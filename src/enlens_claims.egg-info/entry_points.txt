@@ -1,0 +1,3 @@
+[console_scripts]
+enlens = enlens_claims.cli:main
+enlens-gui = enlens_claims.gui.launch:main

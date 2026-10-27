@@ -1,0 +1,64 @@
+Metadata-Version: 2.4
+Name: enlens-claims
+Version: 0.3.0
+Summary: Evidence-grounded extraction of SDG impact claims for value chain assessment (ENLENS prototype)
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2.5
+Requires-Dist: pypdf>=4.0
+Requires-Dist: openpyxl>=3.1
+Provides-Extra: anthropic
+Requires-Dist: anthropic>=0.40; extra == "anthropic"
+Provides-Extra: gui
+Requires-Dist: streamlit>=1.40; extra == "gui"
+Requires-Dist: anthropic>=0.40; extra == "gui"
+Provides-Extra: pdfminer
+Requires-Dist: pdfminer.six>=20231228; extra == "pdfminer"
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+
+# ENLENS claims
+
+Prototype of the claim-centred redesign of the ENLENS pipeline. It extracts evidence-backed SDG impact claims from
+source documents, checks the green hydrogen Value Chain Assessment (Peyerl & van der Zwaan 2024) against its cited
+sources, and reports effects, synergies and trade-offs by segment, place, time and condition.
+
+Check single claims in the browser:
+
+```bash
+pip install -e '.[gui]'
+enlens-gui
+```
+
+Run the whole pipeline from the command line:
+
+```bash
+pip install -e '.[dev]'
+pytest
+enlens --ws pilot init
+enlens --ws pilot load-vca 43621_2024_374_MOESM1_ESM.xlsx
+enlens --ws pilot ingest sources/
+```
+
+The usage manual is in [docs/MANUAL.md](docs/MANUAL.md). The green hydrogen pilot (workspace, report and run notes)
+is in `pilot/`; start with `pilot/RUN_NOTES.md` and `pilot/report/report.html`.
+
+`tools/pdf_to_text.py` converts a folder of PDFs to page-preserving text files for upload (needs only `pypdf`).
+
+Layout:
+
+| Module | Role |
+| --- | --- |
+| `ingest.py` | PDF, HTML and text to documents and passages with page and character offsets |
+| `vca.py` | VCA workbook (cell colours) to gold labels and cited references |
+| `sources.py` | Match documents to references by DOI or wording |
+| `retrieve.py` | BM25 ranking and the passage screen |
+| `schema.py`, `prompts.py` | Output schemas and versioned prompts for split, extract, verify_set and verify |
+| `tasks.py` | Create, export, run and validate model tasks (quote check, retries, dry-run checks, audits) |
+| `llm.py` | Claude API, Ollama, other OpenAI-compatible servers, and an offline keyword baseline |
+| `analysis.py` | Effects, candidate interactions, VCA support, label recovery, VCA consistency, audit agreement |
+| `review.py` | Reviewer queue as CSV, decisions back as labels, gold-set export |
+| `report.py` | `report.html` and CSV/JSON exports |
+| `claimcheck.py` | Check one typed claim: search terms, passage ranking, grading, results and history |
+| `benchmark.py` | Score a model against answers a reference model already gave |
+| `gui/` | The claim checker: `app.py` (Streamlit pages), `core.py` (settings, projects, key, backends), `launch.py` |

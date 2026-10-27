@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enlens-claims"
+version = "0.3.0"
+description = "Evidence-grounded extraction of SDG impact claims for value chain assessment (ENLENS prototype)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.5",
+  "pypdf>=4.0",
+  "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+gui = ["streamlit>=1.40", "anthropic>=0.40"]
+pdfminer = ["pdfminer.six>=20231228"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+enlens = "enlens_claims.cli:main"
+enlens-gui = "enlens_claims.gui.launch:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+enlens_claims = ["data/*.csv", "data/*.md", "gui/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

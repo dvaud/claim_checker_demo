@@ -1,0 +1,7 @@
+match,action,value,note
+"mneimneh f, ghazzawi h",doi,10.3390/en16031368,DOI split by a space in the VCA reference list
+"smith c, torrente-murciano l",doi,none,DOI cut off after 12.0 in the VCA reference list; find by title
+"irena. geopolitics of the energy transition: critical materials",doi,none,"DOI in the VCA list belongs to a Springer paper, not the IRENA report"
+"https://doi.org/10.1016/j.trd.2022.103416",same_as,"gore, k., rigot-muller, p. & coughlan, j",DOI-only entry for Gore et al. (maritime fuels in Ireland)
+"https://doi.org/10.1016/j.enpol.2021.112613",same_as,"van der zwaan, b., lamboo, s. & dalla longa, f",DOI-only entry for Timmermans' dream
+"international renewable energy agency t. green hydrogen cost reduction",same_as,"irena. green hydrogen cost reduction",Same IRENA report cited under two spellings

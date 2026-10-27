@@ -1,0 +1,18 @@
+{
+  "models": {
+    "screen": "heuristic",
+    "split": "claude-fable-5-1",
+    "extract": "claude-opus-5-5",
+    "verify": "claude-opus-5-5"
+  },
+  "thresholds": {
+    "screen_min_score": 2.0,
+    "accept_confidence": 0.8,
+    "support_confidence": 0.6,
+    "verify_top_k": 6
+  },
+  "passages": {
+    "max_chars": 1100,
+    "min_chars": 200
+  }
+}

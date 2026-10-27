@@ -1,0 +1,82 @@
+[
+ {
+  "vca_claim_id": "3.9#2",
+  "verdict": "none_found",
+  "quote": null,
+  "title": null,
+  "page": null,
+  "reasoning": "Clean-cooking paper has no hydrogen; its air-pollution gains come from replacing biomass with LPG/electric stoves, not replacing fossil fuels. SDG7 file is an IEA landing page with no substantive text."
+ },
+ {
+  "vca_claim_id": "3.9#9",
+  "verdict": "none_found",
+  "quote": null,
+  "title": null,
+  "page": null,
+  "reasoning": "Neither source mentions freight, trucks or transport fuel substitution (only LPG transport tankers); SDG7 file is a landing page."
+ },
+ {
+  "vca_claim_id": "9.4#2",
+  "verdict": "partially_supports",
+  "quote": "As natural gas consumption declines, repurposing this existing \ninfrastructure for hydrogen would provide an opportunity to mitigate the risk of \nstranded assets. It would reduce the environmental impact associated with \nmanufacturing and laying new pipelines",
+  "title": "IEA. Global Hydrogen Review 2023. 2023",
+  "page": 110,
+  "reasoning": "Hydrogen transport segment upgrading (repurposing) gas pipelines with lower environmental impact covers the infrastructure half; nothing ties the transport segment to retrofitting industries."
+ },
+ {
+  "vca_claim_id": "3.9#3",
+  "verdict": "none_found",
+  "quote": null,
+  "title": null,
+  "page": null,
+  "reasoning": "No hydrogen or multi-sector decarbonisation in either source; GHG content concerns cooking stoves only."
+ },
+ {
+  "vca_claim_id": "9.b#1",
+  "verdict": "partially_supports",
+  "quote": "the alliance with those countries \nwith import needs (European Union, United \nKingdom, Japan and Korea, among others) will \nbe necessary to accelerate the hydrogen eco -\nnomy development process. These countries \ncan provide support in regulatory aspects and \ntalent generation",
+  "title": "Ministerio de Industria E y M. Green Hydrogen Roadmap in Uruguay. Green Hydrog Roadmap Uruguay 2022",
+  "page": 47,
+  "reasoning": "Converse case: support from Global North importers (regulation, talent generation) is needed to accelerate Uruguay's hydrogen economy; implies but does not state that transfer gaps hinder it."
+ },
+ {
+  "vca_claim_id": "3.9#6",
+  "verdict": "none_found",
+  "quote": null,
+  "title": null,
+  "page": null,
+  "reasoning": "No mention of ships, ammonia or hydrogen in the clean-cooking paper or the SDG7 landing page."
+ },
+ {
+  "vca_claim_id": "5.1#2",
+  "verdict": "refutes",
+  "quote": "Such a target could be reached through green hydrogen,\nby providing job opportunities through the industry which disregard the individual’s\ngender.",
+  "title": "Mneimneh F, Ghazzawi H, Hejjeh MA, Manganelli M, Ramakrishna S. Roadmap to Achieving Sustainable Development via Green Hydrogen. Energies 2023;16:1368.  en16031368",
+  "page": 9,
+  "reasoning": "States the opposite direction (gender-blind hydrogen jobs advancing equality, also Goal 5 achievable via hydrogen); generic and unevidenced, no wage or low-income-country data, so weak."
+ },
+ {
+  "vca_claim_id": "14.2#6",
+  "verdict": "none_found",
+  "quote": null,
+  "title": null,
+  "page": null,
+  "reasoning": "Seaports paper never discusses marine/coastal ecosystems, biodiversity, resilience or restoration; only port economics and logistics."
+ },
+ {
+  "vca_claim_id": "14.2#4",
+  "verdict": "none_found",
+  "quote": null,
+  "title": null,
+  "page": null,
+  "reasoning": "Offshore hydrogen appears only as wind-to-hydrogen infrastructure and pipelines to ports; no adverse effect on the maritime sector is stated."
+ },
+ {
+  "vca_claim_id": "9.3#3",
+  "verdict": "none_found",
+  "quote": null,
+  "title": null,
+  "page": null,
+  "reasoning": "Paper is a technical sizing study of a port H2 system; no mention of small enterprises, SMEs, local suppliers or market integration."
+ }
+]

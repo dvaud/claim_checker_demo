@@ -1,0 +1,127 @@
+{
+  "scope": "targets with at least one cited source available",
+  "targets_scored": 50,
+  "target_sign": {
+    "n": 33,
+    "agree": 13,
+    "accuracy": 0.394
+  },
+  "horizon": {
+    "n": 19,
+    "agree": 11,
+    "accuracy": 0.579
+  },
+  "cell_presence": {
+    "tp": 40,
+    "fp": 0,
+    "fn": 87,
+    "tn": 23,
+    "precision": 1.0,
+    "recall": 0.315,
+    "f1": 0.479,
+    "kappa": 0.124
+  },
+  "cell_sign": {
+    "n": 40,
+    "agree": 16,
+    "accuracy": 0.4
+  },
+  "cell_influence": {
+    "n": 40,
+    "agree": 20,
+    "accuracy": 0.5
+  },
+  "target_presence_all_targets": {
+    "tp": 41,
+    "fp": 18,
+    "fn": 20,
+    "tn": 90,
+    "precision": 0.695,
+    "recall": 0.672,
+    "f1": 0.683,
+    "kappa": 0.509
+  },
+  "vca_claim_status": {
+    "unsupported": 142,
+    "supported": 24,
+    "contradicted": 1,
+    "partially_supported": 11,
+    "source_missing": 39
+  },
+  "claim_status": {
+    "needs_review": 346
+  },
+  "vca_status_by_threshold": [
+    {
+      "threshold": 0.0,
+      "supported": 27,
+      "partially_supported": 95,
+      "contradicted": 2,
+      "unsupported": 54
+    },
+    {
+      "threshold": 0.5,
+      "supported": 27,
+      "partially_supported": 46,
+      "contradicted": 2,
+      "unsupported": 103
+    },
+    {
+      "threshold": 0.6,
+      "supported": 24,
+      "partially_supported": 11,
+      "contradicted": 1,
+      "unsupported": 142
+    },
+    {
+      "threshold": 0.7,
+      "supported": 12,
+      "partially_supported": 2,
+      "contradicted": 1,
+      "unsupported": 163
+    },
+    {
+      "threshold": 0.8,
+      "supported": 10,
+      "partially_supported": 1,
+      "contradicted": 0,
+      "unsupported": 167
+    }
+  ],
+  "audit": {
+    "vca_checks": {
+      "claims": 14,
+      "models": [
+        "claude-fable-5-1"
+      ],
+      "status_agreement": 0.857,
+      "grounded_agreement": {
+        "tp": 2,
+        "fp": 2,
+        "fn": 0,
+        "tn": 10,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.667,
+        "kappa": 0.588
+      },
+      "passage_grade_agreement": 0.929,
+      "confusion": {
+        "unsupported -> unsupported": 10,
+        "unsupported -> partially_supported": 1,
+        "supported -> supported": 2,
+        "unsupported -> supported": 1
+      }
+    },
+    "claim_checks": {
+      "claims": 34,
+      "models": [
+        "claude-fable-5-1"
+      ],
+      "verdicts": {
+        "supports": 34
+      },
+      "supported_share": 1.0
+    }
+  }
+}
