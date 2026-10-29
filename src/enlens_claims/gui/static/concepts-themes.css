@@ -1,0 +1,114 @@
+/* 0.7: the Concepts (F3) and Themes (F4) pages. Built on the shared components of app.css and v07.css. */
+
+/* ------------------------------------------------------------------ concepts: the glossary */
+.ct-gloss .ct-name a { font-family: var(--font-serif); font-size: 1rem; color: var(--text); text-decoration: none; font-weight: 500; }
+.ct-gloss .ct-name a:hover, .ct-gloss .ct-name a:focus-visible { color: var(--accent-text); text-decoration: underline; }
+.ct-also { font-size: .8rem; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.ct-gloss td.num { width: 1%; }
+.filters-top .select { width: auto; }
+
+/* ------------------------------------------------------------------ concepts: the card */
+.ct-title, .th-title { font-weight: 500; overflow-wrap: anywhere; }
+.ct-wordings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ct-wordings li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); }
+.ct-wording { font-size: 1.02rem; color: var(--text); text-decoration: none; font-weight: 500; }
+.ct-wording:hover, .ct-wording:focus-visible { color: var(--accent-text); text-decoration: underline; }
+.ct-wordings li .btn { margin-left: auto; }
+.ct-suggest { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ct-suggest h3, .ct-group h3 { font-size: .95rem; margin: 0 0 4px; display: flex; align-items: center; flex-wrap: wrap; }
+.ct-group { margin-top: 14px; }
+.ct-group:first-of-type { margin-top: 0; }
+.ct-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ct-link { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--surface); }
+.ct-link.ct-proposed { border-style: dashed; border-color: var(--partly-line); background: var(--partly-soft); }
+.ct-link.ct-proposed .muted { color: var(--text-2); }
+.ct-link-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.ct-link-name { font-size: 1rem; color: var(--text); font-weight: 500; text-decoration: none; }
+.ct-link-name:hover, .ct-link-name:focus-visible { color: var(--accent-text); text-decoration: underline; }
+.ct-link-acts { margin-top: 6px; gap: 6px; }
+.ct-change { display: inline-block; }
+.ct-change > summary { list-style: none; display: inline-flex; }
+.ct-change > summary::-webkit-details-marker { display: none; }
+.ct-change[open] { display: block; width: 100%; }
+.ct-change .select { max-width: 100%; }
+.ct-why > summary { font-size: .82rem; padding: 2px 0; }
+.ct-quotes { margin: 2px 0 0; padding-left: 18px; font-size: .9rem; color: var(--text-2); }
+.ct-add { margin-top: 14px; }
+.ct-add-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.ct-add-form .input { flex: 1 1 200px; width: auto; }
+.ct-add-form .select { width: auto; max-width: 100%; }
+.ct-add .field-error { margin: 6px 0 0; }
+.ct-docs .doc-title { -webkit-line-clamp: 2; font-weight: 500; }
+.ct-docs td.num { width: 1%; }
+.kwic .ct-node { color: inherit; text-decoration: none; }
+.kwic .ct-node:hover mark, .kwic .ct-node:focus-visible mark { outline: 2px solid var(--mark-line); }
+.kwic .kw-where a { text-decoration: none; }
+.kwic .kw-where a:hover { text-decoration: underline; color: var(--accent-text); }
+.card.section { margin: 18px 0; }
+
+/* ------------------------------------------------------------------ themes: the list */
+.th-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.th-item { padding: 14px 18px; }
+.th-item-head { display: flex; gap: 12px; align-items: flex-start; }
+.th-num { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 1.9em; height: 1.9em; padding: 0 .3em;
+  border-radius: 8px; background: var(--accent-soft); color: var(--accent-text); font-weight: 700; font-variant-numeric: tabular-nums; font-size: .9rem; }
+.th-item-main { min-width: 0; flex: 1; }
+.th-name { margin: 0; font-family: var(--font-serif); font-weight: 500; font-size: 1.12rem; line-height: 1.3; overflow-wrap: anywhere; }
+.th-name a { color: var(--text); text-decoration: none; }
+.th-name a:hover, .th-name a:focus-visible { color: var(--accent-text); text-decoration: underline; }
+.th-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
+.th-desc { font-family: var(--font-serif); color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+.th-size { display: flex; align-items: center; gap: 10px; margin: 10px 0 8px; flex-wrap: wrap; }
+.th-bar { flex: 1 1 160px; max-width: 360px; height: 8px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.th-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.th-size-text { font-size: .85rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.th-terms { margin: 4px 0; }
+.th-terms .chip-btn, .chips .chip-btn, .colloc .chip-btn { text-decoration: none; color: var(--text-2); }
+.th-docs { margin: 6px 0 0; overflow-wrap: anywhere; }
+.th-docs a { color: inherit; }
+.th-reps { margin-top: 6px; }
+.th-acts { margin-top: 8px; gap: 6px; }
+
+/* a passage of a theme (the representatives in the list, the cards on a theme's page) */
+.th-passage { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 10px 14px; }
+.th-passage.card { padding: 12px 16px; box-shadow: none; }
+.th-passage .passage { font-family: var(--font-serif); font-size: 1rem; line-height: 1.58; margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.th-passage .ev-src { margin-bottom: 6px; }
+.th-passage .ev-src .page { margin-left: .5em; color: var(--muted); font-weight: 500; }
+.th-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; font-size: .85rem; }
+.th-move { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.th-move .select { width: auto; max-width: min(100%, 360px); flex: 0 1 auto; min-width: 0; }
+.th-tech { margin-left: auto; }
+.th-tech > summary { cursor: pointer; }
+.th-about { margin-bottom: 16px; }
+.th-quote { margin: 8px 0 0; }
+.th-quote q { color: var(--text); font-style: normal; }
+.th-doclist { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 16px; }
+.th-doclist li { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+.th-doclist a { color: var(--text); text-decoration: none; min-width: 0; overflow-wrap: anywhere; }
+.th-doclist a:hover { color: var(--accent-text); text-decoration: underline; }
+.th-doclist .muted { white-space: nowrap; }
+.th-job .grow { min-width: 0; }
+
+/* ------------------------------------------------------------------ themes: the grids (on the map component) */
+.th-grid .map-hyp a { font-family: var(--font-serif); }
+.th-cell { min-width: 2.6em; font-size: .85rem; color: var(--text-2); }
+.th-cell.th-l0 { color: var(--faint); }
+.map-table td.th-cell.th-l1 { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.map-table td.th-cell.th-l2 { background: color-mix(in srgb, var(--accent) 30%, var(--surface)); color: var(--text); }
+.map-table td.th-cell.th-l3 { background: color-mix(in srgb, var(--accent) 48%, var(--surface)); color: var(--text); font-weight: 600; }
+.map-table td.th-cell.th-l4 { background: var(--heat-4); color: var(--on-accent); font-weight: 700; }
+.row-link:hover .th-cell.th-l0 { background: var(--surface-2); }
+/* 0.8.2: the levels outrank the row hover (`.row-link:hover .map-cell`), which used to wipe the heat colours */
+.th-code-head { font-family: var(--font-mono); font-size: .78rem; white-space: nowrap; text-align: center; min-width: 3em; cursor: help; }
+.th-fw .select { width: auto; }
+.th-runs .th-run-now td { background: var(--surface-2); }
+
+@media (max-width: 860px) {
+  .th-item { padding: 12px 14px; }
+  .th-tech { margin-left: 0; width: 100%; }
+  .ct-wordings li .btn { margin-left: 0; }
+  .th-doclist { grid-template-columns: 1fr; }
+  .ct-change .select { width: 100%; }
+  .ct-gloss td.num, .ct-docs td.num { display: inline-block; width: auto; margin-right: 14px; }
+}

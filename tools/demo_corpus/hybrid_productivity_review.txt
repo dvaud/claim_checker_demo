@@ -1,0 +1,20 @@
+Does hybrid work change productivity? A review of 27 studies
+C. Lindqvist, Centre for Labour Studies (fictional), Policy review, 2025
+
+Overview. Studies of hybrid work report mixed effects on productivity. Of 27 studies, 11 found higher productivity, 9 found no difference and 7 found lower productivity.
+
+Where productivity rose. Productivity rose most in jobs with long periods of concentrated individual work, such as programming and writing. Fewer interruptions at home were the main reason given.
+
+Where productivity fell. Productivity fell in jobs that depend on quick coordination with colleagues, and among new employees who needed training.
+
+Measurement. Most studies relied on self-reported productivity. Studies that measured output directly found smaller effects than studies that asked employees.
+
+Conclusion. There is no evidence that hybrid work reduces productivity overall; the effect depends on the kind of work.
+
+Selection of studies. We searched four databases for studies published between 2020 and 2024 that compared hybrid or remote workers with office workers on a measure of productivity. Twenty-seven studies met our criteria: twelve surveys, nine studies using company records, and six field experiments.
+
+Experiments. The six field experiments, in which employers assigned home-working days by lottery, found on average no difference in output between home and office days. One experiment in a call centre found a small rise in calls handled at home, and one in a design firm found slower progress on team projects.
+
+Hours worked. Several studies found that remote workers worked longer hours, partly in the evening. Higher output per week can therefore hide lower output per hour.
+
+Implications for employers. Employers should decide about hybrid work task by task: home days for focused individual work, office days for training, coordination and creative team work.

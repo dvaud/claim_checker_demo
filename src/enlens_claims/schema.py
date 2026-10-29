@@ -161,6 +161,37 @@ class VerifySetOut(BaseModel):
     rationale: Optional[str] = None
 
 
+def _none_words(v):
+    if v is None:
+        return None
+    v = " ".join(str(v).split())
+    return None if v.lower().strip(" .") in ("", "null", "none", "n/a", "no", "same", "nothing") else v
+
+
+class CheckEvidence(PassageEvidence):
+    """A grade of the hypothesis checker (check-v3): may say the passage is about another group or setting; (check-v4)
+    may name what its quote refers to, quoted from the passage or the text before it."""
+    scope_note: Optional[str] = Field(None, max_length=200)
+    refers_to: Optional[str] = Field(None, max_length=200)
+
+    @field_validator("scope_note", mode="before")
+    @classmethod
+    def _note(cls, v):
+        v = _none_words(v)
+        return v.strip(" .")[:200] if v else None
+
+    @field_validator("refers_to", mode="before")
+    @classmethod
+    def _ref(cls, v):
+        v = _none_words(v)
+        return v.strip()[:200] if v else None
+
+
+class CheckOut(BaseModel):
+    evidence: list[CheckEvidence] = Field(default_factory=list)
+    rationale: Optional[str] = None
+
+
 class ExpandOut(BaseModel):
     terms: list[str] = Field(min_length=1)
 
@@ -175,6 +206,152 @@ class ExpandOut(BaseModel):
             if t and len(t) <= 80 and t.lower() not in {x.lower() for x in out}:
                 out.append(t)
         return out[:40]
+
+
+PART_ROLES = ("condition", "mechanism", "outcome", "comparison", "scope", "component")
+
+
+class HypothesisPart(BaseModel):
+    text: str = Field(min_length=10, max_length=400)
+    role: Literal[PART_ROLES] = "component"
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _role(cls, v):
+        v = _norm_enum(v) if v is not None else "component"
+        return v if v in PART_ROLES else "component"
+
+
+class DecomposeOut(BaseModel):
+    parts: list[HypothesisPart] = Field(min_length=1, max_length=6)
+    note: Optional[str] = None
+
+    @field_validator("parts", mode="before")
+    @classmethod
+    def _strings(cls, v):  # a plain list of sentences is accepted too
+        if isinstance(v, list):
+            return [{"text": x} if isinstance(x, str) else x for x in v]
+        return v
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.7: codebook labels (label-v1), links between terms (link-v1), theme names (theme-v1), reference chains (resolve-v1)
+# ---------------------------------------------------------------------------------------------
+class CodeLabel(BaseModel):
+    code: str = Field(min_length=1, max_length=40)
+    relevance: Literal["main", "mentioned"] = "mentioned"
+    direction: Literal["helps", "hinders", "mixed", "not_stated"] = "not_stated"
+    confidence: float = Field(ge=0, le=1)
+    quote: str = Field(min_length=3)
+    reason: str = Field("", max_length=200)
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _code(cls, v):
+        return str(v).strip() if v is not None else v
+
+    @field_validator("relevance", mode="before")
+    @classmethod
+    def _rel(cls, v):
+        v = _norm_enum(v) if v is not None else "mentioned"
+        return {"main_topic": "main", "primary": "main", "central": "main", "mention": "mentioned",
+                "minor": "mentioned", "secondary": "mentioned"}.get(v, v)
+
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _dir(cls, v):
+        v = _norm_enum(v) if v is not None else "not_stated"
+        return {"positive": "helps", "help": "helps", "negative": "hinders", "hinder": "hinders",
+                "both": "mixed", "no_effect": "not_stated", "unclear": "not_stated"}.get(v, v)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def _reason(cls, v):
+        return " ".join(str(v or "").split())[:200]
+
+
+class LabelOut(BaseModel):
+    labels: list[CodeLabel] = Field(default_factory=list)
+    note: Optional[str] = None
+
+
+LINK_RELATIONS = ("same", "broader", "narrower", "related", "different")
+
+
+class TermLink(BaseModel):
+    a: int = Field(ge=1)
+    b: int = Field(ge=1)
+    relation: Literal[LINK_RELATIONS]
+    confidence: float = Field(ge=0, le=1)
+    quote_a: str = Field(min_length=3)
+    quote_b: str = Field(min_length=3)
+
+    @field_validator("relation", mode="before")
+    @classmethod
+    def _rel(cls, v):
+        v = _norm_enum(v)
+        return {"synonym": "same", "equivalent": "same", "identical": "same", "parent": "broader",
+                "child": "narrower", "hypernym": "broader", "hyponym": "narrower", "unrelated": "different",
+                "co_occurs": "related"}.get(v, v)
+
+
+class LinkOut(BaseModel):
+    relations: list[TermLink] = Field(min_length=1)
+
+
+class QuoteRef(BaseModel):
+    passage: int = Field(ge=1)
+    quote: str = Field(min_length=3)
+
+    @field_validator("passage", mode="before")
+    @classmethod
+    def _num(cls, v):
+        if isinstance(v, str):
+            v = v.strip().upper().lstrip("P")
+        return v
+
+
+class ThemeOut(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    name_quote: QuoteRef
+    description: str = Field(min_length=10, max_length=300)
+    description_quote: QuoteRef
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _name(cls, v):
+        v = " ".join(str(v or "").split()).strip(" .\"'")
+        if len(v.split()) > 6:
+            raise ValueError("the name must have at most six words")
+        return v
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _desc(cls, v):
+        return " ".join(str(v or "").split())
+
+
+class Mention(BaseModel):
+    passage: int = Field(ge=1)
+    span: str = Field(min_length=3, max_length=300)
+    mention: str = Field(min_length=1, max_length=200)
+    named: bool = False
+
+    @field_validator("passage", mode="before")
+    @classmethod
+    def _num(cls, v):
+        if isinstance(v, str):
+            v = v.strip().upper().lstrip("P")
+        return v
+
+
+class Chain(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    mentions: list[Mention] = Field(min_length=1)
+
+
+class ResolveOut(BaseModel):
+    chains: list[Chain] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -225,10 +402,22 @@ def output_schema(kind: str) -> dict:
         s = _inline(SplitOut.model_json_schema())
     elif kind == "verify":
         s = _inline(VerifyOut.model_json_schema())
-    elif kind in ("verify_set", "check"):
+    elif kind == "verify_set":
         s = _inline(VerifySetOut.model_json_schema())
+    elif kind in ("check", "reread", "second"):
+        s = _inline(CheckOut.model_json_schema())
     elif kind == "expand":
         s = _inline(ExpandOut.model_json_schema())
+    elif kind == "decompose":
+        s = _inline(DecomposeOut.model_json_schema())
+    elif kind == "label":
+        s = _inline(LabelOut.model_json_schema())
+    elif kind == "link":
+        s = _inline(LinkOut.model_json_schema())
+    elif kind == "theme":
+        s = _inline(ThemeOut.model_json_schema())
+    elif kind == "resolve":
+        s = _inline(ResolveOut.model_json_schema())
     else:
         raise ValueError(f"no output schema for task kind {kind!r}")
     return _require_all(s)

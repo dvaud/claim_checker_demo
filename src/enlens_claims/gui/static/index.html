@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="enlens-token" content="{{ENLENS_TOKEN}}">
+<meta name="enlens-version" content="{{ENLENS_VERSION}}">
+<meta name="color-scheme" content="light dark">
+<title>ENLENS · hypothesis checker</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/v07.css">
+<link rel="stylesheet" href="/static/concepts-themes.css">
+<link rel="stylesheet" href="/static/profile-viewer.css">
+<script type="module" src="/static/app.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="shell" id="shell">
+  <header class="topbar" id="topbar">
+    <button class="icon-btn" id="menu-btn" type="button" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false"></button>
+    <a class="brand brand-small" href="#/check" aria-label="ENLENS home">
+      <img src="/static/logo.svg" alt="" width="26" height="26">
+      <span>ENLENS</span>
+    </a>
+    <span class="topbar-project" id="topbar-project"></span>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Sidebar">
+    <div class="sidebar-inner">
+      <a class="brand" href="#/check" aria-label="ENLENS home">
+        <img src="/static/logo.svg" alt="" width="34" height="34">
+        <span class="brand-text"><strong>ENLENS</strong><small>checks hypotheses against your documents</small></span>
+      </a>
+      <div class="project-switch" id="project-switch"></div>
+      <nav class="nav" aria-label="Main" id="nav">
+        <a href="#/check" data-route="check"><span class="nav-icon" data-icon="flask"></span><span>Check a hypothesis</span></a>
+        <a href="#/history" data-route="history"><span class="nav-icon" data-icon="history"></span><span>Results</span></a>
+        <a href="#/batch" data-route="batch"><span class="nav-icon" data-icon="list-checks"></span><span>Check several</span></a>
+        <a href="#/sources" data-route="sources"><span class="nav-icon" data-icon="book-open"></span><span>Documents</span></a>
+        <span class="nav-group" role="presentation">Explore the documents</span>
+        <a href="#/search" data-route="search"><span class="nav-icon" data-icon="text-search"></span><span>Search</span></a>
+        <a href="#/profile" data-route="profile"><span class="nav-icon" data-icon="tag"></span><span>Profile</span></a>
+        <a href="#/concepts" data-route="concepts"><span class="nav-icon" data-icon="network"></span><span>Concepts</span></a>
+        <a href="#/themes" data-route="themes"><span class="nav-icon" data-icon="shapes"></span><span>Themes</span></a>
+        <a href="#/settings" data-route="settings"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></a>
+      </nav>
+      <div class="sidebar-foot">
+        <div id="jobs-indicator"></div>
+        <div id="queue-indicator"></div>
+        <div id="privacy-indicator"></div>
+        <div class="sidebar-row">
+          <button class="btn btn-ghost btn-sm" id="theme-btn" type="button" aria-live="polite"></button>
+        </div>
+        <div class="sidebar-row">
+          <button class="btn btn-ghost btn-sm" id="quit-btn" type="button" hidden></button>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <main class="main" id="main" tabindex="-1">
+    <div id="quicklook-banner"></div>
+    <div class="view" id="view" aria-busy="true"><p class="muted">Loading…</p></div>
+  </main>
+</div>
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+<div id="dialogs"></div>
+</body>
+</html>

@@ -1,0 +1,18 @@
+Working from home and wellbeing: evidence from the Lowland Household Panel, 2019-2024
+M. Verhoeven and A. Okafor, Journal of Work and Society (fictional), 2025
+
+Abstract. We follow 6,200 employees of the Lowland Household Panel before, during and after the pandemic. Employees who worked from home at least two days a week reported higher life satisfaction than comparable employees who worked at the office every day. The difference was largest for parents of young children. Working from home did not reduce job satisfaction.
+
+1. Data. The panel interviews the same households every year. We compare employees whose employer allowed home working with employees in similar jobs whose employer did not.
+
+2. Results. Hybrid workers commuted on average 3.1 fewer hours a week. They reported more time with their family and slightly better sleep. Among employees younger than 30, however, those who worked fully from home reported more loneliness than those who came to the office at least once a week. Loneliness did not rise among hybrid workers of any age.
+
+3. Discussion. The results suggest that hybrid work improves wellbeing for most employees, but fully remote work may increase loneliness among young employees who have few colleagues to meet outside work.
+
+4. Heterogeneity. Women with children under twelve gained most from hybrid work: their reported stress fell by 0.4 points on a ten-point scale. Men without children reported almost no change. Employees with long commutes, more than 45 minutes each way, gained more than employees who lived close to the office.
+
+5. Health. We find no change in self-reported physical health. Employees who worked fully from home reported slightly more back and neck complaints, which they attributed to poor home desks.
+
+6. Limitations. Employers decided who could work from home, so the groups may differ in ways we do not observe. We control for occupation, income, age, household type and region, and the results hold when we compare the same employees before and after their employer changed its policy.
+
+7. Conclusion. For most employees, two or three days of home working a week are associated with higher wellbeing. The benefits are smaller, and loneliness is higher, for young employees who work fully from home.

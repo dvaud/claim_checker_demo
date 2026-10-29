@@ -1,0 +1,18 @@
+Commuting less, emitting less? A survey of 4,000 workers in the Rivermouth region
+Rivermouth Mobility Institute (fictional), Research report 12, 2024
+
+Summary. Remote work reduces commuting emissions, but by less than often assumed. Workers who stay home two days a week cut their commuting distance by 35 percent. Part of the saving is lost: remote workers make more short car trips for errands, and some moved further away from the office after the pandemic.
+
+Findings. Average commuting emissions per worker fell by 18 percent between 2019 and 2023. Emissions fell most for workers who used to drive alone. For workers who cycle or take the train, remote work made almost no difference to emissions.
+
+Home energy. Working from home raises home heating and electricity use in winter. In our estimate this offsets about a fifth of the commuting saving.
+
+Conclusion. Remote work lowers commuting emissions, especially for car commuters, but it is not a large climate measure on its own.
+
+Method. The institute surveyed 4,012 workers in 2019 and again in 2023, asking them to record every trip during one week. Emissions were calculated from distance, mode of transport and vehicle type.
+
+Who works from home. Office workers with higher education were three times as likely to work from home as workers in retail, care or manufacturing, whose commuting did not change. Remote work therefore mainly reduced the emissions of workers who already earned more.
+
+Rebound effects. On home-working days, 41 percent of respondents made at least one extra car trip, mostly short trips for shopping, school runs or sport. Workers who moved to villages after 2020 now drive further on office days than before.
+
+Recommendations. Employers can make the most of remote work by coordinating office days, so that fewer offices need to be heated, and by supporting cycling and public transport for the days staff do come in.

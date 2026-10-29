@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enlens-claims"
-version = "0.3.0"
-description = "Evidence-grounded extraction of SDG impact claims for value chain assessment (ENLENS prototype)"
+version = "0.8.2"
+description = "Check hypotheses against your own documents, locally or with Claude Code on your own plan, with verified quotes (ENLENS); includes the SDG value chain assessment pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,20 +15,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.40"]
-gui = ["streamlit>=1.40", "anthropic>=0.40"]
+# the app (enlens-gui) needs nothing beyond the core: it is a standard-library server and a static page
+gui = []
+fast = ["numpy>=1.24"]                 # faster semantic search on large projects (pure Python otherwise)
+anthropic = ["anthropic>=0.40"]        # the Claude API (cloud, opt-in)
+connector = ["mcp>=2,<3"]
 pdfminer = ["pdfminer.six>=20231228"]
+ocr = ["pypdfium2>=4.20", "pillow>=10"]  # read scanned PDF pages; also needs the program tesseract (see the manual)
 dev = ["pytest>=8"]
 
 [project.scripts]
 enlens = "enlens_claims.cli:main"
 enlens-gui = "enlens_claims.gui.launch:main"
+enlens-mcp = "enlens_claims.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-enlens_claims = ["data/*.csv", "data/*.md", "gui/*.py"]
+enlens_claims = ["data/*.csv", "data/*.md", "gui/static/*", "gui/static/views/*", "claude_plugin/*", "claude_plugin/agents/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

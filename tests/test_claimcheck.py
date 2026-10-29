@@ -18,7 +18,7 @@ def test_check_claim_with_baseline(loaded):
     steps = []
     cid = claimcheck.check_claim(loaded, CLAIM, BaselineBackend(), "baseline", target="6.4", k=4,
                                  progress=lambda s, m: steps.append(s))
-    assert steps == ["terms", "rank", "grade"]
+    assert steps == ["terms", "terms_done", "rank", "rank_done", "grade", "grade_done"]
     r = claimcheck.result(loaded, cid)
     assert r["status"] in ("supported", "partially_supported") and r["terms"]
     graded = [p for p in r["passages"] if p["verdict"]]
@@ -94,7 +94,8 @@ def test_ollama_backend_over_http(loaded):
         assert len(chat) == 2
         for body in chat:  # context length and answer schema go with every request; no streaming
             assert body["options"]["num_ctx"] == 16384 and body["options"]["temperature"] == 0
-            assert body["format"]["type"] == "object" and body["stream"] is False and "think" not in body
+            assert body["format"]["type"] == "object" and body["stream"] is True and "think" not in body
+            assert body["options"]["num_predict"] in (400, 1500)  # capped per task kind
         with pytest.raises(BackendError, match="ollama pull nope"):
             be.complete("expand", "You prepare a search", "CLAIM:\nx", "nope", {})
         small = OllamaBackend(base_url=url, num_ctx=4096)
@@ -182,3 +183,58 @@ def test_a_stopped_check_leaves_no_history(loaded):
     with pytest.raises(BackendError):
         claimcheck.check_claim(loaded, CLAIM, Down(), "m")
     assert claimcheck.history(loaded) == [] and not loaded.query("SELECT 1 FROM tasks WHERE kind IN ('expand','check')")
+
+
+
+# ---------------------------------------------------------------------------------------------
+# streaming: progress, and the guards against models that never finish
+# ---------------------------------------------------------------------------------------------
+def test_ollama_streams_progress_and_stops_runaway_models():
+    import time
+
+    srv, url = fake_servers.start("ollama")
+    try:
+        seen = []
+        be = OllamaBackend(base_url=url)
+        be.progress = seen.append
+        srv.delay = 0.12  # the answer streams for over 2 s, so a once-a-second report fires while it writes
+        out = be.complete("check", "You check whether", "CLAIM:\nx\n\nP1 | d\nGreen hydrogen raises water stress here.",
+                          fake_servers.FAKE_MODEL, {})
+        srv.delay = 0.0
+        assert json.loads(out)["evidence"][0]["passage"] == 1
+        assert seen[-1]["phase"] == "done" and seen[-1]["stats"]["output_tokens"] > 0
+        assert any(i["phase"] == "writing" and i["answer_tokens"] for i in seen[:-1])
+
+        # a reasoning model that never stops reasoning: capped, then a plain message
+        with pytest.raises(BackendError, match="on reasoning without answering"):
+            OllamaBackend(base_url=url).complete("expand", "You prepare a search", "CLAIM:\nx", fake_servers.THINKER, {})
+        # the same model with reasoning off answers normally
+        out = OllamaBackend(base_url=url, think=False).complete("expand", "You prepare a search", "CLAIM:\nwater stress",
+                                                                fake_servers.THINKER, {})
+        assert json.loads(out)["terms"]
+        assert srv.requests[-1][1]["think"] is False
+
+        # endless blank space inside the JSON: stopped early and the connection is closed
+        with pytest.raises(BackendError, match="blank space"):
+            OllamaBackend(base_url=url).complete("check", "You check whether", "CLAIM:\nx", fake_servers.LOOPER, {})
+        for _ in range(50):
+            if srv.disconnects:
+                break
+            time.sleep(0.05)
+        assert srv.disconnects >= 1
+
+        # nothing at all for too long
+        srv.slow_seconds = 3
+        with pytest.raises(BackendError, match="sent nothing for 1 seconds before starting"):
+            OllamaBackend(base_url=url, stall_timeout=1).complete("expand", "You prepare a search", "CLAIM:\nx",
+                                                                  fake_servers.SLOW, {})
+    finally:
+        srv.shutdown()
+
+
+def test_reasoning_needs_room_in_the_context():
+    be = OllamaBackend(base_url="http://127.0.0.1:9", think=True)
+    be._caps["m"] = ["completion", "thinking"]
+    system = tasks.prompts.system_prompt("extract")
+    with pytest.raises(BackendError, match="or switch reasoning off"):
+        be.complete("extract", system, "PASSAGE:\n" + "word " * 300, "m", {})

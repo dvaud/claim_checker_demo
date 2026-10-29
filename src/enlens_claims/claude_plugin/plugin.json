@@ -1,0 +1,7 @@
+{
+  "name": "enlens-run",
+  "version": "{{VERSION}}",
+  "description": "Works through an ENLENS project's task queue: labels, concept links, theme names, references, search words and checks (and the SDG pack's extractions, splits, VCA checks and audits), each kind with a helper agent on the right model. ENLENS keeps the documents and checks every quote; Claude Code only reads the passages handed out.",
+  "author": {"name": "ENLENS"},
+  "keywords": ["enlens", "research", "documents", "hypotheses"]
+}

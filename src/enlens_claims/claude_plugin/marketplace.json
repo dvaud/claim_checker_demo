@@ -1,0 +1,12 @@
+{
+  "name": "enlens",
+  "description": "ENLENS for Claude Code: answer an ENLENS project's task queue on your own Claude plan",
+  "owner": {"name": "ENLENS"},
+  "plugins": [
+    {
+      "name": "enlens-run",
+      "source": "./plugins/enlens-run",
+      "description": "Works through an ENLENS project's task queue with helper agents on the right model per task"
+    }
+  ]
+}

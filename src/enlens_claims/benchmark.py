@@ -11,8 +11,15 @@ What is measured, per task kind:
   - verify_set: same claim status (supported / partly / contradicted / nothing), grounded or not (Cohen's kappa),
     and the same grade per passage
   - extract: passage has a claim or not (kappa), overlap of the SDG targets named, same direction on shared targets
+  - label (0.7): code present or not, over the candidate codes and the codes either answer names (kappa), and the
+    share of passages labelled with exactly the same codes
 
 Agreement with the reference is not correctness: the reference is itself unreviewed model output.
+
+With Claude Code (0.8.1) the sample waits in the queue of a scratch copy of the reference, removed afterwards; each
+kind is answered by `model` when it is one of haiku, sonnet, opus or fable, else by the model the router names for
+that kind. Only the first answer to each task is scored ("usable on the first try"), and the seconds per task are
+those Claude Code took.
 """
 from __future__ import annotations
 
@@ -68,6 +75,22 @@ def _targets(out: dict) -> dict[str, str]:
     return found
 
 
+def _codes(out: dict, payload: dict) -> set[str]:
+    from . import frameworks
+
+    try:
+        fw = frameworks.get(payload.get("framework") or "sdg")
+    except ValueError:
+        fw = None
+    got = set()
+    for lb in out.get("labels") or []:
+        if isinstance(lb, dict) and lb.get("code"):
+            c = fw.normalise(lb["code"]) if fw else str(lb["code"])
+            if c:
+                got.add(c)
+    return got
+
+
 def _sample(ws: Workspace, kind: str, n: int, seed: int) -> list:
     rows = ws.query("SELECT t.* FROM tasks t WHERE t.kind=? AND t.status='done' AND t.task_id NOT LIKE '%:audit:%' "
                     "ORDER BY t.task_id", (kind,))
@@ -85,13 +108,33 @@ def _reference(ws: Workspace, task_id: str) -> dict | None:
         return None
 
 
-def run(ws: Workspace, backend, model: str, kinds=("verify_set", "extract"), sample: int = 30, seed: int = 0,
+def _queue_models(backend, model: str | None, kinds) -> dict:
+    """Claude Code: the model of each kind, `model` when it is an alias, else the routed one."""
+    from . import routing
+
+    r = getattr(backend, "router", None)
+    if r is None:
+        from .home import load_settings
+
+        r = routing.from_settings(load_settings(), route="claude_code")
+    return {k: (model if model in routing.ALIASES else r.first(k) or "opus") for k in kinds}
+
+
+def run(ws: Workspace, backend, model: str | None, kinds=("verify_set", "extract"), sample: int = 30, seed: int = 0,
         progress: Callable[[int, int, str], None] | None = None) -> dict:
     thr = float(ws.config["thresholds"]["support_confidence"])
     jobs = [(k, t) for k in kinds for t in _sample(ws, k, sample, seed)]
     if not jobs:
         raise ValueError("The reference workspace has no answered tasks of these kinds.")
     per: dict[str, list[dict]] = {k: [] for k in kinds}
+    queued = secs = models = None
+    if getattr(backend, "name", "") == "claude_code":
+        from .taskqueue import answer_on_copy
+
+        models = _queue_models(backend, model, kinds)
+        queued, secs = answer_on_copy(ws, [(t["task_id"], k, json.loads(t["payload_json"]), models[k])
+                                           for k, t in jobs], backend, "model test",
+                                      should_stop=getattr(backend, "should_stop", None))
     cx = sqlite3.connect(ws.db_path, timeout=60)
     cx.row_factory = sqlite3.Row
     try:
@@ -103,16 +146,21 @@ def run(ws: Workspace, backend, model: str, kinds=("verify_set", "extract"), sam
             rec: dict = {"task_id": t["task_id"]}
             t0 = time.time()
             try:
-                raw = backend.complete(kind, system, user, model, payload)
+                if queued is not None:
+                    raw = queued.get(t["task_id"])
+                    if raw is None:
+                        raise ValueError("Claude Code gave no answer to this task")
+                else:
+                    raw = backend.complete(kind, system, user, model, payload)
             except Exception as e:  # keep going: one failure should not stop the benchmark
                 rec.update(error=str(e)[:300], seconds=round(time.time() - t0, 2))
                 per[kind].append(rec)
                 continue
-            rec["seconds"] = round(time.time() - t0, 2)
+            rec["seconds"] = (secs.get((kind, models[kind])) or 0.0) if secs is not None else round(time.time() - t0, 2)
             try:
                 out = parse_json(raw)
                 rec["json_ok"] = True
-                ok, errors = HANDLERS[kind](cx, t, payload, out, model)
+                ok, errors = HANDLERS[kind](cx, t, payload, out, models[kind] if models else model)
             except Exception as e:
                 out, ok, errors = None, False, (_errs(e) if hasattr(e, "errors") else [str(e)])
                 rec["json_ok"] = out is not None
@@ -128,6 +176,11 @@ def run(ws: Workspace, backend, model: str, kinds=("verify_set", "extract"), sam
                     rec["status"], rec["ref_status"] = _status_from(out, n, thr), _status_from(ref, n, thr)
                     a, b = _grades(out, n), _grades(ref, n)
                     rec["same_grades"], rec["passages"] = sum(x == y for x, y in zip(a, b)), n
+                elif kind == "label":
+                    a, b = _codes(out, payload), _codes(ref, payload)
+                    universe = {c["code"] for c in payload.get("candidates") or []} | a | b
+                    rec["code_pairs"] = [(c in b, c in a) for c in sorted(universe)]
+                    rec["same_codes"] = a == b
                 elif kind == "extract":
                     ta, tb = _targets(out), _targets(ref)
                     rec["has_claims"], rec["ref_has_claims"] = bool(ta), bool(tb)
@@ -138,9 +191,13 @@ def run(ws: Workspace, backend, model: str, kinds=("verify_set", "extract"), sam
             per[kind].append(rec)
     finally:
         cx.close()
-    return {"model": model, "backend": getattr(backend, "name", ""), "sample_per_kind": sample, "seed": seed,
-            "reference": _ref_models(ws, kinds), "threshold": thr,
-            "kinds": {k: _summarise(k, v) for k, v in per.items()}, "tasks": per}
+    out = {"model": model or ("the routed models" if models else model), "backend": getattr(backend, "name", ""),
+           "sample_per_kind": sample, "seed": seed,
+           "reference": _ref_models(ws, kinds), "threshold": thr,
+           "kinds": {k: _summarise(k, v) for k, v in per.items()}, "tasks": per}
+    if models:
+        out["models"] = models
+    return out
 
 
 def _ref_models(ws: Workspace, kinds) -> dict:
@@ -172,6 +229,16 @@ def _summarise(kind: str, recs: list[dict]) -> dict:
             s["same_passage_grade"] = round(sum(r["same_grades"] for r in recs if "same_grades" in r)
                                             / sum(r["passages"] for r in recs if "passages" in r), 3)
             s["compared"] = len(pairs)
+    if kind == "label":
+        pairs = [p for r in recs for p in r.get("code_pairs", [])]
+        if pairs:
+            tp = sum(a and b for a, b in pairs)
+            fp = sum((not a) and b for a, b in pairs)
+            fn = sum(a and not b for a, b in pairs)
+            s["codes_kappa"] = _prf(tp, fp, fn, len(pairs) - tp - fp - fn)["kappa"]
+            same = [r["same_codes"] for r in recs if "same_codes" in r]
+            s["same_codes"] = round(sum(same) / len(same), 3) if same else None
+            s["compared"] = len(same)
     if kind == "extract":
         pairs = [(r["ref_has_claims"], r["has_claims"]) for r in recs if "has_claims" in r]
         if pairs:
@@ -192,14 +259,15 @@ def verdict(summary: dict) -> list[str]:
     """Plain-language reading of a benchmark, with the thresholds used, for the GUI and the CLI."""
     lines = []
     for kind, s in summary["kinds"].items():
-        name = {"verify_set": "Checking claims", "check": "Checking claims", "extract": "Extracting claims"}.get(kind, kind)
+        name = {"verify_set": "Checking claims", "check": "Checking claims", "extract": "Extracting claims",
+                "label": "Labelling passages with codes"}.get(kind, kind)
         if not s["tasks"]:
             continue
         if s["errors"] == s["tasks"]:
             lines.append(f"{name}: every task failed; see the errors.")
             continue
         usable = s["usable"] or 0
-        agree = s.get("grounded_kappa") if kind != "extract" else s.get("claims_kappa")
+        agree = {"extract": s.get("claims_kappa"), "label": s.get("codes_kappa")}.get(kind, s.get("grounded_kappa"))
         if usable >= 0.9 and (agree or 0) >= 0.6:
             word = "good enough to use, with review"
         elif usable >= 0.75 and (agree or 0) >= 0.4:

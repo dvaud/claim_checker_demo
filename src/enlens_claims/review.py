@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .analysis import vca_support
 from .store import Workspace, now
-from .taxonomy import CLAIM_SEGMENTS, HORIZONS, normalise_target
+from .taxonomy import CLAIM_SEGMENTS, DIRECTIONS, HORIZONS, INFLUENCES, normalise_target
 
 COLUMNS = ["item_kind", "item_id", "reason", "text", "targets", "segment", "horizon", "place", "condition",
            "quote", "source", "page", "decision", "corrected_targets", "corrected_segment", "corrected_horizon",
@@ -24,7 +24,7 @@ def _targets_str(ws: Workspace, claim_id: str) -> str:
 def export(ws: Workspace, path: str | Path, audit_fraction: float = 0.05, seed: int = 0,
            include_vca: bool = True) -> dict[str, int]:
     rng = random.Random(seed)
-    reviewed = {r[0] for r in ws.query("SELECT DISTINCT item_id FROM reviews")}
+    reviewed = {r[0] for r in ws.query("SELECT DISTINCT item_id FROM reviews WHERE field != 'superseded'")}
     rows = []
     claims = ws.query("SELECT c.*, d.title, p.page FROM claims c JOIN documents d ON d.doc_id=c.doc_id "
                       "JOIN passages p ON p.passage_id=c.passage_id WHERE c.status IN ('needs_review','auto') ORDER BY c.claim_id")
@@ -70,19 +70,32 @@ def _parse_targets(s: str) -> list[tuple[str, str, str]]:
         code = normalise_target(bits[0])
         if not code:
             raise ValueError(f"unknown target in {part!r}")
-        direction = bits[1] if len(bits) > 1 and bits[1] else "positive"
-        influence = bits[2] if len(bits) > 2 and bits[2] else "unclear"
-        if direction not in ("positive", "negative", "mixed", "no_effect"):
-            raise ValueError(f"bad direction in {part!r}")
+        direction = bits[1].lower() if len(bits) > 1 and bits[1] else "positive"
+        influence = bits[2].lower() if len(bits) > 2 and bits[2] else "unclear"
+        if direction not in DIRECTIONS:
+            raise ValueError(f"bad direction in {part!r}; use one of {', '.join(DIRECTIONS)}")
+        if influence not in INFLUENCES:
+            raise ValueError(f"bad influence in {part!r}; use one of {', '.join(INFLUENCES)}")
         out.append((code, direction, influence))
     return out
+
+
+def read_csv_rows(path: str | Path) -> list[dict]:
+    """Rows of a CSV file as saved by a spreadsheet: UTF-8 with or without a byte-order mark, else Windows-1252."""
+    raw = Path(path).read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252", errors="replace")
+    import io
+
+    return [{(k or "").strip(): v for k, v in r.items()} for r in csv.DictReader(io.StringIO(text, newline=""))]
 
 
 def import_decisions(ws: Workspace, path: str | Path, reviewer: str = "") -> dict[str, int]:
     stats = {"rows": 0, "applied": 0, "skipped": 0, "errors": 0}
     errors = []
-    with open(path, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
+    rows = read_csv_rows(path)
     with ws.connect() as cx:
         for i, r in enumerate(rows, start=2):
             stats["rows"] += 1
@@ -139,7 +152,7 @@ def export_gold(ws: Workspace, path: str | Path) -> int:
     with open(path, "w", encoding="utf-8") as f:
         for r in ws.query("SELECT rv.*, c.claim, c.segment, c.horizon, c.passage_id, p.text AS passage FROM reviews rv "
                           "JOIN claims c ON c.claim_id=rv.item_id JOIN passages p ON p.passage_id=c.passage_id "
-                          "WHERE rv.item_kind='claim' ORDER BY rv.review_id"):
+                          "WHERE rv.item_kind='claim' AND rv.field != 'superseded' ORDER BY rv.review_id"):
             rec = dict(r)
             rec["targets"] = _targets_str(ws, r["item_id"])
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")

@@ -41,10 +41,27 @@ def main(argv: list[str]) -> int:
         print(f"Not a folder: {src}")
         return 2
     out = src.parent / "enlens_text"
+    if out == src or src.is_relative_to(out) or out.is_relative_to(src):
+        print(f"The output folder {out} would contain or replace the sources. Rename the sources folder "
+              f"(it must not be called enlens_text) or move it into a folder of its own.")
+        return 2
+    problems: list[str] = []
     if out.exists():
         shutil.rmtree(out)
     (out / "sources").mkdir(parents=True)
-    problems = []
+    used: set[str] = set()
+
+    def target(f: Path, suffix: str) -> Path:
+        """sources/<name><suffix>; files of the same name from different subfolders keep both (name_2 …)."""
+        stem, n = f.stem, 1
+        name = stem + suffix
+        while name.lower() in used:
+            n += 1
+            name = f"{stem}_{n}{suffix}"
+        used.add(name.lower())
+        if n > 1:
+            problems.append(f"{f.relative_to(src)}: a file of the same name exists elsewhere; written as {name}")
+        return out / "sources" / name
     n = 0
     for f in sorted(src.rglob("*")):
         if not f.is_file():
@@ -56,7 +73,7 @@ def main(argv: list[str]) -> int:
                 problems.append(f"{f.name}: could not be read ({e})")
                 continue
             text = "\f".join(pages)
-            (out / "sources" / (f.stem + ".txt")).write_text(text, encoding="utf-8")
+            target(f, ".txt").write_text(text, encoding="utf-8")
             n += 1
             empty = sum(1 for p in pages if len(p.strip()) < 30)
             cid = len(re.findall(r"\(cid:\d+\)", text))
@@ -65,7 +82,7 @@ def main(argv: list[str]) -> int:
             if cid > 200:
                 problems.append(f"{f.name}: text layer uses unreadable glyph codes ({cid} found)")
         elif f.suffix.lower() in (".html", ".htm", ".txt", ".md"):
-            shutil.copy2(f, out / "sources" / f.name)
+            shutil.copy2(f, target(f, f.suffix))
             n += 1
     if manifest and manifest.exists():
         shutil.copy2(manifest, out / "manifest.csv")

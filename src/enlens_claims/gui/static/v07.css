@@ -1,0 +1,58 @@
+/* 0.7: explore the documents (search, profile, concepts, themes), highlighted copies, quick look.
+   Shared pieces here; the pages' own rules are in concepts-themes.css and profile-viewer.css. */
+
+.nav-group { display: block; margin: 12px 10px 2px; font-size: .72rem; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--faint); }
+
+/* quick look banner (a temporary project) */
+.ql-banner { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 auto 14px; max-width: var(--content-w);
+  padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--partly-line); background: var(--partly-soft);
+  color: var(--partly); font-size: .9rem; }
+.ql-banner .grow { flex: 1 1 260px; }
+
+/* concordance lines (keyword in context): the words found centred */
+.kwic { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.kwic td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: baseline; }
+.kwic tr:hover td { background: var(--surface-2); }
+.kwic .kw-left { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0;
+  width: 40%; direction: rtl; font-family: var(--font-serif); color: var(--text-2); }
+.kwic .kw-left > span { direction: ltr; unicode-bidi: plaintext; }
+.kwic .kw-node { white-space: nowrap; font-weight: 700; font-family: var(--font-serif); padding: 5px 2px; }
+.kwic .kw-node mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2px; }
+.kwic .kw-right { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; width: 40%;
+  font-family: var(--font-serif); color: var(--text-2); }
+.kwic .kw-where { white-space: nowrap; font-size: .78rem; color: var(--muted); width: 1%; }
+.kwic .kw-where a { color: inherit; }
+.kwic .kw-act { white-space: nowrap; width: 1%; text-align: right; }
+.kwic .kw-word { cursor: pointer; border-radius: 3px; }
+.kwic .kw-word:hover { background: var(--accent-soft); color: var(--accent-text); }
+.kwic .kw-mark { background: var(--accent-soft); border-radius: 3px; }
+.kwic-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+@media (max-width: 760px) {
+  .kwic .kw-left, .kwic .kw-right { width: auto; max-width: 9em; }
+  .kwic .kw-where { display: none; }
+}
+
+.search-form { display: grid; gap: 10px; }
+.search-form .search-main { display: flex; gap: 8px; flex-wrap: wrap; }
+.search-form .search-main .input { flex: 1 1 280px; font-size: 1.05rem; }
+.search-opts { display: flex; gap: 10px 16px; flex-wrap: wrap; align-items: center; font-size: .88rem; }
+.search-opts label { display: inline-flex; gap: 6px; align-items: center; }
+.per-doc { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.pager { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 10px 0; flex-wrap: wrap; }
+.colloc { display: flex; flex-wrap: wrap; gap: 6px; }
+.colloc .chip-btn { font-size: .82rem; }
+.colloc .pmi { color: var(--muted); font-size: .75rem; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.meaning-list { display: grid; gap: 10px; }
+.meaning-list .passage { margin: 6px 0 0; }
+
+/* what a quote refers to (F5), the words that found an excerpt (F6) */
+.refers { display: inline-flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: .85rem; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; }
+.refers strong { font-family: var(--font-serif); font-weight: 600; color: var(--text); }
+.found-words { font-size: .8rem; color: var(--muted); }
+.found-words b { color: var(--text-2); font-weight: 600; }
+.chip-flag { background: var(--partly-soft); color: var(--partly); border: 1px solid var(--partly-line); }
+.ev-refers { margin: 6px 0 2px; }
+.map-doc-dl { margin-top: 4px; padding: 1px 6px; font-size: 11px; min-height: 0; gap: 3px; }
+.other-forms { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }

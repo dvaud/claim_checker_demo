@@ -1,0 +1,211 @@
+/* 0.7: the Profile page (F2) and the panels of the document viewer: Codes (F2), Key terms (F6), References (F5),
+   Search in this document (F1) and the highlighted copy (F7). Built on the shared components of app.css and v07.css. */
+
+/* ------------------------------------------------------------------ profile: controls and summary */
+.pf-controls { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: flex-start; margin: 0 0 16px; }
+.pf-control { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
+.pf-control .select { width: auto; max-width: 100%; }
+.pf-control .field-help { max-width: 30em; }
+.pf-seg { gap: 6px; }
+.pf-summary { margin: 0 0 16px; }
+.pf-lead { font-size: 1.02rem; margin: 0; }
+.pf-summary .chip-weak { vertical-align: 1px; }
+
+/* the AI-labelling card (also in the document viewer, compact) */
+.pf-ai-title { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
+.pf-ai-title .icon { color: var(--accent); }
+.pf-ai .switch-field { margin: 4px 0 8px; }
+.pf-ai-opts { margin-top: 6px; }
+.pf-limit-row { gap: 8px; flex-wrap: wrap; }
+.pf-limit { width: 6.5em; }
+.pf-changed { margin: 8px 0; }
+.pf-changed .grow { min-width: 0; }
+.pf-changed p + p { margin-top: 6px; }
+.pf-changed-list { margin: 6px 0; padding-left: 1.2em; }
+.pf-changed-list li { margin: 2px 0; }
+.pf-changed .fold { margin-top: 6px; }
+.pf-changed .fold > summary { color: inherit; }
+.pf-tech-table { font-size: .8rem; margin-top: 4px; }
+.pf-tech-table td { overflow-wrap: anywhere; }
+.pf-compare { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.pf-compare p { margin: 0 0 4px; }
+.pf-ai .ev-tech-list { margin-bottom: 4px; }
+.pf-ai-compact { padding-top: 12px; margin-top: 14px; border-top: 1px solid var(--border); }
+.pf-ai-compact .pf-ai-title { font-size: .95rem; }
+.pf-ai-compact .card { padding: 12px 14px; }
+
+/* the codes addressed most */
+.pf-top { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pf-top li { display: grid; grid-template-columns: 3.6em minmax(0, 1fr) minmax(80px, 180px) auto; gap: 4px 12px; align-items: center;
+  padding: 5px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); font-size: .9rem; }
+.pf-top-code { font-family: var(--font-mono); font-size: .82rem; font-weight: 600; color: var(--accent-text); }
+.pf-top-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.pf-top-bar { height: 8px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.pf-top-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.pf-top-n { font-size: .8rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* the documents × codes grid (the map component) */
+.pf-grid .pf-doc a { font-family: var(--font-serif); }
+.pf-code-head { position: relative; font-family: var(--font-mono); font-size: .78rem; white-space: nowrap; text-align: center; min-width: 3em; cursor: help; }
+.pf-cell { min-width: 2.6em; font-size: .85rem; color: var(--text-2); }
+.pf-cell:not(.pf-l0) { cursor: pointer; }
+.pf-cell.pf-l0 { color: var(--faint); }
+.map-table td.pf-cell.pf-l1 { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.map-table td.pf-cell.pf-l2 { background: color-mix(in srgb, var(--accent) 30%, var(--surface)); color: var(--text); }
+.map-table td.pf-cell.pf-l3 { background: color-mix(in srgb, var(--accent) 48%, var(--surface)); color: var(--text); font-weight: 600; }
+.map-table td.pf-cell.pf-l4 { background: var(--heat-4); color: var(--on-accent); font-weight: 700; }
+.pf-cell:not(.pf-l0):hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+.row-link:hover .pf-cell.pf-l0 { background: var(--surface-2); }
+/* 0.8.2: the row hover (`.row-link:hover .map-cell`) used to paint over the heat colours, leaving the darkest
+   cells' light numbers on a pale background. The levels above outrank it (td + two classes); the hovered row is
+   marked by its document cell and empty cells, the hovered cell by an outline. */
+.pf-grid-key { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin: 0 0 8px; }
+
+@media (max-width: 860px) {
+  .pf-top li { grid-template-columns: 3.4em minmax(0, 1fr); grid-template-areas: "code n" "desc desc"; }
+  .pf-top-code { grid-area: code; }
+  .pf-top-n { grid-area: n; justify-self: end; }
+  .pf-top-desc { grid-area: desc; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pf-top-bar { display: none; }
+  .pf-controls { gap: 12px; }
+}
+
+/* ------------------------------------------------------------------ document viewer: layout */
+.dv-layout { display: flex; flex-direction: column; gap: 14px; }
+.dv-side { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
+.dv-main { min-width: 0; }
+.dv-tabs { gap: 4px; }
+.dv-tabs .btn { padding: .3rem .5rem; gap: .3em; }
+.dv-intro { margin: 8px 0 0; }
+.dv-panel-box:not(:empty) { margin-top: 10px; }
+.dv-panel-title { font-size: 1.02rem; margin: 0 0 8px; }
+.dv-panel { min-width: 0; }
+.dv-panel .empty { padding: 22px 14px; }
+.dv-more { margin-top: 10px; }
+@media (min-width: 1180px) {
+  .view:has(.dv-layout) { max-width: 1380px; }
+  .dv-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 420px); align-items: start; gap: 20px; }
+  .dv-side { grid-column: 2; grid-row: 1; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; overscroll-behavior: contain; }
+  .dv-main { grid-column: 1; grid-row: 1; }
+}
+@media (max-width: 1179px) {
+  .dv-panel-box { max-height: 70vh; overflow: auto; overscroll-behavior: contain; }
+}
+
+.dv-head-row .orig-link, .dv-head-row .orig-missing { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+
+/* the text and its layers of highlights */
+.dv-text { position: relative; }
+.dv-body { min-width: 0; overflow-wrap: anywhere; }
+mark.dv-hit { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 .05em; }
+mark.dv-hit-cur, mark.dv-focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+mark.dv-focus:not(.quote):not(.dv-hit):not(.dv-code-mark):not(.dv-ref):not(.kt) { background: var(--accent-soft); color: inherit; border-radius: 3px; }
+mark.dv-focus { border-radius: 3px; scroll-margin: 30vh 0; }
+.dv-focus-soft { background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: 2px; scroll-margin: 30vh 0; }
+mark.dv-code-mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: inherit; border-radius: 3px; box-shadow: inset 0 -2px 0 var(--accent); }
+mark.dv-ref { background: var(--mixed-soft); color: inherit; border-radius: 3px; box-shadow: inset 0 -2px 0 var(--mixed-line); }
+mark.dv-ref-named { font-weight: 650; }
+.kt { text-decoration-line: none; }
+.kt.kt-on { text-decoration: underline 2px var(--accent); text-underline-offset: 3px; text-decoration-skip-ink: none; }
+mark.kt-pin { background: var(--accent-soft); color: inherit; border-radius: 3px; text-decoration: underline 2px var(--accent); text-underline-offset: 3px; }
+.doc-view .passage-row.ev-flash { border-radius: 8px; }
+
+/* what to do with selected text */
+.dv-selbar { position: absolute; z-index: 6; display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; max-width: calc(100% - 16px);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: var(--shadow-lg); }
+.dv-selbar .btn { white-space: normal; text-align: left; }
+.dv-selbar > .muted { padding: 4px 8px; }
+
+/* ------------------------------------------------------------------ document viewer: Codes */
+.dv-fw { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; }
+.dv-fw .select { max-width: 100%; }
+.dv-sum { margin: 0 0 2px; }
+.dv-codes { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; }
+.dv-code { border-top: 1px solid var(--border); padding: 6px 0 8px; }
+.dv-code:first-child { border-top: 0; }
+.dv-code-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; width: 100%; padding: 4px 2px;
+  background: none; border: 0; border-radius: 6px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.dv-code-head:hover { background: var(--surface-2); }
+.dv-code-head > .icon { margin-top: 3px; color: var(--muted); }
+.dv-code-id { font-family: var(--font-mono); font-size: .8rem; font-weight: 600; padding: .1em .45em; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text); white-space: nowrap; }
+.dv-code-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dv-code-desc { font-size: .88rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dv-open .dv-code-desc { -webkit-line-clamp: unset; display: block; }
+.dv-code-n { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dv-code-n .chip { font-size: .72rem; padding: 0 .45em; }
+.dv-strip { position: relative; height: 10px; margin: 4px 2px 0; border-radius: 999px; background: var(--surface-3); cursor: pointer; overflow: hidden; }
+.dv-strip:hover { outline: 1px solid var(--border-strong); }
+.dv-tick { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: var(--accent); border-radius: 2px; }
+.dv-items { list-style: none; margin: 8px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dv-item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
+.dv-item.dv-prov { border-style: dashed; }
+.dv-item-top { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.dv-item-top .chips { gap: 4px; }
+.dv-item-top .chip, .dv-item-top .cert { font-size: .74rem; }
+.dv-loc { font-size: .84rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+.dv-loc:hover { text-decoration: underline; }
+.dv-quote { margin: 6px 0 2px; font-size: .95rem; line-height: 1.45; }
+.dv-why { margin: 4px 0 0; font-size: .84rem; color: var(--text-2); overflow-wrap: anywhere; }
+.dv-decide { margin-top: 6px; gap: 6px 8px; }
+.dv-decide .judge-body .input { flex: 1 1 140px; width: auto; }
+.dv-add { margin: 0 0 12px; padding: 12px 14px; }
+.dv-add h3 { font-size: .95rem; }
+.dv-add .row .select { width: auto; }
+.dv-add .row .input { flex: 1 1 140px; width: auto; }
+
+/* ------------------------------------------------------------------ document viewer: Key terms */
+.dv-terms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dv-term { display: grid; grid-template-columns: minmax(0, 1fr) 64px auto; gap: 4px 10px; align-items: center; padding: 3px 6px; border-radius: 8px; }
+.dv-term:hover, .dv-term:focus-within { background: var(--surface-2); }
+.dv-term.dv-pinned { background: var(--accent-soft); }
+.dv-term-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.dv-term-btn { background: none; border: 0; padding: 0; font: inherit; font-family: var(--font-serif); font-size: 1rem; color: var(--text); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.dv-term-btn:hover, .dv-term-btn[aria-pressed="true"] { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.dv-term-bar { height: 6px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.dv-term-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.dv-term-links { display: inline-flex; }
+.dv-term-links .btn { padding: .25rem .4rem; }
+
+/* ------------------------------------------------------------------ document viewer: References */
+.dv-name-row { flex-wrap: nowrap; gap: 6px; }
+.dv-name-row .input { flex: 1 1 auto; min-width: 0; }
+.dv-chains { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dv-chain-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.dv-chain-btn:hover { border-color: var(--border-strong); }
+.dv-chain-btn[aria-pressed="true"] { border-color: var(--mixed-line); background: var(--mixed-soft); }
+.dv-chain-name { font-size: 1rem; overflow-wrap: anywhere; }
+.dv-mentions { margin: 2px 0 6px; padding-left: 1.6em; font-size: .88rem; }
+.dv-mentions li { margin: 2px 0; }
+.dv-mentions .link-btn { text-align: left; font-family: var(--font-serif); }
+.dv-selnote { margin: 0 0 10px; font-size: .88rem; }
+p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+
+/* ------------------------------------------------------------------ document viewer: Search in this document */
+.dv-search { display: grid; gap: 6px; }
+.dv-search-row { flex-wrap: nowrap; gap: 6px; }
+.dv-search-row .input { flex: 1 1 auto; min-width: 0; }
+.dv-search .select { width: auto; max-width: 100%; justify-self: start; }
+.dv-hitnav { gap: 6px; margin: 4px 0 6px; }
+.dv-kwic { max-height: 46vh; overflow: auto; }
+.dv-kwic .kwic { font-size: .86rem; }
+.dv-kwic .kw-where { display: none; }
+.dv-kwic .kw-left, .dv-kwic .kw-right { width: auto; max-width: 9em; }
+.dv-node { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.dv-node:hover mark, .dv-node:focus-visible mark { outline: 2px solid var(--mark-line); }
+.kwic tr.dv-cur td { background: var(--accent-soft); }
+
+/* ------------------------------------------------------------------ the highlighted copy */
+.dv-layers { border: 0; padding: 0; margin: 10px 0 0; display: grid; gap: 10px; min-width: 0; }
+.dv-layers legend { padding: 0; margin-bottom: 6px; }
+.dv-layer { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.dv-layer input { margin-top: 4px; flex: none; }
+.dv-layer > span { display: flex; flex-direction: column; gap: 1px; }
+.dv-layer input:disabled + span { cursor: default; }
+
+@media (max-width: 420px) {
+  .dv-side { padding: 10px 12px; }
+  .dv-term { grid-template-columns: minmax(0, 1fr) auto; }
+  .dv-term-bar { display: none; }
+  .dv-selbar { left: 8px !important; right: 8px; }
+}

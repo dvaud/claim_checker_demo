@@ -1,12 +1,624 @@
-# ENLENS claims: usage manual
+# ENLENS: usage manual
 
-ENLENS claims turns a set of source documents into **impact claims**: statements that an activity in a value chain
-affects a UN SDG target, in a direction, in a segment of the chain, at a place and time, under a condition. Every
-claim carries the exact words from the source that support it, with page and character positions. The claims are
-then compared with an expert Value Chain Assessment (VCA) and summarised into a report.
+ENLENS checks **hypotheses** against your own documents. You give it a statement that could be true or false
+("Green hydrogen production increases water stress in arid regions", "Remote work lowers commuting emissions in
+large cities"); it finds the passages of your sources that bear on it, has a language model grade each one, verifies
+every quoted word against the source text, and reports whether the sources support, partly support, contest or
+contradict the hypothesis, with the document, page and quote behind every grade.
 
-The first application is the green hydrogen VCA by Peyerl and van der Zwaan (2024, *Discover Sustainability* 5:199).
-The pipeline asks five questions of the literature:
+It is **local first**: the documents, the history and, by default, the model all stay on your computer. A model
+served by Ollama, LM Studio, llama.cpp, Jan or vLLM does the reading; the Claude API is available as an explicit
+opt-in for when a local model is not good enough.
+
+The first application was the green hydrogen Value Chain Assessment (VCA) by Peyerl and van der Zwaan (2024,
+*Discover Sustainability* 5:199). The pipeline built for it (impact claims tagged with UN SDG targets, compared with
+an expert table, summarised in a report) is included as the **SDG pack**, sections 9 to 14.
+
+---
+
+## 1. Install
+
+Python 3.10 or newer.
+
+```bash
+pip install -e .                 # core: pydantic, pypdf, openpyxl; includes the app and the command line
+pip install -e '.[fast]'         # numpy: faster semantic search on large projects
+pip install -e '.[anthropic]'    # the Claude API (cloud, opt-in)
+pip install -e '.[connector]'    # the connector for the Claude app and Claude Code
+pip install -e '.[ocr]'          # read scanned PDFs on this computer (also needs the program Tesseract, below)
+pip install -e '.[dev]'          # pytest
+```
+
+**Scanned PDFs (optional).** A PDF page without a text layer is a picture of text. With the `ocr` extra and the
+program Tesseract installed, ENLENS recognises the text of such pages on this computer, one page at a time, at low
+priority and on one processor thread, so a local model working at the same time is not slowed down. Install
+Tesseract with `brew install tesseract tesseract-lang` (macOS), `sudo apt install tesseract-ocr tesseract-ocr-nld`
+(Debian/Ubuntu; one package per language) or the installer from the Tesseract project (Windows; add it to the PATH).
+Choose the languages in Settings (`eng+nld` for English and Dutch). Without Tesseract a scanned PDF is listed as
+"Scanned: no text".
+
+**Updating (0.8.2).** Install from the git copy of ENLENS (`git clone …`, then `pip install -e .` in a venv) and
+every new version is `enlens update`: it fetches the version from GitHub into the same folder, reinstalls into the
+same Python only when the requirements changed (with the extras already installed), refreshes the Claude Code
+plugin if one was set up, and says to restart the app if it is running. It changes nothing if files of the copy
+were edited by hand, and never touches the data folder. `enlens update --check` only looks.
+
+**An icon instead of the terminal.** Run once, as the person who will use the app:
+
+```bash
+enlens-gui --make-launcher                     # add --home FOLDER and/or --local-only if the app is used that way
+```
+
+It puts an **ENLENS** icon on the Desktop (macOS: also an app in the user's Applications folder; Windows: also in the
+Start menu; Linux: also in the applications menu). Double-clicking it starts ENLENS in the background, with no
+terminal window, and opens it in the browser; double-clicking it again while it runs just opens it again. If the
+model service is Ollama on this computer and it is not running, the Ollama app is started too. The icon calls the
+Python ENLENS was installed in, so another `enlens-gui` earlier on the PATH (for example an old one in Anaconda)
+cannot get in the way. **Quit ENLENS** at the bottom of the sidebar stops it (it asks first when a check is still
+running). What the app would print goes to `logs/enlens.log` in the data folder. On Linux desktops that ask for it,
+right-click the Desktop icon and choose *Allow launching* once.
+
+Check the install with the tests (about 15 seconds, no network):
+
+```bash
+pytest
+```
+
+A local model server: install [Ollama](https://ollama.com) and pull a chat model (`ollama pull qwen3:8b`), or start
+the server of [LM Studio](https://lmstudio.ai) (Developer → Start server) with a model loaded. Optionally pull an
+embedding model for search by meaning: `ollama pull nomic-embed-text` (English) or `ollama pull bge-m3` (many
+languages, so an English hypothesis also finds Dutch or French passages). Section 5 helps choose.
+
+The commands are `enlens-gui` (the app), `enlens` (or `python -m enlens_claims`; every command takes `--ws FOLDER`,
+default `./workspace`) and `enlens-mcp` (the connector).
+
+---
+
+## 2. Concepts
+
+The app speaks plain language; the command line, the API and the code use the technical names. Both are listed.
+
+| In the app | Technical name | Meaning |
+| --- | --- | --- |
+| Project | Project / workspace | A folder with `config.json` and `enlens.sqlite`. The app keeps its projects in `~/enlens/projects` (or `ENLENS_HOME`); the command line works on any folder given with `--ws`. Both use the same format. |
+| Document | Document | One source file (PDF, Word .docx, HTML, TXT or MD; zips are opened). Its text is stored once; every offset points into it. Its paragraphs and headings are kept, so a quote can be cited as "paragraph 6 of 8" (text and web pages) or "page 2, paragraph 3" (PDFs added from 0.6 on; older ones by page). Scanned pages can be read by OCR. |
+| Excerpt | Passage | A run of whole sentences (up to about 1,100 characters, some 180 words) inside a document. Excerpts are what the AI reads. Reference lists and unreadable text are skipped. |
+| Hypothesis | Hypothesis | What you check. Checked as written, or split into 2 to 5 *parts* that must all hold, each checked on its own. |
+| Part | Claim | One statement that is checked: the hypothesis itself, or one of its parts. |
+| Judgement | Grade / verdict | What the AI says about one excerpt: *supports*, *partly supports* (an important part is stated; something remains to be inferred), *contradicts* (`refutes`), or *not about this hypothesis*. With a quote and a certainty. |
+| Your judgement | User verdict | Your own judgement of an excerpt. It replaces the AI's in the answer and the counts, always counts, and is kept next to the AI's. Agreeing with the AI is a review; choosing another judgement is a change. You can point to the sentence you mean. |
+| AI certainty | Confidence | The AI's own estimate (0–100%) of how sure it is. It is not a check of whether it is right: high (≥ 80%), medium (≥ 60%), low. |
+| Strictness | Threshold | How sure the AI must be for a judgement to count (default 60%). Weaker judgements stay visible, marked *not counted*. It applies to every result, old and new. |
+| Search | Round | One set of excerpts read for a part. *Look for more evidence* and *Search with other words* add searches. |
+| Search by meaning | Semantic index | Optional: a vector per excerpt from a local embedding model, so excerpts are found by meaning as well as by shared words. |
+| About another group | Scope note | The AI's note that an excerpt is about another group, setting, place or period than the hypothesis names ("about fully remote workers, not hybrid"). Such an excerpt supports the hypothesis at most partly. |
+| Second AI model | Second opinion | Another local model that reads the same excerpts again, to show where two models disagree. Its judgements never change an answer. |
+| Codebook | Framework | An optional list of codes a hypothesis can be tagged with (like codes in NVivo or Atlas.ti). The 169 SDG targets ship with ENLENS; add your own as a CSV. The AI sees the code's text. |
+
+### Answers
+
+| In the app | Status | Meaning |
+| --- | --- | --- |
+| Supported by your documents | `supported` | At least one excerpt says what the hypothesis says (and counts), and none says the opposite. |
+| Partly supported | `partially_supported` | No excerpt says it all, but one says an important part of it. |
+| **Mixed evidence** | `contested` | Some excerpts support the hypothesis (fully or partly) and others contradict it. Read both sides: do they concern the same place, group or period? |
+| Contradicted by your documents | `contradicted` | An excerpt says the opposite, and none supports it. |
+| Only uncertain evidence | `uncertain` | Excerpts were judged, but the AI was not sure enough about any of them for your strictness. Judge them yourself, or lower the strictness. |
+| No evidence found | `unsupported` | None of the excerpts read was about the hypothesis. This is not proof that no document says it: look for more evidence, search with other words, or add documents. |
+| Nothing in your documents matched | `no_passages` | No excerpt shares words (or meaning) with the hypothesis. |
+| The check did not work | `failed` | The AI's answers did not pass the checks three times. |
+
+A split hypothesis combines its parts, which must all hold: a part contradicted → contradicted (even when other
+parts are supported); otherwise a part with mixed evidence → mixed evidence; every part supported → supported; some
+parts (partly) supported → partly supported; only uncertain evidence → only uncertain evidence; otherwise nothing
+found. The app says which part decides ("Part 2 has mixed evidence, so the whole hypothesis has mixed evidence").
+Parts whose check failed are left out (the result says it is incomplete).
+
+**Who says what** lists the documents behind an answer by side. A document counts as supporting if one of its
+counted excerpts supports, as partly supporting only if none supports, and as contradicting if one contradicts, so a
+document can be on both sides (the app says so). The lean (−1 only contradicting, +1 only supporting) summarises the
+excerpts read; it is not a measure of truth.
+
+---
+
+## 3. The app
+
+```bash
+enlens-gui                 # opens http://127.0.0.1:8765 in your browser
+```
+
+Options: `--home FOLDER` (where projects, history and settings live; default `~/enlens`), `--port 8600`,
+`--headless` (do not open a browser), `--local-only` (no cloud option at all; see *For whoever installs the app*),
+`--make-launcher` (the ENLENS icon, see section 1).
+The app listens on this computer only and answers only to the page it served (a token per run). `--host 0.0.0.0`
+exposes it to your network: the page then does not carry the token, so open the link the terminal prints (it ends
+in `#token=…`), and only by IP address; do this only on a network you trust. Stop it with Ctrl+C or *Quit ENLENS*. Nothing is loaded
+from the internet: no CDN, no fonts, no analytics.
+
+The app is written for researchers who do not program: plain words on every working screen, model names and other
+technical details only under *Technical details* and *Settings → Advanced (for IT staff)*.
+
+### First use
+
+The welcome screen has two steps: name a **project** (one per set of documents), then **add documents**: choose
+files (PDF, Word .docx, HTML, text, Markdown, zip) or a folder. A Word file keeps its paragraphs, headings and the pages
+Word marked (0.8); older .doc files are not read: save them as .docx or PDF. The list shows the
+title read from each file and warns about unreadable text and very short files (often a landing page instead of the
+report). *Open an existing ENLENS project folder (advanced)* links a project made with the command line, without
+copying it.
+
+The AI model is normally set up by whoever installed the app (Settings → Advanced). The sidebar always says where
+text goes: *Private · The AI runs on this computer*; if cloud models were allowed, that excerpts are sent to the
+Claude API; or with Claude Code (0.8), that Claude Code reads the excerpts on your own plan (section 6).
+
+### Checking a hypothesis
+
+Write one sentence that could be true or false and press *Check* (Ctrl+Enter). When it contains "and", "but" or a
+semicolon, the app offers to **check each part separately**. *What happens when you check* explains the four
+steps (search, read, verify, answer). *More options*: let the AI think of other words your documents might use,
+tag the hypothesis with a code, and limit the check to some documents.
+
+**Look before checking** shows first how the hypothesis will be checked: the parts the AI would split it into (with
+*Check each part separately*) and the extra words it would search for. Change a part, remove one or add one; remove
+search words that do not fit and add words your documents use; then *Check*. The result records that you set them.
+
+While it runs, the panel shows each step as it finishes: the parts, the other words searched for, how many excerpts
+from how many documents, the AI reading them; *Technical details* shows what the model is doing second by second.
+*Stop* ends the check and leaves nothing behind. You can use the rest of the app meanwhile.
+
+### Reading and reviewing a result
+
+The answer box says:
+
+- the answer, shown as **the AI's first reading** (an outlined badge) until you have reviewed the judgements, then
+  *Partly reviewed by you* and *Reviewed by you*;
+- what it rests on: the documents by name and the number of excerpts that count, with a caution when it rests on a
+  single document or when one or two unchecked AI judgements decide it;
+- how many judgements were too uncertain to count, how many excerpts you reviewed and changed, and how often you
+  agreed with the AI (an agreement figure, like an inter-coder check);
+- *What to do next*, and your strictness (*Change in Settings*).
+
+**Who says what** names the documents on each side with their locations. Below, every excerpt read is shown with
+its judgement, the AI's certainty, whether it counts, the document and where in it ("quote in paragraph 6 of 8 · the
+excerpt covers paragraphs 1–6", "quote on page 2"), and the excerpt with the verified quote highlighted. *Show more
+of the document* shows the paragraphs around it; *Open the whole document here* shows the document by paragraph or
+page, with the quote highlighted, and *Back to the result* returns to the excerpt. Excerpts the AI found not about
+the hypothesis are listed at the bottom, so you can check those too. Excerpts are shown with their paragraphs and
+headings as in the document. **Open the original** opens the file itself: a PDF at the page, a text file with the
+quote highlighted, a web page scrolled to the quote (in browsers that support it).
+
+An orange **About another group** flag means the AI thinks the excerpt is about another group, place or period than
+your hypothesis (fully remote workers for a hypothesis about hybrid work): it then counts at most as partly
+supporting. Decide yourself whether it is about your hypothesis.
+
+**Ask the AI to read this again** sends one excerpt back to the AI, alone, with your comment as a hint (why you doubt
+it). The card then says "Read again by the AI: was Supports (75%), now Partly supports (59%)", with the AI's reason;
+the earlier judgements are under *Technical details*. Your own judgement, if you gave one, still counts.
+
+To review, use **Agree with the AI** or **Judge it differently** (supports, partly supports, contradicts, not about
+this; each saves at once, with Undo). Add a comment, and **mark the sentence you mean** (select it in the excerpt, or
+pick it from a list) when the AI highlighted the wrong one. Your judgement replaces the AI's in the answer and in the
+downloads, always counts whatever the strictness, and shows "AI said: …" beside it. *Go back to the AI's judgement*
+undoes a change. *Next to review* goes to the excerpts you have not reviewed, those that count first. Agreeing with
+an uncertain AI judgement makes it yours, so it then counts. A comment saved without a judgement stays a comment: it
+is not a review and does not count as agreeing. After a save, the card keeps its place on the screen and says where
+it moved in the list.
+
+**Keep this result up to date** (under the answer):
+
+- When documents were added to the project after the check, it says how many and how many have matching excerpts.
+  *Read them* reads those documents as a further search; the check is not run again, so your reviews are kept.
+- **Ask a second AI model** has another local model (chosen there or in Settings) read the same excerpts. Each card
+  then shows "Second AI model: Contradicts (70%) — disagrees" or "agrees", and *Next to review* goes to the
+  disagreements first. Only one model is kept in the computer's memory at a time: the main model is unloaded while
+  the second one reads, so this takes a while. The second model's judgements never change the answer; yours do.
+
+**Look harder**: *Look for more evidence* reads the next excerpts that match the same words; *Search with other
+words* reads excerpts containing words you type (documents often say "telework" where the hypothesis says "remote
+work"). New excerpts are marked *new*, a *Just now* line says what was found, and each search shows the words it
+used. When everything that matches has been read, the button says so.
+
+Add **notes** (saved automatically). **Download for Excel (.xlsx)**: a *Summary* sheet (one row per hypothesis:
+answer, answer per part, documents per side, excerpts counted and too uncertain, your reviews and changes, notes,
+strictness, the AI model for a methods section) and an *Excerpts* sheet (every excerpt read: judgement, judged by
+you or the AI, the AI's own judgement and certainty, counted or not, quote and who chose it, document, where, your
+comment, the AI's note about another group, its earlier judgement when it read an excerpt again, the second model's
+judgement when one was asked, the full excerpt). CSV and JSON are under *Technical details*, for programmers.
+
+### Results and checking several
+
+**Results** lists every hypothesis with its answer, the excerpts that count (and how many were too uncertain), tags
+such as *part of a set*, *checked in 2 parts*, *N to review*, *N changed by you*, *has notes*, *N documents added
+since*, *models disagree on N*, and the date. Search, filter by answer, open one, or **Download all for Excel** (with a
+*Map* sheet). *Read the new documents for all N* brings every result with documents added since up to date in one go;
+*Ask a second AI model* does the same for the second model.
+
+**Show as a map** shows all results (or one set) as a grid: one row per hypothesis, one column per document, and in
+each cell + supports, (+) partly supports, − contradicts or ± both, with the number of excerpts that count. It flags
+answers that rest on one document, and documents that *decide* answers (leaving them out would change those answers),
+which are the ones to read most carefully.
+
+**Projects** (the project menu → *Manage projects*): *Download as a zip* puts the whole project in one file (the
+database, the documents and their original files, the codebooks) for a co-author or another computer; *Import a
+project (.zip)* opens such a file as a new project. *Download the whole project (.zip)* is also on the Results page.
+
+**Check several** checks many hypotheses one after the other: paste them one per line, or load a CSV with a column
+`hypothesis` (or `claim`, `text`, `statement`) and optional `framework` and `code` columns. *Show the list* previews
+what will be checked; *Check all N* runs them. A hypothesis that cannot be checked is listed and the next one is
+checked; a problem with the AI stops the set and keeps what was done. The end screen lists each answer.
+
+### Exploring the documents (0.7)
+
+Before or alongside checking hypotheses, the pages under **Explore the documents** show what the documents say and
+where. They replace the Cross-Doc SDG Explorer. Search, key terms, the keyword profile, the glossary and themes by
+words need no AI model; the AI only adds readings on top, and every one of them quotes the text and is checked
+against it.
+
+**Search.** Every place words occur, one line per place with the words before and after (a concordance), with the
+count per document first. *Find* any of the words, all of them in one passage, a phrase, or words near each other
+(within N words). Without *exact words only*, a word also finds its other endings ("price" finds "prices"); forms the
+search does not include are listed under the count (*Other forms in the documents: commuters*), to add with one
+click. Click a word in a line to add it to the search, Shift-click to make a phrase. Sort by document, by the words
+before or by the words after. *Words that often appear nearby* lists the words within 2 to 10 words of the places
+found, most often or most typical first (point at one for both figures). Every line opens the document at its words,
+and its flask button starts a check of what the line says. Download all lines for Excel or as CSV. A *passage* is
+the stretch of text the app reads as one unit, up to about 1,100 characters; the location (page, paragraph) is that
+of the original.
+
+**Profile.** Which codes of a codebook (the 169 SDG targets by default, the 17 goals, or your own CSV) each document
+addresses, how much and where. When documents are added, the app finds candidate codes in seconds by their
+keywords (and by meaning, with an embedding model): a *provisional* profile. *Let the AI label the passages* has the
+AI read each passage with a candidate code and say which codes really apply (main topic or mentioned; for the SDGs,
+whether the passage says it helps or hinders the aim), with a quote and a reason; afterwards it says how many keyword
+codes it confirmed, did not confirm, and added. Count by code or by group (the SDG goals). The grid opens the passages
+behind each cell. In a document, the **Codes** panel shows every code with its passages, quotes, reasons or the
+words that found it (highlighted in the text): agree, change how it applies, reject (with Undo), or add a code of
+your own; your labels always count. *Technical details* show the model, its exact version (digest), the prompt and
+the seed, and warn when they differ from the last run.
+
+**Concepts.** A glossary of the terms the documents use (one or more words, found by the C-value method; running
+heads and page furniture are left out), grouped into concepts: abbreviations and their long forms ("proton exchange
+membrane (PEM)"), wordings close in meaning (with an embedding model), links the AI proposes and you accept, and
+links of your own. A concept card shows how the documents write it (*Not the same* splits a wording off), which
+documents discuss it and where it first appears, every line where it occurs, and related concepts (the same,
+broader, narrower, related, often together). *Ask the AI for other wordings* lists wordings the documents use;
+add them, or say *Not the same* and they are not proposed again.
+
+**Themes.** What the documents are about, grouped into themes (spherical k-means on the passages' embeddings, or on
+their terms without an embedding model; the same documents and settings always give the same themes). Each theme has
+key terms, a size, the documents it comes from and the passages that represent it best; grids show themes by document
+and by code. Rename, merge and move passages (kept and reapplied to a new set with the same settings); *Let the AI
+name the themes* gives names and short descriptions with checked quotes. A small project gets fewer themes than
+asked (about three passages a theme).
+
+**In a document.** Besides *Codes*: **Key terms** (the terms that set the document apart; point at one to underline it
+in the text), **References** (*Follow the references*: the AI reads the document three passages at a time and links
+"it", "they" or "the study" to the name they stand for; select a name in the text to see every later mention), and
+**Search** in the document. *Download a highlighted copy* gives the PDF with highlights for the judgements, codes,
+concepts or references you choose (exact boxes with the `pdfminer` extra, whole lines otherwise, text recognition for
+scanned pages), and a note listing any quote it could not place; other documents come as an HTML copy.
+
+**In a result.** A quote that starts with "it" or "they" says what it refers to (*"it" = green hydrogen*); when the
+AI did not say, the excerpt is flagged *Check what the quote's first word refers to*. *Highlighted copy* on an
+excerpt, *Highlighted documents (.zip)* in the downloads, and *highlighted* under each document of the evidence map
+give the documents with the quotes marked.
+
+**Quick look.** *Quick look at one document* (on the start page, *Check a hypothesis*, and on *Manage projects*) reads one file into a
+temporary project and opens it at its key terms: search it, see its codes and references at once. A banner offers
+*Keep as a project* or *Discard now*; otherwise it goes to the trash after 7 days.
+
+**For FlexiConc / Cross-Doc** (Projects page) downloads the project as one SQLite file in the FlexiConc layout of
+the Cross-Doc SDG Explorer (documents, sentences with their code, reference chains, theme clusters and, with an
+embedding model, embeddings), for tools that read that format.
+
+### Settings
+
+**Basics**: *Test the AI model*; the **strictness** (how sure the AI must be before a judgement counts; it saves at
+once, applies to every result, and reports which answers and counts changed; *Back to normal (60%)*), with **how
+often you agreed with the AI, by its certainty**: a small chart from the excerpts you judged; after 20 judgements it
+may suggest a strictness ("When the AI was at least 70% sure, you agreed with it in 85% … *Use 70%*"); the defaults
+of a check (other words, parts, how many excerpts to read and at most how many from one document); **reading
+scanned PDFs** (on or off, and the languages); where your data is. **Codebooks**: view the codes, add a CSV codebook,
+remove one; a CSV codebook can be marked as aims a text can help or hinder, like the SDG targets. **Exploring the
+documents** (0.7): the codebook of the profiles and how many themes a new set looks for. **Advanced (for IT staff)**: the model service (on this computer: automatic, Ollama, a local
+OpenAI-compatible server, the offline demo; separately, *Not on this computer*: the Claude API, behind a
+confirmation), the address, model and reasoning switch, the **second AI model**, the **context length** (automatic
+by default, see section 5) and *Sort the best excerpts again by wording* (off; see the changelog of 0.6.0), the
+embedding model for search by meaning, **Repeatable results** (the seed sent with every request, 42 by default, and
+a test of whether the server gives the same answer twice), and *Test a model before trusting it* (section 5).
+
+When no model is chosen, or the chosen one is not installed, the app uses one the model server already holds in
+memory (so nothing extra is loaded), else the most recently downloaded one, and *Test the AI model* says so.
+
+0.8 adds *Claude Code (your subscription)* to the model service (under *Not on this computer*, behind a confirmation;
+section 6), with *Prepare the plugin* and *Let the auditor use Fable*, and **AI model per task** under Advanced: which
+model answers each kind of task, what it steps up to, the helper (Claude Code), a choice per kind, *Use the
+recommended models*, and for local servers the small model for labels and links.
+
+### For whoever installs the app
+
+- Set up the model once in *Settings → Advanced* (or let *automatic* find Ollama or LM Studio) and press *Test the AI
+  model*; with an embedding model set, new documents are indexed for search by meaning right away.
+- To make sure nothing can ever be sent to a cloud model, start the app with `enlens-gui --local-only`, set
+  `ENLENS_LOCAL_ONLY=1`, or create an empty file named `local_only` in the data folder. The cloud options (the
+  Claude API and Claude Code) are then hidden, the app and its API refuse to switch to them, and the connector
+  refuses to hand out queued tasks.
+- Keep the data folder (`--home`) somewhere that is backed up: it holds the projects, their results and the settings.
+- Give the user an icon instead of a terminal: `enlens-gui --make-launcher` (section 1), with the same `--home` and
+  `--local-only` you would start it with.
+- For scanned PDFs, install Tesseract and the `ocr` extra (section 1); Settings shows whether it is available.
+
+**Cost and time.** With a local model, a check costs nothing but time: from seconds to several minutes per call
+depending on the model and the computer. With the Claude API one part is two calls of a few thousand tokens.
+
+---
+
+## 4. The command line for hypotheses
+
+```bash
+enlens --ws myproject init
+enlens --ws myproject ingest ~/Reports/ more.zip
+enlens --ws myproject embed --embed-model nomic-embed-text          # optional semantic index
+enlens --ws myproject check "Green hydrogen production increases water stress in arid regions." --code 6.4
+enlens --ws myproject check "..." --decompose --embed-model nomic-embed-text
+enlens --ws myproject batch hypotheses.csv --out results.csv
+enlens --ws myproject history --limit 20                            # or --csv all_checks.csv
+enlens --ws myproject frameworks
+enlens detect                                                       # local servers and their models
+```
+
+`check` (or `hypothesis`) prints the verdict, the balance, and per claim the graded passages with quotes and the
+passages read without result, as JSON. Options: `--decompose`, `--framework NAME --code CODE` (`--target` still works
+for SDG targets), `--k`, `--per-doc`, `--no-expand`, `--threshold`, `--embed-model` and `--embed-url`.
+
+Backends (`--backend`, every model command): `auto` (default: the first local server running, Ollama first), `ollama`
+(`--url`, `--num-ctx`, `--think on|off`), `local` (an OpenAI-compatible server, `--url http://localhost:1234/v1`),
+`anthropic` (the Claude API: the text read is sent to Anthropic), `baseline` (offline keyword demo). Without
+`--model`, a local backend uses a chat model its server already holds in memory, else the most recently downloaded
+one, and says which; the Claude API uses `models.verify` of `config.json`. `--num-ctx` is `auto` by default: the
+smallest of 8,192, 12,288, 16,384 and 32,768 tokens that fits the largest task (for `run`, the largest pending task).
+
+```bash
+enlens --ws myproject ingest scans/ --ocr auto --ocr-lang eng+nld   # scanned pages read by OCR (default: auto, eng)
+enlens --ws myproject export-project myproject.zip                  # the whole project in one zip
+enlens import-project myproject.zip --ws copy_of_project            # into a new (or empty) folder
+```
+
+Exploring the documents (0.7):
+
+```bash
+enlens --ws myproject search "electrolyser imports" --mode phrase --out hits.csv   # also --mode any|all|near --near 5
+enlens --ws myproject search water --collocates                                    # the words around the hits
+enlens --ws myproject terms --rebuild                                              # the glossary; --q water filters
+enlens --ws myproject concept "proton exchange membrane" --references              # a concept card as JSON
+enlens --ws myproject profile --keywords-only --out profile.xlsx                   # codes by keywords, no model
+enlens --ws myproject profile --framework sdg_goals --level group --limit 50       # the AI labels 50 passages
+enlens --ws myproject themes --k 20 --mode auto --name-with-model --out themes.xlsx
+enlens --ws myproject resolve <doc_id> [--name "the plant"]                        # follow references
+enlens --ws myproject annotate <doc_id> --hyp <hyp_id> --layers judgements labels --out highlighted.pdf
+enlens --ws myproject export-flexiconc project.sqlite [--no-embeddings]
+enlens --ws pilot acceptance samples|measure|search                                 # the 0.7 acceptance measures
+enlens --ws pilot acceptance queue --kind label --model haiku [--again]           # 0.8: a run through the queue
+enlens --ws pilot acceptance score [--apply]                                      # 0.8: score the runs (docs/MODEL_CHOICE.md)
+enlens --ws myproject prepare label|link|theme|resolve|check ["hypothesis"]       # 0.8: tasks for Claude Code
+enlens --ws myproject queue status|run|first|hold|go|withdraw [kind]              # 0.8: the queue (run: answer it here)
+enlens claude-setup                                                               # 0.8: the Claude Code plugin
+```
+
+Every model command takes `--model-seed N` (default: the seed of the settings, 42). `enlens backend-check
+--repeatable` asks the model the same question twice and says whether the answers match. `export-tasks` warns when
+asked for the 0.7 kinds (`label`, `link`, `theme`, `resolve`): the file queue works for them, but their tasks are
+made per project run and are usually answered in the app.
+
+---
+
+## 5. Local models
+
+What ENLENS asks of a model is harder than chat: quotes copied word for word, fine judgement between "partly
+supports" and "same topic", and answers in a fixed JSON format. Ollama and the OpenAI-compatible servers are given
+the answer's JSON schema, so even small models give valid JSON; the rest depends on the model.
+
+- **Size.** Rough guide by memory (October 2026; check your server's library for current models): about 16 GB runs
+  models of 8 to 12 billion parameters, 32 GB runs 27 to 32 billion, 64 GB or more runs the largest. Larger models
+  judge better and are slower. If memory allows, an 8-bit version copies quotes more reliably than a 4-bit one.
+- **Context.** ENLENS sets the context length on every Ollama request (Ollama's own default is much smaller and
+  cuts long prompts without warning). By default it is automatic: the smallest of 8,192, 12,288, 16,384 and 32,768
+  tokens that holds the largest task the settings can produce (8 excerpts without reasoning: 8,192). The model's
+  working memory grows with it (for qwen3:8b about 1.2 GB at 8,192 tokens and 2.4 GB at 16,384), so this leaves the
+  most memory for the model itself. It stays the same between requests, because Ollama reloads the model when it
+  changes. Settings → Advanced shows the length in use and takes a fixed number instead. With LM Studio or
+  llama.cpp set it when loading the model (16,384 covers every task of the app).
+- **Memory.** ENLENS loads no model of its own and makes one model call at a time. The second AI model unloads the
+  main model first (Ollama) and unloads itself when it is done, so two models are never in memory together; LM
+  Studio and other OpenAI-compatible servers have no standard way to unload a model, so there their own setting
+  (LM Studio can be set to keep only one model loaded) decides.
+- **Reasoning.** For models that reason before answering (Qwen 3 and 3.5, for example), *Settings → Advanced →
+  Reasoning* (Ollama) has four choices:
+  - *Off*, the fastest;
+  - *Only when judging excerpts*: reasoning where it can help, not for search words or splitting a hypothesis;
+  - *On for every step*;
+  - *Model's default*.
+
+  The **reasoning budget** (default 1,500 tokens) keeps reasoning within a time limit. A model still reasoning at
+  the budget is stopped and asked to answer at once from its notes. At 20 tokens a second that is at most about 75
+  seconds of reasoning per judgement, and with *Only when judging excerpts* a check takes a minute or two per part
+  instead of half an hour. Whether reasoning judges better depends on the model: compare it with
+  `enlens --ws pilot benchmark --model … --think off` and `--think judging` before relying on it. Reasoning text
+  that a server puts before the answer is ignored.
+- **Embeddings.** `nomic-embed-text` (fast, English), `mxbai-embed-large`, or `bge-m3` (multilingual). Building the
+  index embeds every passage once (minutes for ten thousand passages); after that a search costs one short call.
+  With numpy installed (`.[fast]`) the comparison is instant; without it, about half a second per search on ten
+  thousand passages.
+
+**Test a model before trusting it**: Settings → *Test a model*, or
+
+```bash
+enlens --ws pilot benchmark --backend ollama --model qwen3:8b --sample 30
+```
+
+It runs the model on tasks the pilot already answered with Claude Opus 5.5 and reports, per task kind: the share of
+usable answers, of answers with a quote not in the text, agreement with the reference (same status, and Cohen's κ
+beyond chance), and seconds per task. Nothing is stored. The verdict line uses rules of thumb: at least 90% usable
+and κ 0.6 is "good enough to use, with review"; at least 75% and κ 0.4 is "usable for a first pass". Agreement with
+Opus is not correctness, but a model that disagrees with it often will also disagree with your reviewers.
+
+Confidences are the model's own estimates. They are not calibrated until you compare them with your own judgement:
+Settings shows how often you agreed with the AI at each certainty, from the excerpts you judged, and after 20
+judgements suggests the lowest strictness from which you agreed at least 80% of the time.
+
+---
+
+## 6. The connector for the Claude app and Claude Code
+
+The connector lets Claude check claims and hypotheses against your documents inside an ordinary chat. Claude does the
+reading and grading on your Claude plan, with no API key; only the passages shown to it (about 8,000 characters a
+round) leave the computer. The connector, a small program on your computer, keeps the projects, picks the passages,
+checks every quote against the source and keeps the history. It uses the same projects as the app, so a check made
+in the chat appears in the app's History (graded by "claude (chat)") and the other way round.
+
+### Set it up
+
+```bash
+pip install -e '.[connector]'
+enlens-mcp --install-claude-desktop      # adds the connector to the Claude desktop app's config (keeps a .bak copy)
+```
+
+Quit and reopen the Claude desktop app. `enlens-mcp --print-config` prints the block for the desktop app's config file
+(to add by hand) and the exact `claude mcp add …` command for Claude Code. Both start the connector with the Python
+it was installed in. Use `--home FOLDER` with either command if your projects are not in `~/enlens`.
+
+### Use it
+
+Write in the chat as you would to a colleague:
+
+- "Make a new project called Morocco from ~/Downloads/morocco_sources.zip" (give a path; files attached to the chat do
+  not reach the connector)
+- "Use my pilot folder ~/enlens/pilot as a project called Pilot"
+- "In Pilot, check this hypothesis: hydrogen leakage along the value chain undercuts its climate benefits, because
+  leaked hydrogen extends the lifetime of methane." (Claude splits a compound hypothesis into parts and checks each)
+- "Read more passages" or "Try a different search" when nothing was found
+- "Show me my recent checks in Pilot"
+
+- "In Pilot, where do the documents talk about electrolyser imports?" or "Which SDG targets does the IEA Africa
+  outlook address?" or "What does Pilot call PEM electrolysis, and in which documents?" (0.7)
+
+The connector's tools: `list_projects`, `create_project`, `add_sources`, `use_folder_as_project`, `list_documents`,
+`list_frameworks`, `suggest_targets`, `start_check`, `submit_grades`, `more_passages`, `get_check`, `list_checks`,
+and since 0.7 `search_corpus` (concordance lines, so Claude can look around before proposing a hypothesis),
+`document_profile` (a document's codes with their passages) and `find_concept` (a concept's wordings and documents).
+A recorded demo of a session is in `docs/connector_demo.html` (made with 0.4; the flow is the same).
+
+If the Claude app does not show the connector, check its connector settings for an error. Running `enlens-mcp` in a
+terminal shows any start-up problem (it then waits for the app; stop it with Ctrl+C).
+
+### Claude Code as the AI behind every task (0.8)
+
+With Claude Code, signed in with your own Claude plan, every AI button of ENLENS can be answered by Claude: profile
+labels, concept links, theme names, references, checks, reading an excerpt again, second opinions, the model tests
+(*Compare a sample* of labels, the *Model test*), and the SDG pack's tasks (section 10, step 5). ENLENS prepares
+the work in a queue and checks every answer as it checks any other; Claude Code, which you start yourself, does only
+the reading. ENLENS never starts Claude Code, never sees your Claude login and never runs on anyone else's plan. For a
+shared installation that runs unattended, use the Claude API with the team's key instead (the same queue and the
+same models per task: `enlens queue run --backend anthropic`).
+
+**Set it up once.**
+
+1. In ENLENS, *Settings → AI model service*: choose **Claude Code (your subscription)** and confirm. The passages
+   inside the tasks Claude Code takes are sent to Anthropic; your documents, results and reviews stay here.
+2. *Prepare the plugin* (in the same place), or in a terminal `enlens claude-setup`. It writes the plugin into your
+   ENLENS folder (`claude-plugin/`), checks that the ENLENS connector starts, and shows two lines.
+3. Type them in a terminal (or, inside Claude Code, as `/plugin marketplace add …` and `/plugin install …`):
+
+   ```
+   claude plugin marketplace add "<your ENLENS folder>/claude-plugin"
+   claude plugin install enlens-run@enlens
+   ```
+
+4. Restart Claude Code. The first time it starts the connector it may ask you to allow it.
+
+**Use it.** Press an AI button in ENLENS. The page says what waits, for example *Waiting for Claude Code: 120
+passages to label · about 25 minutes*, with the command and a copy button. In Claude Code, opened in any folder:
+
+```
+/enlens-run Pilot              # every kind of task waiting in the project Pilot
+/enlens-run Pilot label        # only the labels
+/enlens-run Pilot --parallel 4 # four helpers at once: faster, but it uses your plan's limit faster (default 2)
+```
+
+`/enlens-run` hands each kind of task to a helper agent on the model ENLENS names for it (labels and links on
+Haiku, theme names, references and search words on Sonnet, checks on Opus; for the SDG pack, extraction on Sonnet,
+splitting the VCA and checking its claims on Opus, audits on the auditor; *AI model per task* in Settings) and
+reports what is done and what is left. The helpers can use only the ENLENS queue tools: they see nothing but the
+passages handed out and write nothing but answers. Every answer is quote-checked; a wrong quote is sent back and
+answered again. An unsure answer (certainty under 0.6), or one rejected twice, goes once to a stronger model.
+
+You follow the progress in ENLENS: on the page that waits, and in the **queue panel** under the jobs in the
+sidebar (per kind: waiting, being answered, done, the model and helper, the estimate; *Do first*, *Hold*, *Remove*).
+A check waits under Results as *Waiting for Claude Code*: its search runs in ENLENS at once, and only its search
+words, parts and judging wait. It finishes when the answers arrive, even if the app was closed meanwhile.
+
+**Stopping.** A run can stop at any moment (a usage limit, a closed laptop, Ctrl+C). A batch taken and not answered
+returns to the queue after 30 minutes, and the next `/enlens-run` continues where it stopped; nothing is lost. When
+answers stop arriving, ENLENS says *Paused at 340 of 7,868 labels. To go on, type /enlens-run Pilot in Claude Code.*
+*Stop* on a waiting page takes its tasks that no session has taken yet out of the queue (a waiting check is removed
+whole).
+
+**Fable.** The auditor (second opinions, and checks read again by a stronger model) runs on Opus. *Let the auditor
+use Fable* switches it to Fable. In Claude Code, Fable can be billed from usage credits instead of your plan; its
+model picker then says *Requires usage credits*.
+
+**What is recorded.** Claude Code gives no seed and no model digest, so its answers are not repeatable the way a
+seeded local model's are. Each answer records its route (Claude Code), helper, the model set for that helper,
+prompt version, whether it stepped up, and when its batch was claimed and answered; *How these results were made*
+lists them per kind. The acceptance runs (`enlens acceptance queue … --again`) measure how much two readings differ.
+
+**Model tests with Claude Code.** *Compare a sample* (profile labels) and the *Model test* (Settings) put their
+tasks in the queue of a temporary copy of the project, named on the waiting page (type `/enlens-run "<that
+name>"`). The copy is removed when the test ends, so nothing is stored; the labels are read by the label model, and
+the model test answers each kind on its own model. *Test: repeatable answers?* says that Claude Code takes no seed.
+
+**The connector's queue tools** (used by the plugin; not meant for a chat): `queue_status`, `next_tasks` (a batch,
+claimed for 30 minutes), `submit_answers` (each answer quote-checked: stored, or its problems), `release`.
+
+---
+
+## 7. Data
+
+| Table | Holds |
+| --- | --- |
+| hypotheses | Every hypothesis checked: text, framework and code, options, the parts found, note, batch |
+| user_claims | Each claim checked (a hypothesis as written, or one of its parts) with its search terms and the model's summary; its grades are in `verifications` with `subject_kind` `user_claim` |
+| documents, pages, passages | Source text, page spans, passages with `section` (body, references, reference_like, unreadable) and screen score |
+| embeddings | One vector per passage and embedding model (float32, unit length) |
+| tasks, results | Every model call, its payload and status; every answer with model, prompt version, validity and errors |
+| verifications | One row per passage read, with its grade, quote and offsets; a person's judgement (`user_*`), the AI's scope note, and its earlier judgements when it read the excerpt again (`ai_history_json`, `reread_json`) |
+| paragraphs, headings | Where each paragraph (with its page) and heading of a document starts, found when it was added |
+| second_opinions | A second model's grade of each excerpt it read again (never used for an answer) |
+| task_claims | 0.8: the batches of queued tasks handed out to Claude Code: who took them, when, model, helper; `tasks.queued`, `claimed_by`, `step`, `again` and `results.route`, `helper`, `step` belong with it |
+| meta | Thresholds used by the pack, and the corpus version (search indexes are rebuilt when it changes) |
+| vca_targets, vca_refs, doc_refs, claims, claim_targets, evidence, interactions, vca_claims, reviews | The SDG pack (section 13) |
+
+Open it with any SQLite tool. Offsets in `evidence` and `verifications` index into `documents.text`. Removing one
+document keeps past checks intact (each check stores the passages it showed); removing all documents also removes
+every check.
+
+---
+
+## 8. Privacy and copyright
+
+With a local model nothing leaves the computer. With the Claude API (app or `--backend anthropic`) the hypothesis and
+the passages read are sent to Anthropic; with the connector, the passages shown to Claude are part of your chat; with
+Claude Code (0.8), the passages inside the tasks it takes are sent to Anthropic on your own plan. For
+paywalled literature, check with your library whether your licences allow text and data mining with an outside
+service, or keep to a local model.
+
+---
+## 9. The SDG pack: impact claims and the Value Chain Assessment
+
+The pilot's pipeline turns a set of source documents into **impact claims**: statements that an activity in a value
+chain affects a UN SDG target, in a direction, in a segment of the chain, at a place and time, under a condition,
+each with the exact words from the source. The claims are compared with an expert Value Chain Assessment (VCA) and
+summarised into a report. It asks five questions of the literature:
 
 1. Does the cited literature support the VCA's judgements? (Each justification is split into claims and checked.)
 2. Which SDG targets does green hydrogen affect, in which direction and in which segment?
@@ -17,48 +629,8 @@ The pipeline asks five questions of the literature:
 It also measures how well evidence extracted from the sources rebuilds the VCA's own labels, so you can judge
 whether the method is good enough to extend the VCA to other value chains.
 
-For checking single claims there is a **claim checker** with a graphical interface (section 3): type a claim, add
-sources, and see which passages support it, with the quote highlighted. It works with the Claude API or with a model
-running on your own computer through Ollama.
-
----
-
-## 1. Install
-
-Python 3.10 or newer.
-
-```bash
-pip install -e .                 # core: pydantic, pypdf, openpyxl
-pip install -e '.[anthropic]'    # to call the Claude API
-pip install -e '.[gui]'          # the claim checker: Streamlit and the Claude API client
-pip install -e '.[dev]'          # pytest
-```
-
-Check the install with the tests (about 3 seconds, no network):
-
-```bash
-pytest
-```
-
-The command is `enlens` (or `python -m enlens_claims`). Every command takes `--ws FOLDER`, the workspace; the
-default is `./workspace`.
-
----
-
-## 2. Concepts
-
-| Term | Meaning |
-| --- | --- |
-| Workspace | A folder with `config.json`, `enlens.sqlite` and subfolders `tasks/`, `results/`, `report/`. Everything about a run lives here. |
-| Document | One source file (PDF, HTML, TXT or MD). Its text is stored once; every offset in the system points into it. |
-| Passage | A run of whole sentences (up to about 1,100 characters) inside a document, with its page. Passages are the unit the model reads. Passages in the reference list are marked and skipped. |
-| VCA target | One row of the VCA table: the cell for each segment (direct or indirect, positive or negative), the time horizon, the justification and the cited references. |
-| VCA claim | One atomic statement split out of a justification, with its quote from the justification. |
-| Impact claim | What the model extracts from a passage: activity, segment, SDG targets with direction and direct/indirect influence, place, countries, side (producer or importer), horizon, condition, policy lever, confidence, and evidence quotes. |
-| Task | One model call waiting to be answered: `split` (justification to VCA claims), `extract` (passage to impact claims), `verify_set` (which of up to six passages from the cited sources support a VCA claim, fully or partly?), `verify` (does one passage support one claim? used for second checks of extracted claims), and for the claim checker `expand` (search terms for a claim) and `check` (grade passages against a typed claim). |
-| Status of a claim | `auto` (accepted automatically), `needs_review`, `accepted`, `changed`, `rejected`. |
-
-### Vocabularies
+The pack keeps the passage selection of 0.4 exactly (its own tokenizer), so re-running `make-tasks` on a 0.4
+workspace queues no new work. Vocabularies:
 
 - Segments: `production`, `transportation`, `end_use`, plus `whole_chain` and `unclear`.
 - Direction: `positive` (helps progress on the target), `negative` (hinders it), `mixed`, `no_effect`.
@@ -66,88 +638,12 @@ default is `./workspace`.
 - Horizon: `short_term` (to 2030), `medium_long_term` (after 2030), `not_stated`.
 - Interaction scores between targets: Nilsson et al. (2016) scale from −3 (cancelling) to +3 (indivisible).
 - Targets: all 169 SDG targets, including lettered ones such as `7.b` and SDG 17 (`src/enlens_claims/data/sdg_targets.csv`).
+- Status of an extracted claim: `auto` (accepted automatically), `needs_review`, `accepted`, `changed`, `rejected`.
+- Task kinds: `split` (justification to VCA claims), `extract` (passage to impact claims), `verify_set` (which of up
+  to six passages from the cited sources support a VCA claim), `verify` (one passage, one claim: second checks),
+  and for hypotheses `decompose`, `expand` and `check`.
 
----
-
-## 3. The claim checker (graphical interface)
-
-Type a claim, add sources, and see which passages support it, partly support it or contradict it, with the quote
-highlighted in the passage.
-
-### Start it
-
-```bash
-pip install -e '.[gui]'
-enlens-gui                 # opens http://localhost:8501 in your browser
-```
-
-Options: `--home FOLDER` (where projects, history and settings live; default `~/enlens`), `--port 8600`, `--headless`
-(do not open a browser). The app listens on this computer only. Stop it with Ctrl+C in the terminal.
-
-### First use
-
-1. **Settings → Model service.** Choose one:
-   - **Claude API.** Paste an API key from console.anthropic.com and press *Test connection*. The key is kept for the
-     session, or saved on this computer (readable by your user only) if you tick *Remember*. An `ANTHROPIC_API_KEY`
-     environment variable is picked up too. The model is `claude-opus-5-5` unless you change it.
-   - **Ollama.** Install Ollama (ollama.com), download a model (`ollama pull <model>`), then pick it from the list and
-     press *Test connection*. It reports the model's size and the context it was trained for. Keep the context length at
-     16,384 or more: Ollama's own default is much smaller and cuts long prompts without warning. See section 7 for
-     choosing a model.
-   - **Offline demo.** Grades by word overlap, without a model. For trying the app only.
-2. **Sidebar → New project.** One project per set of sources.
-3. **Sources.** Upload a zip, or PDF, HTML, text or Markdown files, and press *Add*. A `manifest.csv` inside the zip
-   (columns `file`, `reference`, `doi`) names the work each file is. The *Check* column flags documents with an
-   unreadable text layer and very short files (often a landing page instead of the report). Files already in the
-   project are skipped.
-4. **Check a claim.** Write the claim as one sentence. Optionally choose the SDG target it is about; targets marked ★
-   are suggested from the claim's wording. Press *Check claim*.
-
-### What a check does
-
-1. The model writes search terms for the claim (synonyms, technical words, the opposite phrasing). One short call;
-   switch it off under *Options*.
-2. The passages that match the claim and its terms best are picked: 8 by default, at most 2 from one document first,
-   so one long report cannot fill every slot.
-3. The model reads them together and grades each one that bears on the claim: *supports*, *partly supports* (a
-   necessary part of the claim is stated; one inference remains) or *refutes*, with a quote and a confidence. Every
-   quote is checked against the passage; an answer that fails is retried with the problems listed, up to three times.
-
-The result shows a status, the model's one-line summary, the evidence with the quote highlighted, the passages read
-that held nothing relevant, and the search terms. Download it as CSV or JSON.
-
-| Status | Meaning |
-| --- | --- |
-| Stated by a source | At least one passage states the claim (grade *supports* at or above the confidence threshold). |
-| Partly stated by a source | No passage states it all, but one states a necessary part. |
-| Contradicted by a source | A passage states the opposite, and none supports it. |
-| Nothing found in the passages read | No passage read bears on the claim. This is not proof that no source says it: read more passages, restrict the documents, or reword the claim. |
-
-*Options* on the check page: passages to read (4 to 12), at most per document, search terms on or off, the confidence
-from which grades count, and a list to check against chosen documents only.
-
-**History** lists every check in the project with its status. Select a row to see its evidence, delete it, or download
-all checks as one CSV.
-
-**The pilot's sources.** *Sources → Use an existing workspace as a project* links a workspace folder without copying it.
-Give it the `pilot` folder from this package to check claims against the 38 pilot documents.
-
-**Cost and time.** With the Claude API one check is two calls of a few thousand tokens. With Ollama it depends on the
-model and the computer, from seconds to several minutes.
-
-**Privacy.** With the Claude API the claim and the passages read are sent to Anthropic. With Ollama nothing leaves the
-computer. Projects, history and settings stay in the home folder.
-
-The same check from the command line:
-
-```bash
-enlens --ws myproject check "Green hydrogen production increases water stress in arid regions." --target 6.4
-enlens --ws myproject check "..." --backend ollama --model qwen3:8b
-```
-
----
-
-## 4. Quick start with the offline baseline
+### Quick start with the offline baseline
 
 The `baseline` backend is a keyword heuristic with the same output format as the models. It needs no key and no
 network, so it is the fastest way to see the whole pipeline work. Its results are a floor, not findings.
@@ -169,7 +665,7 @@ enlens --ws demo report                               # demo/report/report.html
 
 ---
 
-## 5. The full workflow
+## 10. The full workflow
 
 ### Step 1. Load the VCA
 
@@ -203,7 +699,8 @@ enlens --ws pilot coverage
   applies `src/enlens_claims/data/reference_fixes.csv` (actions `doi` and `same_as`) and then merges references
   whose title words overlap strongly. `load-vca` reports how many were fixed and merged. Add rows to that file when
   you find more.
-- Duplicate files (same bytes) are skipped. Scanned PDFs without a text layer come out empty; run OCR first.
+- Duplicate files (same bytes) are skipped. Scanned PDFs without a text layer come out empty; run OCR first. A file
+  that cannot be read is listed under `failed` and the others are added.
 - Notes that travel with a corpus (`problems.txt`, `README.md`, `notes.txt`) are not ingested. When a manifest is
   present, `ingest` lists files it does not mention under `not_in_manifest`, so you can see what was added unlinked.
 - `--exclude PATTERN` leaves out files by name, for example a download that turned out to be the wrong document:
@@ -241,7 +738,7 @@ enlens --ws pilot screen
 
 A transparent heuristic marks passages that mention hydrogen (or its derivatives) and impact terms, and score
 against the SDG target texts. Only screened passages go to extraction unless you pass `--all-passages`. This step
-stands in for a fast decision model; see section 7 for replacing it. Lower `thresholds.screen_min_score` in
+stands in for a fast decision model; see section 12 for replacing it. Lower `thresholds.screen_min_score` in
 `config.json` (default 2.0) to let more passages through.
 
 ### Step 4. Create model tasks
@@ -285,35 +782,59 @@ enlens --ws pilot make-tasks verify-claims --sample 0.1 --model claude-fable-5-1
 ```
 
 Audit answers to VCA checks are stored apart (`subject_kind` `vca_claim_audit`) and never change a claim's status;
-`evaluate` and the report compare them with the first answers.
+`evaluate` and the report compare them with the first answers. `refresh KIND --model M` switches the main tasks to M
+but leaves audits and second checks with the model they were made for.
 
 ### Step 5. Answer the tasks
 
-Three ways, which can be mixed per task kind:
+Four ways, which can be mixed per task kind:
 
-**a) Claude API**
+**Claude Code on your own plan** (0.8.1; the passages handed out are sent to Anthropic). `prepare` makes the tasks
+as `make-tasks` does and puts them in the queue; `/enlens-run` answers them with a helper per kind:
+
+```bash
+enlens --ws pilot prepare split                       # Opus (enlens-extractor), one task per VCA target
+enlens --ws pilot prepare verify-vca --k 6            # Opus (enlens-checker), one VCA claim and its passages
+enlens --ws pilot prepare extract --per-target 6      # Sonnet (enlens-extractor); unsure claims go to Opus
+enlens --ws pilot prepare audit-vca --sample 0.1      # the auditor (Opus, or Fable when switched on)
+enlens --ws pilot prepare verify-claims --sample 0.1 --model fable   # a second check of extracted claims
+# then in Claude Code:  /enlens-run pilot   (or /enlens-run pilot extract)
+```
+
+`--model haiku|sonnet|opus|fable` keeps one model for those tasks instead of the routed one. The audits keep their
+model and never step up, so they stay a second model's reading. The pack's tasks enter the queue only through
+`prepare`: `make-tasks` and `run` work as before. `enlens queue run --backend anthropic` answers the same queue
+unattended with the same models.
+
+**a) Claude API** (cloud: the passages are sent to Anthropic)
 
 ```bash
 export ANTHROPIC_API_KEY=...
-enlens --ws pilot run split
-enlens --ws pilot run extract
-enlens --ws pilot run verify_set
+enlens --ws pilot run split --backend anthropic
+enlens --ws pilot run extract --backend anthropic
+enlens --ws pilot run verify_set --backend anthropic
 ```
 
-**b) A model in Ollama** (text stays on your machine):
+The tasks record the model of `config.json` (`claude-opus-5-5` …); with the Claude API that model is used.
+
+**b) A local model** (text stays on your machine; `--backend auto` is the default):
 
 ```bash
 ollama pull qwen3:8b                                        # once
 enlens backend-check --backend ollama --model qwen3:8b      # is it running, is the model there?
-enlens --ws pilot run verify_set --backend ollama --model qwen3:8b
+enlens --ws pilot run verify_set --model qwen3:8b
 ```
+
+Without `--model` a local backend uses the first chat model its server offers (the Claude model names stored on
+the tasks do not exist on a local server).
 
 The context length is set on every request (`--num-ctx`, default 16,384), and the answer is forced into the task's
 JSON format. `--think off` switches off the reasoning of thinking models, which is faster. Other OpenAI-compatible
-servers (llama.cpp, LM Studio, vLLM) work with `--backend local --url http://localhost:8080/v1`; set the context length
-on the server, because that endpoint cannot pass it.
+servers (LM Studio, llama.cpp, Jan, vLLM) work with `--backend local --url http://localhost:1234/v1`: the answer format
+is passed as a JSON schema where the server accepts it (json_object or none otherwise); set the context length on the
+server, because that endpoint cannot pass it.
 
-Local models are cheaper and private but weaker. Test them before trusting them (section 7).
+Local models are cheaper and private but weaker. Test them before trusting them (section 5).
 
 **c) File queue** (any worker, including Claude in a chat or an agent):
 
@@ -341,7 +862,7 @@ Whatever the route, every answer is validated before it is stored:
 - Every quote must be found in the text the model was given. Matching ignores case, typographic quotes and dashes,
   ligatures and whitespace (PDF text often splits words), but nothing else: a paraphrase or an added number fails.
 - A claim whose main quote is not found is dropped. A task with no usable answer is retried, with the problems
-  listed in the next prompt, up to three attempts.
+  listed in the next prompt, up to three attempts. An answer that is not accepted changes nothing stored before.
 - Claims with confidence below `thresholds.accept_confidence` (default 0.8) get status `needs_review`.
 
 Check progress at any time:
@@ -368,7 +889,10 @@ enlens --ws pilot review-import queue.csv --reviewer "initials"
 enlens --ws pilot gold-export gold.jsonl
 ```
 
-Rows with an invalid correction are reported and change nothing. Reviewed items do not reappear in later queues.
+Rows with an invalid correction (also an unknown direction or influence) are reported and change nothing. The file
+may be saved by Excel (UTF-8 with or without byte-order mark, or Windows-1252). Reviewed items do not reappear in
+later queues. When a task is answered again (`refresh`), a reviewed claim with the same text keeps the decision;
+a claim whose text changed has its review marked superseded and comes back to the queue.
 `gold.jsonl` is the growing gold set: use it to compare prompts, models and thresholds.
 
 ### Step 7. Evaluate and report
@@ -381,7 +905,7 @@ enlens --ws pilot report --strict      # only auto-accepted and reviewed claims
 
 ---
 
-## 6. Reading the report
+## 11. Reading the report
 
 The report has one section per question. Every number traces to `claims.csv`, which holds each claim with its quote,
 source and page.
@@ -440,7 +964,7 @@ audits.
 
 ---
 
-## 7. Models and configuration
+## 12. Models and configuration
 
 `config.json` in the workspace:
 
@@ -459,58 +983,28 @@ claude-fable-5-1`), which measures whether the more expensive model changes outc
 or a dedicated classifier can replace the screen once it is benchmarked on reviewed passages.
 
 Every stored result records the model and the prompt version (`extract-v1`, `split-v2`, `verify-v1`,
-`verify-set-v1`). When you change
+`verify-set-v1`; for hypotheses `decompose-v1`, `expand-v2`, `check-v2`). When you change
 a prompt in `prompts.py`, bump its version so old and new results stay distinguishable, then queue the affected tasks
 again with `enlens refresh KIND` (add `--model` to switch model at the same time). Earlier answers stay in the
 `results` table.
 
-### Choosing and testing a local model
-
-What this pipeline asks of a model is harder than chat: quotes copied word for word, a 10,000-token extraction prompt
-(it lists all 169 targets), fine judgement between "partly supports" and "same topic", and answers in a fixed JSON
-format. Ollama enforces the format, so even small models give valid JSON; the rest depends on the model.
-
-Rough guide by memory (October 2026; check Ollama's library for current models): about 16 GB runs models of 8 to
-12 billion parameters, 32 GB runs 27 to 32 billion, 64 GB or more runs the largest. Larger models judge better and are
-slower. If memory allows, an 8-bit version copies quotes more reliably than the usual 4-bit one.
-
-Test a model on your own computer before using it:
-
-```bash
-enlens --ws pilot benchmark --backend ollama --model qwen3:8b --sample 30
-```
-
-or *Settings → Test a model* in the claim checker. It runs the model on tasks the pilot already answered with Claude
-Opus 5.5 and reports, per task kind: the share of usable answers, of answers with a quote not in the text, agreement
-with the reference (same status, and Cohen's κ beyond chance), and seconds per task. Nothing is stored. The verdict
-line uses rules of thumb: at least 90% usable and κ 0.6 is "good enough to use, with review"; at least 75% and κ 0.4
-is "usable for a first pass". Agreement with Opus is not correctness, but a model that disagrees with it often will
-also disagree with your reviewers.
-
-Confidences are the model's own estimates. They are not calibrated until you compare them with reviewer decisions:
-after a few hundred reviews, check what share of claims at each confidence level were accepted, and set
-`accept_confidence` from that.
-
----
-
-## 8. Database tables
+## 13. The pack's tables
 
 | Table | Holds |
 | --- | --- |
 | documents, pages, passages | Source text, page spans, passages with `section` (body, references, reference_like, unreadable) and screen score |
-| vca_targets, vca_refs, doc_refs | Gold labels, cited references, and which document matched which reference (method doi or title) |
+| vca_targets, vca_refs, doc_refs | Gold labels, cited references, and which document matched which reference (method manifest, doi, title, or manual: rows you add by hand with method `manual` survive `match-sources`) |
 | tasks, results | Every task, its payload and status; every answer with model, prompt version, validity and errors |
 | claims, claim_targets, evidence | Extracted claims, their targets with direction and influence, and quotes with offsets and page |
 | interactions | Stated interactions (with quote) and inferred candidate pairs |
 | vca_claims, verifications | Split justifications; one row per checked passage with its grade and quote. `subject_kind` is `vca_claim`, `vca_claim_audit` (second opinion) or `claim` (second check of an extracted claim) |
 | reviews | Reviewer decisions and corrections |
-| user_claims | Claims typed into the claim checker, with their search terms, the model's summary and the options used; their grades are in `verifications` with `subject_kind` `user_claim` |
 
 Open it with any SQLite tool. Offsets in `evidence` and `verifications` index into `documents.text`.
 
 ---
 
-## 9. Using it for other value chains or policy documents
+## 14. Using the pack for other value chains or policy documents
 
 - **Another value chain**: you need the screen terms (`H2_RE` in `retrieve.py`), the segment definitions (`prompts.py`)
   and, for evaluation, an expert table in the same layout, or reviewed claims as gold.
@@ -519,45 +1013,54 @@ Open it with any SQLite tool. Offsets in `evidence` and `verifications` index in
 - **The Netherlands angle**: no VCA justification mentions the Netherlands; Dutch and EU policy documents and national
   studies have to be added as sources first.
 
+For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
+
 ---
 
-## 10. Limits
+## 15. Limits
 
-- Claims are model output until reviewed. The quote check proves the quoted words exist; it does not prove the fields
+- Grades and claims are model output until reviewed. The quote check proves the quoted words exist; it does not prove the fields
   follow from them.
 - The corpus is what you provide. Paywalled sources you cannot or will not process leave targets as "source missing".
 - Text comes from the PDF text layer. Tables and figures are read as text, which is often garbled; scanned pages need OCR.
+- "Nothing found" is about the passages read, not the documents: read more passages or search with other words.
 - The screen is a heuristic. Measure its recall on reviewed passages before relying on it for a new topic.
 - Inferred interactions are co-occurrence within a document, not causal statements.
-- Verification reads only the top `--k` passages per claim. In the pilot, a manual search of the full cited documents
+- Verification reads only the top `--k` passages per claim (a hypothesis check: `k` per claim per round; semantic search
+  narrows the gap). In the pilot, a manual search of the full cited documents
   for 10 claims with no graded passage found partial support for 2 and a weak contradiction for 1; the other 7 had
   nothing anywhere in their sources. Retrieval misses some evidence, mostly where the source uses other words
   ("repurposing" for "upgrading").
 - Model confidences in the pilot were low (extraction mean 0.46), so with the default `accept_confidence` of 0.8
   every claim went to review. Calibrate the threshold against reviewer decisions before using the auto status.
 
-## 11. Copyright and privacy
-
-Processing a document with an outside model service sends its text to that service. For paywalled literature, check
-with your library whether your licences allow text and data mining with such a service, or use the local backend so
-the text stays on your machine.
-
-## 12. Troubleshooting
+## 16. Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
 | `load-vca` totals differ from the paper | The workbook layout or colours changed. Check `_fill_sign` in `vca.py`; theme colour 9 is read as green. |
-| A document did not match its reference | Put the DOI in the file name (`10.1016_j.ijhydene.2022.11.024.pdf`), or check `doc_refs` and add it by SQL. |
+| A document did not match its reference | Put the DOI in the file name (`10.1016_j.ijhydene.2022.11.024.pdf`), use a `manifest.csv`, or add a `doc_refs` row by SQL with method `manual`. |
 | Many quotes fail | Look at `results.errors_json`. Usually the model tidied PDF text; the retry prompt tells it to copy exactly. |
 | Tasks stuck as `exported` | `enlens requeue KIND`. |
-| `Set ANTHROPIC_API_KEY` | Export the key, or use the file queue or the local backend. |
-| Empty document | No text layer (scanned). Run OCR, for example `ocrmypdf in.pdf out.pdf`, then ingest again. |
+| "No Claude API key" | Export `ANTHROPIC_API_KEY` or enter it in Settings, or use a local model or the file queue. |
+| "No local model server is running" | Start Ollama (or `ollama serve`) or LM Studio's server; `enlens detect` lists what is found. Or choose `--backend baseline` / the offline demo to try things out. |
+| "Cloud models are switched off" / "Allow cloud models first" | The Claude API sends the passages read to Anthropic, so the app asks you to allow it first (Settings → Model service). |
+| "The local server … has no model" | Load the model in LM Studio, start llama.cpp with it, or name another with `--model` / in Settings. |
+| A semantic search error about vector sizes | The embedding model changed since the index was built: Sources → *Build semantic index*. |
+| "Remove all documents" is refused | The project also holds results of the SDG pack (extracted claims, VCA verifications). Remove documents one by one, or run `enlens --ws FOLDER reset-corpus --yes` if you mean it. |
+| Empty document, or "Scanned: no text" | No text layer (scanned). Install Tesseract and the `ocr` extra (section 1) and add the file again, or run OCR yourself (`ocrmypdf in.pdf out.pdf`). |
+| Double-clicking the ENLENS icon does nothing | Look at `logs/enlens.log` in the data folder. Run `enlens-gui --make-launcher` again after moving or reinstalling Python. On macOS, if the icon was copied from another computer, right-click it and choose *Open* once. |
+| "The original file is no longer at …" | The file was moved or renamed after it was added; the app still has its text. Put it back, or add it again. |
 | A document is listed under `mostly_unreadable` | The PDF's fonts have no character map. Get another copy (often the publisher's) or OCR it, `reset-corpus` or ingest the new copy, and run `match-sources` again. |
 | A source is flagged "very short" | It is probably a landing page or an agenda, not the cited work. Replace it, or leave it out with `--exclude`. |
-| The claim checker says it cannot reach Ollama | Start the Ollama app (or `ollama serve`) and check the address in Settings (default `http://localhost:11434`). |
+| The app says it cannot reach Ollama | Start the Ollama app (or `ollama serve`) and check the address in Settings (default `http://localhost:11434`). |
 | "Ollama has no model ..." | Download it: `ollama pull <model>`, then pick it again in Settings. |
 | Test connection warns about Ollama's cloud | The model runs on Ollama's servers, which do not support the JSON format the app needs, and the text leaves your computer. Pick a model downloaded with `ollama pull`. |
-| "This task needs about N tokens of context" | Raise the context length in Settings or with `--num-ctx`. 16,384 covers every task. |
-| A check with Ollama takes very long | The model is too large for the computer's memory, or it is thinking at length: try a smaller model or set reasoning to off. |
+| "This task needs about N tokens of context" | Set the context length to automatic in Settings → Advanced (the default), or raise it (`--num-ctx`). 16,384 covers every task of the app. |
+| A check with a local model takes very long | The progress panel shows where the time goes. Long "loading the model and reading the prompt": the model is too large for the memory (check Activity Monitor) or the computer is swapping. Long "reasoning": set *Reasoning* to off. |
+| "… sent nothing for 600 seconds" | The model did not start or stopped answering: usually too little memory. Close other apps or choose a smaller model. |
+| "… used its whole allowance … on reasoning" | The model kept reasoning without answering. Give reasoning a budget (Settings → Advanced, the default 1,500 tokens), choose *Only when judging excerpts*, or set it off. |
+| A check with reasoning takes half an hour | Set *Reasoning* to *Only when judging excerpts* with a budget (1,500 tokens is the default; lower it for a slow computer). |
+| "… got stuck writing blank space" | A known failure of some models with fixed-format answers. Try again, set *Reasoning* to off, or choose another model. |
 | "The Claude API rejected the key" | Copy the key again from console.anthropic.com; check it has credit. |
 | Two workers' answers ended up in one results file | Give each worker its own scratch folder. Move the stray lines to the right file; `import-results` accepts any order. |

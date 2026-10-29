@@ -200,6 +200,8 @@ def merge_references(refs: dict[str, dict], fixes: list[dict] | None = None) -> 
             if dst:
                 alias[s_] = dst[0]
     words = {k: _title_words(refs[k]["reference"]) for k in keys}
+    years = {k: set(re.findall(r"\b((?:19|20)\d{2})[a-z]?\b", re.sub(r"https?://\S+", " ", refs[k]["reference"])))
+             for k in keys}
     for i, a in enumerate(keys):
         for b in keys[i + 1:]:
             if a in alias or b in alias:
@@ -207,6 +209,8 @@ def merge_references(refs: dict[str, dict], fixes: list[dict] | None = None) -> 
             wa, wb = words[a], words[b]
             if len(wa) < 5 or len(wb) < 5:
                 continue
+            if years[a] and years[b] and not (years[a] & years[b]):
+                continue  # same wording, different years: an organisation's reports of different years are different works
             if len(wa & wb) / len(wa | wb) >= 0.7:
                 keep, drop = (a, b) if (refs[a]["doi"] or not refs[b]["doi"]) else (b, a)
                 alias[drop] = keep
