@@ -1,4 +1,4 @@
-# ENLENS: check hypotheses against your own documents, locally
+# ENLENS: check topics, codes, hypotheses and more against your own documents, with Claude Code or local models
 
 ENLENS reads your sources (reports, papers, policy documents, interview notes) and tells you whether a hypothesis is
 supported, partly supported, contradicted or met with mixed evidence, with the exact words of each source, where they
