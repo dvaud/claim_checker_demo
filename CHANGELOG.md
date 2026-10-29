@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 (October 2026): link buttons readable on hover
+
+- **A primary button made from a link stays readable under the mouse.** On the Overview, *Finish the set-up* (and
+  *Set up Claude Code*) turned into an empty teal bar when hovered, most visibly in the dark theme; so did other
+  link buttons such as *Add documents* on the first-run page. The general link hover colour (`a:hover`) outranked
+  the button's own, so the text took the colour of its own hover background. Link buttons now keep their button
+  colours (`a.btn:hover`, `a.btn-primary:hover`, `a.btn-danger:hover`, `a.btn-outline-danger:hover`).
+- Tests: 1 new (`tests/test_090_subscription_first.py`): link buttons keep their colours on hover.
+
 ## 0.9.0 (October 2026): subscription first, exploring first
 
 0.9 changes no analysis: every answer still goes through the quote check, a person can overrule it, and every result

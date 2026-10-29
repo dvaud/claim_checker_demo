@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enlens-claims"
-version = "0.9.0"
+version = "0.9.1"
 description = "Explore your documents (search, code profiles, concepts, themes) and check hypotheses against them with Claude Code on your own plan or a local model, with verified quotes (ENLENS); includes the SDG value chain assessment pipeline"
 readme = "README.md"
 requires-python = ">=3.10"

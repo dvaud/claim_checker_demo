@@ -243,6 +243,12 @@ mark.quote {
 .btn-ghost:hover { background: var(--surface-3); border-color: transparent; color: var(--text); }
 .btn-outline-danger { color: var(--bad); border-color: var(--bad-line); background: transparent; }
 .btn-outline-danger:hover { background: var(--bad-soft); border-color: var(--bad); }
+/* a link styled as a button keeps its button colours on hover (the general a:hover colour outranks .btn-primary,
+   which made the text of a primary link-button the colour of its own hover background: invisible) */
+a.btn:hover { color: var(--text); }
+a.btn-primary:hover { color: var(--on-accent); }
+a.btn-danger:hover { color: #fff; }
+a.btn-outline-danger:hover { color: var(--bad); }
 .btn-sm { padding: .32rem .65rem; font-size: .84rem; border-radius: 7px; }
 .btn-lg { padding: .7rem 1.3rem; font-size: 1rem; }
 .icon-btn {

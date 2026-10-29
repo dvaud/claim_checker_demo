@@ -165,3 +165,11 @@ def test_the_page_puts_exploring_first_and_marks_the_ai():
         assert f'ai: "{ai}"' in block[:block.index("\n  },")], key
     app = (static / "app.js").read_text(encoding="utf-8")
     assert "nav-ai" in app and "nav-legend" in app and '[/^\\/?$/, "overview", renderOverview]' in app
+
+
+def test_a_link_button_keeps_its_colours_on_hover():
+    """The general `a:hover` colour outranked `.btn-primary`: a primary button made from a link (Overview's *Set up
+    Claude Code*, *Add documents*…) turned its text the colour of its own hover background, so it read as empty."""
+    css = (ROOT / "src" / "enlens_claims" / "gui" / "static" / "app.css").read_text(encoding="utf-8")
+    assert "a:hover { color: var(--accent-strong); }" in css
+    assert "a.btn-primary:hover { color: var(--on-accent); }" in css and "a.btn:hover { color: var(--text); }" in css
