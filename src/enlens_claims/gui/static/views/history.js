@@ -1,4 +1,5 @@
 // Results: every hypothesis checked in the project. Counts come from the API at the current strictness.
+import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness } from "../lib.js";
 import { ProgressPanel } from "./progress.js";
 
@@ -16,7 +17,7 @@ export async function renderHistory(view, params, query) {
   const xlsx = h("button", { class: "btn btn-primary btn-sm", type: "button", title: "Three sheets: a summary, every excerpt read, and the evidence map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) }, icon("download", { size: 14 }), "Download all for Excel (.xlsx)");
   const csv = h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "Technical CSV: ids, raw judgement words, UTC times", onClick: () => download(`/api/projects/${P(project)}/export.csv?threshold=${threshold}`).catch(showError) }, icon("download", { size: 13 }), "CSV for programmers");
   const mapLink = h("a", { class: "btn btn-sm", href: "#/map" }, icon("layers", { size: 14 }), "Show as a map");
-  view.appendChild(pageHead("Results", { sub: `Every hypothesis checked in project “${project}”, newest first. Open one to read the evidence.`, actions: [mapLink, xlsx, csv] }));
+  view.appendChild(pageHead("Results", { eyebrow: featureEyebrow("history"), sub: `Every hypothesis checked in project “${project}”, newest first. Open one to read the evidence.`, actions: [mapLink, xlsx, csv] }));
 
   const search = h("input", { class: "input", type: "search", placeholder: "Find a hypothesis…", value: q, "aria-label": "Find a hypothesis" });
   const chips = h("div", { class: "chips", role: "group", "aria-label": "Show only" });

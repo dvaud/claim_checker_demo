@@ -1,9 +1,9 @@
 // Check a hypothesis: the hypothesis box and the button are the page; the codebook tag is optional and quiet;
 // everything else sits under "More options". The live progress of the running check is shown below.
+import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, append, toast, showError, field, pageHead, navigate, watchJob, P, debounce, session } from "../lib.js";
 import { checkOptions, pickCode } from "./options.js";
 import { ProgressPanel } from "./progress.js";
-import { quickLookButton } from "./quicklook.js";
 
 export async function renderCheck(view, params, query) {
   const project = App.project;
@@ -17,13 +17,12 @@ export async function renderCheck(view, params, query) {
   if (query.text) { draft.text = String(query.text).slice(0, 2000); session("draft", { ...draft }); }  // "Check a hypothesis about this…"
   const nDocs = docs.length;
 
-  view.appendChild(pageHead("Check a hypothesis", { sub: `The app looks through the ${nDocs} ${nDocs === 1 ? "document" : "documents"} of project “${project}”, the AI reads the excerpts that match, and every quote is verified against the document.`,
-    actions: [quickLookButton({ class: "btn btn-sm" })] }));
+  view.appendChild(pageHead("Check a hypothesis", { eyebrow: featureEyebrow("check"), sub: `The app looks through the ${nDocs} ${nDocs === 1 ? "document" : "documents"} of project “${project}”, the AI reads the excerpts that match, and every quote is verified against the document.` }));
   if (query.text) view.appendChild(h("p", { class: "muted small", style: { margin: "-6px 0 12px" } }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check."));
 
   if (!App.modelConfigured()) {
     view.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "16px" } }, icon("alert-triangle"),
-      h("div", {}, h("p", {}, "No AI model is set up yet, so checks cannot run."), h("a", { href: "#/setup" }, "Set up the AI model"))));
+      h("div", {}, h("p", {}, "No AI model is set up yet, so checks cannot run."), h("a", { href: "#/settings/model" }, "Set up the AI model"))));
   }
   if (!info.passages) {
     view.appendChild(h("div", { class: "notice notice-info", style: { marginBottom: "16px" } }, icon("info"),

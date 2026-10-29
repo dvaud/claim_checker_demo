@@ -1,32 +1,50 @@
 // First run. When the AI model is already set up (someone installed the app), the user starts by naming a project
 // and adding documents. The model step appears only when no model works yet.
-import { App, api, h, icon, replace, clear, toast, showError, field, navigate } from "../lib.js";
-import { testResult, plainTestResult } from "./settings.js";
+import { App, api, h, icon, replace, clear, toast, showError, field, navigate, store } from "../lib.js";
+import { testResult, plainTestResult, claudeSetupCard } from "./settings.js";
 import { linkProjectDialog } from "./projects.js";
 
 function rerender() { window.dispatchEvent(new HashChangeEvent("hashchange")); }
 
 export async function renderSetup(view) {
   const hasProject = (App.state.projects || []).length > 0;
-  const modelOk = App.modelConfigured();
-  const stepsAll = modelOk ? [["Project", "project"], ["Documents", "docs"]] : [["AI model", "model"], ["Project", "project"], ["Documents", "docs"]];
+  const s = App.settings();
+  const cc = s.backend === "claude_code";
+  // 0.9: subscription first: a new installation answers with Claude Code; the first step sets it up (or skips it)
+  const modelOk = cc ? store("setup-ai") === "done" : App.modelConfigured();
+  const stepsAll = modelOk ? [["Project", "project"], ["Documents", "docs"]] : [["AI", "model"], ["Project", "project"], ["Documents", "docs"]];
   const current = !modelOk ? "model" : !hasProject ? "project" : "docs";
   const idx = stepsAll.findIndex((x) => x[1] === current);
 
   const steps = h("ol", { class: "setup-steps", "aria-label": "Steps" },
     stepsAll.map(([t, key], i) => h("li", { class: `setup-step ${i === idx ? "active" : i < idx ? "done" : ""}`, "aria-current": i === idx ? "step" : null }, h("span", { class: "n" }, i < idx ? icon("check", { size: 12 }) : String(i + 1)), t)));
   const wrap = h("div", { class: "setup" },
-    h("div", { class: "hero" }, h("p", { class: "eyebrow" }, "Welcome"), h("h1", { id: "page-title", tabindex: "-1" }, "Check your hypotheses against your own documents"),
-      h("p", {}, "Write a hypothesis, and ENLENS finds the excerpts of your reports and papers that speak to it, has an AI read them, and tells you whether they support or contradict it, with the exact quotes so you can judge for yourself."),
-      modelOk ? h("p", { class: "it small", style: { color: "var(--ok)" } }, icon("house", { size: 14 }), h("span", {}, "The AI model is set up and runs on this computer: your documents never leave it.")) : null),
+    h("div", { class: "hero" }, h("p", { class: "eyebrow" }, "Welcome"), h("h1", { id: "page-title", tabindex: "-1" }, "Explore your documents, and check what they say"),
+      h("p", {}, "ENLENS reads your reports, papers and interview notes. Search them, see which topics and codes each one addresses, follow concepts and themes across them, and check a hypothesis against them, with the exact quotes so you can judge for yourself."),
+      modelOk && !cc ? h("p", { class: "it small", style: { color: "var(--ok)" } }, icon("house", { size: 14 }), h("span", {}, "The AI model is set up and runs on this computer: your documents never leave it.")) : null),
     steps);
   view.appendChild(wrap);
   const body = h("div", {});
   wrap.appendChild(body);
 
-  if (current === "model") await modelStep(body);
+  if (current === "model") { if (cc) claudeStep(body); else await modelStep(body); }
   else if (current === "project") projectStep(body);
   else sourcesStep(body);
+}
+
+function claudeStep(body) {
+  const next = () => { store("setup-ai", "done"); rerender(); };
+  const nextBtn = h("button", { class: "btn btn-lg", type: "button", onClick: next }, "Next: your project", icon("arrow-right", { size: 14 }));
+  replace(body, h("div", { class: "card" }, h("h2", {}, "The AI: Claude, on your own Claude plan"),
+    h("p", { class: "muted" }, "ENLENS uses Claude Code, signed in with your Claude subscription, for the AI parts (labels, theme names, checks). Search, keyword profiles, the glossary and themes work without any AI. Your documents stay on this computer; only the passages inside the AI's tasks are sent to Anthropic."),
+    claudeSetupCard({ onReady: () => { nextBtn.classList.add("btn-primary"); } }),
+    h("div", { class: "btn-row", style: { marginTop: "14px" } }, nextBtn),
+    h("details", { class: "fold", style: { marginTop: "10px" } }, h("summary", {}, "No Claude plan? Other options"),
+      h("div", { class: "stack", style: { marginTop: "8px" } },
+        h("p", { class: "small" }, h("strong", {}, "A model on this computer"), " (Ollama, LM Studio…): free and fully private. ",
+          h("button", { class: "btn btn-sm", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { backend: "auto" }); await App.refresh(); rerender(); } catch (e) { showError(e); } } }, "Use a local model")),
+        h("p", { class: "small" }, h("strong", {}, "No AI for now"), ": everything that needs no AI works; AI buttons use a simple word-overlap stand-in. ",
+          h("button", { class: "btn btn-sm", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { backend: "baseline" }); await App.refresh(); toast("Demo mode selected. Change it any time in Settings → AI.", "ok"); rerender(); } catch (e) { showError(e); } } }, "Continue without AI"))))));
 }
 
 function projectStep(body) {
@@ -47,7 +65,7 @@ function projectStep(body) {
       navigate("#/sources");
     } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
   } },
-    h("div", { class: "field" }, h("label", { class: "field-label", for: "proj-name" }, "Project name"), input, h("div", { class: "field-help" }, "A project is one set of documents and the hypotheses you check against them, for example one literature review. You can make more later.")),
+    h("div", { class: "field" }, h("label", { class: "field-label", for: "proj-name" }, "Project name"), input, h("div", { class: "field-help" }, "A project is one set of documents you explore together (and the hypotheses you check against them), for example one literature review. You can make more later.")),
     err,
     h("div", { class: "btn-row" }, btn, h("button", { class: "btn btn-ghost", type: "button", onClick: () => linkProjectDialog() }, "Open an existing ENLENS project folder (advanced)")));
   replace(body, h("div", { class: "card" }, h("h2", {}, "Give your project a name"), form));
@@ -55,8 +73,8 @@ function projectStep(body) {
 }
 
 function sourcesStep(body) {
-  replace(body, h("div", { class: "card" }, h("h2", {}, "Add your documents"), h("p", { class: "muted" }, `Project “${App.project}” is ready. Add the reports, papers and web pages you want to check hypotheses against: PDF, text, Markdown or saved web pages (HTML).`),
-    h("div", { class: "btn-row" }, h("a", { class: "btn btn-primary btn-lg", href: "#/sources" }, icon("upload", { size: 15 }), "Add documents"), h("a", { class: "btn btn-ghost", href: "#/check" }, "Skip for now"))));
+  replace(body, h("div", { class: "card" }, h("h2", {}, "Add your documents"), h("p", { class: "muted" }, `Project “${App.project}” is ready. Add the reports, papers and web pages you want to explore: PDF, Word, text, Markdown or saved web pages (HTML).`),
+    h("div", { class: "btn-row" }, h("a", { class: "btn btn-primary btn-lg", href: "#/sources" }, icon("upload", { size: 15 }), "Add documents"), h("a", { class: "btn btn-ghost", href: "#/overview" }, "Skip for now"))));
 }
 
 async function modelStep(body) {
@@ -65,7 +83,8 @@ async function modelStep(body) {
   let servers = [];
   try { servers = (await api("GET", "/api/servers")).servers || []; } catch (_) { servers = []; }
   clear(body);
-  const card = h("div", { class: "card" }, h("h2", {}, "Set up the AI model"), h("p", { class: "muted" }, "This is the technical part. It is done once, usually by whoever installs the app. If that is not you, ask them; the steps are below."));
+  const card = h("div", { class: "card" }, h("h2", {}, "Set up a model on this computer"), h("p", { class: "muted" }, "This is the technical part. It is done once, usually by whoever installs the app. If that is not you, ask them; the steps are below."),
+    App.state.local_only ? null : h("p", { class: "small" }, "Have a Claude plan? ", h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { backend: "claude_code", allow_claude_code: true }); await App.refresh(); rerender(); } catch (e) { showError(e); } } }, "Use Claude Code instead")));
   body.appendChild(card);
 
   if (!servers.length) {
@@ -76,7 +95,7 @@ async function modelStep(body) {
       h("div", { class: "guide-step" }, h("span", { class: "n" }, "3"), h("div", {}, "Optional, for search by meaning (finding excerpts that use other words): ", h("code", {}, "ollama pull nomic-embed-text"))),
       h("div", { class: "guide-step" }, h("span", { class: "n" }, "4"), h("div", {}, "Come back here and ", h("button", { class: "btn btn-sm", type: "button", onClick: () => location.reload() }, icon("refresh", { size: 13 }), "look again")))));
     card.appendChild(h("p", { class: "muted small" }, "LM Studio, llama.cpp, Jan or vLLM work too: start one with a model loaded, then look again."));
-    const alt = h("details", { class: "fold" }, h("summary", {}, "Other options: a cloud AI, or trying the app without an AI"),
+    const alt = h("details", { class: "fold" }, h("summary", {}, "Other options: the Claude API, or trying the app without an AI"),
       h("div", { class: "stack", style: { marginTop: "8px" } },
         h("div", { class: "cloud-box" }, h("p", { style: { color: "inherit", margin: 0 } }, h("strong", {}, "Claude API (cloud).")), h("p", {}, "Excerpts of your documents are sent to Anthropic's servers. Needs an account key and an explicit opt-in."), h("a", { class: "btn btn-sm", href: "#/settings/model", style: { marginTop: "8px" } }, "Set up in Settings → Advanced")),
         h("div", { class: "notice" }, icon("cpu"), h("div", {}, h("p", {}, h("strong", {}, "Demo mode"), " uses a simple word-overlap stand-in instead of an AI. Good for seeing how the app works; its results are not findings."),

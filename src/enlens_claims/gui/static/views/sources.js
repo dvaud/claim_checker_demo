@@ -1,5 +1,6 @@
 // Documents: a big add area first, the document table, smart search in plain words, a document viewer, and the
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
+import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT } from "../lib.js";
 import { simpleProgress } from "./progress.js";
 import { plainSection, blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
@@ -14,7 +15,7 @@ export async function renderSources(view) {
   const project = App.project;
   let info;
   try { info = await api("GET", `/api/projects/${P(project)}`); } catch (e) { showError(e); info = { search: null, passages: 0 }; }
-  view.appendChild(pageHead("Documents", { sub: `The reports, papers and web pages of project “${project}” that hypotheses are checked against.` }));
+  view.appendChild(pageHead("Documents", { eyebrow: featureEyebrow("sources"), sub: `The reports, papers and web pages of project “${project}” that you explore and check hypotheses against. Open one to read it with its codes, key terms and references.` }));
 
   const watchers = [];
 
@@ -170,7 +171,7 @@ export async function renderSources(view) {
     const body = h("div", { class: "grow" });
     const head = h("div", { class: "index-card" }, h("span", { class: "icon-big" }, icon("sparkles", { size: 26 })), body);
     if (!s.model) {
-      body.append(h("h2", {}, "Search by meaning is off"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, "Documents are searched by their words only. With search by meaning, excerpts are found even when they use other words than your hypothesis. It can be turned on under Settings → Advanced."));
+      body.append(h("h2", {}, "Search by meaning is off"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, "Documents are searched by their words only. With search by meaning, excerpts are found even when they use other words than your hypothesis. It can be turned on under Settings → Documents."));
       indexCard.appendChild(head); return;
     }
     if (!s.passages) {
@@ -968,7 +969,7 @@ export async function renderDocument(view, [docId], query) {
       body.appendChild(h("p", { class: "muted small", style: { margin: "0 0 8px" } },
         st.windows_read ? `The AI has read ${fmt.num(st.windows_read)} of ${plural(st.windows_total || 0, "stretch", "stretches")} of this document` : `Not followed yet: ${plural(st.windows_total || 0, "stretch", "stretches")} of three passages to read`,
         st.windows_failed ? `; ${fmt.num(st.windows_failed)} could not be read` : "", ".",
-        where.where === "cloud" ? " The passages are sent to the Claude API (cloud)." : ""));
+        where.where === "cloud" ? ` ${where.sent || "The passages are sent to the Claude API (cloud)."}` : ""));
       if (!running) {
         const name = h("input", { class: "input input-sm", type: "text", placeholder: "a name used in the document", "aria-label": "Only for one name" });
         const nameBtn = h("button", { class: "btn btn-sm", type: "button", onClick: (e) => { const v = name.value.trim(); if (!v) { name.focus(); return; } start(v, e.currentTarget); } }, "Follow this name");

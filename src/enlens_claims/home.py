@@ -25,7 +25,10 @@ from .llm import (AnthropicBackend, BackendError, BaselineBackend, LocalBackend,
 from .store import Workspace
 
 DEFAULTS = {
-    "backend": "auto",                 # auto | ollama | openai | anthropic | baseline
+    # 0.9: subscription first. A new installation answers with Claude Code on the researcher's own Claude plan; the
+    # tasks wait in the project's queue on this computer and leave it only when the researcher runs Claude Code
+    # (or presses "Start Claude Code" in the app). Local-only installations fall back to "auto" (see load_settings).
+    "backend": "claude_code",          # claude_code | auto | ollama | openai | anthropic | baseline
     "allow_cloud": False,              # the Claude API can be used only when this is on
     "anthropic_model": "claude-opus-5-5",
     "ollama_url": "http://localhost:11434",
@@ -54,15 +57,15 @@ DEFAULTS = {
     "profile_framework": "sdg",        # the codebook of document profiles: the 169 SDG targets (or sdg_goals: 17)
     "themes_k": 20,                    # how many themes a run looks for (2 to 60; fewer in a small project)
     # 0.8
-    "allow_claude_code": False,        # Claude Code (the researcher's own plan) may answer: confirmed once in Settings
+    "allow_claude_code": True,         # Claude Code (the researcher's own plan) may answer (0.9: on by default)
     "use_fable": False,                # the auditor (second opinions, hard checks) runs on Fable instead of Opus
     "task_models": {},                 # per-task models chosen in Settings: {"claude": {row: alias}, "local": {row: model}}
     "local_small_model": "",           # local: the small model for labels and links ("" = the main model does all)
     "routing": True,                   # the Claude API and local servers use the model of each task (G3)
 }
 
-BACKEND_LABELS = {"auto": "Local model (automatic)", "ollama": "Ollama", "openai": "Local OpenAI-compatible server",
-                  "anthropic": "Claude API (cloud)", "claude_code": "Claude Code (your subscription)",
+BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Local model (automatic)",
+                  "ollama": "Ollama", "openai": "Local OpenAI-compatible server", "anthropic": "Claude API (cloud)",
                   "baseline": "Offline demo"}
 CLOUD_BACKENDS = {"anthropic"}
 OFF_COMPUTER = {"anthropic", "claude_code"}   # the passages read leave this computer
@@ -104,6 +107,10 @@ def load_settings() -> dict:
                 s["allow_cloud"] = bool(env_key() or stored_key())
         except (json.JSONDecodeError, OSError):
             pass
+    if local_only() and s.get("backend") in OFF_COMPUTER:
+        # whoever installed ENLENS switched cloud models off for good: the subscription default becomes the local one
+        s["backend"] = "auto"
+        s["allow_claude_code"] = False
     return s
 
 

@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.9.0 (October 2026): subscription first, exploring first
+
+0.9 changes no analysis: every answer still goes through the quote check, a person can overrule it, and every result
+records how it was made. It changes what a researcher meets first: the AI is Claude on their own plan, set up and
+started from the app, and the app opens on exploring the documents, with checking hypotheses second.
+
+**Subscription first.**
+- A new installation answers with **Claude Code on the researcher's own Claude plan** (`backend: "claude_code"`,
+  `allow_claude_code: true` by default). Nothing is sent before the researcher starts Claude Code (a button or
+  `/enlens-run`); then only the passages inside the tasks it takes go to Anthropic. An installation that already
+  chose a model keeps it when it is updated (its settings file names it). With `--local-only` the default stays the
+  local model (`auto`) and Claude Code cannot be chosen.
+- **Set up Claude Code** (first screen, *Settings → AI*): a checklist (Claude Code on this computer, signed in with
+  your plan, the ENLENS plugin added) and one button that prepares the plugin and adds it to Claude Code itself, by
+  running the two commands a person used to type (`claude plugin marketplace add …`, `claude plugin install
+  enlens-run@enlens`; both tested idempotent with Claude Code 2.1.312). What only a person can do (install Claude
+  Code, sign in once) is said plainly; *Set it up from a terminal instead* keeps the two lines. `enlens claude-setup`
+  does the same from a terminal (`--print-only`: only print them). ENLENS finds `claude` on the PATH or where its
+  installers put it; `ENLENS_CLAUDE` names it.
+- **Start Claude Code.** Wherever AI work waits (a check, labels, theme names…) and in the sidebar's queue panel,
+  *Start Claude Code* starts it in the background for that project (`claude -p "/enlens-run:enlens-run <project>"`,
+  allowed only the four ENLENS queue tools and its helpers, run in the ENLENS folder). The page says *Claude Code is
+  working on it*, with *Stop*; it stops by itself when nothing waits; *Stop* gives the batches it had taken back to
+  the queue at once instead of after 30 minutes; a run that ends with a problem shows the end of its report. The
+  first start adds the plugin if that was not done yet. Typing `/enlens-run <project>` in Claude Code still works
+  and is shown one line below. ENLENS still never sees the Claude login. **Not yet done:** a run in a signed-in
+  Claude Code from the button; the command line was checked against Claude Code 2.1.312 (the skill resolves as
+  `enlens-run:enlens-run` with its seven helpers, with the model API blocked), and the whole path with a stand-in.
+- *Save and test* on Claude Code says whether it is set up (and signed in) instead of always "working".
+- The sidebar's privacy line on Claude Code is the normal case, not a warning: *Claude, on your plan · Only the
+  passages of AI tasks leave this computer*.
+
+**Exploring first, clear separations.**
+- New **Overview** page, the start page of a project (and of the app): *Explore the documents* first (Search,
+  Profile, Concepts, Themes, Read one document), *Check hypotheses* second (Check a hypothesis, Check several,
+  Results). Each feature has one line on what it does, one on what it is for, whether it uses the AI, and what is
+  already made in the project (a profile, a glossary, a set of themes, results). It also says which AI is in use
+  and what is left to set up, and holds *Quick look at one document* (moved from the check page) and *Add
+  documents*. `GET /api/projects/<p>/overview` gives the counts.
+- The sidebar is ordered the same way: Overview, Documents, **Explore the documents**, **Check hypotheses**,
+  Settings. Each feature carries an **AI mark**: filled *AI* (needs the AI: checks), dashed *AI* (works without it;
+  the AI can add to it: Profile, Concepts, Themes), no mark (never uses the AI: Search, Documents, Results), with a
+  legend under the list and a tooltip saying what the feature does.
+- Above every feature's title: the part of the app it belongs to and its AI use (*Explore the documents · No AI
+  needed*). One description of every feature (`static/features.js`) feeds the sidebar, the Overview and the titles.
+- The welcome screen leads with exploring ("Explore your documents, and check what they say"); its first step is
+  the AI (Claude Code, with *No Claude plan? Other options*: a local model, or no AI for now).
+
+**Less clutter, fewer menus inside menus.**
+- **Settings as five flat tabs**: *AI*, *Checking*, *Exploring*, *Documents*, *Technical*. In 0.8 the choice of the
+  AI was folded inside *Advanced (for IT staff)* together with seven other sections; now it is the first tab, as
+  four large choices (Claude Code, recommended; a model on this computer, with the local server as one choice inside
+  it; no AI; the Claude API for a team key). Old links to a section open its tab. On the Claude Code route the
+  Technical tab leaves out what only a local model uses (the second model, the context length).
+- The sidebar shows the jobs box only when there are jobs, and the queue panel only when work waits or Claude Code
+  is working; *Theme* and *Quit ENLENS* share a row.
+- Profile: the explanation of what a passage is moved into *Technical details*.
+
+**Usability fixes found on the way.**
+- The check page's "Set up the AI model" link went to the first-run page even when a project existed; it opens
+  *Settings → AI*.
+- Switching projects from a theme or concept page returned to that page of the other project, where it does not
+  exist; it opens the Overview (as from a result or a document).
+- With Claude Code, the AI-labelling and references notes said the passages were sent "to the Claude API"; they now
+  say Claude Code reads them on your plan.
+- Settings links in Search, Documents and the check options pointed at *Settings → Advanced*; they name the tab.
+
+Tests: 9 new (`tests/test_090_subscription_first.py`): the defaults (and local only), set-up with Claude Code missing
+and with a stand-in `claude` (`tests/fake_claude_cli.py`), the run command's allowed tools, *Start Claude Code*
+answering a project's queue and *Stop* returning its batches, the overview counts, the model test, and the order and
+AI marks of the sidebar. A test never touches a real Claude Code (`conftest.py` points `ENLENS_CLAUDE` nowhere).
+`tools/dev_server.py --claude-cli` runs the app with the stand-in.
+
 ## 0.8.2 (October 2026): readable heat grids, updating in place
 
 - **The heat grids stay readable on hover.** On *Profile → Documents by goal/target* and on *Themes* (documents and

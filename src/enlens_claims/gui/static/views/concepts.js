@@ -1,6 +1,7 @@
 // Concepts (F3): a searchable glossary of the terms the documents use, grouped into concepts, and the card of one
 // concept: its wordings, the documents that discuss it, the passages as concordance lines, and related concepts
 // (a person accepts or rejects the links proposed by search by meaning or by the AI).
+import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, debounce, navigate, switchControl } from "../lib.js";
 import { simpleProgress, MiniJob } from "./progress.js";
 
@@ -73,7 +74,7 @@ export async function renderConcepts(view, params, query) {
   let q = query.q || "", sort = ["docs", "mentions", "name"].includes(query.sort) ? query.sort : "docs", offset = Math.max(0, Number(query.offset) || 0);
   const watchers = [];
 
-  view.appendChild(pageHead("Concepts", { sub: `The terms the documents of project “${project}” use, grouped into concepts. Open one to follow it across the documents: where it appears, how it is written, and what it is related to.` }));
+  view.appendChild(pageHead("Concepts", { eyebrow: featureEyebrow("concepts"), sub: `The terms the documents of project “${project}” use, grouped into concepts. Open one to follow it across the documents: where it appears, how it is written, and what it is related to.` }));
 
   const jobBox = h("section", { class: "section", hidden: true, "aria-label": "Progress" });
   const statusBox = h("div");

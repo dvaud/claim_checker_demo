@@ -3,51 +3,47 @@ import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, wat
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 
+// 0.9: Settings as five flat tabs (no section folded inside another). Old links to a section (#/settings/second,
+// #/settings/calibration…) open its tab and scroll to it.
+const TABS = [["model", "AI", "cpu"], ["basics", "Checking", "flask"], ["explore", "Exploring", "network"], ["documents", "Documents", "book-open"], ["advanced", "Technical", "sliders"]];
+const TAB_OF = { model: "model", ai: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
+  advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", data: "advanced" };
+
 export async function renderSettings(view, [section]) {
   const s = { ...App.settings() };
+  const tab = TAB_OF[section] || "model";
   let servers = [];
-  try { servers = (await api("GET", "/api/servers")).servers || []; } catch (_) { servers = []; }
-
-  view.appendChild(pageHead("Settings", { sub: "The basics are all most people need. Everything technical is under Advanced." }));
-  const scrollTo = (id) => { const t = document.getElementById(`s-${id}`); if (!t) return; const adv = t.closest("details"); if (adv) adv.open = true; t.scrollIntoView({ behavior: "smooth", block: "start" }); const hd = t.querySelector("h2"); if (hd) hd.focus(); };
-  const nav = h("nav", { class: "settings-nav", "aria-label": "Settings sections" },
-    [["basics", "Basics"], ["explore", "Exploring"], ["frameworks", "Codebooks"], ["advanced", "Advanced"]].map(([id, label]) => h("a", { href: `#/settings/${id}`, onClick: (e) => { e.preventDefault(); history.replaceState(null, "", `#/settings/${id}`); scrollTo(id); } }, label)));
-  const main = h("div", { class: "stack", style: { gap: "20px" } });
-  view.appendChild(h("div", { class: "settings-layout" }, nav, main));
-
-  const advanced = h("details", { class: "fold settings-section", id: "s-advanced" },
-    h("summary", {}, h("h2", { tabindex: "-1", style: { display: "inline" } }, "Advanced (for IT staff)"), h("span", { class: "muted small", style: { marginLeft: "8px" } }, "AI model service, search by meaning, model test, data folder")),
-    h("p", { class: "muted", style: { margin: "8px 0 0" } }, "Settings for whoever installs the app. You don't need to change anything here."),
-    h("div", { class: "stack", style: { gap: "20px", marginTop: "12px" } }, modelSection(s, servers), routingSection(s, servers), secondModelSection(s, servers), contextSection(s), embedSection(s, servers), reproSection(s), testSection(s), dataSection()));
-  main.append(basicsSection(s), exploreSection(s), await frameworksSection(), advanced);
-  if (section) {
-    const adv = ["model", "routing", "second", "context", "embeddings", "repeatable", "test", "data", "advanced"].includes(section);
-    if (adv) advanced.open = true;
-    setTimeout(() => { const t = document.getElementById(`s-${section}`); if (t) t.scrollIntoView({ block: "start" }); }, 50);
+  if (tab === "model" || tab === "advanced" || tab === "documents") {
+    try { servers = (await api("GET", "/api/servers")).servers || []; } catch (_) { servers = []; }
   }
+  view.appendChild(pageHead("Settings", { sub: {
+    model: "Which AI reads your documents: Claude Code on your own Claude plan, a model on this computer, or none.",
+    basics: "How strict a check is, and how new checks start.",
+    explore: "The defaults of the Profile and Themes pages, and your codebooks.",
+    documents: "Reading scanned PDFs, and search by meaning.",
+    advanced: "For whoever installs the app. Most people never change anything here.",
+  }[tab] }));
+  view.appendChild(h("nav", { class: "settings-tabs", "aria-label": "Settings" },
+    TABS.map(([id, label, ic]) => h("a", { href: `#/settings/${id}`, "aria-current": id === tab ? "page" : null }, icon(ic, { size: 14 }), label))));
+  const main = h("div", { class: "stack", style: { gap: "20px" } });
+  view.appendChild(main);
+  if (tab === "model") main.append(modelSection(s, servers));
+  else if (tab === "basics") main.append(basicsSection(s));
+  else if (tab === "explore") main.append(exploreSection(s), await frameworksSection());
+  else if (tab === "documents") main.append(sectionCard("ocr", "Reading scanned PDFs", "", ocrBlock(s)), embedSection(s, servers));
+  else {
+    // a local model's own settings (second model, context length) only when a local model answers
+    const local = ["auto", "ollama", "openai"].includes(s.backend || "auto");
+    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s), dataSection()].filter(Boolean));
+    if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (a second model, the context length) show here when a local model is chosen under AI."));
+  }
+  if (section && section !== tab) setTimeout(() => { const t = document.getElementById(`s-${section}`); if (t) t.scrollIntoView({ block: "start" }); }, 80);
 }
 
 // ---------------------------------------------------------------------------------------------
 function basicsSection(s) {
-  const p = App.privacy();
   const state = h("span", { class: "save-state", "aria-live": "polite" });
   const strictState = h("span", { class: "save-state", "aria-live": "polite" });
-  const testOut = h("div", { class: "test-result", "aria-live": "polite" });
-  const testBtn = h("button", { class: "btn", type: "button" }, icon("zap", { size: 14 }), "Test the AI model");
-  testBtn.addEventListener("click", async () => {
-    testBtn.disabled = true;
-    replace(testOut, h("div", { class: "notice" }, h("span", { class: "spinner" }, icon("loader")), h("p", {}, "Asking the AI model for a short answer…")));
-    try {
-      const r = await api("POST", "/api/servers/test");
-      replace(testOut, plainTestResult(r));
-    } catch (e) {
-      replace(testOut, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, h("strong", {}, "Not working. "), "The AI model is not answering. Whoever set up the app for you can fix this under Advanced."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, e.message)))));
-    }
-    testBtn.disabled = false;
-  });
-  const modelRow = h("div", { class: `privacy privacy-${p.where} privacy-wide` }, icon(p.icon, { size: 18 }),
-    h("div", {}, h("strong", {}, p.label), h("span", {}, p.plain), h("div", { class: "muted small", style: { marginTop: "2px" } }, p.where === "local" ? "Set up by whoever installed the app. Which model it is, and how to change it, is under Advanced." : "Which model it is, and how to change it, is under Advanced.")));
-
   const thr = rangeControl("How sure the AI must be before a judgement counts", { min: 0.3, max: 0.95, step: 0.05, value: s.threshold ?? 0.6, format: (v) => `${strictness(v)} (${Math.round(Number(v) * 100)}%)`, ends: ["relaxed", "strict"], help: "The AI says how sure it is of each judgement; 60% means it said it was at least 60% sure. Judgements below this are shown but not counted. Your own judgements always count. Changing this updates all results, old and new." });
   const changes = h("div", { "aria-live": "polite" });
   async function reportChanges(oldT, newT) {
@@ -107,25 +103,16 @@ function basicsSection(s) {
     if (/#\/settings\/calibration$/.test(location.hash)) { calibration.scrollIntoView({ block: "start" }); const t = calibration.querySelector(".cal-title"); if (t) { t.setAttribute("tabindex", "-1"); t.focus(); } }
   };
   loadCalibration();
-  const ocr = ocrBlock(s);
   const saveDefaults = async () => { try { await save({ k: k.input.valueAsNumber, per_doc: perDoc.input.valueAsNumber, expand: expand.input.checked, decompose: decompose.input.checked }, state); } catch (_) { /* shown */ } };
   for (const c of [k.input, perDoc.input, expand.input, decompose.input]) c.addEventListener("change", saveDefaults);
   const form = h("div", {},
     h("div", { class: "fields-2" }, h("div", {}, expand, decompose), h("div", {}, k, perDoc)),
     h("div", { class: "save-row" }, h("span", { class: "muted small" }, "Saved as soon as you change something. New checks start with these; each check can still change them under More options."), state));
-  const secondSet = (s.second_model || "").trim();
-  return sectionCard("basics", "Basics", "",
-    h("h3", { style: { marginBottom: "6px" } }, "The AI model"),
-    modelRow,
-    h("div", { class: "btn-row", style: { margin: "10px 0 4px" } }, testBtn, h("span", { class: "muted small" }, "Change the model under Advanced.")),
-    testOut,
-    h("p", { class: "muted small", style: { margin: "8px 0 0" } }, icon("cpu", { size: 13 }), secondSet ? " A second AI model is set up for “Ask a second AI model” on results. " : " No second AI model is set up yet; “Ask a second AI model” on results needs one. ", h("a", { href: "#/settings/second", onClick: (e) => { e.preventDefault(); history.replaceState(null, "", "#/settings/second"); const t = document.getElementById("s-second"); if (t) { const adv = t.closest("details"); if (adv) adv.open = true; t.scrollIntoView({ behavior: "smooth", block: "start" }); const hd = t.querySelector("h2"); if (hd) hd.focus(); } } }, "Choose it under Advanced")),
-    h("h3", { style: { margin: "22px 0 6px" } }, "Strictness"),
+  return sectionCard("basics", "Checking hypotheses", "",
+    h("h3", { style: { marginBottom: "6px" } }, "Strictness"),
     strictForm,
     h("h3", { style: { margin: "22px 0 6px" } }, "How new checks start"),
-    form,
-    h("h3", { style: { margin: "22px 0 6px" } }, "Reading scanned PDFs"),
-    ocr);
+    form);
 }
 
 // Calibration: how often the person agreed with the AI, by the AI's certainty, as a small bar chart with a text
@@ -185,7 +172,7 @@ function ocrBlock(s) {
   lang.addEventListener("change", saveOcr);
   const box = h("div", {});
   if (st.available === false) {
-    box.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "To read scanned PDFs, ask IT to install Tesseract."), " Until then, scanned pages stay without text and a wholly scanned PDF cannot be added. What is missing is listed under Advanced."))));
+    box.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "To read scanned PDFs, ask IT to install Tesseract."), " Until then, scanned pages stay without text and a wholly scanned PDF cannot be added. What is missing is listed under Settings → Technical."))));
   } else if (st.available) {
     box.appendChild(h("p", { class: "muted small", style: { margin: "0 0 8px" } }, icon("circle-check", { size: 13 }), " Text recognition is installed on this computer."));
   }
@@ -228,55 +215,66 @@ async function save(changes, stateEl) {
 
 // ---------------------------------------------------------------------------------------------
 function modelSection(s, servers) {
-  const labels = (App.state && App.state.backend_labels) || {};
-  const subs = { auto: "The first local server found: Ollama, then LM Studio, llama.cpp, Jan, vLLM.", ollama: "A model served by Ollama on this computer.", openai: "LM Studio, llama.cpp, Jan, vLLM… at a local address.", anthropic: "The excerpts read are sent to Anthropic's servers, billed to the team's API key. For a shared installation.", claude_code: "Claude Code, signed in with your own Claude plan, reads the excerpts; ENLENS prepares the work and checks every quote.", baseline: "No AI: a word-overlap stand-in. For trying the app only; its results are not findings." };
-  const icons = { auto: "house", ollama: "house", openai: "house", anthropic: "cloud", claude_code: "cloud", baseline: "cpu" };
+  const localOnly = !!(App.state && App.state.local_only);
   let allowCC = !!s.allow_claude_code;
   const state = h("span", { class: "save-state", "aria-live": "polite" });
-  const radios = h("div", { class: "radio-cards", role: "radiogroup", "aria-label": "Model service, on this computer" });
-  let radiosWrap = null;
   const detail = h("div", {});
   let backend = s.backend || "auto";
+  const isLocal = (b) => ["auto", "ollama", "openai"].includes(b);
   const allowCloud = switchControl("Allow cloud models", !!s.allow_cloud, { help: "" });
-  const cloudBox = h("div", { class: "cloud-box" }, allowCloud, h("p", {}, icon("alert-triangle", { size: 13 }), " With a cloud model the hypothesis and the excerpts read leave this computer and are billed to your key. Local models never send anything."));
-  allowCloud.input.addEventListener("change", () => { if (backend !== "anthropic" && !allowCloud.input.checked) cloudBox.remove(); });
+  const cloudBox = h("div", { class: "cloud-box" }, allowCloud, h("p", {}, icon("alert-triangle", { size: 13 }), " With the Claude API the hypothesis and the excerpts read leave this computer and are billed to the key."));
 
-  const cloudGroup = h("div", { class: "cloud-group" }, h("div", { class: "cloud-group-title" }, icon("cloud", { size: 14 }), "Not on this computer"),
-    h("p", { class: "small", style: { margin: "0 0 8px" } }, "Excerpts of your documents would be sent to Anthropic's servers. You will be asked to confirm."));
-  for (const key of ["auto", "ollama", "openai", "baseline", "claude_code", "anthropic"]) {
-    const input = h("input", { type: "radio", name: "backend", value: key, checked: backend === key });
+  // 0.9: subscription first: four large choices, Claude Code first
+  const ROUTES = [
+    ["claude_code", "Claude Code", "cloud", "Recommended", "Claude reads the excerpts on your own Claude plan (Pro or Max). ENLENS prepares the work, starts Claude Code for you and checks every quote.", "Only the passages inside the tasks go to Anthropic"],
+    ["local", "A model on this computer", "house", "", "Ollama, LM Studio, llama.cpp, Jan or vLLM. Free and fully private; needs a capable computer and judges less well than Claude.", "Nothing leaves this computer"],
+    ["baseline", "No AI (demo)", "cpu", "", "A word-overlap stand-in, to see how the app works. Search, keyword profiles, the glossary and themes work fully without AI.", "Nothing leaves this computer"],
+    ["anthropic", "Claude API (team key)", "key", "", "For a shared installation: the Claude API with the team's key, billed per use.", "The excerpts read go to Anthropic"],
+  ];
+  const routeOf = (b) => (isLocal(b) ? "local" : b);
+  const radiosWrap = h("div", { class: "route-cards", role: "radiogroup", "aria-label": "Which AI reads the documents" });
+  const select = (key) => { for (const inp of radiosWrap.querySelectorAll("input")) inp.checked = inp.value === key; };
+  for (const [key, title, ic, badge, sub, where] of ROUTES) {
+    if (localOnly && (key === "claude_code" || key === "anthropic")) continue;
+    const input = h("input", { type: "radio", name: "route", value: key, checked: routeOf(backend) === key });
     input.addEventListener("change", async () => {
-      if (key === "claude_code" && backend !== "claude_code") {
+      const prev = routeOf(backend);
+      if (key === "claude_code" && !allowCC) {
         const ok = await dialog({
           title: "Let Claude Code read the excerpts, on your own Claude plan?",
-          body: h("div", {}, h("p", {}, "The AI buttons of ENLENS then prepare tasks instead of asking a model. You run Claude Code yourself and type /enlens-run there; it takes the tasks in small batches."),
+          body: h("div", {}, h("p", {}, "The AI buttons of ENLENS then prepare tasks; Claude Code answers them, started by ENLENS when you press Start Claude Code, or by you with /enlens-run."),
             h("p", {}, h("strong", {}, "The passages inside the tasks Claude Code takes are sent to Anthropic."), " Your documents, results and reviews stay on this computer, and every answer is checked here against the text."),
-            h("p", { class: "muted small" }, "ENLENS never starts Claude Code, never sees your Claude login and never runs on anyone else's plan. Nothing is sent before you save and run /enlens-run.")),
-          actions: [{ text: "Keep the AI on this computer", value: false, primary: true, id: "dlg-safe" }, { text: "Use Claude Code", value: true }],
-          onOpen(dlg) { const b = dlg.querySelector("#dlg-safe"); if (b) b.focus(); },
+            h("p", { class: "muted small" }, "ENLENS never sees your Claude login and never runs on anyone else's plan.")),
+          actions: [{ text: "Keep the AI on this computer", value: false, id: "dlg-safe" }, { text: "Use Claude Code", value: true, primary: true }],
         });
-        if (!ok) { const prev = radiosWrap.querySelector(`input[value="${backend}"]`); if (prev) prev.checked = true; return; }
+        if (!ok) { select(prev); return; }
         allowCC = true;
       }
-      if (key === "anthropic" && backend !== "anthropic") {
+      if (key === "anthropic" && prev !== "anthropic") {
         const ok = await dialog({
-          title: "Use a cloud AI instead of the one on this computer?",
-          body: h("div", {}, h("p", {}, "With the Claude API, the hypothesis and the excerpts of your documents that the AI reads are sent to Anthropic's servers on the internet, and the use is billed to an account key."),
-            h("p", {}, "Until now everything stayed on this computer. Results you already have are not sent anywhere."),
-            h("p", { class: "muted small" }, "Nothing is sent before you also switch on “Allow cloud models”, enter a key and save.")),
-          actions: [{ text: "Keep the AI on this computer", value: false, primary: true, id: "dlg-safe" }, { text: "Continue with the cloud option", value: true }],
+          title: "Use the Claude API with a team key?",
+          body: h("div", {}, h("p", {}, "With the Claude API, the hypothesis and the excerpts of your documents that the AI reads are sent to Anthropic's servers, and the use is billed to an account key."),
+            h("p", { class: "muted small" }, "For one researcher, Claude Code on your own plan is simpler. Nothing is sent before you also switch on “Allow cloud models”, enter a key and save.")),
+          actions: [{ text: "Back", value: false, primary: true, id: "dlg-safe" }, { text: "Continue with the Claude API", value: true }],
           onOpen(dlg) { const b = dlg.querySelector("#dlg-safe"); if (b) b.focus(); },
         });
-        if (!ok) { const prev = radiosWrap.querySelector(`input[value="${backend}"]`); if (prev) prev.checked = true; return; }
+        if (!ok) { select(prev); return; }
       }
-      backend = key; drawDetail();
+      backend = key === "local" ? (isLocal(s.backend) ? s.backend : "auto") : key;
+      drawDetail();
     });
-    const cloudish = key === "anthropic" || key === "claude_code";
-    const cardEl = h("label", { class: "radio-card" + (cloudish ? " radio-card-cloud" : "") }, input, h("span", {}, h("span", { class: "rc-title it" }, icon(icons[key], { size: 14 }), labels[key] || key), h("span", { class: "rc-sub" }, subs[key])));
-    if (cloudish) cloudGroup.appendChild(cardEl); else radios.appendChild(cardEl);
+    radiosWrap.appendChild(h("label", { class: "route-card" }, input,
+      h("span", { class: "rc-top" }, icon(ic, { size: 16 }), title, badge ? h("span", { class: "rc-badge" }, badge) : null),
+      h("span", { class: "rc-sub" }, sub),
+      h("span", { class: "rc-where" }, icon(key === "claude_code" || key === "anthropic" ? "cloud" : "house", { size: 12 }), where)));
   }
-  const lockedLine = h("p", { class: "muted small", style: { marginTop: "10px" } }, icon("shield", { size: 13 }), " Cloud models are switched off on this computer by whoever installed ENLENS.");
-  radiosWrap = h("div", {}, h("div", { class: "muted small", style: { margin: "0 0 6px" } }, "On this computer"), radios, App.state && App.state.local_only ? lockedLine : cloudGroup);
+  const lockedLine = localOnly ? h("p", { class: "muted small" }, icon("shield", { size: 13 }), " Cloud models are switched off on this computer by whoever installed ENLENS.") : null;
+  // which local server (the three local routes of 0.8, as one choice)
+  const localKind = () => {
+    const sel = h("select", { class: "select" }, [["auto", "Automatic: the first server found"], ["ollama", "Ollama"], ["openai", "LM Studio, llama.cpp, Jan, vLLM (OpenAI-compatible)"]].map(([v, t]) => h("option", { value: v, selected: backend === v }, t)));
+    sel.addEventListener("change", () => { backend = sel.value; drawDetail(); });
+    return field("Local model server", sel);
+  };
 
   const ollamaSrv = servers.find((x) => x.kind === "ollama");
   const openaiSrv = servers.find((x) => x.kind !== "ollama");
@@ -325,18 +323,18 @@ function modelSection(s, servers) {
     const thinkRow = () => h("div", { class: "fields-2" },
       field("Reasoning (thinking models only)", fields.think, { help: "Reasoning can make judgements more careful but makes each check slower. “Only when judging excerpts” reasons where it can help and not for search words or splitting a hypothesis. Test it before relying on it (Test a model, with reasoning on and off)." }),
       h("div", { class: "field" }, h("label", { class: "field-label" }, "Reasoning budget (tokens)", fields.think_budget), budgetNote));
-    if (backend !== "anthropic" && allowCloud.input.checked) detail.append(cloudBox);
+    if (isLocal(backend)) detail.append(localKind());
     if (backend === "auto") {
       detail.append(serverList(), h("p", { class: "muted small" }, "The first server found is used. If a chat model is named below for Ollama or an OpenAI-compatible server, it is preferred when that server has it."),
         fields.ollamaModel = modelPicker("m-ollama", s.ollama_model, ollamaSrv ? ollamaSrv.chat_models : [], "e.g. qwen3:8b"), thinkRow());
       fields.ollamaModel.querySelector(".field-label").textContent = "Preferred Ollama model";
     } else if (backend === "ollama") {
       detail.append(serverList(), h("div", { class: "fields-2" }, field("Ollama address", fields.ollama_url), fields.ollamaModel = modelPicker("m-ollama", s.ollama_model, ollamaSrv ? ollamaSrv.chat_models : [], "e.g. qwen3:8b")),
-        thinkRow(), h("p", { class: "muted small" }, "Context length: set automatically; see “Context length and search order” below."));
+        thinkRow(), h("p", { class: "muted small" }, "Context length: set automatically; see Settings → Technical."));
     } else if (backend === "openai") {
       detail.append(serverList(), h("div", { class: "fields-2" }, field("Server address", fields.openai_url, { help: "The /v1 base URL of LM Studio, llama.cpp, Jan, vLLM…" }), fields.openaiModel = modelPicker("m-openai", s.openai_model, openaiSrv ? openaiSrv.chat_models : [], "leave empty for the first model listed")));
     } else if (backend === "anthropic") {
-      detail.append(cloudBox, field("Model for judging excerpts", fields.anthropic_model, { help: "For example claude-opus-5-5. The other kinds of task use their own model: see “AI model per task” below." }), keyBox(), fableSwitch());
+      detail.append(cloudBox, field("Model for judging excerpts", fields.anthropic_model, { help: "For example claude-opus-5-5. The other kinds of task use their own model: see “AI model per task” under Technical." }), keyBox(), fableSwitch());
     } else if (backend === "claude_code") {
       detail.append(claudeCodeBox(), fableSwitch());
     } else {
@@ -349,24 +347,9 @@ function modelSection(s, servers) {
     return fields.use_fable;
   }
 
-  // Claude Code: what the researcher does once (the plugin), and how a run is started.
+  // Claude Code (0.9): a checklist of what is ready, one button that sets up what is not, and how a run starts.
   function claudeCodeBox() {
-    const box = h("div", { class: "card card-plain", style: { padding: "12px 14px" } });
-    const draw = (info) => {
-      replace(box,
-        h("div", { class: "field-label" }, "Set up Claude Code (once)"),
-        info.ready ? h("div", { class: "notice notice-ok", style: { margin: "6px 0 10px" } }, icon("circle-check"), h("p", {}, "The ENLENS plugin is prepared for this installation. If you have not added it to Claude Code yet, type these two lines in a terminal:"))
-          : h("p", { class: "small" }, "Claude Code needs the ENLENS plugin: it adds the /enlens-run command, the helpers and the ENLENS connector. Prepare it here (or type ", h("code", {}, "enlens claude-setup"), " in a terminal), then type the two lines it shows."),
-        info.ready ? h("div", {}, info.commands.map((c) => copyLine(c))) : h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
-          try { const r = await api("POST", "/api/claude-setup", {}); if (r.problems && r.problems.length) toast(r.problems.join("; "), "warn"); draw(r); } catch (e) { showError(e); }
-        } }, icon("download", { size: 13 }), "Prepare the plugin"),
-        h("p", { class: "muted small", style: { marginTop: "8px" } }, "Then restart Claude Code. To run the work an AI button prepared, open Claude Code in any folder and type ", h("code", {}, `/enlens-run ${App.project || "<project>"}`), ". You follow the progress here. A run can stop at any moment (a usage limit, a closed laptop); the next /enlens-run continues where it stopped."),
-        h("p", { class: "muted small" }, icon("shield", { size: 13 }), " ENLENS never starts Claude Code, never sees your Claude login, and writes nothing to Claude Code's settings."));
-    };
-    api("GET", "/api/claude-setup").then(draw).catch(() => draw({ ready: false, commands: [] }));
-    return h("div", { class: "stack", style: { gap: "10px" } },
-      h("div", { class: "cloud-box" }, h("p", {}, icon("alert-triangle", { size: 13 }), " With Claude Code the passages inside the tasks it takes are sent to Anthropic, on your own Claude plan. Your documents, results and reviews stay here.")),
-      box);
+    return h("div", { class: "stack", style: { gap: "10px" } }, claudeSetupCard());
   }
 
   function keyBox() {
@@ -409,8 +392,8 @@ function modelSection(s, servers) {
     }
     return c;
   };
-  const form = h("form", { onSubmit: async (e) => { e.preventDefault(); try { await save(collect(), state); Object.assign(s, App.settings()); toast(`Model service: ${App.state.backend_label}`, "ok"); } catch (_) { /* shown */ } } },
-    radiosWrap, detail, h("div", { class: "save-row" }, saveBtn, testBtn, state));
+  const form = h("form", { onSubmit: async (e) => { e.preventDefault(); try { await save(collect(), state); Object.assign(s, App.settings()); toast(`AI: ${App.state.backend_label}`, "ok"); } catch (_) { /* shown */ } } },
+    radiosWrap, lockedLine, detail, h("div", { class: "save-row" }, saveBtn, testBtn, state));
   testBtn.addEventListener("click", async () => {
     testBtn.disabled = true;
     replace(testOut, h("div", { class: "notice" }, h("span", { class: "spinner" }, icon("loader")), h("p", {}, "Testing the model service…")));
@@ -425,7 +408,7 @@ function modelSection(s, servers) {
     testBtn.disabled = false;
   });
   drawDetail();
-  return sectionCard("model", "AI model service", "Which model reads and judges the excerpts. Local servers keep every word on this computer.", form, testOut);
+  return sectionCard("model", "Which AI reads your documents", "", form, testOut);
 }
 
 export function testResult(r) {
@@ -764,4 +747,51 @@ function dataSection() {
       h("div", { class: "kv" }, h("dt", {}, "Text recognition (OCR) for scanned PDFs"), h("dd", {}, ocr.available ? `installed (Tesseract${ocr.languages && ocr.languages.length ? `, languages: ${ocr.languages.join(", ")}` : ""})`
         : ["not available", ocr.missing && ocr.missing.length ? h("div", { class: "muted small", style: { fontWeight: 400 } }, `Missing: ${ocr.missing.map((m) => ({ tesseract: "the Tesseract program (tesseract-ocr)", pypdfium2: "the Python package pypdfium2", pillow: "the Python package pillow" }[m] || m)).join("; ")}. Install them, then restart the app.`) : null]))),
     h("p", { class: "muted small", style: { marginTop: "12px" } }, "Each project is a folder with a database, the added files and the settings. Removed projects go to a trash folder inside the data folder."));
+}
+
+// ---------------------------------------------------------------------------------------------
+// 0.9: setting up Claude Code, as a checklist: Claude Code found, signed in, the ENLENS plugin added. One button
+// does what can be done from here (prepare the plugin and add it to Claude Code); what only a person can do (install
+// Claude Code, sign in) is said plainly. Used in Settings and on the first-run page.
+export function claudeSetupCard(opts = {}) {
+  const box = h("div", { class: "card card-plain cc-card", style: { padding: "14px 16px" } }, h("p", { class: "muted small" }, "Looking for Claude Code on this computer…"));
+  const log = h("div", { "aria-live": "polite" });
+  const step = (ok, title, text) => h("li", { class: `cc-step ${ok === true ? "ok" : ok === false ? "bad" : ""}` },
+    h("span", { class: "cc-mark", "aria-hidden": "true" }, ok === true ? icon("check", { size: 12 }) : ok === false ? "!" : "?"),
+    h("div", {}, h("strong", {}, title), text ? h("span", { class: "small" }, text) : null));
+  const draw = (info) => {
+    const st = info.status || {};
+    const ready = !!st.ready;
+    if (ready && opts.onReady) opts.onReady();
+    const btn = h("button", { class: `btn ${ready ? "btn-sm" : "btn-primary"}`, type: "button" }, icon(ready ? "refresh" : "zap", { size: 14 }), ready ? "Check again" : "Set up Claude Code");
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      replace(log, h("p", { class: "muted small" }, h("span", { class: "spinner" }, icon("loader", { size: 13 })), " Setting up… (this takes a few seconds)"));
+      try {
+        if (ready) { draw(await api("GET", "/api/claude-setup?refresh=1")); replace(log); }
+        else {
+          const r = await api("POST", "/api/claude-setup", {});
+          replace(log, h("ul", { class: "cc-log" }, (r.steps || []).map((x) => h("li", { class: x.ok ? "" : "bad" }, `${x.ok ? "Done" : "Did not work"}: ${x.step}`, x.ok ? null : h("div", { class: "small" }, x.text)))));
+          draw({ ...r, status: r.status });
+          if (r.status && r.status.ready) toast("Claude Code is set up.", "ok");
+        }
+      } catch (e) { replace(log); showError(e); }
+      btn.disabled = false;
+    });
+    replace(box,
+      h("div", { class: "field-label" }, ready ? "Claude Code is ready" : "Set up Claude Code (once)"),
+      h("ol", { class: "cc-steps" },
+        step(st.found ? true : false, "Claude Code on this computer", st.found ? (st.version || "found") : "Not found. Install it from claude.com/claude-code (the terminal program), then press the button again."),
+        step(st.signed_in === true ? true : st.signed_in === false ? false : null, "Signed in with your Claude plan",
+          st.signed_in === true ? "Pro, Max, Team or Enterprise" : st.signed_in === false ? "Open a terminal, type claude, and sign in once." : "Claude Code asks you to sign in the first time it starts."),
+        step(st.installed === true ? true : st.found ? false : null, "The ENLENS plugin added to Claude Code",
+          st.installed ? "It adds /enlens-run, its helpers and the ENLENS connector." : "The button below adds it (nothing else in Claude Code is changed).")),
+      h("div", { class: "btn-row" }, btn),
+      log,
+      h("p", { class: "muted small", style: { marginTop: "10px" } }, "Then press ", h("strong", {}, "Start Claude Code"), " wherever work waits (or in the sidebar): ENLENS starts Claude Code in the background on this project's work, and the results appear as they come in. You can also type ", h("code", {}, `/enlens-run ${App.project || "<project>"}`), " in Claude Code yourself."),
+      (info.commands || []).length ? h("details", { class: "fold" }, h("summary", {}, "Set it up from a terminal instead"),
+        h("p", { class: "small muted" }, "Type these two lines, then restart Claude Code:"), h("div", {}, info.commands.map((c) => copyLine(c)))) : null);
+  };
+  api("GET", "/api/claude-setup").then(draw).catch(() => draw({ status: {}, commands: [] }));
+  return box;
 }

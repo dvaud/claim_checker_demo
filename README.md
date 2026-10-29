@@ -1,73 +1,71 @@
-# ENLENS: check hypotheses against your own documents, locally
+# ENLENS: explore your documents, and check what they say, with Claude on your own plan
 
-ENLENS reads your sources (reports, papers, policy documents, interview notes) and tells you whether a hypothesis is
-supported, partly supported, contradicted or met with mixed evidence, with the exact words of each source, where they
-are (page or paragraph), and a quote checked character by character against the source text. You review the AI's
-judgements like a co-coder's: agree, change them, point to the sentence you mean; your judgements count and are kept
-next to the AI's in the Excel download. It runs on your computer: documents, history and models stay there unless
-you explicitly allow a cloud model (and whoever installs it can switch that off for good).
+ENLENS reads your sources (reports, papers, policy documents, interview notes) and helps you find your way through
+them before you claim anything: every place a word occurs, the codes each document addresses (the SDG targets or
+your own codebook), a glossary of terms grouped into concepts you can follow from one document to the next, themes
+across the documents, what "it" and "they" refer to, highlighted copies, and an export in Cross-Doc's FlexiConc
+format. Most of that needs no AI at all; what the AI adds is quoted, checked against the text, and yours to overrule.
 
-The app is written for researchers who do not program: plain language on every working screen, technical details
-kept under *Technical details* and *Settings → Advanced (for IT staff)*.
+When you have a statement to test, ENLENS also checks it: supported, partly supported, contradicted or mixed
+evidence, with the exact words of each source, where they are (page or paragraph), and a quote checked character by
+character against the source text. You review the AI's judgements like a co-coder's; your judgements count and are
+kept next to the AI's in the Excel download.
 
-Since 0.7 it also lets you explore the documents before and beside checking, and replaces the Cross-Doc SDG
-Explorer: a concordance search across all documents, a profile of the codes each document addresses (the SDG targets
-or your own codebook), a glossary of terms grouped into concepts, themes across the documents, references followed
-inside a document, highlighted PDFs, a quick look at one document, and an export in Cross-Doc's FlexiConc format.
-Most of it needs no model; what the AI adds is quoted, checked against the text, and yours to overrule.
+**Subscription first (0.9).** The AI is Claude, through Claude Code signed in with your own Claude plan (Pro, Max,
+Team or Enterprise). ENLENS sets Claude Code up by itself and starts it when you press *Start Claude Code*; each kind
+of task goes to the right model (labels on Haiku, theme names on Sonnet, checks on Opus). Your documents, results
+and reviews stay on your computer: only the passages inside the AI's tasks are sent to Anthropic. A model on your own
+computer (Ollama, LM Studio…) and a shared installation on the Claude API remain available, and whoever installs it
+can switch everything off the computer off for good (`--local-only`).
 
-Since 0.8 the AI can also be Claude Code, signed in with your own Claude plan. ENLENS prepares the work in a queue
-and checks every answer. You type `/enlens-run <project>` in Claude Code, which hands each kind of task to a helper
-on the right model (labels on Haiku, theme names on Sonnet, checks on Opus) and steps hard cases up once. ENLENS never
-starts Claude Code and never sees its login. A shared installation answers the same queue with the Claude API and
-the team's key.
-
-It grew out of the ENLENS green hydrogen pilot (a Value Chain Assessment checked against its cited literature); that
-SDG pipeline is still included as an optional pack.
+The app is written for researchers who do not program: plain language on every working screen; each feature says
+what it does and whether it uses the AI; technical details are kept under *Technical details* and
+*Settings → Technical*. It grew out of the Cross-Doc SDG Explorer and the ENLENS green hydrogen pilot (a Value Chain
+Assessment checked against its cited literature); that SDG pipeline is still included as an optional pack.
 
 ## Start
 
 ```bash
-pip install -e .                 # Python 3.10+; core needs only pydantic, pypdf, openpyxl
-ollama pull qwen3:8b             # any local chat model (Ollama, LM Studio, llama.cpp, Jan, vLLM all work)
-ollama pull nomic-embed-text     # optional: search by meaning as well as by words (bge-m3 for mixed languages)
+pip install -e '.[connector]'    # Python 3.10+; the core needs only pydantic, pypdf, openpyxl
 enlens-gui                       # opens http://127.0.0.1:8765
 ```
 
-The app finds the local model server by itself. Create a project, add documents, and check a hypothesis. No model
-yet? The offline demo shows how everything works. Installing it for someone else: `enlens-gui --make-launcher` puts
-an ENLENS icon on their Desktop (double-click: no terminal needed; *Quit ENLENS* in the app stops it), and
-`--local-only` (or `ENLENS_LOCAL_ONLY=1`) removes the cloud option entirely. Scanned PDFs: `pip install -e '.[ocr]'`
-plus Tesseract.
+You need [Claude Code](https://claude.com/claude-code) on the computer, signed in once with your Claude plan (type
+`claude` in a terminal and sign in). The first screen of the app finds it and adds the ENLENS plugin to it with one
+button (or, from a terminal, `enlens claude-setup`). Then create a project, add documents, and explore. Wherever AI
+work waits (labels, theme names, a check…), press **Start Claude Code**: ENLENS starts it in the background on that
+project's work and the results appear as they come in. You can also type `/enlens-run <project>` in Claude Code
+yourself.
+
+No Claude plan? Choose *A model on this computer* (first screen or *Settings → AI*):
+
+```bash
+ollama pull qwen3:8b             # any local chat model (Ollama, LM Studio, llama.cpp, Jan, vLLM all work)
+ollama pull nomic-embed-text     # optional: search by meaning as well as by words (bge-m3 for mixed languages)
+```
+
+Installing it for someone else: `enlens-gui --make-launcher` puts an ENLENS icon on their Desktop (double-click: no
+terminal needed; *Quit ENLENS* in the app stops it), and `--local-only` (or `ENLENS_LOCAL_ONLY=1`) removes every
+option that sends text off the computer. Scanned PDFs: `pip install -e '.[ocr]'` plus Tesseract.
 
 From the command line:
 
 ```bash
 enlens --ws myproject init
 enlens --ws myproject ingest ~/Reports/                    # PDFs, Word (.docx), HTML, text, Markdown, zips
-enlens --ws myproject embed --embed-model nomic-embed-text  # optional semantic index
-enlens --ws myproject check "Remote work lowers commuting emissions in large cities." --decompose
-enlens --ws myproject batch hypotheses.csv --out results.csv
-enlens detect                                               # which local model servers are running
 enlens --ws myproject search "commuting emissions" --mode phrase --out hits.csv
 enlens --ws myproject profile --keywords-only --out profile.xlsx   # SDG targets per document, no model
 enlens --ws myproject themes --k 20 --out themes.xlsx
 enlens --ws myproject export-flexiconc myproject.sqlite     # for tools that read Cross-Doc's FlexiConc format
+enlens --ws myproject prepare label                         # AI work for Claude Code; then /enlens-run myproject
+enlens --ws myproject check "Remote work lowers commuting emissions in large cities." --decompose --backend ollama
+enlens --ws myproject batch hypotheses.csv --out results.csv --backend ollama
+enlens detect                                               # which local model servers are running
 ```
 
-Inside the Claude app or Claude Code (Claude does the reading on your plan; only the passages shown leave the
-computer): `pip install -e '.[connector]' && enlens-mcp --install-claude-desktop`.
-
-Claude Code as the AI behind every task (0.8): in Settings choose *Claude Code (your subscription)*, then once
-
-```bash
-pip install -e '.[connector]'
-enlens claude-setup                       # prepares the plugin and prints the two lines that add it to Claude Code
-```
-
-Press any AI button in ENLENS; then in Claude Code, opened in any folder, type `/enlens-run <project>`.
-`enlens prepare label|link|theme|resolve|check` prepares the same work from the command line, and `enlens queue
-status|run` shows it or answers it here (`--backend anthropic` for a shared installation).
+`enlens prepare label|link|theme|resolve|check` prepares AI work for Claude Code from the command line, and `enlens
+queue status|run` shows it or answers it here (`--backend anthropic` for a shared installation). Inside the Claude
+app (Claude reads on your plan; only the passages shown leave the computer): `enlens-mcp --install-claude-desktop`.
 
 ## Updating
 
@@ -85,6 +83,37 @@ enlens update            # later: fetch the new version (add --check to only loo
 Because the install is editable (`-e`), the app runs the code in that folder: `enlens update` pulls the new version
 and reinstalls only when its requirements changed. Restart the app afterwards (*Quit ENLENS*, then the icon). Run
 it as `~/enlens-app/.venv/bin/enlens update` if the venv is not active.
+
+## Exploring the documents (the main part of the app)
+
+| Page | What it gives | Model? |
+| --- | --- | --- |
+| Search | Every place words occur, with the words around them; phrases, near, other forms, words nearby; Excel/CSV | no |
+| Profile | The codes each document addresses, how much and where, with the words or quote and reason behind each | keywords first; the AI confirms |
+| Concepts | A glossary of terms grouped into concepts (abbreviations, wordings, your links); where each appears | optional |
+| Themes | Themes across the documents, by document and by code; rename, merge, move | optional (names) |
+| A document | Codes, key terms, references ("it", "they"), search, a highlighted copy | references only |
+
+The *Overview* page (the start page of a project) shows these first, each with what it does, whether it uses the
+AI and what is already made; checking hypotheses comes second. In the sidebar a filled **AI** mark means the feature
+needs the AI, a dashed one that the AI is optional, and no mark that it never uses the AI.
+
+Where the parts of the Cross-Doc SDG Explorer went:
+
+| Cross-Doc | ENLENS |
+| --- | --- |
+| Single-document concordance (AND / OR), token strip | Search (any / all / phrase / near), across all documents or one |
+| SDG classifier, dual consensus | Profile: keywords and meaning first, the AI confirms with a quote and a reason |
+| Explainability (integrated gradients, span masking, keyphrases) | Key terms per document and passage; the words and reason behind every label |
+| Coreference (fastcoref, LingMess) | References in a document (the AI follows "it" and "they"); checks say what a quote's "it" is |
+| Global coreference (trie) across documents | Concepts: one concept followed across every document, with its wordings |
+| SciCo clusters, communities and summaries | Themes, named by the AI with checked quotes |
+| `pdf_highlight_post.py` | Highlighted copies of a document, an answer, a column of the evidence map |
+| FlexiConc SQLite | *For FlexiConc / Cross-Doc* on the Projects page, `enlens export-flexiconc` |
+
+Every model answer records the model, its exact version (digest), the prompt version and the seed (42 by default,
+temperature 0); every Excel download ends with *How these results were made*. Since 0.8 it also records the route
+(Claude Code, the Claude API, a local server), the helper, and whether the answer came from the stronger model.
 
 ## What a check does
 
@@ -107,20 +136,6 @@ which documents decide which answers, see how often you agree with the AI at eac
 result or all results for Excel (summary, every excerpt with who judged it, the map) or as CSV/JSON, and hand the
 whole project to a colleague as one zip.
 
-## Exploring the documents (0.7)
-
-| Page | What it gives | Model? |
-| --- | --- | --- |
-| Search | Every place words occur, with the words around them; phrases, near, other forms, words nearby; Excel/CSV | no |
-| Profile | The codes each document addresses, how much and where, with the words or quote and reason behind each | keywords first; the AI confirms |
-| Concepts | A glossary of terms grouped into concepts (abbreviations, wordings, your links); where each appears | optional |
-| Themes | Themes across the documents, by document and by code; rename, merge, move | optional (names) |
-| A document | Codes, key terms, references ("it", "they"), search, a highlighted copy | references only |
-
-Every model answer records the model, its exact version (digest), the prompt version and the seed (42 by default,
-temperature 0); every Excel download ends with *How these results were made*. Since 0.8 it also records the route
-(Claude Code, the Claude API, a local server), the helper, and whether the answer came from the stronger model.
-
 ## A model per task (0.8)
 
 | Task | Claude Code and the Claude API | Steps up to | Local |
@@ -134,11 +149,14 @@ A task steps up once: when its answer's certainty is under 0.6, after two reject
 stronger model*. The defaults are starting points until the runs on the pilot (`enlens acceptance queue|score`,
 see docs/MODEL_CHOICE.md) set them.
 
-## Local first
+## Privacy
 
-- The default model service is whatever local server is running. The Claude API is available only after
-  *Allow cloud models* is switched on in Settings (or `--backend anthropic` on the command line), and Claude Code only
-  after its own confirmation; only the passages inside the tasks it takes leave the computer.
+- Claude Code (the default from 0.9) runs on your own Claude plan. ENLENS never sees its login: Claude Code uses its
+  own. Started from the app, it may use only the four ENLENS queue tools and its helpers (`--allowedTools`), and
+  only the passages inside the tasks it takes are sent to Anthropic. Stop it at any time; what it had taken waits
+  again.
+- A model on this computer keeps every word on it. The Claude API is available only after *Allow cloud models* is
+  switched on (or `--backend anthropic` on the command line). `--local-only` hides both cloud options for good.
 - The app is a small standard-library server on 127.0.0.1 with a per-run token; the page loads nothing from the
   internet (no CDN, fonts or analytics). No Streamlit, no telemetry.
 - Projects are plain folders with one SQLite database; settings live in `~/enlens` (or `ENLENS_HOME`).
@@ -147,7 +165,7 @@ see docs/MODEL_CHOICE.md) set them.
 
 - [docs/MANUAL.md](docs/MANUAL.md): the manual (app, command line, connector, models, the SDG pack).
 - [docs/API.md](docs/API.md): the local app's HTTP API.
-- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.8.1), including the defects fixed.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.9.0), including the defects fixed.
 - [docs/USER_TESTS.md](docs/USER_TESTS.md): the first-time user tests behind the app (0.5.1 to 0.7.0).
 - [docs/MODEL_CHOICE.md](docs/MODEL_CHOICE.md): which model each task needs, measured on the pilot (0.8: the method
   and the empty tables, until the runs are made).
@@ -174,13 +192,14 @@ see docs/MODEL_CHOICE.md) set them.
 | `flexiconc_export.py`, `runs.py`, `acceptance.py` | The FlexiConc export; runs and "How these results were made"; the 0.7 acceptance measures |
 | `mcp_server.py` | The connector for the Claude app and Claude Code (0.8: also the queue tools) |
 | `taskqueue.py`, `routing.py` | The task queue for Claude Code (claims, order, estimates, waiting) and the model of each kind of task (0.8) |
-| `claude_setup.py`, `claude_plugin/` | The Claude Code plugin: `/enlens-run`, its seven helpers and the connector (0.8) |
+| `claude_setup.py`, `claude_plugin/` | The Claude Code plugin: `/enlens-run`, its seven helpers and the connector (0.8); finding Claude Code, adding the plugin to it and starting it for a project's queue (0.9) |
 | `evaluation.py` | The acceptance runs per kind and model through the queue, and their scores (0.8, G6) |
 | `vca.py`, `sources.py`, `analysis.py`, `review.py`, `report.py`, `benchmark.py` | The SDG / value chain assessment pack |
 
 `tools/dev_server.py` runs the app against fake local models (for interface work; `--fresh-user` shows the app as a
 new user would find it, with the remote-work demo documents in `tools/demo_corpus/`; `--claude-code` with a fake
-Claude Code answering the queue); `tools/pdf_to_text.py` turns a
+Claude Code answering the queue; `--claude-cli` with a stand-in `claude` program the app sets up and starts, 0.9);
+`tools/pdf_to_text.py` turns a
 folder of PDFs into page-preserving text files; `tools/eval_second_pass.py` measures the second sorting pass on the
 pilot. The green hydrogen pilot (workspace, report, run notes) is in
 `pilot/`.

@@ -287,6 +287,19 @@ class App:
         elif out["backend"] == "local":
             out["message"] = (f"The server at {info.get('url')} answers and offers {model}." if out["model_available"]
                               else f"The server answers, but does not list {model}.")
+        elif out["backend"] == "claude_code":
+            from .. import claude_setup
+
+            st = claude_setup.status(refresh=True)
+            out["model_available"] = bool(st["ready"])
+            out["claude"] = st
+            out["message"] = ("Claude Code is set up: " + (st.get("version") or "found") + ", with the ENLENS plugin. "
+                              "Press Start Claude Code where work waits." if st["ready"] else
+                              "Claude Code is not on this computer yet. Install it, then press Set up Claude Code."
+                              if not st["found"] else "Claude Code is found, but the ENLENS plugin is not added to it "
+                              "yet: press Set up Claude Code.")
+            if st.get("signed_in") is False:
+                out["warning"] = "Claude Code is not signed in: open a terminal, type claude and sign in once."
         elif out["backend"] == "anthropic":
             out["message"] = (f"Connected to the Claude API. {model} is available." if out["model_available"]
                               else f"Connected, but {model} is not in this key's model list.")
@@ -804,7 +817,42 @@ class App:
         out = taskqueue.status(ws, name)
         out["route"] = self.settings().get("backend")
         out["setup"] = claude_setup_info()
+        from .. import claude_setup  # 0.9: Claude Code started from the app, and whether it can be
+
+        out["runner"] = claude_setup.run_state(name)
+        if out["route"] == "claude_code" and not home.local_only():
+            st = claude_setup.status()
+            out["can_start"] = bool(st["found"])
+            out["claude"] = {k: st[k] for k in ("found", "signed_in", "installed", "ready")}
         return out
+
+    def overview(self, name: str) -> dict:
+        """0.9: what has been made in a project, for the Overview page: one cheap count per feature."""
+        ws = self.ws(name)
+
+        def n(sql: str, args: tuple = ()) -> int:
+            try:
+                return int(ws.scalar(sql, args) or 0)
+            except Exception:  # noqa: BLE001 - an older project without the table
+                return 0
+
+        fw = self.settings().get("profile_framework") or "sdg"
+        run = ws.query("SELECT run_id FROM theme_runs ORDER BY created_at DESC LIMIT 1") if n(
+            "SELECT COUNT(*) FROM theme_runs") else []
+        return {
+            "documents": n("SELECT COUNT(*) FROM documents"),
+            "passages": n("SELECT COUNT(*) FROM passages WHERE section='body'"),
+            "profile": {"framework": fw, "keyword": n("SELECT COUNT(*) FROM labels WHERE framework=? AND source='keyword'", (fw,)),
+                        "labels": n("SELECT COUNT(*) FROM labels WHERE framework=?", (fw,)),
+                        "documents": n("SELECT COUNT(DISTINCT doc_id) FROM labels WHERE framework=?", (fw,))},
+            "concepts": {"terms": n("SELECT COUNT(*) FROM terms"), "concepts": n("SELECT COUNT(*) FROM concepts")},
+            "themes": {"runs": n("SELECT COUNT(*) FROM theme_runs"),
+                       "themes": n("SELECT COUNT(*) FROM themes WHERE run_id=?", (run[0]["run_id"],)) if run else 0,
+                       "latest": run[0]["run_id"] if run else None},
+            "references": n("SELECT COUNT(DISTINCT doc_id) FROM mentions"),
+            "hypotheses": n("SELECT COUNT(*) FROM hypotheses"),
+            "waiting": (self._queue_summary(name) or {}).get("waiting", 0),
+        }
 
     def start_stronger(self, name: str, task_id: str) -> Job:
         """"Ask a stronger model" on one answered task (a round of a check): read again once by the model it steps
@@ -1298,6 +1346,9 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/queue/order", "post_queue_order"),
     ("POST", rf"/api/projects/{P}/queue/withdraw", "post_queue_withdraw"),
     ("POST", rf"/api/projects/{P}/queue/run", "post_queue_run"),
+    ("POST", rf"/api/projects/{P}/queue/claude-code", "post_claude_code_start"),
+    ("POST", rf"/api/projects/{P}/queue/claude-code/stop", "post_claude_code_stop"),
+    ("GET", rf"/api/projects/{P}/overview", "get_overview"),
     ("POST", rf"/api/projects/{P}/tasks/{P}/stronger", "post_stronger"),
     ("GET", r"/api/routing", "get_routing"),
     ("GET", r"/api/claude-setup", "get_claude_setup"),
@@ -2308,16 +2359,57 @@ class Handler(BaseHTTPRequestHandler):
                 "step_up_below": routing.STEP_UP_BELOW, "routing": bool(s.get("routing", True))}
 
     def get_claude_setup(self, q):
-        return claude_setup_info()
+        from .. import claude_setup
+
+        out = claude_setup_info()
+        if not home.local_only():
+            out["status"] = claude_setup.status(refresh=str(q.get("refresh", "")) in ("1", "true"))
+        return out
 
     def post_claude_setup(self, q):
+        """0.9: one button: prepare the plugin and add it to Claude Code (when Claude Code is on this computer)."""
+        from .. import claude_setup
+
+        body = self._body()
+        if home.local_only():
+            raise ApiError(403, "Cloud models are switched off on this computer: the Claude Code plugin is not available.")
+        if body.get("write_only"):
+            claude_setup.write_plugin()
+            return {**claude_setup_info(), "problems": claude_setup.check_files()}
+        r = claude_setup.install(check=bool(body.get("check")))
+        return {**claude_setup_info(), **r, "problems": [x["text"] for x in r["steps"][:1] if not x["ok"]]}
+
+    def get_overview(self, name, q):
+        return self.app.overview(name)
+
+    def post_claude_code_start(self, name, q):
         from .. import claude_setup
 
         self._body()
-        if home.local_only():
-            raise ApiError(403, "Cloud models are switched off on this computer: the Claude Code plugin is not available.")
-        claude_setup.write_plugin()
-        return {**claude_setup_info(), "problems": claude_setup.check_files()}
+        self.app.ws(name)  # 404 for a project that does not exist
+        if self.app.settings().get("backend") != "claude_code":
+            raise ApiError(400, "Choose Claude Code as the AI in Settings first.")
+        try:
+            return claude_setup.start_run(name)
+        except ValueError as e:
+            raise ApiError(400, str(e)) from e
+
+    def post_claude_code_stop(self, name, q):
+        from .. import claude_setup
+
+        self._body()
+        before = claude_setup.run_state(name)
+        out = claude_setup.stop_run(name)
+        if before.get("running") and before.get("started_at"):
+            # the batches it had taken go back to the queue at once instead of after 30 minutes
+            ws = self.app.ws(name)
+            for c in ws.query("SELECT claim_id, claimed_at FROM task_claims WHERE finished_at IS NULL"):
+                if str(c["claimed_at"] or "") >= before["started_at"]:
+                    try:
+                        taskqueue.release(ws, c["claim_id"])
+                    except Exception:  # noqa: BLE001
+                        pass
+        return out
 
 
 def make_server(host: str = "127.0.0.1", port: int = 8765, app: App | None = None) -> tuple[ThreadingHTTPServer, App]:

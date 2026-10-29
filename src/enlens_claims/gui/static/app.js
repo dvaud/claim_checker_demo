@@ -1,5 +1,6 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, copyLine, watchJob } from "./lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, copyLine, watchJob, startClaude } from "./lib.js";
+import { FEATURES, aiTag } from "./features.js";
 import { renderCheck } from "./views/check.js";
 import { renderResult } from "./views/result.js";
 import { renderHistory } from "./views/history.js";
@@ -14,9 +15,11 @@ import { renderProfile } from "./views/profile.js";
 import { renderConcepts, renderConcept } from "./views/concepts.js";
 import { renderThemes, renderThemeRun, renderTheme } from "./views/themes.js";
 import { quickLookBanner } from "./views/quicklook.js";
+import { renderOverview } from "./views/overview.js";
 
 const ROUTES = [
-  [/^\/?$/, "check", renderCheck],
+  [/^\/?$/, "overview", renderOverview],
+  [/^\/overview$/, "overview", renderOverview],
   [/^\/check$/, "check", renderCheck],
   [/^\/h\/([^/]+)$/, "history", renderResult],
   [/^\/history$/, "history", renderHistory],
@@ -42,7 +45,7 @@ let lastHash = null;
 let renderSeq = 0;
 
 async function route() {
-  const hash = location.hash.replace(/^#/, "") || "/check";
+  const hash = location.hash.replace(/^#/, "") || "/overview";
   const [pathPart, qs] = hash.split("?");
   const query = parseQuery(qs);
   const view = document.getElementById("view");
@@ -65,7 +68,7 @@ async function route() {
   setNav(nav);
   closeDrawer();
   for (const d of document.querySelectorAll("#project-switch details[open], #jobs-indicator details[open], #queue-indicator details[open]")) d.open = false;
-  document.title = `${{ check: "Check a hypothesis", history: "Results", batch: "Check several", sources: "Documents", settings: "Settings", search: "Search", profile: "Profile", concepts: "Concepts", themes: "Themes" }[nav] || "ENLENS"} · ENLENS`;
+  document.title = `${{ overview: "Overview", check: "Check a hypothesis", history: "Results", batch: "Check several", sources: "Documents", settings: "Settings", search: "Search", profile: "Profile", concepts: "Concepts", themes: "Themes" }[nav] || "ENLENS"} · ENLENS`;
   quickLookBanner(document.getElementById("quicklook-banner"));
   // Each page renders into its own container: a render still in flight when the hash changes again writes into a
   // detached element and cannot disturb the new page.
@@ -74,7 +77,7 @@ async function route() {
   replace(view, page);
   view.setAttribute("aria-busy", "true");
   if (!render) {
-    replace(page, h("div", { class: "empty" }, icon("search-x", { size: 28 }), h("h3", {}, "No such page"), h("p", {}, "The address does not match a page of the app."), h("a", { class: "btn", href: "#/check" }, "Go to Check")));
+    replace(page, h("div", { class: "empty" }, icon("search-x", { size: 28 }), h("h3", {}, "No such page"), h("p", {}, "The address does not match a page of the app."), h("a", { class: "btn", href: "#/overview" }, "Go to the overview")));
     view.setAttribute("aria-busy", "false");
     return;
   }
@@ -150,16 +153,16 @@ export async function switchProject(name) {
     await api("PUT", "/api/settings", { project: name });
     await App.refresh();
     toast(`Project: ${name}`, "ok", { ttl: 2000 });
-    if (/^#\/(h|doc)\//.test(location.hash)) navigate("#/check"); else route();
+    if (/^#\/(h|doc|themes|concepts)\//.test(location.hash)) navigate("#/overview"); else route();
   } catch (e) { showError(e); }
 }
 
 function renderPrivacy() {
   const box = document.getElementById("privacy-indicator");
   const p = App.privacy();
-  const a = h("a", { class: `privacy privacy-${p.where}`, href: "#/settings", title: `${p.plain} AI model: ${p.detail}. Change it in Settings.` },
+  const a = h("a", { class: `privacy privacy-${p.where}${App.settings().backend === "claude_code" ? " privacy-plan" : ""}`, href: "#/settings", title: `${p.plain} AI model: ${p.detail}. Change it in Settings.` },
     icon(p.icon, { size: 16 }),
-    h("div", {}, h("strong", {}, p.label), h("span", {}, p.plain)));
+    h("div", {}, h("strong", {}, p.label), h("span", {}, p.short || p.plain)));
   replace(box, a);
 }
 
@@ -177,6 +180,7 @@ async function drawJobs() {
   try { jobs = (await api("GET", "/api/jobs")).jobs || []; } catch (_) { return; }
   const active = jobs.filter((j) => !TERMINAL.has(j.state));
   const recent = jobs.filter((j) => TERMINAL.has(j.state)).slice(0, 5);
+  box.hidden = !active.length && !recent.length;  // 0.9: nothing to show yet: no empty box in the sidebar
   const details = h("details", { class: "jobs " + (active.length ? "jobs-active" : "jobs-idle") });
   const summary = h("summary", {}, active.length ? h("span", { class: "running-dot", "aria-hidden": "true" }) : icon("clock", { size: 14 }),
     h("span", { class: "grow" }, active.length ? `${active.length} ${active.length === 1 ? "task" : "tasks"} running` : "Nothing running"), icon("chevron-up", { size: 14 }));
@@ -223,11 +227,17 @@ async function drawQueue() {
   if (!App.project || (s.backend !== "claude_code" && !summary.waiting)) { box.hidden = true; replace(box); return; }
   let q;
   try { q = await api("GET", `/api/projects/${P(App.project)}/queue`); } catch (_) { return; }
+  if (!q.waiting && !q.being_answered && !(q.runner && q.runner.running)) {
+    box.hidden = true; replace(box);
+    if (s.backend === "claude_code") queueTimer = setTimeout(renderQueue, 15000);
+    return;
+  }
   box.hidden = false;
   const old = box.querySelector("details");
   const details = h("details", { class: "jobs queue-panel " + (q.waiting ? "jobs-active" : "jobs-idle") });
   if (old && old.open) details.open = true;
-  const head = q.waiting ? (q.paused ? `Paused: ${q.waiting.toLocaleString()} waiting` : `${(q.waiting + q.being_answered).toLocaleString()} waiting for Claude Code`)
+  const head = q.runner && q.runner.running ? `Claude Code is working: ${(q.waiting + q.being_answered).toLocaleString()} to go`
+    : q.waiting ? (q.paused ? `Paused: ${q.waiting.toLocaleString()} waiting` : `${(q.waiting + q.being_answered).toLocaleString()} waiting for Claude Code`)
     : q.being_answered ? `Claude Code is answering ${q.being_answered}` : "Queue for Claude Code: empty";
   details.appendChild(h("summary", {}, icon(q.paused ? "pause" : "inbox", { size: 14 }), h("span", { class: "grow" }, head), icon("chevron-up", { size: 14 })));
   const menu = h("div", { class: "ps-menu queue-menu" });
@@ -254,9 +264,7 @@ async function drawQueue() {
         h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => remove(k) }, icon("trash", { size: 12 }), "Remove"))));
   }
   if (kinds.length) {
-    menu.appendChild(h("div", { class: "small", style: { padding: "6px 8px 0" } }, "In Claude Code (opened in any folder), type:"));
-    menu.appendChild(h("div", { style: { padding: "0 8px" } }, copyLine(q.command)));
-    if (q.setup && !q.setup.ready && s.backend === "claude_code") menu.appendChild(h("p", { class: "small", style: { padding: "4px 8px" } }, icon("info", { size: 12 }), " Claude Code needs the ENLENS plugin once: ", h("a", { href: "#/settings/model" }, "set it up in Settings"), "."));
+    menu.appendChild(h("div", { style: { padding: "6px 8px 0" } }, startClaude(App.project, { command: q.command })));
     if (s.backend !== "claude_code") {
       menu.appendChild(h("div", { style: { padding: "6px 8px" } }, h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
         try { const r = await api("POST", `/api/projects/${P(App.project)}/queue/run`, {}); toast("The AI model of Settings answers the queue now.", "ok"); watchJob(r.job.id, () => {}).promise.then(() => renderQueue()); } catch (e) { showError(e); }
@@ -341,8 +349,30 @@ function drawerInit() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sb.classList.contains("open")) { closeDrawer(); mb.focus(); } });
 }
 
+// 0.9: each feature in the sidebar shows whether it uses the AI: a filled "AI" mark (the AI does the work), a dashed
+// one (works without it; the AI can add to it), none (never uses the AI). A legend under the list says so in words.
+const AI_BADGE = {
+  uses: ["AI", "Uses the AI"],
+  optional: ["AI", "Works without the AI; the AI can add to it"],
+  none: ["", "No AI needed"],
+};
 function navIcons() {
   for (const span of document.querySelectorAll(".nav-icon[data-icon]")) replace(span, icon(span.dataset.icon, { size: 18 }));
+  for (const a of document.querySelectorAll("#nav a[data-route]")) {
+    const f = FEATURES[a.dataset.route];
+    if (!f) continue;
+    const [text, plain] = AI_BADGE[f.ai] || AI_BADGE.none;
+    a.title = `${f.what} ${plain}.`;
+    if (text) a.appendChild(h("span", { class: `nav-ai nav-ai-${f.ai}`, title: plain }, h("span", { "aria-hidden": "true" }, "AI"), h("span", { class: "visually-hidden" }, ` (${plain})`)));
+    else a.appendChild(h("span", { class: "visually-hidden" }, ` (${plain})`));
+  }
+  const nav = document.getElementById("nav");
+  if (nav && !nav.querySelector(".nav-legend")) {
+    nav.insertBefore(h("div", { class: "nav-legend", "aria-hidden": "true" },
+      h("span", {}, h("span", { class: "nav-ai nav-ai-uses" }, "AI"), " needs AI"),
+      h("span", {}, h("span", { class: "nav-ai nav-ai-optional" }, "AI"), " optional"),
+      h("span", {}, "no mark: no AI")), nav.querySelector(".nav-sep"));
+  }
 }
 
 async function boot() {

@@ -1,4 +1,5 @@
 // Batch: several hypotheses at once, from pasted lines, CSV text or a file read in the browser.
+import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, session, emptyState, statusBadge, debounce } from "../lib.js";
 import { checkOptions } from "./options.js";
 import { ProgressPanel } from "./progress.js";
@@ -9,7 +10,7 @@ export async function renderBatch(view, params, query) {
   try { [info, docsRes] = await Promise.all([api("GET", `/api/projects/${P(project)}`), api("GET", `/api/projects/${P(project)}/documents`)]); }
   catch (e) { showError(e); info = { search: null }; docsRes = { documents: [] }; }
 
-  view.appendChild(pageHead("Check several hypotheses", { sub: "Paste a list, or load a spreadsheet. They are checked one after the other, and each one gets its own result under Results." }));
+  view.appendChild(pageHead("Check several hypotheses", { eyebrow: featureEyebrow("batch"), sub: "Paste a list, or load a spreadsheet. They are checked one after the other, and each one gets its own result under Results." }));
 
   const ta = h("textarea", { class: "textarea", rows: 8, id: "batch-text", placeholder: "One hypothesis per line, for example:\n\nWorking from home reduces commuting emissions.\nHybrid work increases loneliness among young employees.", spellcheck: "false" });
   ta.value = session("batchDraft") || "";

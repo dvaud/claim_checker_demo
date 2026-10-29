@@ -25,7 +25,9 @@ def home(tmp_path, monkeypatch):
 
 def test_settings_projects_and_key(home, tmp_path):
     s = home.load_settings()
-    assert s["backend"] == "auto" and s["allow_cloud"] is False and s["num_ctx"] == "auto"
+    # 0.9: subscription first: a new installation answers with Claude Code; the Claude API stays opt-in
+    assert s["backend"] == "claude_code" and s["allow_claude_code"] is True and s["allow_cloud"] is False
+    assert s["num_ctx"] == "auto"
     s.update(backend="ollama", ollama_model="qwen3:8b", unknown="dropped")
     home.save_settings(s)
     assert home.load_settings()["ollama_model"] == "qwen3:8b" and "unknown" not in home.load_settings()
@@ -226,7 +228,7 @@ def test_api_guards(api):
     assert st == 200 and api.token.encode() in page and b"{{ENLENS_TOKEN}}" not in page
     assert api("GET", "/static/../server.py", token=False)[0] == 404
     st, s = api("GET", "/api/state")
-    assert st == 200 and s["settings"]["backend"] == "auto" and s["projects"] == [] and s["statuses"]
+    assert st == 200 and s["settings"]["backend"] == "claude_code" and s["projects"] == [] and s["statuses"]
     st, body = api("PUT", "/api/settings", {"backend": "anthropic"})
     assert st == 400 and "Allow cloud" in body["error"]
 

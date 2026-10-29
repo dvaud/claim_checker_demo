@@ -40,3 +40,13 @@ def loaded(ws: Workspace, corpus: Path, vca_xlsx: Path) -> Workspace:
     ingest.ingest(ws, [corpus])
     sources.match(ws)
     return ws
+
+
+@pytest.fixture(autouse=True)
+def _no_real_claude_code(tmp_path, monkeypatch):
+    """0.9: ENLENS finds and sets up Claude Code by itself. Tests never touch a real Claude Code: the `claude` program
+    is "not found" unless a test points ENLENS_CLAUDE at the stand-in (tests/fake_claude_cli.py)."""
+    monkeypatch.setenv("ENLENS_CLAUDE", str(tmp_path / "no-claude-here"))
+    from enlens_claims import claude_setup
+
+    claude_setup._STATUS.update(at=0.0, value=None)

@@ -1,0 +1,116 @@
+/* ENLENS 0.9: the overview, the AI marks of the sidebar, Settings as tabs, Claude Code set-up and start. */
+
+/* ---------------------------------------------------------------- sidebar: AI marks, groups */
+.nav a { padding: 7px 10px; }
+.nav-group { margin: 12px 10px 4px; }
+.nav-sep { display: block; height: 1px; background: var(--border); margin: 8px 10px; }
+.nav-ai {
+  margin-left: auto; display: inline-flex; align-items: center; flex: none;
+  font-weight: 700; letter-spacing: .04em; line-height: 1; border-radius: 999px; border: 1.5px solid transparent;
+}
+.nav-ai-uses { background: var(--mixed-soft); color: var(--mixed); border-color: var(--mixed-line); }
+.nav-ai-optional { background: transparent; color: var(--mixed); border-color: var(--mixed-line); border-style: dashed; }
+.nav a[aria-current="page"] .nav-ai-optional { background: var(--surface); }
+.nav-legend {
+  display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin: 8px 10px 0;
+  font-size: .68rem; color: var(--muted); line-height: 1.5;
+}
+.nav-legend .nav-ai { margin-left: 0; margin-right: 2px; }
+
+/* the line above a page title: part of the app, and AI use */
+.feature-eyebrow { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fe-section { text-transform: uppercase; letter-spacing: .08em; font-size: .7rem; font-weight: 700; color: var(--muted); }
+.ai-tag {
+  display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 600; text-transform: none; letter-spacing: 0;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); background: var(--surface);
+}
+.ai-tag.ai-none { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+.ai-tag.ai-optional { color: var(--mixed); border-color: var(--mixed-line); border-style: dashed; }
+.ai-tag.ai-uses { color: var(--mixed); border-color: var(--mixed-line); background: var(--mixed-soft); }
+
+/* ---------------------------------------------------------------- overview */
+.ov-ai {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 20px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.ov-ai .grow { flex: 1 1 260px; }
+.ov-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 26px 0 10px; flex-wrap: wrap; }
+.ov-section-head h2 { margin: 0; font-size: 1.15rem; }
+.ov-section-head p { margin: 0; color: var(--muted); font-size: .9rem; }
+.ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.ov-card {
+  display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; text-decoration: none; color: inherit;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  transition: border-color .12s, transform .12s;
+}
+.ov-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.ov-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.ov-card-head { display: flex; align-items: center; gap: 10px; }
+.ov-card-icon { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent-text); flex: none; }
+.ov-card h3 { margin: 0; font-size: 1.02rem; }
+.ov-card p { margin: 0; color: var(--text-2); font-size: .9rem; line-height: 1.45; }
+.ov-card .ov-use { color: var(--muted); font-size: .84rem; }
+.ov-card-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-top: 6px; }
+.ov-state { font-size: .82rem; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.ov-state.ov-made { color: var(--ok); }
+.ov-grid-small { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.ov-grid-small .ov-card { padding: 12px 14px; box-shadow: none; }
+.ov-grid-small .ov-card-icon { width: 28px; height: 28px; }
+.ov-empty-docs { margin-bottom: 18px; }
+
+/* ---------------------------------------------------------------- settings as tabs */
+.settings-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin: 0 0 20px; padding: 0;
+}
+.settings-tabs a {
+  display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; text-decoration: none; color: var(--text-2);
+  border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; margin-bottom: -1px; font-weight: 500;
+}
+.settings-tabs a:hover { color: var(--text); background: var(--surface-3); }
+.settings-tabs a[aria-current="page"] { background: var(--surface); border-color: var(--border); color: var(--accent-text); }
+
+/* the AI choice: three large options */
+.route-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.route-card {
+  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; cursor: pointer;
+  border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.route-card:hover { border-color: var(--border-strong); }
+.route-card:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.route-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.route-card input { position: absolute; opacity: 0; pointer-events: none; }
+.route-card .rc-top { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+.route-card .rc-badge { margin-left: auto; font-size: .68rem; font-weight: 700; color: var(--accent-text); background: var(--accent-soft); padding: 2px 7px; border-radius: 999px; }
+.route-card .rc-sub { font-size: .86rem; color: var(--text-2); line-height: 1.4; }
+.route-card .rc-where { font-size: .78rem; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+
+/* Claude Code set-up checklist */
+.cc-steps { list-style: none; padding: 0; margin: 8px 0 12px; display: flex; flex-direction: column; gap: 8px; }
+.cc-step { display: flex; gap: 10px; align-items: flex-start; }
+.cc-step .cc-mark { flex: none; display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 50%; border: 1.5px solid var(--border-strong); color: var(--muted); font-size: .75rem; font-weight: 700; }
+.cc-step.ok .cc-mark { background: var(--ok); border-color: var(--ok); color: var(--on-accent); }
+.cc-step.bad .cc-mark { background: var(--warn-soft); border-color: var(--partly-line); color: var(--warn); }
+.cc-step strong { display: block; }
+.cc-step .small { color: var(--muted); }
+.cc-log { margin: 8px 0 0; padding: 0 0 0 18px; font-size: .82rem; }
+.cc-log li.bad { color: var(--bad); }
+
+/* Start Claude Code (queue notices, the sidebar panel) */
+.start-claude { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.sc-start, .sc-running { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sc-running .btn { margin-left: auto; }
+.sc-type { display: flex; flex-direction: column; gap: 2px; }
+.sc-report { white-space: pre-wrap; max-height: 12em; overflow: auto; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; }
+.queue-menu .start-claude .sc-start .muted { display: none; }
+
+/* the sidebar's privacy line on Claude Code: the normal case from 0.9, not a warning */
+.privacy.privacy-plan { border-color: var(--border); background: var(--surface); }
+.privacy.privacy-plan .icon { color: var(--accent); }
+.nav a > span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-ai { padding: 2px 5px; font-size: .62rem; }
+.sidebar-row { flex-wrap: wrap; }
+:root { --sidebar-w: 264px; }
+.nav-ai-uses { background: var(--mixed); color: var(--surface); border-color: var(--mixed); }
+.nav-ai-optional { background: transparent; color: var(--mixed); border-color: var(--mixed); border-style: dashed; }
+.nav-legend { gap: 2px 8px; }
+.route-cards { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }

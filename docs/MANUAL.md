@@ -1,14 +1,19 @@
 # ENLENS: usage manual
 
-ENLENS checks **hypotheses** against your own documents. You give it a statement that could be true or false
-("Green hydrogen production increases water stress in arid regions", "Remote work lowers commuting emissions in
-large cities"); it finds the passages of your sources that bear on it, has a language model grade each one, verifies
-every quoted word against the source text, and reports whether the sources support, partly support, contest or
-contradict the hypothesis, with the document, page and quote behind every grade.
+ENLENS helps you **explore** your own documents and **check hypotheses** against them. Exploring comes first: every
+place a word occurs, the codes each document addresses (the SDG targets or your own codebook), a glossary of terms
+grouped into concepts you follow across documents, themes, references inside a document, highlighted copies. Most of
+it needs no AI. When you have a statement that could be true or false ("Green hydrogen production increases water
+stress in arid regions", "Remote work lowers commuting emissions in large cities"), ENLENS finds the passages of your
+sources that bear on it, has a language model grade each one, verifies every quoted word against the source text,
+and reports whether the sources support, partly support, contest or contradict the hypothesis, with the document,
+page and quote behind every grade.
 
-It is **local first**: the documents, the history and, by default, the model all stay on your computer. A model
-served by Ollama, LM Studio, llama.cpp, Jan or vLLM does the reading; the Claude API is available as an explicit
-opt-in for when a local model is not good enough.
+It is **subscription first** (0.9): the AI is Claude, through Claude Code signed in with your own Claude plan, which
+ENLENS sets up and starts for you. Your documents, results and reviews stay on your computer; only the passages
+inside the AI's tasks are sent to Anthropic. A model served on your own computer by Ollama, LM Studio, llama.cpp, Jan
+or vLLM keeps every word on it, and the Claude API with a team key serves a shared installation. Whoever installs the
+app can remove every cloud option for good (`--local-only`).
 
 The first application was the green hydrogen Value Chain Assessment (VCA) by Peyerl and van der Zwaan (2024,
 *Discover Sustainability* 5:199). The pipeline built for it (impact claims tagged with UN SDG targets, compared with
@@ -21,10 +26,10 @@ an expert table, summarised in a report) is included as the **SDG pack**, sectio
 Python 3.10 or newer.
 
 ```bash
-pip install -e .                 # core: pydantic, pypdf, openpyxl; includes the app and the command line
+pip install -e '.[connector]'    # the app, the command line and the Claude Code plugin's connector (recommended)
+pip install -e .                 # core only: pydantic, pypdf, openpyxl; the app and the command line
 pip install -e '.[fast]'         # numpy: faster semantic search on large projects
 pip install -e '.[anthropic]'    # the Claude API (cloud, opt-in)
-pip install -e '.[connector]'    # the connector for the Claude app and Claude Code
 pip install -e '.[ocr]'          # read scanned PDFs on this computer (also needs the program Tesseract, below)
 pip install -e '.[dev]'          # pytest
 ```
@@ -136,20 +141,34 @@ in `#token=…`), and only by IP address; do this only on a network you trust. S
 from the internet: no CDN, no fonts, no analytics.
 
 The app is written for researchers who do not program: plain words on every working screen, model names and other
-technical details only under *Technical details* and *Settings → Advanced (for IT staff)*.
+technical details only under *Technical details* and *Settings → Technical*. Each feature says, above its title,
+which part of the app it belongs to (*Explore the documents* or *Check hypotheses*) and whether it uses the AI; in
+the sidebar a filled **AI** mark means the feature needs the AI, a dashed one that the AI is optional, and no mark
+that it never uses the AI (0.9).
+
+**The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, then **Explore the documents**
+(Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results), and
+*Settings*. The *Overview* shows every feature with one line on what it does, whether it uses the AI and what is
+already made in the project (a profile, a glossary, a set of themes, results), and the AI in use with what is left
+to set up. *Quick look at one document* is there too.
 
 ### First use
 
-The welcome screen has two steps: name a **project** (one per set of documents), then **add documents**: choose
+The welcome screen has three steps (0.9). **The AI**: ENLENS uses Claude Code, signed in with your Claude plan. The
+step shows a checklist (Claude Code on this computer, signed in, the ENLENS plugin added) and *Set up Claude Code*
+does what can be done from here: it prepares the plugin and adds it to Claude Code. What only you can do is said
+plainly: install Claude Code (claude.com/claude-code) or sign in once (type `claude` in a terminal). *No Claude plan?
+Other options* offers a model on this computer or no AI for now. When whoever installed the app chose a local model,
+this step is skipped. Then name a **project** (one per set of documents), and **add documents**: choose
 files (PDF, Word .docx, HTML, text, Markdown, zip) or a folder. A Word file keeps its paragraphs, headings and the pages
 Word marked (0.8); older .doc files are not read: save them as .docx or PDF. The list shows the
 title read from each file and warns about unreadable text and very short files (often a landing page instead of the
 report). *Open an existing ENLENS project folder (advanced)* links a project made with the command line, without
 copying it.
 
-The AI model is normally set up by whoever installed the app (Settings → Advanced). The sidebar always says where
-text goes: *Private · The AI runs on this computer*; if cloud models were allowed, that excerpts are sent to the
-Claude API; or with Claude Code (0.8), that Claude Code reads the excerpts on your own plan (section 6).
+The sidebar always says where text goes: *Claude, on your plan · Only the passages of AI tasks leave this computer*
+(the default from 0.9), *Private · The AI runs on this computer* with a local model, or that excerpts are sent to the
+Claude API if a shared installation allowed it (section 6).
 
 ### Checking a hypothesis
 
@@ -313,36 +332,46 @@ embedding model, embeddings), for tools that read that format.
 
 ### Settings
 
-**Basics**: *Test the AI model*; the **strictness** (how sure the AI must be before a judgement counts; it saves at
-once, applies to every result, and reports which answers and counts changed; *Back to normal (60%)*), with **how
-often you agreed with the AI, by its certainty**: a small chart from the excerpts you judged; after 20 judgements it
-may suggest a strictness ("When the AI was at least 70% sure, you agreed with it in 85% … *Use 70%*"); the defaults
-of a check (other words, parts, how many excerpts to read and at most how many from one document); **reading
-scanned PDFs** (on or off, and the languages); where your data is. **Codebooks**: view the codes, add a CSV codebook,
-remove one; a CSV codebook can be marked as aims a text can help or hinder, like the SDG targets. **Exploring the
-documents** (0.7): the codebook of the profiles and how many themes a new set looks for. **Advanced (for IT staff)**: the model service (on this computer: automatic, Ollama, a local
-OpenAI-compatible server, the offline demo; separately, *Not on this computer*: the Claude API, behind a
-confirmation), the address, model and reasoning switch, the **second AI model**, the **context length** (automatic
-by default, see section 5) and *Sort the best excerpts again by wording* (off; see the changelog of 0.6.0), the
-embedding model for search by meaning, **Repeatable results** (the seed sent with every request, 42 by default, and
-a test of whether the server gives the same answer twice), and *Test a model before trusting it* (section 5).
+Settings has five tabs, each one page with nothing folded inside another (0.9):
 
-When no model is chosen, or the chosen one is not installed, the app uses one the model server already holds in
-memory (so nothing extra is loaded), else the most recently downloaded one, and *Test the AI model* says so.
+- **AI**: which AI reads your documents, as four choices: **Claude Code** (recommended: your own Claude plan),
+  **A model on this computer** (automatic, Ollama, or an OpenAI-compatible server such as LM Studio, with the
+  address, model and reasoning switch), **No AI (demo)**, and the **Claude API (team key)** for a shared
+  installation, behind a confirmation and *Allow cloud models*. With Claude Code: the set-up checklist and *Set up
+  Claude Code* (section 6) and *Let the auditor use Fable*. *Save and test* says whether the AI answers (with Claude
+  Code: whether it is set up).
+- **Checking**: the **strictness** (how sure the AI must be before a judgement counts; it saves at once, applies to
+  every result, and reports which answers and counts changed; *Back to normal (60%)*), with **how often you agreed
+  with the AI, by its certainty**: a small chart from the excerpts you judged; after 20 judgements it may suggest a
+  strictness ("When the AI was at least 70% sure, you agreed with it in 85% … *Use 70%*"); and how new checks start
+  (other words, parts, how many excerpts to read and at most how many from one document).
+- **Exploring**: the codebook of the profiles, how many themes a new set looks for, and the **codebooks**: view the
+  codes, add a CSV codebook, remove one; a CSV codebook can be marked as aims a text can help or hinder, like the SDG
+  targets.
+- **Documents**: **reading scanned PDFs** (on or off, and the languages) and the embedding model for **search by
+  meaning**.
+- **Technical**: **AI model per task** (which model answers each kind of task, what it steps up to, the helper on
+  Claude Code, a choice per kind, *Use the recommended models*, and for local servers the small model for labels and
+  links); with a local model, the **second AI model** and the **context length** (automatic by default, see section
+  5) with *Sort the best excerpts again by wording* (off; see the changelog of 0.6.0); **Repeatable results** (the
+  seed sent with every request, 42 by default, and a test of whether the server gives the same answer twice); *Test a
+  model before trusting it* (section 5); and where your data is.
 
-0.8 adds *Claude Code (your subscription)* to the model service (under *Not on this computer*, behind a confirmation;
-section 6), with *Prepare the plugin* and *Let the auditor use Fable*, and **AI model per task** under Advanced: which
-model answers each kind of task, what it steps up to, the helper (Claude Code), a choice per kind, *Use the
-recommended models*, and for local servers the small model for labels and links.
+Old links to a section (`#/settings/second`, `#/settings/calibration`…) open its tab.
+
+When no local model is chosen, or the chosen one is not installed, the app uses one the model server already holds
+in memory (so nothing extra is loaded), else the most recently downloaded one, and the test says so.
 
 ### For whoever installs the app
 
-- Set up the model once in *Settings → Advanced* (or let *automatic* find Ollama or LM Studio) and press *Test the AI
-  model*; with an embedding model set, new documents are indexed for search by meaning right away.
+- A new installation uses Claude Code on the researcher's own plan (0.9). To use a model on this computer instead,
+  choose it once in *Settings → AI* (or let *automatic* find Ollama or LM Studio) and press *Save and test*; an
+  installation that already chose a local model keeps it when it is updated. With an embedding model set
+  (*Settings → Documents*), new documents are indexed for search by meaning right away.
 - To make sure nothing can ever be sent to a cloud model, start the app with `enlens-gui --local-only`, set
   `ENLENS_LOCAL_ONLY=1`, or create an empty file named `local_only` in the data folder. The cloud options (the
-  Claude API and Claude Code) are then hidden, the app and its API refuse to switch to them, and the connector
-  refuses to hand out queued tasks.
+  Claude API and Claude Code) are then hidden, the default becomes the local model (*automatic*), the app and its
+  API refuse to switch to them, ENLENS never starts Claude Code, and the connector refuses to hand out queued tasks.
 - Keep the data folder (`--home`) somewhere that is backed up: it holds the projects, their results and the settings.
 - Give the user an icon instead of a terminal: `enlens-gui --make-launcher` (section 1), with the same `--home` and
   `--local-only` you would start it with.
@@ -426,13 +455,13 @@ the answer's JSON schema, so even small models give valid JSON; the rest depends
   tokens that holds the largest task the settings can produce (8 excerpts without reasoning: 8,192). The model's
   working memory grows with it (for qwen3:8b about 1.2 GB at 8,192 tokens and 2.4 GB at 16,384), so this leaves the
   most memory for the model itself. It stays the same between requests, because Ollama reloads the model when it
-  changes. Settings → Advanced shows the length in use and takes a fixed number instead. With LM Studio or
+  changes. Settings → Technical shows the length in use and takes a fixed number instead. With LM Studio or
   llama.cpp set it when loading the model (16,384 covers every task of the app).
 - **Memory.** ENLENS loads no model of its own and makes one model call at a time. The second AI model unloads the
   main model first (Ollama) and unloads itself when it is done, so two models are never in memory together; LM
   Studio and other OpenAI-compatible servers have no standard way to unload a model, so there their own setting
   (LM Studio can be set to keep only one model loaded) decides.
-- **Reasoning.** For models that reason before answering (Qwen 3 and 3.5, for example), *Settings → Advanced →
+- **Reasoning.** For models that reason before answering (Qwen 3 and 3.5, for example), *Settings → AI →
   Reasoning* (Ollama) has four choices:
   - *Off*, the fastest;
   - *Only when judging excerpts*: reasoning where it can help, not for search words or splitting a hypothesis;
@@ -511,33 +540,34 @@ A recorded demo of a session is in `docs/connector_demo.html` (made with 0.4; th
 If the Claude app does not show the connector, check its connector settings for an error. Running `enlens-mcp` in a
 terminal shows any start-up problem (it then waits for the app; stop it with Ctrl+C).
 
-### Claude Code as the AI behind every task (0.8)
+### Claude Code as the AI behind every task (0.8; the default from 0.9)
 
-With Claude Code, signed in with your own Claude plan, every AI button of ENLENS can be answered by Claude: profile
+With Claude Code, signed in with your own Claude plan, every AI button of ENLENS is answered by Claude: profile
 labels, concept links, theme names, references, checks, reading an excerpt again, second opinions, the model tests
 (*Compare a sample* of labels, the *Model test*), and the SDG pack's tasks (section 10, step 5). ENLENS prepares
-the work in a queue and checks every answer as it checks any other; Claude Code, which you start yourself, does only
-the reading. ENLENS never starts Claude Code, never sees your Claude login and never runs on anyone else's plan. For a
-shared installation that runs unattended, use the Claude API with the team's key instead (the same queue and the
-same models per task: `enlens queue run --backend anthropic`).
+the work in a queue and checks every answer as it checks any other; Claude Code does only the reading. ENLENS never
+sees your Claude login (Claude Code uses its own) and never runs on anyone else's plan. For a shared installation
+that runs unattended, use the Claude API with the team's key instead (the same queue and the same models per task:
+`enlens queue run --backend anthropic`).
 
-**Set it up once.**
+**Set it up once.** You need Claude Code (claude.com/claude-code) installed and signed in once with your Claude plan
+(type `claude` in a terminal and sign in). Then, in ENLENS, the first screen or *Settings → AI → Claude Code*: press
+**Set up Claude Code**. It writes the plugin into your ENLENS folder (`claude-plugin/`) and adds it to Claude Code by
+running the same two commands you would type (`claude plugin marketplace add …`, `claude plugin install
+enlens-run@enlens`); nothing else in Claude Code's settings changes. The checklist then shows three ticks. From a
+terminal, `enlens claude-setup` does the same (`--print-only` only prints the two lines). ENLENS finds the `claude`
+program on the PATH or where its installers put it; `ENLENS_CLAUDE=/path/to/claude` names it.
 
-1. In ENLENS, *Settings → AI model service*: choose **Claude Code (your subscription)** and confirm. The passages
-   inside the tasks Claude Code takes are sent to Anthropic; your documents, results and reviews stay here.
-2. *Prepare the plugin* (in the same place), or in a terminal `enlens claude-setup`. It writes the plugin into your
-   ENLENS folder (`claude-plugin/`), checks that the ENLENS connector starts, and shows two lines.
-3. Type them in a terminal (or, inside Claude Code, as `/plugin marketplace add …` and `/plugin install …`):
+**Start Claude Code (0.9).** Press an AI button in ENLENS. The page says what waits, for example *Waiting for
+Claude Code: 120 passages to label · about 25 minutes*, with **Start Claude Code**. ENLENS then starts Claude Code
+in the background for that project (`claude -p "/enlens-run:enlens-run <project>"`, run in the ENLENS folder),
+allowed only the four ENLENS queue tools and its helpers, so a passage that tries to give it instructions can do
+nothing else. The page and the sidebar's queue panel say *Claude Code is working on it*, with *Stop*; it stops by
+itself when nothing waits. *Stop* returns the batches it had taken to the queue at once. If a run ends with a
+problem (a usage limit, for example), the page shows the end of its report. The first start also adds the plugin if
+that was not done yet.
 
-   ```
-   claude plugin marketplace add "<your ENLENS folder>/claude-plugin"
-   claude plugin install enlens-run@enlens
-   ```
-
-4. Restart Claude Code. The first time it starts the connector it may ask you to allow it.
-
-**Use it.** Press an AI button in ENLENS. The page says what waits, for example *Waiting for Claude Code: 120
-passages to label · about 25 minutes*, with the command and a copy button. In Claude Code, opened in any folder:
+**Or type it yourself.** The same work can be started in Claude Code, opened in any folder:
 
 ```
 /enlens-run Pilot              # every kind of task waiting in the project Pilot
@@ -1056,10 +1086,10 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | The app says it cannot reach Ollama | Start the Ollama app (or `ollama serve`) and check the address in Settings (default `http://localhost:11434`). |
 | "Ollama has no model ..." | Download it: `ollama pull <model>`, then pick it again in Settings. |
 | Test connection warns about Ollama's cloud | The model runs on Ollama's servers, which do not support the JSON format the app needs, and the text leaves your computer. Pick a model downloaded with `ollama pull`. |
-| "This task needs about N tokens of context" | Set the context length to automatic in Settings → Advanced (the default), or raise it (`--num-ctx`). 16,384 covers every task of the app. |
+| "This task needs about N tokens of context" | Set the context length to automatic in Settings → Technical (the default), or raise it (`--num-ctx`). 16,384 covers every task of the app. |
 | A check with a local model takes very long | The progress panel shows where the time goes. Long "loading the model and reading the prompt": the model is too large for the memory (check Activity Monitor) or the computer is swapping. Long "reasoning": set *Reasoning* to off. |
 | "… sent nothing for 600 seconds" | The model did not start or stopped answering: usually too little memory. Close other apps or choose a smaller model. |
-| "… used its whole allowance … on reasoning" | The model kept reasoning without answering. Give reasoning a budget (Settings → Advanced, the default 1,500 tokens), choose *Only when judging excerpts*, or set it off. |
+| "… used its whole allowance … on reasoning" | The model kept reasoning without answering. Give reasoning a budget (Settings → AI, the default 1,500 tokens), choose *Only when judging excerpts*, or set it off. |
 | A check with reasoning takes half an hour | Set *Reasoning* to *Only when judging excerpts* with a budget (1,500 tokens is the default; lower it for a slow computer). |
 | "… got stuck writing blank space" | A known failure of some models with fixed-format answers. Try again, set *Reasoning* to off, or choose another model. |
 | "The Claude API rejected the key" | Copy the key again from console.anthropic.com; check it has credit. |

@@ -9,7 +9,10 @@
 - starts the app with its API token printed, so the API can be called with curl as well;
 - with `--claude-code` (0.8): Settings name Claude Code, and a fake Claude Code session answers the queue every few
   seconds (tests/fake_claude_code.py), as if the researcher had typed /enlens-run; `--claude-code-paused` leaves the
-  queue unanswered, to see the waiting and paused states.
+  queue unanswered, to see the waiting and paused states;
+- with `--claude-cli` (0.9): Claude Code chosen, and a stand-in `claude` program (tests/fake_claude_cli.py) that the
+  app finds, adds the plugin to, and starts with "Start Claude Code" (each run waits 2 s per round, so the progress
+  can be watched). Add `--empty` to see the first-run screens as a new user of 0.9 does.
 """
 from __future__ import annotations
 
@@ -54,6 +57,8 @@ def main() -> int:
                     help="documents of the seeded Demo project (social: the remote-work demo corpus)")
     ap.add_argument("--claude-code", action="store_true", help="0.8: Claude Code answers (a fake session, every 3 s)")
     ap.add_argument("--claude-code-paused", action="store_true", help="0.8: Claude Code chosen, but nothing answers")
+    ap.add_argument("--claude-cli", action="store_true",
+                    help="0.9: Claude Code chosen, with a stand-in claude program the app sets up and starts")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -112,6 +117,10 @@ def main() -> int:
         from enlens_claims import claude_setup
 
         claude_setup.write_plugin()
+    if a.claude_cli:
+        os.environ["ENLENS_CLAUDE"] = str(ROOT / "tests" / "fake_claude_cli.py")
+        os.environ.setdefault("FAKE_CLAUDE_DELAY", "2")
+        home.update_settings({"allow_claude_code": True, "backend": "claude_code"})
     if a.claude_code:
         import time
 

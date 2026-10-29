@@ -2,8 +2,14 @@
 
 The plugin ships inside the ENLENS package (`claude_plugin/`). Set-up writes it, as a one-plugin marketplace, into
 ENLENS's own data folder (`<ENLENS_HOME>/claude-plugin`), with the connector started by this very Python and this
-data folder, then checks that the connector starts and offers the queue tools. It prints the two lines that add the
-plugin to Claude Code. ENLENS writes nothing to Claude Code's own settings and never starts Claude Code.
+data folder, then checks that the connector starts and offers the queue tools.
+
+0.9 (subscription first): when the `claude` program is found, set-up also adds the plugin to Claude Code itself, by
+running the same two commands a person would type (`claude plugin marketplace add …`, `claude plugin install …`);
+otherwise it prints them. `status()` says what is ready (Claude Code found, signed in, the plugin added), and
+`start_run()` starts Claude Code for one project's queue, in the background, when the researcher presses
+"Start Claude Code" in the app (`claude -p "/enlens-run:enlens-run <project>"`, allowed only the ENLENS queue tools
+and its helpers). ENLENS still never sees the Claude login: Claude Code uses its own.
 
 Layout written:
 
@@ -17,12 +23,18 @@ Layout written:
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
+import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from . import __version__
 from . import home as core
+from .store import now
 
 PLUGIN = "enlens-run"        # the plugin's name: its root skill is /enlens-run
 MARKETPLACE = "enlens"
@@ -161,3 +173,186 @@ def setup_info() -> dict:
     return {"folder": str(folder()), "ready": ready, "commands": commands(), "terminal": "enlens claude-setup",
             "in_claude_code": [f'/plugin marketplace add "{folder()}"', f"/plugin install {PLUGIN}@{MARKETPLACE}"],
             "local_only": core.local_only()}
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.9: finding Claude Code, adding the plugin to it, and starting it for a project's queue
+# ---------------------------------------------------------------------------------------------
+SLASH = f"/{PLUGIN}:{PLUGIN}"   # how Claude Code names the plugin's skill (typing /enlens-run offers it)
+
+
+def find_claude() -> str:
+    """The `claude` program: ENLENS_CLAUDE, the PATH, or where its installers put it. "" when not found."""
+    env = os.environ.get("ENLENS_CLAUDE", "").strip()
+    if env:
+        return env if Path(env).exists() else ""
+    found = shutil.which("claude")
+    if found:
+        return found
+    h = Path.home()
+    for c in (h / ".claude" / "local" / "claude", h / ".local" / "bin" / "claude", Path("/opt/homebrew/bin/claude"),
+              Path("/usr/local/bin/claude"), h / ".npm-global" / "bin" / "claude",
+              h / "AppData" / "Roaming" / "npm" / "claude.cmd"):
+        if c.exists():
+            return str(c)
+    return ""
+
+
+def _cmd(path: str) -> list[str]:
+    """How to call the program found: a Python script (the tests' and dev server's stand-in) runs with this Python."""
+    return [sys.executable, path] if path.endswith(".py") else [path]
+
+
+def _run(args: list[str], timeout: float = 60) -> tuple[int, str]:
+    args = _cmd(args[0]) + list(args[1:])
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=str(core.home()),
+                           stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as e:
+        return 1, f"{type(e).__name__}: {e}"
+    return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
+
+
+_STATUS: dict = {"at": 0.0, "value": None}
+
+
+def status(refresh: bool = False) -> dict:
+    """What is ready for Claude Code, for the app's set-up checklist (cached for half a minute):
+    `found` (and `path`, `version`), `signed_in` (True, False, or None when Claude Code does not say), the plugin
+    `written` for this installation and `installed` in Claude Code (None when that could not be read), and `ready`
+    (found and installed: the app can start Claude Code)."""
+    if not refresh and _STATUS["value"] is not None and time.time() - _STATUS["at"] < 30:
+        return _STATUS["value"]
+    info = setup_info()
+    out = {"found": False, "path": "", "version": "", "signed_in": None, "written": info["ready"], "installed": None,
+           "plugin_version": "", "ready": False, "local_only": core.local_only()}
+    path = "" if out["local_only"] else find_claude()
+    if path:
+        out.update(found=True, path=path)
+        code, text = _run([path, "--version"], timeout=20)
+        if code == 0:
+            out["version"] = text.splitlines()[0].strip() if text else ""
+        code, text = _run([path, "auth", "status"], timeout=20)
+        try:
+            out["signed_in"] = bool(json.loads(text[text.index("{"):]).get("loggedIn"))
+        except (ValueError, AttributeError):
+            out["signed_in"] = None
+        code, text = _run([path, "plugin", "list", "--json"], timeout=30)
+        try:
+            plugins = json.loads(text[text.index("["):])
+            mine = [p for p in plugins if p.get("id") == f"{PLUGIN}@{MARKETPLACE}"]
+            out["installed"] = bool(mine and mine[0].get("enabled", True))
+            out["plugin_version"] = (mine[0].get("folderVersion") or mine[0].get("version") or "") if mine else ""
+        except (ValueError, AttributeError):
+            out["installed"] = None
+    out["ready"] = bool(out["found"] and out["written"] and out["installed"] is not False)
+    _STATUS.update(at=time.time(), value=out)
+    return out
+
+
+def install(check: bool = False) -> dict:
+    """Prepare the plugin and, when Claude Code is found, add it to Claude Code (the two commands of `commands()`).
+    Returns {"steps": [{"step", "ok", "text"}], "status": status(), "commands": [...]}; never raises for Claude Code's
+    own problems (they are reported in the steps)."""
+    steps = []
+    root = write_plugin()
+    problems = check_files(root)
+    steps.append({"step": "Prepare the ENLENS plugin", "ok": not problems,
+                  "text": "; ".join(problems) or f"Written to {root}"})
+    if check:
+        r = check_connector()
+        steps.append({"step": "Start the ENLENS connector", "ok": r["ok"],
+                      "text": r.get("error") or ("Offers the queue tools." if r["ok"] else
+                                                 "Missing: " + ", ".join(r.get("missing", [])))})
+    path = find_claude()
+    if not path:
+        steps.append({"step": "Add the plugin to Claude Code", "ok": False,
+                      "text": "Claude Code was not found on this computer. Install it from claude.com/claude-code, "
+                              "then press Set up again (or type the two lines below in a terminal)."})
+    else:
+        for line, args in zip(commands(root), ([path, "plugin", "marketplace", "add", str(root)],
+                                               [path, "plugin", "install", f"{PLUGIN}@{MARKETPLACE}"])):
+            code, text = _run(args, timeout=120)
+            steps.append({"step": line, "ok": code == 0, "text": re.sub(r"\x1b\[[0-9;]*m", "", text)[-600:]})
+            if code != 0:
+                break
+    _STATUS["value"] = None
+    return {"steps": steps, "status": status(refresh=True), "commands": commands(root)}
+
+
+# -- starting Claude Code for one project's queue (the "Start Claude Code" button) ------------------------
+_RUNS: dict[str, dict] = {}
+_RUNS_LOCK = threading.Lock()
+
+
+def run_args(project: str, claude: str = "") -> list[str]:
+    """The command that answers one project's queue headless, allowed only the ENLENS queue tools and the helpers."""
+    tools = ["Agent"] + [TOOL_PREFIX + t for t in QUEUE_TOOLS]
+    quoted = '"' + project.replace('"', "") + '"'
+    return _cmd(claude or find_claude() or "claude") + ["-p", f"{SLASH} {quoted}", "--output-format", "text",
+                                                       "--allowedTools", *tools]
+
+
+def _log_path(project: str) -> Path:
+    d = core.home() / "claude-runs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / ((re.sub(r"[^A-Za-z0-9_-]+", "_", project).strip("_") or "project") + ".log")
+
+
+def run_state(project: str) -> dict:
+    """Whether Claude Code, started from the app, is working on this project's queue; the end of its report."""
+    with _RUNS_LOCK:
+        r = _RUNS.get(project)
+    if not r:
+        return {"running": False}
+    code = r["proc"].poll()
+    tail = ""
+    try:
+        tail = r["log"].read_text(encoding="utf-8", errors="replace")[-1200:].strip()
+    except OSError:
+        pass
+    return {"running": code is None, "started_at": r["started_at"], "seconds": int(time.time() - r["t0"]),
+            "exit_code": code, "report": tail if code is not None else "", "stopped": r.get("stopped", False)}
+
+
+def start_run(project: str) -> dict:
+    """Start Claude Code (headless, signed in with its own login) on the project's queue. One run per project."""
+    if core.local_only():
+        raise ValueError("Cloud models are switched off on this computer: Claude Code is not available.")
+    st = run_state(project)
+    if st.get("running"):
+        return st
+    path = find_claude()
+    if not path:
+        raise ValueError("Claude Code was not found on this computer. Install it (claude.com/claude-code), or type "
+                         f"{SLASH.split(':')[0]} {project} in Claude Code yourself.")
+    if not setup_info()["ready"] or status().get("installed") is False:
+        install()  # the plugin is prepared and added on the first start: no separate set-up needed
+    log = _log_path(project)
+    fh = open(log, "w", encoding="utf-8")
+    kwargs = {"start_new_session": True} if os.name != "nt" else {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+    proc = subprocess.Popen(run_args(project, path), cwd=str(core.home()), stdout=fh, stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL, **kwargs)
+    fh.close()
+    with _RUNS_LOCK:
+        _RUNS[project] = {"proc": proc, "log": log, "t0": time.time(),
+                          "started_at": now()}
+    return run_state(project)
+
+
+def stop_run(project: str) -> dict:
+    """Stop Claude Code started from the app. Batches it had taken return to the queue (claims lapse)."""
+    with _RUNS_LOCK:
+        r = _RUNS.get(project)
+    if r and r["proc"].poll() is None:
+        r["stopped"] = True
+        try:
+            r["proc"].terminate()
+            r["proc"].wait(timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            try:
+                r["proc"].kill()
+            except OSError:
+                pass
+    return run_state(project)

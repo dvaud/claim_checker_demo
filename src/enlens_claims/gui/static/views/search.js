@@ -1,6 +1,7 @@
 // Search (F1): every place words occur in the project's documents, one line per hit with the words centred
 // (a concordance). No hypothesis and no AI are needed. Clicking a word of a line adds it to the search; Shift-click
 // makes a phrase. A line opens its document at the words, or starts a check about what it says.
+import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, showError, download, pageHead, emptyState, fmt, P, navigate } from "../lib.js";
 
 const MODES = [
@@ -54,7 +55,7 @@ export async function renderSearch(view, params, query) {
     offset: Number(query.offset || 0), meaning: query.meaning === "1",
   };
   const semantic = !!(info.search && info.search.embedded);
-  view.appendChild(pageHead("Search the documents", {
+  view.appendChild(pageHead("Search the documents", { eyebrow: featureEyebrow("search"),
     sub: `Every place words occur in the ${fmt.plural(docs.length, "document")} of project “${project}”, one line per place, with the words around it. No AI model is used (only search by meaning uses the embedding model).`,
   }));
 
@@ -77,7 +78,7 @@ export async function renderSearch(view, params, query) {
       h("label", {}, "Find", modeSel), nearBox, docSel,
       h("label", { title: "Without this, “price” also finds “prices” and “priced”." }, exact, "exact words only"),
       h("label", { title: "Reference lists and title pages are left out of checks; include them here." }, allSec, "include reference lists"),
-      h("label", { title: semantic ? "Whole passages that say the same thing in other words" : "Turn on search by meaning under Settings → Advanced first." }, meaning, "search by meaning")),
+      h("label", { title: semantic ? "Whole passages that say the same thing in other words" : "Turn on search by meaning under Settings → Documents first." }, meaning, "search by meaning")),
     h("details", { class: "fold", open: !!st.code }, h("summary", {}, "Only passages with a code"),
       h("div", { class: "search-opts", style: { marginTop: "6px" } }, h("label", {}, "Code", codeIn),
         h("span", { class: "muted small" }, "A code of the Profile page, written as codebook:code (sdg:6.4). Only passages labelled with it are searched."))));

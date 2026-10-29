@@ -500,11 +500,11 @@ export const App = {
     const s = App.settings();
     const b = s.backend || "auto";
     if (b === "anthropic") return { where: "cloud", label: "Cloud AI", plain: "Excerpts of your documents are sent to the Claude API (cloud)", detail: `Claude API · ${s.anthropic_model || ""}`, icon: "cloud" };
-    if (b === "claude_code") return { where: "cloud", label: "Claude Code", plain: "Claude Code reads the excerpts on your own Claude plan: the passages it takes are sent to Anthropic", detail: "Claude Code (your subscription) · a helper and model per task", icon: "cloud" };
+    if (b === "claude_code") return { where: "cloud", label: "Claude, on your plan", sent: "Claude Code reads the passages on your Claude plan (sent to Anthropic).", short: "Only the passages of AI tasks leave this computer", plain: "Your documents stay here; only the passages inside the AI's tasks go to Anthropic.", detail: "Claude Code (your subscription) · a helper and model per task", icon: "cloud" };
     if (b === "baseline") return { where: "none", label: "Demo mode", plain: "No AI model: a simple word-overlap stand-in. Results are not findings.", detail: "offline demo", icon: "cpu" };
     const labels = (App.state && App.state.backend_labels) || {};
     const model = b === "ollama" ? (s.ollama_model || "no model chosen") : b === "openai" ? (s.openai_model || "first model listed") : (s.ollama_model || s.openai_model || "first model found");
-    return { where: "local", label: "Private", plain: "The AI runs on this computer. Your documents never leave it.", detail: `${labels[b] || b} · ${model}`, icon: "house" };
+    return { where: "local", label: "Private", short: "The AI runs on this computer", plain: "The AI runs on this computer. Your documents never leave it.", detail: `${labels[b] || b} · ${model}`, icon: "house" };
   },
   modelConfigured() {
     const s = App.settings();
@@ -657,7 +657,8 @@ export function copyLine(text, label = "Copy") {
   return h("div", { class: "copy-line" }, icon("terminal", { size: 13 }), code, btn);
 }
 
-// What waits for Claude Code, for a page that waits on it: the line, the estimate, the command, and a pause note.
+// What waits for Claude Code, for a page that waits on it: the line, the estimate, a button that starts Claude Code
+// (0.9), the command to type instead, and the privacy note.
 export function queueNotice(q, opts = {}) {
   if (!q) return null;
   const est = q.estimate || "";
@@ -666,7 +667,72 @@ export function queueNotice(q, opts = {}) {
       q.being_answered ? h("span", { class: "muted small" }, ` · ${q.being_answered} being answered now`) : null),
     est && !q.paused ? h("div", { class: "muted small" }, est.charAt(0).toUpperCase() + est.slice(1) + ".") : null,
     q.paused && q.paused_text ? h("p", { class: "small", style: { margin: "4px 0" } }, q.paused_text) : null,
-    h("div", { class: "small", style: { marginTop: "4px" } }, q.paused ? "Type this in Claude Code to go on:" : "Claude Code answers it when you type this in it (opened in any folder):"),
-    copyLine(q.command || "/enlens-run"),
+    App.project ? startClaude(App.project, { command: q.command }) : null,
     opts.privacy === false ? null : h("div", { class: "muted small", style: { marginTop: "4px" } }, icon("cloud", { size: 12 }), " ", q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic."));
+}
+
+// 0.9: "Start Claude Code": ENLENS starts Claude Code (signed in with its own login, on the researcher's plan) for
+// the project's queue, and shows while it works. The command to type in Claude Code yourself stays one line below.
+// The element keeps itself current while it is on the page.
+export function startClaude(project, opts = {}) {
+  const box = h("div", { class: "start-claude" });
+  let timer = null;
+  let busy = false;
+  const ago = (s) => (s < 60 ? "just now" : `${Math.round(s / 60)} min ago`);
+  async function draw(useCache) {
+    clearTimeout(timer);
+    if (!box.isConnected && box.dataset.drawn) return;  // the page moved on
+    let q;
+    const cached = QUEUE_CACHE.get(project);
+    if (useCache && cached && cached.q) {
+      q = cached.q;  // draw at once from the last answer (a page that redraws often never waits)
+      if (Date.now() - cached.at > 3000) queueFetch(project).then(() => { if (box.isConnected) draw(true); }).catch(() => {});
+    } else {
+      try { q = await queueFetch(project); } catch (_) { return; }
+    }
+    box.dataset.drawn = "1";
+    const cmd = opts.command || q.command || `/enlens-run ${project}`;
+    const typeIt = h("div", { class: "sc-type" }, h("span", { class: "muted small" }, q.can_start ? "Or type this in Claude Code yourself:" : "In Claude Code (opened in any folder), type:"), copyLine(cmd));
+    const r = q.runner || {};
+    const parts = [];
+    if (q.route !== "claude_code") { replace(box, typeIt); return; }
+    if (r.running) {
+      parts.push(h("div", { class: "sc-running" }, h("span", { class: "running-dot", "aria-hidden": "true" }),
+        h("span", {}, h("strong", {}, "Claude Code is working on it"), h("span", { class: "muted small" }, ` · started ${ago(r.seconds || 0)} from ENLENS`)),
+        h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => {
+          try { await api("POST", `/api/projects/${P(project)}/queue/claude-code/stop`, {}); toast("Claude Code stopped. What it had not answered waits again.", "ok"); QUEUE_CACHE.delete(project); draw(false); } catch (e) { showError(e); }
+        } }, icon("stop", { size: 12 }), "Stop")));
+    } else if (q.can_start && (q.waiting || q.being_answered || opts.always)) {
+      const b = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
+        if (busy) return;
+        busy = true; b.disabled = true;
+        try { await api("POST", `/api/projects/${P(project)}/queue/claude-code`, {}); toast("Claude Code started. You can keep working; the results appear as they come in.", "ok"); }
+        catch (e) { showError(e); }
+        busy = false; QUEUE_CACHE.delete(project); draw(false);
+      } }, icon("play", { size: 13 }), "Start Claude Code");
+      parts.push(h("div", { class: "sc-start" }, b, h("span", { class: "muted small" }, "Runs on your Claude plan, in the background. It stops by itself when nothing waits.")));
+      if (r.exit_code !== undefined && r.exit_code !== null && r.exit_code !== 0 && !r.stopped) {
+        parts.push(h("details", { class: "fold small" }, h("summary", {}, icon("alert-triangle", { size: 12 }), " The last run stopped with a problem"), h("pre", { class: "mono small sc-report" }, r.report || "(no report)")));
+      }
+    } else if (!q.can_start && q.claude && !q.claude.found) {
+      parts.push(h("p", { class: "small sc-missing" }, icon("info", { size: 12 }), " Claude Code was not found on this computer. ", h("a", { href: "#/settings/model" }, "Set it up"), " to start it from here."));
+    }
+    if (q.claude && q.claude.signed_in === false) parts.push(h("p", { class: "small" }, icon("info", { size: 12 }), " Sign in to Claude Code once: open a terminal, type ", h("code", {}, "claude"), " and sign in with your Claude plan."));
+    replace(box, ...parts, r.running ? null : typeIt);
+    if (r.running) timer = setTimeout(() => queueFetch(project).then(() => draw(true)).catch(() => {}), 4000);
+    else if (r.seconds !== undefined && opts.onDone && box.dataset.wasRunning === "1") opts.onDone();
+    box.dataset.wasRunning = r.running ? "1" : "0";
+  }
+  draw(true);
+  return box;
+}
+const QUEUE_CACHE = new Map();
+// one request at a time per project; the answer is kept for the next element that draws
+function queueFetch(project) {
+  const c = QUEUE_CACHE.get(project) || {};
+  if (c.inflight) return c.inflight;
+  const p = api("GET", `/api/projects/${P(project)}/queue`).then((q) => { QUEUE_CACHE.set(project, { q, at: Date.now() }); return q; })
+    .finally(() => { const now = QUEUE_CACHE.get(project); if (now && now.inflight === p) delete now.inflight; });
+  QUEUE_CACHE.set(project, { ...c, inflight: p });
+  return p;
 }

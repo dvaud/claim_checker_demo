@@ -25,7 +25,7 @@ export class ProgressPanel {
     this.partsBox = h("div", { class: "parts-box" });
     this.modelBox = h("div", { class: "model-line", hidden: true });
     this.expect = h("p", { class: "muted small expect" }, App.settings().backend === "claude_code"
-      ? "Claude Code reads it when you type the command above in it. You can move around the app, or close it: the check waits in the queue, and its answer appears under Results."
+      ? "Claude Code reads it once you press Start Claude Code (or type the command in Claude Code). You can move around the app, or close it: the check waits in the queue, and its answer appears under Results."
       : "An AI model running on your own computer can take a few minutes. You can move around the app meanwhile; the check keeps running.");
     this.techOpen = false;
     this.body = h("div", { class: "progress-body" }, this.batchBox, this.decompBox, this.partsBox, this.modelBox, this.expect);

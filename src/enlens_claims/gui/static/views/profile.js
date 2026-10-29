@@ -3,6 +3,7 @@
 // seconds, a provisional profile) and, optionally, the AI reading the passages with a candidate code. Every label
 // says why it is there; a person can agree, change or reject it (in the document viewer, Codes panel).
 // The pieces shared with the document viewer (the AI-labelling card, job cards, wording) are exported from here.
+import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, download, switchControl, navigate } from "../lib.js";
 import { simpleProgress } from "./progress.js";
 
@@ -140,7 +141,7 @@ export function aiLabelCard({ project, framework, docIds = null, watchers, onEnd
       ? `${plural(plan.passages || 0, "passage")}${one ? " in this document" : ""}: ${fmt.num(plan.already_read || 0)} already read, ${fmt.num(toRead)} to read.`
       : `${plural(plan.with_candidates || 0, "passage")} of ${fmt.num(plan.passages || 0)}${one ? " in this document" : ""} ${plan.with_candidates === 1 ? "has" : "have"} a candidate code: ${fmt.num(plan.already_read || 0)} already read, ${fmt.num(toRead)} to read.`;
     bits.push(h("p", { class: "pf-ai-counts", style: { margin: "0 0 6px" } }, h("strong", {}, counts), est ? ` ${cap(aboutTime(est))} with this model.` : toRead ? " How long it takes is not known yet: it is measured on the first passages." : ""));
-    if (where.where === "cloud") bits.push(h("p", { class: "muted small it", style: { margin: "0 0 6px" } }, icon("cloud", { size: 13 }), " The passages are sent to the Claude API (cloud)."));
+    if (where.where === "cloud") bits.push(h("p", { class: "muted small it", style: { margin: "0 0 6px" } }, icon("cloud", { size: 13 }), ` ${where.sent || "The passages are sent to the Claude API (cloud)."}`));
     if (run.error) {
       bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, "The AI model is not available, so it cannot label passages now."),
         h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, run.error)), h("a", { href: "#/settings" }, "Check the AI model in Settings"))));
@@ -329,7 +330,7 @@ export async function renderProfile(view, params, query) {
     const xlsx = h("button", { class: "btn btn-sm", type: "button", disabled: !prof.pass1.done,
       onClick: (e) => { const b = e.currentTarget; b.disabled = true; download(`${base}/profile.xlsx?framework=${encodeURIComponent(framework)}&level=${level}`).catch(showError).finally(() => { b.disabled = false; }); } },
       icon("download", { size: 13 }), "Download for Excel (.xlsx)");
-    replace(head, pageHead("Profile", {
+    replace(head, pageHead("Profile", { eyebrow: featureEyebrow("profile"),
       sub: `Which codes of a codebook the documents of project “${project}” address, how much and where. Every label says why it is there, and you can agree, change or reject it in the document.`,
       actions: [xlsx],
     }));
@@ -395,8 +396,9 @@ export async function renderProfile(view, params, query) {
       h("p", { class: "muted small", style: { margin: "2px 0 0" } }, `Labelled ${sources.join(", ") || "by nobody yet"}. `,
         provisionalOnly ? h("span", { class: "chip chip-weak" }, "provisional") : null,
         provisionalOnly ? " The AI has not read any passage yet: the profile rests on keywords" + (p1.meaning_model ? " and meaning" : "") + " alone." : g.provisional ? ` The AI has read ${plural(prof.read_by_model || 0, "passage")}; passages it has not read count with their keyword codes (provisional).` : ` The AI has read ${plural(prof.read_by_model || 0, "passage")}.`),
-      h("p", { class: "muted small", style: { margin: "4px 0 0" } }, "A passage is the stretch of text the app reads as one unit, up to about 1,100 characters: a few paragraphs together, or part of a long one. A passage can have several codes, so there are more labels than passages; the AI may confirm fewer codes than the keywords proposed."),
-      h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("dl", { class: "ev-tech-list" },
+      h("details", { class: "fold" }, h("summary", {}, "Technical details"),
+        h("p", { class: "muted small", style: { margin: "4px 0 6px" } }, "A passage is the stretch of text the app reads as one unit, up to about 1,100 characters: a few paragraphs together, or part of a long one. A passage can have several codes, so there are more labels than passages; the AI may confirm fewer codes than the keywords proposed."),
+        h("dl", { class: "ev-tech-list" },
         h("div", {}, h("dt", {}, "Codebook"), h("dd", {}, `${fw.title || framework} (${framework})`)),
         h("div", {}, h("dt", {}, "Keyword pass"), h("dd", {}, `${fmt.date(p1.at)} · ${plural(p1.passages || 0, "passage")}`)),
         h("div", {}, h("dt", {}, "By meaning"), h("dd", {}, p1.meaning_model || "not used (no search by meaning)")),

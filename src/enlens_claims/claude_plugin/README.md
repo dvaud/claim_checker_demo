@@ -40,4 +40,5 @@ the queue after 30 minutes, and the next `/enlens-run` continues where it stoppe
 ## What it can do
 
 The helpers can use only the ENLENS queue tools: they read nothing but the passages the queue hands them and write
-nothing but answers. ENLENS never starts Claude Code, never handles your login and never runs on anyone else's plan.
+nothing but answers. ENLENS never handles your login and never runs on anyone else's plan. When you press
+*Start Claude Code* in the app, ENLENS starts Claude Code for you with only the ENLENS queue tools allowed.

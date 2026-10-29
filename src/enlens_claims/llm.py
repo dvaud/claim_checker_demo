@@ -1056,7 +1056,8 @@ class BaselineBackend:
 class ClaudeCodeBackend:
     """Claude Code on the researcher's own plan (0.8): nothing is asked from here. The app's runs prepare tasks and
     wait for them in the queue (`taskqueue.wait_for`), which Claude Code answers through the connector
-    (`/enlens-run` in Claude Code). ENLENS never starts Claude Code and never handles its login."""
+    (`/enlens-run` in Claude Code, typed by the researcher or started by the app's "Start Claude Code", 0.9). ENLENS
+    never handles its login."""
 
     name = "claude_code"
 

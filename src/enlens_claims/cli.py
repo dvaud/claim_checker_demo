@@ -376,8 +376,11 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--model", help="run: the model (default: the model of each kind, see Settings)")
     p.add_argument("--limit", type=int)
     backend_args(p)
-    p = sub.add_parser("claude-setup", help="prepare the ENLENS plugin for Claude Code and print the lines that add it")
+    p = sub.add_parser("claude-setup", help="prepare the ENLENS plugin and add it to Claude Code (when Claude Code is "
+                                            "found; otherwise print the two lines that add it)")
     p.add_argument("--no-check", action="store_true", help="do not start the connector to check it")
+    p.add_argument("--print-only", action="store_true", help="only print the lines that add it; change nothing in "
+                                                             "Claude Code")
     p = sub.add_parser("update", help="fetch the newest ENLENS from GitHub into this copy (no new venv, data untouched)")
     p.add_argument("--check", action="store_true", help="only say whether a newer version is waiting")
 
@@ -866,11 +869,29 @@ def _claude_setup(a) -> int:
             print(f"Problem: {r.get('error') or 'the connector lacks ' + ', '.join(r.get('missing', []))}", file=sys.stderr)
             return 1
         print("The ENLENS connector starts and offers the queue tools.")
-    print("\nAdd it to Claude Code (once) by typing these two lines in a terminal:\n")
+    path = "" if a.print_only else claude_setup.find_claude()
+    if path:
+        r = claude_setup.install()
+        for step in r["steps"][1:]:
+            print(("ok   " if step["ok"] else "FAIL ") + step["step"])
+            if not step["ok"]:
+                print("     " + step["text"].replace("\n", "\n     "), file=sys.stderr)
+        if all(x["ok"] for x in r["steps"]):
+            st = r["status"]
+            print(f"\nThe plugin is added to Claude Code ({st.get('version') or path}).")
+            if st.get("signed_in") is False:
+                print("Claude Code is not signed in yet: open it once (type claude) and sign in with your Claude plan.")
+            print("In the app, press Start Claude Code where work waits, or type /enlens-run <project> in Claude Code "
+                  "(restart Claude Code first if it was open).")
+            return 0
+        print("\nIt could not be added automatically. Type these two lines in a terminal instead:\n")
+    else:
+        if not a.print_only:
+            print("\nClaude Code was not found on this computer (install it from claude.com/claude-code).")
+        print("\nAdd the plugin to Claude Code (once) by typing these two lines in a terminal:\n")
     for line in claude_setup.commands():
         print("  " + line)
-    print("\nThen restart Claude Code and type /enlens-run <project> in it. ENLENS writes nothing to Claude Code's own "
-          "settings.")
+    print("\nThen restart Claude Code and type /enlens-run <project> in it.")
     return 0
 
 

@@ -6,12 +6,13 @@
 <meta name="enlens-token" content="{{ENLENS_TOKEN}}">
 <meta name="enlens-version" content="{{ENLENS_VERSION}}">
 <meta name="color-scheme" content="light dark">
-<title>ENLENS · hypothesis checker</title>
+<title>ENLENS · explore and check your documents</title>
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/app.css">
 <link rel="stylesheet" href="/static/v07.css">
 <link rel="stylesheet" href="/static/concepts-themes.css">
 <link rel="stylesheet" href="/static/profile-viewer.css">
+<link rel="stylesheet" href="/static/v09.css">
 <script type="module" src="/static/app.js"></script>
 </head>
 <body>
@@ -19,7 +20,7 @@
 <div class="shell" id="shell">
   <header class="topbar" id="topbar">
     <button class="icon-btn" id="menu-btn" type="button" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false"></button>
-    <a class="brand brand-small" href="#/check" aria-label="ENLENS home">
+    <a class="brand brand-small" href="#/overview" aria-label="ENLENS home">
       <img src="/static/logo.svg" alt="" width="26" height="26">
       <span>ENLENS</span>
     </a>
@@ -28,22 +29,25 @@
 
   <aside class="sidebar" id="sidebar" aria-label="Sidebar">
     <div class="sidebar-inner">
-      <a class="brand" href="#/check" aria-label="ENLENS home">
+      <a class="brand" href="#/overview" aria-label="ENLENS home">
         <img src="/static/logo.svg" alt="" width="34" height="34">
-        <span class="brand-text"><strong>ENLENS</strong><small>checks hypotheses against your documents</small></span>
+        <span class="brand-text"><strong>ENLENS</strong><small>explore and check your documents</small></span>
       </a>
       <div class="project-switch" id="project-switch"></div>
       <nav class="nav" aria-label="Main" id="nav">
-        <a href="#/check" data-route="check"><span class="nav-icon" data-icon="flask"></span><span>Check a hypothesis</span></a>
-        <a href="#/history" data-route="history"><span class="nav-icon" data-icon="history"></span><span>Results</span></a>
-        <a href="#/batch" data-route="batch"><span class="nav-icon" data-icon="list-checks"></span><span>Check several</span></a>
-        <a href="#/sources" data-route="sources"><span class="nav-icon" data-icon="book-open"></span><span>Documents</span></a>
+        <a href="#/overview" data-route="overview" title="Everything you can do with this project, and what is already made"><span class="nav-icon" data-icon="grid"></span><span>Overview</span></a>
+        <a href="#/sources" data-route="sources" title="Add documents, and read one with its codes, key terms and references"><span class="nav-icon" data-icon="book-open"></span><span>Documents</span></a>
         <span class="nav-group" role="presentation">Explore the documents</span>
-        <a href="#/search" data-route="search"><span class="nav-icon" data-icon="text-search"></span><span>Search</span></a>
-        <a href="#/profile" data-route="profile"><span class="nav-icon" data-icon="tag"></span><span>Profile</span></a>
-        <a href="#/concepts" data-route="concepts"><span class="nav-icon" data-icon="network"></span><span>Concepts</span></a>
-        <a href="#/themes" data-route="themes"><span class="nav-icon" data-icon="shapes"></span><span>Themes</span></a>
-        <a href="#/settings" data-route="settings"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></a>
+        <a href="#/search" data-route="search" title="Every place words occur, with the words around them (no AI)"><span class="nav-icon" data-icon="text-search"></span><span>Search</span></a>
+        <a href="#/profile" data-route="profile" title="Which codes (SDG targets or your codebook) each document addresses"><span class="nav-icon" data-icon="tag"></span><span>Profile</span></a>
+        <a href="#/concepts" data-route="concepts" title="A glossary of terms grouped into concepts, followed across documents"><span class="nav-icon" data-icon="network"></span><span>Concepts</span></a>
+        <a href="#/themes" data-route="themes" title="What the documents are about, grouped into themes"><span class="nav-icon" data-icon="shapes"></span><span>Themes</span></a>
+        <span class="nav-group" role="presentation">Check hypotheses</span>
+        <a href="#/check" data-route="check" title="Whether the documents support or contradict a statement, with quotes"><span class="nav-icon" data-icon="flask"></span><span>Check a hypothesis</span></a>
+        <a href="#/batch" data-route="batch" title="A list of hypotheses, checked one after the other"><span class="nav-icon" data-icon="list-checks"></span><span>Check several</span></a>
+        <a href="#/history" data-route="history" title="Every hypothesis checked, your reviews and downloads"><span class="nav-icon" data-icon="history"></span><span>Results</span></a>
+        <span class="nav-sep" role="presentation"></span>
+        <a href="#/settings" data-route="settings" title="The AI (Claude Code, a local model), checking, exploring, documents"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></a>
       </nav>
       <div class="sidebar-foot">
         <div id="jobs-indicator"></div>
@@ -51,8 +55,6 @@
         <div id="privacy-indicator"></div>
         <div class="sidebar-row">
           <button class="btn btn-ghost btn-sm" id="theme-btn" type="button" aria-live="polite"></button>
-        </div>
-        <div class="sidebar-row">
           <button class="btn btn-ghost btn-sm" id="quit-btn" type="button" hidden></button>
         </div>
       </div>

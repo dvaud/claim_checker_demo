@@ -9,7 +9,7 @@ export function checkOptions({ docs = [], search = null, compact = false } = {})
   const perDoc = rangeControl("At most this many from one document", { min: 1, max: 4, step: 1, value: Math.min(4, Math.max(1, s.per_doc || 2)), help: "So that one long report does not crowd out the others." });
   const hasIndex = search && search.model && search.embedded > 0;
   const semantic = switchControl("Search by meaning: finds excerpts even when they use other words than your hypothesis", !!hasIndex, {
-    help: !search || !search.model ? "Search by meaning is off: documents are searched by their words only. It can be turned on under Settings → Advanced." :
+    help: !search || !search.model ? "Search by meaning is off: documents are searched by their words only. It can be turned on under Settings → Documents." :
       !search.embedded ? "Search by meaning is not set up for this project yet (see Documents)." :
       search.complete ? "Ready for all documents of this project." : `Set up for part of the documents only (finish it under Documents).`,
   });

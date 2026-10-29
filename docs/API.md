@@ -657,6 +657,31 @@ that no session has taken yet out of the queue; a check by queue is removed whol
 - Themes carry `number` (1 to n in the order shown) and `merged_from_names`; `PUT …/concepts/links` accepts
   `decision: "undo"`.
 
+### Subscription first, Claude Code set up and started from the app, the overview (0.9)
+
+- A new installation's settings have `backend: "claude_code"` and `allow_claude_code: true`. With `--local-only` the
+  default is `"auto"` (and `allow_claude_code` false).
+- `GET /api/claude-setup[?refresh=1]` adds `"status"`: `{"found", "path", "version", "signed_in": true | false |
+  null, "written", "installed": true | false | null, "plugin_version", "ready", "local_only"}` (from `claude
+  --version`, `claude auth status` and `claude plugin list --json`; cached for 30 s, `refresh=1` reads again).
+- `POST /api/claude-setup` `{}` prepares the plugin and, when Claude Code is found, adds it to Claude Code →
+  `{..., "steps": [{"step", "ok", "text"}], "status", "commands", "problems"}`; `{"write_only": true}` only writes
+  the plugin (as 0.8); `{"check": true}` also starts the connector to check it.
+- `POST /api/projects/<p>/queue/claude-code` → `{"running", "started_at", "seconds", "exit_code", "report",
+  "stopped"}`: starts Claude Code headless for the project's queue (`claude -p "/enlens-run:enlens-run <p>"
+  --allowedTools Agent mcp__plugin_enlens-run_enlens__{queue_status,next_tasks,submit_answers,release}`), one run per
+  project; adds the plugin first if needed. 400 when Settings do not name Claude Code, when Claude Code is not found,
+  or with `--local-only`.
+- `POST /api/projects/<p>/queue/claude-code/stop` → the same object: stops it, and gives the batches it had taken
+  back to the queue at once.
+- `GET /api/projects/<p>/queue` adds `"runner"` (as above, or `{"running": false}`), and on the Claude Code route
+  `"can_start"` and `"claude": {"found", "signed_in", "installed", "ready"}`.
+- `POST /api/servers/test` on the Claude Code route answers from the set-up status: `model_available` is whether it
+  is ready, `claude` the status, `warning` when it is not signed in.
+- `GET /api/projects/<p>/overview` → `{"documents", "passages", "profile": {"framework", "keyword", "labels",
+  "documents"}, "concepts": {"terms", "concepts"}, "themes": {"runs", "themes", "latest"}, "references",
+  "hypotheses", "waiting"}`: what each feature has made, for the Overview page.
+
 ### Jobs
 
 `GET /api/jobs` → `{"jobs": [Job summary]}` newest first. `GET /api/jobs/<id>` → full Job:
