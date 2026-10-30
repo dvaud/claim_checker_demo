@@ -1,5 +1,74 @@
 # ENLENS: explore your documents, and check what they say, with Claude on your own plan
 
+ENLENS helps researchers find their way through their own reports, papers and interview notes, and check whether
+they support a statement, with every quote checked against the source. It runs on your computer.
+
+## Install
+
+1. **Paste one line.** On a Mac or Linux, open *Terminal*; on Windows, open *PowerShell*. Paste the line for your
+   system and press Enter:
+
+   | System | Where | Paste this |
+   | --- | --- | --- |
+   | macOS, Linux | Terminal | `curl -fsSL https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.sh \| sh` |
+   | Windows | PowerShell | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.ps1 \| iex"` |
+
+   It needs no git, no Python and no administrator rights. When it is done, ENLENS opens in your browser and its
+   icon is in the usual place (macOS: Applications and Desktop; Windows: Start menu and Desktop; Linux: the
+   applications menu).
+2. **Press *Set up Claude*** on the first screen. It installs Claude Code if it is missing (it shows you the command
+   first), opens a window where you sign in once with your Claude plan, and adds the ENLENS plugin.
+3. **Name a project and add your documents** (PDF, Word, web pages, text, or a zip of them). ENLENS asks who may read
+   them with AI: *Claude may read them*, *Only a local AI*, or *No AI*.
+4. **Explore and check.** Where AI work waits (labels, theme names, a check), press **Start Claude Code**; the
+   results appear as they come in.
+
+Used ENLENS on another computer? Choose *Import from another computer* on the first screen (on the old computer:
+*Projects → Move ENLENS to another computer*). No Claude plan? See *Other ways to run it* below.
+
+## Update
+
+1. **Quit ENLENS** (*Quit ENLENS* at the bottom of the sidebar).
+2. **Get the new version:** in Terminal or PowerShell type `enlens update`, or paste the install line again. On
+   Windows, use the install line.
+3. **Open ENLENS again** from its icon.
+
+Your projects and settings (in the folder `enlens` in your home folder) are never touched. Installed from a git copy
+instead? `enlens update` pulls the new version (see *For developers*).
+
+## New in 0.11: per-document AI settings
+
+- **Choose who may read each document with AI.** One project can mix documents Claude may read with documents that
+  must stay on your computer, such as a licensed PDF or an interview transcript. Each document is *Claude may read
+  it*, *Only a local AI* or *No AI*: asked when you add documents, and changed any time in the column *AI* of the
+  Documents page (tick several to change them together; add a note on why).
+- **Enforced in the code, in every feature.** Documents marked *Only a local AI* or *No AI* are never sent to Claude:
+  not in checks, the Profile, themes, concepts, references or the connector. In a check, Claude reads what it may,
+  a model on your computer reads the *Only a local AI* excerpts, and the *No AI* ones wait for your own judgement;
+  each excerpt says who read it.
+- **See what Claude has read.** The column *Sent to Claude* shows how much of each document Claude has read, with
+  the passages, when and why; *Settings → Technical* downloads the whole list for your records. You can cap how much
+  of a document Claude may read.
+- **Know your account's terms.** *Set up Claude* explains what happens to the text Claude reads on a personal or a
+  work plan, with a link to Anthropic's own page.
+- Projects made before 0.11 work exactly as before until you change a setting. Full notes: `CHANGELOG.md`.
+
+## Earlier releases
+
+- **0.10**: install with one pasted line and update with `enlens update`; *Set up Claude* in one button; move every
+  project to another computer; the icon always opens the version installed.
+- **0.9**: subscription first (Claude Code on your own plan is the AI) and exploring first (Overview, Search,
+  Profile, Concepts, Themes before checking).
+- **0.8**: Claude Code answers every AI task through a queue, with the right model for each kind of task.
+- **0.7**: explore the documents (search, codebook profiles, a glossary of concepts, themes, references), replacing
+  the Cross-Doc SDG Explorer.
+- **0.5 and 0.6**: the hypothesis checker for researchers who do not program: checked quotes, your own judgements,
+  a second opinion, look before checking.
+
+The full notes of every release are in `CHANGELOG.md`.
+
+## What ENLENS does
+
 ENLENS reads your sources (reports, papers, policy documents, interview notes) and helps you find your way through
 them before you claim anything: every place a word occurs, the codes each document addresses (the SDG targets or
 your own codebook), a glossary of terms grouped into concepts you can follow from one document to the next, themes
@@ -11,47 +80,25 @@ evidence, with the exact words of each source, where they are (page or paragraph
 character against the source text. You review the AI's judgements like a co-coder's; your judgements count and are
 kept next to the AI's in the Excel download.
 
-**Subscription first (0.9).** The AI is Claude, through Claude Code signed in with your own Claude plan (Pro, Max,
-Team or Enterprise). ENLENS sets Claude Code up by itself and starts it when you press *Start Claude Code*; each kind
-of task goes to the right model (labels on Haiku, theme names on Sonnet, checks on Opus). Your documents, results
-and reviews stay on your computer: only the passages inside the AI's tasks are sent to Anthropic. A model on your own
+The AI is Claude, through Claude Code signed in with your own Claude plan (Pro, Max, Team or Enterprise). ENLENS sets
+Claude Code up by itself and starts it when you press *Start Claude Code*; each kind of task goes to the right model
+(labels on Haiku, theme names on Sonnet, checks on Opus). Your documents, results and reviews stay on your computer:
+only the passages inside the AI's tasks, from documents Claude may read, are sent to Anthropic. A model on your own
 computer (Ollama, LM Studio…) and a shared installation on the Claude API remain available, and whoever installs it
 can switch everything off the computer off for good (`--local-only`).
-
-**Per-document AI settings (0.11).** One project can mix documents Claude may read with documents that must stay on
-the computer. Each document is *Claude may read it*, *Only a local AI* or *No AI*; the code makes it impossible for a
-restricted document's text to reach Claude, in any feature, and the Documents page shows how much of every other
-document Claude has read.
 
 The app is written for researchers who do not program: plain language on every working screen; each feature says
 what it does and whether it uses the AI; technical details are kept under *Technical details* and
 *Settings → Technical*. It grew out of the Cross-Doc SDG Explorer and the ENLENS green hydrogen pilot (a Value Chain
 Assessment checked against its cited literature); that SDG pipeline is still included as an optional pack.
 
-## Start
+## Other ways to run it
 
-Paste one line (0.10). It needs no git, no Python and no venv of your own, and ends with the ENLENS icon in its
-usual place and ENLENS open in your browser:
-
-| System | Where | Paste this |
-| --- | --- | --- |
-| macOS, Linux | Terminal | `curl -fsSL https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.sh \| sh` |
-| Windows | PowerShell | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.ps1 \| iex"` |
-
-The line gets [uv](https://docs.astral.sh/uv/) (which brings its own Python 3.12), downloads the ENLENS package of
-the latest release, checks it against the release's `SHA256SUMS`, installs it, and makes the icon (macOS:
-Applications and Desktop; Windows: Start menu and Desktop; Linux: the applications menu). Running it again installs
-the newest release; your projects (in `~/enlens`) stay where they are. `ENLENS_LOCAL_ONLY=1` or `ENLENS_HOME=<folder>`
-before the line are built into the icon.
-
-Then press **Set up Claude** on the first screen: it installs [Claude Code](https://claude.com/claude-code) if it is
-missing (with Anthropic's installer, after showing you the command), opens a window where you sign in once with your
-Claude plan, and adds the ENLENS plugin (or, from a terminal, `enlens claude-setup`). Then create a project, add
-documents, and explore. Used ENLENS on another computer? *Import from another computer* on the first screen brings
-every project and the settings (made there with *Projects → Move ENLENS to another computer*). Wherever AI
-work waits (labels, theme names, a check…), press **Start Claude Code**: ENLENS starts it in the background on that
-project's work and the results appear as they come in. You can also type `/enlens-run <project>` in Claude Code
-yourself.
+What the install line does: it gets [uv](https://docs.astral.sh/uv/) (which brings its own Python 3.12), downloads
+the ENLENS package of the latest release, checks it against the release's `SHA256SUMS`, installs it, and makes the
+icon. `ENLENS_LOCAL_ONLY=1` or `ENLENS_HOME=<folder>` before the line are built into the icon. Instead of the button,
+`enlens claude-setup` sets up Claude from a terminal, and `/enlens-run <project>` in Claude Code answers a project's
+waiting work yourself.
 
 No Claude plan? Choose *A model on this computer* (first screen or *Settings → AI*):
 
@@ -60,7 +107,7 @@ ollama pull qwen3:8b             # any local chat model (Ollama, LM Studio, llam
 ollama pull nomic-embed-text     # optional: search by meaning as well as by words (bge-m3 for mixed languages)
 ```
 
-Installing it for someone else: the line above, on their account (*Quit ENLENS* in the app stops it);
+Installing it for someone else: the install line, on their account (*Quit ENLENS* in the app stops it);
 `ENLENS_LOCAL_ONLY=1` removes every option that sends text off the computer. Scanned PDFs need the program
 Tesseract; the app says how to get it on that system when it meets a scanned page.
 
@@ -82,12 +129,6 @@ enlens detect                                               # which local model 
 `enlens prepare label|link|theme|resolve|check` prepares AI work for Claude Code from the command line, and `enlens
 queue status|run` shows it or answers it here (`--backend anthropic` for a shared installation). Inside the Claude
 app (Claude reads on your plan; only the passages shown leave the computer): `enlens-mcp --install-claude-desktop`.
-
-## Updating
-
-Installed with the line above: run it again, or `enlens update` (it takes the latest GitHub Release, checked against
-its checksums, and installs it in the same place; on Windows, quit ENLENS and run the line again). Then reopen
-ENLENS from its icon. The data folder, `~/enlens`, is never touched.
 
 ## For developers (a git copy)
 
