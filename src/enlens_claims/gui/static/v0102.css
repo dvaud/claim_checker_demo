@@ -1,0 +1,23 @@
+/* ENLENS 0.10.2: a newer version installed while this one runs. */
+
+/* the notice above every page: in the page's column, like the quick-look banner */
+#update-banner:not(:empty) { max-width: var(--content-w); margin: 0 auto; padding: 20px 36px 0; }
+.update-banner { align-items: center; }
+.update-banner > div { flex: 1 1 0; min-width: 0; }
+.update-banner p { margin: 0; }
+.update-banner .btn { flex: none; }
+
+/* the version label on the Settings page */
+.version-tag.version-tag-stale { border-color: var(--partly-line); background: var(--partly-soft); color: var(--text); }
+.version-tag.version-tag-stale svg { color: var(--partly); }
+a.version-tag.version-tag-stale:hover { background: var(--partly-soft); border-color: var(--partly); color: var(--text); }
+
+/* the same side margins as the page below it */
+@media (max-width: 1100px) { #update-banner:not(:empty) { padding: 18px 24px 0; } }
+@media (max-width: 860px) { #update-banner:not(:empty) { padding: 14px 16px 0; } }
+@media (max-width: 420px) { #update-banner:not(:empty) { padding: 12px 12px 0; } }
+@media (max-width: 520px) {
+  .update-banner { flex-wrap: wrap; align-items: flex-start; }
+  .update-banner > div { flex-basis: calc(100% - 40px); }  /* the text fills the line beside the icon … */
+  .update-banner .btn { margin-left: 28px; }               /* … and the button goes under it */
+}

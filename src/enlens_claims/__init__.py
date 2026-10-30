@@ -3,4 +3,4 @@
 The SDG / value chain assessment pipeline of the green hydrogen pilot is included as an optional pack
 (`enlens load-vca`, `make-tasks`, `report`, ...).
 """
-__version__ = "0.10.1"
+__version__ = "0.10.2"

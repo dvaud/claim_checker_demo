@@ -32,8 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--launcher-dir", action="append", metavar="FOLDER",
                     help="with --make-launcher: put the icon in this folder instead (repeatable)")
     ap.add_argument("--launcher", action="store_true",
-                    help="what the icon runs: open the app if it is already running, otherwise start it in the "
-                         "background (output to logs/enlens.log in the data folder) and open it")
+                    help="what the icon runs: open the app if it is already running (an older version still "
+                         "running is quit first, unless something runs in it), otherwise start it in the background "
+                         "(output to logs/enlens.log in the data folder) and open it")
     ap.add_argument("--no-start-ollama", action="store_true",
                     help="with --launcher: do not start the Ollama app when it is not running")
     a = ap.parse_args(argv)
@@ -53,7 +54,19 @@ def main(argv: list[str] | None = None) -> int:
         from .. import home
         from . import launcher
 
+        replaced = ""
         live = launcher.running()
+        if live and launcher.is_older(live):  # 0.10.2: updated while it ran: quit the old copy, start this one
+            from .. import __version__
+
+            old = live.get("version") or "an older version"
+            outcome = launcher.stop_older(live)
+            if outcome == "stopped":  # said in the log below: started from the icon, nothing shows what is printed
+                replaced = f"ENLENS {old} was still running: stopped it to start {__version__}."
+                live = None
+            elif outcome == "busy":
+                print(f"ENLENS {old} is still running and busy (a check, or documents being added): opening it. "
+                      f"When it is done, choose Quit ENLENS and open ENLENS again to use {__version__}.")
         if live:  # already running: just show it
             if not a.headless:
                 import webbrowser
@@ -63,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         launcher.detach()
         launcher.log_to_file()
+        if replaced:
+            print(replaced)
         if not a.no_start_ollama:
             started = launcher.start_ollama(home.load_settings())
             if started:

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.10.2 (October 2026): the icon has its picture, and opens the new version
+
+Two problems met right after updating to 0.10.1 on a Mac. No analysis changes: every answer still goes through the
+quote check, a person can overrule it, and every result records how it was made.
+
+**The icon has its picture, always.** The ENLENS icon was drawn when it was made, with the Python package Pillow;
+without Pillow (a git copy installed without the `ocr` extra) it silently came out as a blank square on macOS and a
+plain shortcut on Windows. The picture now ships with ENLENS (`gui/icons/ENLENS.icns`, up to 1024 pixels for the
+Desktop at full size, and `ENLENS.ico`), drawn once by `tools/make_icons.py` from the same logo; Pillow is only a
+fallback if the files are missing. An icon made without its picture is given it when ENLENS starts
+(`launcher.repair_icons`): on macOS the ENLENS app (and only an app made by `--make-launcher`) gets `ENLENS.icns`
+and its Info.plist names it, nothing else changes; on Windows, when the data folder has no `ENLENS.ico`, it is
+written and the ENLENS shortcuts on the Desktop and in the Start menu are pointed at it. Linux already used
+`logo.svg`.
+
+**The icon opens the version that is installed.** After an update (`git pull`, `enlens update`, the install line),
+the copy still running was the old version, and double-clicking the icon only showed it again: the new page files
+(read from disk) with the old program, so Settings showed the old version number with the new layout.
+- Double-clicking the icon while an **older** version runs now quits it, as *Quit ENLENS* would, and starts this
+  version (`launcher.is_older`, `launcher.stop_older`; the log says so). When a check or another job runs in it, it
+  is left alone and opened, because quitting would stop that work. A newer copy running is just opened.
+- `/api/state` says which version is installed now (`installed_version`, read from the package on disk). When it is
+  newer than the running one, every page shows *ENLENS X is installed, but Y is still running* with a *Quit ENLENS*
+  button, and the version label in Settings shows *Y · X installed*. (A copy older than 0.10.2 cannot say this; the
+  icon handles that case.)
+
+Tests: 10 new (`tests/test_0102_icon_and_restart.py`): the icon files (valid ICNS with the 1024-pixel image, ICO
+with five sizes, in the package data); the macOS app and the Windows shortcut get their picture without Pillow; a
+blank macOS icon repaired, its start script and other apps untouched, and only once; blank Windows shortcuts pointed
+at the picture (a stand-in for PowerShell); which running copy is older; quitting it only when nothing runs; two
+real launches, the second quitting an "older" first copy and starting in its place; `installed_version` in the
+state; the page files. Two 0.10.1 tests no longer pin the version number (the same fix as for the 0.10.0 tests in
+0.10.1).
+
+**Not yet done.**
+- The repaired and the shipped icon were checked as files here, not shown by a real Finder or Windows Explorer.
+  macOS caches icons: a repaired app is given a new date so Finder notices, but `killall Finder` may still be needed.
+  The Windows repair (PowerShell setting `IconLocation` on the existing shortcuts) was tested only with a stand-in.
+- Replacing an older copy was tested with two real launches on Linux, not from a real macOS or Windows icon.
+
 ## 0.10.1 (October 2026): Settings beside Theme and Quit, and the version in sight
 
 A small polish release, and the first made with the new release workflow from start to finish. No analysis changes:

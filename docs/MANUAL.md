@@ -83,7 +83,13 @@ enlens-gui --make-launcher                     # add --home FOLDER and/or --loca
 
 It puts an **ENLENS** icon on the Desktop (macOS: also an app in the user's Applications folder; Windows: also in the
 Start menu; Linux: also in the applications menu). Double-clicking it starts ENLENS in the background, with no
-terminal window, and opens it in the browser; double-clicking it again while it runs just opens it again. If the
+terminal window, and opens it in the browser; double-clicking it again while it runs just opens it again. After an
+update (`enlens update`, `git pull`, the install line again), the copy still running is the old version: the icon
+then quits it and starts the new one (0.10.2), unless a check or documents being added still run in it, in which
+case it opens it and every page says *ENLENS X is installed, but Y is still running*, with a *Quit ENLENS* button;
+the version label in Settings says the same. The icon's picture ships with ENLENS (0.10.2; before, it needed the
+Python package Pillow, and without it the icon was blank); an icon made without its picture gets it the next time
+ENLENS starts. If the
 model service is Ollama on this computer and it is not running, the Ollama app is started too. The icon calls the
 Python ENLENS was installed in, so another `enlens-gui` earlier on the PATH (for example an old one in Anaconda)
 cannot get in the way. **Quit ENLENS** at the bottom of the sidebar stops it (it asks first when a check is still
@@ -1132,6 +1138,8 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | A semantic search error about vector sizes | The embedding model changed since the index was built: Sources → *Build semantic index*. |
 | "Remove all documents" is refused | The project also holds results of the SDG pack (extracted claims, VCA verifications). Remove documents one by one, or run `enlens --ws FOLDER reset-corpus --yes` if you mean it. |
 | Empty document, or "Scanned: no text" | No text layer (scanned). Install Tesseract and the `ocr` extra (section 1) and add the file again, or run OCR yourself (`ocrmypdf in.pdf out.pdf`). |
+| The ENLENS icon is a blank square (macOS) or a plain shortcut (Windows) | It was made before 0.10.2 without Pillow. Open ENLENS once with 0.10.2 or later: it gives the icon its picture (macOS: if Finder still shows the blank one, `killall Finder`). Or make the icon again: `enlens-gui --make-launcher`. |
+| Settings shows an older version after updating | That copy was still running. Choose *Quit ENLENS*, then open ENLENS from its icon (0.10.2 does this by itself when nothing runs). |
 | Double-clicking the ENLENS icon does nothing | Look at `logs/enlens.log` in the data folder. Run the install line again (one-line install), or `enlens-gui --make-launcher` again after moving or reinstalling Python (git copy). On macOS, if the icon was copied from another computer, right-click it and choose *Open* once. |
 | The install line stops with "does not match the release's checksum" | The download was cut off or changed on the way; nothing was installed. Run the line again later. |
 | The install line on Windows says uv could not install ENLENS | ENLENS is probably running: choose *Quit ENLENS* in it and run the line again. |

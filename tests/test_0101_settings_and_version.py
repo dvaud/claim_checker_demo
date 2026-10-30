@@ -48,13 +48,13 @@ def test_the_settings_page_shows_the_version():
     assert 'pageHead("Settings", { actions: versionTag(),' in js
     tag = js[js.index("function versionTag()"):]
     tag = tag[:tag.index("\n}\n")]
-    assert "st.version || VERSION" in tag and 'href: "#/settings/data"' in tag and 'class: "version-tag"' in tag
+    assert "st.version || VERSION" in tag and 'href: "#/settings/data"' in tag and 'class: `version-tag' in tag
 
 
 def test_the_version_reaches_the_page(api):  # noqa: F811
     """The number the Settings page shows: /api/state's version, and the page's meta tag as the fallback."""
     code, st = api("GET", "/api/state")
-    assert code == 200 and st["version"] == __version__ == "0.10.1"
+    assert code == 200 and st["version"] == __version__
     code, body = api("GET", "/", token=False)
     assert code == 200 and f'<meta name="enlens-version" content="{__version__}">' in body.decode()
 

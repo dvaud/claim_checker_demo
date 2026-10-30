@@ -238,7 +238,7 @@ class App:
         if current is None and s.get("project") and names:  # the project was removed: open another one
             current = next((p["name"] for p in projects if not p.get("temporary")), names[0])
             home.update_settings({"project": current})
-        return {"version": __version__, "home": str(home.home()), "settings": s,
+        return {"version": __version__, "installed_version": _installed_version(), "home": str(home.home()), "settings": s,
                 "backend_label": home.backend_label(s), "backend_labels": home.BACKEND_LABELS,
                 "projects": projects, "project": current, "local_only": home.local_only(),
                 "launcher": self.launcher, "can_quit": self.stop is not None,
@@ -2496,6 +2496,28 @@ class Handler(BaseHTTPRequestHandler):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _installed_version() -> str:
+    """0.10.2: the version now on disk. It differs from the running __version__ when ENLENS was updated (git pull,
+    the install line, enlens update) while this copy kept running; the page then says to quit and reopen."""
+    try:
+        text = (Path(__file__).resolve().parent.parent / "__init__.py").read_text(encoding="utf-8")
+    except OSError:
+        return __version__
+    m = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.M)
+    return m.group(1) if m else __version__
+
+
+def _repair_icons() -> None:
+    """0.10.2: an ENLENS icon made without a picture (before 0.10.2, when Pillow was missing) gets the shipped one."""
+    try:
+        from . import launcher as _l
+
+        for p in _l.repair_icons():
+            print(f"Gave the ENLENS icon its picture: {p}")
+    except Exception as e:  # noqa: BLE001 - never in the way of starting
+        print(f"Could not repair the ENLENS icon: {e}", file=sys.stderr)
+
+
 def make_server(host: str = "127.0.0.1", port: int = 8765, app: App | None = None) -> tuple[ThreadingHTTPServer, App]:
     """The server (not started) and its app. Port 0 picks a free port."""
     app = app or App()
@@ -2540,6 +2562,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
               "with that link and access to this address can use the app and read your projects.", file=sys.stderr)
     print("Stop it with Quit ENLENS in the app." if launcher else "Stop it with Ctrl+C (or Quit ENLENS in the app).")
     threading.Thread(target=_repair_plugin, daemon=True, name="plugin-repair").start()
+    threading.Thread(target=_repair_icons, daemon=True, name="icon-repair").start()
     if open_browser:
         import webbrowser
 

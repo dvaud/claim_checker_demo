@@ -302,13 +302,18 @@ function quitInit() {
   if (!btn || !App.state || !App.state.can_quit) return;
   replace(btn, icon("power", { size: 15 }), h("span", {}, "Quit ENLENS"));
   btn.hidden = false;
-  btn.addEventListener("click", async () => {
+  btn.addEventListener("click", () => quitApp());
+}
+
+// `reason`: 0.10.2, why the person is asked to quit (a newer version is installed), shown in the dialog
+async function quitApp(reason = "") {
+  {
     const running = (App.state.jobs || []).length || (await api("GET", "/api/jobs").then((r) => r.jobs.filter((j) => !TERMINAL.has(j.state)).length).catch(() => 0));
     const ok = await confirmDialog({
       title: "Quit ENLENS?",
-      message: running
+      message: reason + (running
         ? "Something is still running (a check, or documents being added). Quitting stops it; a check that is stopped leaves nothing behind. Your projects and results are kept."
-        : "ENLENS stops on this computer. Your projects and results are kept.",
+        : "ENLENS stops on this computer. Your projects and results are kept."),
       confirmText: "Quit ENLENS", danger: !!running,
     });
     if (!ok) return;
@@ -322,7 +327,23 @@ function quitInit() {
       h("h1", {}, "ENLENS has stopped"),
       h("p", {}, "You can close this tab. Your projects and results are kept."),
       h("p", { class: "muted" }, again)));
-  });
+  }
+}
+
+// 0.10.2: ENLENS was updated while this copy kept running (the page files are new, the program is not): say so on
+// every page, with the way to start the new version. The ENLENS icon also does this by itself when nothing runs.
+function renderUpdateBanner() {
+  const box = document.getElementById("update-banner");
+  if (!box) return;
+  const st = App.state || {};
+  const now = st.installed_version;
+  if (!now || !st.version || now === st.version) { clear(box); return; }
+  const how = st.can_quit
+    ? `Choose Quit ENLENS, then open ENLENS again${st.launcher ? " from its icon" : ""}.`
+    : "Stop it and start it again.";
+  replace(box, h("div", { class: "notice notice-info update-banner", role: "status" }, icon("refresh"),
+    h("div", {}, h("p", {}, h("strong", {}, `ENLENS ${now} is installed, but ${st.version} is still running.`), ` ${how}`)),
+    st.can_quit ? h("button", { class: "btn btn-sm", type: "button", onclick: () => quitApp(`ENLENS ${now} starts when you open it again. `) }, icon("power", { size: 13 }), "Quit ENLENS") : null));
 }
 
 function closeDrawer() {
@@ -380,7 +401,7 @@ async function boot() {
   themeInit();
   drawerInit();
   navIcons();
-  App.onChange(() => { renderProjectSwitch(); renderPrivacy(); renderQueue(); });
+  App.onChange(() => { renderProjectSwitch(); renderPrivacy(); renderQueue(); renderUpdateBanner(); });
   onJobsChanged(() => { renderJobs(); renderQueue(); });
   window.addEventListener("hashchange", route);
   try {

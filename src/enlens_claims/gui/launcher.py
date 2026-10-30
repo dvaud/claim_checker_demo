@@ -9,16 +9,24 @@ Linux: also in the applications menu). The icon calls this Python directly, so a
 PATH (an old install in Anaconda, say) cannot get in the way.
 
 Double-clicking the icon runs `enlens-gui --launcher`:
-- if ENLENS is already running, the browser opens on it and nothing else starts;
+- if ENLENS is already running, the browser opens on it and nothing else starts; 0.10.2: unless the running copy is
+  an older version (ENLENS was updated while it ran): then it is quit first, when nothing is running in it, and this
+  version starts instead;
 - otherwise the app starts in the background, with no terminal window, and opens in the browser; what it would print
   goes to `logs/enlens.log` in the data folder;
 - if the model service is Ollama on this computer and it is not running, the Ollama app is started too;
 - the app is stopped with "Quit ENLENS" in the app (`POST /api/quit`).
+
+The icon's picture ships with ENLENS (0.10.2: `gui/icons/ENLENS.icns` and `ENLENS.ico`, drawn by
+tools/make_icons.py), so it no longer needs Pillow; an icon made without a picture before is given one when ENLENS
+starts (`repair_icons`).
 """
 from __future__ import annotations
 
 import json
 import os
+import plistlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -28,6 +36,8 @@ from pathlib import Path
 
 APP_NAME = "ENLENS"
 LOG_MAX = 5 * 1024 ** 2
+ICONS = Path(__file__).with_name("icons")  # 0.10.2: the icon files that ship with ENLENS
+BUNDLE_ID = "org.enlens.launcher"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -73,6 +83,48 @@ def clear_info() -> None:
             p.unlink()
     except (OSError, ValueError):
         pass
+
+
+# 0.10.2: after an update, the copy still running is the old version, and double-clicking the icon showed it again
+def is_older(live: dict) -> bool:
+    """Whether the running copy is an older version than this one (a copy that does not say counts as older)."""
+    from .. import __version__
+    from ..update import version_tuple
+
+    v = str(live.get("version") or "")
+    return not version_tuple(v) or version_tuple(v) < version_tuple(__version__)
+
+
+def stop_older(live: dict, wait: float = 25.0, fetch=None) -> str:
+    """Quit the running copy so this version can start, as "Quit ENLENS" would. Returns "stopped"; "busy" when a
+    check or another job runs in it (it is left alone: quitting would stop that work); "failed" otherwise."""
+    from urllib.request import Request, urlopen
+
+    def call(method: str, path: str, token: str | None = None) -> bytes:
+        req = Request(live["url"].rstrip("/") + path, method=method, data=b"{}" if method == "POST" else None,
+                      headers={"X-Enlens-Token": token, "Content-Type": "application/json"} if token else {})
+        with urlopen(req, timeout=5) as r:
+            return r.read()
+
+    call = fetch or call
+    try:
+        page = call("GET", "/").decode("utf-8", errors="replace")
+        m = re.search(r'name="enlens-token" content="([^"]+)"', page)
+        if not m:
+            return "failed"
+        token = m.group(1)
+        jobs = json.loads(call("GET", "/api/jobs", token)).get("jobs", [])
+        if any(j.get("state") in ("queued", "running") for j in jobs):
+            return "busy"
+        call("POST", "/api/quit", token)
+    except (OSError, ValueError):
+        return "failed"
+    t0 = time.time()
+    while time.time() - t0 < wait:
+        if running(timeout=0.5) is None:
+            return "stopped"
+        time.sleep(0.2)
+    return "failed"
 
 
 def log_to_file() -> Path:
@@ -179,6 +231,30 @@ def draw_icon(size: int = 512):
     return big
 
 
+def _put_icon(dest: Path, ext: str) -> bool:
+    """Write the icon file `dest` (ENLENS.icns or ENLENS.ico): the one that ships with ENLENS, else drawn (Pillow)."""
+    shipped = ICONS / f"ENLENS.{ext}"
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if shipped.is_file():
+            shutil.copyfile(shipped, dest)
+            return True
+        img = draw_icon(512 if ext == "icns" else 256)
+        if img is None:
+            return False
+        if ext == "ico":
+            img.save(dest, sizes=[(256, 256), (64, 64), (48, 48), (32, 32), (16, 16)])
+        else:
+            img.save(dest)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _start_menu() -> Path:
+    return Path(os.environ.get("APPDATA", str(Path.home()))) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+
+
 def _desktop() -> Path:
     if os.name == "nt":
         try:
@@ -198,24 +274,17 @@ def _desktop() -> Path:
 
 
 def _mac_app(folder: Path, python: str, args: list[str]) -> Path:
-    import plistlib
-
     app = folder / f"{APP_NAME}.app"
     if app.exists():
         shutil.rmtree(app)
     (app / "Contents" / "MacOS").mkdir(parents=True)
     (app / "Contents" / "Resources").mkdir()
-    plist = {"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME, "CFBundleIdentifier": "org.enlens.launcher",
+    plist = {"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME, "CFBundleIdentifier": BUNDLE_ID,
              "CFBundleExecutable": APP_NAME, "CFBundlePackageType": "APPL", "CFBundleVersion": "1",
              "CFBundleShortVersionString": "1", "LSUIElement": True,  # no Dock icon for the little starter
              "NSHighResolutionCapable": True}
-    icon = draw_icon()
-    if icon is not None:
-        try:
-            icon.save(app / "Contents" / "Resources" / "ENLENS.icns")
-            plist["CFBundleIconFile"] = "ENLENS"
-        except (OSError, ValueError):
-            pass
+    if _put_icon(app / "Contents" / "Resources" / "ENLENS.icns", "icns"):
+        plist["CFBundleIconFile"] = "ENLENS"
     with open(app / "Contents" / "Info.plist", "wb") as f:
         plistlib.dump(plist, f)
     script = app / "Contents" / "MacOS" / APP_NAME
@@ -232,17 +301,10 @@ def _windows_shortcut(folder: Path, python: str, args: list[str]) -> Path:
     exe = Path(python)
     pyw = exe.with_name("pythonw.exe")
     target = pyw if pyw.exists() else exe   # pythonw: no console window
-    icon_path = ""
-    img = draw_icon(256)
-    if img is not None:
-        try:
-            from .. import home
+    from .. import home
 
-            ico = home.home() / "ENLENS.ico"
-            img.save(ico, sizes=[(256, 256), (64, 64), (48, 48), (32, 32), (16, 16)])
-            icon_path = str(ico)
-        except (OSError, ValueError):
-            icon_path = ""
+    ico = home.home() / "ENLENS.ico"  # beside the data, so the shortcut keeps its picture when ENLENS is reinstalled
+    icon_path = str(ico) if _put_icon(ico, "ico") else ""
     link = folder / f"{APP_NAME}.lnk"
     arg_line = subprocess.list2cmdline(args)
 
@@ -295,8 +357,7 @@ def make_launcher(home: str | None = None, local_only: bool = False, folders: li
             folder.mkdir(parents=True, exist_ok=True)
             made.append(_mac_app(folder, python, args))
     elif platform.startswith("win"):
-        start_menu = Path(os.environ.get("APPDATA", str(Path.home()))) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-        for folder in folders or [_desktop(), start_menu]:
+        for folder in folders or [_desktop(), _start_menu()]:
             folder.mkdir(parents=True, exist_ok=True)
             made.append(_windows_shortcut(folder, python, args))
     else:
@@ -308,3 +369,54 @@ def make_launcher(home: str | None = None, local_only: bool = False, folders: li
             if desk.is_dir():
                 made.append(_desktop_entry(desk / "enlens.desktop", python, args))
     return made
+
+
+def repair_icons(folders: list[Path] | None = None, platform: str | None = None, run=subprocess.run) -> list[Path]:
+    """0.10.2: give the ENLENS icons made without a picture (before 0.10.2, Pillow missing) the one that ships now.
+    macOS: an ENLENS app made by --make-launcher without ENLENS.icns gets it, and its Info.plist names it. Windows:
+    when the data folder has no ENLENS.ico, it is written and the ENLENS shortcuts are pointed at it. Nothing else of
+    the icon changes. Returns what was repaired."""
+    platform = platform or sys.platform
+    fixed: list[Path] = []
+    if platform == "darwin":
+        for folder in folders or [_desktop(), Path.home() / "Applications"]:
+            app = folder / f"{APP_NAME}.app"
+            plist_path = app / "Contents" / "Info.plist"
+            try:
+                info = plistlib.loads(plist_path.read_bytes())
+            except (OSError, ValueError):
+                continue
+            icns = app / "Contents" / "Resources" / "ENLENS.icns"
+            if info.get("CFBundleIdentifier") != BUNDLE_ID or (info.get("CFBundleIconFile") and icns.is_file()):
+                continue
+            if not _put_icon(icns, "icns"):
+                continue
+            info["CFBundleIconFile"] = "ENLENS"
+            try:
+                plist_path.write_bytes(plistlib.dumps(info))
+                os.utime(app)  # Finder shows the new picture when the app's date changes
+            except OSError:
+                continue
+            fixed.append(app)
+    elif platform.startswith("win"):
+        from .. import home
+
+        ico = home.home() / "ENLENS.ico"
+        links = [f / f"{APP_NAME}.lnk" for f in (folders or [_desktop(), _start_menu()])]
+        links = [p for p in links if p.is_file()]
+        if ico.is_file() or not links or not _put_icon(ico, "ico"):
+            return fixed
+
+        def ps(x: str) -> str:
+            return "'" + x.replace("'", "''") + "'"
+
+        script = "; ".join(f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({ps(str(p))}); "
+                           f"$s.IconLocation = {ps(str(ico))}; $s.Save()" for p in links)
+        try:
+            r = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
+                    text=True, timeout=60)
+            if r.returncode == 0:
+                fixed += links
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return fixed

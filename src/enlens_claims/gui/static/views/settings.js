@@ -741,8 +741,11 @@ function versionTag() {
   const st = App.state || {};
   const v = st.version || VERSION;
   if (!v) return null;
-  return h("a", { class: "version-tag", href: "#/settings/data", title: "How ENLENS was installed and how to update it (Technical)" },
-    icon("info", { size: 14 }), h("span", {}, "Version ", h("strong", {}, v)));
+  // 0.10.2: updated while it ran: the newer version waits for a restart (the banner above the page says how)
+  const now = st.installed_version && st.installed_version !== v ? st.installed_version : null;
+  return h("a", { class: `version-tag${now ? " version-tag-stale" : ""}`, href: "#/settings/data",
+    title: now ? `ENLENS ${now} is installed: quit ENLENS and open it again to use it` : "How ENLENS was installed and how to update it (Technical)" },
+    icon(now ? "alert-circle" : "info", { size: 14 }), h("span", {}, "Version ", h("strong", {}, v)), now ? h("span", {}, ` · ${now} installed`) : null);
 }
 
 // 0.10: how this copy was installed, and how it is updated

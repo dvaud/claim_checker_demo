@@ -98,7 +98,8 @@ enlens update            # later: fetch the new version (add --check to only loo
 ```
 
 Because the install is editable (`-e`), the app runs the code in that folder: `enlens update` pulls the new version
-and reinstalls only when its requirements changed. Restart the app afterwards (*Quit ENLENS*, then the icon). Run
+and reinstalls only when its requirements changed. Then open ENLENS from its icon: an older version still running is
+quit and the new one started (0.10.2), and if something still runs in it, the page says to quit and reopen. Run
 it as `~/enlens-app/.venv/bin/enlens update` if the venv is not active.
 
 ## Exploring the documents (the main part of the app)
@@ -200,7 +201,7 @@ see docs/MODEL_CHOICE.md) set them.
 | `bundle.py` | A whole project as one zip (export and import); every project and the settings, to move to another computer (0.10) |
 | `installation.py`, `update.py` | How this copy was installed (git copy, the one-line install, a package, pip) and `enlens post-install`; `enlens update` for each (0.10) |
 | `home.py` | Settings, projects, the optional cloud key |
-| `gui/` | The local app: `server.py` (API and jobs), `static/` (the page), `progress.py`, `launcher.py` (the ENLENS icon) |
+| `gui/` | The local app: `server.py` (API and jobs), `static/` (the page), `progress.py`, `launcher.py` (the ENLENS icon), `icons/` (its picture, drawn by `tools/make_icons.py`) |
 | `concordance.py` | Search (0.7): concordance lines, modes, other forms, collocates |
 | `profile.py` | Codebook profiles: the keyword and meaning pass, the AI's labels, grids, a person's labels |
 | `terms.py` | The glossary (C-value terms, abbreviations), concepts and their links, key terms |
