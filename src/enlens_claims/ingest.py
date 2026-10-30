@@ -262,6 +262,38 @@ class OcrOptions:
 
 
 _OCR_STATUS: list = [0.0, None]
+TESSERACT_PLACES = ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract", "/opt/local/bin/tesseract"]
+
+
+def find_tesseract() -> str:
+    """The tesseract program: the PATH, or where its installers put it (0.10). An app started from its icon has a
+    short PATH (on macOS without Homebrew's folder), and the Windows installer does not add itself to the PATH."""
+    import os
+
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    candidates = [Path(p) for p in TESSERACT_PLACES]
+    for var in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        base = os.environ.get(var)
+        if base:
+            candidates += [Path(base) / "Tesseract-OCR" / "tesseract.exe", Path(base) / "Programs" / "Tesseract-OCR" / "tesseract.exe"]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return ""
+
+
+# How to get Tesseract on each system (shown by the app when a scanned page stayed without text)
+TESSERACT_HELP = {
+    "mac": {"text": "With Homebrew (brew.sh), type this in Terminal:", "command": "brew install tesseract",
+            "link": "https://tesseract-ocr.github.io/tessdoc/Installation.html", "link_text": "Other ways to install it"},
+    "windows": {"text": "Download and run the Tesseract installer for Windows (from the University of Mannheim, "
+                        "which the Tesseract project links to).", "command": "",
+                "link": "https://github.com/UB-Mannheim/tesseract/wiki", "link_text": "Tesseract installer for Windows"},
+    "linux": {"text": "Install it with your system's packages, for example:", "command": "sudo apt install tesseract-ocr",
+              "link": "https://tesseract-ocr.github.io/tessdoc/Installation.html", "link_text": "Other systems"},
+}
 
 
 def ocr_status(max_age: float = 60.0) -> dict:
@@ -274,7 +306,7 @@ def ocr_status(max_age: float = 60.0) -> dict:
         return dict(_OCR_STATUS[1])
 
     missing = [m for m, mod in (("pypdfium2", "pypdfium2"), ("pillow", "PIL")) if importlib.util.find_spec(mod) is None]
-    exe = shutil.which("tesseract")
+    exe = find_tesseract()
     if not exe:
         missing.append("tesseract")
     langs: list[str] = []
@@ -286,7 +318,10 @@ def ocr_status(max_age: float = 60.0) -> dict:
             langs = [ln.strip() for ln in (r.stdout or "").splitlines()[1:] if ln.strip() and ln.strip() != "osd"]
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
-    _OCR_STATUS[:] = [time.time(), {"available": not missing, "missing": missing, "languages": langs}]
+    from .installation import system
+
+    _OCR_STATUS[:] = [time.time(), {"available": not missing, "missing": missing, "languages": langs,
+                                    "install": TESSERACT_HELP[system()] if "tesseract" in missing else None}]
     return dict(_OCR_STATUS[1])
 
 
@@ -308,7 +343,7 @@ def _ocr_pages(path: Path, numbers: list[int], lang: str) -> dict[int, str]:
 
     import pypdfium2 as pdfium
 
-    exe = shutil.which("tesseract")
+    exe = find_tesseract()
     if not exe or not re.fullmatch(r"[A-Za-z_]{2,}(\+[A-Za-z_]{2,})*", lang or ""):
         return {}
     env = {**os.environ, "OMP_THREAD_LIMIT": "1"}

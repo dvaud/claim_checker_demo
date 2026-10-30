@@ -13,6 +13,9 @@
 - with `--claude-cli` (0.9): Claude Code chosen, and a stand-in `claude` program (tests/fake_claude_cli.py) that the
   app finds, adds the plugin to, and starts with "Start Claude Code" (each run waits 2 s per round, so the progress
   can be watched). Add `--empty` to see the first-run screens as a new user of 0.9 does.
+- with `--claude-install` (0.10): Claude Code chosen but not on the computer yet, and signed out: "Set up Claude"
+  runs a stand-in installer (tests/fake_claude_installer.py, 3 s), opens a stand-in sign-in that signs in after 6 s,
+  and adds the plugin. Combine with `--empty` for a new user's first screen.
 """
 from __future__ import annotations
 
@@ -59,6 +62,9 @@ def main() -> int:
     ap.add_argument("--claude-code-paused", action="store_true", help="0.8: Claude Code chosen, but nothing answers")
     ap.add_argument("--claude-cli", action="store_true",
                     help="0.9: Claude Code chosen, with a stand-in claude program the app sets up and starts")
+    ap.add_argument("--no-tesseract", action="store_true", help="0.10: act as if Tesseract were not installed")
+    ap.add_argument("--claude-install", action="store_true",
+                    help="0.10: Claude Code not installed yet and signed out: Set up Claude installs it (stand-ins)")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -112,6 +118,9 @@ def main() -> int:
         except ValueError as e:
             print(e)
     fake.delay = a.delay
+    if a.no_tesseract:
+        ingest.find_tesseract = lambda: ""
+        ingest._OCR_STATUS[:] = [0.0, None]
     if a.claude_code or a.claude_code_paused:
         home.update_settings({"allow_claude_code": True, "backend": "claude_code"})
         from enlens_claims import claude_setup
@@ -121,6 +130,26 @@ def main() -> int:
         os.environ["ENLENS_CLAUDE"] = str(ROOT / "tests" / "fake_claude_cli.py")
         os.environ.setdefault("FAKE_CLAUDE_DELAY", "2")
         home.update_settings({"allow_claude_code": True, "backend": "claude_code"})
+    if a.claude_install:
+        import subprocess
+        import time
+
+        from enlens_claims import claude_setup
+
+        os.environ["ENLENS_CLAUDE"] = str(home_dir / "claude-code" / "claude.py")
+        os.environ["ENLENS_CLAUDE_INSTALLER"] = str(ROOT / "tests" / "fake_claude_installer.py")
+        os.environ.setdefault("FAKE_INSTALLER_DELAY", "3")
+        os.environ["FAKE_CLAUDE_LOGGED_OUT"] = "1"
+        home.update_settings({"allow_claude_code": True, "backend": "claude_code"})
+
+        def sign_in_later(script):  # the "window": the stand-in signs in after a few seconds
+            def run():
+                time.sleep(6)
+                subprocess.run([sys.executable, os.environ["ENLENS_CLAUDE"]], capture_output=True)
+            threading.Thread(target=run, daemon=True).start()
+            return "Terminal (stand-in)"
+
+        claude_setup._open_window = sign_in_later
     if a.claude_code:
         import time
 

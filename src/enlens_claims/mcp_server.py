@@ -444,6 +444,23 @@ def install_desktop(path: Path | None = None) -> Path:
     return path
 
 
+def repair_desktop(path: Path | None = None) -> bool:
+    """0.10: when the Claude desktop app's config starts ENLENS's connector with a Python that no longer exists (ENLENS
+    was moved or installed again elsewhere) for this same data folder, point it at this Python. Returns whether it
+    was changed. Any other entry, or a config that names another data folder, is left alone."""
+    path = path or desktop_config_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+        entry = data["mcpServers"]["enlens"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    cmd = str(entry.get("command") or "")
+    if cmd == sys.executable or (entry.get("env") or {}).get("ENLENS_HOME") != str(core.home()) or Path(cmd).exists():
+        return False
+    install_desktop(path)
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="enlens-mcp", description="The ENLENS connector for the Claude app and Claude Code.")
     ap.add_argument("--home", help="folder with projects and settings (default: ~/enlens, or ENLENS_HOME)")

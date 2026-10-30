@@ -1,7 +1,7 @@
 // Documents: a big add area first, the document table, smart search in plain words, a document viewer, and the
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT } from "../lib.js";
+import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT } from "../lib.js";
 import { simpleProgress } from "./progress.js";
 import { plainSection, blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { dialog, certainty, breakSegments, session } from "../lib.js";
@@ -50,13 +50,13 @@ export async function renderSources(view) {
     icon("upload", { size: 28 }),
     h("p", { class: "drop-title" }, h("strong", {}, "Drop your documents here"), " or ", h("label", { for: "src-files", class: "btn", tabindex: "0", onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } } }, "choose files"), fileInput),
     h("p", { class: "muted small" }, "PDF, Word (.docx), text, Markdown and saved web pages (HTML), or a zip folder of them. ",
-      ocrState().available === false ? "Scanned PDFs cannot be read on this computer yet: ask IT to install Tesseract (text recognition)." : ocrState().available && (App.settings().ocr || "auto") === "off" ? "Reading scanned PDFs is switched off in Settings." : ocrState().available ? "Scanned PDFs are read with text recognition (OCR), which is slow and can make mistakes." : ""),
+      ocrState().available === false ? ["Scanned PDFs cannot be read on this computer yet: they need Tesseract (", h("a", { href: "#/settings/ocr" }, "how to get it"), ")."] : ocrState().available && (App.settings().ocr || "auto") === "off" ? "Reading scanned PDFs is switched off in Settings." : ocrState().available ? "Scanned PDFs are read with text recognition (OCR), which is slow and can make mistakes." : ""),
     fileList);
   for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); });
   for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); });
   drop.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files) takeFiles(e.dataTransfer.files); });
   // a click anywhere on the area (not on a chosen file's row or its remove button) opens the file chooser
-  drop.addEventListener("click", (e) => { if (e.target.closest("label, button, input, .file-list")) return; fileInput.click(); });
+  drop.addEventListener("click", (e) => { if (e.target.closest("a, label, button, input, .file-list")) return; fileInput.click(); });
 
   const pathInput = h("input", { class: "input", type: "text", placeholder: "e.g. C:\\Users\\me\\Documents\\Literature  or  /Users/me/Documents/Literature", id: "src-path" });
   const pathBtn = h("button", { class: "btn", type: "button" }, icon("folder-open", { size: 14 }), "Add this folder");
@@ -113,7 +113,8 @@ export async function renderSources(view) {
     const notAdded = [...noText].filter((f) => (st.empty_files || []).includes(f));
     if (noText.size) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "Scanned: no text. "), `${noText.size === 1 ? "This document has" : "These documents have"} scanned pages that stayed without text: ${[...noText].join(", ")}. `,
       notAdded.length ? `${notAdded.length === 1 ? `${notAdded[0]} was not added, because none of its pages has text. ` : `${notAdded.length} of them were not added, because none of their pages has text. `}` : "",
-      ocrState().available === false ? "Ask IT to install Tesseract to read it." : (App.settings().ocr || "auto") === "off" ? ["Reading scanned PDFs is switched off: turn it on in ", h("a", { href: "#/settings/basics" }, "Settings"), " and add the document again."] : "Text recognition could not read these pages."))));
+      ocrState().available === false ? (ocrState().install ? "" : "Tesseract (text recognition) is needed to read them.") : (App.settings().ocr || "auto") === "off" ? ["Reading scanned PDFs is switched off: turn it on in ", h("a", { href: "#/settings/ocr" }, "Settings → Documents"), " and add the document again."] : "Text recognition could not read these pages."),
+      ocrState().available === false ? tesseractHelp(ocrState()) : null)));
     const emptyOther = (st.empty_files || []).filter((f) => !noText.has(f));
     if (emptyOther.length) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, `${emptyOther.length} ${emptyOther.length === 1 ? "file has" : "files have"} no readable text: ${emptyOther.join(", ")}`)));
     if (st.mostly_unreadable && st.mostly_unreadable.length) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, "The text of these could mostly not be read: " + st.mostly_unreadable.join(", ") + ". Try another copy (for example from the publisher), or run OCR.")));

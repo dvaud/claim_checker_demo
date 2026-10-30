@@ -682,12 +682,40 @@ that no session has taken yet out of the queue; a check by queue is removed whol
   "documents"}, "concepts": {"terms", "concepts"}, "themes": {"runs", "themes", "latest"}, "references",
   "hypotheses", "waiting"}`: what each feature has made, for the Overview page.
 
+### Set-up in one button, moving to another computer (0.10)
+
+- `GET /api/claude-setup` adds `"installer"` (the line of Anthropic's Claude Code installer for this system:
+  `curl -fsSL https://claude.ai/install.sh | bash`, or `irm https://claude.ai/install.ps1 | iex` on Windows) and
+  `"docs"` (Anthropic's set-up page).
+- `POST /api/claude-setup/claude-code` `{}` → job (kind `claude-install`): runs that installer (the page shows the
+  command and asks first). `result`: `{"ok", "text", "status"}`; the job ends in `error` when Claude Code could not
+  be installed. 409 when Claude Code is already found; 403 with `--local-only`.
+- `POST /api/claude-setup/sign-in` `{}` → `{"opened", "window", "command": "claude"}`: opens a terminal window
+  (Terminal on macOS, PowerShell on Windows, the first terminal found on Linux) already running `claude`, for the
+  one-time sign-in; `opened: false` when no window could be opened (the page then shows the line to type). The page
+  then reads `GET /api/claude-setup?refresh=1` every few seconds until `status.signed_in` is true, and adds the
+  plugin. 400 when Claude Code is not found, or with `--local-only`.
+- On start, the app writes the Claude Code plugin again (and runs the two set-up commands again, quietly) when the
+  plugin names another Python or another data folder than this ENLENS (it moved, or was installed again).
+- `GET /api/move.zip` (a download; the token may be given as `?token=`) → one zip with every project (each as the
+  zip of `GET /api/projects/<p>/export.zip`, under `projects/NNN.zip`) and `enlens-move.json`: `{"format":
+  "enlens-move", "version", "made", "projects": [{"name", "file", "documents", "linked", "missing"}], "current",
+  "settings"}`. Quick looks not kept are left out, and so is a saved Claude API key.
+- `POST /api/projects/import` also takes that zip → `{"moved": {"projects": [{"from", "name", "documents"}],
+  "settings": bool, "current", "made", "version"}, "project": summary of the current one}`. A project whose name is
+  taken comes in as `name (2)`. The settings come along only when this computer has no project yet; with
+  `--local-only`, never the choice of a cloud AI.
+- `GET /api/state` adds `"installation": {"kind": "git" | "script" | "package" | "pip", "system": "mac" | "windows"
+  | "linux", "line", "releases"}`, and `ocr` adds `"install"` when Tesseract is missing: `{"text", "command", "link",
+  "link_text"}` for this system.
+
 ### Jobs
 
 `GET /api/jobs` → `{"jobs": [Job summary]}` newest first. `GET /api/jobs/<id>` → full Job:
 ```json
 {"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "second-opinion" |
-         "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" | …,
+         "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
+         "claude-install" | …,
  "title": "…", "queue": false,
  "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
  "created_at": 1793136448.87, "started_at": … | null, "finished_at": … | null, "seconds": 19.9,

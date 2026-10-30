@@ -23,7 +23,26 @@ an expert table, summarised in a report) is included as the **SDG pack**, sectio
 
 ## 1. Install
 
-Python 3.10 or newer.
+**The one-line install (0.10).** No git, no Python and no venv of your own. Paste one line, and ENLENS ends up as an
+icon in its usual place:
+
+| System | Where | Paste this |
+| --- | --- | --- |
+| macOS, Linux | Terminal | `curl -fsSL https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.sh \| sh` |
+| Windows | PowerShell | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.ps1 \| iex"` |
+
+It says what it does in four steps: it gets **uv** (a small installer for Python programs, from Astral) unless it is
+already there; downloads the ENLENS package of the latest release and checks it against the release's checksums
+(`SHA256SUMS`); installs ENLENS with uv, which brings its own Python 3.12 and keeps it apart from any other Python on
+the computer (no administrator rights); and makes the **ENLENS icon** (macOS: Applications and the Desktop; Windows:
+the Start menu and the Desktop; Linux: the applications menu) and opens ENLENS. The package includes the connector,
+faster search (numpy), pdfminer and the Python parts of text recognition, so no feature needs a later install. Then
+press **Set up Claude** on the first screen (section 3, *First use*). Running the same line again installs the newest
+release over this one (on Windows quit ENLENS first); your projects in `~/enlens` stay as they are. Options go before
+the line as environment variables: `ENLENS_LOCAL_ONLY=1` (nothing may leave the computer, built into the icon),
+`ENLENS_HOME=<folder>` (another data folder, built into the icon), `ENLENS_VERSION=0.10.0` (that release).
+
+**From a git copy (developers).** Python 3.10 or newer:
 
 ```bash
 pip install -e '.[connector]'    # the app, the command line and the Claude Code plugin's connector (recommended)
@@ -38,17 +57,25 @@ pip install -e '.[dev]'          # pytest
 program Tesseract installed, ENLENS recognises the text of such pages on this computer, one page at a time, at low
 priority and on one processor thread, so a local model working at the same time is not slowed down. Install
 Tesseract with `brew install tesseract tesseract-lang` (macOS), `sudo apt install tesseract-ocr tesseract-ocr-nld`
-(Debian/Ubuntu; one package per language) or the installer from the Tesseract project (Windows; add it to the PATH).
-Choose the languages in Settings (`eng+nld` for English and Dutch). Without Tesseract a scanned PDF is listed as
-"Scanned: no text".
+(Debian/Ubuntu; one package per language) or the installer for Windows that the Tesseract project links to (UB
+Mannheim). Since 0.10 ENLENS also finds Tesseract where these installers put it when that folder is not on the PATH
+(Homebrew's folder for an app started from its icon, `C:\Program Files\Tesseract-OCR` on Windows), and notices a new
+installation within a minute. Choose the languages in Settings (`eng+nld` for English and Dutch). Without Tesseract a
+scanned PDF is listed as "Scanned: no text", and the app says how to get Tesseract on this system (after adding the
+document, and in *Settings → Documents*). The one-line install brings the `ocr` extra; only Tesseract is separate.
 
-**Updating (0.8.2).** Install from the git copy of ENLENS (`git clone …`, then `pip install -e .` in a venv) and
-every new version is `enlens update`: it fetches the version from GitHub into the same folder, reinstalls into the
+**Updating.** `enlens update` updates ENLENS the way it was installed (0.10). Installed with the one-line install,
+it asks GitHub for the latest release, downloads its package, checks it against the release's checksums, installs it
+over this one with uv and brings the Claude Code plugin up to date; on Windows, where a running program cannot
+replace itself, it says to quit ENLENS and run the install line again (which does the same). *Settings → Technical*
+says how this copy was installed. Installed from the git copy of ENLENS (`git clone …`, then `pip install -e .` in a
+venv) every new version is also `enlens update` (0.8.2): it fetches the version from GitHub into the same folder, reinstalls into the
 same Python only when the requirements changed (with the extras already installed), refreshes the Claude Code
 plugin if one was set up, and says to restart the app if it is running. It changes nothing if files of the copy
 were edited by hand, and never touches the data folder. `enlens update --check` only looks.
 
-**An icon instead of the terminal.** Run once, as the person who will use the app:
+**An icon instead of the terminal.** The one-line install makes it. From a git copy, run once, as the person who will
+use the app:
 
 ```bash
 enlens-gui --make-launcher                     # add --home FOLDER and/or --local-only if the app is used that way
@@ -155,11 +182,23 @@ to set up. *Quick look at one document* is there too.
 ### First use
 
 The welcome screen has three steps (0.9). **The AI**: ENLENS uses Claude Code, signed in with your Claude plan. The
-step shows a checklist (Claude Code on this computer, signed in, the ENLENS plugin added) and *Set up Claude Code*
-does what can be done from here: it prepares the plugin and adds it to Claude Code. What only you can do is said
-plainly: install Claude Code (claude.com/claude-code) or sign in once (type `claude` in a terminal). *No Claude plan?
-Other options* offers a model on this computer or no AI for now. When whoever installed the app chose a local model,
-this step is skipped. Then name a **project** (one per set of documents), and **add documents**: choose
+step shows a checklist (Claude Code on this computer, signed in, the ENLENS plugin added) and one button, **Set up
+Claude** (0.10), that does every step still open, in order:
+
+1. Claude Code is not on the computer: ENLENS shows the command of Anthropic's installer (`curl -fsSL
+   https://claude.ai/install.sh | bash`, or `irm https://claude.ai/install.ps1 | iex` on Windows) and runs it when you
+   choose *Install Claude Code*. It needs no administrator rights and takes a minute or two. *Anthropic's set-up
+   page* is linked for doing it yourself.
+2. Not signed in: ENLENS opens a Terminal (macOS) or PowerShell (Windows) window already running Claude Code. Sign in
+   there with your Claude plan (it opens a page in your browser) and close the window; ENLENS checks every few
+   seconds and continues by itself (*I have signed in* checks at once). ENLENS never sees your login. If no window
+   can be opened, the page shows the line to type.
+3. The plugin is not added: ENLENS adds it (as in 0.9).
+
+*Set it up yourself instead* keeps the lines to type. *No Claude plan? Other options* offers a model on this computer
+or no AI for now. When whoever installed the app chose a local model, this step is skipped. Then name a **project**
+(one per set of documents); used ENLENS on another computer before? *Import from another computer* brings every
+project and the settings in one go (section 7). Then **add documents**: choose
 files (PDF, Word .docx, HTML, text, Markdown, zip) or a folder. A Word file keeps its paragraphs, headings and the pages
 Word marked (0.8); older .doc files are not read: save them as .docx or PDF. The list shows the
 title read from each file and warns about unreadable text and very short files (often a landing page instead of the
@@ -373,8 +412,9 @@ in memory (so nothing extra is loaded), else the most recently downloaded one, a
   Claude API and Claude Code) are then hidden, the default becomes the local model (*automatic*), the app and its
   API refuse to switch to them, ENLENS never starts Claude Code, and the connector refuses to hand out queued tasks.
 - Keep the data folder (`--home`) somewhere that is backed up: it holds the projects, their results and the settings.
-- Give the user an icon instead of a terminal: `enlens-gui --make-launcher` (section 1), with the same `--home` and
-  `--local-only` you would start it with.
+- Install it with the one-line install (section 1): it makes the icon. With `ENLENS_LOCAL_ONLY=1` and
+  `ENLENS_HOME=<folder>` before the line, both are built into the icon. From a git copy, give the user an icon with
+  `enlens-gui --make-launcher` (section 1), with the same `--home` and `--local-only` you would start it with.
 - For scanned PDFs, install Tesseract and the `ocr` extra (section 1); Settings shows whether it is available.
 
 **Cost and time.** With a local model, a check costs nothing but time: from seconds to several minutes per call
@@ -550,13 +590,16 @@ sees your Claude login (Claude Code uses its own) and never runs on anyone else'
 that runs unattended, use the Claude API with the team's key instead (the same queue and the same models per task:
 `enlens queue run --backend anthropic`).
 
-**Set it up once.** You need Claude Code (claude.com/claude-code) installed and signed in once with your Claude plan
-(type `claude` in a terminal and sign in). Then, in ENLENS, the first screen or *Settings → AI → Claude Code*: press
-**Set up Claude Code**. It writes the plugin into your ENLENS folder (`claude-plugin/`) and adds it to Claude Code by
+**Set it up once.** In ENLENS, the first screen or *Settings → AI → Claude Code*: press **Set up Claude** (0.10). It
+installs Claude Code if it is missing (after showing you the command), opens a window for the one-time sign-in with
+your Claude plan and waits for it (section 3, *First use*), then writes the plugin into your ENLENS folder
+(`claude-plugin/`) and adds it to Claude Code by
 running the same two commands you would type (`claude plugin marketplace add …`, `claude plugin install
 enlens-run@enlens`); nothing else in Claude Code's settings changes. The checklist then shows three ticks. From a
 terminal, `enlens claude-setup` does the same (`--print-only` only prints the two lines). ENLENS finds the `claude`
-program on the PATH or where its installers put it; `ENLENS_CLAUDE=/path/to/claude` names it.
+program on the PATH or where its installers put it; `ENLENS_CLAUDE=/path/to/claude` names it. When ENLENS is moved
+or installed again (a new Python), it writes the plugin again on its next start and adds it again, quietly (0.10);
+the Claude desktop app's connector entry is pointed at the new Python too when the old one is gone.
 
 **Start Claude Code (0.9).** Press an AI button in ENLENS. The page says what waits, for example *Waiting for
 Claude Code: 120 passages to label · about 25 minutes*, with **Start Claude Code**. ENLENS then starts Claude Code
@@ -631,6 +674,14 @@ claimed for 30 minutes), `submit_answers` (each answer quote-checked: stored, or
 Open it with any SQLite tool. Offsets in `evidence` and `verifications` index into `documents.text`. Removing one
 document keeps past checks intact (each check stores the passages it showed); removing all documents also removes
 every check.
+
+**Moving to another computer (0.10).** *Projects → Move ENLENS to another computer → Download everything (.zip)*
+makes one file with every project (each as its own project zip: database, uploads, original files) and the settings.
+A saved Claude API key is left out, and so are quick looks not kept; projects used in place from another folder come
+along as copies. On the new computer, install ENLENS and choose the file under *Import from another computer* on the
+first screen (or *Projects → Import a project (.zip)*, which takes both kinds of zip). Each project keeps its name
+(`name (2)` when the name is taken). The settings come along only when the new computer has no project yet, and on a
+`--local-only` installation never the choice of a cloud AI.
 
 ---
 
@@ -1079,7 +1130,11 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | A semantic search error about vector sizes | The embedding model changed since the index was built: Sources → *Build semantic index*. |
 | "Remove all documents" is refused | The project also holds results of the SDG pack (extracted claims, VCA verifications). Remove documents one by one, or run `enlens --ws FOLDER reset-corpus --yes` if you mean it. |
 | Empty document, or "Scanned: no text" | No text layer (scanned). Install Tesseract and the `ocr` extra (section 1) and add the file again, or run OCR yourself (`ocrmypdf in.pdf out.pdf`). |
-| Double-clicking the ENLENS icon does nothing | Look at `logs/enlens.log` in the data folder. Run `enlens-gui --make-launcher` again after moving or reinstalling Python. On macOS, if the icon was copied from another computer, right-click it and choose *Open* once. |
+| Double-clicking the ENLENS icon does nothing | Look at `logs/enlens.log` in the data folder. Run the install line again (one-line install), or `enlens-gui --make-launcher` again after moving or reinstalling Python (git copy). On macOS, if the icon was copied from another computer, right-click it and choose *Open* once. |
+| The install line stops with "does not match the release's checksum" | The download was cut off or changed on the way; nothing was installed. Run the line again later. |
+| The install line on Windows says uv could not install ENLENS | ENLENS is probably running: choose *Quit ENLENS* in it and run the line again. |
+| *Set up Claude* cannot install Claude Code | No network, or the installer was blocked. Install it with Anthropic's set-up page (linked under *Technical details*), then press *Set up Claude* again. |
+| *Set up Claude* keeps waiting for the sign-in | Finish signing in in the window it opened (and in the browser page that window opened), then press *I have signed in*. No window? Open Terminal or PowerShell, type `claude`, and sign in. |
 | "The original file is no longer at …" | The file was moved or renamed after it was added; the app still has its text. Put it back, or add it again. |
 | A document is listed under `mostly_unreadable` | The PDF's fonts have no character map. Get another copy (often the publisher's) or OCR it, `reset-corpus` or ingest the new copy, and run `match-sources` again. |
 | A source is flagged "very short" | It is probably a landing page or an agenda, not the cited work. Replace it, or leave it out with `--exclude`. |

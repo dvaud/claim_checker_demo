@@ -244,6 +244,7 @@ class App:
                 "launcher": self.launcher, "can_quit": self.stop is not None,
                 "context": home.context_plan(s),
                 "ocr": ingest.ocr_status(),
+                "installation": _installation(),
                 "key": {"session": bool(self.session_key), "env": bool(home.env_key()), "stored": bool(home.stored_key())},
                 "statuses": [{"status": k, "text": v, "help": claimcheck.STATUS_HELP.get(k, ""),
                               "next": claimcheck.STATUS_NEXT.get(k, "")} for k, v in claimcheck.STATUS_TEXT.items()],
@@ -1238,6 +1239,30 @@ def _disposition(fname: str) -> str:
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(fname)}"
 
 
+def _installation() -> dict:
+    """0.10: how this ENLENS was installed (installation.py), for Settings → Technical and the help text."""
+    from .. import installation
+
+    try:
+        return {"kind": installation.kind(), "system": installation.system(), "line": installation.install_line(),
+                "releases": f"https://github.com/{installation.REPO}/releases"}
+    except Exception:  # noqa: BLE001
+        return {"kind": "pip", "system": installation.system(), "line": "", "releases": ""}
+
+
+def _repair_plugin() -> None:
+    """0.10: on start, when the Claude Code plugin names a Python that is not this one (ENLENS moved or was installed
+    again), write it again and add it to Claude Code again, quietly, in the background."""
+    try:
+        from .. import claude_setup
+
+        r = claude_setup.repair()
+        if r.get("repaired"):
+            print(f"The Claude Code plugin was brought up to date ({r.get('reason')}).")
+    except Exception as e:  # noqa: BLE001 - never stop the app over this
+        print(f"Could not bring the Claude Code plugin up to date: {e}", file=sys.stderr)
+
+
 def _csv(rows: list[dict]) -> bytes:
     buf = io.StringIO()
     if rows:
@@ -1353,9 +1378,13 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", r"/api/routing", "get_routing"),
     ("GET", r"/api/claude-setup", "get_claude_setup"),
     ("POST", r"/api/claude-setup", "post_claude_setup"),
+    # 0.10: set-up and moving
+    ("POST", r"/api/claude-setup/claude-code", "post_install_claude_code"),
+    ("POST", r"/api/claude-setup/sign-in", "post_claude_sign_in"),
+    ("GET", r"/api/move\.zip", "get_move_zip"),
 ]]
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
-             "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export"}
+             "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip"}
 # (these may take the token as ?token=, for plain links)
 
 
@@ -1878,6 +1907,12 @@ class Handler(BaseHTTPRequestHandler):
                     left -= len(chunk)
             if left or not n:
                 raise ApiError(400, "The upload was cut off.")
+            if bundle.is_move_zip(path):  # 0.10: everything from another computer
+                try:
+                    moved = bundle.import_all(path)
+                except ValueError as e:
+                    raise ApiError(400, str(e)) from e
+                return {"moved": moved, "project": self.app.project_summary(moved["current"]) if moved["current"] else None}
             wanted = _str(q, "name")
             if not wanted:
                 try:
@@ -2363,7 +2398,8 @@ class Handler(BaseHTTPRequestHandler):
 
         out = claude_setup_info()
         if not home.local_only():
-            out["status"] = claude_setup.status(refresh=str(q.get("refresh", "")) in ("1", "true"))
+            # 0.10: the query's values are lists: 0.9 compared "['1']" and never read the status again
+            out["status"] = claude_setup.status(refresh=(_str(q, "refresh") or "") in ("1", "true"))
         return out
 
     def post_claude_setup(self, q):
@@ -2411,6 +2447,54 @@ class Handler(BaseHTTPRequestHandler):
                         pass
         return out
 
+    # -- 0.10 ------------------------------------------------------------------------------------
+    def post_install_claude_code(self, q):
+        """Install Claude Code with Anthropic's installer, after the person confirmed the command shown (a job)."""
+        from .. import claude_setup
+
+        self._body()
+        if home.local_only():
+            raise ApiError(403, "Cloud models are switched off on this computer: Claude Code is not available.")
+        if claude_setup.find_claude():
+            raise ApiError(409, "Claude Code is already on this computer.")
+        running = [j for j in self.app.jobs.all() if j.kind == "claude-install" and j.state in ("queued", "running")]
+        if running:
+            return {"job": running[0].view()}
+
+        def run(job: Job):
+            r = claude_setup.install_claude_code()
+            if not r["ok"]:
+                raise ValueError("Claude Code could not be installed. " + (r["text"][-600:] or ""))
+            return r
+
+        return {"job": self.app.jobs.start("claude-install", "Installing Claude Code", None, run, uses_model=False).view()}
+
+    def post_claude_sign_in(self, q):
+        """Open a terminal window running `claude`, for the one-time sign-in (ENLENS never sees the login)."""
+        from .. import claude_setup
+
+        self._body()
+        try:
+            return claude_setup.open_sign_in()
+        except ValueError as e:
+            raise ApiError(400, str(e)) from e
+
+    def get_move_zip(self, q):
+        """Every project and the settings in one zip, for another computer (never a saved cloud key)."""
+        import shutil
+        import tempfile
+
+        from .. import bundle
+
+        tmp = Path(tempfile.mkdtemp(prefix="enlens-move-"))
+        try:
+            out = tmp / "everything.zip"
+            bundle.export_all(out)
+            fname = _filename(f"ENLENS - all projects and settings - {time.strftime('%Y-%m-%d')}", "zip")
+            self._stream(out, "application/zip", {"Content-Disposition": _disposition(fname)})
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 def make_server(host: str = "127.0.0.1", port: int = 8765, app: App | None = None) -> tuple[ThreadingHTTPServer, App]:
     """The server (not started) and its app. Port 0 picks a free port."""
@@ -2455,6 +2539,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
         print("Warning: listening beyond this computer. Open the link above (it carries the access token); anyone "
               "with that link and access to this address can use the app and read your projects.", file=sys.stderr)
     print("Stop it with Quit ENLENS in the app." if launcher else "Stop it with Ctrl+C (or Quit ENLENS in the app).")
+    threading.Thread(target=_repair_plugin, daemon=True, name="plugin-repair").start()
     if open_browser:
         import webbrowser
 

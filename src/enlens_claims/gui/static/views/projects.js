@@ -3,43 +3,58 @@ import { quickLookButton } from "./quicklook.js";
 import { App, api, h, icon, replace, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download } from "../lib.js";
 import { projectZipLink } from "./result.js";
 
-// Import a project from a zip made with "Download as a zip" (on this or another computer).
-export function importProjectDialog() {
+// Import a project from a zip made with "Download as a zip" (on this or another computer). 0.10: the same dialog takes
+// the zip of "Move ENLENS to another computer" (every project and the settings); its projects keep their names.
+const MOVE_NAME = /^ENLENS - all projects and settings - .*\.zip$/i;
+export function importProjectDialog(opts = {}) {
   const file = h("input", { type: "file", accept: ".zip,application/zip", class: "input", id: "import-zip" });
   const name = h("input", { class: "input", type: "text", placeholder: "the name the project had", autocomplete: "off", maxlength: 60 });
+  const nameField = field("Project name", name, { help: "Proposed from the file name. If a project of that name exists already, you are asked for another." });
+  nameField.hidden = !!opts.move;  // a zip of everything keeps the names its projects had
   const err = h("div", { class: "field-error", role: "alert" });
   const status = h("div", { class: "muted small", "aria-live": "polite" });
+  const moveNote = h("p", { class: "small", hidden: true }, "This file holds everything from another computer: each project comes in under its own name (with “(2)” when a project of that name is here already)", opts.move ? ", and the settings come with it when this computer has no project yet." : ".");
   let proposed = "";
   file.addEventListener("change", () => {
     const f = file.files && file.files[0];
     err.textContent = "";
     if (!f) return;
+    const everything = MOVE_NAME.test(f.name);
+    nameField.hidden = everything;
+    moveNote.hidden = !everything;
     // "ENLENS project - Demo - 2026-10-28.zip" -> "Demo"
     const m = /^ENLENS project - (.+?) - \d{4}-\d{2}-\d{2}\.zip$/i.exec(f.name);
     proposed = (m ? m[1] : f.name.replace(/\.zip$/i, "")).trim();
-    if (!name.value.trim() || name.value === proposed) name.value = proposed;
+    if (!everything && (!name.value.trim() || name.value === proposed)) name.value = proposed;
     status.textContent = `${f.name} · ${fmt.bytes(f.size)}`;
   });
   return dialog({
-    title: "Import a project (.zip)",
+    title: opts.move ? "Bring ENLENS from another computer" : "Import a project (.zip)",
     body: h("div", {},
-      h("p", { class: "muted" }, "A zip made with “Download as a zip”, from this or another computer: the documents, the results and the notes come with it, as a new project."),
-      field("Zip file", file), status,
-      field("Project name", name, { help: "Proposed from the file name. If a project of that name exists already, you are asked for another." }), err),
+      opts.move ? h("p", { class: "muted" }, "On the other computer, open Projects and choose “Download everything (.zip)” under Move ENLENS to another computer. Bring that file here (a USB stick, a shared folder, an e-mail to yourself), then choose it below.")
+        : h("p", { class: "muted" }, "A zip made with “Download as a zip”, from this or another computer: the documents, the results and the notes come with it, as a new project. A zip of everything (from “Move ENLENS to another computer”) works here too."),
+      field("Zip file", file), status, moveNote, nameField, err),
     actions: [{ text: "Cancel", value: null }, {
       text: "Import", value: true, primary: true, id: "dlg-confirm",
       async onClick(dlg) {
         err.textContent = "";
         const f = file.files && file.files[0];
         if (!f) { err.textContent = "Choose a zip file first."; file.focus(); return false; }
-        const typed = name.value.trim();
+        const typed = nameField.hidden ? "" : name.value.trim();
         const btn = dlg.querySelector("#dlg-confirm");
         btn.disabled = true; status.textContent = `Importing ${f.name}… this can take a moment for a large project.`;
         try {
           const r = await api("POST", `/api/projects/import${typed ? `?name=${encodeURIComponent(typed)}` : ""}`, f);
           await App.refresh();
-          toast(`Project “${r.project.name}” imported: ${r.project.documents} ${r.project.documents === 1 ? "document" : "documents"}, ${r.project.hypotheses} ${r.project.hypotheses === 1 ? "result" : "results"}. It is now the current project.`, "ok", { ttl: 7000 });
-          navigate("#/history");
+          if (r.moved) {
+            const n = r.moved.projects.length;
+            const renamed = r.moved.projects.filter((p) => p.name !== p.from);
+            toast(`${n} ${n === 1 ? "project" : "projects"} brought in${r.moved.settings ? ", with the settings" : ""}.${renamed.length ? ` Renamed because the name was taken: ${renamed.map((p) => `${p.from} → ${p.name}`).join(", ")}.` : ""}`, "ok", { ttl: 9000 });
+            navigate(n ? "#/projects" : "#/overview");
+          } else {
+            toast(`Project “${r.project.name}” imported: ${r.project.documents} ${r.project.documents === 1 ? "document" : "documents"}, ${r.project.hypotheses} ${r.project.hypotheses === 1 ? "result" : "results"}. It is now the current project.`, "ok", { ttl: 7000 });
+            navigate("#/history");
+          }
         } catch (e) {
           btn.disabled = false; status.textContent = "";
           err.textContent = e.status === 409 ? `${e.message} Type another name and try again.` : e.message;
@@ -55,6 +70,22 @@ export function importProjectDialog() {
       file.focus();
     },
   });
+}
+
+// 0.10: every project and the settings in one zip, for another computer.
+function moveCard() {
+  const btn = h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+    btn.disabled = true;
+    toast("Packing every project… this can take a while for large projects.", "info", { small: true, ttl: 4000 });
+    try { await download("/api/move.zip"); } catch (e) { showError(e); }
+    btn.disabled = false;
+  } }, icon("download", { size: 13 }), "Download everything (.zip)");
+  return h("div", { class: "card card-plain move-card" },
+    h("h2", { style: { fontSize: "1.05rem" } }, icon("monitor", { size: 16 }), " Move ENLENS to another computer"),
+    h("p", { class: "muted small" }, "One file with every project (documents, results, your judgements and notes) and your settings. A saved Claude API key is left out: it stays on this computer. Projects used in place from another folder come along as copies."),
+    h("ol", { class: "small move-steps" },
+      h("li", {}, "Here: ", btn),
+      h("li", {}, "On the new computer: install ENLENS, then on its first screen (or under Projects → Import) choose the file.")));
 }
 
 export function newProjectDialog() {
@@ -123,6 +154,7 @@ export async function renderProjects(view) {
   view.appendChild(h("p", { class: "muted small", style: { margin: "-10px 0 14px" } }, "“Download as a zip” gives a project to a colleague or moves it to another computer: one file with the documents, the results, your judgements and notes. “Import a project” brings such a zip in as a new project."));
   const list = h("div", { class: "stack" });
   view.appendChild(list);
+  if ((App.state.projects || []).some((p) => !p.temporary)) view.appendChild(moveCard());
   const draw = () => {
     replace(list);
     const projects = App.state.projects || [];

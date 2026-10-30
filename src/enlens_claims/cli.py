@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -381,8 +382,16 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-check", action="store_true", help="do not start the connector to check it")
     p.add_argument("--print-only", action="store_true", help="only print the lines that add it; change nothing in "
                                                              "Claude Code")
-    p = sub.add_parser("update", help="fetch the newest ENLENS from GitHub into this copy (no new venv, data untouched)")
+    p = sub.add_parser("update", help="install the newest ENLENS the way this one was installed (a git copy: git pull; "
+                                      "the one-line install: the newest release); data untouched")
     p.add_argument("--check", action="store_true", help="only say whether a newer version is waiting")
+    p = sub.add_parser("post-install", help="what the installers run last: record how ENLENS was installed, make the "
+                                            "icon, bring the Claude Code plugin up to date")
+    p.add_argument("--by", choices=["script", "package", "pip", "none"], default="script",
+                   help="how ENLENS was installed (none: write no marker)")
+    p.add_argument("--no-icon", action="store_true", help="do not make the ENLENS icon")
+    p.add_argument("--open", action="store_true", help="start ENLENS afterwards (or show the copy already running)")
+    p.add_argument("--home", help="data folder built into the icon (default: ~/enlens, or ENLENS_HOME)")
 
     a = ap.parse_args(argv)
     if a.cmd == "update":
@@ -393,6 +402,13 @@ def _main(argv: list[str] | None = None) -> int:
         except update.UpdateError as e:
             print(f"Problem: {e}", file=sys.stderr)
             return 1
+        print(out["message"])
+        return 0
+    if a.cmd == "post-install":
+        from . import installation
+
+        out = installation.post_install(by=None if a.by == "none" else a.by, icon=not a.no_icon,
+                                        open_app=a.open and not os.environ.get("ENLENS_NO_OPEN"), home=a.home)
         print(out["message"])
         return 0
     if a.cmd == "claude-setup":

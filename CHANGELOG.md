@@ -1,5 +1,105 @@
 # Changelog
 
+## 0.10.0 (October 2026): from GitHub to the icon in one line
+
+Getting from the GitHub page to an ENLENS icon took eleven separate actions in 0.9.1, seven of them in a terminal
+(git, Python, a venv, pip, `--make-launcher`, Claude Code, its sign-in). 0.10 is Phase 1 of the set-up roadmap, with
+the parts of Phases 2 and 3 that live inside the app: one pasted line, then one button. No analysis changes: every
+answer still goes through the quote check, a person can overrule it, and every result records how it was made.
+
+**The one-line install.**
+- `install/install.sh` (macOS, Linux) and `install/install.ps1` (Windows), attached to every GitHub Release with the
+  release's version filled in. The line (`curl -fsSL …/releases/latest/download/install.sh | sh`, or `irm
+  …/install.ps1 | iex` in PowerShell) gets uv unless it is there, downloads the release's wheel and checks it against
+  the release's `SHA256SUMS`, installs it with `uv tool install` into its own Python 3.12 (uv-managed only, so a
+  Homebrew upgrade cannot break it; no git, no venv, no pip, no administrator rights), with the `connector`, `fast`,
+  `pdfminer` and `ocr` extras, and runs `enlens post-install`: it records how ENLENS was installed, makes the icon,
+  repairs the Claude Code plugin, and opens ENLENS. Running the line again updates. `ENLENS_LOCAL_ONLY=1` and
+  `ENLENS_HOME=` are built into the icon; `ENLENS_WHEEL=` installs a local build. The PowerShell script never calls
+  `exit`, which would close the window `irm | iex` runs in.
+- `installation.py`: how this copy was installed (`git`, `script`, `package`, `pip`), from a marker
+  `<sys.prefix>/enlens-install.json` the installers write (a git copy needs none). *Settings → Technical* says it and
+  how to update. `enlens post-install [--by script|package|pip|none] [--no-icon] [--open] [--home]`.
+- `enlens update` follows the installation: a git copy pulls as in 0.8.2; a one-line install asks GitHub for the
+  latest release, downloads its wheel, refuses it unless it matches `SHA256SUMS`, installs it with uv in the same
+  place (so the icon and the plugin keep their Python) and runs `post-install` from the new version; on Windows, where
+  a running program cannot replace itself, it gives the install line instead. A pip install is told about the line.
+- **Releases.** `.github/workflows/release.yml` (the repo had no `.github/` and no workflow): a tag `vX.Y.Z` checks
+  that the tag, `pyproject.toml`, `__init__.py` and the top CHANGELOG entry agree (`tools/release.py check`), runs the
+  tests, builds the wheel, fills the version into the two scripts and writes `SHA256SUMS` (`tools/release.py assets`),
+  tries the one-line install of that build on Linux, macOS and Windows runners (the connector must start and offer
+  the queue tools), and uploads everything to a **draft** release whose notes are this entry with the install lines
+  on top (`tools/release.py notes`). You check the draft and press Publish; the line always takes the latest
+  published release. *Run workflow* by hand builds test copies without a release.
+
+**Set up Claude, in one button.** On the first screen and in *Settings → AI*, *Set up Claude* does every Claude step
+still open, in order, and skips what is done:
+- Claude Code missing: it shows the command of Anthropic's native installer (`curl -fsSL
+  https://claude.ai/install.sh | bash`; `irm https://claude.ai/install.ps1 | iex` on Windows) and runs it after you
+  confirm, as a background job (`POST /api/claude-setup/claude-code`); a failure says so and links Anthropic's set-up
+  page. `find_claude()` also looks for `~/.local/bin/claude.exe` (Windows).
+- Not signed in: it opens a Terminal (macOS) or PowerShell (Windows) window, or the first terminal found on Linux,
+  already running `claude` (`POST /api/claude-setup/sign-in`), and checks every few seconds until Claude Code says it
+  is signed in; *I have signed in* checks at once, *Stop waiting* stops. No window: the line to type. ENLENS still
+  never sees the login.
+- The plugin: added straight away, with no second button. The checklist ticks each step as it is done.
+- *Set it up yourself instead* keeps the three steps to type.
+- **The plugin follows the installation.** When the plugin names another Python or another data folder (ENLENS moved,
+  or was installed again), the app writes it again on start and runs the two set-up commands again, quietly, in the
+  background (`claude_setup.repair()`); `post-install` and `enlens update` do the same. The Claude desktop app's
+  connector entry is pointed at this Python when the one it names is gone (`mcp_server.repair_desktop()`).
+
+**Move ENLENS to another computer.** *Projects → Move ENLENS to another computer → Download everything (.zip)*
+(`GET /api/move.zip`): every project (each as its own project zip, `bundle.export_all`) and the settings, never a
+saved Claude API key; quick looks not kept stay behind; projects used in place come along as copies. The new
+computer's first screen offers *Import from another computer*, and *Import a project (.zip)* takes both kinds of zip
+(`POST /api/projects/import`). Each project keeps its name (`name (2)` when taken). The settings come along only when
+the computer has no project yet (a computer in use keeps its own, and its current project), and on a `--local-only`
+installation never the choice of a cloud AI.
+
+**Scanned PDFs: Tesseract offered, and found.** When a scanned page stays without text because Tesseract is missing,
+the notice after adding documents, the Documents page and *Settings → Documents* say how to get it on this system
+(Homebrew's `brew install tesseract`, the Windows installer the Tesseract project links to, `apt install
+tesseract-ocr`), instead of "ask IT to install Tesseract". ENLENS now finds Tesseract where those installers put it
+when it is not on the PATH (`ingest.find_tesseract()`; also used for highlighted copies).
+
+**Usability problems fixed on the way.**
+- *Check again* on the Claude Code checklist (and every `GET /api/claude-setup?refresh=1`) showed the status of up to
+  half a minute before: the query's value is a list, so `refresh` was never seen. Signing in or installing Claude Code
+  was therefore not noticed until the cache ran out.
+- A Mac app started from its icon has no Homebrew folder on its PATH, and the Windows Tesseract installer does not add
+  itself to the PATH: an installed Tesseract was reported missing. See above.
+- After a scanned document, "turn it on in Settings" opened the *Checking* tab; the setting is under *Documents*.
+- *Copy* on a terminal line (set-up commands, the Tesseract line) said "Paste it in Claude Code"; it names the
+  terminal now.
+
+Tests: 21 new (`tests/test_0100_setup_and_moving.py`): the installation kinds and marker; `post-install` (marker,
+icon, plugin repaired with the stand-in `claude`); the plugin repaired only when it names another Python or data
+folder, never when local only; the Claude desktop entry; `enlens update` from a release (up to date, waiting,
+installed with uv, a wrong checksum refused, Windows, offline) and by kind; `install.sh` with stand-ins for uv and
+curl (download, checksum, the uv command, `post-install`; a wrong checksum installs nothing; a local package and the
+options; the raw script refuses without a version); the PowerShell script's shape; `tools/release.py` and the
+workflow; *Set up Claude* through the API (the stand-in installer `tests/fake_claude_installer.py`, the sign-in window,
+the plugin; a failed install; local only; `refresh=1`); moving everything (no key, a fresh computer takes the
+settings, one in use keeps its own, local only); Tesseract found and offered; the page files. One 0.8.2 test now
+expects the pip install's new message. `tools/dev_server.py --claude-install` shows the whole button with
+stand-ins; `--no-tesseract` the Tesseract offer.
+
+**Not yet done.**
+- The one-line install was run for real on Linux only (uv, a managed Python 3.12, the icon entry, the marker).
+  `install.ps1` was not run (no PowerShell in the build environment), and `install.sh` was not run on a Mac: the
+  release workflow tries both on GitHub's runners when the tag is pushed; check that run before publishing.
+- The install line works only once a release is **published** (`releases/latest`); the draft from the tag must be
+  published first. Until then `enlens update` on a one-line install says it cannot ask GitHub.
+- *Set up Claude* against a real Claude Code: Anthropic's installer, the sign-in window on macOS (`open -a Terminal`
+  with a `.command` file) and Windows (`Start-Process powershell`), and `claude auth status` after signing in were
+  tested only with stand-ins. Re-running `claude plugin marketplace add` / `install` after a move relies on both
+  being idempotent, as tested with Claude Code 2.1.312 in 0.9.
+- Packaged apps (dmg, setup.exe, AppImage), the in-app update button and signing (Phases 2 to 4) are for later
+  releases; the marker already knows the kind `package`.
+- Gate A of the roadmap (a fresh Mac and Windows account reach a finished check with the line and the button) is
+  for a person to run.
+
 ## 0.9.1 (October 2026): link buttons readable on hover
 
 - **A primary button made from a link stays readable under the mouse.** On the Overview, *Finish the set-up* (and

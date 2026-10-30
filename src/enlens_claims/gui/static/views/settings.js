@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, session, TERMINAL, strictness, statusBadge, copyLine } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, session, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp } from "../lib.js";
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 
@@ -172,7 +172,8 @@ function ocrBlock(s) {
   lang.addEventListener("change", saveOcr);
   const box = h("div", {});
   if (st.available === false) {
-    box.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "To read scanned PDFs, ask IT to install Tesseract."), " Until then, scanned pages stay without text and a wholly scanned PDF cannot be added. What is missing is listed under Settings → Technical."))));
+    box.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "To read scanned PDFs, install Tesseract."), " Until then, scanned pages stay without text and a wholly scanned PDF cannot be added."),
+      st.install ? tesseractHelp(st) : h("p", { class: "small" }, "What is missing is listed under Settings → Technical."))));
   } else if (st.available) {
     box.appendChild(h("p", { class: "muted small", style: { margin: "0 0 8px" } }, icon("circle-check", { size: 13 }), " Text recognition is installed on this computer."));
   }
@@ -734,6 +735,14 @@ function testSection(s) {
     out);
 }
 
+// 0.10: how this copy was installed, and how it is updated
+function installedWith(inst) {
+  if (!inst || !inst.kind) return null;
+  const how = { git: ["from a git copy", "Update: enlens update"], script: ["with the one-line install", "Update: run the install line again (or enlens update)"],
+    package: ["from the download for this system", "Update: download the newest version"], pip: ["with pip", "Update: pip install --upgrade, or switch to the one-line install"] }[inst.kind];
+  return h("div", { class: "muted small", style: { fontWeight: 400 } }, `Installed ${how[0]}. ${how[1]}.`);
+}
+
 // ---------------------------------------------------------------------------------------------
 function dataSection() {
   const st = App.state || {};
@@ -742,56 +751,151 @@ function dataSection() {
     h("dl", { class: "kv-grid" },
       h("div", { class: "kv" }, h("dt", {}, "Data folder"), h("dd", {}, h("code", { class: "path", title: st.home || "" }, ...String(st.home || "").split(/(?<=[\/\\])/).flatMap((seg) => [seg, h("wbr")])))),
       h("div", { class: "kv" }, h("dt", {}, "Projects"), h("dd", {}, `${(st.projects || []).length}`, " · ", h("a", { href: "#/projects" }, "manage"))),
-      h("div", { class: "kv" }, h("dt", {}, "Version"), h("dd", {}, `ENLENS ${st.version || VERSION}`)),
+      h("div", { class: "kv" }, h("dt", {}, "Version"), h("dd", {}, `ENLENS ${st.version || VERSION}`, installedWith(st.installation))),
       h("div", { class: "kv" }, h("dt", {}, "Network"), h("dd", {}, "This computer only · nothing is loaded from the internet")),
       h("div", { class: "kv" }, h("dt", {}, "Text recognition (OCR) for scanned PDFs"), h("dd", {}, ocr.available ? `installed (Tesseract${ocr.languages && ocr.languages.length ? `, languages: ${ocr.languages.join(", ")}` : ""})`
-        : ["not available", ocr.missing && ocr.missing.length ? h("div", { class: "muted small", style: { fontWeight: 400 } }, `Missing: ${ocr.missing.map((m) => ({ tesseract: "the Tesseract program (tesseract-ocr)", pypdfium2: "the Python package pypdfium2", pillow: "the Python package pillow" }[m] || m)).join("; ")}. Install them, then restart the app.`) : null]))),
+        : ["not available", ocr.missing && ocr.missing.length ? h("div", { class: "muted small", style: { fontWeight: 400 } }, `Missing: ${ocr.missing.map((m) => ({ tesseract: "the Tesseract program (tesseract-ocr)", pypdfium2: "the Python package pypdfium2", pillow: "the Python package pillow" }[m] || m)).join("; ")}.${ocr.missing.includes("tesseract") ? " How to get Tesseract: Settings → Documents." : ""}${ocr.missing.some((m) => m !== "tesseract") ? " The Python parts: pip install 'enlens-claims[ocr]', then restart the app." : ""}`) : null]))),
     h("p", { class: "muted small", style: { marginTop: "12px" } }, "Each project is a folder with a database, the added files and the settings. Removed projects go to a trash folder inside the data folder."));
 }
 
 // ---------------------------------------------------------------------------------------------
-// 0.9: setting up Claude Code, as a checklist: Claude Code found, signed in, the ENLENS plugin added. One button
-// does what can be done from here (prepare the plugin and add it to Claude Code); what only a person can do (install
-// Claude Code, sign in) is said plainly. Used in Settings and on the first-run page.
+// 0.9: setting up Claude Code, as a checklist: Claude Code found, signed in, the ENLENS plugin added.
+// 0.10: one button, "Set up Claude", does every step it can, in order, and skips what is done: it installs Claude Code
+// with Anthropic's installer (after the person has seen and confirmed the command), opens a window where the person
+// signs in with their Claude plan (ENLENS never sees the login) and waits for it, then adds the plugin. Doing it by
+// hand stays one fold below. Used in Settings → AI and on the first-run page.
 export function claudeSetupCard(opts = {}) {
   const box = h("div", { class: "card card-plain cc-card", style: { padding: "14px 16px" } }, h("p", { class: "muted small" }, "Looking for Claude Code on this computer…"));
-  const log = h("div", { "aria-live": "polite" });
+  const log = h("div", { class: "cc-progress", "aria-live": "polite" });
+  let info = { status: {}, commands: [] };
+  let busy = false;
+  let stopWaiting = null;
   const step = (ok, title, text) => h("li", { class: `cc-step ${ok === true ? "ok" : ok === false ? "bad" : ""}` },
     h("span", { class: "cc-mark", "aria-hidden": "true" }, ok === true ? icon("check", { size: 12 }) : ok === false ? "!" : "?"),
     h("div", {}, h("strong", {}, title), text ? h("span", { class: "small" }, text) : null));
-  const draw = (info) => {
-    const st = info.status || {};
-    const ready = !!st.ready;
-    if (ready && opts.onReady) opts.onReady();
-    const btn = h("button", { class: `btn ${ready ? "btn-sm" : "btn-primary"}`, type: "button" }, icon(ready ? "refresh" : "zap", { size: 14 }), ready ? "Check again" : "Set up Claude Code");
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      replace(log, h("p", { class: "muted small" }, h("span", { class: "spinner" }, icon("loader", { size: 13 })), " Setting up… (this takes a few seconds)"));
-      try {
-        if (ready) { draw(await api("GET", "/api/claude-setup?refresh=1")); replace(log); }
-        else {
-          const r = await api("POST", "/api/claude-setup", {});
-          replace(log, h("ul", { class: "cc-log" }, (r.steps || []).map((x) => h("li", { class: x.ok ? "" : "bad" }, `${x.ok ? "Done" : "Did not work"}: ${x.step}`, x.ok ? null : h("div", { class: "small" }, x.text)))));
-          draw({ ...r, status: r.status });
-          if (r.status && r.status.ready) toast("Claude Code is set up.", "ok");
-        }
-      } catch (e) { replace(log); showError(e); }
-      btn.disabled = false;
+  const say = (...children) => replace(log, h("div", { class: "cc-now" }, ...children));
+  const working = (text) => say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("span", {}, text));
+  const fresh = async () => { info = await api("GET", "/api/claude-setup?refresh=1"); return info.status || {}; };
+
+  async function installClaudeCode() {
+    const line = info.installer || "curl -fsSL https://claude.ai/install.sh | bash";
+    const ok = await confirmDialog({
+      title: "Install Claude Code?", confirmText: "Install Claude Code", danger: false,
+      message: h("div", { class: "stack", style: { gap: "10px" } },
+        h("p", {}, "Claude Code is the program that lets Claude work on your own Claude plan. ENLENS will run Anthropic's installer for it, which downloads Claude Code from claude.ai and puts it in your user folder. It needs no administrator rights and takes a minute or two."),
+        h("p", { class: "small muted" }, "The command it runs:"), copyLine(line, "Copy", "a terminal"),
+        h("p", { class: "small muted" }, "Prefer to do it yourself? Follow ", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), ", then press Set up Claude again.")),
     });
+    if (!ok) { replace(log); return false; }
+    working("Installing Claude Code… (a minute or two)");
+    const r = await api("POST", "/api/claude-setup/claude-code", {});
+    const job = await watchJob(r.job.id, null, 1000).promise;
+    if (job.state !== "done") {
+      say(icon("alert-circle", { size: 14 }), h("div", {}, h("p", {}, "Claude Code could not be installed from here."),
+        h("p", { class: "small" }, "Install it with ", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), ", then press Set up Claude again."),
+        job.error ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error)) : null));
+      return false;
+    }
+    return true;
+  }
+
+  // Opens the sign-in window and waits (checking every few seconds) until Claude Code says it is signed in.
+  async function signIn() {
+    let opened = { opened: false };
+    try { opened = await api("POST", "/api/claude-setup/sign-in", {}); } catch (e) { opened = { opened: false, error: e.message }; }
+    return new Promise((resolve) => {
+      let timer = null;
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; clearTimeout(timer); stopWaiting = null; resolve(v); };
+      stopWaiting = () => finish(false);
+      const checkNow = h("button", { class: "btn btn-sm", type: "button", onClick: () => poll(true) }, "I have signed in");
+      const cancel = h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { finish(false); replace(log); } }, "Stop waiting");
+      say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("div", {},
+        opened.opened ? h("p", {}, `A ${opened.window} window opened with Claude Code. Sign in there with your Claude plan (it opens a page in your browser), then close that window. ENLENS is waiting and continues by itself.`)
+          : h("div", {}, h("p", {}, "Sign in to Claude Code once: open a terminal (Terminal on a Mac, PowerShell on Windows), type the line below, and follow the steps."), copyLine("claude", "Copy", "a terminal")),
+        h("p", { class: "small muted" }, "ENLENS never sees your login: Claude Code keeps it."),
+        h("div", { class: "btn-row", style: { marginTop: "6px" } }, checkNow, cancel)));
+      const started = Date.now();
+      async function poll(now) {
+        clearTimeout(timer);
+        if (done) return;
+        if (!box.isConnected && !now) { finish(false); return; }
+        let st = {};
+        try { st = await fresh(); } catch (_) { /* try again */ }
+        if (st.signed_in === true) { finish(true); return; }
+        if (now && st.signed_in !== false) { finish(true); return; }  // Claude Code does not say: carry on
+        if (now) toast("Claude Code does not say it is signed in yet. Finish signing in, then press the button again.", "warn");
+        if (Date.now() - started > 15 * 60 * 1000) { finish(false); replace(log, h("p", { class: "small" }, "Stopped waiting for the sign-in. Press Set up Claude again when you have signed in.")); return; }
+        timer = setTimeout(() => poll(false), 4000);
+      }
+      timer = setTimeout(() => poll(false), 4000);
+    });
+  }
+
+  async function addPlugin() {
+    working("Adding the ENLENS plugin to Claude Code…");
+    const r = await api("POST", "/api/claude-setup", {});
+    info = { ...info, ...r };
+    const bad = (r.steps || []).filter((x) => !x.ok);
+    if (bad.length) {
+      say(icon("alert-circle", { size: 14 }), h("div", {}, h("p", {}, "The plugin could not be added: ", bad[0].step),
+        h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, bad[0].text))));
+      return false;
+    }
+    return true;
+  }
+
+  async function setUp() {
+    if (busy) return;
+    busy = true;
+    draw(true);
+    const now = async () => { const st = await fresh(); draw(true); return st; };  // the checklist follows each step
+    let ok = true;
+    try {
+      working("Checking what is ready…");
+      let st = await now();
+      if (!st.found) {
+        ok = (await installClaudeCode()) && (st = await now()).found;
+      }
+      if (ok && st.signed_in === false) {
+        ok = await signIn();
+        if (ok) st = await now();
+      }
+      if (ok && (!st.ready || st.installed !== true)) {
+        ok = await addPlugin();
+        if (ok) st = await fresh();
+      }
+      if (ok) { replace(log); if (st.ready) toast("Claude is set up.", "ok"); }
+    } catch (e) { replace(log); showError(e); ok = true; }
+    busy = false;
+    draw(!ok);
+  }
+
+  function draw(keepLog) {
+    const st = info.status || {};
+    const ready = !!st.ready && st.signed_in !== false;
+    if (ready && opts.onReady) opts.onReady();
+    if (!keepLog && !busy) replace(log);
+    const btn = h("button", { class: `btn ${ready ? "btn-sm" : "btn-primary"}`, type: "button", disabled: busy, onClick: () => (ready ? fresh().then(() => draw()).catch(showError) : setUp()) },
+      icon(ready ? "refresh" : "zap", { size: 14 }), ready ? "Check again" : "Set up Claude");
+    const manual = h("details", { class: "fold" }, h("summary", {}, "Set it up yourself instead"),
+      h("ol", { class: "cc-manual small" },
+        h("li", {}, "Install Claude Code (", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), "), in a terminal:", info.installer ? copyLine(info.installer, "Copy", "a terminal") : null),
+        h("li", {}, "Sign in once: type ", h("code", {}, "claude"), " in a terminal and follow the steps."),
+        (info.commands || []).length ? h("li", {}, "Add the ENLENS plugin with these two lines in a terminal, then restart Claude Code:", info.commands.map((c) => copyLine(c, "Copy", "a terminal"))) : null));
     replace(box,
-      h("div", { class: "field-label" }, ready ? "Claude Code is ready" : "Set up Claude Code (once)"),
+      h("div", { class: "field-label" }, ready ? "Claude is ready" : "Set up Claude (once)"),
       h("ol", { class: "cc-steps" },
-        step(st.found ? true : false, "Claude Code on this computer", st.found ? (st.version || "found") : "Not found. Install it from claude.com/claude-code (the terminal program), then press the button again."),
+        step(st.found ? true : busy ? null : false, "Claude Code on this computer", st.found ? (st.version || "found") : "Not on this computer yet. The button installs it with Anthropic's installer (it shows you the command first)."),
         step(st.signed_in === true ? true : st.signed_in === false ? false : null, "Signed in with your Claude plan",
-          st.signed_in === true ? "Pro, Max, Team or Enterprise" : st.signed_in === false ? "Open a terminal, type claude, and sign in once." : "Claude Code asks you to sign in the first time it starts."),
+          st.signed_in === true ? "Pro, Max, Team or Enterprise" : st.signed_in === false ? "Not yet. The button opens a window where you sign in once." : "Claude Code asks you to sign in once; the button opens the window for it."),
         step(st.installed === true ? true : st.found ? false : null, "The ENLENS plugin added to Claude Code",
-          st.installed ? "It adds /enlens-run, its helpers and the ENLENS connector." : "The button below adds it (nothing else in Claude Code is changed).")),
+          st.installed ? "It adds /enlens-run, its helpers and the ENLENS connector." : "The button adds it (nothing else in Claude Code is changed).")),
       h("div", { class: "btn-row" }, btn),
       log,
       h("p", { class: "muted small", style: { marginTop: "10px" } }, "Then press ", h("strong", {}, "Start Claude Code"), " wherever work waits (or in the sidebar): ENLENS starts Claude Code in the background on this project's work, and the results appear as they come in. You can also type ", h("code", {}, `/enlens-run ${App.project || "<project>"}`), " in Claude Code yourself."),
-      (info.commands || []).length ? h("details", { class: "fold" }, h("summary", {}, "Set it up from a terminal instead"),
-        h("p", { class: "small muted" }, "Type these two lines, then restart Claude Code:"), h("div", {}, info.commands.map((c) => copyLine(c)))) : null);
-  };
-  api("GET", "/api/claude-setup").then(draw).catch(() => draw({ status: {}, commands: [] }));
+      manual);
+  }
+  api("GET", "/api/claude-setup").then((r) => { info = r; draw(); }).catch(() => draw());
   return box;
 }

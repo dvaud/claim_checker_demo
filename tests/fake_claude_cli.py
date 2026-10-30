@@ -4,6 +4,9 @@ Point ENLENS_CLAUDE at this file. It answers what ENLENS asks of Claude Code: `-
 `plugin list --json`, `plugin marketplace add <folder>`, `plugin install enlens-run@enlens`, and
 `-p "/enlens-run:enlens-run <project>" ...`, which plays /enlens-run with the fake Claude Code of the tests
 (fake_claude_code.py) until nothing waits. What was "installed" is kept in <ENLENS_HOME>/fake-claude.json.
+
+0.10: with FAKE_CLAUDE_LOGGED_OUT=1 it starts signed out; run with no arguments (as the sign-in window of "Set up
+Claude" does) it "signs in".
 """
 from __future__ import annotations
 
@@ -38,7 +41,15 @@ def main(argv: list[str]) -> int:
         print("2.1.312 (Claude Code, stand-in)")
         return 0
     if argv[:2] == ["auth", "status"]:
-        print(json.dumps({"loggedIn": True, "authMethod": "claude.ai"}))
+        st = _state()
+        logged_in = st.get("logged_in", not os.environ.get("FAKE_CLAUDE_LOGGED_OUT"))
+        print(json.dumps({"loggedIn": bool(logged_in), "authMethod": "claude.ai" if logged_in else "none"}))
+        return 0
+    if not argv:  # the interactive start: the person signs in
+        st = _state()
+        st["logged_in"] = True
+        _save(st)
+        print("Signed in with your Claude plan (stand-in).")
         return 0
     if argv[:2] == ["plugin", "list"]:
         st = _state()

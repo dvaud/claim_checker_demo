@@ -142,5 +142,5 @@ def test_local_changes_stop_the_update(copies):
 
 def test_not_a_git_copy(monkeypatch):
     monkeypatch.setattr(update, "source_root", lambda: None)
-    with pytest.raises(update.UpdateError, match="not installed from a git copy"):
+    with pytest.raises(update.UpdateError, match="installed with pip, so it cannot update itself"):
         update.update(run=Pip())

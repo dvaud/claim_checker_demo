@@ -647,10 +647,11 @@ export function pageHead(title, opts = {}) {
 // 0.8: the task queue (Claude Code)
 // ---------------------------------------------------------------------------------------------
 // A command to type, with a button that copies it.
-export function copyLine(text, label = "Copy") {
+// `where`: where it is pasted, for the confirmation ("Claude Code", or "a terminal" for a command line).
+export function copyLine(text, label = "Copy", where = "Claude Code") {
   const btn = h("button", { class: "btn btn-sm btn-ghost copy-btn", type: "button", "aria-label": `${label}: ${text}` }, icon("copy", { size: 13 }), label);
   btn.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(text); toast("Copied. Paste it in Claude Code.", "ok", { ttl: 2000 }); }
+    try { await navigator.clipboard.writeText(text); toast(`Copied. Paste it in ${where}.`, "ok", { ttl: 2000 }); }
     catch (_) { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Selected: copy it with Ctrl+C (or Cmd+C).", "info"); }
   });
   const code = h("code", { class: "copy-code" }, text);
@@ -735,4 +736,18 @@ function queueFetch(project) {
     .finally(() => { const now = QUEUE_CACHE.get(project); if (now && now.inflight === p) delete now.inflight; });
   QUEUE_CACHE.set(project, { ...c, inflight: p });
   return p;
+}
+
+// 0.10: how to get Tesseract (text recognition for scanned PDFs) on this computer's system, as the server says
+// (ocr.install: {text, command, link, link_text}); the Python parts are a technical detail.
+export function tesseractHelp(ocr) {
+  const how = (ocr && ocr.install) || null;
+  if (!how) return null;
+  const py = ((ocr && ocr.missing) || []).filter((m) => m !== "tesseract");
+  return h("div", { class: "tess-help" },
+    h("p", { class: "small" }, "Scanned pages need Tesseract, a free text-recognition program. ", how.text),
+    how.command ? copyLine(how.command, "Copy", "a terminal") : null,
+    h("p", { class: "small" }, how.link ? h("a", { href: how.link, target: "_blank", rel: "noopener" }, how.link_text || "How to install it") : null,
+      how.link ? " · " : null, "ENLENS notices it within a minute; then add the document again."),
+    py.length ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("p", { class: "small" }, `Also missing in ENLENS's Python: ${py.join(", ")}. Install them with `, h("code", {}, "pip install 'enlens-claims[ocr]'"), " (the one-line install brings them).")) : null);
 }

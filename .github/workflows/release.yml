@@ -1,0 +1,100 @@
+# ENLENS release (0.10). Pushing a tag v<version> tests ENLENS, builds the package, tries the one-line install on
+# Linux, macOS and Windows, and uploads everything to a DRAFT GitHub Release: check it, then press Publish (the
+# install line always takes the latest published release). Run it by hand ("Run workflow") to build test copies
+# without a release: they are attached to the run.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the version (tag, pyproject.toml, __init__.py, CHANGELOG.md)
+        run: python tools/release.py check "${{ github.ref_type == 'tag' && github.ref_name || '' }}"
+      - name: Test
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,connector,fast]'
+          python -m pytest -q
+      - name: Build the package and the install scripts
+        run: |
+          pip install build
+          python -m build --wheel --outdir dist
+          python tools/release.py assets dist
+          python tools/release.py notes > release-notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: enlens-release
+          path: |
+            dist/
+            release-notes.md
+
+  try-install:
+    name: One-line install on ${{ matrix.os }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      ENLENS_NO_OPEN: "1"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: enlens-release
+      - name: Install with install.sh (the built package)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ENLENS_WHEEL="$(ls "$PWD"/dist/enlens_claims-*.whl)" sh dist/install.sh
+          export PATH="$HOME/.local/bin:$PATH"
+          BIN="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
+          "$BIN/enlens" --help > /dev/null
+          PY="$(uv tool dir 2>/dev/null || echo "$HOME/.local/share/uv/tools")/enlens-claims/bin/python"
+          "$PY" -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
+          "$PY" -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
+      - name: Install with install.ps1 (the built package)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:ENLENS_WHEEL = (Get-ChildItem dist\enlens_claims-*.whl).FullName
+          $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
+          . .\dist\install.ps1
+          $bin = (uv tool dir --bin).Trim()
+          & "$bin\enlens.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "enlens did not start" }
+          $py = Join-Path (uv tool dir).Trim() 'enlens-claims\Scripts\python.exe'
+          & $py -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
+          if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
+          & $py -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
+          if ($LASTEXITCODE -ne 0) { throw "the connector did not start" }
+
+  release:
+    name: Draft the GitHub Release
+    needs: [build, try-install]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: enlens-release
+      - name: Upload to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/* --draft --verify-tag \
+            --title "ENLENS ${GITHUB_REF_NAME#v}" --notes-file release-notes.md

@@ -271,10 +271,9 @@ def _pypdf_pages(reader) -> dict[int, PageText]:
 
 def _ocr_page(path: Path, pno: int, lang: str = "eng") -> PageText | None:
     """Word boxes of a scanned page from Tesseract (TSV), at the resolution ingest reads scans with."""
-    import shutil
     import subprocess
 
-    from .ingest import OCR_DPI, ocr_status
+    from .ingest import OCR_DPI, find_tesseract, ocr_status
 
     if not ocr_status()["available"]:
         return None
@@ -291,7 +290,9 @@ def _ocr_page(path: Path, pno: int, lang: str = "eng") -> PageText | None:
         img.save(buf, format="PNG")
     finally:
         pdf.close()
-    exe = shutil.which("tesseract")
+    exe = find_tesseract()
+    if not exe:
+        return None
     r = subprocess.run([exe, "stdin", "stdout", "-l", lang, "tsv"], input=buf.getvalue(), capture_output=True, timeout=300)
     if r.returncode != 0:
         return None

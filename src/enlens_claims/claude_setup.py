@@ -171,6 +171,7 @@ def setup_info() -> dict:
     except (OSError, ValueError, KeyError):
         ready = False
     return {"folder": str(folder()), "ready": ready, "commands": commands(), "terminal": "enlens claude-setup",
+            "installer": installer_command()["line"], "docs": INSTALL_DOCS,
             "in_claude_code": [f'/plugin marketplace add "{folder()}"', f"/plugin install {PLUGIN}@{MARKETPLACE}"],
             "local_only": core.local_only()}
 
@@ -190,7 +191,8 @@ def find_claude() -> str:
     if found:
         return found
     h = Path.home()
-    for c in (h / ".claude" / "local" / "claude", h / ".local" / "bin" / "claude", Path("/opt/homebrew/bin/claude"),
+    for c in (h / ".claude" / "local" / "claude", h / ".local" / "bin" / "claude", h / ".local" / "bin" / "claude.exe",
+              Path("/opt/homebrew/bin/claude"),
               Path("/usr/local/bin/claude"), h / ".npm-global" / "bin" / "claude",
               h / "AppData" / "Roaming" / "npm" / "claude.cmd"):
         if c.exists():
@@ -356,3 +358,156 @@ def stop_run(project: str) -> dict:
             except OSError:
                 pass
     return run_state(project)
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.10: the plugin follows the installation; "Set up Claude" installs Claude Code and opens the sign-in
+# ---------------------------------------------------------------------------------------------
+def stale() -> str:
+    """Why the written plugin no longer fits this installation ("" when it fits, or when none was written): the
+    connector it starts is another Python (ENLENS moved, or another copy wrote it) or another data folder."""
+    plug = plugin_folder()
+    if not (plug / ".mcp.json").exists():
+        return ""
+    try:
+        cfg = json.loads((plug / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][SERVER]
+    except (OSError, ValueError, KeyError, TypeError):
+        return "the plugin's connector settings cannot be read"
+    if cfg.get("command") != sys.executable:
+        return f"it starts the connector with {cfg.get('command')}, not with this ENLENS ({sys.executable})"
+    if (cfg.get("env") or {}).get("ENLENS_HOME") != str(core.home()):
+        return "it uses another data folder"
+    if not (plug / "SKILL.md").exists():
+        return "files of the plugin are missing"
+    return ""
+
+
+def repair(run_claude: bool = True) -> dict:
+    """Write the plugin again when it no longer fits this installation (see stale()), and add it to Claude Code again
+    with the same two commands as set-up (both idempotent), quietly. Nothing happens when no plugin was set up, or
+    on a local-only installation. Run when the app starts and after an installer or an update."""
+    if core.local_only():
+        return {"repaired": False}
+    why = stale()
+    if not why:
+        return {"repaired": False}
+    out: dict = {"repaired": True, "reason": why, "steps": []}
+    try:
+        root = write_plugin()
+    except (OSError, ValueError) as e:
+        return {"repaired": False, "reason": why, "error": str(e)}
+    path = find_claude() if run_claude else ""
+    if path:
+        for args in ([path, "plugin", "marketplace", "add", str(root)], [path, "plugin", "install", f"{PLUGIN}@{MARKETPLACE}"]):
+            code, text = _run(args, timeout=120)
+            out["steps"].append({"args": args[1:], "ok": code == 0, "text": text[-300:]})
+            if code != 0:
+                break
+    _STATUS["value"] = None
+    try:
+        from . import mcp_server
+
+        out["desktop"] = mcp_server.repair_desktop()
+    except Exception:  # noqa: BLE001 - the Claude desktop app's config is a nicety here
+        pass
+    return out
+
+
+INSTALL_DOCS = "https://code.claude.com/docs/en/setup"
+
+
+def installer_command(sys_name: str | None = None) -> dict:
+    """Anthropic's native installer for Claude Code (no Node.js; it lands in ~/.local/bin, where find_claude() looks):
+    the line shown to the person, and the program the app runs after they confirm. ENLENS_CLAUDE_INSTALLER replaces
+    the program (for the tests and the dev server)."""
+    from .installation import system
+
+    name = sys_name or system()
+    if name == "windows":
+        line = "irm https://claude.ai/install.ps1 | iex"
+        args = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", line]
+    else:
+        line = "curl -fsSL https://claude.ai/install.sh | bash"
+        args = ["/bin/bash", "-c", line]
+    stand_in = os.environ.get("ENLENS_CLAUDE_INSTALLER", "").strip()
+    if stand_in:
+        args = _cmd(stand_in)
+    return {"line": line, "args": args, "docs": INSTALL_DOCS}
+
+
+def install_claude_code(timeout: float = 900) -> dict:
+    """Run the installer (the person confirmed it in the app). Returns {"ok", "text", "status"}."""
+    if core.local_only():
+        raise ValueError("Cloud models are switched off on this computer: Claude Code is not available.")
+    cmd = installer_command()
+    try:
+        r = subprocess.run(cmd["args"], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL,
+                           cwd=str(Path.home()))
+        code, text = r.returncode, ((r.stdout or "") + (r.stderr or ""))
+    except (OSError, subprocess.SubprocessError) as e:
+        code, text = 1, f"{type(e).__name__}: {e}"
+    text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text).strip()
+    _STATUS["value"] = None
+    st = status(refresh=True)
+    ok = code == 0 and st["found"]
+    if code == 0 and not st["found"]:
+        text = (text + "\n" if text else "") + "The installer finished, but ENLENS cannot find the claude program yet."
+    return {"ok": ok, "text": text[-1500:], "status": st}
+
+
+def _sign_in_script(claude: str) -> Path:
+    d = core.home() / "claude-runs"
+    d.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        p = d / "sign-in.ps1"
+        p.write_text("Write-Host 'ENLENS: sign in to Claude Code with your Claude plan.'\r\n"
+                     "Write-Host 'Follow the steps below; when Claude Code shows its prompt, close this window.'\r\n"
+                     f"& '{claude.replace(chr(39), chr(39) * 2)}'\r\n", encoding="utf-8")
+        return p
+    import shlex
+
+    p = d / "sign-in.command"   # .command: macOS opens it in Terminal
+    p.write_text("#!/bin/sh\n"
+                 "echo 'ENLENS: sign in to Claude Code with your Claude plan.'\n"
+                 "echo 'Follow the steps below; when Claude Code shows its prompt, close this window.'\n"
+                 "echo\n"
+                 f"cd {shlex.quote(str(Path.home()))}\n"
+                 f"exec {' '.join(shlex.quote(x) for x in _cmd(claude))}\n", encoding="utf-8")
+    p.chmod(0o755)
+    return p
+
+
+def _open_window(script: Path) -> str:
+    """Open a terminal window running the sign-in script. Returns the window's name, or "" when none could open."""
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-a", "Terminal", str(script)])
+            return "Terminal"
+        if os.name == "nt":
+            subprocess.Popen(["powershell", "-NoProfile", "-Command",
+                              f"Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File',"
+                              f"'{str(script).replace(chr(39), chr(39) * 2)}'"],
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            return "PowerShell"
+        for term, flag in (("x-terminal-emulator", "-e"), ("gnome-terminal", "--"), ("konsole", "-e"),
+                           ("xfce4-terminal", "-x"), ("xterm", "-e")):
+            exe = shutil.which(term)
+            if exe:
+                subprocess.Popen([exe, flag, str(script)], start_new_session=True)
+                return term
+    except OSError:
+        return ""
+    return ""
+
+
+def open_sign_in() -> dict:
+    """Open a terminal window already running `claude`, for the one-time sign-in with the person's Claude plan.
+    ENLENS never sees the login: Claude Code keeps it. The app checks `status()` until it says signed in."""
+    if core.local_only():
+        raise ValueError("Cloud models are switched off on this computer: Claude Code is not available.")
+    path = find_claude()
+    if not path:
+        raise ValueError("Claude Code is not on this computer yet: install it first.")
+    window = _open_window(_sign_in_script(path))
+    _STATUS["value"] = None
+    return {"opened": bool(window), "window": window, "command": "claude"}

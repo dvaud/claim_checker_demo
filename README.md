@@ -25,14 +25,25 @@ Assessment checked against its cited literature); that SDG pipeline is still inc
 
 ## Start
 
-```bash
-pip install -e '.[connector]'    # Python 3.10+; the core needs only pydantic, pypdf, openpyxl
-enlens-gui                       # opens http://127.0.0.1:8765
-```
+Paste one line (0.10). It needs no git, no Python and no venv of your own, and ends with the ENLENS icon in its
+usual place and ENLENS open in your browser:
 
-You need [Claude Code](https://claude.com/claude-code) on the computer, signed in once with your Claude plan (type
-`claude` in a terminal and sign in). The first screen of the app finds it and adds the ENLENS plugin to it with one
-button (or, from a terminal, `enlens claude-setup`). Then create a project, add documents, and explore. Wherever AI
+| System | Where | Paste this |
+| --- | --- | --- |
+| macOS, Linux | Terminal | `curl -fsSL https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.sh \| sh` |
+| Windows | PowerShell | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.ps1 \| iex"` |
+
+The line gets [uv](https://docs.astral.sh/uv/) (which brings its own Python 3.12), downloads the ENLENS package of
+the latest release, checks it against the release's `SHA256SUMS`, installs it, and makes the icon (macOS:
+Applications and Desktop; Windows: Start menu and Desktop; Linux: the applications menu). Running it again installs
+the newest release; your projects (in `~/enlens`) stay where they are. `ENLENS_LOCAL_ONLY=1` or `ENLENS_HOME=<folder>`
+before the line are built into the icon.
+
+Then press **Set up Claude** on the first screen: it installs [Claude Code](https://claude.com/claude-code) if it is
+missing (with Anthropic's installer, after showing you the command), opens a window where you sign in once with your
+Claude plan, and adds the ENLENS plugin (or, from a terminal, `enlens claude-setup`). Then create a project, add
+documents, and explore. Used ENLENS on another computer? *Import from another computer* on the first screen brings
+every project and the settings (made there with *Projects → Move ENLENS to another computer*). Wherever AI
 work waits (labels, theme names, a check…), press **Start Claude Code**: ENLENS starts it in the background on that
 project's work and the results appear as they come in. You can also type `/enlens-run <project>` in Claude Code
 yourself.
@@ -44,9 +55,9 @@ ollama pull qwen3:8b             # any local chat model (Ollama, LM Studio, llam
 ollama pull nomic-embed-text     # optional: search by meaning as well as by words (bge-m3 for mixed languages)
 ```
 
-Installing it for someone else: `enlens-gui --make-launcher` puts an ENLENS icon on their Desktop (double-click: no
-terminal needed; *Quit ENLENS* in the app stops it), and `--local-only` (or `ENLENS_LOCAL_ONLY=1`) removes every
-option that sends text off the computer. Scanned PDFs: `pip install -e '.[ocr]'` plus Tesseract.
+Installing it for someone else: the line above, on their account (*Quit ENLENS* in the app stops it);
+`ENLENS_LOCAL_ONLY=1` removes every option that sends text off the computer. Scanned PDFs need the program
+Tesseract; the app says how to get it on that system when it meets a scanned page.
 
 From the command line:
 
@@ -68,6 +79,12 @@ queue status|run` shows it or answers it here (`--backend anthropic` for a share
 app (Claude reads on your plan; only the passages shown leave the computer): `enlens-mcp --install-claude-desktop`.
 
 ## Updating
+
+Installed with the line above: run it again, or `enlens update` (it takes the latest GitHub Release, checked against
+its checksums, and installs it in the same place; on Windows, quit ENLENS and run the line again). Then reopen
+ENLENS from its icon. The data folder, `~/enlens`, is never touched.
+
+## For developers (a git copy)
 
 Install ENLENS once from its git copy, and every later version is one command, in the same folder and the same
 venv (the data folder, `~/enlens`, is never touched):
@@ -165,7 +182,7 @@ see docs/MODEL_CHOICE.md) set them.
 
 - [docs/MANUAL.md](docs/MANUAL.md): the manual (app, command line, connector, models, the SDG pack).
 - [docs/API.md](docs/API.md): the local app's HTTP API.
-- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.9.0), including the defects fixed.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.10.0), including the defects fixed.
 - [docs/USER_TESTS.md](docs/USER_TESTS.md): the first-time user tests behind the app (0.5.1 to 0.7.0).
 - [docs/MODEL_CHOICE.md](docs/MODEL_CHOICE.md): which model each task needs, measured on the pilot (0.8: the method
   and the empty tables, until the runs are made).
@@ -180,7 +197,8 @@ see docs/MODEL_CHOICE.md) set them.
 | `llm.py` | Ollama, OpenAI-compatible local servers (LM Studio, llama.cpp…), server detection, Claude API, offline baseline |
 | `tasks.py`, `schema.py`, `prompts.py` | Model tasks, validation with the quote check, versioned prompts |
 | `ingest.py`, `textutil.py`, `store.py` | Documents and passages with page offsets, layout (paragraphs, headings), local OCR, text normalisation, the workspace database |
-| `bundle.py` | A whole project as one zip (export and import) |
+| `bundle.py` | A whole project as one zip (export and import); every project and the settings, to move to another computer (0.10) |
+| `installation.py`, `update.py` | How this copy was installed (git copy, the one-line install, a package, pip) and `enlens post-install`; `enlens update` for each (0.10) |
 | `home.py` | Settings, projects, the optional cloud key |
 | `gui/` | The local app: `server.py` (API and jobs), `static/` (the page), `progress.py`, `launcher.py` (the ENLENS icon) |
 | `concordance.py` | Search (0.7): concordance lines, modes, other forms, collocates |
@@ -196,9 +214,13 @@ see docs/MODEL_CHOICE.md) set them.
 | `evaluation.py` | The acceptance runs per kind and model through the queue, and their scores (0.8, G6) |
 | `vca.py`, `sources.py`, `analysis.py`, `review.py`, `report.py`, `benchmark.py` | The SDG / value chain assessment pack |
 
+`install/install.sh` and `install/install.ps1` are the one-line install; `.github/workflows/release.yml` turns a
+tag `vX.Y.Z` into a draft GitHub Release (tests, the package, the two scripts with the version filled in,
+`SHA256SUMS`, and a try of the install line on Linux, macOS and Windows) with `tools/release.py`.
 `tools/dev_server.py` runs the app against fake local models (for interface work; `--fresh-user` shows the app as a
 new user would find it, with the remote-work demo documents in `tools/demo_corpus/`; `--claude-code` with a fake
-Claude Code answering the queue; `--claude-cli` with a stand-in `claude` program the app sets up and starts, 0.9);
+Claude Code answering the queue; `--claude-cli` with a stand-in `claude` program the app sets up and starts, 0.9;
+`--claude-install` with Claude Code still to be installed and signed in to, `--no-tesseract` without Tesseract, 0.10);
 `tools/pdf_to_text.py` turns a
 folder of PDFs into page-preserving text files; `tools/eval_second_pass.py` measures the second sorting pass on the
 pilot. The green hydrogen pilot (workspace, report, run notes) is in

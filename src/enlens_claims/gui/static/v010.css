@@ -1,0 +1,32 @@
+/* ENLENS 0.10: "Set up Claude" in one button, moving to another computer, getting Tesseract. */
+
+/* ---------------------------------------------------------------- Set up Claude: what it is doing now */
+.cc-progress:empty { display: none; }
+.cc-now {
+  display: flex; gap: 10px; align-items: flex-start; margin: 10px 0 0; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.cc-now > .spinner, .cc-now > svg { flex: none; margin-top: 2px; }
+.cc-now p { margin: 0 0 4px; }
+.cc-now .copy-line { margin: 6px 0; }
+.cc-manual { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.cc-manual .copy-line { margin-top: 4px; }
+
+/* ---------------------------------------------------------------- moving to another computer */
+.move-card { margin-top: 18px; }
+.move-card h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
+.move-steps { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.move-steps .btn { margin-left: 4px; vertical-align: middle; }
+.move-in { margin-top: 14px; padding: 12px 14px; }
+.move-in .it { gap: 6px; }
+.move-in p { margin: 4px 0 8px; }
+
+/* ---------------------------------------------------------------- Tesseract, for scanned PDFs */
+.tess-help { margin-top: 6px; }
+.tess-help p { margin: 4px 0; }
+.tess-help .copy-line { margin: 4px 0; }
+
+@media (max-width: 520px) {
+  .move-steps .btn { margin: 6px 0 0; display: inline-flex; }
+  .cc-now { padding: 8px 10px; }
+}
