@@ -138,22 +138,48 @@ def _unit(v: Sequence[float]) -> array:
     return array("f", (x / n for x in v))
 
 
-def status(ws: Workspace, model: str | None) -> dict:
-    """How many readable passages have a vector from this model."""
+def _restricted_docs(ws: Workspace) -> set[str]:
+    from . import access
+
+    return {d for d, lv in access.levels(ws).items() if lv != "cloud"}
+
+
+def remote(embedder) -> bool:
+    """Whether an embedder sends the text to another computer (0.11: then restricted passages are not embedded)."""
+    from . import access
+
+    return not access.on_this_computer(getattr(embedder, "base_url", "") or "")
+
+
+def status(ws: Workspace, model: str | None, embedder=None) -> dict:
+    """How many readable passages have a vector from this model. 0.11: with an embedder on another computer, the
+    passages of documents marked Only a local AI or No AI are not embedded (meaning search finds them by their words),
+    and are not counted as missing."""
     total = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'") or 0)
     done = int(ws.scalar("SELECT COUNT(*) FROM embeddings e JOIN passages p ON p.passage_id=e.passage_id "
                          "WHERE e.model=? AND p.section='body'", (model or "",)) or 0) if model else 0
     models = [r[0] for r in ws.query("SELECT DISTINCT model FROM embeddings")]
+    skipped = 0
+    if embedder is not None and remote(embedder):
+        docs = _restricted_docs(ws)
+        if docs:
+            skipped = int(ws.scalar(f"SELECT COUNT(*) FROM passages WHERE section='body' AND doc_id IN "
+                                    f"({','.join('?' * len(docs))}) AND passage_id NOT IN (SELECT passage_id FROM "
+                                    f"embeddings WHERE model=?)", [*docs, model or ""]) or 0)
+    total -= skipped
     return {"model": model or "", "passages": total, "embedded": done, "complete": bool(model) and total > 0 and done >= total,
-            "models": models}
+            "models": models, **({"restricted_not_embedded": skipped} if skipped else {})}
 
 
 def build(ws: Workspace, embedder: Embedder, batch: int = 32, progress: Callable[[int, int], None] | None = None,
           should_stop: Callable[[], bool] | None = None) -> dict:
     """Embed every readable passage that has no vector from this model yet. Safe to stop and resume."""
-    todo = ws.query("SELECT p.passage_id, p.text, d.title FROM passages p JOIN documents d ON d.doc_id=p.doc_id "
+    todo = ws.query("SELECT p.passage_id, p.text, d.title, p.doc_id FROM passages p JOIN documents d ON d.doc_id=p.doc_id "
                     "WHERE p.section='body' AND p.passage_id NOT IN (SELECT passage_id FROM embeddings WHERE model=?) "
                     "ORDER BY p.passage_id", (embedder.model,))
+    if remote(embedder):  # 0.11: restricted passages are embedded only by an embedder on this computer
+        restricted = _restricted_docs(ws)
+        todo = [r for r in todo if r["doc_id"] not in restricted]
     _q, dprefix = prefixes(embedder.model)
     done = 0
     for i in range(0, len(todo), batch):
@@ -168,7 +194,7 @@ def build(ws: Workspace, embedder: Embedder, batch: int = 32, progress: Callable
         if progress:
             progress(done, len(todo))
     _VECTORS.pop((str(ws.db_path.resolve()), embedder.model), None)
-    return {**status(ws, embedder.model), "added": done, "remaining": len(todo) - done}
+    return {**status(ws, embedder.model, embedder), "added": done, "remaining": len(todo) - done}
 
 
 class Vectors:

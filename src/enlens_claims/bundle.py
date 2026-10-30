@@ -131,7 +131,20 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+    cx0 = sqlite3.connect(dest / "enlens.sqlite")
+    try:
+        before_011 = "ai_access" not in {r[1] for r in cx0.execute("PRAGMA table_info(documents)")}
+    finally:
+        cx0.close()
     ws = Workspace.open(dest)  # adds the tables and columns of this version
+    if before_011:
+        # 0.11: a project made before per-document AI settings: the app asks once who may read its documents
+        cfg = json.loads(ws.config_path.read_text(encoding="utf-8")) if ws.config_path.exists() else {}
+        cfg.pop("ai_access_default", None)
+        cfg.pop("ai_access_banner", None)
+        cfg["ai_access_ask"] = True
+        ws.config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        ws._config_cache = None
     root = dest.resolve()
     files = meta.get("files") if isinstance(meta.get("files"), dict) else {}
     with ws.connect() as cx:

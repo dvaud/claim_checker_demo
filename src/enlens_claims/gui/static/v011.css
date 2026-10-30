@@ -1,0 +1,70 @@
+/* ENLENS 0.11: per-document AI settings (who may read each document with AI), what Claude has read, and who read
+   each excerpt of a check. Colour tokens of app.css only, so light and dark both work. */
+
+/* ---------------------------------------------------------------- the three settings */
+.access-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: .78rem;
+  font-weight: 600; white-space: nowrap; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2);
+}
+.access-badge.access-cloud { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
+.access-badge.access-local { background: var(--ok-soft); border-color: var(--ok-line); color: var(--ok); }
+.access-badge.access-none { background: var(--none-soft); border-color: var(--none-line); color: var(--none); }
+
+.access-choice { border: 0; margin: 0; padding: 0; min-width: 0; }
+.access-choice legend { margin-bottom: 6px; padding: 0; }
+.access-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.access-option {
+  display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; cursor: pointer;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface);
+}
+.access-option:hover { border-color: var(--accent); }
+.access-option-head { display: flex; align-items: center; gap: 6px; }
+.access-option:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.access-option:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.access-option.access-local .access-option-head svg { color: var(--ok); }
+.access-option.access-none .access-option-head svg { color: var(--none); }
+.access-option.access-cloud .access-option-head svg { color: var(--accent-text); }
+.add-access { margin-top: 14px; }
+
+/* ---------------------------------------------------------------- the Documents table */
+.pick-col { width: 28px; }
+.access-cell { min-width: 150px; }
+.access-select { width: auto; max-width: 170px; padding: .28rem .45rem; font-size: .86rem; }
+.access-select[data-level="local"] { border-color: var(--ok-line); }
+.access-select[data-level="none"] { border-color: var(--none-line); }
+.access-why { display: block; margin-top: 2px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; color: var(--muted); }
+.access-counts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: 10px; }
+.bulk-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text);
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-bar .select { width: auto; padding: .28rem .45rem; font-size: .88rem; }
+.access-banner { margin-bottom: 12px; }
+.access-banner .icon-btn { flex: none; }
+.access-ask { margin-bottom: 14px; border-color: var(--accent); }
+.access-ask h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
+.sent-list { list-style: none; margin: 6px 0 0; padding: 0; max-height: 260px; overflow: auto; border-top: 1px solid var(--border); }
+.sent-list li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.sent-preview { color: var(--text-2); margin-top: 2px; }
+
+/* ---------------------------------------------------------------- who read an excerpt */
+.read-by { display: inline-flex; align-items: center; gap: 4px; font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.read-by.read-local { color: var(--ok); }
+.read-by.read-you { color: var(--warn); font-weight: 600; }
+.wait-local { margin: 8px 0; }
+
+/* ---------------------------------------------------------------- what happens to the text Claude reads */
+.terms-panel { padding: 12px 14px; margin-top: 12px; }
+.terms-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+.terms-panel p { margin: 4px 0; }
+.terms-pick { gap: 6px; margin: 6px 0; }
+
+@media (max-width: 860px) {
+  .table-responsive td.pick-col { display: inline-block; width: auto; }
+  .access-cell { min-width: 0; }
+  .access-select, .access-why { max-width: 100%; }
+}
+.docs-table .link-btn.small { color: var(--accent-text); }
+.docs-table td.num .link-btn { text-decoration-style: dotted; text-underline-offset: 3px; }
+.chip-wait-you { background: var(--warn-soft); color: var(--warn); border-color: transparent; font-weight: 600; }

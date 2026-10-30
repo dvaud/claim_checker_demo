@@ -248,6 +248,45 @@ policy as web pages; without a match the plain file is sent); for a web page add
 `DELETE /api/projects/<p>/documents/<doc_id>` → `{"removed": {...counts}}` (past checks keep their evidence).
 `DELETE /api/projects/<p>/documents` `{"confirm": true}` → removes every document **and every check**.
 
+#### Who may read each document with AI (0.11)
+
+Every document has one of three settings: `cloud` (Claude may read it: the chosen route), `local` (only a model
+server on this computer, or a person) and `none` (a person only). A document without its own setting follows the
+project's default. The setting is enforced where tasks are made and run (see `access.py`), never by a prompt.
+
+- `GET /api/projects/<p>/documents` adds to each document `ai_access` (the setting that applies now), `own` (its own
+  setting, or null for the project's default), `note`, `budget` (a cap in percent, or null), `budget_reached`,
+  `sent` (the share of its text Claude has read, 0 to 1) and `sent_passages`; and to the answer `ai_access`
+  (`{"default", "chosen", "ask", "banner", "counts": {"cloud", "local", "none"}, "local_only", "ledger_since"}`) and
+  `restricted_model` (the local model for restricted documents, `{}` for none). `GET /api/projects/<p>` has the same
+  `ai_access` block. `ask`: the project's default was never chosen (made before 0.11 and imported, or through the
+  connector): ask once. `banner`: the one-time note of an existing project.
+- `PUT /api/projects/<p>/documents/ai-access` `{"doc_ids": [...], "ai_access": "cloud"|"local"|"none"|null,
+  "note": "…", "budget": 10|""}` (each key optional; `ai_access` null returns them to the default; `budget` "" removes
+  the cap) → `{"documents": n, "tasks_changed": n, …the documents answer}`. Tasks not answered yet take the new
+  setting at once; a queued one that is no longer `cloud` leaves the queue. 400 for an unknown setting, 404 for an
+  unknown document; `cloud` is refused on a `--local-only` installation.
+- `PUT /api/projects/<p>/ai-access` `{"default": "cloud"|"local"|"none"}` and/or `{"dismiss_banner": true}` →
+  `{"ai_access": {…}}`.
+- `POST /api/projects/<p>/ingest` takes `ai_access` (who may read the new documents; the first answer in a project
+  becomes its default) and `ai_note`. A `manifest.csv` may have `ai_access` and `ai_note` columns per file; an unknown
+  value is listed under `manifest_problems`.
+- `GET /api/projects/<p>/documents/<doc_id>/ai-sent` → what Claude has read of a document: `{"doc_id", "share",
+  "since", "passages": [{"passage_id", "seq", "page", "preview", "times", "first", "last", "features", "routes"}]}`.
+- `GET /api/projects/<p>/ai-sent.csv` (also `?token=`) → the ledger: one row per passage sent (Sent at, Route,
+  Feature, Document, Document id, Passage id, Page, Task).
+- `POST /api/projects/<p>/hypotheses/<hyp_id>/read-local` → job (kind `read-local`): the excerpts of the check that
+  wait for the local model (made in a Claude chat, or while the app was closed) are read by it; without one they wait
+  for a person. `result`: `{"hyp_id", "parts", "status"}`.
+- `/api/state` adds `restricted` (as `restricted_model` above). Settings: `restricted_server` (`""`, `ollama`,
+  `openai`), `restricted_model`, `account_type` (`""`, `personal`, `commercial`).
+- The result of a check: each excerpt has `read_by` (`claude`, `local`, `ai`, `you`, `waiting`), `access` (its
+  document's setting), `waiting_for_you` (no model may read it and no person has judged it) and `waiting_local`; each
+  round in `rounds_info` has `parts` (`[{"task_id", "read_by", "passages", "status"}]`); parts and hypotheses count
+  `waiting_for_you` and `waiting_local`. A round's excerpts are split into the task Claude reads (`check:<id>` or
+  `…:r<n>`), the local model's (`…:local`) and a person's (`…:person`, answered by no model); it is shown as one round.
+  Reading an excerpt again (`POST …/reread/…`) is refused with 409 when no model may read its document.
+
 `POST /api/projects/<p>/index` → job (kind `index`) that embeds passages without a vector; progress `{"done", "total"}`;
 result: the `search` state plus `added` and `remaining`; 400 when no embedding model is set.
 

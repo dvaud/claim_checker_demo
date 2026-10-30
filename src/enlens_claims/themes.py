@@ -562,20 +562,50 @@ def theme_passages(ws: Workspace, run_id: str, theme_id: int, offset: int = 0, l
 # ---------------------------------------------------------------------------------------------
 # the optional model pass: a name and a description, each with a checked quote
 # ---------------------------------------------------------------------------------------------
-def make_name_tasks(ws: Workspace, run_id: str, model: str) -> int:
-    from .tasks import _insert_task
+def _allowed_reps(ws: Workspace, run_id: str, theme: dict, allowed: set[str], lv: dict[str, str]) -> list[dict]:
+    """A theme's representatives from documents of these settings (0.11): the shown ones that qualify, topped up
+    from the theme's other passages closest to its centre."""
+    reps = [p for p in theme["representatives"] if lv.get(p["doc_id"]) in allowed]
+    want = max(len(theme["representatives"]), 1)
+    if len(reps) < want:
+        have = {p["passage_id"] for p in reps} | {p["passage_id"] for p in theme["representatives"]}
+        for r in ws.query("SELECT p.passage_id, p.doc_id, p.page, p.text, d.title FROM theme_members m JOIN passages p ON "
+                          "p.passage_id=m.passage_id JOIN documents d ON d.doc_id=p.doc_id WHERE m.run_id=? AND "
+                          "m.theme_id=? ORDER BY m.similarity DESC LIMIT 200", (run_id, theme["theme_id"])):
+            if len(reps) >= want:
+                break
+            if r["passage_id"] not in have and lv.get(r["doc_id"]) in allowed:
+                reps.append({"passage_id": r["passage_id"], "doc_id": r["doc_id"], "title": r["title"] or "",
+                             "page": r["page"], "text": r["text"]})
+    return reps
 
+
+def make_name_tasks(ws: Workspace, run_id: str, model: str, allowed: set[str] | None = None,
+                    theme_ids: set[int] | None = None) -> int:
+    """A naming task per theme, with representatives from documents of the `allowed` settings only (0.11: the
+    ones the reader may read; default: every document an AI may read). A theme without such passages gets none."""
+    from . import access
+    from .tasks import replace_task
+
+    allowed = allowed or {"cloud", "local"}
     v = view(ws, run_id)
+    lv = access.levels(ws)
     n = 0
     with ws.connect() as cx:
         for t in v["themes"]:
-            reps = t["representatives"]
+            if theme_ids is not None and t["theme_id"] not in theme_ids:
+                continue
+            reps = _allowed_reps(ws, run_id, t, allowed, lv)
             if not reps:
                 continue
-            payload = {"run_id": run_id, "theme_id": t["theme_id"], "terms": t["terms"][:10],
+            # 0.11: key terms are words of the documents: only those found in the passages sent go with them
+            texts = " ".join(p["text"] for p in reps).lower()
+            payload = {"run_id": run_id, "theme_id": t["theme_id"],
+                       "terms": [w for w in t["terms"][:10] if w.lower() in texts or
+                                 all(x in texts for x in w.lower().split())],
                        "passages": [{"n": i, "passage_id": p["passage_id"], "title": p["title"], "page": p["page"],
                                      "text": p["text"]} for i, p in enumerate(reps, 1)]}
-            n += _insert_task(cx, f"theme:{run_id}:{t['theme_id']}", "theme", model, payload)
+            n += replace_task(cx, f"theme:{run_id}:{t['theme_id']}", "theme", model, payload)
     return n
 
 
@@ -606,27 +636,41 @@ def store_theme(cx, t, payload: dict, obj: dict, model: str) -> tuple[bool, list
 
 def name_with_model(ws: Workspace, run_id: str, backend, model: str, progress: Callable | None = None,
                     should_stop: Callable[[], bool] | None = None) -> dict:
+    from . import access
     from . import runs as runs_mod
     from . import tasks
 
-    make_name_tasks(ws, run_id, model)
+    # 0.11: representatives from documents the main model may read; a theme with none of those is named by the
+    # local model (from its restricted passages) or keeps its key terms
+    readers = access.Readers(backend, model)
+    make_name_tasks(ws, run_id, model, readers.main_levels)
+    head = f"theme:{run_id}:"
+    made = {r[0] for r in ws.query("SELECT task_id FROM tasks WHERE kind='theme' AND substr(task_id, 1, ?) = ?",
+                                   (len(head), head))}
+    rest = {t["theme_id"] for t in view(ws, run_id)["themes"] if f"{head}{t['theme_id']}" not in made}
+    if rest and "local" not in readers.main_levels and readers.local_configured():
+        make_name_tasks(ws, run_id, model, {"cloud", "local"}, rest)
     todo = [r["task_id"] for r in ws.query("SELECT task_id FROM tasks WHERE kind='theme' AND substr(task_id, 1, ?) = ? "
-                                           "AND status != 'done' ORDER BY task_id", (len(f"theme:{run_id}:"),
-                                                                                    f"theme:{run_id}:"))]
+                                           "AND status != 'done' ORDER BY task_id", (len(head), head))]
     rid = runs_mod.start(ws, "theme", run_id, backend, model, len(todo))
-    done = failed = 0
+    done = failed = kept = 0
     for i, tid in enumerate(todo, 1):
         if should_stop and should_stop():
             break
         if progress:
             progress(i, len(todo))
-        ok, _e = tasks.run_one(ws, tid, backend, model)
+        got = readers.for_task(ws, tid)
+        if got is None:
+            kept += 1  # keeps its key terms as its name
+            continue
+        ok, _e = tasks.run_one(ws, tid, got[0], got[1])
         done += ok
         failed += not ok
     runs_mod.finish(ws, rid, done + failed)
     with ws.connect() as cx:
         cx.execute("UPDATE theme_runs SET chat_model=? WHERE run_id=?", (model, run_id))
-    return {"named": done, "failed": failed, "themes": len(todo)}
+    return {"named": done, "failed": failed, "themes": len(todo), "kept_terms": kept + len(rest - {
+        int(t.split(":")[-1]) for t in todo})}
 
 
 def tables(ws: Workspace, run_id: str, framework: str | None = None) -> list[tuple[str, list[dict]]]:

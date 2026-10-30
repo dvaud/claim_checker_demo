@@ -2,6 +2,7 @@
 import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, session, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp } from "../lib.js";
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
+import { restrictedModelCard, termsPanel } from "./ai-access.js";
 
 // 0.9: Settings as five flat tabs (no section folded inside another). Old links to a section (#/settings/second,
 // #/settings/calibration…) open its tab and scroll to it.
@@ -27,14 +28,19 @@ export async function renderSettings(view, [section]) {
     TABS.map(([id, label, ic]) => h("a", { href: `#/settings/${id}`, "aria-current": id === tab ? "page" : null }, icon(ic, { size: 14 }), label))));
   const main = h("div", { class: "stack", style: { gap: "20px" } });
   view.appendChild(main);
-  if (tab === "model") main.append(modelSection(s, servers));
+  if (tab === "model") {
+    main.append(modelSection(s, servers));
+    // 0.11: who reads the documents marked Only a local AI, and what happens to the text Claude reads
+    if (!(App.state && App.state.local_only)) main.append(restrictedModelCard(s, servers, save));
+    if (s.backend === "anthropic") main.append(sectionCard("terms", "Your Claude account and your documents", "", termsPanel({ account: "commercial" })));
+  }
   else if (tab === "basics") main.append(basicsSection(s));
   else if (tab === "explore") main.append(exploreSection(s), await frameworksSection());
   else if (tab === "documents") main.append(sectionCard("ocr", "Reading scanned PDFs", "", ocrBlock(s)), embedSection(s, servers));
   else {
     // a local model's own settings (second model, context length) only when a local model answers
     const local = ["auto", "ollama", "openai"].includes(s.backend || "auto");
-    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s), dataSection()].filter(Boolean));
+    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s), ledgerSection(), dataSection()].filter(Boolean));
     if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (a second model, the context length) show here when a local model is chosen under AI."));
   }
   if (section && section !== tab) setTimeout(() => { const t = document.getElementById(`s-${section}`); if (t) t.scrollIntoView({ block: "start" }); }, 80);
@@ -756,6 +762,14 @@ function installedWith(inst) {
   return h("div", { class: "muted small", style: { fontWeight: 400 } }, `Installed ${how[0]}. ${how[1]}.`);
 }
 
+// 0.11: every passage sent to Claude, as a table for records such as a data management plan
+function ledgerSection() {
+  const project = App.project;
+  return sectionCard("ledger", "What was sent to Claude", "ENLENS writes down every passage it sends to Claude (Claude Code, the Claude API, or a Claude chat through the connector) at the moment it leaves: when, by which route, for which feature. The Documents page shows the share of each document; here is the whole list as a spreadsheet file.",
+    project ? h("button", { class: "btn", type: "button", onClick: () => download(`/api/projects/${P(project)}/ai-sent.csv`).catch(showError) }, icon("download", { size: 14 }), `Download the list for “${project}” (CSV)`)
+      : h("p", { class: "muted small" }, "Open a project first."));
+}
+
 // ---------------------------------------------------------------------------------------------
 function dataSection() {
   const st = App.state || {};
@@ -906,6 +920,7 @@ export function claudeSetupCard(opts = {}) {
           st.installed ? "It adds /enlens-run, its helpers and the ENLENS connector." : "The button adds it (nothing else in Claude Code is changed).")),
       h("div", { class: "btn-row" }, btn),
       log,
+      ready || st.signed_in ? termsPanel({ account: st.account || "", detected: st.plan ? `${st.plan[0].toUpperCase()}${st.plan.slice(1)}` : null, kind: st.account }) : null,
       h("p", { class: "muted small", style: { marginTop: "10px" } }, "Then press ", h("strong", {}, "Start Claude Code"), " wherever work waits (or in the sidebar): ENLENS starts Claude Code in the background on this project's work, and the results appear as they come in. You can also type ", h("code", {}, `/enlens-run ${App.project || "<project>"}`), " in Claude Code yourself."),
       manual);
   }

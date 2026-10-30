@@ -13,7 +13,7 @@ export const SECTIONS = {
 export const FEATURES = {
   sources: {
     section: "project", title: "Documents", icon: "book-open", href: "#/sources", ai: "none",
-    what: "Add your reports, papers and web pages, and open one to read it with its codes, key terms and references.",
+    what: "Add your reports, papers and web pages, say who may read each with AI, and open one to read it with its codes, key terms and references.",
   },
   search: {
     section: "explore", title: "Search", icon: "text-search", href: "#/search", ai: "none",

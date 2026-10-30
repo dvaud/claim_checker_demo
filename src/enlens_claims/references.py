@@ -203,8 +203,16 @@ def _join(cx, doc_id: str) -> None:
 def resolve_document(ws: Workspace, doc_id: str, backend, model: str, name: str | None = None,
                      progress: Callable | None = None, should_stop: Callable[[], bool] | None = None) -> dict:
     """Read a document (or the passages where one name occurs) window by window. Resumes after a stop."""
-    from . import runs, tasks
+    from . import access, runs, tasks
 
+    # 0.11: the document's setting decides who reads it: the main model, the local model, or nobody
+    level = access.levels(ws, [doc_id]).get(doc_id, "none")
+    got = access.Readers(backend, model).for_level(level)
+    if got is None:
+        raise ValueError("This document is marked No AI: no model may read it, so its references are not followed."
+                         if level == "none" else "This document is marked Only a local AI, and no local model is chosen "
+                         "for such documents (Settings → AI).")
+    backend, model = got
     ids = make_tasks(ws, doc_id, model, name)
     todo = [t for t in ids if ws.scalar("SELECT status FROM tasks WHERE task_id=?", (t,)) != "done"]
     rid = runs.start(ws, "resolve", doc_id, backend, model, len(todo))

@@ -250,11 +250,20 @@ def label_plan(ws: Workspace, framework: str = "sdg", doc_ids: list[str] | None 
         "SELECT task_id FROM tasks WHERE kind='label' AND status='done' AND substr(task_id, 1, ?) = ?",
         (len(f"label:{framework}:"), f"label:{framework}:"))}
     todo = [p for p in chosen if p not in done]
+    # 0.11: passages of documents marked No AI are never read by a model; those marked Only a local AI are read by
+    # the local model (or skipped without one: see run_labels)
+    from . import access
+
+    lv = access.levels(ws)
+    doc_of = access.doc_of_passages(ws._conn(), todo) if todo else {}
+    no_ai = [p for p in todo if lv.get(doc_of.get(p), "none") == "none"]
+    local = [p for p in todo if lv.get(doc_of.get(p)) == "local"]
+    todo = [p for p in todo if p not in set(no_ai)]
     if limit:
         todo = todo[:int(limit)]
     return {"framework": framework, "passages": len(pids), "with_candidates": len([p for p in pids if p in with_cands]),
             "already_read": len([p for p in chosen if p in done]), "to_read": len(todo), "passage_ids": todo,
-            "pass1": st}
+            "pass1": st, "no_ai": len(no_ai), "local": len(set(local) & set(todo))}
 
 
 def make_label_tasks(ws: Workspace, framework: str, passage_ids: list[str], model: str,
@@ -338,7 +347,21 @@ def run_labels(ws: Workspace, framework: str, backend, model: str, doc_ids: list
     """The model pass as a job: make the tasks, answer them one by one (resumable), record the run."""
     from . import runs, tasks
 
+    from . import access
+
     plan = label_plan(ws, framework, doc_ids, all_passages, limit)
+    readers = access.Readers(backend, model)
+    lv = access.levels(ws)
+    doc_of = access.doc_of_passages(ws._conn(), plan["passage_ids"]) if plan["passage_ids"] else {}
+    reader_of = {}
+    skipped = 0
+    for pid in plan["passage_ids"]:  # 0.11: each passage is read by a model its document's setting allows
+        got = readers.for_level(lv.get(doc_of.get(pid), "none"))
+        if got is None:
+            skipped += 1
+        else:
+            reader_of[pid] = got
+    plan["passage_ids"] = [p for p in plan["passage_ids"] if p in reader_of]
     make_label_tasks(ws, framework, plan["passage_ids"], model, all_passages)
     run_id = runs.start(ws, "label", framework, backend, model, len(plan["passage_ids"]))
     done = failed = 0
@@ -352,7 +375,13 @@ def run_labels(ws: Workspace, framework: str, backend, model: str, doc_ids: list
         if progress:
             progress(i, len(plan["passage_ids"]))
         t0 = time.time()
-        ok, _errs = tasks.run_one(ws, tid, backend, model)
+        with ws.connect() as cx:  # its document's setting now (a cap on what Claude reads may be reached meanwhile)
+            access.relabel(cx, [tid])
+        got = readers.for_task(ws, tid)
+        if got is None:
+            skipped += 1
+            continue
+        ok, _errs = tasks.run_one(ws, tid, got[0], got[1])
         if getattr(backend, "name", "") != "claude_code":  # by queue the connector measures (waiting is not reading)
             runs.timing(ws, "label", runs._routed(backend, "label", model), time.time() - t0)
         done += ok
@@ -368,7 +397,8 @@ def run_labels(ws: Workspace, framework: str, backend, model: str, doc_ids: list
         tasks.run_stepups(ws, backend, ["label"], should_stop)  # the stronger model once, after the small one
     runs.finish(ws, run_id, done + failed)
     return {"framework": framework, "read": done, "failed": failed, "planned": len(plan["passage_ids"]),
-            "stopped": bool(should_stop and should_stop()), "changes": change}
+            "stopped": bool(should_stop and should_stop()), "changes": change,
+            "skipped_restricted": skipped + plan.get("no_ai", 0)}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -651,6 +681,10 @@ def compare_sample(ws: Workspace, framework: str, backend, model: str, n: int = 
 
     rows = ws.query("SELECT * FROM tasks WHERE kind='label' AND status='done' AND substr(task_id, 1, ?) = ? "
                     "ORDER BY task_id", (len(f"label:{framework}:"), f"label:{framework}:"))
+    from . import access
+
+    if getattr(backend, "name", "") != "claude_code":  # by queue, answer_on_copy leaves restricted ones out
+        rows = [r for r in rows if access.may_read(ws, json.loads(r["payload_json"]), backend)]
     rng = random.Random(seed)
     sample = rng.sample(list(rows), min(n, len(rows)))
     if not sample:
@@ -684,6 +718,7 @@ def compare_sample(ws: Workspace, framework: str, backend, model: str, n: int = 
                     if raw is None:
                         raise ValueError("not answered")
                 else:
+                    access.sending(ws, payload, backend, "label (compare labels)", t["task_id"])
                     raw = backend.complete("label", prompts.system_prompt("label"),
                                            prompts.user_prompt("label", payload), model, payload)
                 obj = parse_json(raw)

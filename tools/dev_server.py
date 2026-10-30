@@ -65,6 +65,9 @@ def main() -> int:
     ap.add_argument("--no-tesseract", action="store_true", help="0.10: act as if Tesseract were not installed")
     ap.add_argument("--claude-install", action="store_true",
                     help="0.10: Claude Code not installed yet and signed out: Set up Claude installs it (stand-ins)")
+    ap.add_argument("--mixed", action="store_true",
+                    help="0.11: the Demo project's documents have each AI setting (one Claude may read, one only a local "
+                         "AI, one no AI), Claude Code is the AI and the fake local model reads the restricted one")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -99,10 +102,23 @@ def main() -> int:
             (corpus / "irena_jobs_report.txt").write_text(REPORT_B_TEXT)
             (corpus / "birds.html").write_text(UNRELATED_HTML)
         ws = home.create_project("Demo")
-        ingest.ingest(ws, [corpus])
+        ingest.ingest(ws, [corpus], ai_access="cloud")
         emb = home.make_embedder(home.load_settings())
         embed.build(ws, emb)
         be = OllamaBackend(base_url=fake_url)
+        if a.mixed:  # 0.11: one document per AI setting; "Claude" (the fake model under Claude's name) reads the rest
+            from enlens_claims import access
+
+            docs = [r[0] for r in ws.query("SELECT doc_id FROM documents ORDER BY title")]
+            access.set_documents(ws, docs[:1], "local", note="publisher licence")
+            access.set_documents(ws, docs[1:2], "none", note="contains interview data")
+            home.update_settings({"allow_claude_code": True, "backend": "claude_code", "restricted_server": "ollama",
+                                  "restricted_model": chat_model})
+
+            class FakeClaude(OllamaBackend):
+                name = "anthropic"
+
+            be = FakeClaude(base_url=fake_url)
         checks = ([("Working from home reduces commuting emissions.", False),
                    ("Hybrid work improves wellbeing and increases loneliness among young employees.", True),
                    ("Remote work lowers the quality of public services.", False)] if a.corpus == "social" else

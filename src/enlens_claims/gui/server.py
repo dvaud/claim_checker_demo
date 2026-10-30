@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .. import __version__, claimcheck, embed, frameworks, home, ingest, taskqueue
+from .. import __version__, access, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import tasks as tasks_mod
 from ..llm import BackendError, detect_local
 from ..claude_setup import setup_info as claude_setup_info
@@ -243,6 +243,7 @@ class App:
                 "projects": projects, "project": current, "local_only": home.local_only(),
                 "launcher": self.launcher, "can_quit": self.stop is not None,
                 "context": home.context_plan(s),
+                "restricted": home.restricted_choice(s),   # 0.11: the local model for restricted documents
                 "ocr": ingest.ocr_status(),
                 "installation": _installation(),
                 "key": {"session": bool(self.session_key), "env": bool(home.env_key()), "stored": bool(home.stored_key())},
@@ -257,8 +258,8 @@ class App:
             return None
         try:
             ws = home.open_project(name)
-            n = ws.scalar("SELECT COUNT(*) FROM tasks WHERE COALESCE(queued, 0)=1 AND (status IN ('pending', 'retry') "
-                          "OR (status='done' AND again=1))") or 0
+            n = ws.scalar("SELECT COUNT(*) FROM tasks WHERE COALESCE(queued, 0)=1 AND COALESCE(access, 'cloud')='cloud' "
+                          "AND (status IN ('pending', 'retry') OR (status='done' AND again=1))") or 0
         except Exception:  # noqa: BLE001
             return None
         return {"waiting": int(n)}
@@ -320,15 +321,23 @@ class App:
         s = self.settings()
         out = self.project_summary(name)
         out["passages"] = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'") or 0)
-        out["search"] = embed.status(ws, s.get("embed_model") if s.get("embed_backend") != "off" else None)
+        out["search"] = embed.status(ws, s.get("embed_model") if s.get("embed_backend") != "off" else None,
+                                     home.make_embedder(s))
+        out["ai_access"] = access.project_info(ws)
         out["frameworks"] = [fw.info() for fw in frameworks.available(ws).values()]
         return out
 
     def documents(self, name: str) -> dict:
         ws = self.ws(name)
         s = self.settings()
-        return {"documents": document_overview(ws),
-                "search": embed.status(ws, s.get("embed_model") if s.get("embed_backend") != "off" else None)}
+        docs = document_overview(ws)
+        acc = access.documents_view(ws)  # 0.11: who may read each one with AI, and how much Claude has read
+        for d in docs:
+            d.update(acc.get(d["doc_id"], {}))
+        return {"documents": docs, "ai_access": access.project_info(ws),
+                "restricted_model": home.restricted_choice(s),
+                "search": embed.status(ws, s.get("embed_model") if s.get("embed_backend") != "off" else None,
+                                       home.make_embedder(s))}
 
     def document(self, name: str, doc_id: str, offset: int, limit: int, view: str = "") -> dict:
         ws = self.ws(name)
@@ -468,7 +477,10 @@ class App:
         arrive (here, or in the connector). Stop withdraws the checks that are still waiting."""
         shown: dict[str, str] = {}
         t0 = time.time()
+        readers = access.Readers(None, "")  # 0.11: the local model for restricted documents (Claude reads the rest)
         while True:
+            if claimcheck.run_local_parts(ws, hyp_ids, readers):
+                tracker.step("note", "Excerpts from documents marked Only a local AI were read on this computer", {})
             left = taskqueue.advance(ws, hyp_ids)
             for i, hid in enumerate(hyp_ids, 1):
                 st = claimcheck.queue_stage(ws, hid)
@@ -537,6 +549,13 @@ class App:
         if note is not None and not isinstance(note, str):
             raise ApiError(400, "note must be text.")
         be, model = self.backend()
+        doc = ws.scalar("SELECT doc_id FROM passages WHERE passage_id=?", (passage_id,))
+        level = access.levels(ws, [doc]).get(doc, "none") if doc else "none"
+        if level == "none" or (level == "local" and not access.Readers(be, model).local_configured()):
+            raise ApiError(409, "This excerpt's document is marked No AI: no model may read it. Give your own "
+                                "judgement instead." if level == "none" else
+                                "This excerpt's document is marked Only a local AI, and no local model is chosen for "
+                                "such documents. Choose one in Settings → AI, or give your own judgement.")
 
         def run(job: Job):
             tracker = Tracker(expand=False, steps=("grade",))
@@ -548,6 +567,22 @@ class App:
             return r
 
         return self._job("reread", "Reading one excerpt again", name, run, withdraw=("reread",), ws=ws)
+
+    def start_read_local(self, name: str, hyp_id: str) -> Job:
+        """0.11: read the excerpts of a check that wait for the local model (made in a Claude chat, or while the app
+        was closed), with the local model for restricted documents; without one they wait for a person."""
+        ws = self.ws(name)
+        if not ws.scalar("SELECT 1 FROM hypotheses WHERE hyp_id=?", (hyp_id,)):
+            raise ApiError(404, "No such hypothesis.")
+        be, model = self.backend()
+
+        def run(job: Job):
+            n = claimcheck.run_local_parts(ws, [hyp_id], access.Readers(be, model))
+            taskqueue.advance(ws, [hyp_id])
+            return {"hyp_id": hyp_id, "parts": n,
+                    "status": claimcheck.hypothesis_result(ws, hyp_id, self.settings()["threshold"])["status"]}
+
+        return self.jobs.start("read-local", "Reading excerpts with the local model", name, run, uses_model=True)
 
     def start_batch(self, name: str, body: dict) -> Job:
         ws = self.ws(name)
@@ -714,6 +749,15 @@ class App:
             raise ApiError(400, "Upload files or give a folder path first.")
         exclude = str(body.get("exclude") or "").split() or None
         s = self.settings()
+        level = body.get("ai_access") or None  # 0.11: "Who may read these documents with AI?"
+        if level is not None:
+            try:
+                level = access.clean(level)
+            except ValueError as e:
+                raise ApiError(400, str(e)) from None
+            if level == "cloud" and home.local_only():
+                raise ApiError(400, "Cloud models are switched off on this computer.")
+        note = str(body.get("ai_note") or "").strip() or None
 
         def run(job: Job):
             job.progress = {"done": 0, "total": 0, "file": ""}
@@ -723,7 +767,8 @@ class App:
 
             before = {r[0] for r in ws.query("SELECT doc_id FROM documents")}
             stats = ingest.ingest(ws, inputs, exclude=exclude, progress=prog, should_stop=job.cancel.is_set,
-                                  ocr=ingest.OcrOptions(s.get("ocr", "auto"), s.get("ocr_lang") or "eng"))
+                                  ocr=ingest.OcrOptions(s.get("ocr", "auto"), s.get("ocr_lang") or "eng"),
+                                  ai_access=level, ai_note=note)
             stats["documents_added"] = [d for d in document_overview(ws) if d["doc_id"] not in before]
             emb = home.make_embedder(s)
             if emb is not None and stats["added"] and not job.cancel.is_set():
@@ -1292,6 +1337,11 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("DELETE", rf"/api/projects/{P}", "delete_project"),
     ("GET", rf"/api/projects/{P}/documents", "get_documents"),
     ("DELETE", rf"/api/projects/{P}/documents", "delete_documents"),
+    ("PUT", rf"/api/projects/{P}/documents/ai-access", "put_documents_access"),
+    ("PUT", rf"/api/projects/{P}/ai-access", "put_project_access"),
+    ("GET", rf"/api/projects/{P}/ai-sent\.csv", "get_ai_sent_csv"),
+    ("GET", rf"/api/projects/{P}/documents/{P}/ai-sent", "get_document_sent"),
+    ("POST", rf"/api/projects/{P}/hypotheses/{P}/read-local", "post_read_local"),
     ("GET", rf"/api/projects/{P}/documents/{P}", "get_document"),
     ("DELETE", rf"/api/projects/{P}/documents/{P}", "delete_document"),
     ("GET", rf"/api/projects/{P}/documents/{P}/file", "get_document_file"),
@@ -1384,7 +1434,8 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", r"/api/move\.zip", "get_move_zip"),
 ]]
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
-             "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip"}
+             "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
+             "get_ai_sent_csv"}
 # (these may take the token as ?token=, for plain links)
 
 
@@ -1649,6 +1700,53 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_documents(self, name, q):
         return self.app.documents(name)
+
+    # -- 0.11: per-document AI settings and the ledger of what Claude has read --------------------------------
+    def put_documents_access(self, name, q):
+        body = self._body()
+        ws = self.app.ws(name)
+        ids = body.get("doc_ids")
+        if not isinstance(ids, list) or not ids or not all(isinstance(x, str) for x in ids):
+            raise ApiError(400, "doc_ids must be a list of document ids.")
+        kw = {}
+        if "ai_access" in body:
+            kw["setting"] = body.get("ai_access") or None
+        if "note" in body:
+            kw["note"] = body.get("note")
+        if "budget" in body:
+            kw["budget"] = body.get("budget")
+        if not kw:
+            raise ApiError(400, "Give ai_access, note or budget.")
+        r = access.set_documents(ws, ids, **kw)
+        return {**r, **self.app.documents(name)}
+
+    def put_project_access(self, name, q):
+        body = self._body()
+        ws = self.app.ws(name)
+        if body.get("default"):
+            access.set_default(ws, body["default"])
+        if body.get("dismiss_banner"):
+            access.dismiss_banner(ws)
+        return {"ai_access": access.project_info(ws)}
+
+    def get_document_sent(self, name, doc_id, q):
+        ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+            raise ApiError(404, "No such document.")
+        return access.document_ledger(ws, doc_id)
+
+    def get_ai_sent_csv(self, name, q):
+        rows = [{"Sent at": r["sent_at"], "Route": r["route"], "Feature": r["feature"], "Document": r["title"],
+                 "Document id": r["doc_id"], "Passage id": r["passage_id"], "Page": r["page"] if r["page"] else "",
+                 "Task": r["task_id"]} for r in access.ledger(self.app.ws(name))]
+        if not rows:
+            rows = [{"Sent at": "", "Route": "", "Feature": "", "Document": "Nothing has been sent to Claude from this "
+                     "project.", "Document id": "", "Passage id": "", "Page": "", "Task": ""}]
+        stem = _filename(f"ENLENS sent to Claude - {name} - {time.strftime('%Y-%m-%d')}", "csv")
+        return self._send(200, _csv(rows), "text/csv; charset=utf-8", {"Content-Disposition": _disposition(stem)})
+
+    def post_read_local(self, name, hyp_id, q):
+        return {"job": self.app.start_read_local(name, hyp_id).view()}
 
     def delete_documents(self, name, q):
         body = self._body()

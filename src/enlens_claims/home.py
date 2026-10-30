@@ -62,6 +62,12 @@ DEFAULTS = {
     "task_models": {},                 # per-task models chosen in Settings: {"claude": {row: alias}, "local": {row: model}}
     "local_small_model": "",           # local: the small model for labels and links ("" = the main model does all)
     "routing": True,                   # the Claude API and local servers use the model of each task (G3)
+    # 0.11: per-document AI settings. The local model that reads documents marked "Only a local AI" when the main
+    # model is Claude ("" = none: those excerpts wait for a person), on a server on this computer; and the kind of
+    # Claude account, for the panel "What happens to the text Claude reads" ("" = not said yet)
+    "restricted_server": "",           # "" | ollama | openai
+    "restricted_model": "",
+    "account_type": "",                # "" | personal | commercial
 }
 
 BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Local model (automatic)",
@@ -159,6 +165,10 @@ def clean_settings(changes: dict) -> dict:
         raise ValueError("ocr must be auto or off.")
     if "ocr_lang" in out and not re.fullmatch(r"[A-Za-z_]{2,}(\+[A-Za-z_]{2,})*", out["ocr_lang"] or ""):
         raise ValueError("ocr_lang must be Tesseract language codes joined by +, for example eng or eng+nld.")
+    if "restricted_server" in out and out["restricted_server"] not in ("", "ollama", "openai"):
+        raise ValueError("restricted_server must be ollama, openai or empty (no local model for restricted documents).")
+    if "account_type" in out and out["account_type"] not in ("", "personal", "commercial"):
+        raise ValueError("account_type must be personal, commercial or empty.")
     if "embed_backend" in out and out["embed_backend"] not in ("ollama", "openai", "off"):
         raise ValueError("embed_backend must be ollama, openai or off.")
     if "threshold" in out and not 0 <= out["threshold"] <= 1:
@@ -452,6 +462,57 @@ def _make_backend(settings: dict, api_key: str = "", kinds: tuple[str, ...] = ("
         raise BackendError("No local model server is running. Start Ollama (ollama.com) or LM Studio (lmstudio.ai), "
                            "or choose the offline demo in Settings.")
     return BaselineBackend(), "baseline"
+
+
+def main_reads_local(settings: dict) -> bool:
+    """Whether the main model may read documents marked "Only a local AI": a model server on this computer (or the
+    offline demo), not Claude."""
+    from .access import on_this_computer
+
+    b = settings.get("backend", "auto")
+    if b in OFF_COMPUTER:
+        return False
+    if b == "baseline":
+        return True
+    if b == "openai":
+        return on_this_computer(settings.get("openai_url") or "")
+    if b == "ollama":
+        return on_this_computer(settings.get("ollama_url") or "")
+    return True  # auto: detect_local only looks on this computer's addresses (and the configured ones, checked again
+    # by the guard when a task is run: see access.backend_levels)
+
+
+def restricted_choice(settings: dict) -> dict:
+    """The local model for documents marked "Only a local AI", as Settings shows it: {"server", "model", "url",
+    "same_as_main"} or {} when there is none (those excerpts then wait for a person's judgement)."""
+    if main_reads_local(settings):
+        return {"same_as_main": True, "server": settings.get("backend"), "model": ""}
+    srv, model = settings.get("restricted_server") or "", settings.get("restricted_model") or ""
+    if not srv or not model:
+        return {}
+    url = settings.get("ollama_url") if srv == "ollama" else settings.get("openai_url")
+    return {"same_as_main": False, "server": srv, "model": model, "url": url}
+
+
+def make_restricted_backend(settings: dict):
+    """(backend, model) for the tasks of documents marked "Only a local AI" when the main model is Claude, or None
+    when no local model is chosen. Raises BackendError when the chosen one is not on this computer."""
+    from .access import on_this_computer
+
+    choice = restricted_choice(settings)
+    if not choice or choice.get("same_as_main"):
+        return None
+    if not on_this_computer(choice.get("url") or ""):
+        raise BackendError(f"The local model for restricted documents must run on this computer; "
+                           f"{choice.get('url')} is another computer.")
+    key = "ollama_model" if choice["server"] == "ollama" else "openai_model"
+    changed = {**settings, "backend": choice["server"], key: choice["model"], "routing": False}
+    be, model = _make_backend(changed, "", ("check", "reread"))
+    if model != choice["model"]:
+        raise BackendError(f"The local model for restricted documents, {choice['model']}, is not installed on the model "
+                           "server. Install it, or choose another one in Settings → AI.")
+    be.model_note = None
+    return be, model
 
 
 def make_embedder(settings: dict):

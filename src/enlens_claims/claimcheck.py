@@ -26,7 +26,7 @@ import json
 import uuid
 from typing import Any, Callable
 
-from . import frameworks, tasks
+from . import access, frameworks, tasks
 from .search import neighbours, passage_index, rank_passages  # noqa: F401  (re-exported for callers)
 from .store import Workspace, now
 from .textutil import find_quote
@@ -303,6 +303,190 @@ def _add_task(ws: Workspace, task_id: str, kind: str, model: str, payload: dict)
         tasks._insert_task(cx, task_id, kind, model, payload)
 
 
+# ---------------------------------------------------------------------------------------------
+# 0.11: a round of excerpts split by who may read them. The excerpts of a round are grouped by their documents'
+# AI settings: those the main model may read go into the round's task (`check:{cid}` or `check:{cid}:r{n}`), those
+# only a local AI may read (when the main model is Claude) into `…:local` for the local model, and those no AI may
+# read (or local ones without a local model) into `…:person`, which no model answers: they wait for a person's
+# judgement. The round is still shown as one; each excerpt says who read it.
+# ---------------------------------------------------------------------------------------------
+PART_SUFFIXES = (":local", ":person")
+PERSON = "person"
+
+
+def round_base(task_id: str) -> str:
+    for suf in PART_SUFFIXES:
+        if task_id.endswith(suf):
+            return task_id[: -len(suf)]
+    return task_id
+
+
+def _rounds(ws: Workspace, cid: str) -> list[list]:
+    """The check's rounds in order, each the list of its parts (task rows)."""
+    groups: dict[str, list] = {}
+    for t in _check_tasks(ws, cid):
+        groups.setdefault(round_base(t["task_id"]), []).append(t)
+    return list(groups.values())
+
+
+def _main_part(parts: list):
+    return next((t for t in parts if t["task_id"] == round_base(t["task_id"])), None)
+
+
+def _round_status(parts: list) -> str:
+    sts = [t["status"] for t in parts]
+    for s in ("retry", "pending"):
+        if s in sts:
+            return s
+    if "done" in sts:
+        return "done"
+    return "failed" if "failed" in sts else (sts[-1] if sts else "pending")
+
+
+def _is_person(t) -> bool:
+    return (t["model"] or "") == PERSON
+
+
+def _person_rows(cx, task_id: str, cid: str, passages: list[dict]) -> None:
+    """The excerpts of a part no model reads: each waits for a person's judgement (no AI verdict)."""
+    for p in passages:
+        vid = f"v{tasks._h(task_id, p['passage_id'])}"
+        cx.execute("INSERT OR REPLACE INTO verifications(ver_id, subject_kind, subject_id, passage_id, doc_id, verdict, "
+                   "confidence, quote, start, end, page, model, prompt_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (vid, "user_claim", cid, p["passage_id"], p["doc_id"], "not_enough_info", None, None, None, None,
+                    p.get("page"), PERSON, None))
+
+
+def _add_round(ws: Workspace, cid: str, base: str, payload: dict, model: str, main_levels=("cloud",),
+               local_reader: bool = False, cx=None) -> dict[str, str]:
+    """Create the parts of one round (see above). Returns {"main"|"local"|"person": task id} for the parts made."""
+    if cx is None:
+        with ws.connect() as c:
+            return _add_round(ws, cid, base, payload, model, main_levels, local_reader, c)
+    lv = access.levels(cx, [p["doc_id"] for p in payload["passages"]])
+    main, local, person = [], [], []
+    for p in payload["passages"]:
+        level = lv.get(p["doc_id"], "none")
+        if level in main_levels:
+            main.append(p)
+        elif level == "local" and local_reader:
+            local.append(p)
+        else:
+            person.append(p)
+    total = len(payload["passages"])
+    out: dict[str, str] = {}
+    for key, tid, ps in (("main", base, main), ("local", base + ":local", local), ("person", base + ":person", person)):
+        if not ps:
+            continue
+        pl = {**payload, "passages": ps}
+        if len(ps) < total and key != "person":
+            pl["read_elsewhere"] = total - len(ps)  # told to the model, so a summary does not speak for them
+        if key == "person":
+            if cx.execute("SELECT 1 FROM tasks WHERE task_id=?", (tid,)).fetchone():
+                continue
+            cx.execute("INSERT INTO tasks(task_id, kind, model, prompt_version, payload_json, status, attempts, created_at, "
+                       "queued, access) VALUES (?,?,?,?,?,'done',0,?,0,'none')",
+                       (tid, "check", PERSON, None, json.dumps(pl, ensure_ascii=False), now()))
+            _person_rows(cx, tid, cid, ps)
+        else:
+            tasks._insert_task(cx, tid, "check", model, pl)
+        out[key] = tid
+    return out
+
+
+def _to_person(ws: Workspace, task_id: str) -> None:
+    """A local part whose local model is not there: its excerpts wait for a person's judgement instead."""
+    with ws.connect() as cx:
+        t = cx.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        if t is None or t["status"] == "done":
+            return
+        payload = json.loads(t["payload_json"])
+        cid = payload["subject_id"]
+        cx.execute("DELETE FROM results WHERE task_id=?", (task_id,))
+        cx.execute("UPDATE tasks SET status='done', model=?, attempts=0, queued=0, claimed_by=NULL WHERE task_id=?",
+                   (PERSON, task_id))
+        _person_rows(cx, task_id, cid, payload["passages"])
+
+
+def _part_counts(ws: Workspace, parts: dict[str, str]) -> dict[str, int]:
+    out = {}
+    for key, tid in parts.items():
+        pl = ws.scalar("SELECT payload_json FROM tasks WHERE task_id=?", (tid,))
+        out[key] = len(json.loads(pl)["passages"]) if pl else 0
+    return out
+
+
+def _grade_text(n: dict[str, int], main_is_claude: bool) -> str:
+    who = "Claude" if main_is_claude else "The AI"
+    bits = []
+    if n.get("main"):
+        bits.append(f"{who} is reading the {n['main']} excerpts" if not (n.get("local") or n.get("person"))
+                    else f"{who} is reading {n['main']} {'excerpt' if n['main'] == 1 else 'excerpts'}")
+    if n.get("local"):
+        bits.append(f"the local model reads {n['local']} from documents marked Only a local AI")
+    if n.get("person"):
+        bits.append(f"{n['person']} {'waits' if n['person'] == 1 else 'wait'} for your judgement")
+    text = "; ".join(bits)
+    return text[:1].upper() + text[1:] if text else ""
+
+
+def _run_round(ws: Workspace, parts: dict[str, str], backend, model: str, readers, say=lambda *a, **k: None) -> bool:
+    """Answer the parts of a round: the main one with the main model, the local one with the local model (or, when
+    it cannot be reached, it waits for a person). Returns whether the main part's answer was accepted (True when
+    there is none). Backend errors of the main model propagate."""
+    from .llm import BackendError
+
+    ok = True
+    if "main" in parts:
+        ok, _errs = tasks.run_one(ws, parts["main"], backend, model)
+    if "local" in parts:
+        got = readers.local() if readers is not None else None
+        if got is None:
+            _to_person(ws, parts["local"])
+            if readers is not None and readers.local_problem:
+                say("note", f"The local model could not be used ({readers.local_problem}); those excerpts wait for "
+                            "your judgement", {})
+        else:
+            try:
+                tasks.run_one(ws, parts["local"], got[0], got[1])
+            except BackendError as e:
+                _to_person(ws, parts["local"])
+                say("note", f"The local model could not be reached ({e}); those excerpts wait for your judgement", {})
+    return ok
+
+
+def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=None) -> int:
+    """Answer the local parts of rounds that wait (made by a check by queue or in a Claude chat), with the local model
+    for restricted documents; without one they wait for a person. Returns the number of parts handled."""
+    from .llm import BackendError
+
+    if readers is None:
+        readers = access.Readers(None, "")
+    rows = ws.query("SELECT task_id, payload_json FROM tasks WHERE kind='check' AND status IN ('pending', 'retry') AND "
+                    "substr(task_id, -6) = ':local'")
+    n = 0
+    for r in rows:
+        cid = json.loads(r["payload_json"]).get("subject_id")
+        if hyp_ids is not None:
+            hid = ws.scalar("SELECT hyp_id FROM user_claims WHERE claim_id=?", (cid,))
+            if hid not in hyp_ids:
+                continue
+        got = readers.local()
+        if got is None:
+            _to_person(ws, r["task_id"])
+        else:
+            try:
+                tasks.run_one(ws, r["task_id"], got[0], got[1])
+            except BackendError:
+                _to_person(ws, r["task_id"])
+        n += 1
+    return n
+
+
+def _readers(backend, model: str, readers=None):
+    return readers if readers is not None else access.Readers(backend, model)
+
+
 def _used(backend, model: str) -> str:
     return "baseline" if getattr(backend, "name", "") == "baseline" else model
 
@@ -396,6 +580,7 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
             options["decompose"] = len(given) > 1
     hid = _new_id("h")
     new_hypothesis(ws, text, fw, code, options, batch_id, hyp_id=hid)
+    readers = access.Readers(backend, model)
     try:
         plan = [{"text": text, "role": None, "part": 0}]
         if given is not None:
@@ -423,7 +608,8 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
             mine = given_terms[i] if given_terms is not None and i < len(given_terms) else None
             _run_check(ws, cid, backend, model, used, k, per_doc, expand, doc_ids,
                        lambda s, m, extra=None, _i=info: say(s, m, {**_i, **(extra or {})}), embedder,
-                       context=text if p["part"] else None, stop=stop, given_terms=mine, second_pass=second_pass)
+                       context=text if p["part"] else None, stop=stop, given_terms=mine, second_pass=second_pass,
+                       readers=readers)
         stop()
         with ws.connect() as cx:
             cx.execute("UPDATE hypotheses SET model=? WHERE hyp_id=?", (used, hid))
@@ -657,13 +843,14 @@ def _advance_one(ws: Workspace, h: dict) -> bool:
                                    ("judge" if picked else "done", cid)).rowcount
                 if moved and picked:
                     payload = _payload(ws, cid, c["text"], c["target"], c["framework"], picked, terms)
-                    tasks._insert_task(cx, f"check:{cid}", "check", (r.model("check") if r else None) or "opus", payload)
+                    _add_round(ws, cid, f"check:{cid}", payload, (r.model("check") if r else None) or "opus",
+                               ("cloud",), _local_configured(), cx)
             if picked:
                 open_ = True
             continue
         if stage == "judge":
-            st = ws.scalar("SELECT status FROM tasks WHERE task_id=?", (f"check:{cid}",))
-            if st in ("pending", "retry"):
+            sts = [t["status"] for t in _check_tasks(ws, cid)]
+            if any(st in ("pending", "retry") for st in sts):  # the local part too (the app reads it, see _follow)
                 open_ = True
                 continue
             with ws.connect() as cx:
@@ -673,6 +860,16 @@ def _advance_one(ws: Workspace, h: dict) -> bool:
         with ws.connect() as cx:
             cx.execute("UPDATE hypotheses SET queue='done' WHERE hyp_id=? AND queue='waiting'", (hid,))
     return open_
+
+
+def _local_configured() -> bool:
+    """Whether a local model is chosen for restricted documents (a check by queue or in a chat: Claude reads the rest)."""
+    try:
+        from .home import load_settings, restricted_choice
+
+        return bool(restricted_choice(load_settings()))
+    except Exception:  # noqa: BLE001 - without settings, a person judges them
+        return False
 
 
 def queue_stage(ws: Workspace, hyp_id: str) -> dict:
@@ -700,7 +897,8 @@ def check_claim(ws: Workspace, text: str, backend, model: str, target: str | Non
 
 
 def _run_check(ws, cid, backend, model, used, k, per_doc, expand, doc_ids, say, embedder=None, context=None,
-               stop=lambda: None, given_terms: list[str] | None = None, second_pass: bool = False) -> None:
+               stop=lambda: None, given_terms: list[str] | None = None, second_pass: bool = False,
+               readers=None) -> None:
     uc = ws.query("SELECT text, target, framework FROM user_claims WHERE claim_id=?", (cid,))[0]
     claim = uc["text"]
     terms: list[str] = []
@@ -727,16 +925,22 @@ def _run_check(ws, cid, backend, model, used, k, per_doc, expand, doc_ids, say, 
     n_docs = len({p["doc_id"] for p in picked})
     say("rank_done", f"Found {len(picked)} excerpts in {n_docs} {'document' if n_docs == 1 else 'documents'}", {"passages": len(picked), "documents": n_docs})
     stop()
-    _add_task(ws, f"check:{cid}", "check", used, _payload(ws, cid, claim, uc["target"], uc["framework"], picked, terms))
-    say("grade", f"The AI is reading the {len(picked)} excerpts")
-    ok, _errs = tasks.run_one(ws, f"check:{cid}", backend, model)
+    readers = _readers(backend, model, readers)
+    parts = _add_round(ws, cid, f"check:{cid}", _payload(ws, cid, claim, uc["target"], uc["framework"], picked, terms),
+                       used, tuple(readers.main_levels), readers.local_configured())
+    n = _part_counts(ws, parts)
+    say("grade", _grade_text(n, access.is_cloud(backend)), {"split": n} if len(n) > 1 else {})
+    ok = _run_round(ws, parts, backend, model, readers, say)
     graded = ws.scalar("SELECT COUNT(*) FROM verifications WHERE subject_kind='user_claim' AND subject_id=? "
                        "AND verdict != 'not_enough_info'", (cid,)) or 0
     attempts = ws.scalar("SELECT attempts FROM tasks WHERE task_id=?", (f"check:{cid}",)) or 1
+    waiting = ws.scalar("SELECT COUNT(*) FROM verifications WHERE subject_kind='user_claim' AND subject_id=? AND "
+                        "model=? AND user_verdict IS NULL", (cid, PERSON)) or 0
     say("grade_done", (f"{graded} of {len(picked)} excerpts are about the hypothesis; every quote was checked against "
                        "the document" if ok else "The AI's answers could not be used, even after three tries")
-        + (f" ({attempts} tries)" if attempts > 1 and ok else ""),
-        {"graded": graded, "ok": ok})
+        + (f" ({attempts} tries)" if attempts > 1 and ok else "")
+        + (f"; {waiting} {'waits' if waiting == 1 else 'wait'} for your judgement" if waiting else ""),
+        {"graded": graded, "ok": ok, "waiting_for_you": waiting})
 
 
 def _payload(ws: Workspace, cid: str, claim: str, code: str | None, framework: str | None, picked: list[dict],
@@ -766,26 +970,32 @@ def _payload(ws: Workspace, cid: str, claim: str, code: str | None, framework: s
 
 def continue_check(ws: Workspace, cid: str, backend, model: str, k: int = 8, terms: list[str] | None = None,
                    embedder=None, progress: Progress | None = None, should_stop: Callable[[], bool] | None = None,
-                   doc_ids: list[str] | None = None) -> dict:
+                   doc_ids: list[str] | None = None, readers=None) -> dict:
     """Read the next best passages for a claim (none shown before) and grade them, as a new round of its check.
     `doc_ids` limits the round to those documents (see `more_passages`)."""
     say = _adapt(progress)
     _stopper(should_stop)()
     used = _used(backend, model)
     say("rank", "Looking for further excerpts not read yet", {})
-    r = more_passages(ws, cid, k=k, model=used, terms=terms, embedder=embedder, doc_ids=doc_ids)
+    readers = _readers(backend, model, readers)
+    r = more_passages(ws, cid, k=k, model=used, terms=terms, embedder=embedder, doc_ids=doc_ids,
+                      main_levels=tuple(readers.main_levels), local_reader=readers.local_configured())
     if not r["passages"]:
         say("rank_done", "No further excerpts match", {"passages": 0})
         return r
     say("rank_done", f"Found {len(r['passages'])} more excerpts", {"passages": len(r["passages"])})
-    tid = f"check:{cid}" if r["round"] == 1 else f"check:{cid}:r{r['round']}"
-    say("grade", f"The AI is reading the {len(r['passages'])} excerpts", {})
+    parts = r.pop("parts", {})
+    say("grade", _grade_text(_part_counts(ws, parts), access.is_cloud(backend)), {})
     try:
-        ok, _errs = tasks.run_one(ws, tid, backend, model)
+        ok = _run_round(ws, parts, backend, model, readers, say)
     except BaseException:
         with ws.connect() as cx:  # a round stopped by a backend problem is removed, so it can be asked again
-            cx.execute("DELETE FROM results WHERE task_id=?", (tid,))
-            cx.execute("DELETE FROM tasks WHERE task_id=?", (tid,))
+            for tid in parts.values():
+                pl = cx.execute("SELECT payload_json FROM tasks WHERE task_id=?", (tid,)).fetchone()
+                for p in (json.loads(pl[0])["passages"] if pl else []):
+                    cx.execute("DELETE FROM verifications WHERE ver_id=?", (f"v{tasks._h(tid, p['passage_id'])}",))
+                cx.execute("DELETE FROM results WHERE task_id=?", (tid,))
+                cx.execute("DELETE FROM tasks WHERE task_id=?", (tid,))
         raise
     say("grade_done", "Read; every quote was checked against the document" if ok else "The AI's answers could not be used, even after three tries", {"ok": ok})
     return {**r, "ok": ok}
@@ -803,7 +1013,7 @@ def chat_rules() -> str:
 
 def _check_tasks(ws: Workspace, cid: str) -> list:
     return ws.query("SELECT * FROM tasks WHERE kind='check' AND (task_id=? OR task_id LIKE ?) ORDER BY created_at, rowid",
-                    (f"check:{cid}", f"check:{cid}:r%"))
+                    (f"check:{cid}", f"check:{cid}:%"))
 
 
 def _shown(payload: dict) -> list[dict]:
@@ -828,12 +1038,32 @@ def open_check(ws: Workspace, text: str, terms: list[str] | None = None, target:
     if not picked:
         return {"check_id": cid, "round": 1, "passages": []}
     payload = _payload(ws, cid, uc["text"], uc["target"], uc["framework"], picked, terms)
-    _add_task(ws, f"check:{cid}", "check", model, payload)
-    return {"check_id": cid, "round": 1, "passages": _shown(payload)}
+    parts = _add_round(ws, cid, f"check:{cid}", payload, model, ("cloud",), _local_configured())
+    return {"check_id": cid, "round": 1, **_chat_round(ws, parts)}
+
+
+def _chat_round(ws: Workspace, parts: dict[str, str]) -> dict:
+    """The excerpts of a round a Claude chat may read (the main part), and how many others there are (0.11)."""
+    main = ws.scalar("SELECT payload_json FROM tasks WHERE task_id=?", (parts["main"],)) if "main" in parts else None
+    shown = _shown(json.loads(main)) if main else []
+    if main:
+        with ws.connect() as cx:
+            access.record_sent(cx, parts["main"], json.loads(main), access.ROUTE_NAMES["chat"], "check")
+    n = _part_counts(ws, {k: v for k, v in parts.items() if k != "main"})
+    out: dict = {"passages": shown}
+    if n:
+        out["restricted_passages"] = sum(n.values())
+        out["restricted_note"] = (f"{sum(n.values())} further excerpts come from documents the user keeps on this "
+                                  "computer: " + ", ".join(
+                                      ([f"{n['local']} are read by the local model"] if n.get("local") else []) +
+                                      ([f"{n['person']} wait for the user's own judgement"] if n.get("person") else []))
+                                  + ". They are not shown to you; say so when you report the result.")
+    return out
 
 
 def more_passages(ws: Workspace, cid: str, k: int = 8, model: str = CHAT_MODEL, terms: list[str] | None = None,
-                  embedder=None, doc_ids: list[str] | None = None) -> dict:
+                  embedder=None, doc_ids: list[str] | None = None, main_levels=("cloud",),
+                  local_reader: bool | None = None) -> dict:
     """The next best passages, none of them shown before, as a new round of the same check.
 
     With `terms`, the ranking uses these new search terms (with the claim) instead of the earlier ones, and only
@@ -845,9 +1075,11 @@ def more_passages(ws: Workspace, cid: str, k: int = 8, model: str = CHAT_MODEL, 
     if not uc:
         raise KeyError(cid)
     uc = dict(uc[0])
-    rounds = _check_tasks(ws, cid)
-    if rounds and rounds[-1]["status"] not in ("done", "failed"):
+    groups = _rounds(ws, cid)
+    last_main = _main_part(groups[-1]) if groups else None
+    if last_main is not None and last_main["status"] not in ("done", "failed"):
         raise ValueError("Grade the passages already shown first (submit_grades), then ask for more.")
+    rounds = [t for g in groups for t in g]
     seen = {p["passage_id"] for r in rounds for p in json.loads(r["payload_json"])["passages"]}
     opts = json.loads(uc["options_json"] or "{}")
     old_terms = json.loads(uc["terms_json"] or "[]")
@@ -862,20 +1094,26 @@ def more_passages(ws: Workspace, cid: str, k: int = 8, model: str = CHAT_MODEL, 
     if not picked:
         return {"check_id": cid, "round": len(rounds) + 1, "passages": []}
     payload = _payload(ws, cid, uc["text"], uc["target"], uc.get("framework"), picked, new_terms or old_terms)
-    n = len(rounds) + 1
-    _add_task(ws, f"check:{cid}:r{n}" if rounds else f"check:{cid}", "check", model, payload)
-    return {"check_id": cid, "round": n, "passages": _shown(payload)}
+    n = len(groups) + 1
+    parts = _add_round(ws, cid, f"check:{cid}:r{n}" if groups else f"check:{cid}", payload, model, tuple(main_levels),
+                       _local_configured() if local_reader is None else local_reader)
+    if model == CHAT_MODEL:  # a Claude chat (the connector): it is shown the excerpts it may read
+        return {"check_id": cid, "round": n, **_chat_round(ws, parts)}
+    return {"check_id": cid, "round": n, "passages": _shown(payload), "parts": parts}
 
 
 def submit_grades(ws: Workspace, cid: str, grades: list[dict], summary: str | None = None,
                   model: str = CHAT_MODEL) -> dict:
     """Validate and store the grades for the open round. Problems come back so they can be fixed and resent."""
-    rounds = _check_tasks(ws, cid)
-    if not rounds:
+    groups = _rounds(ws, cid)
+    if not groups:
         if not ws.query("SELECT 1 FROM user_claims WHERE claim_id=?", (cid,)):
             raise KeyError(cid)
         raise ValueError("This check has no passages to grade.")
-    t = rounds[-1]
+    t = _main_part(groups[-1])
+    if t is None:
+        raise ValueError("The excerpts of this round all come from documents kept on this computer, so there is "
+                         "nothing for you to grade. Ask for more_passages to read further.")
     if t["status"] == "done":
         raise ValueError("These passages are already graded. Ask for more_passages to read further.")
     if t["status"] == "failed":
@@ -1059,6 +1297,29 @@ def _round_notes(ws: Workspace, rounds: list) -> list[str | None]:
     return notes
 
 
+def _readers_of(ws: Workspace, parts: list) -> dict[str, str]:
+    """Who read each part of a round (0.11): "claude", "local" (a model on this computer), "ai" (another model
+    server), "you" (no model may read it), or "waiting" (not answered yet)."""
+    out = {}
+    for t in parts:
+        if _is_person(t):
+            out[t["task_id"]] = "you"
+            continue
+        r = ws.query("SELECT route, model FROM results WHERE task_id=? AND valid=1 ORDER BY attempt DESC LIMIT 1",
+                     (t["task_id"],))
+        if not r:
+            out[t["task_id"]] = "waiting" if t["status"] in ("pending", "retry") else "ai"
+            continue
+        route, model = r[0]["route"] or "", r[0]["model"] or ""
+        if route in ("Claude Code", "Claude API") or model == CHAT_MODEL or model.startswith("claude"):
+            out[t["task_id"]] = "claude"
+        elif t["task_id"].endswith(":local") or route in ("local model server", "offline demo"):
+            out[t["task_id"]] = "local"
+        else:
+            out[t["task_id"]] = "ai"
+    return out
+
+
 def _opens_with_pronoun(q: str | None) -> bool:
     from .references import opens_with_pronoun
 
@@ -1093,13 +1354,14 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     if not rows:
         raise KeyError(claim_id)
     uc = dict(rows[0])
-    rounds = _check_tasks(ws, claim_id)
+    groups = _rounds(ws, claim_id)
+    rounds = [t for g in groups for t in g]
     terms_all = json.loads(uc["terms_json"] or "[]")
     out = {"claim_id": claim_id, "hyp_id": uc.get("hyp_id") or claim_id, "part": uc.get("part") or 0,
            "role": uc.get("role"), "claim": uc["text"], "target": uc["target"], "framework": uc.get("framework"),
            "created_at": uc["created_at"], "terms": terms_all, "rationale": uc["rationale"],
            "model": uc["model"], "options": json.loads(uc["options_json"] or "{}"), "threshold": thr, "passages": [],
-           "errors": [], "rounds": len(rounds), "rounds_info": []}
+           "errors": [], "rounds": len(groups), "rounds_info": [], "waiting_for_you": 0, "waiting_local": 0}
     if uc["target"]:
         try:
             _fw, _c, desc, label = frameworks.resolve(ws, uc.get("framework") or "sdg", uc["target"])
@@ -1108,28 +1370,37 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
             pass
     raw_vs = [dict(v) for v in ws.query("SELECT * FROM verifications WHERE subject_kind='user_claim' AND subject_id=?",
                                         (claim_id,))]
+    access_of = access.levels(ws, list({p["doc_id"] for t in rounds for p in json.loads(t["payload_json"])["passages"]}))
     vs = [effective(v) for v in raw_vs]
     out["balance"] = balance(vs, thr)
     stage = uc.get("stage")
     if not rounds:
         out["status"] = out["status_any"] = "waiting" if stage in ("terms", "rank", "judge") else "no_passages"
         return out
-    payloads = [json.loads(r["payload_json"]) for r in rounds]
-    notes = _round_notes(ws, rounds)
-    for r_i, (r, pl, note) in enumerate(zip(rounds, payloads, notes), 1):
-        out["rounds_info"].append({"round": r_i, "status": r["status"], "passages": len(pl["passages"]),
-                                   "terms": pl.get("terms", terms_all if r_i == 1 else None), "ai_note": note,
+    readers_of = _readers_of(ws, rounds)
+    shown = []
+    for r_i, g in enumerate(groups, 1):
+        main = _main_part(g) or g[0]
+        pls = [json.loads(t["payload_json"]) for t in g]
+        note = _round_notes(ws, [main])[0] if not _is_person(main) else None
+        out["rounds_info"].append({"round": r_i, "status": _round_status(g), "passages": sum(len(pl["passages"]) for pl in pls),
+                                   "terms": pls[0].get("terms", terms_all if r_i == 1 else None), "ai_note": note,
                                    # 0.8: which task it is, and whether a stronger model read it (or will)
-                                   "task_id": r["task_id"], "stepped_up": bool(r["step"]) and not r["again"],
-                                   "stronger_waiting": bool(r["again"]), "waiting": _queued_open(r)})
-    shown = [(r_i, p) for r_i, pl in enumerate(payloads, 1) for p in pl["passages"]]
+                                   "task_id": main["task_id"], "stepped_up": bool(main["step"]) and not main["again"],
+                                   "stronger_waiting": bool(main["again"]), "waiting": any(_queued_open(t) for t in g),
+                                   # 0.11: who read which excerpts of this round
+                                   "parts": [{"task_id": t["task_id"], "read_by": readers_of[t["task_id"]],
+                                              "passages": len(pl["passages"]), "status": t["status"]}
+                                             for t, pl in zip(g, pls)]})
+        for t, pl in zip(g, pls):
+            shown += [(r_i, p, t) for p in pl["passages"]]
     by_passage = {v["passage_id"]: v for v in raw_vs}
-    locs = _locations(ws, list({p["passage_id"] for _r, p in shown}),
+    locs = _locations(ws, list({p["passage_id"] for _r, p, _t in shown}),
                       {v["passage_id"]: (v["user_start"] if v.get("user_start") is not None else v["start"])
                        for v in raw_vs if v.get("start") is not None or v.get("user_start") is not None})
     breaks = _breaks(ws, [(pid, lc["doc_id"], lc["start"], lc["end"]) for pid, lc in locs.items()])
     seconds = _second_opinions(ws, [claim_id]).get(claim_id, {})
-    for n, (r_i, p) in enumerate(shown, 1):
+    for n, (r_i, p, part) in enumerate(shown, 1):
         v = by_passage.get(p["passage_id"])
         loc = locs.get(p["passage_id"], {})
         item = {"n": n, "round": r_i, "passage_id": p["passage_id"], "doc_id": p["doc_id"], "title": p["title"],
@@ -1144,7 +1415,11 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                 "reread": False, "reread_info": None,
                 # 0.7: the words that found it (F6), and what its quote refers to (F5)
                 "matched": p.get("matched") or [], "refers_to": None, "refers_where": None, "refers_location": None,
-                "refers_start": None, "reference_missing": False}
+                "refers_start": None, "reference_missing": False,
+                # 0.11: who read it (claude, local, ai, you) and whether it still waits for the local model or a person
+                "read_by": readers_of[part["task_id"]], "access": access_of.get(p["doc_id"], "none"),
+                "waiting_local": part["status"] in ("pending", "retry") and part["task_id"].endswith(":local"),
+                "waiting_for_you": False}
         if v:
             ai = v["verdict"] if v["verdict"] != "not_enough_info" else None
             eff = effective(v)
@@ -1186,9 +1461,13 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
             item["counted"] = bool(item["verdict"]) and (eff["confidence"] or 0) >= thr
         so = seconds.get(p["passage_id"])
         item["second"] = ({**so, "agrees": so["verdict"] == item["ai_verdict"]} if so else None)
+        item["waiting_for_you"] = item["read_by"] == "you" and not item["user_verdict"]
+        out["waiting_for_you"] += item["waiting_for_you"]
+        out["waiting_local"] += item["waiting_local"]
         out["passages"].append(item)
-    statuses = [r["status"] for r in rounds]
-    waiting = _queued_open(rounds[-1])
+    statuses = [_round_status(g) for g in groups]
+    waiting = any(_queued_open(t) or (t["task_id"].endswith(":local") and t["status"] in ("pending", "retry"))
+                  for t in groups[-1])
     out["status"] = _status_of_rounds(statuses, vs, thr, stage, waiting)
     out["status_any"] = _status_of_rounds(statuses, vs, 0.0, stage, waiting)
     out["waiting"] = out["status"] == "waiting"
@@ -1196,7 +1475,8 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     out["stepped_up"] = {r["task_id"]: {"step": int(r["step"] or 0), "again": bool(r["again"])} for r in rounds}
     out["round_status"] = statuses[-1]
     if "done" not in statuses or statuses[-1] in ("failed", "retry"):
-        err = ws.query("SELECT errors_json FROM results WHERE task_id=? ORDER BY attempt DESC LIMIT 1", (rounds[-1]["task_id"],))
+        bad = next((t for t in groups[-1] if t["status"] in ("failed", "retry")), groups[-1][-1])
+        err = ws.query("SELECT errors_json FROM results WHERE task_id=? ORDER BY attempt DESC LIMIT 1", (bad["task_id"],))
         out["errors"] = json.loads(err[0][0]) if err else []
     _reference_locations(ws, out["passages"])
     out["who"] = who_says_what(out["passages"])
@@ -1244,6 +1524,8 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     out["status_text"] = STATUS_TEXT.get(out["status"], out["status"])
     out["rationale"] = parts[0]["rationale"] if len(parts) == 1 else None
     items = [x for p in parts for x in p["passages"]]
+    out["waiting_for_you"] = sum(p["waiting_for_you"] for p in parts)  # 0.11: excerpts no model may read
+    out["waiting_local"] = sum(p["waiting_local"] for p in parts)      # 0.11: excerpts waiting for the local model
     out["corrected"] = sum(1 for x in items if x["changed"])       # judgements a person changed
     out["reviewed"] = sum(1 for x in items if x["reviewed"])       # judgements a person looked at (agreed or changed)
     out["to_review"] = sum(1 for x in items if not x["reviewed"])  # excerpts read that no person has judged yet
@@ -1343,11 +1625,21 @@ def second_opinion(ws: Workspace, hyp_ids: list[str], backend, main_model: str, 
         # on Claude the auditor gives the second opinion; it may run on the same model as the checker (Opus)
         raise ValueError("The second model must be another model than the main one.")
     todo = []
+    restricted = 0
+    may = access.backend_levels(backend)
     for hid in hyp_ids:
         for c in ws.query("SELECT claim_id FROM user_claims WHERE hyp_id=? ORDER BY part, rowid", (hid,)):
             for t in _check_tasks(ws, c["claim_id"]):
+                if _is_person(t):
+                    continue  # no model may read these excerpts
+                with ws.connect() as cx:  # the setting of its documents now (it may have changed since)
+                    lv = access.label_payload(cx, json.loads(t["payload_json"]))
+                if lv not in may:  # 0.11: a local excerpt has a second opinion only from a second local model
+                    restricted += len(json.loads(t["payload_json"])["passages"])
+                    continue
                 todo.append((hid, t))
-    out = {"hypotheses": len(hyp_ids), "rounds": len(todo), "graded": 0, "skipped": 0, "failed": 0, "unloaded": []}
+    out = {"hypotheses": len(hyp_ids), "rounds": len(todo), "graded": 0, "skipped": 0, "failed": 0, "unloaded": [],
+           "restricted": restricted}
     if not todo:
         return out
     unload = getattr(backend, "unload", None)
@@ -1899,7 +2191,8 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
 
 
 def reread_excerpt(ws: Workspace, claim_id: str, passage_id: str, backend, model: str, note: str | None = None,
-                   progress: Progress | None = None, should_stop: Callable[[], bool] | None = None) -> dict:
+                   progress: Progress | None = None, should_stop: Callable[[], bool] | None = None,
+                   readers=None) -> dict:
     """Ask the AI to read one excerpt again, alone, with the check prompt; a person's comment (`note`, or the
     comment saved with their judgement) is added as a hint. The new judgement replaces the AI's for this excerpt;
     the earlier ones are kept (`ai_history` in `result`). A person's own judgement is not changed and still counts.
@@ -1925,6 +2218,14 @@ def reread_excerpt(ws: Workspace, claim_id: str, passage_id: str, backend, model
     v = dict(v[0]) if v else None
     if note is None and v:
         note = v.get("user_note")
+    # 0.11: the excerpt is read again by a model its document's setting allows: the main one, or the local model
+    level = access.levels(ws, [p["doc_id"]]).get(p["doc_id"], "none")
+    reader = _readers(backend, model, readers).for_level(level)
+    if reader is None:
+        raise ValueError("This excerpt's document is marked No AI: no model may read it. Give your own judgement."
+                         if level == "none" else "This excerpt's document is marked Only a local AI, and no local "
+                         "model is chosen for such documents (Settings → AI). Give your own judgement, or choose one.")
+    backend, model = reader
     used = _used(backend, model)
     payload = _payload(ws, claim_id, uc["text"], uc["target"], uc.get("framework"), [p])
     if (note or "").strip():
@@ -1984,7 +2285,7 @@ def delete_claim(ws: Workspace, claim_id: str) -> None:
         for tid in (f"expand:{claim_id}", f"check:{claim_id}"):
             cx.execute("DELETE FROM results WHERE task_id=?", (tid,))
             cx.execute("DELETE FROM tasks WHERE task_id=?", (tid,))
-        for pat in (f"check:{claim_id}:r%", f"reread:{claim_id}:%", f"second:check:{claim_id}:%"):
+        for pat in (f"check:{claim_id}:%", f"reread:{claim_id}:%", f"second:check:{claim_id}:%"):
             cx.execute("DELETE FROM results WHERE task_id LIKE ?", (pat,))
             cx.execute("DELETE FROM tasks WHERE task_id LIKE ?", (pat,))
         cx.execute("DELETE FROM second_opinions WHERE subject_id=?", (claim_id,))

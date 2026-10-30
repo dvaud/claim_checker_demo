@@ -801,7 +801,7 @@ def _cmd_08(a, ws) -> int:
 
                 terms.ensure(ws)
                 pairs = terms.proposed_pairs(ws, a.limit or 200)
-                made["tasks"] = len([terms.make_link_task(ws, x, y, r.model("link")) for x, y in pairs])
+                made["tasks"] = len([terms.make_link_task(ws, x, y, r.model("link"), {"cloud"}) for x, y in pairs])
             elif a.kind == "theme":
                 from . import themes
 

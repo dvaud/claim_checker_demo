@@ -22,7 +22,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from . import __version__, claimcheck, frameworks, ingest
+from . import __version__, access, claimcheck, frameworks, ingest
 from . import home as core
 from .sources import document_overview
 
@@ -51,7 +51,13 @@ the documents and pages; find_concept shows a concept's wordings, documents and 
 says which codes (by default the 169 SDG targets) a document addresses, how much and where.
 
 Adding sources: the user gives a path to a zip, a folder or files on this computer (attachments in the chat do not
-reach this connector). Call create_project or add_sources with that path.
+reach this connector). Call create_project or add_sources with that path. Ask the user who may read the new documents
+with AI and pass it as ai_access: cloud (Claude may read them), local (only a local AI on this computer) or none (no
+AI; the user judges them).
+
+Documents the user keeps on this computer (0.11): you are never shown text of documents marked local or none. Tools
+report them as counts (restricted_hits, restricted_passages, restricted evidence) and documents marked none as
+"Restricted document N". Say so when you report: a result may rest on evidence you did not read.
 
 The task queue (0.8): work the ENLENS app prepared for Claude Code. In Claude Code the /enlens-run command of the ENLENS
 plugin works through it with helper agents: queue_status says what waits (per kind, with the model and helper for
@@ -103,14 +109,30 @@ def _find_check(check_id: str):
 
 def _summary(ws, check_id: str) -> dict:
     r = claimcheck.result(ws, check_id)
-    evidence = [{"grade": p["verdict"], "confidence": p["confidence"], "quote": p["quote"], "document": p["title"],
-                 "page": p["page"], **({"about_another_group": p["scope_note"]} if p.get("scope_note") else {})}
-                for p in r["passages"] if p["verdict"]]
+    hidden = access.restricted_titles(ws)
+    lv = access.levels(ws, {p["doc_id"] for p in r["passages"]})
+    evidence, restricted = [], {"supports": 0, "partially_supports": 0, "refutes": 0, "waiting_for_the_user": 0,
+                                "waiting_for_the_local_model": 0}
+    for p in r["passages"]:
+        if lv.get(p["doc_id"], "none") != "cloud":  # 0.11: no text of a restricted document, only what it says
+            if p["verdict"]:
+                restricted[p["verdict"]] += 1
+            restricted["waiting_for_the_user"] += bool(p.get("waiting_for_you"))
+            restricted["waiting_for_the_local_model"] += bool(p.get("waiting_local"))
+            continue
+        if p["verdict"]:
+            evidence.append({"grade": p["verdict"], "confidence": p["confidence"], "quote": p["quote"],
+                             "document": hidden.get(p["doc_id"], p["title"]), "page": p["page"],
+                             **({"about_another_group": p["scope_note"]} if p.get("scope_note") else {})})
     out = {"check_id": check_id, "claim": r["claim"], "status": r["status"],
            "status_text": claimcheck.STATUS_TEXT.get(r["status"], r["status"]),
            "status_at_any_confidence": r["status_any"], "confidence_threshold": r["threshold"],
            "passages_read": len(r["passages"]), "rounds": r["rounds"], "evidence": evidence,
            "summary": r["rationale"], "target": r["target"]}
+    if any(restricted.values()):
+        out["restricted_evidence"] = {k: v for k, v in restricted.items() if v}
+        out["restricted_note"] = ("Part of the evidence comes from documents the user keeps on this computer: their "
+                                  "grades count in the status, their text is not shown.")
     if r["status_any"] != r["status"]:
         low = sum(1 for e in evidence if (e["confidence"] or 0) < r["threshold"])
         out["note"] = (f"Counting every grade: {claimcheck.STATUS_TEXT.get(r['status_any'], r['status_any']).lower()}. "
@@ -134,14 +156,15 @@ def _check_path(path: str) -> Path:
     return p
 
 
-def _ingest(ws, path: str, exclude: list[str] | None) -> dict:
+def _ingest(ws, path: str, exclude: list[str] | None, ai_access: str | None = None) -> dict:
     p = _check_path(path)
     before = {d["doc_id"] for d in document_overview(ws)}
-    stats = ingest.ingest(ws, [p], exclude=exclude or None)
+    stats = ingest.ingest(ws, [p], exclude=exclude or None, ai_access=ai_access)
     added = [d for d in document_overview(ws) if d["doc_id"] not in before]
     out = {"documents_added": len(added), "usable_documents_added": sum(1 for d in added if not d["check"]),
            "readable_passages_added": sum(d["passages"] for d in added), "already_in_project": stats["duplicates"],
            "without_text": stats["empty"]}
+    out["ai_access"] = access.default(ws) if ai_access is None else ai_access
     warn = [{"title": d["title"], "warning": d["check"]} for d in added if d["check"]]
     if warn:
         out["warnings"] = warn
@@ -188,18 +211,23 @@ def build_server():
         return {"projects": out, "folder": str(core.home() / "projects")}
 
     @s.tool(description="Create a project and read its sources from a path on this computer: a zip, a folder, or a "
-                        "PDF/HTML/text file. A manifest.csv inside (columns file, reference, doi) names each work.")
+                        "PDF/HTML/text file. A manifest.csv inside (columns file, reference, doi, optional ai_access) "
+                        "names each work. ai_access: who may read the documents with AI: cloud (Claude may read them), "
+                        "local (only a local AI on this computer), none (no AI); without it the project's default.")
     @_friendly
-    def create_project(name: str, sources_path: str, exclude: Optional[list[str]] = None) -> dict:
+    def create_project(name: str, sources_path: str, exclude: Optional[list[str]] = None,
+                       ai_access: Optional[Literal["cloud", "local", "none"]] = None) -> dict:
         _check_path(sources_path)  # before creating: a mistyped path must not leave an empty project behind
         ws = core.create_project(name)
-        return {"project": ws.root.name, **_ingest(ws, sources_path, exclude)}
+        return {"project": ws.root.name, **_ingest(ws, sources_path, exclude, ai_access)}
 
-    @s.tool(description="Add sources to an existing project from a path on this computer (zip, folder or file).")
+    @s.tool(description="Add sources to an existing project from a path on this computer (zip, folder or file). "
+                        "ai_access as for create_project; without it the project's default applies.")
     @_friendly
-    def add_sources(project: str, sources_path: str, exclude: Optional[list[str]] = None) -> dict:
+    def add_sources(project: str, sources_path: str, exclude: Optional[list[str]] = None,
+                    ai_access: Optional[Literal["cloud", "local", "none"]] = None) -> dict:
         name, ws = _project(project)
-        return {"project": name, **_ingest(ws, sources_path, exclude)}
+        return {"project": name, **_ingest(ws, sources_path, exclude, ai_access)}
 
     @s.tool(description="Use an existing ENLENS workspace folder (for example the pilot) as a project, without copying it.")
     @_friendly
@@ -211,8 +239,12 @@ def build_server():
     def list_documents(project: Optional[str] = None) -> dict:
         name, ws = _project(project)
         docs = document_overview(ws)
-        return {"project": name, "documents": [{"id": d["doc_id"], "title": d["title"], "pages": d["pages"],
-                                                 "passages": d["passages"], "warning": d["check"] or None} for d in docs]}
+        hidden = access.restricted_titles(ws)
+        lv = access.levels(ws)
+        return {"project": name, "documents": [{"id": d["doc_id"], "title": hidden.get(d["doc_id"], d["title"]),
+                                                 "pages": d["pages"], "passages": d["passages"],
+                                                 "ai_access": lv.get(d["doc_id"], "none"),
+                                                 "warning": d["check"] or None} for d in docs]}
 
     @s.tool(description="Suggest codes of a framework (by default the 169 SDG targets) whose wording is close to a "
                         "claim (keyword match, a starting point only). list_frameworks shows the project's frameworks.")
@@ -298,13 +330,25 @@ def build_server():
         from . import concordance
 
         name, ws = _project(project)
-        r = concordance.search(ws, query, mode, document_ids, "doc", max(0, int(offset)), max(1, min(int(lines), 200)),
+        hidden = access.restricted_titles(ws)
+        everything = concordance.search(ws, query, mode, document_ids, "doc", 0, 1, exact, near)
+        # 0.11: lines only from documents Claude may read; hits in the others as counts
+        cloud = sorted(d for d, lv in access.levels(ws).items() if lv == "cloud" and
+                       (not document_ids or d in set(document_ids)))
+        r = concordance.search(ws, query, mode, cloud or ["-"], "doc", max(0, int(offset)), max(1, min(int(lines), 200)),
                                exact, near)
-        return {"project": name, "query": query, "hits": r["total"], "passages": r["passages"],
-                "documents": [{"document": d["title"], "hits": d["hits"]} for d in r["per_doc"][:30]],
-                "lines": [{"document": x["title"], "where": x["location"], "text": f"{x['left']}[{x['node']}]{x['right']}",
-                           "passage_id": x["passage_id"]} for x in r["lines"]],
-                "more": max(0, r["total"] - offset - len(r["lines"]))}
+        shown = [{"document": x["title"], "where": x["location"], "text": f"{x['left']}[{x['node']}]{x['right']}",
+                  "passage_id": x["passage_id"]} for x in r["lines"]]
+        access.record_passages(ws, [x["passage_id"] for x in r["lines"]], access.ROUTE_NAMES["chat"], "search")
+        out = {"project": name, "query": query, "hits": everything["total"], "passages": everything["passages"],
+               "documents": [{"document": hidden.get(d["doc_id"], d["title"]), "hits": d["hits"]}
+                             for d in everything["per_doc"][:30]],
+               "lines": shown, "more": max(0, r["total"] - offset - len(r["lines"]))}
+        if everything["total"] > r["total"]:
+            out["restricted_hits"] = everything["total"] - r["total"]
+            out["restricted_note"] = ("These hits are in documents the user keeps on this computer: counted, not "
+                                      "shown.")
+        return out
 
     @s.tool(description="Which codes of a codebook (by default the 169 SDG targets; sdg_goals for the 17 goals) a "
                         "document addresses, how much (passages, share of the document) and where (pages), each label "
@@ -318,13 +362,24 @@ def build_server():
         name, ws = _project(project)
         profile.ensure_pass1(ws, framework)
         d = profile.doc_profile(ws, framework, document_id)
-        return {"project": name, "document": d["title"], "codebook": d["framework_title"],
-                "read_by_the_model": d["read_by_model"], "passages": d["passages"],
-                "codes": [{"code": c["code"], "text": c["description"], "passages": c["passages"],
-                           "share": c["share"], "pages": c["pages"][:20],
-                           "examples": [{"quote": i["quote"], "reason": i["reason"], "where": i["location"],
-                                         "by": i["source"], "provisional": i["provisional"]} for i in c["items"][:3]]}
-                          for c in d["codes"][:max(1, int(codes))]]}
+        level = access.levels(ws, [document_id]).get(document_id, "none")
+        restricted = level != "cloud"  # 0.11: a restricted document's codes, shares and pages, without quotes
+        codes_out = []
+        for c in d["codes"][:max(1, int(codes))]:
+            item = {"code": c["code"], "text": c["description"], "passages": c["passages"], "share": c["share"],
+                    "pages": c["pages"][:20]}
+            if not restricted:
+                item["examples"] = [{"quote": i["quote"], "reason": i["reason"], "where": i["location"],
+                                     "by": i["source"], "provisional": i["provisional"]} for i in c["items"][:3]]
+                access.record_passages(ws, [i["passage_id"] for i in c["items"][:3] if i.get("passage_id")],
+                                       access.ROUTE_NAMES["chat"], "profile")
+            codes_out.append(item)
+        out = {"project": name, "document": access.restricted_titles(ws).get(document_id, d["title"]),
+               "codebook": d["framework_title"], "read_by_the_model": d["read_by_model"], "passages": d["passages"],
+               "codes": codes_out}
+        if restricted:
+            out["restricted_note"] = "The user keeps this document on this computer: no quotes are shown."
+        return out
 
     @s.tool(description="A concept of the project's glossary (for example 'PEM electrolysis'): the wordings it goes by, "
                         "the documents that discuss it with counts and the first page, passages where it occurs, and "
@@ -338,17 +393,33 @@ def build_server():
         tid = terms.find_term(ws, name)
         if not tid:
             raise ValueError(f"No term of the glossary matches {name!r}. Try a shorter wording.")
-        c = terms.card(ws, tid, 0, max(1, min(int(lines), 50)))
-        return {"project": pname, "concept": c["label"], "wordings": [w["label"] for w in c["wordings"]],
-                "mentions": c["mentions"],
-                "documents": [{"document": d["title"], "mentions": d["mentions"], "first": d.get("first_location")}
-                              for d in c["documents"][:30]],
-                "lines": [{"document": x["title"], "where": x["location"], "text": f"{x['left']}[{x['node']}]{x['right']}"}
-                          for x in c["lines"]],
-                "related": [{"concept": x["label"], "relation": x["relation"], "state": x["state"]}
-                            for x in c["related"]["links"]],
-                "mentioned_together": [{"concept": x["label"], "passages": x["together"], "lift": x["lift"]}
-                                       for x in c["related"]["together"]]}
+        n = max(1, min(int(lines), 50))
+        c = terms.card(ws, tid, 0, 200)
+        hidden = access.restricted_titles(ws)
+        lv = access.levels(ws)
+        lines_ = [x for x in c["lines"] if lv.get(x["doc_id"]) == "cloud"][:n]  # 0.11: example lines from cloud documents
+        access.record_passages(ws, [x["passage_id"] for x in lines_ if x.get("passage_id")], access.ROUTE_NAMES["chat"],
+                               "concept")
+        # 0.11: a wording is words of the documents: only wordings found in documents Claude may read are named
+        cloud_docs = {d for d, x in lv.items() if x == "cloud"}
+        named = terms.terms_in_docs(ws, [w["term_id"] for w in c["wordings"]] +
+                                    [x["term_id"] for x in c["related"]["links"]] +
+                                    [x["term_id"] for x in c["related"]["together"]], cloud_docs)
+        wordings = [w["label"] for w in c["wordings"] if w["term_id"] in named]
+        out = {"project": pname, "concept": wordings[0] if wordings and c["label"] not in wordings else
+               (c["label"] if c["label"] in wordings else name), "wordings": wordings, "mentions": c["mentions"],
+               "documents": [{"document": hidden.get(d.get("doc_id"), d["title"]), "mentions": d["mentions"],
+                              "first": d.get("first_location")} for d in c["documents"][:30]],
+               "lines": [{"document": x["title"], "where": x["location"], "text": f"{x['left']}[{x['node']}]{x['right']}"}
+                         for x in lines_],
+               "related": [{"concept": x["label"], "relation": x["relation"], "state": x["state"]}
+                           for x in c["related"]["links"] if x["term_id"] in named],
+               "mentioned_together": [{"concept": x["label"], "passages": x["together"], "lift": x["lift"]}
+                                      for x in c["related"]["together"] if x["term_id"] in named]}
+        if len(wordings) < len(c["wordings"]) or c["mentions"] > len(c["lines"]) and len(lines_) < len(c["lines"]):
+            out["restricted_note"] = ("Some of this concept's wordings and lines are in documents the user keeps on "
+                                      "this computer: counted, not shown.")
+        return out
 
     # ---- 0.8: the task queue (Claude Code's /enlens-run) ------------------------------------------
     @s.tool(description="What waits in a project's task queue for Claude Code: per kind of task, how many wait, are "

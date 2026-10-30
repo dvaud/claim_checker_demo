@@ -236,7 +236,14 @@ def status(refresh: bool = False) -> dict:
             out["version"] = text.splitlines()[0].strip() if text else ""
         code, text = _run([path, "auth", "status"], timeout=20)
         try:
-            out["signed_in"] = bool(json.loads(text[text.index("{"):]).get("loggedIn"))
+            auth = json.loads(text[text.index("{"):])
+            out["signed_in"] = bool(auth.get("loggedIn"))
+            # 0.11: the kind of plan, when Claude Code says it (for "What happens to the text Claude reads")
+            plan = str(auth.get("subscriptionType") or auth.get("subscription") or auth.get("plan") or "").lower()
+            out["account"] = ("personal" if plan in ("pro", "max", "free") else
+                              "commercial" if plan in ("team", "enterprise") else
+                              "commercial" if str(auth.get("authMethod") or "").lower() in ("api_key", "console") else "")
+            out["plan"] = plan
         except (ValueError, AttributeError):
             out["signed_in"] = None
         code, text = _run([path, "plugin", "list", "--json"], timeout=30)
@@ -287,11 +294,30 @@ _RUNS: dict[str, dict] = {}
 _RUNS_LOCK = threading.Lock()
 
 
+# 0.11: the built-in tools a headless run may not use. --allowedTools only pre-approves tools; read-only tools such as
+# Read and Grep need no approval inside the working folder, so the run is denied every tool that reads, writes or
+# fetches files or runs commands (deny rules hold for the helper agents too), and it starts in an empty folder
+# (`work_folder`), away from the projects' databases, which hold every document's text.
+DENIED_TOOLS = ("Bash", "BashOutput", "KillShell", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "NotebookRead",
+                "Glob", "Grep", "LS", "WebFetch", "WebSearch")
+
+
+def work_folder() -> Path:
+    """The empty folder a headless run starts in (anything found in it is removed first)."""
+    d = core.home() / "claude-runs" / "work"
+    if d.exists():
+        shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def run_args(project: str, claude: str = "") -> list[str]:
-    """The command that answers one project's queue headless, allowed only the ENLENS queue tools and the helpers."""
+    """The command that answers one project's queue headless, allowed only the ENLENS queue tools and the helpers, and
+    denied every built-in tool that reads files, runs commands or fetches pages."""
     tools = ["Agent"] + [TOOL_PREFIX + t for t in QUEUE_TOOLS]
     quoted = '"' + project.replace('"', "") + '"'
     return _cmd(claude or find_claude() or "claude") + ["-p", f"{SLASH} {quoted}", "--output-format", "text",
+                                                       "--disallowedTools", ",".join(DENIED_TOOLS),
                                                        "--allowedTools", *tools]
 
 
@@ -334,7 +360,7 @@ def start_run(project: str) -> dict:
     fh = open(log, "w", encoding="utf-8")
     kwargs = {"start_new_session": True} if os.name != "nt" else {
         "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
-    proc = subprocess.Popen(run_args(project, path), cwd=str(core.home()), stdout=fh, stderr=subprocess.STDOUT,
+    proc = subprocess.Popen(run_args(project, path), cwd=str(work_folder()), stdout=fh, stderr=subprocess.STDOUT,
                             stdin=subprocess.DEVNULL, **kwargs)
     fh.close()
     with _RUNS_LOCK:

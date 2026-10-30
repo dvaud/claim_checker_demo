@@ -20,7 +20,6 @@ Links are kept by term id (a hash of the term's stems), so they survive a rebuil
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import re
 from collections import Counter, defaultdict
@@ -943,11 +942,17 @@ def passage_term_counts(ws: Workspace) -> dict[str, Counter]:
 # ---------------------------------------------------------------------------------------------
 # link tasks (the model judges how two terms relate) and wordings proposed by the model
 # ---------------------------------------------------------------------------------------------
-def snippets(ws: Workspace, term: str, n: int = 3, width: int = 150) -> list[dict]:
-    """Up to n short passages where a term occurs, from different documents where possible."""
+def snippets(ws: Workspace, term: str, n: int = 3, width: int = 150, allowed: set[str] | None = None) -> list[dict]:
+    """Up to n short passages where a term occurs, from different documents where possible; with `allowed` (0.11),
+    only from documents of those AI settings."""
     rows = ws.query("SELECT m.passage_id, m.doc_id, m.start, m.end, p.text, p.start AS pstart, d.title FROM term_mentions m "
                     "JOIN passages p ON p.passage_id=m.passage_id JOIN documents d ON d.doc_id=m.doc_id "
                     "WHERE m.term_id=? ORDER BY m.doc_id, m.start", (term,))
+    if allowed is not None:
+        from . import access
+
+        lv = access.levels(ws, {r["doc_id"] for r in rows})
+        rows = [r for r in rows if lv.get(r["doc_id"]) in allowed]
     picked, docs = [], set()
     for r in rows:
         if r["doc_id"] in docs:
@@ -971,27 +976,32 @@ def snippets(ws: Workspace, term: str, n: int = 3, width: int = 150) -> list[dic
     return out
 
 
-def make_link_task(ws: Workspace, a: str, b: str, model: str) -> str:
-    """A `link` task for two terms (each with up to three passages where it occurs); returns its id."""
-    from .tasks import _insert_task
+def make_link_task(ws: Workspace, a: str, b: str, model: str, allowed: set[str] | None = None,
+                   local_reader: bool = False) -> str | None:
+    """A `link` task for two terms (each with up to three passages where it occurs); returns its id.
+
+    0.11: the passages come from documents of the `allowed` settings (those the reader may read; default: every
+    document an AI may read). When a term occurs only in documents the reader may not read, the pair is read by the
+    local model with those passages (`local_reader`), or not at all: returns None then (a term is words of the
+    documents, so its wording is not sent either)."""
+    from .tasks import replace_task
 
     a, b = sorted((a, b))
     info = {r["term_id"]: r["label"] for r in ws.query("SELECT term_id, label FROM terms WHERE term_id IN (?, ?)", (a, b))}
     if len(info) < 2:
         raise KeyError(a if a not in info else b)
-    payload = {"terms": [{"n": i, "term_id": t, "label": info[t], "snippets": snippets(ws, t)}
-                         for i, t in enumerate((a, b), 1)]}
+    allowed = set(allowed or {"cloud", "local"})
+    sn = {t: snippets(ws, t, allowed=allowed) for t in (a, b)}
+    if not all(sn.values()):
+        if not (local_reader and "local" not in allowed):
+            return None
+        sn = {t: snippets(ws, t, allowed=allowed | {"local"}) for t in (a, b)}  # read by the local model
+        if not all(sn.values()):
+            return None
+    payload = {"terms": [{"n": i, "term_id": t, "label": info[t], "snippets": sn[t]} for i, t in enumerate((a, b), 1)]}
     tid = f"link:{a}|{b}"
-    from .tasks import mark_queued, queue_mode
-
     with ws.connect() as cx:
-        if cx.execute("SELECT status FROM tasks WHERE task_id=?", (tid,)).fetchone():
-            cx.execute("UPDATE tasks SET status='pending', attempts=0, payload_json=?, model=? WHERE task_id=? "
-                       "AND status != 'done'", (json.dumps(payload, ensure_ascii=False), model, tid))
-            if queue_mode():
-                mark_queued(cx, [tid])
-        else:
-            _insert_task(cx, tid, "link", model, payload)
+        replace_task(cx, tid, "link", model, payload)
     return tid
 
 
@@ -1011,23 +1021,31 @@ def judge_links(ws: Workspace, pairs: list[tuple[str, str]], backend, model: str
     """Ask the model how each pair of terms relates (one `link` task per pair, quotes checked)."""
     from . import tasks
 
+    from . import access
+
     done = failed = 0
+    readers = access.Readers(backend, model)
     # every task first (0.8): with Claude Code they all wait in the queue at once, to be answered in batches
-    ids = [make_link_task(ws, a, b, model) for a, b in pairs]
+    made = [make_link_task(ws, a, b, model, readers.main_levels, readers.local_configured()) for a, b in pairs]
+    ids = [t for t in made if t]
+    kept = len(made) - len(ids)  # pairs whose terms occur only in documents no model here may read
     try:
         for i, tid in enumerate(ids, 1):
             if should_stop and should_stop():
                 break
             if progress:
                 progress(i, len(pairs))
-            ok, _errs = tasks.run_one(ws, tid, backend, model)
+            got = readers.for_task(ws, tid)
+            if got is None:
+                continue
+            ok, _errs = tasks.run_one(ws, tid, got[0], got[1])
             done += ok
             failed += not ok
         if getattr(getattr(backend, "router", None), "route", "") == "local":
             tasks.run_stepups(ws, backend, ["link"], should_stop)  # the stronger model once, after the small one
     finally:
         rebuild_concepts(ws)
-    return {"pairs": len(pairs), "judged": done, "failed": failed}
+    return {"pairs": len(pairs), "judged": done, "failed": failed, **({"restricted": kept} if kept else {})}
 
 
 def propose_wordings(ws: Workspace, term: str, backend, model: str) -> list[dict]:
@@ -1035,7 +1053,13 @@ def propose_wordings(ws: Workspace, term: str, backend, model: str) -> list[dict
     keep those the documents use."""
     from . import tasks
 
+    from . import access
+
     ids = concept_of(ws, term)
+    # 0.11: only wordings found in documents this model may read are sent
+    ids = sorted(terms_in_docs(ws, ids, access.allowed_docs(ws, access.backend_levels(backend))))
+    if not ids:
+        raise ValueError("This concept occurs only in documents this model may not read, so its wordings are not sent.")
     labels = [r[0] for r in ws.query(f"SELECT label FROM terms WHERE term_id IN ({','.join('?' * len(ids))}) "
                                      "ORDER BY tf DESC", ids)]
     n = int(ws.scalar("SELECT COUNT(*) FROM tasks WHERE kind='expand' AND task_id LIKE ?", (f"expand:concept:{term}:%",))
@@ -1046,6 +1070,16 @@ def propose_wordings(ws: Workspace, term: str, backend, model: str) -> list[dict
                                                        + (f" (also written: {', '.join(labels[1:6])})" if labels[1:] else "")})
     tasks.run_one(ws, tid, backend, model)
     return suggested_wordings(ws, term)
+
+
+def terms_in_docs(ws: Workspace, term_ids, docs) -> set[str]:
+    """The terms among these that occur in at least one of these documents (0.11)."""
+    ids, docs = list(term_ids), list(docs)
+    if not ids or not docs:
+        return set()
+    return {r[0] for r in ws.query(f"SELECT DISTINCT term_id FROM term_mentions WHERE term_id IN "
+                                   f"({','.join('?' * len(ids))}) AND doc_id IN ({','.join('?' * len(docs))})",
+                                   [*ids, *docs])}
 
 
 def stems_of(text: str) -> str:

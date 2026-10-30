@@ -7,6 +7,15 @@ import { ProgressPanel, MiniJob } from "./progress.js";
 
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
 const about = (p) => p.verdict !== null && p.verdict !== undefined;   // the judgement that counts says it is about the hypothesis
+// 0.11: who read an excerpt (its document's AI setting decides)
+const READ_BY = { claude: ["cloud", "Read by Claude", "read-claude"], local: ["house", "Read by the local model", "read-local"], ai: ["cpu", "Read by the AI", "read-ai"],
+  you: ["shield", "No AI read it", "read-you"], waiting: ["inbox", "Not read yet", "read-waiting"] };
+const READ_BY_ROUND = { claude: (n) => `Claude read ${n}`, local: (n) => `the local model read ${n}`, ai: (n) => `the AI read ${n}`, you: (n) => `${n} for your judgement`, waiting: (n) => `${n} not read yet` };
+function readByChip(p) {
+  const [ic, text, cls] = READ_BY[p.read_by] || READ_BY.ai;
+  const why = p.access === "none" ? "Its document is marked No AI." : p.access === "local" ? "Its document is marked Only a local AI." : "";
+  return h("span", { class: `read-by ${cls}`, title: why || text }, icon(ic, { size: 12 }), text);
+}
 const SCOPE_HELP = "The AI thinks this excerpt is about another group, place, setting or period than your hypothesis names, so it counts it as partly supporting at most. Read the excerpt and judge for yourself whether it applies.";
 const ONE_MODEL_NOTE = "Only one AI model is kept in memory at a time, so this takes a while: the main model is unloaded first, and the second one when it is done.";
 
@@ -154,7 +163,11 @@ export async function renderResult(view, [hypId], query) {
           r.batch_id ? [h("span", { class: "sep" }, "·"), h("a", { href: `#/history?batch=${encodeURIComponent(r.batch_id)}` }, "checked as part of a set")] : null),
         h("p", { class: "result-read" }, readSentence(allPassages, docsRead, total, single ? "this hypothesis" : "its parts")))));
 
-    if (r.status === "waiting") {
+    const onlyLocal = r.waiting_local && !parts.some((p) => (p.rounds_info || []).some((x) => x.waiting) || ["terms", "rank", "judge"].includes(p.stage));
+    if (r.status === "waiting" && onlyLocal) {
+      // 0.11: only the excerpts of documents marked Only a local AI wait (their notice is on each part)
+      box.appendChild(h("div", { class: "notice notice-info" }, icon("house"), h("p", {}, `${r.waiting_local} ${r.waiting_local === 1 ? "excerpt waits" : "excerpts wait"} for the local model; the answer counts the rest meanwhile. See “Read them now” below.`)));
+    } else if (r.status === "waiting") {
       // 0.8: a check by queue: Claude Code has not read (all of) it yet; the page looks again every few seconds
       box.appendChild(h("section", { class: "card", "aria-label": "Waiting for Claude Code" },
         queueNotice({ text: "This check waits in the queue for Claude Code", command: r.queue_command,
@@ -640,7 +653,9 @@ export async function renderResult(view, [hypId], query) {
   function partView(part, r, single) {
     const passages = part.passages || [];
     const judged = passages.filter(about);
-    const rest = passages.filter((p) => !about(p));
+    // 0.11: excerpts no model read (documents marked No AI, or Only a local AI without a local model) wait for you
+    const waitingYou = passages.filter((p) => !about(p) && (p.waiting_for_you || p.waiting_local));
+    const rest = passages.filter((p) => !about(p) && !waitingYou.includes(p));
     const counted = passages.filter((p) => p.counted).length;
     const card = h("section", { class: "card part-card", "aria-label": single ? "Evidence" : `Part ${part.part}` });
     card.id = `part-${part.part}`;
@@ -667,10 +682,17 @@ export async function renderResult(view, [hypId], query) {
       h("h3", {}, judged.length ? `${title}: ${judged.length} ${judged.length === 1 ? "excerpt is" : "excerpts are"} about ${what}` : `${title}: none of the ${passages.length} ${passages.length === 1 ? "excerpt" : "excerpts"} read is about ${what}`),
       h("span", { class: "muted small" }, judged.length ? [`${counted} ${counted === 1 ? "counts" : "count"} at `, h("a", { href: "#strictness", onClick: jumpTo("strictness") }, "your strictness"), rest.length ? `; ${rest.length} ${rest.length === 1 ? "excerpt was" : "excerpts were"} not about ${what} (listed at the bottom)` : "", ". The highlighted words are the exact quote, verified against the document."] : "")));
     card.appendChild(roundsBlock(part, r));
+    if (part.waiting_local) card.appendChild(readLocalNotice(part));
     if (evidenceView === "table") {
       card.appendChild(h("p", { class: "muted small table-note" }, icon("list-checks", { size: 13 }), ` The ${passages.length} ${passages.length === 1 ? "excerpt" : "excerpts"} read for ${what} ${passages.length === 1 ? "is" : "are"} in the table above; click a row to open it as a card.`));
     } else {
       if (judged.length) card.appendChild(h("div", { class: "ev-list" }, judged.map((p) => evidenceCard(p, part))));
+      const forYou = waitingYou.filter((p) => p.waiting_for_you);
+      if (forYou.length) {
+        card.appendChild(h("div", { class: "evidence-head" }, h("h3", {}, `Waiting for your judgement: ${forYou.length} ${forYou.length === 1 ? "excerpt" : "excerpts"}`),
+          h("span", { class: "muted small" }, "No AI read these: they come from documents marked No AI, or Only a local AI without a local model. Your judgement counts like any other.")));
+        card.appendChild(h("div", { class: "ev-list" }, forYou.map((p) => evidenceCard(p, part))));
+      }
       if (rest.length) {
         card.appendChild(fold(`rest:${part.claim_id}`, { class: "fold also-read" }, h("summary", {}, `Excerpts read that were not about ${what} (${rest.length})`),
           h("p", { class: "muted small", style: { margin: "4px 0 0" } }, "Judged as not about it, by the AI or by you. They are listed so you can check the search, and you can judge them yourself."),
@@ -739,12 +761,32 @@ export async function renderResult(view, [hypId], query) {
         h("div", { class: "round-head" }, h("strong", {}, rounds.length > 1 ? `Search ${rd.round}` : "Search"), isNew ? h("span", { class: "badge status-supported new-badge" }, "new") : null,
           h("span", { class: "muted" }, ` · ${rd.passages} ${rd.passages === 1 ? "excerpt" : "excerpts"} read`),
           terms.length ? h("span", { class: "muted" }, " · also searched for: ", terms.map((t) => h("span", { class: "term" }, t))) : h("span", { class: "muted" }, " · searched with the words of the hypothesis")),
+        (rd.parts || []).length > 1 ? h("div", { class: "muted small round-readers" }, icon("shield", { size: 12 }), " ", rd.parts.map((x) => READ_BY_ROUND[x.read_by] ? READ_BY_ROUND[x.read_by](x.passages) : `${x.passages}`).join(" · ")) : null,
         rd.ai_note ? h("div", { class: "ai-note" }, icon("quote", { size: 13 }), h("span", {}, h("span", { class: "muted" }, corrected ? `The AI's note when it read these ${rd.passages} excerpts (before your corrections): ` : `The AI's own note on these ${rd.passages} excerpts: `), rd.ai_note)) : null,
         strongerLine(rd)));
     }
     const tried = triedTerms.get(part.claim_id) || [];
     if (tried.length) box.appendChild(h("div", { class: "round-row round-tried" }, h("div", { class: "round-head" }, h("strong", {}, "You also tried"), h("span", { class: "muted" }, ": ", tried.map((t) => h("span", { class: "term" }, t)), ". Nothing new was found."))));
     return box;
+  }
+
+  // 0.11: excerpts that wait for the local model (a check made in a Claude chat, or while the app was closed)
+  function readLocalNotice(part) {
+    const btn = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("house", { size: 13 }), "Read them now on this computer");
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const r = await api("POST", `/api/projects/${P(project)}/hypotheses/${P(current.hyp_id)}/read-local`, {});
+        const w = watchJob(r.job.id, () => {});
+        watchers.push(w);
+        const job = await w.promise;
+        if (job.state === "error") showError({ message: job.error, kind: job.error_kind });
+        load();
+      } catch (e) { showError(e); btn.disabled = false; }
+    });
+    return h("div", { class: "notice notice-info wait-local" }, icon("house"), h("div", { class: "grow" },
+      h("p", {}, `${part.waiting_local} ${part.waiting_local === 1 ? "excerpt comes" : "excerpts come"} from documents marked Only a local AI and ${part.waiting_local === 1 ? "waits" : "wait"} for the local model.`),
+      h("div", { class: "btn-row" }, btn, h("span", { class: "muted small" }, "Without a local model (Settings → AI) they wait for your judgement."))));
   }
 
   // 0.8: "Ask a stronger model" on one search round (the excerpts the AI read together), once
@@ -783,16 +825,21 @@ export async function renderResult(view, [hypId], query) {
     const top = h("div", { class: "ev-top" });
     if (yours && p.changed) {
       append(top, [gradeBadge(p.verdict, false), h("span", { class: "chip chip-yours" }, icon("note", { size: 12 }), "your judgement"),
-        h("span", { class: "muted small" }, p.ai_verdict ? `AI said: ${GRADE_TEXT[p.ai_verdict]}${p.certainty ? ` (certainty ${p.certainty}${pct ? `, ${Math.round(p.confidence * 100)}%` : ""})` : ""}` : "AI said: not about this")]);
+        p.read_by === "you" ? null : h("span", { class: "muted small" }, p.ai_verdict ? `AI said: ${GRADE_TEXT[p.ai_verdict]}${p.certainty ? ` (certainty ${p.certainty}${pct ? `, ${Math.round(p.confidence * 100)}%` : ""})` : ""}` : "AI said: not about this")]);
     } else if (yours) {
       append(top, [gradeBadge(p.verdict, false), h("span", { class: "chip chip-yours" }, icon("check", { size: 12 }), "you agreed with the AI"),
         p.certainty ? h("span", { class: "muted small" }, `AI certainty: ${p.certainty}${pct}`) : null]);
+    } else if (p.waiting_for_you) {
+      append(top, [h("span", { class: "chip chip-wait-you" }, icon("shield", { size: 12 }), "Waiting for your judgement")]);
     } else {
       append(top, [gradeBadge(p.verdict, false)]);
       if (p.verdict && p.certainty) append(top, [h("span", { class: `cert cert-${p.certainty}`, title: certaintyHelp(p) }, icon(p.certainty === "high" ? "circle-check" : p.certainty === "medium" ? "circle-half" : "circle-dashed", { size: 12 }), `AI certainty: ${p.certainty}${pct}`)]);
+      else if (!p.verdict && p.waiting_local) append(top, [h("span", { class: "muted small" }, "Waiting for the local model")]);
       else if (!p.verdict) append(top, [h("span", { class: "muted small" }, "AI: not about this hypothesis (it gives no certainty for this)")]);
       if (p.user_note) append(top, [h("span", { class: "chip chip-yours", title: "You wrote a comment on this excerpt but have not judged it: the AI's judgement still counts" }, icon("note", { size: 12 }), "your comment (not a judgement)")]);
     }
+    if (p.waiting_for_you) append(top, [h("span", { class: "muted small" }, p.access === "none" ? "Its document is marked No AI: judge it yourself below." : "Its document is marked Only a local AI and no local model is chosen: judge it yourself below.")]);
+    else if (p.read_by) append(top, [readByChip(p)]);
     if (p.verdict && p.counted) append(top, [h("span", { class: "chip chip-counted", title: "This judgement is counted in the answer" }, icon("check", { size: 12 }), "counts")]);
     else if (p.verdict && !p.counted) append(top, [h("span", { class: "chip chip-weak", title: certaintyHelp(p) }, icon("alert-triangle", { size: 12 }), "not counted: the AI was less sure than your strictness")]);
     if (p.scope_note) {
@@ -888,7 +935,7 @@ export async function renderResult(view, [hypId], query) {
     }
     const rereadBtn = h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: [...running.values()].some((x) => x.kind === "reread" && x.passage_id === p.passage_id) }, icon("refresh", { size: 13 }), "Ask the AI to read this again");
     rereadBtn.addEventListener("click", () => rereadDialog(p, part, rereadBtn));
-    foot.appendChild(rereadBtn);
+    if (p.read_by !== "you") foot.appendChild(rereadBtn);   // 0.11: no model may read it
     foot.appendChild(h("span", { class: "spacer" }));
     const sec = p.second;
     foot.appendChild(fold(`tech:${p.passage_id}`, { class: "fold ev-tech" }, h("summary", {}, "Technical details"),
@@ -1047,11 +1094,15 @@ export async function renderResult(view, [hypId], query) {
     const aiVerdict = p.ai_verdict || "not_relevant";
     const current = p.user_verdict || "";
     const row = h("div", { class: "judge-row" });
-    if (p.changed) {
+    if (p.read_by === "you" && p.user_verdict) {
+      row.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => put(null, p.user_note || "", "Your judgement was removed: the excerpt waits for it again.") }, icon("x", { size: 13 }), "Remove your judgement"));
+    } else if (p.changed) {
       row.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => {
         const ok = await confirmDialog({ title: "Go back to the AI's judgement?", message: `Your judgement (${current === "not_relevant" ? "Not about this" : GRADE_TEXT[current]}) is replaced by the AI's (${p.ai_verdict ? GRADE_TEXT[p.ai_verdict] : "not about this"}).${p.user_note ? " Your comment stays." : ""}`, confirmText: "Go back to the AI's", danger: false });
         if (ok) put(null, p.user_note || "", "Back to the AI's judgement.");   // the comment is sent along, so it is kept
       } }, icon("refresh", { size: 13 }), "Go back to the AI's judgement"));
+    } else if (p.read_by === "you") {
+      // 0.11: no AI read it, so there is nothing to agree with: the person's own judgement is open at once
     } else {
       const agreed = p.reviewed && !p.changed;
       const pendHere = pendingQuote.get(pendingKey(p, part));
@@ -1060,7 +1111,7 @@ export async function renderResult(view, [hypId], query) {
         h("span", { class: "muted small" }, agreed ? "" : pendHere ? "Agreeing saves your sentence with the AI's judgement as yours." : p.ai_verdict ? "Agreeing makes it your judgement: it then counts in the answer, whatever the AI's certainty." : "Agreeing records that you checked it: it stays out of the answer.")));
     }
     const det = fold(`judge:${part.claim_id}:${p.passage_id}`, { class: "fold judge-diff" });
-    if (pendingQuote.get(pendingKey(p, part))) det.open = true;   // the options are needed now
+    if (pendingQuote.get(pendingKey(p, part)) || (p.read_by === "you" && !p.user_verdict)) det.open = true;   // the options are needed now
     const name = `jv-${part.claim_id}-${p.passage_id}`.replace(/[^a-z0-9_-]/gi, "_");   // one group per card: the same excerpt can sit in two parts
     const opts = USER_VERDICTS.map(([val, label]) => {
       const input = h("input", { type: "radio", name, value: val });
@@ -1075,7 +1126,7 @@ export async function renderResult(view, [hypId], query) {
     // a comment alone is not a judgement: it is sent with verdict null and the AI's judgement keeps counting
     const saveNote = h("button", { class: "btn btn-sm", type: "button", onClick: () => put(current || null, note.value.trim(), current ? "Comment saved." : "Comment saved. It is not a judgement: the AI's judgement still counts.") }, "Save comment");
     note.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveNote.click(); } });
-    det.append(h("summary", {}, icon("note", { size: 13 }), p.changed ? `Your judgement: ${current === "not_relevant" ? "Not about this" : GRADE_TEXT[current]} · change` : "Judge it differently"),
+    det.append(h("summary", {}, icon("note", { size: 13 }), p.changed ? `Your judgement: ${current === "not_relevant" ? "Not about this" : GRADE_TEXT[current]} · change` : p.read_by === "you" ? "Your judgement" : "Judge it differently"),
       h("div", { class: "judge-body" },
         pendNow ? h("p", { class: "pending-hint" }, icon("arrow-right", { size: 13 }), " Now choose your judgement for this sentence:") : null,
         h("div", { class: "judge-opts", role: "radiogroup", "aria-label": "Your judgement (saved when you pick one)" }, opts),

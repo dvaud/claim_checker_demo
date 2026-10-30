@@ -18,6 +18,11 @@ and reviews stay on your computer: only the passages inside the AI's tasks are s
 computer (Ollama, LM Studio…) and a shared installation on the Claude API remain available, and whoever installs it
 can switch everything off the computer off for good (`--local-only`).
 
+**Per-document AI settings (0.11).** One project can mix documents Claude may read with documents that must stay on
+the computer. Each document is *Claude may read it*, *Only a local AI* or *No AI*; the code makes it impossible for a
+restricted document's text to reach Claude, in any feature, and the Documents page shows how much of every other
+document Claude has read.
+
 The app is written for researchers who do not program: plain language on every working screen; each feature says
 what it does and whether it uses the AI; technical details are kept under *Technical details* and
 *Settings → Technical*. It grew out of the Cross-Doc SDG Explorer and the ENLENS green hydrogen pilot (a Value Chain
@@ -170,9 +175,13 @@ see docs/MODEL_CHOICE.md) set them.
 ## Privacy
 
 - Claude Code (the default from 0.9) runs on your own Claude plan. ENLENS never sees its login: Claude Code uses its
-  own. Started from the app, it may use only the four ENLENS queue tools and its helpers (`--allowedTools`), and
-  only the passages inside the tasks it takes are sent to Anthropic. Stop it at any time; what it had taken waits
-  again.
+  own. Started from the app, it may use only the four ENLENS queue tools and its helpers (`--allowedTools`), is
+  denied its own file, shell and web tools (`--disallowedTools`, 0.11) and starts in an empty folder; only the
+  passages inside the tasks it takes are sent to Anthropic. Stop it at any time; what it had taken waits again.
+- Documents marked *Only a local AI* or *No AI* (0.11) are never sent to Claude: every task is labelled with the most
+  restricted setting of the documents it names and refused before a model it does not allow is asked; the queue
+  hands Claude Code only what Claude may read; the connector gives Claude counts instead of their text. Every passage
+  that does go to Claude is recorded (*Sent to Claude* on the Documents page, a CSV under *Settings → Technical*).
 - A model on this computer keeps every word on it. The Claude API is available only after *Allow cloud models* is
   switched on (or `--backend anthropic` on the command line). `--local-only` hides both cloud options for good.
 - The app is a small standard-library server on 127.0.0.1 with a per-run token; the page loads nothing from the
@@ -197,6 +206,7 @@ see docs/MODEL_CHOICE.md) set them.
 | `frameworks.py`, `taxonomy.py` | Optional codebooks (SDG targets bundled, custom CSVs) |
 | `llm.py` | Ollama, OpenAI-compatible local servers (LM Studio, llama.cpp…), server detection, Claude API, offline baseline |
 | `tasks.py`, `schema.py`, `prompts.py` | Model tasks, validation with the quote check, versioned prompts |
+| `access.py` | Who may read each document with AI (0.11): the settings, the guard on every task, which model reads what, the ledger of what was sent to Claude, the cap |
 | `ingest.py`, `textutil.py`, `store.py` | Documents and passages with page offsets, layout (paragraphs, headings), local OCR, text normalisation, the workspace database |
 | `bundle.py` | A whole project as one zip (export and import); every project and the settings, to move to another computer (0.10) |
 | `installation.py`, `update.py` | How this copy was installed (git copy, the one-line install, a package, pip) and `enlens post-install`; `enlens update` for each (0.10) |

@@ -18,7 +18,7 @@ from typing import Any, Iterable
 
 from pydantic import ValidationError
 
-from . import prompts
+from . import access, prompts
 from .retrieve import BM25, H2_RE
 from .schema import (CheckOut, DecomposeOut, ExpandOut, ExtractOut, ImpactClaimOut, InteractionOut, SplitOut,
                      VerifyOut, VerifySetOut)
@@ -61,26 +61,57 @@ def queue_mode() -> bool:
 
 
 def mark_queued(cx, task_ids: Iterable[str]) -> int:
-    """Hand these tasks to the queue (no change for tasks already in it)."""
+    """Hand these tasks to the queue (no change for tasks already in it). 0.11: only tasks whose documents Claude
+    may read (`access` cloud) ever enter it."""
     n = 0
     for tid in task_ids:
         n += cx.execute("UPDATE tasks SET queued=1, queued_at=COALESCE(queued_at, ?) WHERE task_id=? AND "
-                        "COALESCE(queued, 0)=0", (now(), tid)).rowcount
+                        "COALESCE(queued, 0)=0 AND COALESCE(access, 'cloud')='cloud'", (now(), tid)).rowcount
     return n
 
 
 def _insert_task(cx, task_id: str, kind: str, model: str, payload: dict) -> bool:
+    """Create a task (no change when it exists). 0.11: every task is labelled with the most restricted setting of the
+    documents its payload names (`tasks.access`, see access.py); only `cloud` tasks are handed to the queue."""
     if cx.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone():
         if queue_mode():  # an existing task asked for again (a stopped run started anew): into the queue
             cx.execute("UPDATE tasks SET queued=1, queued_at=COALESCE(queued_at, ?) WHERE task_id=? AND status IN "
-                       "('pending', 'retry')", (now(), task_id))
+                       "('pending', 'retry') AND COALESCE(access, 'cloud')='cloud'", (now(), task_id))
         return False
-    q = queue_mode()
+    level = access.label_payload(cx, payload)
+    q = queue_mode() and level == "cloud"
     cx.execute("INSERT INTO tasks(task_id, kind, model, prompt_version, payload_json, status, attempts, created_at, "
-               "queued, queued_at) VALUES (?,?,?,?,?,?,0,?,?,?)",
+               "queued, queued_at, access) VALUES (?,?,?,?,?,?,0,?,?,?,?)",
                (task_id, kind, model, prompts.VERSIONS[kind], json.dumps(payload, ensure_ascii=False), "pending", now(),
-                int(q), now() if q else None))
+                int(q), now() if q else None, level))
     return True
+
+
+def replace_task(cx, task_id: str, kind: str, model: str, payload: dict) -> bool:
+    """Create a task, or give a task not answered yet this payload (and the setting that goes with it): a feature
+    that chose its passages again for another reader (0.11). An answered task is left as it is."""
+    row = cx.execute("SELECT status FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+    if row is None:
+        return _insert_task(cx, task_id, kind, model, payload)
+    if row[0] == "done":
+        return False
+    level = access.label_payload(cx, payload)
+    cx.execute("UPDATE tasks SET payload_json=?, model=?, access=?, status='pending', attempts=0 WHERE task_id=?",
+               (json.dumps(payload, ensure_ascii=False), model, level, task_id))
+    if level != "cloud":
+        cx.execute("UPDATE tasks SET queued=0, queued_at=NULL, claimed_by=NULL WHERE task_id=?", (task_id,))
+    elif queue_mode():
+        mark_queued(cx, [task_id])
+    return True
+
+
+def _send(ws: Workspace, t, backend) -> None:
+    """Before a backend is asked: the guard (0.11), and the ledger when the text leaves this computer."""
+    access.require(backend, t)
+    if access.is_cloud(backend) and getattr(backend, "name", "") != "claude_code":
+        with ws.connect() as cx:
+            access.record_sent(cx, t["task_id"], json.loads(t["payload_json"]),
+                               access.ROUTE_NAMES.get(backend.name, backend.name), t["kind"])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -178,7 +209,7 @@ def make_verify_vca(ws: Workspace, model: str | None = None, k: int | None = Non
     """
     model = model or ws.config["models"]["verify"]
     k = k or int(ws.config["thresholds"]["verify_top_k"])
-    made, missing = 0, 0
+    made, missing, no_ai = 0, 0, 0
     tdesc = targets()
     vcs = ws.query("SELECT * FROM vca_claims ORDER BY target, seq")
     all_docs = [r["doc_id"] for r in ws.query("SELECT doc_id FROM documents")]
@@ -219,13 +250,27 @@ def make_verify_vca(ws: Workspace, model: str | None = None, k: int | None = Non
             tid = f"verify_set:{vc['vca_claim_id']}"
             ids = sorted(p["passage_id"] for p in payload["passages"])
             earlier = cx.execute("SELECT task_id, payload_json FROM tasks WHERE kind='verify_set' AND (task_id=? OR task_id LIKE ?) "
-                                 "AND task_id NOT LIKE '%:audit:%'", (tid, tid + ":set:%")).fetchall()
-            if any(sorted(x["passage_id"] for x in json.loads(r["payload_json"])["passages"]) == ids for r in earlier):
+                                 "AND task_id NOT LIKE '%:audit:%'", (tid, tid + ":%")).fetchall()
+            sets: dict[str, list[str]] = {}
+            for r in earlier:  # 0.11: a set split by AI setting is one set (its cloud part and its `:local` part)
+                b = r["task_id"][:-6] if r["task_id"].endswith(":local") else r["task_id"]
+                sets.setdefault(b, []).extend(x["passage_id"] for x in json.loads(r["payload_json"])["passages"])
+            if any(sorted(v) == ids for v in sets.values()):
                 continue
             if earlier:
                 tid = f"{tid}:set:{_h(*ids)}"
-            made += _insert_task(cx, tid, "verify_set", model, payload)
-    return {"tasks": made, "vca_claims_without_sources": missing}
+            # 0.11: split like a check's round: what Claude may read, what only a local AI may read; passages of
+            # documents marked No AI are left out (the SDG pack has no person's judgement of a single passage)
+            lv = access.levels(cx, [p["doc_id"] for p in payload["passages"]])
+            total = len(payload["passages"])
+            for suffix, keep in (("", "cloud"), (":local", "local")):
+                ps = [p for p in payload["passages"] if lv.get(p["doc_id"]) == keep]
+                if not ps:
+                    continue
+                part = {**payload, "passages": ps, **({"read_elsewhere": total - len(ps)} if len(ps) < total else {})}
+                made += _insert_task(cx, tid + suffix, "verify_set", model, part)
+            no_ai += sum(1 for p in payload["passages"] if lv.get(p["doc_id"]) == "none")
+    return {"tasks": made, "vca_claims_without_sources": missing, **({"passages_no_ai": no_ai} if no_ai else {})}
 
 
 def make_verify_claims(ws: Workspace, model: str | None = None, sample: float = 1.0, seed: int = 0) -> int:
@@ -807,6 +852,7 @@ def _store_link(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
             continue
         qa = next((find_quote(sn["text"], r.quote_a) for sn in terms[r.a]["snippets"] if find_quote(sn["text"], r.quote_a)), None)
         qb = next((find_quote(sn["text"], r.quote_b) for sn in terms[r.b]["snippets"] if find_quote(sn["text"], r.quote_b)), None)
+
         if not qa:
             errors.append(f"relations[{i}]: quote_a not found in the passages of term {r.a}: {r.quote_a[:80]!r}")
         if not qb:
@@ -933,6 +979,9 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
     if getattr(backend, "name", "") == "claude_code":
         from .taskqueue import wait_for
 
+        t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))
+        if t:
+            access.require(backend, t[0])  # a task the queue would never hand out must not be waited for
         return wait_for(ws, task_id, backend)
     errors: list[str] = []
     for _ in range(MAX_ATTEMPTS + 1):
@@ -946,6 +995,7 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
             break
         system, user = render(ws, t)
         call = model_for(t, backend, model)
+        _send(ws, t, backend)
         raw = backend.complete(t["kind"], system, user, call, json.loads(t["payload_json"]))
         used = "baseline" if getattr(backend, "name", "") == "baseline" else call
         was_again = t["status"] == "done"
@@ -1005,6 +1055,7 @@ def answer_again(ws: Workspace, task_id: str, backend) -> bool:
     if getattr(backend, "name", "") == "claude_code":
         from .taskqueue import wait_for
 
+        access.require(backend, ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0])
         wait_for(ws, task_id, backend)
         return int(ws.scalar("SELECT step FROM tasks WHERE task_id=?", (task_id,)) or 0) == 1 and \
             bool(ws.scalar("SELECT valid FROM results WHERE task_id=? ORDER BY attempt DESC LIMIT 1", (task_id,)))
@@ -1014,6 +1065,7 @@ def answer_again(ws: Workspace, task_id: str, backend) -> bool:
             return False
         system, user = render(ws, t)
         call = model_for(t, backend)
+        _send(ws, t, backend)
         raw = backend.complete(t["kind"], system, user, call, json.loads(t["payload_json"]))
         ok, _e = ingest_result(ws, task_id, raw, model=call, provenance=_provenance(backend, call),
                                route=_route_name(backend))
@@ -1058,8 +1110,11 @@ def run(ws: Workspace, kind: str, backend, limit: int | None = None, model: str 
         if not todo:
             break
         for t in todo:
+            if (t["access"] or "cloud") not in access.backend_levels(backend):
+                continue  # 0.11: a task of a restricted document is left for a model that may read it
             system, user = render(ws, t)
             payload = json.loads(t["payload_json"])
+            _send(ws, t, backend)
             raw = backend.complete(kind, system, user, model or t["model"], payload)
             used = "baseline" if backend.name == "baseline" else (model or t["model"])
             ingest_result(ws, t["task_id"], raw, model=used, provenance=_provenance(backend, used))
@@ -1087,7 +1142,10 @@ You are answering model tasks for the ENLENS claims pipeline.
 
 def export(ws: Workspace, kind: str, batch_size: int = 25, limit: int | None = None) -> list[Path]:
     _sync_thresholds(ws)
-    todo = pending(ws, kind, limit)
+    # 0.11: the file queue hands tasks to a worker outside this program, so only tasks whose documents Claude may
+    # read are written; the others stay pending for a local model or a person
+    todo = [t for t in pending(ws, kind) if (t["access"] or "cloud") == "cloud"]
+    todo = todo[:limit] if limit else todo
     out_dir = ws.root / "tasks" / kind
     out_dir.mkdir(parents=True, exist_ok=True)
     (ws.root / "results" / kind).mkdir(parents=True, exist_ok=True)
@@ -1106,6 +1164,7 @@ def export(ws: Workspace, kind: str, batch_size: int = 25, limit: int | None = N
     with ws.connect() as cx:
         for t in todo:
             cx.execute("UPDATE tasks SET status='exported' WHERE task_id=?", (t["task_id"],))
+            access.record_sent(cx, t["task_id"], json.loads(t["payload_json"]), "file queue", t["kind"])
     return files
 
 

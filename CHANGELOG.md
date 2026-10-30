@@ -1,5 +1,159 @@
 # Changelog
 
+## 0.11.0 (October 2026): per-document AI settings
+
+Until now the choice was all or nothing: `local_only()` switched cloud models off for a whole installation and a
+project ran on one route, so a single licensed PDF or interview transcript forced the whole project onto a local
+model. 0.11 lets one project mix documents Claude may read with documents that must stay on the computer, and the
+code makes it impossible for a restricted document's text to reach a cloud model. The promise, in the app's words:
+*Documents you mark as local stay on this computer. ENLENS never sends their text to Claude, in any feature, and
+shows you how much of every other document it has sent.* Every model answer still goes through the quote check, a
+person can overrule it, every result records how it was made, and `local_only()` is honoured everywhere.
+
+**Three settings per document** (`documents.ai_access`; NULL: the project's default, `ai_access_default` in the
+project's config): *Claude may read it* (`cloud`), *Only a local AI* (`local`: a model server on this computer, or a
+person) and *No AI* (`none`: a person only; Search, the keyword Profile, Concepts and Themes still work).
+- *Adding documents* asks *Who may read these documents with AI?*, one answer for everything added at once. A new
+  project asks with nothing preselected; its first answer becomes the default, which is preselected afterwards.
+- The Documents page has a column *AI* with a dropdown per document, a checkbox per row to change several together,
+  and a note per document (*Why*, e.g. "publisher licence"), kept and exported with the project; it changes nothing.
+- `manifest.csv` may have `ai_access` and `ai_note` columns (per file, for large corpora; a wrong value is reported).
+- The connector's `create_project` and `add_sources` take `ai_access`.
+- A `--local-only` installation defaults to *Only a local AI* and does not offer Claude.
+
+**Enforcement: one guard where tasks are made and run** (new module `access.py`), never an instruction in a prompt.
+- `tasks._insert_task` (every task of every feature passes through it) walks the payload for `passage_id` and
+  `doc_id` at any depth and stores the most restricted setting in the new column `tasks.access`. A task without
+  document text (search words, parts of a hypothesis) is `cloud`; passages of a removed document count as `none`.
+- `tasks.run_one` (and `answer_again`, the old `run`, the label comparison, the model test) refuses, before any model
+  is asked, a `local` task on a route that leaves the computer and a `none` task on any route (`AccessError`). A model
+  server counts as on this computer only at a loopback address (localhost, 127.x, ::1): one on another machine is
+  treated like Claude. With Claude Code, a task the queue would never hand out is refused instead of waited for.
+- The queue only ever holds and hands out `cloud` tasks (`mark_queued`, `next_tasks`, `status` and the sidebar count
+  check `access` too), so Claude Code never sees the rest. The file queue (`enlens export`) writes only `cloud` tasks.
+- Changing a setting applies to every task not answered yet (`access.relabel`); a queued task that is no longer
+  `cloud` leaves the queue. What Claude already read stays in the results and the ledger.
+- Search by meaning: an embedding server on another computer is not given restricted passages (they are found by
+  their words; the status no longer counts them as missing).
+- The guard is the backstop: features split their work themselves (below), and a feature that forgets fails loudly
+  (`tests/test_0110_no_leak.py` proved it by switching the split off: the guard stopped the first task).
+
+**Mixed processing, feature by feature.** Finding passages is unchanged, so restricted documents still compete for
+every check on equal terms; only the reading is split.
+- *Checking a hypothesis* (one check, several, a further round, documents added since, a check by queue, a check in a
+  Claude chat): a round's excerpts are split into the part the main model may read (`check:<id>`, `…:r<n>`), the
+  local part (`…:local`, read by the local model for restricted documents) and the person's part (`…:person`, no
+  model: its excerpts are stored as *Waiting for your judgement*). The round is shown as one; each excerpt says who
+  read it (Claude, the local model, or you), from the provenance already recorded. The overall answer counts every
+  excerpt; a model is told how many excerpts of the round it is not shown, so its note speaks only for its own.
+  With a main model on this computer, cloud and local excerpts are read together (no split needed).
+- A local part whose local model is not chosen, or cannot be reached, waits for a person instead, and the progress
+  says so. A check by queue reads its local part in the app while the app follows it; a check made in a Claude chat
+  (or while the app was closed) shows *N excerpts wait for the local model · Read them now on this computer* on its
+  result (`POST …/hypotheses/<id>/read-local`).
+- Excerpts waiting for you are listed under *Waiting for your judgement* (no longer among "not about this"), with
+  the judging options open; they have no *Agree with the AI* and no *Ask the AI to read this again*.
+- *Second opinion* and *Read again* follow the excerpt's document: a second opinion on a local excerpt only from a
+  second model on this computer; reading again a *No AI* excerpt is refused (409) with a plain message.
+- *Profile's AI pass*: each passage goes to its document's reader; *All passages* of a local document run locally, of
+  a *No AI* document are skipped (`skipped_restricted`). The setting is looked at again before each passage, so a cap
+  reached meanwhile takes effect.
+- *Theme names*: representatives from documents the reader may read (topped up from the theme's other passages);
+  a theme whose passages are all restricted is named by the local model or keeps its key terms. Key terms sent are
+  only words found in the passages sent.
+- *Concept links*: snippets from documents the reader may read. A term found only in restricted documents is linked
+  by the local model, or not at all. The roadmap allowed "from its labels alone", but a term's label is words of the
+  documents, so 0.11 does not send it; *Propose wordings* likewise sends only wordings found in documents Claude may
+  read.
+- *References*: follow the document; a *No AI* document is refused with a plain message.
+- *The SDG pack*: `extract` and `verify` follow their passages; `verify_set` splits like a check (`…:local`), and
+  passages of *No AI* documents are left out (the pack has no person's judgement of a single passage).
+- *Hypothesis parts and search words*: no document text, unchanged.
+
+**The Claude Code run and the connector.**
+- The headless run started from the app is denied Claude Code's own tools that read or write files, run commands or
+  fetch pages (`--disallowedTools Bash,Read,Grep,Glob,Write,Edit,WebFetch,…`, which holds for the helper agents too;
+  `--allowedTools` only pre-approves) and starts in an empty folder (`~/enlens/claude-runs/work/`, emptied first),
+  away from the projects' databases, which hold every document's full text.
+- The connector's tools filter restricted documents: `search_corpus` gives lines from documents Claude may read and
+  the other hits as `restricted_hits`; `find_concept` example lines and wordings only from them; `document_profile` a
+  restricted document's codes, shares and pages without quotes; `start_check` and `more_passages` only the excerpts
+  Claude may read, the others counted (`restricted_passages`) and left to the local model or the user; `get_check`
+  quotes only from documents Claude may read, restricted evidence as counts and verdicts; `list_documents` each
+  document's setting, and the title of a *No AI* document as *Restricted document 3*. The queue tools are covered by
+  the guard.
+
+**The ledger of what was sent, and a cap per document.**
+- New table `ai_sent(passage_id, doc_id, route, task_id, sent_at, feature)`: one row per passage (and per passage
+  shown before it as context) at the moment it leaves: before a Claude API call, when Claude Code takes a batch,
+  when a Claude chat is shown excerpts or lines through the connector, when the file queue writes a batch. Local and
+  person reading write nothing.
+- The Documents page column *Sent to Claude* shows the share of each document's text in distinct passages sent;
+  clicking it lists the passages with feature, route and date. *Settings → Technical → What was sent to Claude*
+  downloads the list as CSV (`GET …/ai-sent.csv`), for records such as a data management plan.
+- The cap (the roadmap's stretch goal; shipped because the ledger landed cleanly): *Claude may read at most N %* per
+  document (`documents.ai_budget`). Once reached, its further passages count as *Only a local AI* for new tasks and
+  *All passages* of the Profile is not sent for it. It is checked when tasks are made.
+
+**Your Claude account.** *Set up Claude* and *Settings → AI* (Claude API) show *What happens to the text Claude
+reads*: the account kind when `claude auth status` reports a plan, otherwise a choice (*Pro or Max*, *Team, Enterprise
+or the Claude API*, setting `account_type`). Personal plans: consumer terms; training when the model-improvement
+setting is on (5 years' retention, 30 days when off), with a link to turn it off. Commercial: no training, 30 days.
+EU-only: mark those documents *Only a local AI*. The panel cites Anthropic's Claude Code data-usage page and the date
+its wording was checked (30 October 2026); ENLENS decides nothing there. *Settings → AI* also gets *Local model for
+restricted documents* (`restricted_server`, `restricted_model`; a model of a server on this computer, or none).
+
+**Upgrading.** A normal commit on `main`; `enlens update` and a reopen are enough, no new venv. Migrations add
+`documents.ai_access`, `ai_note`, `ai_budget`, `tasks.access` and `ai_sent`. A project made before 0.11, on its first
+open: its default becomes *Claude may read it* (`local` on a `--local-only` installation), so nothing changes silently;
+the tasks not answered yet get their setting (a queued one no longer `cloud` leaves the queue); answers given on a
+Claude route (from their recorded provenance) enter the ledger with the time of the answer, and the column says
+"since 0.11, plus earlier results ENLENS recorded"; the Documents page shows a one-time banner, *New in 0.11: choose
+which documents Claude may read*. Project zips (export, import, *Move ENLENS to another computer*) carry each
+document's setting and note; importing a zip made before 0.11 asks the question once for all its documents.
+
+**Answers to the roadmap's open questions.**
+- The account kind: read from `claude auth status` when it reports a plan (`subscriptionType`, `subscription` or
+  `plan`), else the person picks; the field names are not confirmed against a real Claude Code (below).
+- The tool restriction: `--disallowedTools` (present in Claude Code for long) rather than `--tools` (newer), so an
+  older Claude Code does not refuse to start; not tried against a real one (below).
+- *Only a local AI* without a local model: neither silent nor a question at check time. The excerpts wait for your
+  judgement, the progress line and the result say so, and *Settings → AI* is where a local model is chosen.
+- The cap: shipped in 0.11 (above).
+- Titles of *No AI* documents are hidden where Claude would see them (the connector). The app's own exports (Excel,
+  project zips) keep them: they are the researcher's files, and a zip must keep them to move a project.
+
+**Usability, on the way.** The new CSS is in `gui/static/v011.css` (colour tokens of `app.css` only; light and dark,
+and 390 px wide, checked with screenshots and no console errors). The banner's link to the column *AI* goes to the
+first dropdown on a phone, where the table head is hidden.
+
+Tests: 35 new. `tests/test_0110_no_leak.py`: a project with one document per setting, each restricted one carrying a
+marker in every sentence; every task kind (search words, parts, check, further rounds, a batch, second opinion, read
+again, labels over all passages, theme names, concept links, references, the SDG pack's extract and verify_set, the
+file queue) through a recording stand-in for Claude, the queue through the stand-in Claude Code, and every connector
+tool; no marker in anything Claude was given, and nothing marked *No AI* reached the local model either.
+`test_0110_access_guard.py` (labels at any depth, refusals before the backend, a model server on another computer, the
+queue holding only cloud tasks even when forced, a changed setting applied to tasks not answered yet, the default and
+the question once, the manifest, the cap, addresses, embeddings on another computer); `test_0110_mixed_check.py` (one
+round, three readers, shown as one; no local model; a local model that cannot be reached; a local main model; a check
+in a Claude chat read later on this computer); `test_0110_ledger.py` (rows on send only, by route; the share; the cap
+stopping further reading; the CSV and the Documents endpoints); `test_0110_upgrade.py` (a 0.10 project opens
+unchanged with its ledger backfilled once; on a local-only installation queued tasks leave; zips carry the settings;
+a 0.10 zip asks once; the headless run's arguments and empty folder; the account kind from `claude auth status`);
+`test_0110_connector.py`; `test_0110_page.py`.
+
+**Not yet done.**
+- The headless run with `--disallowedTools` and the empty working folder was tried only with the stand-in
+  (`tests/fake_claude_cli.py`). Needs a real, signed-in Claude Code: does `/enlens-run` still work with those tools
+  denied (it needs only Agent and the ENLENS tools), and does the version people run accept the flag?
+- Whether a real `claude auth status` reports the plan, and under which field name; until then most people pick their
+  account kind in the panel.
+- A real local model reading restricted excerpts while Claude reads the rest (only stand-ins were used), and a person
+  trying the Documents page, the import question and a mixed result with a real corpus.
+- The cap is checked when tasks are made. A label pass by queue hands Claude Code batches of up to 20 at once, so a
+  capped document can go over by one batch (a check by one round of excerpts).
+- The roadmap's acceptance gates for 0.10 still stand (a fresh Mac and Windows account to a finished check).
+
 ## 0.10.2 (October 2026): the icon has its picture, and opens the new version
 
 Two problems met right after updating to 0.10.1 on a Mac. No analysis changes: every answer still goes through the

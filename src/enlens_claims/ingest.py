@@ -810,7 +810,8 @@ def _safe_extract(zf: zipfile.ZipFile, dest: Path, budget: list[int] | None = No
 
 
 def read_manifests(files: list[Path]) -> dict[str, dict]:
-    """manifest.csv files (columns file, reference, doi) say which references each file is.
+    """manifest.csv files (columns file, reference, doi; 0.11: optional ai_access and ai_note) say which references
+    each file is, and who may read it with AI.
 
     Several rows may point at the same file (one work cited in several ways). Keyed by file name. Files saved
     by a spreadsheet are read whether they are UTF-8 (with or without a byte-order mark) or Windows-1252.
@@ -834,6 +835,10 @@ def read_manifests(files: list[Path]) -> dict[str, dict]:
                     e["references"].append(ref)
                 if (row.get("doi") or "").strip() and not e["doi"]:
                     e["doi"] = row["doi"].strip()
+                if (row.get("ai_access") or "").strip() and not e.get("ai_access"):
+                    e["ai_access"] = row["ai_access"].strip()
+                if (row.get("ai_note") or "").strip() and not e.get("ai_note"):
+                    e["ai_note"] = row["ai_note"].strip()
     return out
 
 
@@ -871,15 +876,32 @@ def discover(inputs: list[str | Path], unpack_dir: Path, manifests: list[Path] |
 
 
 def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = None,
-           progress=None, should_stop=None, ocr: OcrOptions | None = None) -> dict:
+           progress=None, should_stop=None, ocr: OcrOptions | None = None, ai_access: str | None = None,
+           ai_note: str | None = None) -> dict:
     """Add documents. `exclude` holds file-name patterns (e.g. 'A_18_*') to leave out, such as a wrong download.
 
     `progress(done, total, file_name)` is called before each file is read (for a progress bar). Each document is
     stored in its own transaction; a file that cannot be read is listed under `failed` and the rest go on.
     `ocr` (default: automatic, English) recognises the text of scanned PDF pages when OCR is installed; scanned
     files that stay without text are listed under `scanned_no_text`.
+
+    0.11: `ai_access` is who may read the new documents with AI (cloud, local, none; None: the project's default);
+    a project whose default is not chosen yet takes it as its default. An `ai_access` column in a manifest.csv sets
+    it per file (and `ai_note` the reason), which wins over the one answer for all.
     """
     from fnmatch import fnmatch
+
+    from . import access
+
+    if ai_access is not None:
+        ai_access = access.clean(ai_access)
+        if ai_access == "cloud" and access._local_only():
+            raise ValueError("Cloud models are switched off on this computer: documents can be read by a local AI or "
+                             "by you only.")
+        if not access.default_chosen(ws):
+            access.set_default(ws, ai_access)
+        if ai_access == access.default(ws):
+            ai_access = None  # follows the project's default
 
     from .textutil import clean_doi
 
@@ -926,8 +948,17 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
                 doc.title = re.sub(r"https?://\S+", "", dec["references"][0]).strip(" ,.")[:250]
         elif declared:
             stats.setdefault("not_in_manifest", []).append(f.name)
+        level = ai_access
+        if dec.get("ai_access"):
+            try:
+                level = access.clean(dec["ai_access"])
+            except ValueError:
+                stats.setdefault("manifest_problems", []).append(f"{f.name}: ai_access {dec['ai_access']!r} is not "
+                                                                 "cloud, local or none; the answer for all applies")
+            if level == "cloud" and access._local_only():
+                level = "local"
         try:
-            _store_document(ws, doc, raw, f, dec)
+            _store_document(ws, doc, raw, f, dec, level, (dec.get("ai_note") or ai_note or None))
         except sqlite3.IntegrityError:  # the same file, added meanwhile by another ingest
             stats["duplicates"] += 1
             continue
@@ -941,15 +972,17 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
     return stats
 
 
-def _store_document(ws: Workspace, doc: "Document", raw: RawDoc, f: Path, dec: dict) -> None:
+def _store_document(ws: Workspace, doc: "Document", raw: RawDoc, f: Path, dec: dict, ai_access: str | None = None,
+                    ai_note: str | None = None) -> None:
     """One document with its pages and passages, in one transaction (other work is not blocked for long)."""
     with ws.connect() as cx:
         cx.execute("INSERT INTO documents(doc_id, path, sha1, title, doi, kind, n_pages, n_chars, text, added_at, "
-                   "declared_ref, ocr_pages, scanned_pages) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   "declared_ref, ocr_pages, scanned_pages, ai_access, ai_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (doc.doc_id, str(f), raw.sha1, doc.title, doc.doi, raw.kind,
                     len(doc.page_spans) if raw.paginated else None,
                     len(doc.text), doc.text, now(), json.dumps(dec["references"], ensure_ascii=False) if dec else None,
-                    raw.ocr_pages if raw.kind == "pdf" else None, raw.scanned_pages if raw.kind == "pdf" else None))
+                    raw.ocr_pages if raw.kind == "pdf" else None, raw.scanned_pages if raw.kind == "pdf" else None,
+                    ai_access, (ai_note or "")[:300] or None))
         if raw.paginated:
             cx.executemany("INSERT INTO pages VALUES (?,?,?,?)",
                            [(doc.doc_id, n + 1, s, e) for n, (s, e) in enumerate(doc.page_spans)])

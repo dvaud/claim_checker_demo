@@ -123,7 +123,11 @@ def _queue_models(backend, model: str | None, kinds) -> dict:
 def run(ws: Workspace, backend, model: str | None, kinds=("verify_set", "extract"), sample: int = 30, seed: int = 0,
         progress: Callable[[int, int, str], None] | None = None) -> dict:
     thr = float(ws.config["thresholds"]["support_confidence"])
-    jobs = [(k, t) for k in kinds for t in _sample(ws, k, sample, seed)]
+    from . import access
+
+    # 0.11: only answered tasks whose documents this model may read are sent again
+    jobs = [(k, t) for k in kinds for t in _sample(ws, k, sample, seed)
+            if access.may_read(ws, json.loads(t["payload_json"]), backend)]
     if not jobs:
         raise ValueError("The reference workspace has no answered tasks of these kinds.")
     per: dict[str, list[dict]] = {k: [] for k in kinds}
@@ -151,6 +155,9 @@ def run(ws: Workspace, backend, model: str | None, kinds=("verify_set", "extract
                     if raw is None:
                         raise ValueError("Claude Code gave no answer to this task")
                 else:
+                    from . import access
+
+                    access.sending(ws, payload, backend, f"{kind} (model test)", t["task_id"])
                     raw = backend.complete(kind, system, user, model, payload)
             except Exception as e:  # keep going: one failure should not stop the benchmark
                 rec.update(error=str(e)[:300], seconds=round(time.time() - t0, 2))

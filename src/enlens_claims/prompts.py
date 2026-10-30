@@ -297,6 +297,11 @@ def user_prompt(kind: str, payload: dict) -> str:
             if p.get("context"):  # check-v4: the text just before, for refers_to only
                 parts.append(f"BEFORE P{i} (for refers_to only; not to be graded or quoted as evidence):\n…{p['context']}")
             parts.append(f"P{i} | {src}\n{p['text']}")
+        if payload.get("read_elsewhere"):  # 0.11: the round's other excerpts come from documents kept from this model
+            n = payload["read_elsewhere"]
+            parts.append(f"{n} other {'excerpt' if n == 1 else 'excerpts'} for this claim {'comes' if n == 1 else 'come'} "
+                         "from documents you are not shown; they are judged separately. Grade only the passages above, "
+                         "and in your rationale speak only for them.")
         if payload.get("reader_note"):  # a person's comment when they ask for one excerpt to be read again
             parts.append(f"A reader noted (a hint to check against the passage, not evidence): {payload['reader_note']}")
         if kind == "reread":

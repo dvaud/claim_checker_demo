@@ -695,6 +695,71 @@ first screen (or *Projects → Import a project (.zip)*, which takes both kinds 
 
 ## 8. Privacy and copyright
 
+### Who may read each document with AI (0.11)
+
+One project can mix documents Claude may read with documents that must stay on the computer: a licensed PDF, an
+interview transcript. Every document has one of three settings:
+
+| Setting | Who may read its text |
+| --- | --- |
+| *Claude may read it* | the AI you chose: Claude Code, the Claude API, or a local model |
+| *Only a local AI* | a model server on this computer, or you |
+| *No AI* | you only; Search, the keyword Profile, Concepts and Themes without AI still work |
+
+> Documents you mark as local stay on this computer. ENLENS never sends their text to Claude, in any feature, and
+> shows you how much of every other document it has sent.
+
+**Where you set it.** When you add documents, the page asks *Who may read these documents with AI?*; one answer
+covers everything added at once. The first answer in a new project becomes its default (nothing is preselected the
+first time); later the default is preselected. On the Documents page the column *AI* has a small dropdown per
+document; tick several documents to change them together. A note (*Why*, for example "publisher licence") is kept
+with the document and exported with the project; it changes nothing. For large corpora, a `manifest.csv` may have
+`ai_access` (cloud, local or none) and `ai_note` columns. Projects made before 0.11 keep *Claude may read it* for every
+document, so nothing changes until you change it; a project zip made before 0.11 asks once when it is imported. On an
+installation without cloud models (`--local-only`) the default is *Only a local AI* and Claude is not offered.
+
+**What happens in each feature.** Finding passages is unchanged: every document competes for every check. Only the
+reading is split. In a check, Claude reads the excerpts it may; those marked *Only a local AI* go to the local model
+chosen in *Settings → AI → Local model for restricted documents*; those marked *No AI* (and the local ones when no
+local model is chosen, or it cannot be reached) are shown as *Waiting for your judgement*, with your own judgement
+open on the excerpt. The round stays one round, and each excerpt says who read it. The answer counts every
+excerpt; the AI's written note speaks only for the excerpts it read, and is told how many others there are. A second
+opinion, reading an excerpt again, the Profile's AI pass, theme names, concept links and references follow the same
+rule: a task takes the setting of the most restricted document it touches. A theme whose passages are all
+restricted is named by the local model or keeps its key terms; two concepts found only in restricted documents are
+linked by the local model or not at all (a term's words are words of the documents). A check started in a Claude chat
+(the connector) shows Claude only the excerpts it may read; the result page then offers *Read them now on this
+computer* for the local ones. Search by meaning: an embedding server on another computer does not receive the
+restricted passages (they are found by their words).
+
+**How it is enforced.** In code, where every AI task is made and run, never by an instruction in a prompt: each task
+is labelled with the most restricted setting of the documents it names, a task is refused before any model is asked
+when its setting does not allow that model, and the queue for Claude Code only ever hands out tasks Claude may read.
+The connector's tools (search, concepts, document profiles, checks) give Claude counts instead of restricted text,
+and show a document marked *No AI* as *Restricted document 3*, because a title can name a person. The Claude Code run
+that ENLENS starts may not use Claude Code's own file, shell and web tools and starts in an empty folder, away from
+the projects' databases.
+
+**What Claude has read.** ENLENS writes down every passage at the moment it leaves for Claude (Claude Code, the Claude
+API, a Claude chat through the connector). The column *Sent to Claude* shows the share of each document's text;
+click it for the passages, when and for which feature. *Settings → Technical → What was sent to Claude* downloads the
+whole list (CSV), for example for a data management plan. For a project made before 0.11 the list starts with the
+results ENLENS recorded then. Changing a document to *Only a local AI* applies to everything not yet answered; what
+Claude already read stays in the results and the list.
+
+**A cap.** In a document's dialog you can set *Claude may read at most N %*. Once Claude has read that much, its
+further passages are treated as *Only a local AI*. It is checked when tasks are made, so a check that is running can
+go over by one round of excerpts.
+
+**Your Claude account.** *Set up Claude* and *Settings → AI* show *What happens to the text Claude reads*: on a
+personal plan (Pro, Max) consumer terms apply, and Anthropic may use your sessions for training when the account's
+model-improvement setting is on (turn it off at claude.ai/settings/data-privacy-controls before Claude reads licensed
+documents); Team, Enterprise and the Claude API are under commercial terms. Documents that must stay in the EU:
+mark them *Only a local AI*. The panel cites Anthropic's data-usage page and the date it was checked; that page is the
+authority.
+
+### Models and licences
+
 With a local model nothing leaves the computer. With the Claude API (app or `--backend anthropic`) the hypothesis and
 the passages read are sent to Anthropic; with the connector, the passages shown to Claude are part of your chat; with
 Claude Code (0.8), the passages inside the tasks it takes are sent to Anthropic on your own plan. For

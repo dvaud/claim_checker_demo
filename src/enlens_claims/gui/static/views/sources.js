@@ -5,6 +5,7 @@ import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, fmt
 import { simpleProgress } from "./progress.js";
 import { plainSection, blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { dialog, certainty, breakSegments, session } from "../lib.js";
+import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
 import { aiLabelCard, jobCard, runningJob, startKeywordPass, keywordLabel, plural, shortTitle, SOURCE_WORDS, RELEVANCE_WORDS, DIRECTION_WORDS } from "./profile.js";
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
@@ -29,7 +30,7 @@ export async function renderSources(view) {
     fileList.hidden = !files.length;
     replace(fileList, files.map((f, i) => h("li", {}, icon("file-text", { size: 13 }), h("span", { class: "grow", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, f.name), h("span", { class: "fs" }, fmt.bytes(f.size)),
       h("button", { class: "icon-btn", type: "button", "aria-label": `Remove ${f.name} from the list`, style: { width: "24px", height: "24px" }, onClick: () => { files.splice(i, 1); drawFiles(); } }, icon("x", { size: 12 })))));
-    addBtn.disabled = !files.length;
+    addBtn.disabled = !files.length || needLevel();
     replace(addBtn, icon("upload", { size: 15 }), files.length ? `Add ${files.length === 1 ? "this document" : `these ${files.length} documents`} to the project` : "Add to the project");
   };
   const takeFiles = (list) => {
@@ -58,19 +59,26 @@ export async function renderSources(view) {
   // a click anywhere on the area (not on a chosen file's row or its remove button) opens the file chooser
   drop.addEventListener("click", (e) => { if (e.target.closest("a, label, button, input, .file-list")) return; fileInput.click(); });
 
+  // 0.11: "Who may read these documents with AI?" One answer for everything added now; the project's default
+  // preselected, nothing the first time (guessing wrong either way costs the person something).
+  const acc = info.ai_access || {};
+  let chosenLevel = acc.chosen ? acc.default : null;
+  const needLevel = () => !chosenLevel;
+  const accessPick = accessChoice({ value: chosenLevel, name: "add-access", onChange: (v) => { chosenLevel = v; drawFiles(); pathBtn.disabled = false; } });
   const pathInput = h("input", { class: "input", type: "text", placeholder: "e.g. C:\\Users\\me\\Documents\\Literature  or  /Users/me/Documents/Literature", id: "src-path" });
   const pathBtn = h("button", { class: "btn", type: "button" }, icon("folder-open", { size: 14 }), "Add this folder");
   const progressBox = h("div", { class: "section", hidden: true, "aria-live": "polite" });
 
   const addCard = h("section", { class: "card", "aria-label": "Add documents" },
     drop,
+    h("div", { class: "add-access" }, accessPick, acc.chosen ? null : h("p", { class: "muted small", style: { margin: "6px 0 0" } }, "Choose once for this project; it becomes the default, and you can change single documents in the list below.")),
     h("div", { class: "btn-row", style: { marginTop: "12px" } }, addBtn),
     h("details", { class: "fold", style: { marginTop: "12px" } }, h("summary", {}, "More ways to add"),
       h("div", { class: "card card-plain", style: { marginTop: "8px" } },
         h("div", { class: "field" }, h("label", { class: "field-label", for: "src-path" }, "Add a whole folder on this computer"), h("div", { class: "row", style: { flexWrap: "nowrap" } }, pathInput, pathBtn),
           h("div", { class: "field-help" }, "Type or paste the full path of a folder (or of a zip file). The files are read where they are, nothing is copied.")),
         field("Leave out files whose name matches", excludeInput, { help: "Patterns separated by spaces; * stands for anything. Applies to everything you add." }),
-        h("p", { class: "muted small", style: { margin: 0 } }, "For technical users: a zip may contain a manifest.csv (columns file, reference, doi) naming the work each file is."))));
+        h("p", { class: "muted small", style: { margin: 0 } }, "For technical users: a zip may contain a manifest.csv (columns file, reference, doi) naming the work each file is; an ai_access column (cloud, local or none) and an ai_note column set each file's AI setting."))));
   view.appendChild(addCard);
   view.appendChild(progressBox);
 
@@ -149,15 +157,16 @@ export async function renderSources(view) {
         n++;
       }
     } catch (e) { showError(e); addBtn.disabled = false; progressBox.hidden = true; return; }
-    const body = { batch };
+    const body = { batch, ai_access: chosenLevel };
     if (excludeInput.value.trim()) body.exclude = excludeInput.value.trim();
     await runIngest(body, `Reading ${files.length === 1 ? "the document" : `the ${files.length} documents`}`);
   });
   pathBtn.addEventListener("click", async () => {
     const p = pathInput.value.trim();
     if (!p) { pathInput.focus(); return; }
+    if (needLevel()) { toast("Say first who may read these documents with AI.", "warn"); accessPick.scrollIntoView({ block: "center" }); return; }
     pathBtn.disabled = true;
-    const body = { path: p };
+    const body = { path: p, ai_access: chosenLevel };
     if (excludeInput.value.trim()) body.exclude = excludeInput.value.trim();
     await runIngest(body, `Reading the folder`);
   });
@@ -208,18 +217,49 @@ export async function renderSources(view) {
     try { r = await api("GET", `/api/projects/${P(project)}/documents`); } catch (e) { showError(e); return; }
     drawIndex(r.search);
     const docs = r.documents || [];
+    const pa = r.ai_access || {};
     clear(docsBox);
-    docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `In this project (${docs.length})`)));
+    if (pa.ask) docsBox.appendChild(accessAskCard(project, pa, reloadDocs));
+    else if (pa.banner && docs.length) { const b = accessBanner(project, () => b.remove()); docsBox.appendChild(b); }
+    docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `In this project (${docs.length})`),
+      docs.length ? h("span", { class: "muted small access-counts" }, accessLevels().filter((lv) => (pa.counts || {})[lv]).map((lv) => [accessBadge(lv), ` ${pa.counts[lv]} `])) : null));
     if (!docs.length) { docsBox.appendChild(emptyState("book-open", "No documents yet", "Add the reports, papers and web pages you want to check hypotheses against. PDFs keep their page numbers.")); return; }
     const warned = docs.filter((d) => d.check).length;
     if (warned) docsBox.appendChild(h("p", { class: "muted small" }, icon("alert-triangle", { size: 12 }), ` ${warned} ${warned === 1 ? "document needs" : "documents need"} a look: see the note next to ${warned === 1 ? "it" : "them"}.`));
+    if (pa.counts && (pa.counts.local || pa.counts.none)) docsBox.appendChild(h("p", { class: "muted small" }, icon("shield", { size: 12 }), " Documents marked Only a local AI or No AI are never sent to Claude, in any feature."));
+    // 0.11: the AI setting of each document (a dropdown), several at once, and how much Claude has read
+    const picked = new Set();
+    const bulkSel = h("select", { class: "select select-sm", "aria-label": "Who may read the selected documents with AI" }, accessLevels().map((lv) => h("option", { value: lv }, LEVEL[lv].title)));
+    const bulkCount = h("span", { class: "small" });
+    const bulk = h("div", { class: "bulk-bar", hidden: true, role: "region", "aria-label": "Change the selected documents" }, bulkCount, bulkSel,
+      h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => setAccess([...picked], bulkSel.value) }, icon("check", { size: 13 }), "Apply"),
+      h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { picked.clear(); for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = false; drawBulk(); } }, "Clear"));
+    const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected: who may read them with AI?`; };
+    async function setAccess(ids, level, note) {
+      const body = { doc_ids: ids, ai_access: level === pa.default ? null : level };
+      if (note !== undefined) body.note = note;
+      try { await api("PUT", `/api/projects/${P(project)}/documents/ai-access`, body); toast(ids.length === 1 ? `${LEVEL[level].title}.` : `${ids.length} documents: ${LEVEL[level].many.toLowerCase()}.`, "ok", { ttl: 2500 }); await reloadDocs(); }
+      catch (e) { showError(e); await reloadDocs(); }
+    }
+    const pickAll = h("input", { type: "checkbox", class: "doc-pick-all", "aria-label": "Select every document" });
+    pickAll.addEventListener("change", () => { for (const c of docsBox.querySelectorAll(".doc-pick")) { c.checked = pickAll.checked; if (pickAll.checked) picked.add(c.value); else picked.delete(c.value); } drawBulk(); });
+    const sentCell = (d) => {
+      const pct = Math.round((d.sent || 0) * 1000) / 10;
+      const label = d.ai_access !== "cloud" && !pct ? "never" : pct ? `${pct < 1 ? "<1" : Math.round(pct)}%` : "0%";
+      return h("button", { class: "link-btn small", type: "button", title: "What Claude has read of this document", onClick: () => docAccessDialog(project, d, pa.default, () => reloadDocs()) }, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null);
+    };
+    docsBox.appendChild(bulk);
     docsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
-      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col" }, "Note"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Actions")))),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Actions")))),
       h("tbody", {}, docs.map((d) => h("tr", {},
+        h("td", { class: "pick-col" }, (() => { const c = h("input", { type: "checkbox", class: "doc-pick", value: d.doc_id, "aria-label": `Select ${d.title || d.file}` }); c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); }); return c; })()),
         h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)), h("div", { class: "doc-file" }, d.file)),
         h("td", { "data-label": "Type" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
         h("td", { "data-label": "Added", class: "small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
+        h("td", { "data-label": "AI", class: "access-cell" }, accessSelect(d, pa.default, (lv) => setAccess([d.doc_id], lv || pa.default)),
+          d.note ? h("button", { class: "link-btn small access-why", type: "button", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, () => reloadDocs()) }, d.note) : null),
+        h("td", { "data-label": "Sent to Claude", class: "num" }, sentCell(d)),
         h("td", { "data-label": "Note", class: "check-cell" },
           d.check ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 12 }), d.check) : null,
           d.scanned ? h("span", { class: "it scanned-note" + (/no text/i.test(d.scanned) ? " warn-chip" : " muted small") }, icon(/no text/i.test(d.scanned) ? "alert-triangle" : "eye", { size: 12 }), d.scanned) : null,

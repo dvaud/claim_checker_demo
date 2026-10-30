@@ -28,7 +28,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import prompts, routing, runs
+from . import access, prompts, routing, runs
 from .store import Workspace, now
 
 CLAIM_MINUTES = 30
@@ -103,7 +103,8 @@ def router(ws: Workspace | None = None) -> routing.Router:
 
 # a task waits when it is queued and not answered (or answered and to be read again by the stronger model), and not
 # held by a claim that is still open
-_WAITING = ("COALESCE(t.queued, 0)=1 AND (t.status IN ('pending', 'retry') OR (t.status='done' AND t.again=1))")
+_WAITING = ("COALESCE(t.queued, 0)=1 AND COALESCE(t.access, 'cloud')='cloud' AND "
+            "(t.status IN ('pending', 'retry') OR (t.status='done' AND t.again=1))")
 _FREE = "(t.claimed_by IS NULL OR t.claimed_at < ?)"
 
 
@@ -188,7 +189,7 @@ def status(ws: Workspace, project: str | None = None, parallel: int = 2) -> dict
     o, held = order(ws)
     cutoff = _cutoff()
     rows = ws.query("SELECT t.task_id, t.kind, t.role, t.status, t.again, t.step, t.forced_model, t.model, t.claimed_by, "
-                    "t.claimed_at, t.queued_at FROM tasks t WHERE COALESCE(t.queued, 0)=1")
+                    "t.claimed_at, t.queued_at FROM tasks t WHERE COALESCE(t.queued, 0)=1 AND COALESCE(t.access, 'cloud')='cloud'")
     per: dict[str, dict] = {}
     groups: dict[tuple, dict] = {}
     for t in rows:
@@ -315,11 +316,14 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
                 if picked and budget + cost > cap:
                     break
                 got = cx.execute("UPDATE tasks SET claimed_by=?, claimed_at=? WHERE task_id=? AND COALESCE(queued, 0)=1 "
+                                 "AND COALESCE(access, 'cloud')='cloud' "
                                  "AND (claimed_by IS NULL OR claimed_at < ?) AND (status IN ('pending', 'retry') OR "
                                  "(status='done' AND again=1))", (cid, at, t["task_id"], _cutoff())).rowcount
                 if got:
                     picked.append({"task_id": t["task_id"], "prompt": user})
                     budget += cost
+                    # 0.11: the passages of this task leave the computer now, with the batch
+                    access.record_sent(cx, t["task_id"], json.loads(full["payload_json"]), "Claude Code", k)
             if not picked:
                 continue
             cx.execute("INSERT INTO task_claims(claim_id, kind, model, helper, route, taken_by, task_ids_json, claimed_at, "
@@ -633,11 +637,17 @@ def answer_on_copy(ws: Workspace, items: list[tuple[str, str, dict, str]], backe
     except Exception:  # noqa: BLE001 - removed below in any case
         pass
     try:
+        # 0.11: only tasks whose documents Claude may read go to the copy's queue; the others get no answer. Their
+        # passages are written to this project's ledger now (the copy and its own ledger are removed afterwards)
+        with ws.connect() as wcx:
+            items = [it for it in items if access.label_payload(wcx, it[2]) == "cloud"]
+            for tid, kind, payload, _model in items:
+                access.record_sent(wcx, None, payload, "Claude Code", f"{kind} ({purpose})")
         with copy.connect() as cx:
             for tid, kind, payload, model in items:
                 _insert_task(cx, tid, kind, model, payload)
                 cx.execute("UPDATE tasks SET forced_model=?, model=?, queued=1, queued_at=?, status='pending', "
-                           "attempts=0 WHERE task_id=?", (model, model, now(), tid))
+                           "attempts=0, access='cloud' WHERE task_id=?", (model, model, now(), tid))
         for tid, *_rest in items:
             if should_stop and should_stop():
                 break

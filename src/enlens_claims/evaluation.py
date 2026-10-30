@@ -91,8 +91,10 @@ def _force(ws: Workspace, task_ids: list[str], model: str) -> int:
     forced = model.split(":", 1)[1] if model.startswith("local:") else model
     with ws.connect() as cx:
         for tid in task_ids:
-            cx.execute("UPDATE tasks SET forced_model=?, model=?, queued=1, queued_at=?, status='pending', attempts=0 "
-                       "WHERE task_id=?", (forced, forced, now(), tid))
+            # 0.11: a task of a restricted document is never queued (the queue hands out `cloud` tasks only)
+            cx.execute("UPDATE tasks SET forced_model=?, model=?, queued=CASE WHEN COALESCE(access, 'cloud')='cloud' "
+                       "THEN 1 ELSE 0 END, queued_at=?, status='pending', attempts=0 WHERE task_id=?",
+                       (forced, forced, now(), tid))
     return len(task_ids)
 
 

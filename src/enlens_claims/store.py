@@ -119,6 +119,11 @@ CREATE TABLE IF NOT EXISTS runs(run_id TEXT PRIMARY KEY, kind TEXT, scope TEXT, 
 CREATE TABLE IF NOT EXISTS task_claims(claim_id TEXT PRIMARY KEY, kind TEXT, model TEXT, helper TEXT, route TEXT,
   taken_by TEXT, task_ids_json TEXT, claimed_at TEXT, expires_at TEXT, finished_at TEXT, stored INT DEFAULT 0,
   problems INT DEFAULT 0);
+
+-- 0.11: every passage sent to a cloud model (Claude Code, the Claude API, a Claude chat through the connector), at the
+-- moment it left: one row per passage per sending (and per passage shown before it as context)
+CREATE TABLE IF NOT EXISTS ai_sent(passage_id TEXT, doc_id TEXT, route TEXT, task_id TEXT, sent_at TEXT, feature TEXT);
+CREATE INDEX IF NOT EXISTS ix_ai_sent_doc ON ai_sent(doc_id, passage_id);
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
@@ -204,7 +209,12 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               ("results", "route", "TEXT"), ("results", "helper", "TEXT"), ("results", "step", "INT DEFAULT 0"),
               ("results", "claimed_at", "TEXT"),
               # 0.8 (G1): a check by queue: where each hypothesis and each part stand (NULL: an ordinary check)
-              ("hypotheses", "queue", "TEXT"), ("user_claims", "stage", "TEXT")]
+              ("hypotheses", "queue", "TEXT"), ("user_claims", "stage", "TEXT"),
+              # 0.11: who may read a document with AI ('cloud', 'local', 'none'; NULL: the project's default), why
+              # (a person's note, it changes nothing), and an optional cap on the share Claude may read (percent)
+              ("documents", "ai_access", "TEXT"), ("documents", "ai_note", "TEXT"), ("documents", "ai_budget", "REAL"),
+              # 0.11: the most restricted setting of the documents a task's text comes from (see access.py)
+              ("tasks", "access", "TEXT")]
 
 
 def _migrate(cx: sqlite3.Connection) -> None:
@@ -262,12 +272,18 @@ class Workspace:
         cx = sqlite3.connect(self.db_path, timeout=60)
         try:
             cx.execute("PRAGMA journal_mode=WAL")  # readers do not block on a long write; persistent per file
+            doc_cols = {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
+            before_011 = bool(doc_cols) and "ai_access" not in doc_cols  # a project made before 0.11, opened now
             cx.executescript(SCHEMA)
             _migrate(cx)
             cx.executescript(INDEXES)
             cx.commit()
         finally:
             cx.close()
+        if before_011:
+            from .access import upgrade
+
+            upgrade(self)
 
     def _conn(self) -> sqlite3.Connection:
         cx = getattr(self._local, "cx", None)

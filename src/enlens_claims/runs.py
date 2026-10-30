@@ -168,5 +168,5 @@ def hypothesis_task_ids(ws: Workspace, hyp_ids: list[str]) -> list[str]:
             ids.append(f"expand:{cid}")
             ids += [r[0] for r in ws.query("SELECT task_id FROM tasks WHERE kind IN ('check','reread','second') AND "
                                            "(task_id=? OR task_id LIKE ? OR task_id LIKE ? OR task_id LIKE ?)",
-                                           (f"check:{cid}", f"check:{cid}:r%", f"reread:{cid}:%", f"second:check:{cid}%"))]
+                                           (f"check:{cid}", f"check:{cid}:%", f"reread:{cid}:%", f"second:check:{cid}%"))]
     return ids
