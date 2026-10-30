@@ -16,7 +16,7 @@ export async function renderSettings(view, [section]) {
   if (tab === "model" || tab === "advanced" || tab === "documents") {
     try { servers = (await api("GET", "/api/servers")).servers || []; } catch (_) { servers = []; }
   }
-  view.appendChild(pageHead("Settings", { sub: {
+  view.appendChild(pageHead("Settings", { actions: versionTag(), sub: {
     model: "Which AI reads your documents: Claude Code on your own Claude plan, a model on this computer, or none.",
     basics: "How strict a check is, and how new checks start.",
     explore: "The defaults of the Profile and Themes pages, and your codebooks.",
@@ -733,6 +733,16 @@ function testSection(s) {
     h("div", { class: "fields-2" }, n, h("div", { class: "field" }, h("span", { class: "field-label" }, "Tasks"), h("label", { class: "it", for: "k-verify" }, kVerify, " Checking claims"), h("label", { class: "it", for: "k-extract" }, kExtract, " Extracting claims"), h("label", { class: "it", for: "k-label" }, kLabel, " Labelling with codes"))),
     h("div", { class: "save-row" }, run, App.settings().backend === "anthropic" ? h("span", { class: "muted small" }, "With the Claude API this is billed: one call per task.") : null),
     out);
+}
+
+// 0.10.1: the version, on every Settings tab; it opens Technical → Where your data is, which says how this copy was
+// installed and how to update it
+function versionTag() {
+  const st = App.state || {};
+  const v = st.version || VERSION;
+  if (!v) return null;
+  return h("a", { class: "version-tag", href: "#/settings/data", title: "How ENLENS was installed and how to update it (Technical)" },
+    icon("info", { size: 14 }), h("span", {}, "Version ", h("strong", {}, v)));
 }
 
 // 0.10: how this copy was installed, and how it is updated

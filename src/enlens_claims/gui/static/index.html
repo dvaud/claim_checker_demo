@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="/static/profile-viewer.css">
 <link rel="stylesheet" href="/static/v09.css">
 <link rel="stylesheet" href="/static/v010.css">
+<link rel="stylesheet" href="/static/v0101.css">
 <script type="module" src="/static/app.js"></script>
 </head>
 <body>
@@ -47,14 +48,15 @@
         <a href="#/check" data-route="check" title="Whether the documents support or contradict a statement, with quotes"><span class="nav-icon" data-icon="flask"></span><span>Check a hypothesis</span></a>
         <a href="#/batch" data-route="batch" title="A list of hypotheses, checked one after the other"><span class="nav-icon" data-icon="list-checks"></span><span>Check several</span></a>
         <a href="#/history" data-route="history" title="Every hypothesis checked, your reviews and downloads"><span class="nav-icon" data-icon="history"></span><span>Results</span></a>
-        <span class="nav-sep" role="presentation"></span>
-        <a href="#/settings" data-route="settings" title="The AI (Claude Code, a local model), checking, exploring, documents"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></a>
       </nav>
       <div class="sidebar-foot">
         <div id="jobs-indicator"></div>
         <div id="queue-indicator"></div>
         <div id="privacy-indicator"></div>
-        <div class="sidebar-row">
+        <div class="sidebar-app">
+          <nav class="nav nav-foot" id="nav-foot" aria-label="App">
+            <a href="#/settings" data-route="settings" title="The AI (Claude Code, a local model), checking, exploring, documents, and the version"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></a>
+          </nav>
           <button class="btn btn-ghost btn-sm" id="theme-btn" type="button" aria-live="polite"></button>
           <button class="btn btn-ghost btn-sm" id="quit-btn" type="button" hidden></button>
         </div>

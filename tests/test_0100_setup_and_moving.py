@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,12 @@ from pathlib import Path
 import pytest
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
+
+from enlens_claims import __version__ as VERSION
+
+# 0.10.1: the tests follow the package's version (a newer published release is the next patch), so a release no
+# longer has to edit them
+NEXT = ".".join(VERSION.split(".")[:2] + [str(int(VERSION.split(".")[2]) + 1)])
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE = str(Path(__file__).with_name("fake_claude_cli.py"))
@@ -88,7 +95,7 @@ def test_post_install_records_makes_the_icon_and_repairs_the_plugin(home, prefix
     assert out["plugin"]["repaired"] and "/old/place/python" in out["plugin"]["reason"]
     assert [s["ok"] for s in out["plugin"]["steps"]] == [True, True]  # the two set-up commands, again
     assert json.loads(mcp.read_text())["mcpServers"]["enlens"]["command"] == sys.executable
-    assert "ENLENS 0.10.0 is installed." in out["message"]
+    assert f"ENLENS {VERSION} is installed." in out["message"]
     # the CLI runs the same (without an icon here)
     from enlens_claims import cli
 
@@ -139,7 +146,7 @@ class Runs:
         return subprocess.CompletedProcess(cmd, self.code, stdout="ok", stderr="boom" if self.code else "")
 
 
-def _releases(version="0.10.1", wheel=b"PK fake wheel", good_sum=True):
+def _releases(version=NEXT, wheel=b"PK fake wheel", good_sum=True):
     name = f"enlens_claims-{version}-py3-none-any.whl"
     digest = hashlib.sha256(wheel if good_sum else b"other").hexdigest()
     pages = {
@@ -159,13 +166,13 @@ def test_update_from_the_latest_release(monkeypatch, tmp_path):
 
     monkeypatch.setattr(update, "find_uv", lambda: "/bin/uv")
     assert update.version_tuple("v0.10.1") == (0, 10, 1) and update.version_tuple("0.9.1") < update.version_tuple("0.10.0")
-    r = update.update_release(fetch=_releases("0.10.0"), run=Runs())
+    r = update.update_release(fetch=_releases(VERSION), run=Runs())
     assert r["updated"] is False and "up to date" in r["message"]
     r = update.update_release(check_only=True, fetch=_releases(), run=Runs())
-    assert r["waiting"] == "0.10.1" and "ready to install" in r["message"]
+    assert r["waiting"] == NEXT and "ready to install" in r["message"]
     runs = Runs()
     r = update.update_release(fetch=_releases(), run=runs, workdir=tmp_path, windows=False)
-    assert r["updated"] and r["version"] == "0.10.1" and r["route"] == "release"
+    assert r["updated"] and r["version"] == NEXT and r["route"] == "release"
     uv = runs.calls[0]
     assert uv[:6] == ["/bin/uv", "tool", "install", "--force", "--quiet", "--python"]
     assert uv[-1].startswith("enlens-claims[connector,fast,pdfminer,ocr] @ file://") and uv[-1].endswith(".whl")
@@ -292,18 +299,20 @@ def test_release_check_notes_and_assets(tmp_path):
     import release
 
     v = release.check()
-    assert v == "0.10.0" and release.check("v0.10.0") == v
+    assert v == VERSION and release.check(f"v{VERSION}") == v
     with pytest.raises(release.ReleaseError, match="the tag is v0.9.9"):
         release.check("v0.9.9")
     notes = release.notes(v)
-    assert "install.sh \\| sh" in notes and "## 0.10.0" not in notes and "## 0.9.1" not in notes
+    headings = re.findall(r"^## (\d+\.\d+\.\d+)", (ROOT / "CHANGELOG.md").read_text(), re.M)
+    assert headings[0] == v
+    assert "install.sh \\| sh" in notes and f"## {v}" not in notes and f"## {headings[1]}" not in notes
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / f"enlens_claims-{v}-py3-none-any.whl").write_bytes(b"PK")
     files = release.assets(dist)
     assert {p.name for p in files} == {f"enlens_claims-{v}-py3-none-any.whl", "install.sh", "install.ps1", "SHA256SUMS"}
-    assert 'VERSION="${ENLENS_VERSION:-0.10.0}"' in (dist / "install.sh").read_text()
-    assert "'0.10.0'" in (dist / "install.ps1").read_text()
+    assert f'VERSION="${{ENLENS_VERSION:-{v}}}"' in (dist / "install.sh").read_text()
+    assert f"'{v}'" in (dist / "install.ps1").read_text()
     for line in (dist / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split("  ")
         assert hashlib.sha256((dist / name).read_bytes()).hexdigest() == digest

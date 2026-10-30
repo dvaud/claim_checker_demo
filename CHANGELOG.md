@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.10.1 (October 2026): Settings beside Theme and Quit, and the version in sight
+
+A small polish release, and the first made with the new release workflow from start to finish. No analysis changes:
+every answer still goes through the quote check, a person can overrule it, and every result records how it was made.
+
+- **Settings moved to the foot of the sidebar,** in one short list with *Theme* and *Quit ENLENS*, under the line
+  that says where text goes. The list above now holds only what you do with the documents (Overview, Documents,
+  Explore the documents, Check hypotheses); what you set up for the app is in one place at the bottom, on the
+  desktop and in the menu on a phone. *Theme* and *Quit ENLENS* are aligned with Settings (same icon width, padding
+  and hover) instead of sitting as two small buttons. Settings still shows as the current page on every Settings
+  tab.
+- **The version on every Settings tab.** The title row of Settings shows *Version X.Y.Z*; clicking it opens
+  *Technical → Where your data is*, which says how this copy was installed and how to update it. Before, the
+  version was only in that card, three clicks away, so after `enlens update` there was no quick way to see whether
+  the new version was running.
+- **Fixed on the way: the release tests no longer break on every new version.** Three 0.10.0 tests had `0.10.0`
+  written into them (the message after `post-install`, `enlens update` finding a newer release, and
+  `tools/release.py check`/`notes`/`assets`), so the first thing any new tag did was fail its own release workflow
+  at *Test and build*. They now follow the package's version, with the next patch as the "newer release".
+- The release's CSS is in `gui/static/v0101.css` (colour tokens of `app.css` only; light and dark checked, and at
+  390 px wide).
+
+Tests: 5 new (`tests/test_0101_settings_and_version.py`): Settings, Theme and Quit together at the foot and Settings
+gone from the list of features; Settings still marked as the current page; the version on the Settings page and
+its link; `/api/state` and the page carry the version; the page files. The 0.9 test of the sidebar order no longer
+expects Settings at the end of the list of features. Three tests in `tests/test_0100_setup_and_moving.py` follow the version (above).
+
+**Not yet done.**
+- Everything in the *Not yet done* of 0.10.0 still stands; in particular this is the first tag whose release
+  workflow, draft and publish are to be followed through end to end (check *Actions → Release* after the push).
+
 ## 0.10.0 (October 2026): from GitHub to the icon in one line
 
 Getting from the GitHub page to an ENLENS icon took eleven separate actions in 0.9.1, seven of them in a terminal

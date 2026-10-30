@@ -1,0 +1,22 @@
+/* ENLENS 0.10.1: Settings at the foot of the sidebar with Theme and Quit; the version on the Settings page. */
+
+/* ---------------------------------------------------------------- sidebar foot: Settings, Theme, Quit */
+/* One short list, aligned like the features above it: the same padding, icon width and gap. */
+.sidebar-app { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--border); }
+.sidebar-app .btn {
+  width: 100%; justify-content: flex-start; gap: 10px; padding: 7px 10px; border-radius: 8px;
+  font-size: inherit; font-weight: 500; color: var(--text-2);
+}
+.sidebar-app .btn[hidden] { display: none; }
+.sidebar-app .btn svg { width: 18px; height: 18px; flex: none; }
+.sidebar-app .btn:hover { background: var(--surface-3); color: var(--text); }
+
+/* ---------------------------------------------------------------- the version, on the Settings page */
+.version-tag {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  font-size: .84rem; text-decoration: none; white-space: nowrap;
+}
+.version-tag strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.version-tag svg { color: var(--muted); }
+a.version-tag:hover { background: var(--surface-3); border-color: var(--border-strong); color: var(--text); }

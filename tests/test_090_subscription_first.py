@@ -154,7 +154,7 @@ def test_the_page_puts_exploring_first_and_marks_the_ai():
     html = (static / "index.html").read_text(encoding="utf-8")
     nav = html[html.index('<nav class="nav"'):html.index("</nav>")]
     order = [nav.index(f'data-route="{r}"') for r in ("overview", "sources", "search", "profile", "concepts", "themes",
-                                                       "check", "batch", "history", "settings")]
+                                                       "check", "batch", "history")]
     assert order == sorted(order)
     assert nav.index("Explore the documents") < nav.index("Check hypotheses")
     feats = (static / "features.js").read_text(encoding="utf-8")

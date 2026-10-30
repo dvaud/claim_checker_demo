@@ -103,7 +103,8 @@ async function route() {
 }
 
 function setNav(name) {
-  for (const a of document.querySelectorAll("#nav a")) {
+  // 0.10.1: Settings sits at the foot of the sidebar, with Theme and Quit, outside the list of features
+  for (const a of document.querySelectorAll("#nav a, #nav-foot a")) {
     if (a.dataset.route === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
 }
@@ -371,7 +372,7 @@ function navIcons() {
     nav.insertBefore(h("div", { class: "nav-legend", "aria-hidden": "true" },
       h("span", {}, h("span", { class: "nav-ai nav-ai-uses" }, "AI"), " needs AI"),
       h("span", {}, h("span", { class: "nav-ai nav-ai-optional" }, "AI"), " optional"),
-      h("span", {}, "no mark: no AI")), nav.querySelector(".nav-sep"));
+      h("span", {}, "no mark: no AI")), null);
   }
 }
 

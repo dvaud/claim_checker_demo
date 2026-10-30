@@ -67,8 +67,8 @@ document, and in *Settings → Documents*). The one-line install brings the `ocr
 **Updating.** `enlens update` updates ENLENS the way it was installed (0.10). Installed with the one-line install,
 it asks GitHub for the latest release, downloads its package, checks it against the release's checksums, installs it
 over this one with uv and brings the Claude Code plugin up to date; on Windows, where a running program cannot
-replace itself, it says to quit ENLENS and run the install line again (which does the same). *Settings → Technical*
-says how this copy was installed. Installed from the git copy of ENLENS (`git clone …`, then `pip install -e .` in a
+replace itself, it says to quit ENLENS and run the install line again (which does the same). The version you have
+is at the top of every *Settings* tab; *Settings → Technical* says how this copy was installed. Installed from the git copy of ENLENS (`git clone …`, then `pip install -e .` in a
 venv) every new version is also `enlens update` (0.8.2): it fetches the version from GitHub into the same folder, reinstalls into the
 same Python only when the requirements changed (with the extras already installed), refreshes the Claude Code
 plugin if one was set up, and says to restart the app if it is running. It changes nothing if files of the copy
@@ -174,8 +174,10 @@ the sidebar a filled **AI** mark means the feature needs the AI, a dashed one th
 that it never uses the AI (0.9).
 
 **The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, then **Explore the documents**
-(Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results), and
-*Settings*. The *Overview* shows every feature with one line on what it does, whether it uses the AI and what is
+(Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results). At the
+bottom, under the line that says where text goes, *Settings*, *Theme* and *Quit ENLENS* sit together (0.10.1); every
+*Settings* tab shows the version of ENLENS at the top right, and clicking it opens *Technical → Where your data is*
+(how this copy was installed and how to update it). The *Overview* shows every feature with one line on what it does, whether it uses the AI and what is
 already made in the project (a profile, a glossary, a set of themes, results), and the AI in use with what is left
 to set up. *Quick look at one document* is there too.
 
