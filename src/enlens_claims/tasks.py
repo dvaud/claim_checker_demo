@@ -690,12 +690,14 @@ def _store_verify_set(cx, t, payload, obj, model, schema=VerifySetOut) -> tuple[
     graded, errors = _graded_passages(v, passages)
     if errors:
         return False, errors
-    again = t["status"] == "done"  # answered before: a second reading (0.8, the stronger model)
+    # answered before (a second reading by the stronger model, 0.8; or queued again under a new prompt by `refresh`,
+    # 0.11.1): a person's own judgement stays and the AI's earlier one joins its history
+    why = "stepped up" if t["status"] == "done" else "answered again"
     for n, p in enumerate(passages, 1):
         base = cx.execute("SELECT start FROM passages WHERE passage_id=?", (p["passage_id"],)).fetchone()
         off = base[0] if base else 0
         vid = f"v{_h(t['task_id'], p['passage_id'])}"
-        before = cx.execute("SELECT * FROM verifications WHERE ver_id=?", (vid,)).fetchone() if again else None
+        before = cx.execute("SELECT * FROM verifications WHERE ver_id=?", (vid,)).fetchone()
         note = None
         ref = (None, None, None, None)
         if n in graded:
@@ -712,7 +714,7 @@ def _store_verify_set(cx, t, payload, obj, model, schema=VerifySetOut) -> tuple[
                     p["passage_id"], p["doc_id"], *row[:3], row[3], row[4], p.get("page"), model, t["prompt_version"],
                     note, *ref))
         if before is not None:
-            _keep_person_and_history(cx, vid, before, "stepped up")
+            _keep_person_and_history(cx, vid, before, why)
     return True, []
 
 
@@ -824,9 +826,22 @@ def _store_second(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     return True, []
 
 
+PART_SUFFIXES = (":local", ":person")  # the parts of a check's round that other readers answer (0.11)
+
+
+def round_base(task_id: str) -> str:
+    """The round's main task id: `check:<id>:local` and `…:person` belong to the round `check:<id>`."""
+    for suf in PART_SUFFIXES:
+        if task_id.endswith(suf):
+            return task_id[: -len(suf)]
+    return task_id
+
+
 def _store_check(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     ok, errors = _store_verify_set(cx, t, payload, obj, model, schema=CheckOut)
-    if ok:
+    if ok and t["task_id"] == round_base(t["task_id"]):
+        # the claim's summary and model are the main part's (0.11.1): a `:local` part answered after it (its note
+        # may paraphrase a restricted document) must not replace them, since the summary is shown to a Claude chat
         cx.execute("UPDATE user_claims SET rationale=?, model=? WHERE claim_id=?",
                    ((obj.get("rationale") if isinstance(obj, dict) else None), model, payload["subject_id"]))
     return ok, errors
@@ -951,7 +966,6 @@ def _step_up(ws: Workspace, t, backend, ok: bool, raw: Any) -> str | None:
 
     if router is None or t["forced_model"] or int(t["step"] or 0) or not router.step_up(task_kind(t)):
         return None
-    cur = ws.query("SELECT status, attempts FROM tasks WHERE task_id=?", (t["task_id"],))[0]
     if ok:
         try:
             c = certainty(t["kind"], parse_json(raw))
@@ -962,6 +976,7 @@ def _step_up(ws: Workspace, t, backend, ok: bool, raw: Any) -> str | None:
                 cx.execute("UPDATE tasks SET step=1, again=1, attempts=0 WHERE task_id=?", (t["task_id"],))
             return "again"
         return None
+    cur = ws.query("SELECT status, attempts FROM tasks WHERE task_id=?", (t["task_id"],))[0]
     if cur["status"] == "retry" and int(cur["attempts"]) >= MAX_ATTEMPTS - 1:
         with ws.connect() as cx:
             cx.execute("UPDATE tasks SET step=1 WHERE task_id=?", (t["task_id"],))

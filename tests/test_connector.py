@@ -86,13 +86,13 @@ def test_full_check_through_the_connector(home, corpus):
 
     asyncio.run(run())
     # the browser app sees the same check
-    from enlens_claims.gui import core
+    from enlens_claims import home as core
     h = claimcheck.history(core.open_project("Demo"))
     assert h[0]["model"] == claimcheck.CHAT_MODEL and h[0]["passages_read"] >= 3
 
 
 def test_connector_over_stdio(home, corpus):
-    from enlens_claims.gui import core
+    from enlens_claims import home as core
     from enlens_claims import ingest
 
     ws = core.create_project("Demo")

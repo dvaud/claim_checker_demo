@@ -2,13 +2,11 @@
 // 17 goals, or a person's own) each document addresses, how much and where. Two passes: keywords and meaning (no AI,
 // seconds, a provisional profile) and, optionally, the AI reading the passages with a candidate code. Every label
 // says why it is there; a person can agree, change or reject it (in the document viewer, Codes panel).
-// The pieces shared with the document viewer (the AI-labelling card, job cards, wording) are exported from here.
+// The pieces shared with the document viewer (the AI-labelling card, the keyword pass, wording) are exported from here.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, download, switchControl, navigate } from "../lib.js";
-import { simpleProgress } from "./progress.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell } from "../lib.js";
+import { jobCard } from "./progress.js";
 
-export const plural = (n, one, many) => `${fmt.num(n)} ${n === 1 ? one : many || one + "s"}`;
-export const shortTitle = (t, n = 70) => { t = (t || "untitled").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 2).trimEnd() + "…" : t; };
 const pct = (x) => `${Math.round((x || 0) * 100)}%`;
 
 // Who put a label there, in the app's words
@@ -46,46 +44,6 @@ const CHANGED = {
 };
 export function changedLines(changed) {
   return (changed || []).map((c) => (CHANGED[c.field] || ((x) => `${x.field} changed: ${shown(x.was)} → ${shown(x.now)}.`))(c));
-}
-
-// A running job of one of these kinds for this project, if any.
-export async function runningJob(project, kinds) {
-  try {
-    const jobs = (await api("GET", "/api/jobs")).jobs || [];
-    return jobs.find((j) => j.project === project && kinds.includes(j.kind) && !TERMINAL.has(j.state)) || null;
-  } catch (_) { return null; }
-}
-
-// A job in a card: a bar with what it is doing, its time and a Stop button. `onEnd(job)` runs when it ends.
-export function jobCard(box, jobId, title, labelFn, onEnd, opts = {}) {
-  const stop = h("button", { class: "btn btn-sm btn-outline-danger", type: "button" }, icon("stop", { size: 13 }), "Stop");
-  const pb = h("div", { "aria-live": "polite" });
-  const head = h(opts.small ? "h3" : "h2", {}, title);
-  const holder = h("div", { class: "card" + (opts.plain ? " card-plain" : "") }, h("div", { class: "card-head" }, head, stop), pb);
-  stop.addEventListener("click", async () => {
-    stop.disabled = true;
-    try { await api("POST", `/api/jobs/${P(jobId)}/cancel`); } catch (e) { showError(e); stop.disabled = false; }
-  });
-  box.hidden = false;
-  replace(box, holder);
-  const w = watchJob(jobId, (job) => {
-    replace(pb, simpleProgress(job, labelFn));
-    if (TERMINAL.has(job.state)) stop.hidden = true;
-  });
-  w.promise.then((job) => {
-    if (job.state === "error") {
-      head.textContent = "It did not work";
-      replace(pb, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {},
-        h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : job.error_kind === "internal" ? "Something went wrong inside the app." : (job.error || "It could not finish.")),
-        job.error_kind === "backend" || job.error_kind === "internal" ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")) : null,
-        job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)));
-    } else if (job.state === "cancelled") {
-      head.textContent = "Stopped";
-      replace(pb, h("p", { class: "muted", style: { margin: 0 } }, opts.stoppedText || "Stopped. What was done so far is kept."));
-    }
-    if (onEnd) onEnd(job);
-  }).catch(showError);
-  return w;
 }
 
 export const keywordLabel = (p) => (p.total ? `Reading the passages: ${fmt.num(p.done || 0)} of ${fmt.num(p.total)}` : "Reading the passages…");
@@ -244,15 +202,6 @@ export function aiLabelCard({ project, framework, docIds = null, watchers, onEnd
   return { el, follow, reload: load };
 }
 
-const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-
-// A heat cell of the documents × codes grid: on a log scale, so one very large cell does not leave the others pale.
-function heatCell(n, max, label, onClick) {
-  const level = n ? Math.max(1, Math.min(4, Math.ceil((4 * Math.log1p(n)) / Math.log1p(max)))) : 0;
-  return h("td", { class: `map-cell pf-cell pf-l${level}`, title: `${label}: ${plural(n, "passage")}`, onClick: n ? onClick : null },
-    h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·"));
-}
-
 // "How often you agreed with the AI" (the settings page's chart, for codebook labels)
 function calibrationBox(c) {
   const bins = c.bins || [];
@@ -288,13 +237,14 @@ export async function renderProfile(view, params, query) {
   let level = (query.level || savedLevel) === "group" ? "group" : "code";
   let prof;
   const fetchProfile = () => api("GET", `${base}/profile?framework=${encodeURIComponent(framework)}&level=${level}`);
+  let docs = null;   // the project's documents, for "open one document's profile"
+  const docsReq = api("GET", `${base}/documents`).then((r) => r.documents || []).catch(() => null);
   try { prof = await fetchProfile(); }
   catch (e) {
     if (e.status === 400 && framework !== "sdg") { toast(`The codebook “${framework}” is not available: showing the SDG targets.`, "warn"); framework = "sdg"; prof = await fetchProfile(); }
     else throw e;
   }
-  let docs = null;   // the project's documents, for "open one document's profile"
-  api("GET", `${base}/documents`).then((r) => { docs = r.documents || []; drawControls(); drawSummary(); }).catch(() => {});
+  docs = await docsReq;   // both arrive before the page is drawn: one draw, not two
 
   const head = h("div");
   const controls = h("div", { class: "pf-controls" });
@@ -453,7 +403,7 @@ export async function renderProfile(view, params, query) {
         const href = docHref(d);
         return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a, td.pf-cell")) return; location.hash = href; } },
           h("th", { scope: "row", class: "map-hyp pf-doc" }, h("a", { href, title: d.title }, shortTitle(d.title, 90)), h("div", { class: "map-hyp-meta muted small" }, `${plural(d.passages, "passage")} with a code`)),
-          codes.map((c) => heatCell(row[c.code] || 0, max, `${shortTitle(d.title, 50)}, ${unit} ${c.code}`, () => { location.hash = docHref(d, c.code); })));
+          codes.map((c) => heatCell(row[c.code] || 0, max, `${shortTitle(d.title, 50)}, ${unit} ${c.code}`, "pf", () => { location.hash = docHref(d, c.code); })));
       })));
     gridBox.appendChild(h("div", { class: "pf-grid-key muted small" },
       h("span", {}, g.provisional ? h("span", { class: "chip chip-weak" }, "provisional") : null, g.provisional ? " Includes codes found by keywords that the AI has not checked yet. " : ""),

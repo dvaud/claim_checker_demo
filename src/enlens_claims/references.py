@@ -18,12 +18,11 @@ concept card can add them on request).
 """
 from __future__ import annotations
 
-import json
 import re
 from collections import Counter, defaultdict
 from typing import Callable
 
-from .store import Workspace, now
+from .store import Workspace
 from .textutil import fast_normalise, find_quote
 
 WINDOW = 3
@@ -194,10 +193,15 @@ def _join(cx, doc_id: str) -> None:
                     union(by_name[nk], w)
                 else:
                     by_name[nk] = w
-    roots = sorted({find(w) for w in parent}, key=lambda w: min(r["start"] for r in rows if find(r["window"]) == w))
-    number = {w: i for i, w in enumerate(roots, 1)}
+    root_of = {r["rowid"]: find(r["window"]) for r in rows}
+    first: dict = {}  # each chain's first mention (0.11.1: one pass, not one over every mention per chain)
     for r in rows:
-        cx.execute("UPDATE mentions SET chain_id=? WHERE rowid=?", (number[find(r["window"])], r["rowid"]))
+        w = root_of[r["rowid"]]
+        if w not in first or r["start"] < first[w]:
+            first[w] = r["start"]
+    roots = sorted({find(w) for w in parent}, key=lambda w: first.get(w, 0))
+    number = {w: i for i, w in enumerate(roots, 1)}
+    cx.executemany("UPDATE mentions SET chain_id=? WHERE rowid=?", [(number[root_of[r["rowid"]]], r["rowid"]) for r in rows])
 
 
 def resolve_document(ws: Workspace, doc_id: str, backend, model: str, name: str | None = None,
@@ -293,18 +297,6 @@ def concept_reference_counts(ws: Workspace, labels: list[str]) -> dict[str, int]
     return dict(out)
 
 
-def references_table(ws: Workspace, doc_id: str | None = None) -> list[dict]:
-    rows = []
-    docs = [doc_id] if doc_id else [r[0] for r in ws.query("SELECT DISTINCT doc_id FROM mentions")]
-    titles = {r["doc_id"]: r["title"] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
-    for d in docs:
-        for ch in chains(ws, d):
-            for m in ch["mentions"]:
-                rows.append({"Document": titles.get(d, d), "Chain": ch["chain_id"], "Name": ch["name"],
-                             "Mention": m["text"], "Named": "yes" if m["is_named"] else "no", "Where": m["location"]})
-    return rows
-
-
 def pronoun_grades(ws: Workspace) -> list[dict]:
     """Grades of hypothesis checks whose quote opens with a pronoun, with their refers_to (for the F5 measure)."""
     out = []
@@ -313,11 +305,3 @@ def pronoun_grades(ws: Workspace) -> list[dict]:
         if opens_with_pronoun(r["quote"]):
             out.append(dict(r))
     return out
-
-
-def _payload_json(t) -> dict:
-    return json.loads(t["payload_json"])
-
-
-def stamp() -> str:
-    return now()

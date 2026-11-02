@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import statistics
 from collections import Counter, defaultdict
 from typing import Callable
@@ -54,20 +53,19 @@ def label_id(framework: str, passage_id: str, code: str, source: str) -> str:
 # ---------------------------------------------------------------------------------------------
 # pass 1: keywords and meaning
 # ---------------------------------------------------------------------------------------------
-_TOTALS: dict = {}
-
-
-def _coverage(fw: frameworks.Framework, code: str, have: set[str], idf: dict[str, float]) -> tuple[float, list[str]]:
-    """The share of a code text's words (weighted by how rare they are in the corpus) that a passage has."""
+def _coverage(fw: frameworks.Framework, code: str, have: set[str], idf: dict[str, float],
+              totals: dict | None = None) -> tuple[float, list[str]]:
+    """The share of a code text's words (weighted by how rare they are in the corpus) that a passage has. `totals`
+    caches each code's denominator for one pass (0.11.1: a module-wide cache keyed by the idf dict's address kept
+    the denominators of an earlier corpus once the index was rebuilt)."""
     want = fw.code_stems(code)
     if not want:
         return 0.0, []
-    key = (id(idf), fw.name, code)
-    total = _TOTALS.get(key)
+    total = totals.get(code) if totals is not None else None
     if total is None:
-        if len(_TOTALS) > 20000:
-            _TOTALS.clear()
-        total = _TOTALS[key] = sum(idf.get(t, 1.0) for t in want) or 1.0
+        total = sum(idf.get(t, 1.0) for t in want) or 1.0
+        if totals is not None:
+            totals[code] = total
     shared = want & have
     return sum(idf.get(t, 1.0) for t in shared) / total, sorted(shared)
 
@@ -158,14 +156,15 @@ def keyword_pass(ws: Workspace, framework: str = "sdg", embedder=None, doc_ids: 
     meaning = _meaning_candidates(ws, fw, embedder, [r["passage_id"] for r in rows]) if embedder is not None else {}
     out_rows = []
     stamp = now()
+    totals: dict[str, float] = {}
     for n, r in enumerate(rows, 1):
         toks = tokens(r["text"])
         have = set(toks)
-        scores = fw.scores(r["text"], toks)
-        cands: dict[str, dict] = {}
         lex_hits = fw.lexicon_hits(r["text"]) if fw.lexicon else set()
+        scores = fw.scores(r["text"], toks, lex_hits)  # the phrasings matched once, not twice (0.11.1)
+        cands: dict[str, dict] = {}
         for code, sc in sorted(scores.items(), key=lambda x: -x[1])[:MAX_CANDIDATES * 3]:
-            cov, shared = _coverage(fw, code, have, idf)
+            cov, shared = _coverage(fw, code, have, idf, totals)
             lexicon = code in lex_hits
             if cov < KEYWORD_FLOOR and not lexicon:
                 continue
@@ -414,9 +413,10 @@ def _decisions(ws: Workspace, ids: list[str] | None = None) -> dict[str, dict]:
 
 
 def effective(ws: Workspace, framework: str, doc_ids: list[str] | None = None, passage_ids: list[str] | None = None,
-              provisional: bool = True) -> list[dict]:
+              provisional: bool = True, code: str | None = None) -> list[dict]:
     """The labels that count: per passage, the model's once the model read it, else the strong pass-1 candidates
-    (when `provisional`); a person's rejection removes a label, a change replaces its fields, their own labels add."""
+    (when `provisional`); a person's rejection removes a label, a change replaces its fields, their own labels add.
+    `code` keeps the query to one code (the rule per passage and code is the same, so nothing else changes)."""
     where, args = ["l.framework=?"], [framework]
     if doc_ids:
         where.append(f"l.doc_id IN ({','.join('?' * len(doc_ids))})")
@@ -424,6 +424,9 @@ def effective(ws: Workspace, framework: str, doc_ids: list[str] | None = None, p
     if passage_ids:
         where.append(f"l.passage_id IN ({','.join('?' * len(passage_ids))})")
         args += list(passage_ids)
+    if code:
+        where.append("l.code=?")
+        args.append(code)
     rows = [dict(r) for r in ws.query("SELECT l.*, p.seq, p.start AS pstart FROM labels l JOIN passages p ON "
                                       f"p.passage_id=l.passage_id WHERE {' AND '.join(where)}", args)]
     head = f"label:{framework}:"
@@ -463,8 +466,8 @@ def effective(ws: Workspace, framework: str, doc_ids: list[str] | None = None, p
 
 def passages_with_code(ws: Workspace, framework: str, code: str) -> set[str]:
     fw = frameworks.get(framework, ws)
-    c = fw.normalise(code) if fw else code
-    return {r["passage_id"] for r in effective(ws, framework) if r["code"] == (c or code)}
+    c = (fw.normalise(code) if fw else code) or code
+    return {r["passage_id"] for r in effective(ws, framework, code=c)}  # one code's labels only (0.11.1)
 
 
 def doc_profile(ws: Workspace, framework: str, doc_id: str) -> dict:
@@ -674,7 +677,6 @@ def compare_sample(ws: Workspace, framework: str, backend, model: str, n: int = 
     With Claude Code (0.8.1) the sample waits in the queue of a scratch copy of the project, on `model`, and the
     copy is removed afterwards (taskqueue.answer_on_copy): the project itself is not touched either way."""
     import random
-    import sqlite3
 
     from . import prompts
     from .tasks import parse_json
@@ -701,42 +703,37 @@ def compare_sample(ws: Workspace, framework: str, backend, model: str, n: int = 
         queued, _secs = answer_on_copy(ws, [(t["task_id"], "label", json.loads(t["payload_json"]), model)
                                             for t in sample], backend, f"compare labels {model}",
                                        should_stop=should_stop)
-    cx = sqlite3.connect(ws.db_path, timeout=60)
-    cx.row_factory = sqlite3.Row
-    try:
-        for i, t in enumerate(sample, 1):
-            if should_stop and should_stop():
-                break
-            if progress:
-                progress(i, len(sample))
-            payload = json.loads(t["payload_json"])
-            before = {r["code"] for r in ws.query("SELECT code FROM labels WHERE task_id=? AND source='model'",
-                                                  (t["task_id"],))}
-            try:
-                if queued is not None:
-                    raw = queued.get(t["task_id"])
-                    if raw is None:
-                        raise ValueError("not answered")
-                else:
-                    access.sending(ws, payload, backend, "label (compare labels)", t["task_id"])
-                    raw = backend.complete("label", prompts.system_prompt("label"),
-                                           prompts.user_prompt("label", payload), model, payload)
-                obj = parse_json(raw)
-            except Exception:
-                errors += 1
-                continue
-            now_codes = set()
-            for lb in obj.get("labels") or []:
-                c = fw.normalise(lb.get("code")) if isinstance(lb, dict) else None
-                if c:
-                    now_codes.add(c)
-            universe = {c["code"] for c in payload.get("candidates", [])} | before | now_codes
-            for c in universe:
-                pairs.append((c in before, c in now_codes))
-            same += before == now_codes
-            compared += 1
-    finally:
-        cx.close()
+    for i, t in enumerate(sample, 1):
+        if should_stop and should_stop():
+            break
+        if progress:
+            progress(i, len(sample))
+        payload = json.loads(t["payload_json"])
+        before = {r["code"] for r in ws.query("SELECT code FROM labels WHERE task_id=? AND source='model'",
+                                              (t["task_id"],))}
+        try:
+            if queued is not None:
+                raw = queued.get(t["task_id"])
+                if raw is None:
+                    raise ValueError("not answered")
+            else:
+                access.sending(ws, payload, backend, "label (compare labels)", t["task_id"])
+                raw = backend.complete("label", prompts.system_prompt("label"),
+                                       prompts.user_prompt("label", payload), model, payload)
+            obj = parse_json(raw)
+        except Exception:
+            errors += 1
+            continue
+        now_codes = set()
+        for lb in obj.get("labels") or []:
+            c = fw.normalise(lb.get("code")) if isinstance(lb, dict) else None
+            if c:
+                now_codes.add(c)
+        universe = {c["code"] for c in payload.get("candidates", [])} | before | now_codes
+        for c in universe:
+            pairs.append((c in before, c in now_codes))
+        same += before == now_codes
+        compared += 1
     from .analysis import _prf
 
     tp = sum(a and b for a, b in pairs)

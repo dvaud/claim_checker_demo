@@ -260,8 +260,6 @@ def _pypdf_pages(reader) -> dict[int, PageText]:
                     continue
                 lines[-1].append((c, (x + col * cw, y - 0.25 * size, x + (col + 1) * cw, y + 0.85 * size, f"p{line}")))
                 col += 1
-            if text and not text.endswith("\n"):
-                pass
         text, boxes = _join_lines([ln for ln in lines if ln])
         box = page.mediabox
         out[pno] = PageText(text, boxes, "lines", float(box.width), float(box.height), float(box.left),

@@ -352,7 +352,6 @@ def _find(ws: Workspace, claim_id: str):
 def submit(ws: Workspace, claim_id: str, answers: list[dict]) -> dict:
     """Store the answers of a claim. Each answer is checked like any other (quotes against the text); a rejected one
     comes back with its problems and stays with this claim to be fixed, unless it goes up to the stronger model."""
-    from .routing import STEP_UP_BELOW, certainty
     from .tasks import MAX_ATTEMPTS, ingest_result, parse_json
 
     c = _find(ws, claim_id)
@@ -400,10 +399,10 @@ def submit(ws: Workspace, claim_id: str, answers: list[dict]) -> dict:
         if not int(t["step"] or 0) and not t["forced_model"] and r.step_up(rk) and not (t["status"] == "done"):
             if ok:
                 try:
-                    conf = certainty(t["kind"], parse_json(raw))
+                    conf = routing.certainty(t["kind"], parse_json(raw))
                 except ValueError:
                     conf = None
-                if conf is not None and conf < STEP_UP_BELOW:
+                if conf is not None and conf < routing.STEP_UP_BELOW:
                     with ws.connect() as cx:
                         cx.execute("UPDATE tasks SET step=1, again=1, attempts=0, claimed_by=NULL, claimed_at=NULL "
                                    "WHERE task_id=?", (tid,))
@@ -523,7 +522,7 @@ def wait_for(ws: Workspace, task_id: str, backend, poll: float = 1.5) -> tuple[b
     last_report = 0.0
     t0 = time.time()
     while True:
-        r0 = ws.query("SELECT kind, status, again FROM tasks WHERE task_id=?", (task_id,))
+        r0 = ws.query("SELECT kind, status, again, queued, access FROM tasks WHERE task_id=?", (task_id,))
         if not r0:
             return False, ["the task was withdrawn"]
         st = r0[0]
@@ -532,6 +531,11 @@ def wait_for(ws: Workspace, task_id: str, backend, poll: float = 1.5) -> tuple[b
         if st["status"] == "failed":
             err = ws.query("SELECT errors_json FROM results WHERE task_id=? ORDER BY attempt DESC LIMIT 1", (task_id,))
             return False, json.loads(err[0][0]) if err else []
+        if not st["queued"] or (st["access"] or "cloud") != "cloud":
+            # 0.11.1: taken out of the queue meanwhile (a document's AI setting changed, or the document was removed):
+            # Claude Code will never see it, so waiting on would never end
+            return False, ["the AI setting of a document in this task changed while it waited: it is no longer handed "
+                           "to Claude Code (a local model or you can read it)"]
         if backend.should_stop and backend.should_stop():
             raise BackendError("Stopped.")
         if backend.progress and time.time() - last_report >= 3:
@@ -583,7 +587,10 @@ def run_here(ws: Workspace, backend, kinds: list[str] | None = None, limit: int 
             if progress:
                 progress(i, total)
             with ws.connect() as cx:  # taken by this program, so a Claude Code session does not take it meanwhile
-                cx.execute("UPDATE tasks SET claimed_by='here', claimed_at=? WHERE task_id=?", (now(), tid))
+                got = cx.execute(f"UPDATE tasks SET claimed_by='here', claimed_at=? WHERE task_id=? AND "
+                                 f"{_FREE.replace('t.', '')}", (now(), tid, _cutoff())).rowcount
+            if not got:  # a Claude Code session took it since the list was made (0.11.1): leave it to that session
+                continue
             t0 = time.time()
             try:
                 ok, _e = run_one(ws, tid, backend, model)
@@ -637,13 +644,13 @@ def answer_on_copy(ws: Workspace, items: list[tuple[str, str, dict, str]], backe
     except Exception:  # noqa: BLE001 - removed below in any case
         pass
     try:
-        # 0.11: only tasks whose documents Claude may read go to the copy's queue; the others get no answer. Their
-        # passages are written to this project's ledger now (the copy and its own ledger are removed afterwards)
+        # 0.11: only tasks whose documents Claude may read go to the copy's queue; the others get no answer. The
+        # copy's own ledger starts empty: what Claude Code actually takes from it is written there (next_tasks) and
+        # carried into this project's ledger below, so a test stopped before a batch left records nothing (0.11.1)
         with ws.connect() as wcx:
             items = [it for it in items if access.label_payload(wcx, it[2]) == "cloud"]
-            for tid, kind, payload, _model in items:
-                access.record_sent(wcx, None, payload, "Claude Code", f"{kind} ({purpose})")
         with copy.connect() as cx:
+            cx.execute("DELETE FROM ai_sent")
             for tid, kind, payload, model in items:
                 _insert_task(cx, tid, kind, model, payload)
                 cx.execute("UPDATE tasks SET forced_model=?, model=?, queued=1, queued_at=?, status='pending', "
@@ -662,6 +669,16 @@ def answer_on_copy(ws: Workspace, items: list[tuple[str, str, dict, str]], backe
             secs[(kind, model)] = round(statistics.median(xs), 1) if xs else None
         return raws, secs
     finally:
+        try:
+            sent = copy.query("SELECT passage_id, doc_id, route, task_id, sent_at, feature FROM ai_sent")
+            if sent:
+                with ws.connect() as wcx:
+                    wcx.executemany("INSERT INTO ai_sent(passage_id, doc_id, route, task_id, sent_at, feature) "
+                                    "VALUES (?,?,?,?,?,?)",
+                                    [(r[0], r[1], r[2], None, r[4], f"{r[5]} ({purpose})") for r in sent])
+        except Exception:  # noqa: BLE001 - the ledger must not stop the clean-up below
+            pass
+        copy.close()
         shutil.rmtree(copy.root, ignore_errors=True)
         try:
             q = home._quicklooks()

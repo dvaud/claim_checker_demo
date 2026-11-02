@@ -251,6 +251,7 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
     counts = terms.passage_term_counts(ws)
     say("cluster", 0, 1)
     t0 = time.time()
+    without_vector = 0
     if mode == "meaning":
         import numpy as np
 
@@ -258,6 +259,7 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
 
         vs = embed.vectors(ws, embed_model)
         keep = [r for r in rows if r["passage_id"] in vs.pos]
+        without_vector = len(rows) - len(keep)
         X = vs.matrix[[vs.pos[r["passage_id"]] for r in keep]]
         X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
         assign, sim, _C = kmeans_dense(X, k, seed, should_stop)
@@ -328,7 +330,7 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
         for i in groups[j]:
             member_rows.append((rid, tid, rows[i]["passage_id"], round(float(sim[i]), 5)))
     settings = {"why": why, "dropped_repeats": dropped, "seconds": seconds, "passages_without_vector":
-                None}
+                without_vector}  # recorded with the run (0.11.1: it was counted and then written as None)
     with ws.connect() as cx:
         cx.execute("INSERT INTO theme_runs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                    (rid, mode, k, seed, embed_model if mode == "meaning" else None, None, created, len(rows), rkey,
@@ -537,11 +539,18 @@ def theme_passages(ws: Workspace, run_id: str, theme_id: int, offset: int = 0, l
     v = view(ws, run_id)
     r = ws.query("SELECT run_key FROM theme_runs WHERE run_id=?", (run_id,))[0]
     ed = _edits(ws, r["run_key"])
+    # only the rows that can belong to this theme (0.11.1: every member of the run was read, with its text, per
+    # page of one theme): its own and the themes merged into it, plus the passages moved into it
+    own = [t for (t,) in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (run_id,))
+           if _final(ed["merges"], t) == theme_id]
+    moved_in = [pid for pid, t in ed["moves"].items() if _final(ed["merges"], t) == theme_id]
+    marks = lambda xs: ",".join("?" * len(xs))  # noqa: E731
     rows = []
     for m in ws.query("SELECT m.passage_id, m.theme_id, m.similarity, p.doc_id, p.page, p.text, p.start, p.end, d.title "
                       "FROM theme_members m "
                       "JOIN passages p ON p.passage_id=m.passage_id JOIN documents d ON d.doc_id=p.doc_id "
-                      "WHERE m.run_id=?", (run_id,)):
+                      f"WHERE m.run_id=? AND (m.theme_id IN ({marks(own)}) OR m.passage_id IN ({marks(moved_in)}))",
+                      [run_id, *own, *moved_in]):
         moved = ed["moves"].get(m["passage_id"])
         t = _final(ed["merges"], moved or m["theme_id"])
         if t == theme_id:

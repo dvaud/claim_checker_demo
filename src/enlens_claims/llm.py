@@ -71,6 +71,24 @@ def is_chat_model(name: str) -> bool:
     return not re.search(r"embed|bge-|e5-|minilm|rerank", name or "", re.I)
 
 
+def _anthropic_install_hint() -> str:
+    """How to add the Claude API's package to this copy (0.11.1: the one-line install has no pip to speak of)."""
+    try:
+        from .installation import kind
+        k = kind()
+    except Exception:  # noqa: BLE001
+        k = "pip"
+    if k == "script":
+        from . import __version__
+        from .installation import REPO
+
+        url = f"https://github.com/{REPO}/releases/download/v{__version__}/enlens_claims-{__version__}-py3-none-any.whl"
+        return ("The Claude API needs one more package, which the one-line install leaves out. In a terminal run: "
+                f"uv tool install --force --python 3.12 \"enlens-claims[connector,fast,pdfminer,ocr,anthropic] @ {url}\" "
+                "then quit ENLENS and open it again.")
+    return "Install the API extra: pip install 'enlens-claims[anthropic]' (in ENLENS's own Python)."
+
+
 class AnthropicBackend:
     """The Claude API. The system prompt is cached, so repeated tasks of one kind pay for it once."""
 
@@ -82,11 +100,13 @@ class AnthropicBackend:
             try:
                 import anthropic
             except ImportError as e:  # pragma: no cover - depends on the environment
-                raise BackendError("Install the API extra: pip install 'enlens-claims[anthropic]'") from e
+                raise BackendError(_anthropic_install_hint()) from e
             key = api_key or os.environ.get("ANTHROPIC_API_KEY")
             if not key:
                 raise BackendError("No Claude API key. Enter one in Settings or set ANTHROPIC_API_KEY.")
-            kw = {"api_key": key, "timeout": timeout}
+            # one retry at most (0.11.1): with the SDK's default of two, a hung connection held a task for up to
+            # three times the timeout, and a Stop pressed in the app took effect only when the call returned
+            kw = {"api_key": key, "timeout": timeout, "max_retries": 1}
             if base_url:
                 kw["base_url"] = base_url
             client = anthropic.Anthropic(**kw)
@@ -145,7 +165,7 @@ class OllamaBackend:
     name = "ollama"
 
     def __init__(self, base_url: str | None = None, num_ctx: int = 16384, think: bool | None = None,
-                 keep_alive: str = "15m", timeout: int = 1800, reserve: int = 2048, opener=None,
+                 keep_alive: str = "15m", timeout: int = 1800, opener=None,
                  stall_timeout: int = 600, think_kinds: frozenset | set | None = None, think_budget: int = 0,
                  seed: int | None = DEFAULT_SEED):
         url = (base_url or os.environ.get("OLLAMA_HOST") or "http://localhost:11434").rstrip("/")
@@ -158,7 +178,6 @@ class OllamaBackend:
         self.think_budget = int(think_budget or 0)  # reasoning tokens before the model is asked to answer (0: none)
         self.keep_alive = keep_alive
         self.timeout = timeout
-        self.reserve = reserve
         self.stall_timeout = stall_timeout   # longest silence: loading the model and reading a long prompt included
         self.progress = None                 # optional callable(info) while an answer streams in
         self.should_stop = None              # optional callable() -> bool, checked every second: True stops the call
@@ -337,6 +356,8 @@ class OllamaBackend:
             try:
                 with self.opener(req, timeout=self.stall_timeout) as resp:
                     held["resp"] = resp
+                    if held.get("stopped"):  # stopped while the model was still reading the prompt (0.11.1)
+                        return
                     for line in resp:
                         q.put(("line", line))
                 q.put(("end", None))
@@ -344,6 +365,9 @@ class OllamaBackend:
                 q.put(("error", e))
 
         def stop():
+            # Ollama answers the headers with the first token, so a Stop before that finds no response to close:
+            # the flag makes the reader close it as soon as it arrives, so the model does not go on generating
+            held["stopped"] = True
             try:
                 if held.get("resp") is not None:
                     held["resp"].close()
@@ -613,6 +637,8 @@ class LocalBackend:
             try:
                 with self.opener(req, timeout=self.stall_timeout) as resp:
                     held["resp"] = resp
+                    if held.get("stopped"):  # stopped while the server was still reading the prompt (0.11.1)
+                        return
                     if hasattr(resp, "__iter__") and not hasattr(resp, "_fake_whole"):
                         for line in resp:
                             q.put(("line", line))
@@ -701,6 +727,7 @@ class LocalBackend:
                                        "choose another model.")
                 report()
         finally:
+            held["stopped"] = True
             try:
                 if held.get("resp") is not None:
                     held["resp"].close()
@@ -726,9 +753,9 @@ class LocalBackend:
         return text
 
     # -- information ----------------------------------------------------------------------------
-    def models(self) -> list[str]:
+    def models(self, timeout: float = 10) -> list[str]:
         try:
-            with self.opener(self._request("/models"), timeout=10) as resp:
+            with self.opener(self._request("/models"), timeout=timeout) as resp:
                 data = json.loads(resp.read().decode() or "{}")
         except Exception as e:
             raise self._error(e) from e
@@ -825,7 +852,7 @@ def detect_local(ollama_url: str | None = None, extra: list[str] | None = None, 
             return  # Ollama's own OpenAI endpoint: already listed as Ollama
         try:
             lb = LocalBackend(base_url=url, timeout=2)
-            models = lb._probe(timeout)
+            models = lb.models(timeout)
             found[i] = {"kind": "openai", "url": url, "models": models, "loaded": lb.loaded(timeout), "modified": {}}
         except Exception:
             pass
@@ -840,15 +867,6 @@ def detect_local(ollama_url: str | None = None, extra: list[str] | None = None, 
     _DETECTED[key] = (time.time(), out)
     return [dict(x) for x in out]
 
-
-def _probe(self: LocalBackend, timeout: float) -> list[str]:
-    with self.opener(self._request("/models"), timeout=timeout) as resp:
-        data = json.loads(resp.read().decode() or "{}")
-    return sorted(str(m.get("id")) for m in (data.get("data") or []) if isinstance(m, dict) and m.get("id"))
-
-
-LocalBackend._probe = _probe  # type: ignore[attr-defined]
-OpenAICompatibleBackend = LocalBackend
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1087,8 +1105,6 @@ def provenance(backend, model: str) -> dict:
             digest = None
     elif name in ("anthropic", "baseline"):
         digest = f"name:{model}"
-    if name == "claude_code":
-        digest = None
     from .routing import ROUTE_NAMES
 
     settings = {"backend": name, "temperature": 0, "route": ROUTE_NAMES.get(name, name)}

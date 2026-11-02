@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .llm import (AnthropicBackend, BackendError, BaselineBackend, LocalBackend, OllamaBackend, detect_local,
                   is_chat_model)
+from . import routing
 from .store import Workspace
 
 DEFAULTS = {
@@ -74,7 +75,7 @@ BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Loc
                   "ollama": "Ollama", "openai": "Local OpenAI-compatible server", "anthropic": "Claude API (cloud)",
                   "baseline": "Offline demo"}
 CLOUD_BACKENDS = {"anthropic"}
-OFF_COMPUTER = {"anthropic", "claude_code"}   # the passages read leave this computer
+OFF_COMPUTER = routing.OFF_COMPUTER   # the passages read leave this computer
 
 
 def home() -> Path:
@@ -113,10 +114,14 @@ def load_settings() -> dict:
                 s["allow_cloud"] = bool(env_key() or stored_key())
         except (json.JSONDecodeError, OSError):
             pass
-    if local_only() and s.get("backend") in OFF_COMPUTER:
-        # whoever installed ENLENS switched cloud models off for good: the subscription default becomes the local one
-        s["backend"] = "auto"
+    if local_only():
+        # whoever installed ENLENS switched cloud models off for good: the subscription default becomes the local
+        # one, and the cloud permissions a settings file may still carry are off (0.11.1: with `allow_cloud` still
+        # true from before, every settings change was refused, so nothing could be changed at all)
+        if s.get("backend") in OFF_COMPUTER:
+            s["backend"] = "auto"
         s["allow_claude_code"] = False
+        s["allow_cloud"] = False
     return s
 
 
@@ -263,11 +268,6 @@ def pick_chat_model(models: list[str], loaded: list[str] | tuple = (), modified:
     if any(when.values()):
         return max(chat, key=lambda m: (when[m], [-ord(c) for c in m]))  # newest; ties alphabetical
     return chat[0]
-
-
-def _first_chat_model(models: list[str]) -> str:
-    """Kept for callers of 0.5: the alphabetical choice, now `pick_chat_model` without server information."""
-    return pick_chat_model(models)
 
 
 def best_model(be) -> str:
@@ -577,7 +577,11 @@ def create_project(name: str) -> Workspace:
         raise ValueError("Give the project a name (letters, digits, spaces, dots, dashes).")
     if n in list_projects() or (project_path(n) / "enlens.sqlite").exists():
         raise ValueError(f"A project called {n!r} already exists.")
-    return Workspace.create(project_path(n))
+    links = _links()
+    if n in links:  # a link whose folder is gone (0.11.1): the new project is made in the data folder, not there
+        links.pop(n)
+        _save_links(links)
+    return Workspace.create(home() / "projects" / n)
 
 
 _OPEN: dict[str, tuple[float, Workspace]] = {}
@@ -730,6 +734,7 @@ def cleanup_quicklooks(now_: float | None = None) -> list[str]:
         return []
     t = time.time() if now_ is None else now_
     moved = []
+    changed = False
     for name, q in list(data.items()):
         if t - float(q.get("created_at") or t) < QUICKLOOK_DAYS * 86400:
             continue
@@ -740,7 +745,9 @@ def cleanup_quicklooks(now_: float | None = None) -> list[str]:
         except (KeyError, OSError):
             pass
         data.pop(name, None)
-    _save_quicklooks(data)
+        changed = True
+    if changed:  # 0.11.1: the file was rewritten on every /api/state while any quick look existed
+        _save_quicklooks(data)
     return moved
 
 

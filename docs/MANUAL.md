@@ -230,7 +230,9 @@ search words that do not fit and add words your documents use; then *Check*. The
 
 While it runs, the panel shows each step as it finishes: the parts, the other words searched for, how many excerpts
 from how many documents, the AI reading them; *Technical details* shows what the model is doing second by second.
-*Stop* ends the check and leaves nothing behind. You can use the rest of the app meanwhile.
+Remarks about the round (excerpts of restricted documents read on this computer, or waiting for you) appear under
+the steps. *Stop* ends the check and leaves nothing behind; with a model on this computer it also stops the model
+while it is still reading the prompt (0.11.1). You can use the rest of the app meanwhile.
 
 ### Reading and reviewing a result
 
@@ -729,8 +731,11 @@ rule: a task takes the setting of the most restricted document it touches. A the
 restricted is named by the local model or keeps its key terms; two concepts found only in restricted documents are
 linked by the local model or not at all (a term's words are words of the documents). A check started in a Claude chat
 (the connector) shows Claude only the excerpts it may read; the result page then offers *Read them now on this
-computer* for the local ones. Search by meaning: an embedding server on another computer does not receive the
-restricted passages (they are found by their words).
+computer* for the local ones. When the local model's answers for its excerpts cannot be used (three tries), the
+result says so and shows them without a judgement; *Read them again on this computer* tries once more (0.11.1, for
+instance after choosing another local model), or you judge them yourself. The check's written summary is always the
+main model's, never the local model's note. Search by meaning: an embedding server on another computer does not
+receive the restricted passages (they are found by their words).
 
 **How it is enforced.** In code, where every AI task is made and run, never by an instruction in a prompt: each task
 is labelled with the most restricted setting of the documents it names, a task is refused before any model is asked
@@ -745,7 +750,9 @@ API, a Claude chat through the connector). The column *Sent to Claude* shows the
 click it for the passages, when and for which feature. *Settings → Technical → What was sent to Claude* downloads the
 whole list (CSV), for example for a data management plan. For a project made before 0.11 the list starts with the
 results ENLENS recorded then. Changing a document to *Only a local AI* applies to everything not yet answered; what
-Claude already read stays in the results and the list.
+Claude already read stays in the results and the list. Removing a document takes its passages out of everything
+still waiting for Claude Code (0.11.1). A check that was waiting for Claude Code when a document's setting changed
+stops waiting and says so: the excerpts are then for the local model or for you.
 
 **A cap.** In a document's dialog you can set *Claude may read at most N %*. Once Claude has read that much, its
 further passages are treated as *Only a local AI*. It is checked when tasks are made, so a check that is running can

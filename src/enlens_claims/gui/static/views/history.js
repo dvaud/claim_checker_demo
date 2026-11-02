@@ -1,6 +1,6 @@
 // Results: every hypothesis checked in the project. Counts come from the API at the current strictness.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName } from "../lib.js";
 import { ProgressPanel } from "./progress.js";
 
 const ORDER = ["supported", "partially_supported", "contested", "contradicted", "uncertain", "unsupported", "no_passages", "not_checked", "failed", "waiting"];
@@ -35,8 +35,8 @@ export async function renderHistory(view, params, query) {
     clear(actionsBox);
     const withNew = rows.filter((x) => x.docs_added_since > 0);
     const st = App.settings();   // 0.8: on Claude the auditor gives the second opinion
-    const auditor = ["claude_code", "anthropic"].includes(st.backend) && st.routing !== false;
-    const secondSet = auditor ? (st.use_fable ? "fable" : "opus") : (st.second_model || "").trim();
+    const auditor = auditorName(st);
+    const secondSet = auditor || (st.second_model || "").trim();
     const main = auditor ? "" : (st.ollama_model || st.openai_model || "").trim();
     const shown = batch ? "the set shown" : (q || status) ? "the results shown" : "all results";
     const n = rows.length;

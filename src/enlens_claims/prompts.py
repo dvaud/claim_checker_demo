@@ -298,10 +298,7 @@ def user_prompt(kind: str, payload: dict) -> str:
                 parts.append(f"BEFORE P{i} (for refers_to only; not to be graded or quoted as evidence):\n…{p['context']}")
             parts.append(f"P{i} | {src}\n{p['text']}")
         if payload.get("read_elsewhere"):  # 0.11: the round's other excerpts come from documents kept from this model
-            n = payload["read_elsewhere"]
-            parts.append(f"{n} other {'excerpt' if n == 1 else 'excerpts'} for this claim {'comes' if n == 1 else 'come'} "
-                         "from documents you are not shown; they are judged separately. Grade only the passages above, "
-                         "and in your rationale speak only for them.")
+            parts.append(_read_elsewhere(payload["read_elsewhere"]))
         if payload.get("reader_note"):  # a person's comment when they ask for one excerpt to be read again
             parts.append(f"A reader noted (a hint to check against the passage, not evidence): {payload['reader_note']}")
         if kind == "reread":
@@ -351,5 +348,13 @@ def user_prompt(kind: str, payload: dict) -> str:
         for i, p in enumerate(payload["passages"], 1):
             src = (p.get("title") or "untitled") + (f", page {p['page']}" if p.get("page") else "")
             parts.append(f"P{i} | {src}\n{p['text']}")
+        if payload.get("read_elsewhere"):  # 0.11.1: a split set (make_verify_vca) says so, as a check does
+            parts.append(_read_elsewhere(payload["read_elsewhere"]))
         return "\n\n".join(parts)
     raise ValueError(f"unknown task kind {kind!r}")
+
+
+def _read_elsewhere(n: int) -> str:
+    return (f"{n} other {'excerpt' if n == 1 else 'excerpts'} for this claim {'comes' if n == 1 else 'come'} "
+            "from documents you are not shown; they are judged separately. Grade only the passages above, "
+            "and in your rationale speak only for them.")

@@ -41,7 +41,6 @@ DEFAULT_MODELS = {"label": ("haiku", "sonnet", "opus", "local"), "link": ("haiku
                   "theme": ("sonnet", "opus"), "resolve": ("sonnet", "opus"), "check": ("sonnet", "opus", "local")}
 SEED = 11
 CHECK_SAMPLE = 50
-REPEAT_SAMPLE = 50
 
 
 def _read_csv(path: Path) -> list[dict]:
@@ -116,7 +115,7 @@ def prepare(ref: Workspace, folder: str | Path, kind: str, model: str, again: bo
         profile.ensure_pass1(ws, framework)
         pids = [r["passage_id"] for r in rows]
         if again:
-            pids = random.Random(SEED).sample(pids, min(REPEAT_SAMPLE, len(pids)))
+            pids = random.Random(SEED).sample(pids, min(CHECK_SAMPLE, len(pids)))
         profile.make_label_tasks(ws, framework, pids, model)
         ids = [f"label:{framework}:{p}" for p in pids if ws.scalar("SELECT 1 FROM tasks WHERE task_id=?",
                                                                      (f"label:{framework}:{p}",))]
@@ -160,7 +159,7 @@ def prepare(ref: Workspace, folder: str | Path, kind: str, model: str, again: bo
         refs = _reference_checks(ref)
         if not refs:
             raise ValueError("The reference workspace has no answered VCA checks (verify_set tasks).")
-        sample = random.Random(SEED).sample(refs, min(CHECK_SAMPLE if not again else REPEAT_SAMPLE, len(refs)))
+        sample = random.Random(SEED).sample(refs, min(CHECK_SAMPLE, len(refs)))
         ws = _copy(ref, name)
         from .tasks import _insert_task
 
@@ -271,7 +270,8 @@ def _score_link(ws: Workspace, folder: Path) -> dict:
 def _score_theme(ws: Workspace, folder: Path, model: str) -> dict:
     from .acceptance import _write, _yes
 
-    sheet = folder / f"g6_theme_names_{re.sub(r'[^\w.-]', '-', model)}.csv"
+    safe = re.sub(r"[^\w.-]", "-", model)  # outside the f-string: a backslash there is an error before Python 3.12
+    sheet = folder / f"g6_theme_names_{safe}.csv"
     rows = _read_csv(sheet)
     if not rows:
         names = [{"theme_id": r["theme_id"], "name": r["name"] or "", "description": r["description"] or "",

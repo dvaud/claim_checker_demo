@@ -11,7 +11,6 @@ export const LEVEL = {
   none: { title: "No AI", many: "No AI", short: "No AI", icon: "shield",
     sub: "Only you judge its excerpts. Search, the keyword profile, concepts and themes still work." },
 };
-export const PROMISE = "Documents you mark as local stay on this computer. ENLENS never sends their text to Claude, in any feature, and shows you how much of every other document it has sent.";
 const CHECKED = "30 October 2026";
 const DATA_USAGE = "https://code.claude.com/docs/en/data-usage";
 const PRIVACY_SETTING = "https://claude.ai/settings/data-privacy-controls";

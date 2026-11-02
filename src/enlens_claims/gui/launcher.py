@@ -164,7 +164,11 @@ def start_ollama(settings: dict) -> str | None:
     from urllib.parse import urlparse
     from urllib.request import urlopen
 
-    if settings.get("backend") not in ("auto", "ollama"):
+    # the main AI, the local model for restricted documents (0.11) or search by meaning may be Ollama (0.11.1: with
+    # Claude as the main AI, Ollama was not started, so "Only a local AI" excerpts fell to the person's judgement)
+    uses = (settings.get("backend") in ("auto", "ollama") or settings.get("restricted_server") == "ollama"
+            or (settings.get("embed_backend") == "ollama" and settings.get("embed_model")))
+    if not uses:
         return None
     url = (settings.get("ollama_url") or "http://localhost:11434").rstrip("/")
     if urlparse(url if "//" in url else "http://" + url).hostname not in ("localhost", "127.0.0.1", "::1"):

@@ -127,6 +127,9 @@ CREATE INDEX IF NOT EXISTS ix_ai_sent_doc ON ai_sent(doc_id, passage_id);
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
+# 0.11.1: the label lookups per passage (`WHERE framework=? AND passage_id=?`) and per task were planned over the
+# framework index alone (a project has no statistics), hundreds of times slower on a large project; the index on
+# (passage_id, framework) answers them directly, and the old single-column one is dropped.
 INDEXES = """
 CREATE INDEX IF NOT EXISTS ix_ver_subject ON verifications(subject_kind, subject_id);
 CREATE INDEX IF NOT EXISTS ix_ver_passage ON verifications(passage_id);
@@ -138,7 +141,9 @@ CREATE INDEX IF NOT EXISTS ix_interactions_claim ON interactions(claim_id);
 CREATE INDEX IF NOT EXISTS ix_user_claims_hyp ON user_claims(hyp_id, part);
 CREATE INDEX IF NOT EXISTS ix_hypotheses_created ON hypotheses(created_at);
 CREATE INDEX IF NOT EXISTS ix_second_subject ON second_opinions(subject_id);
-CREATE INDEX IF NOT EXISTS ix_labels_passage ON labels(passage_id);
+DROP INDEX IF EXISTS ix_labels_passage;
+CREATE INDEX IF NOT EXISTS ix_labels_passage_fw ON labels(passage_id, framework);
+CREATE INDEX IF NOT EXISTS ix_labels_task ON labels(task_id);
 CREATE INDEX IF NOT EXISTS ix_labels_doc ON labels(framework, doc_id);
 CREATE INDEX IF NOT EXISTS ix_labels_code ON labels(framework, code);
 CREATE INDEX IF NOT EXISTS ix_term_mentions_term ON term_mentions(term_id);
@@ -412,15 +417,18 @@ class Workspace:
             out["interactions"] = cx.execute("DELETE FROM interactions WHERE doc_id=? AND kind='stated'", (doc_id,)).rowcount
             out["verifications"] = cx.execute("DELETE FROM verifications WHERE doc_id=? AND subject_kind != 'user_claim'",
                                               (doc_id,)).rowcount
-            for pid in pids:
-                cx.execute("DELETE FROM embeddings WHERE passage_id=?", (pid,))
-                cx.execute("DELETE FROM results WHERE task_id=?", (f"extract:{pid}",))
-                cx.execute("DELETE FROM tasks WHERE task_id=?", (f"extract:{pid}",))
-                cx.execute("DELETE FROM theme_members WHERE passage_id=?", (pid,))
-                # model labels of this passage: their tasks are 'label:<framework>:<passage_id>'
-                tail = f":{pid}"   # compared exactly ('_' in an id is a wildcard for LIKE)
-                for tbl in ("results", "tasks"):
-                    cx.execute(f"DELETE FROM {tbl} WHERE kind='label' AND substr(task_id, -?) = ?", (len(tail), tail))
+            # one statement per table rather than four per passage (0.11.1: a document of a few hundred passages in a
+            # project with many tasks held the database for seconds)
+            own = "(SELECT passage_id FROM passages WHERE doc_id=?)"
+            cx.execute(f"DELETE FROM embeddings WHERE passage_id IN {own}", (doc_id,))
+            cx.execute(f"DELETE FROM theme_members WHERE passage_id IN {own}", (doc_id,))
+            for tbl in ("results", "tasks"):
+                cx.execute(f"DELETE FROM {tbl} WHERE task_id IN (SELECT 'extract:' || passage_id FROM passages "
+                           "WHERE doc_id=?)", (doc_id,))
+                # model labels of its passages: their tasks are 'label:<framework>:<passage_id>'; the passage ids of
+                # one document share a length (seq is padded), so the tail of the task id is compared exactly
+                for n in sorted({len(pid) for pid in pids}):
+                    cx.execute(f"DELETE FROM {tbl} WHERE kind='label' AND substr(task_id, -?) IN {own}", (n, doc_id))
             # 0.7: what was derived from the document (the term index is rebuilt when the corpus version changes)
             out["labels"] = cx.execute("DELETE FROM labels WHERE doc_id=?", (doc_id,)).rowcount
             out["mentions"] = cx.execute("DELETE FROM mentions WHERE doc_id=?", (doc_id,)).rowcount
@@ -434,6 +442,11 @@ class Workspace:
             cx.execute("DELETE FROM headings WHERE doc_id=?", (doc_id,))
             cx.execute("DELETE FROM doc_refs WHERE doc_id=?", (doc_id,))
             out["documents"] = cx.execute("DELETE FROM documents WHERE doc_id=?", (doc_id,)).rowcount
+            # 0.11.1: tasks not answered yet that still hold its passages (a check, a theme name, a concept link) are
+            # relabelled now, so none of them is handed to Claude Code after the document is gone
+            from .access import relabel
+
+            relabel(cx)
             self.bump_corpus(cx)
         return out
 

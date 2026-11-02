@@ -1,12 +1,12 @@
 // Documents: a big add area first, the document table, smart search in plain words, a document viewer, and the
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow } from "../features.js";
-import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT } from "../lib.js";
-import { simpleProgress } from "./progress.js";
-import { plainSection, blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
-import { dialog, certainty, breakSegments, session } from "../lib.js";
+import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
+  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob } from "../lib.js";
+import { simpleProgress, jobCard } from "./progress.js";
+import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
-import { aiLabelCard, jobCard, runningJob, startKeywordPass, keywordLabel, plural, shortTitle, SOURCE_WORDS, RELEVANCE_WORDS, DIRECTION_WORDS } from "./profile.js";
+import { aiLabelCard, startKeywordPass, keywordLabel, SOURCE_WORDS, RELEVANCE_WORDS, DIRECTION_WORDS } from "./profile.js";
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
 const OK_EXT = ["pdf", "docx", "html", "htm", "txt", "md", "zip"];
@@ -64,7 +64,8 @@ export async function renderSources(view) {
   const acc = info.ai_access || {};
   let chosenLevel = acc.chosen ? acc.default : null;
   const needLevel = () => !chosenLevel;
-  const accessPick = accessChoice({ value: chosenLevel, name: "add-access", onChange: (v) => { chosenLevel = v; drawFiles(); pathBtn.disabled = false; } });
+  let ingesting = false;   // an ingest is being followed: the folder button stays off until it ends
+  const accessPick = accessChoice({ value: chosenLevel, name: "add-access", onChange: (v) => { chosenLevel = v; drawFiles(); if (!ingesting) pathBtn.disabled = false; } });
   const pathInput = h("input", { class: "input", type: "text", placeholder: "e.g. C:\\Users\\me\\Documents\\Literature  or  /Users/me/Documents/Literature", id: "src-path" });
   const pathBtn = h("button", { class: "btn", type: "button" }, icon("folder-open", { size: 14 }), "Add this folder");
   const progressBox = h("div", { class: "section", hidden: true, "aria-live": "polite" });
@@ -90,6 +91,7 @@ export async function renderSources(view) {
   }
 
   function followIngest(jobId, label) {
+    ingesting = true;
     progressBox.hidden = false;
     const holder = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, label || "Adding documents"), h("button", { class: "btn btn-sm btn-outline-danger", type: "button", onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
     replace(progressBox, holder);
@@ -103,6 +105,7 @@ export async function renderSources(view) {
       if (job.state === "done") ingestSummary(holder, job.result || {});
       else if (job.state === "error") replace(holder.querySelector(".pb"), h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, "The documents could not be added."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)));
       else replace(holder.querySelector(".pb"), h("p", { class: "muted" }, "Stopped. The files read so far were kept."));
+      ingesting = false;
       files.length = 0; drawFiles(); pathBtn.disabled = false;
       forgetOriginals();
       await reloadDocs();
@@ -212,53 +215,61 @@ export async function renderSources(view) {
   // ----------------------------------------------------------------- documents
   const docsBox = h("section", { class: "section", "aria-label": "Documents in this project" });
   view.appendChild(docsBox);
+  const picked = new Set();   // the documents ticked for a change of several at once (kept across re-draws)
+  let pa = {};                // the project's AI-access info, as last drawn
+  let countsEl = null, shieldNote = null, tbody = null;
+  const rows = new Map();     // doc_id -> its row
   async function reloadDocs() {
     let r;
     try { r = await api("GET", `/api/projects/${P(project)}/documents`); } catch (e) { showError(e); return; }
+    drawDocs(r);
+  }
+  const countsNode = () => {
+    const docs = (pa.counts && Object.values(pa.counts).reduce((a, b) => a + b, 0)) || 0;
+    return docs ? h("span", { class: "muted small access-counts" }, accessLevels().filter((lv) => (pa.counts || {})[lv]).map((lv) => [accessBadge(lv), ` ${pa.counts[lv]} `])) : h("span", { class: "muted small access-counts" });
+  };
+  const shieldNode = () => h("p", { class: "muted small", hidden: !(pa.counts && (pa.counts.local || pa.counts.none)) }, icon("shield", { size: 12 }), " Documents marked Only a local AI or No AI are never sent to Claude, in any feature.");
+  // the whole list: after adding or removing documents (a change of one document's AI setting patches its row)
+  function drawDocs(r) {
     drawIndex(r.search);
     const docs = r.documents || [];
-    const pa = r.ai_access || {};
-    clear(docsBox);
+    pa = r.ai_access || {};
+    clear(docsBox); rows.clear();
+    for (const id of [...picked]) if (!docs.some((d) => d.doc_id === id)) picked.delete(id);
     if (pa.ask) docsBox.appendChild(accessAskCard(project, pa, reloadDocs));
     else if (pa.banner && docs.length) { const b = accessBanner(project, () => b.remove()); docsBox.appendChild(b); }
-    docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `In this project (${docs.length})`),
-      docs.length ? h("span", { class: "muted small access-counts" }, accessLevels().filter((lv) => (pa.counts || {})[lv]).map((lv) => [accessBadge(lv), ` ${pa.counts[lv]} `])) : null));
+    countsEl = countsNode();
+    docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `In this project (${docs.length})`), docs.length ? countsEl : null));
     if (!docs.length) { docsBox.appendChild(emptyState("book-open", "No documents yet", "Add the reports, papers and web pages you want to check hypotheses against. PDFs keep their page numbers.")); return; }
     const warned = docs.filter((d) => d.check).length;
     if (warned) docsBox.appendChild(h("p", { class: "muted small" }, icon("alert-triangle", { size: 12 }), ` ${warned} ${warned === 1 ? "document needs" : "documents need"} a look: see the note next to ${warned === 1 ? "it" : "them"}.`));
-    if (pa.counts && (pa.counts.local || pa.counts.none)) docsBox.appendChild(h("p", { class: "muted small" }, icon("shield", { size: 12 }), " Documents marked Only a local AI or No AI are never sent to Claude, in any feature."));
+    shieldNote = shieldNode();
+    docsBox.appendChild(shieldNote);
     // 0.11: the AI setting of each document (a dropdown), several at once, and how much Claude has read
-    const picked = new Set();
     const bulkSel = h("select", { class: "select select-sm", "aria-label": "Who may read the selected documents with AI" }, accessLevels().map((lv) => h("option", { value: lv }, LEVEL[lv].title)));
     const bulkCount = h("span", { class: "small" });
     const bulk = h("div", { class: "bulk-bar", hidden: true, role: "region", "aria-label": "Change the selected documents" }, bulkCount, bulkSel,
       h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => setAccess([...picked], bulkSel.value) }, icon("check", { size: 13 }), "Apply"),
       h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { picked.clear(); for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = false; drawBulk(); } }, "Clear"));
     const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected: who may read them with AI?`; };
-    async function setAccess(ids, level, note) {
-      const body = { doc_ids: ids, ai_access: level === pa.default ? null : level };
-      if (note !== undefined) body.note = note;
-      try { await api("PUT", `/api/projects/${P(project)}/documents/ai-access`, body); toast(ids.length === 1 ? `${LEVEL[level].title}.` : `${ids.length} documents: ${LEVEL[level].many.toLowerCase()}.`, "ok", { ttl: 2500 }); await reloadDocs(); }
-      catch (e) { showError(e); await reloadDocs(); }
-    }
     const pickAll = h("input", { type: "checkbox", class: "doc-pick-all", "aria-label": "Select every document" });
     pickAll.addEventListener("change", () => { for (const c of docsBox.querySelectorAll(".doc-pick")) { c.checked = pickAll.checked; if (pickAll.checked) picked.add(c.value); else picked.delete(c.value); } drawBulk(); });
     const sentCell = (d) => {
       const pct = Math.round((d.sent || 0) * 1000) / 10;
       const label = d.ai_access !== "cloud" && !pct ? "never" : pct ? `${pct < 1 ? "<1" : Math.round(pct)}%` : "0%";
-      return h("button", { class: "link-btn small", type: "button", title: "What Claude has read of this document", onClick: () => docAccessDialog(project, d, pa.default, () => reloadDocs()) }, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null);
+      return h("button", { class: "link-btn small", type: "button", title: "What Claude has read of this document", onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null);
     };
-    docsBox.appendChild(bulk);
-    docsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
-      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Actions")))),
-      h("tbody", {}, docs.map((d) => h("tr", {},
-        h("td", { class: "pick-col" }, (() => { const c = h("input", { type: "checkbox", class: "doc-pick", value: d.doc_id, "aria-label": `Select ${d.title || d.file}` }); c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); }); return c; })()),
+    const rowFor = (d) => {
+      const c = h("input", { type: "checkbox", class: "doc-pick", value: d.doc_id, "aria-label": `Select ${d.title || d.file}`, checked: picked.has(d.doc_id) });
+      c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); });
+      const row = h("tr", {},
+        h("td", { class: "pick-col" }, c),
         h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)), h("div", { class: "doc-file" }, d.file)),
         h("td", { "data-label": "Type" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
         h("td", { "data-label": "Added", class: "small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
         h("td", { "data-label": "AI", class: "access-cell" }, accessSelect(d, pa.default, (lv) => setAccess([d.doc_id], lv || pa.default)),
-          d.note ? h("button", { class: "link-btn small access-why", type: "button", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, () => reloadDocs()) }, d.note) : null),
+          d.note ? h("button", { class: "link-btn small access-why", type: "button", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, d.note) : null),
         h("td", { "data-label": "Sent to Claude", class: "num" }, sentCell(d)),
         h("td", { "data-label": "Note", class: "check-cell" },
           d.check ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 12 }), d.check) : null,
@@ -266,7 +277,33 @@ export async function renderSources(view) {
           !d.check && !d.scanned ? h("span", { class: "it muted small" }, icon("check", { size: 12 }), "readable") : null),
         h("td", { class: "actions" },
           h("a", { class: "btn btn-sm btn-ghost", href: `#/doc/${encodeURIComponent(d.doc_id)}`, "aria-label": `Open ${d.title || d.file}` }, icon("eye", { size: 13 }), "Open"),
-          h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Remove ${d.title || d.file}`, onClick: () => removeDoc(d) }, icon("trash", { size: 13 }), "Remove"))))))));
+          h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Remove ${d.title || d.file}`, onClick: () => removeDoc(d) }, icon("trash", { size: 13 }), "Remove")));
+      rows.set(d.doc_id, row);
+      return row;
+    };
+    // a change of the AI setting, note or cap: the answer carries the list again; only the rows changed are
+    // redrawn (the ticks and the scroll position stay), with the counts above the table
+    function patchDocs(res, ids) {
+      pa = res.ai_access || pa;
+      for (const d of res.documents || []) { const old = rows.get(d.doc_id); if (old && ids.includes(d.doc_id)) old.replaceWith(rowFor(d)); }
+      const c = countsNode(); countsEl.replaceWith(c); countsEl = c;
+      const sh = shieldNode(); shieldNote.replaceWith(sh); shieldNote = sh;
+    }
+    async function setAccess(ids, level, note) {
+      const body = { doc_ids: ids, ai_access: level === pa.default ? null : level };
+      if (note !== undefined) body.note = note;
+      try {
+        const res = await api("PUT", `/api/projects/${P(project)}/documents/ai-access`, body);
+        toast(ids.length === 1 ? `${LEVEL[level].title}.` : `${ids.length} documents: ${LEVEL[level].many.toLowerCase()}.`, "ok", { ttl: 2500 });
+        patchDocs(res, ids);
+      } catch (e) { showError(e); await reloadDocs(); }
+    }
+    docsBox.appendChild(bulk);
+    drawBulk();
+    tbody = h("tbody", {}, docs.map(rowFor));
+    docsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
+      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Actions")))),
+      tbody)));
   }
 
   async function removeDoc(d) {
@@ -1180,14 +1217,7 @@ export async function renderDocument(view, [docId], query) {
         const btn = dlg.querySelector(".dialog-actions .btn-primary");
         btn.disabled = true;
         try {
-          const res = await api("GET", `${docBase}/annotated.pdf?layers=${layers.join(",")}&framework=${encodeURIComponent(fwNow)}`, undefined, { raw: true });
-          const blob = await res.blob();
-          const cd = res.headers.get("Content-Disposition") || "";
-          const mm = /filename="?([^";]+)"?/.exec(cd);
-          const url = URL.createObjectURL(blob);
-          const a = h("a", { href: url, download: (mm && mm[1]) || `${d.title || docId} - highlighted.${isPdf ? "pdf" : "html"}` });
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          const res = await download(`${docBase}/annotated.pdf?layers=${layers.join(",")}&framework=${encodeURIComponent(fwNow)}`, undefined, `${d.title || docId} - highlighted.${isPdf ? "pdf" : "html"}`);
           const [placed, marks] = (res.headers.get("X-Enlens-Placed") || "").split("/").map(Number);
           if (!marks) toast("Downloaded. There was nothing to highlight yet with what you chose.", "info");
           else if (placed < marks) toast(`Downloaded: ${placed} of ${plural(marks, "highlight")} placed. The others are listed ${isPdf ? "in a note on the first page" : "at the top"}.`, "warn");
@@ -1205,5 +1235,3 @@ export async function renderDocument(view, [docId], query) {
   if (hit >= 0 || span) setTimeout(() => { const b = span ? blockAt(span.start) : null; const row = b ? document.getElementById(`block-${b.n}`) : null; const el = (row && row.querySelector("mark.quote")) || row; if (el) el.scrollIntoView({ block: "center" }); }, 60);
   return () => { watchers.forEach((w) => w.stop()); cleanups.forEach((f) => f()); };
 }
-
-const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);

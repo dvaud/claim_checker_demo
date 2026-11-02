@@ -2,15 +2,13 @@
 // themes (a "run") is shown as a list with size bars, a theme × document grid and, with a profile, a theme × code
 // grid; a person can rename themes, merge two, move a passage, and let the AI name them. Older sets are kept.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, confirmDialog, download, rangeControl, passageNode, navigate, store } from "../lib.js";
-import { simpleProgress, MiniJob } from "./progress.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, confirmDialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell } from "../lib.js";
+import { simpleProgress, MiniJob, jobError } from "./progress.js";
 
 const PASSAGES = 30;   // passages per page on a theme's page
-const plural = (n, one, many) => `${fmt.num(n)} ${n === 1 ? one : many || one + "s"}`;
 const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}&mode=phrase`;
 const runHref = (rid) => `#/themes/${encodeURIComponent(rid)}`;
 const themeHref = (rid, tid) => `#/themes/${encodeURIComponent(rid)}/${encodeURIComponent(tid)}`;
-const shortTitle = (t, n = 60) => { t = (t || "untitled").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 2).trimEnd() + "…" : t; };
 const modeWords = (m) => (m === "meaning" ? "by meaning" : "by words");
 const NAMED_BY = { terms: "named by its key terms", model: "named by the AI", person: "named by you" };
 const PHASE = { terms: "Updating the glossary of terms…", cluster: "Grouping the passages into themes…", name: "Naming the themes by their key terms…" };
@@ -19,20 +17,6 @@ const PHASE = { terms: "Updating the glossary of terms…", cluster: "Grouping t
 function starter(t) {
   const s = t.name_source !== "terms" ? t.name : (t.terms && t.terms[0]) || t.name;
   return (s && /^[a-z]/.test(s) ? s[0].toUpperCase() + s.slice(1) : s || "") + " ";
-}
-
-async function runningJob(project, kinds, test) {
-  try {
-    const jobs = (await api("GET", "/api/jobs")).jobs || [];
-    return jobs.find((j) => j.project === project && kinds.includes(j.kind) && !TERMINAL.has(j.state) && (!test || test(j))) || null;
-  } catch (_) { return null; }
-}
-
-function jobError(job) {
-  return h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {},
-    h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : job.error_kind === "internal" ? "Something went wrong inside the app." : (job.error || "It could not finish.")),
-    job.error_kind === "backend" || job.error_kind === "internal" ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")) : null,
-    job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -238,24 +222,17 @@ async function renderRun(view, runId, info, query) {
     const table = h("table", { class: "map-table th-grid" },
       h("caption", { class: "visually-hidden" }, "Themes by document: the number of passages"),
       h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "map-hyp-head" }, "Theme"),
-        docs.map((d) => h("th", { scope: "col", class: "map-doc-head" }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}`, title: d.title || "untitled" }, h("span", { class: "map-doc-title" }, shortTitle(d.title))))))),
+        docs.map((d) => h("th", { scope: "col", class: "map-doc-head" }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}`, title: d.title || "untitled" }, h("span", { class: "map-doc-title" }, shortTitle(d.title, 60))))))),
       h("tbody", {}, v.themes.map((t) => {
         const row = grid[String(t.theme_id)] || {};
         const href = themeHref(runId, t.theme_id);
         return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a")) return; location.hash = href; } },
           h("th", { scope: "row", class: "map-hyp" }, h("a", { href }, t.name), h("div", { class: "map-hyp-meta muted small" }, plural(t.size, "passage"))),
-          docs.map((d) => heatCell(row[d.doc_id] || 0, max, `${shortTitle(d.title)} in “${t.name}”`)));
+          docs.map((d) => heatCell(row[d.doc_id] || 0, max, `${shortTitle(d.title, 60)} in “${t.name}”`, "th")));
       })));
     wrap.appendChild(h("p", { class: "muted small map-scroll-hint", style: { margin: "0 0 6px" } }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every document."));
     wrap.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": "Themes by document (scrolls sideways)" }, table));
     return wrap;
-  }
-
-  function heatCell(n, max, label) {
-    // on a log scale, so one very large cell does not leave all the others pale
-    const level = n ? Math.max(1, Math.min(4, Math.ceil((4 * Math.log1p(n)) / Math.log1p(max)))) : 0;
-    return h("td", { class: `map-cell th-cell th-l${level}`, title: `${label}: ${plural(n, "passage")}` },
-      h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·"));
   }
 
   // ---- the theme × code grid (with a profile)
@@ -290,7 +267,7 @@ async function renderRun(view, runId, info, query) {
         const href = themeHref(runId, t.theme_id);
         return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a")) return; location.hash = href; } },
           h("th", { scope: "row", class: "map-hyp" }, h("a", { href }, t.name)),
-          cg.codes.map((code) => heatCell(row[code] || 0, max, `${fwLabel} ${code} in “${t.name}”`)));
+          cg.codes.map((code) => heatCell(row[code] || 0, max, `${fwLabel} ${code} in “${t.name}”`, "th")));
       })));
     wrap.appendChild(h("p", { class: "muted small map-scroll-hint", style: { margin: "0 0 6px" } }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every code."));
     wrap.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": `Themes by ${fwLabel} (scrolls sideways)` }, table));

@@ -72,20 +72,47 @@ def version_in(root: Path) -> str:
     return m.group(1) if m else "?"
 
 
-def installed_extras(pyproject: Path) -> list[str]:
-    """The optional dependency groups whose packages are all installed in this Python (to keep them on reinstall)."""
+def _extras_in(text: str) -> dict[str, list[str]]:
+    """The `[project.optional-dependencies]` table of a pyproject: tomllib when there is one (Python 3.11+), else
+    read line by line (0.11.1: on 3.10 without tomli every extra was dropped on a reinstall)."""
     try:
         import tomllib  # Python 3.11+
     except ImportError:  # pragma: no cover - 3.10
+        tomllib = None
+    if tomllib is not None:
         try:
-            import tomli as tomllib  # type: ignore
-        except ImportError:
-            return []
+            return tomllib.loads(text).get("project", {}).get("optional-dependencies", {})
+        except ValueError:
+            return {}
+    out: dict[str, list[str]] = {}
+    inside = False
+    name, buf = None, ""
+    for line in text.splitlines():
+        bare = line.split("#", 1)[0].strip()
+        if bare.startswith("["):
+            inside = bare == "[project.optional-dependencies]"
+            continue
+        if not inside or not bare:
+            continue
+        if name is None:
+            if "=" not in bare:
+                continue
+            name, buf = bare.split("=", 1)[0].strip(), bare.split("=", 1)[1]
+        else:
+            buf += " " + bare
+        if "]" in buf:
+            out[name] = re.findall(r'"([^"]*)"', buf)
+            name, buf = None, ""
+    return out
+
+
+def installed_extras(pyproject: Path) -> list[str]:
+    """The optional dependency groups whose packages are all installed in this Python (to keep them on reinstall)."""
     from importlib import metadata
 
     try:
-        extras = tomllib.loads(pyproject.read_text("utf-8")).get("project", {}).get("optional-dependencies", {})
-    except (OSError, ValueError):
+        extras = _extras_in(pyproject.read_text("utf-8"))
+    except OSError:
         return []
     keep = []
     for name, reqs in extras.items():
@@ -137,9 +164,12 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
                           "undo them with `git checkout -- .`, then run `enlens update` again.")
     try:
         upstream = _git(run, root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-    except UpdateError:
+    except UpdateError as e:
+        if _git(run, root, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD":  # detached: no branch to set upstream on
+            raise UpdateError("This git copy is not on a branch (a detached HEAD), so it cannot follow GitHub. In it, "
+                              f"run `git checkout main` (in {root}), then `enlens update` again.") from e
         raise UpdateError("This git copy follows no branch on GitHub. In it, run "
-                          "`git branch --set-upstream-to=origin/main` (or the branch you use), then try again.")
+                          "`git branch --set-upstream-to=origin/main` (or the branch you use), then try again.") from e
     _git(run, root, "fetch", "--quiet")
     before = version_in(root)
     waiting = int(_git(run, root, "rev-list", "--count", f"HEAD..{upstream}") or 0)
@@ -154,11 +184,11 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
                           f"forward. Push them first (`git push` in {root}) or ask for help.")
     py = root / "pyproject.toml"
     deps_before = _digest(py)
+    extras = installed_extras(py)  # before the merge (0.11.1): an extra whose packages grew must stay installed
     _git(run, root, "merge", "--ff-only", "--quiet", upstream)
     after = version_in(root)
     out: dict = {"updated": True, "from": before, "version": after, "reinstalled": False}
     if _digest(py) != deps_before:
-        extras = installed_extras(py)
         target = f"{root}[{','.join(extras)}]" if extras else str(root)
         r = run([python or sys.executable, "-m", "pip", "install", "--quiet", "-e", target], root)
         if r.returncode != 0:
@@ -285,11 +315,17 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
             raise UpdateError(f"The downloaded {rel['wheel']} does not match the release's checksum, so it was not "
                               "installed. Try again later.")
         spec = f"enlens-claims[{','.join(installation.EXTRAS)}] @ {wheel.resolve().as_uri()}"
+        # uv's own Python, as the install line chose (0.11.1): never a system Python 3.12 that may go away
+        os.environ.setdefault("UV_PYTHON_PREFERENCE", "only-managed")
         r = run([uv, "tool", "install", "--force", "--quiet", "--python", "3.12", spec], tmp)
         if r.returncode != 0:
             raise UpdateError(f"Installing ENLENS {rel['version']} failed:\n{(r.stderr or r.stdout or '').strip()[-2000:]}")
         # the new version finishes the job: the marker, the plugin (the icon points at the same Python)
         post = run([sys.executable, "-m", "enlens_claims.cli", "post-install", "--by", "script", "--no-icon"], tmp)
+        if post.returncode != 0:  # 0.11.1: a failed marker or plugin repair was reported as a successful update
+            raise UpdateError(f"ENLENS {rel['version']} was installed, but finishing the update failed:\n"
+                              f"{(post.stderr or post.stdout or '').strip()[-2000:]}\nRun `enlens post-install` to try "
+                              "that part again.")
     finally:
         if workdir is None:
             shutil.rmtree(tmp, ignore_errors=True)

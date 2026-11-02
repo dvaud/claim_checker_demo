@@ -26,7 +26,6 @@
 .kwic .kw-act { white-space: nowrap; width: 1%; text-align: right; }
 .kwic .kw-word { cursor: pointer; border-radius: 3px; }
 .kwic .kw-word:hover { background: var(--accent-soft); color: var(--accent-text); }
-.kwic .kw-mark { background: var(--accent-soft); border-radius: 3px; }
 .kwic-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 @media (max-width: 760px) {
   .kwic .kw-left, .kwic .kw-right { width: auto; max-width: 9em; }
@@ -42,7 +41,6 @@
 .pager { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 10px 0; flex-wrap: wrap; }
 .colloc { display: flex; flex-wrap: wrap; gap: 6px; }
 .colloc .chip-btn { font-size: .82rem; }
-.colloc .pmi { color: var(--muted); font-size: .75rem; margin-left: 4px; font-variant-numeric: tabular-nums; }
 .meaning-list { display: grid; gap: 10px; }
 .meaning-list .passage { margin: 6px 0 0; }
 

@@ -43,6 +43,7 @@ function Install-Enlens {
         if (-not $uv) {
             Write-Host '1/4  Getting uv, which installs ENLENS and its own Python...'
             powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'uv could not be installed. Are you online?' }
             $uv = Find-Uv
             if (-not $uv) { throw 'uv was installed, but cannot be found. Open a new PowerShell window and run the line again.' }
         } else {

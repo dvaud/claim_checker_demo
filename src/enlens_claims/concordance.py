@@ -214,8 +214,11 @@ def _code_passages(ws: Workspace, code: str | None) -> set[str] | None:
     return profile.passages_with_code(ws, fw, c)
 
 
+EXPORT_MAX = 50000  # lines of one export
+
+
 def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = None, sort: str = "doc",
-           offset: int = 0, limit: int = PAGE, exact: bool = False, near: int = 5, width: int = 60,
+           offset: int = 0, limit: int | None = PAGE, exact: bool = False, near: int = 5, width: int = 60,
            all_sections: bool = False, code: str | None = None) -> dict:
     """Every hit of the query in the project: counts per document first, then one page of lines.
 
@@ -264,7 +267,10 @@ def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = No
         found.sort(key=lambda h: (words_left(h[0], h[1]), idx.rows[h[0]]["passage_id"], h[1]))
     else:
         found.sort(key=lambda h: (words_right(h[0], h[2]), idx.rows[h[0]]["passage_id"], h[1]))
-    offset, limit = max(0, int(offset)), max(1, min(int(limit), 1000))
+    # a page of lines; `limit` None gives every hit at once, for the export (0.11.1: it ran the whole search once per
+    # thousand lines), at most EXPORT_MAX
+    offset = max(0, int(offset))
+    limit = EXPORT_MAX if limit is None else max(1, min(int(limit), 1000))
     page = found[offset:offset + limit]
     from .claimcheck import locate
 

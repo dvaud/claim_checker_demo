@@ -80,6 +80,7 @@ class Tracker:
         self.model: dict | None = None
         self.message = "Starting"
         self.batch: dict | None = None
+        self.notes: list[str] = []  # 0.11: what happened to the excerpts of restricted documents
         self._part_key = None
         self.ended: float | None = None
 
@@ -106,6 +107,12 @@ class Tracker:
             if kind == "item":
                 self.batch = {"index": info.get("index"), "total": info.get("total"), "text": info.get("text")}
                 self.decompose, self.parts, self._part_key, self.model = None, [], None, None
+                self.notes = []
+                self.message = msg
+                return
+            if kind == "note":  # a remark about the round (0.11.1: it used to open a phantom part and say nothing)
+                if msg not in self.notes:
+                    self.notes.append(msg)
                 self.message = msg
                 return
             key = kind.removesuffix("_done")
@@ -177,7 +184,7 @@ class Tracker:
                 if model["phase"] == "waiting" and model["seconds"] > 60:
                     model["plain"] += " (a model on your own computer can take a few minutes to start)"
             return {"message": self.message, "elapsed": round(now - self.t0, 1), "decompose": dec, "parts": parts,
-                    "model": model, "batch": dict(self.batch) if self.batch else None}
+                    "model": model, "batch": dict(self.batch) if self.batch else None, "notes": list(self.notes)}
 
     def summary(self) -> str:
         """One line with the time each step took, for the command line."""

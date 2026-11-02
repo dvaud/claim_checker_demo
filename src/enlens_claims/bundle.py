@@ -144,7 +144,6 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
         cfg.pop("ai_access_banner", None)
         cfg["ai_access_ask"] = True
         ws.config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-        ws._config_cache = None
     root = dest.resolve()
     files = meta.get("files") if isinstance(meta.get("files"), dict) else {}
     with ws.connect() as cx:

@@ -119,4 +119,3 @@ export const STATUS_ICON = {
   uncertain: "help",
   waiting: "inbox",
 };
-export const GRADE_ICON = { supports: "circle-check", partially_supports: "circle-half", refutes: "circle-x", none: "circle-dashed" };

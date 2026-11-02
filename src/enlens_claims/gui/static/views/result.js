@@ -2,7 +2,7 @@
 // what (documents, from `balance`), then the evidence as verified quotes. Every count on the page is computed from
 // the same `passages` the cards are drawn from, so sections and numbers always agree. A person's judgement
 // replaces the AI's; it is protected (no silent overwrite) and every save can be undone.
-import { App, api, h, icon, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, partsSentence, queueNotice } from "../lib.js";
+import { App, api, h, icon, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, partsSentence, queueNotice, auditorName } from "../lib.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
 
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
@@ -390,7 +390,8 @@ export async function renderResult(view, [hypId], query) {
     const matching = added.filter((d) => d.matching);
     // 0.8: on Claude (Claude Code, or the Claude API with a model per task) the auditor gives the second opinion
     const st = App.settings();
-    const auditor = ["claude_code", "anthropic"].includes(st.backend) && st.routing !== false ? `${st.use_fable ? "fable" : "opus"} (the auditor)` : null;
+    const name = auditorName(st);
+    const auditor = name ? `${name} (the auditor)` : null;
     const secondSet = auditor || (st.second_model || "").trim();
     const mainModel = auditor ? "" : (st.ollama_model || st.openai_model || "").trim();
     const secondUsable = secondSet && secondSet !== mainModel;
@@ -492,7 +493,8 @@ export async function renderResult(view, [hypId], query) {
     return box;
   }
 
-  // Watches a follow-up job of this result; `onDone(job)` runs when it finished well. The page reloads either way.
+  // Watches a follow-up job of this result; `onDone(job, fresh)` runs when it finished well, with the result as
+  // fetched once for the re-draw (one request, not two). The page redraws either way.
   function followJob(jobId, kind, title, onDone, extra = {}) {
     const mini = new MiniJob({ title });
     running.set(jobId, { kind, mini, ...extra });
@@ -500,10 +502,13 @@ export async function renderResult(view, [hypId], query) {
     watchers.push(w);
     w.promise.then(async (job) => {
       running.delete(jobId);
-      if (job.state === "done") { try { await onDone(job); } catch (e) { showError(e); } }
+      let fresh = null;
+      try { fresh = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`); }
+      catch (e) { if (e.status === 404) { await load(); return; } showError(e); }   // deleted meanwhile: load() says so
+      if (job.state === "done") { try { await onDone(job, fresh || current); } catch (e) { showError(e); } }
       else if (job.state === "error") showError({ message: job.error, kind: job.error_kind });
       else if (job.state === "cancelled") toast("Stopped.", "info", { small: true, ttl: 2500 });
-      await load();   // draw() keeps the scroll position, and the card the person acted on in place
+      if (fresh) { current = fresh; draw(fresh); }   // draw() keeps the scroll position, and the card the person acted on in place
     }).catch((e) => { running.delete(jobId); showError(e); });
     draw(current);
     return w;
@@ -514,12 +519,10 @@ export async function renderResult(view, [hypId], query) {
     try {
       // no body: the endpoint takes none (and does not read one, so a body would spill into the next request)
       const res = await api("POST", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/read-new`);
-      const before = new Map((current.parts || []).map((p) => [p.claim_id, Math.max(0, ...(p.rounds_info || []).map((x) => x.round))]));
       const matching = (current.docs_added_since || []).filter((d) => d.matching).length;
-      followJob(res.job.id, "read-new", matching ? "Reading the new documents" : "Marking the new documents as looked at", async (job) => {
+      followJob(res.job.id, "read-new", matching ? "Reading the new documents" : "Marking the new documents as looked at", async (job, fresh) => {
         const me = ((job.result && job.result.hypotheses) || []).find((x) => x.hyp_id === hypId) || {};
         const n = me.passages || 0;
-        const fresh = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`);
         let aboutN = 0;
         for (const rd of me.rounds || []) {
           const fp = (fresh.parts || []).find((x) => x.claim_id === rd.claim_id);
@@ -542,8 +545,7 @@ export async function renderResult(view, [hypId], query) {
     btn.disabled = true;
     try {
       const res = await api("POST", `/api/projects/${P(project)}/second-opinion`, { hyp_ids: [hypId] });
-      followJob(res.job.id, "second-opinion", "The second AI model is reading the excerpts", async (job) => {
-        const fresh = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`);
+      followJob(res.job.id, "second-opinion", "The second AI model is reading the excerpts", async (job, fresh) => {
         const d = fresh.disagreements || 0;
         followNote = `The second AI model read ${fresh.second_read || 0} ${fresh.second_read === 1 ? "excerpt" : "excerpts"}${d ? ` and disagrees with the main model on ${d}: “Next to review” goes to ${d === 1 ? "it" : "those"} first.` : " and agrees with the main model on every one."}`;
         toast("The second AI model has read the excerpts.", "ok", { small: true, ttl: 4000 });
@@ -601,17 +603,7 @@ export async function renderResult(view, [hypId], query) {
   }
 
   // A term with an explanation that opens on hover or focus and stays open on click or tap (no native tooltip).
-  function definedTerm(term, explanation) {
-    const pop = h("span", { class: "pop", role: "note", hidden: true }, explanation);
-    let pinned = false;
-    const btn = h("button", { class: "defined", type: "button", "aria-expanded": "false" }, term);
-    const show = (on) => { pop.hidden = !on; btn.setAttribute("aria-expanded", on ? "true" : "false"); };
-    btn.addEventListener("click", () => { pinned = !pinned; show(pinned); });
-    btn.addEventListener("mouseenter", () => show(true)); btn.addEventListener("mouseleave", () => { if (!pinned) show(false); });
-    btn.addEventListener("focus", () => show(true)); btn.addEventListener("blur", () => { if (!pinned) show(false); });
-    btn.addEventListener("keydown", (e) => { if (e.key === "Escape") { pinned = false; show(false); } });
-    return h("span", { class: "defined-wrap" }, btn, pop);
-  }
+  const definedTerm = (term, explanation) => popNote(h("button", { class: "defined", type: "button" }, term), explanation);
 
   // ------------------------------------------------------------------------------------------
   function whoSaysWhat(part) {
@@ -657,7 +649,7 @@ export async function renderResult(view, [hypId], query) {
     const waitingYou = passages.filter((p) => !about(p) && (p.waiting_for_you || p.waiting_local));
     const rest = passages.filter((p) => !about(p) && !waitingYou.includes(p));
     const counted = passages.filter((p) => p.counted).length;
-    const card = h("section", { class: "card part-card", "aria-label": single ? "Evidence" : `Part ${part.part}` });
+    const card = h("section", { class: "card part-card", "aria-label": single ? "Evidence" : `Part ${part.part}`, tabindex: "-1" });
     card.id = `part-${part.part}`;
     card.dataset.claim = part.claim_id;
     if (!single) {
@@ -672,6 +664,12 @@ export async function renderResult(view, [hypId], query) {
     }
     if (part.status === "failed" && part.errors && part.errors.length) {
       card.appendChild(h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, "The AI's answers could not be used, even after three tries."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("ul", { class: "errors-list" }, part.errors.slice(0, 5).map((e) => h("li", {}, e)))))));
+    }
+    if (part.local_failed) {
+      const n = part.local_failed.passages;
+      card.appendChild(h("div", { class: "notice notice-warn" }, icon("house"), h("div", { class: "grow" }, h("p", {}, `The local model's answers for ${n} ${n === 1 ? "excerpt" : "excerpts"} from documents marked Only a local AI could not be used, even after three tries; ${n === 1 ? "it is" : "they are"} shown without a judgement. Try again (perhaps with another local model, Settings → AI), or judge ${n === 1 ? "it" : "them"} yourself.`),
+        h("div", { class: "btn-row" }, readLocalButton("Read them again on this computer")),
+        part.local_failed.errors.length ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("ul", { class: "errors-list" }, part.local_failed.errors.map((e) => h("li", {}, e)))) : null)));
     }
     if (part.status === "no_passages") {
       card.appendChild(h("div", { class: "notice notice-warn" }, icon("search-x"), h("p", {}, "No part of your documents uses words close to this. Try other words below, rephrase the hypothesis, or add documents.")));
@@ -771,8 +769,8 @@ export async function renderResult(view, [hypId], query) {
   }
 
   // 0.11: excerpts that wait for the local model (a check made in a Claude chat, or while the app was closed)
-  function readLocalNotice(part) {
-    const btn = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("house", { size: 13 }), "Read them now on this computer");
+  function readLocalButton(label) {
+    const btn = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("house", { size: 13 }), label);
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       try {
@@ -784,6 +782,11 @@ export async function renderResult(view, [hypId], query) {
         load();
       } catch (e) { showError(e); btn.disabled = false; }
     });
+    return btn;
+  }
+
+  function readLocalNotice(part) {
+    const btn = readLocalButton("Read them now on this computer");
     return h("div", { class: "notice notice-info wait-local" }, icon("house"), h("div", { class: "grow" },
       h("p", {}, `${part.waiting_local} ${part.waiting_local === 1 ? "excerpt comes" : "excerpts come"} from documents marked Only a local AI and ${part.waiting_local === 1 ? "waits" : "wait"} for the local model.`),
       h("div", { class: "btn-row" }, btn, h("span", { class: "muted small" }, "Without a local model (Settings → AI) they wait for your judgement."))));
@@ -1330,8 +1333,4 @@ export function blockUnit(b) {
   if (/paragraph/i.test(label)) return "paragraphs";
   if (/^page/i.test(label)) return "pages";
   return "parts";
-}
-
-export function plainSection(section) {
-  return { references: "reference list", reference_like: "looks like a reference list", unreadable: "unreadable text", body: "" }[section] || section;
 }

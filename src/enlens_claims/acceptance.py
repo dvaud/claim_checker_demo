@@ -146,7 +146,6 @@ def measure(ws: Workspace, folder: str | Path, framework: str = "sdg") -> dict:
         fw = frameworks.get(framework, ws)
         gold = {r["passage_id"]: {fw.normalise(c) for c in re.split(r"[;,\s]+", r["codes"]) if fw.normalise(c)}
                 for r in rows}
-        gold = {k: v for k, v in gold.items() if v is not None}
         per_model: dict[str, list] = {}
         labs = profile.effective(ws, framework, passage_ids=list(gold), provisional=False)
         by_pid: dict[str, dict[str, set]] = {}

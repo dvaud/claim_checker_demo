@@ -1,5 +1,5 @@
 // The options of a check (shared by the Check and Batch pages) and the framework code picker.
-import { App, api, h, icon, replace, switchControl, rangeControl, field, dialog, P, debounce, store } from "../lib.js";
+import { App, api, h, icon, replace, switchControl, rangeControl, field, dialog, P, debounce } from "../lib.js";
 
 export function checkOptions({ docs = [], search = null, compact = false } = {}) {
   const s = App.settings();
@@ -80,16 +80,6 @@ export async function loadFramework(project, name) {
 }
 export function forgetFrameworks() { fwCache.clear(); }
 
-export function starredCodes(fw) {
-  try { return new Set(JSON.parse(store(`stars.${fw}`) || "[]")); } catch (_) { return new Set(); }
-}
-export function toggleStar(fw, code) {
-  const set = starredCodes(fw);
-  if (set.has(code)) set.delete(code); else set.add(code);
-  store(`stars.${fw}`, JSON.stringify([...set]));
-  return set;
-}
-
 // Opens the picker; resolves to {code, description} or null (cleared) or undefined (cancelled).
 export function pickCode({ project, framework, suggested = [], current = "" }) {
   return new Promise(async (resolve) => {
@@ -97,7 +87,6 @@ export function pickCode({ project, framework, suggested = [], current = "" }) {
     try { fw = await loadFramework(project, framework); } catch (e) { resolve(undefined); throw e; }
     const items = fw.items || [];
     const byCode = new Map(items.map((i) => [i.code, i]));
-    const stars = starredCodes(framework);
     const input = h("input", { class: "input", type: "search", placeholder: `Search ${items.length} codes by number or words…`, "aria-label": "Search codes", autocomplete: "off" });
     const list = h("div", { class: "picker-list", role: "listbox", "aria-label": fw.label || "Codes" });
     let picked;
@@ -108,19 +97,14 @@ export function pickCode({ project, framework, suggested = [], current = "" }) {
       const q = input.value.trim().toLowerCase();
       const words = q.split(/\s+/).filter(Boolean);
       const match = (i) => !words.length || words.every((w) => i.code.toLowerCase().startsWith(w) || (i.description || "").toLowerCase().includes(w) || (i.group_name || "").toLowerCase().includes(w));
-      const row = (i, star, sugg) => {
-        const b = h("button", { type: "button", class: "picker-item", role: "option", "aria-selected": i.code === current ? "true" : "false", onClick: () => choose(i.code) },
-          h("span", { class: "pi-code" }, sugg ? icon("star", { size: 12 }) : null, i.code),
-          h("span", { class: "pi-desc" }, i.description || ""));
-        b.title = star ? "Starred" : "";
-        return b;
-      };
+      const row = (i, sugg) => h("button", { type: "button", class: "picker-item", role: "option", "aria-selected": i.code === current ? "true" : "false", onClick: () => choose(i.code) },
+        h("span", { class: "pi-code" }, sugg ? icon("star", { size: 12 }) : null, i.code),
+        h("span", { class: "pi-desc" }, i.description || ""));
       const top = [];
       const suggSet = new Set(suggested.map((s) => s.code));
-      if (!q && (suggested.length || stars.size)) {
-        if (suggested.length) { top.push(h("div", { class: "picker-group" }, "Suggested from your wording")); suggested.forEach((s) => byCode.has(s.code) && top.push(row(byCode.get(s.code), false, true))); }
-        const starred = [...stars].filter((c) => byCode.has(c) && !suggSet.has(c));
-        if (starred.length) { top.push(h("div", { class: "picker-group" }, "Starred")); starred.forEach((c) => top.push(row(byCode.get(c), true, false))); }
+      if (!q && suggested.length) {
+        top.push(h("div", { class: "picker-group" }, "Suggested from your wording"));
+        suggested.forEach((s) => byCode.has(s.code) && top.push(row(byCode.get(s.code), true)));
       }
       top.forEach((n) => list.appendChild(n));
       let group = null, n = 0;
@@ -129,7 +113,7 @@ export function pickCode({ project, framework, suggested = [], current = "" }) {
         n++;
         const g = i.group_name ? `${i.group ? i.group + " · " : ""}${i.group_name}` : (i.group || "");
         if (g !== group) { group = g; if (g) list.appendChild(h("div", { class: "picker-group" }, g)); }
-        list.appendChild(row(i, stars.has(i.code), suggSet.has(i.code)));
+        list.appendChild(row(i, suggSet.has(i.code)));
         if (n > 400) { list.appendChild(h("div", { class: "muted small", style: { padding: "8px 10px" } }, "More codes: narrow the search.")); break; }
       }
       if (!n) list.appendChild(h("div", { class: "muted small", style: { padding: "8px 10px" } }, "No code matches."));

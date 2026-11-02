@@ -1,11 +1,9 @@
 // 0.9: the Overview: the start page of a project. Exploring the documents comes first (Search, Profile, Concepts,
 // Themes, one document), checking hypotheses second. Each feature says in one line what it does, whether it uses the
 // AI, and what is already made in this project.
-import { App, api, h, icon, P, pageHead } from "../lib.js";
+import { App, api, h, icon, P, pageHead, plural } from "../lib.js";
 import { FEATURES, aiTag } from "../features.js";
 import { quickLookButton } from "./quicklook.js";
-
-const plural = (n, one, many) => `${Number(n).toLocaleString()} ${n === 1 ? one : many}`;
 
 export async function renderOverview(view) {
   const project = App.project;

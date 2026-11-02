@@ -303,6 +303,8 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
     spell: dict[str, Counter] = defaultdict(Counter)
     passages: Counter[str] = Counter()
     abbrev: Counter[tuple[str, str]] = Counter()
+    spelt: dict[str, str] = {}  # a mention's spelling by its raw text: the same words recur (0.11.1, a large corpus
+    #                             spent a third of the build re-tokenising them)
     for n, r in enumerate(rows, 1):
         if should_stop and n % 200 == 0 and should_stop():
             raise _stopped()
@@ -312,7 +314,11 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
             if key in keep:
                 tid = term_id(key)
                 mentions.append((tid, r["passage_id"], r["doc_id"], r["start"] + a, r["start"] + b))
-                spell[key][_spelling(text[a:b], joiner)] += 1
+                raw = text[a:b]
+                sp = spelt.get(raw)
+                if sp is None:
+                    sp = spelt[raw] = _spelling(raw, joiner)
+                spell[key][sp] += 1
                 if key not in seen:
                     seen.add(key)
                     passages[key] += 1
@@ -480,6 +486,8 @@ def meaning_variants(ws: Workspace, embedder, limit: int = MEANING_TERMS, thresh
     rows = ws.query("SELECT term_id, label, stems FROM terms ORDER BY tf DESC, term_id LIMIT ?", (int(limit),))
     if len(rows) < 2:
         return 0
+    with ws.connect() as cx:  # vectors of terms the last build dropped (0.11.1: they stayed for good, a few MB a build)
+        cx.execute("DELETE FROM code_vectors WHERE framework='_terms' AND code NOT IN (SELECT term_id FROM terms)")
     have = {r["code"]: bytes(r["vec"]) for r in ws.query(
         "SELECT code, vec FROM code_vectors WHERE model=? AND framework='_terms'", (embedder.model,))}
     todo = [r for r in rows if r["term_id"] not in have]
@@ -642,7 +650,7 @@ def glossary(ws: Workspace, q: str | None = None, offset: int = 0, limit: int = 
 
     Each entry: {term_id (its most frequent term, for links), concept, label, wordings, documents, passages,
     mentions}."""
-    terms = [dict(r) for r in ws.query("SELECT term_id, label, tf FROM terms")]
+    terms = [dict(r) for r in ws.query("SELECT term_id, label, tf, df FROM terms")]
     in_concept: dict[str, str] = {r["term_id"]: r["concept_id"] for r in ws.query("SELECT * FROM concept_terms")}
     labels = {r["concept_id"]: r["label"] for r in ws.query("SELECT * FROM concepts")}
     entries: dict[str, dict] = {}
@@ -653,15 +661,19 @@ def glossary(ws: Workspace, q: str | None = None, offset: int = 0, limit: int = 
                                      "wordings": [], "mentions": 0})
         e["wordings"].append(t["label"])
         e["mentions"] += t["tf"]
+    # documents per entry: a term's own count is kept with it (`df`); only the terms of a concept need the mentions
+    # (0.11.1: every mention of the corpus was read for each glossary page)
     docs: dict[str, set] = defaultdict(set)
-    for r in ws.query("SELECT DISTINCT term_id, doc_id FROM term_mentions"):
+    for r in ws.query("SELECT DISTINCT m.term_id, m.doc_id FROM term_mentions m JOIN concept_terms ct ON "
+                      "ct.term_id=m.term_id"):
         docs[in_concept.get(r["term_id"]) or r["term_id"]].add(r["doc_id"])
+    own_docs = {t["term_id"]: t["df"] for t in terms if t["term_id"] not in in_concept}
     pas = {r["term_id"]: r["n"] for r in ws.query("SELECT term_id, passages AS n FROM terms")}
     for r in ws.query("SELECT ct.concept_id, COUNT(DISTINCT m.passage_id) AS n FROM term_mentions m JOIN concept_terms ct "
                       "ON ct.term_id=m.term_id GROUP BY ct.concept_id"):
         pas[r["concept_id"]] = r["n"]
     for key, e in entries.items():
-        e["documents"] = len(docs.get(key, ()))
+        e["documents"] = own_docs[key] if key in own_docs else len(docs.get(key, ()))
         e["passages"] = pas.get(key, 0)
     items = list(entries.values())
     if q:

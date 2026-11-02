@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, session, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName } from "../lib.js";
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -13,6 +13,7 @@ const TAB_OF = { model: "model", ai: "model", basics: "basics", calibration: "ba
 export async function renderSettings(view, [section]) {
   const s = { ...App.settings() };
   const tab = TAB_OF[section] || "model";
+  const watchers = [];   // the jobs this page follows (the model test, installing Claude Code): stopped when it is left
   let servers = [];
   if (tab === "model" || tab === "advanced" || tab === "documents") {
     try { servers = (await api("GET", "/api/servers")).servers || []; } catch (_) { servers = []; }
@@ -29,7 +30,7 @@ export async function renderSettings(view, [section]) {
   const main = h("div", { class: "stack", style: { gap: "20px" } });
   view.appendChild(main);
   if (tab === "model") {
-    main.append(modelSection(s, servers));
+    main.append(modelSection(s, servers, watchers));
     // 0.11: who reads the documents marked Only a local AI, and what happens to the text Claude reads
     if (!(App.state && App.state.local_only)) main.append(restrictedModelCard(s, servers, save));
     if (s.backend === "anthropic") main.append(sectionCard("terms", "Your Claude account and your documents", "", termsPanel({ account: "commercial" })));
@@ -40,10 +41,11 @@ export async function renderSettings(view, [section]) {
   else {
     // a local model's own settings (second model, context length) only when a local model answers
     const local = ["auto", "ollama", "openai"].includes(s.backend || "auto");
-    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s), ledgerSection(), dataSection()].filter(Boolean));
+    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s, watchers), ledgerSection(), dataSection()].filter(Boolean));
     if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (a second model, the context length) show here when a local model is chosen under AI."));
   }
   if (section && section !== tab) setTimeout(() => { const t = document.getElementById(`s-${section}`); if (t) t.scrollIntoView({ block: "start" }); }, 80);
+  return () => watchers.forEach((w) => w.stop());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -221,7 +223,7 @@ async function save(changes, stateEl) {
 }
 
 // ---------------------------------------------------------------------------------------------
-function modelSection(s, servers) {
+function modelSection(s, servers, watchers) {
   const localOnly = !!(App.state && App.state.local_only);
   let allowCC = !!s.allow_claude_code;
   const state = h("span", { class: "save-state", "aria-live": "polite" });
@@ -289,7 +291,7 @@ function modelSection(s, servers) {
   const modelPicker = (id, current, models, placeholder) => {
     const wrap = h("div", { class: "field" });
     const sel = h("select", { class: "select", id });
-    const txt = h("input", { class: "input", type: "text", id: id + "-txt", value: current || "", placeholder });
+    const txt = h("input", { class: "input", type: "text", id: id + "-txt", value: current || "", placeholder, "aria-label": "Chat model, typed" });
     if (models && models.length) {
       sel.appendChild(h("option", { value: "" }, "Choose a model…"));
       for (const m of models) sel.appendChild(h("option", { value: m, selected: m === current }, m));
@@ -356,7 +358,7 @@ function modelSection(s, servers) {
 
   // Claude Code (0.9): a checklist of what is ready, one button that sets up what is not, and how a run starts.
   function claudeCodeBox() {
-    return h("div", { class: "stack", style: { gap: "10px" } }, claudeSetupCard());
+    return h("div", { class: "stack", style: { gap: "10px" } }, claudeSetupCard({ watchers }));
   }
 
   function keyBox() {
@@ -447,7 +449,7 @@ function routingSection(s, servers) {
       let ctl;
       if (row.row === "second" && !claude) ctl = h("span", { class: "muted small" }, "Set under “Second AI model” below.");
       else if (claude) {
-        ctl = h("select", { class: "select select-sm", "aria-label": `Model for ${row.title}` }, h("option", { value: "" }, `${row.recommended === "auditor" ? (r.fable ? "fable" : "opus") : row.recommended} (recommended)`),
+        ctl = h("select", { class: "select select-sm", "aria-label": `Model for ${row.title}` }, h("option", { value: "" }, `${row.recommended === "auditor" ? auditorName(App.settings(), { claude: true, fable: r.fable }) : row.recommended} (recommended)`),
           r.aliases.map((a) => h("option", { value: a, selected: chosen[row.row] === a }, a)));
         selects[row.row] = ctl;
       } else {
@@ -688,7 +690,7 @@ function reproSection(s) {
 }
 
 // ---------------------------------------------------------------------------------------------
-function testSection(s) {
+function testSection(s, watchers) {
   const ref = h("input", { class: "input input-mono", type: "text", value: s.benchmark_reference || "", placeholder: "/path/to/pilot" });
   const n = rangeControl("Tasks per kind", { min: 5, max: 50, step: 5, value: 10 });
   const kVerify = h("input", { type: "checkbox", checked: true, id: "k-verify" });
@@ -696,7 +698,6 @@ function testSection(s) {
   const kLabel = h("input", { type: "checkbox", id: "k-label" });
   const out = h("div", { "aria-live": "polite", style: { marginTop: "10px" } });
   const run = h("button", { class: "btn btn-primary", type: "button" }, icon("play", { size: 14 }), "Run test");
-  let watcher = null;
   run.addEventListener("click", async () => {
     const kinds = [kVerify.checked && "verify_set", kExtract.checked && "extract", kLabel.checked && "label"].filter(Boolean);
     if (!ref.value.trim() || !kinds.length) { toast("Give the reference folder and tick at least one task kind.", "warn"); return; }
@@ -709,12 +710,13 @@ function testSection(s) {
   function follow(jobId) {
     const holder = h("div", { class: "card card-plain" }, h("div", { class: "card-head" }, h("h3", {}, "Testing"), h("button", { class: "btn btn-sm btn-outline-danger", type: "button", onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
     replace(out, holder);
-    watcher = watchJob(jobId, (job) => {
+    const watcher = watchJob(jobId, (job) => {
       const p = job.progress || {};
       replace(holder.querySelector(".pb"), simpleProgress(job, () => p.total ? `Task ${Math.min((p.done || 0) + 1, p.total)} of ${p.total}${p.task ? " · " + p.task : ""}` : "Starting…"),
         p.model && p.model.line ? h("div", { class: "model-line", style: { marginTop: "8px" } }, h("div", { class: "ml-head" }, icon("cpu", { size: 14 }), h("span", {}, p.model.line))) : null);
       if (TERMINAL.has(job.state)) { const b = holder.querySelector(".btn-outline-danger"); if (b) b.hidden = true; }
     });
+    watchers.push(watcher);
     watcher.promise.then((job) => {
       run.disabled = false;
       if (job.state === "done") drawResult(holder, job.result || {});
@@ -796,7 +798,6 @@ export function claudeSetupCard(opts = {}) {
   const log = h("div", { class: "cc-progress", "aria-live": "polite" });
   let info = { status: {}, commands: [] };
   let busy = false;
-  let stopWaiting = null;
   const step = (ok, title, text) => h("li", { class: `cc-step ${ok === true ? "ok" : ok === false ? "bad" : ""}` },
     h("span", { class: "cc-mark", "aria-hidden": "true" }, ok === true ? icon("check", { size: 12 }) : ok === false ? "!" : "?"),
     h("div", {}, h("strong", {}, title), text ? h("span", { class: "small" }, text) : null));
@@ -816,7 +817,9 @@ export function claudeSetupCard(opts = {}) {
     if (!ok) { replace(log); return false; }
     working("Installing Claude Code… (a minute or two)");
     const r = await api("POST", "/api/claude-setup/claude-code", {});
-    const job = await watchJob(r.job.id, null, 1000).promise;
+    const w = watchJob(r.job.id, null, 1000);
+    if (opts.watchers) opts.watchers.push(w);
+    const job = await w.promise;
     if (job.state !== "done") {
       say(icon("alert-circle", { size: 14 }), h("div", {}, h("p", {}, "Claude Code could not be installed from here."),
         h("p", { class: "small" }, "Install it with ", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), ", then press Set up Claude again."),
@@ -833,8 +836,7 @@ export function claudeSetupCard(opts = {}) {
     return new Promise((resolve) => {
       let timer = null;
       let done = false;
-      const finish = (v) => { if (done) return; done = true; clearTimeout(timer); stopWaiting = null; resolve(v); };
-      stopWaiting = () => finish(false);
+      const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve(v); };
       const checkNow = h("button", { class: "btn btn-sm", type: "button", onClick: () => poll(true) }, "I have signed in");
       const cancel = h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { finish(false); replace(log); } }, "Stop waiting");
       say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("div", {},

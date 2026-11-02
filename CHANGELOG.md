@@ -1,5 +1,186 @@
 # Changelog
 
+## 0.11.1 (November 2026): a deep clean after 0.11
+
+No new features. Much had been added between 0.7 and 0.11, so every part of the code was read again for defects,
+misbehaviour, redundant code and needless work: the server and the launcher, the checks and the model tasks, the
+AI-access guard, the queue and the model backends, the documents and the exploring layer, settings, updating and the
+install scripts, the SDG pack, and the page. What follows is what was found and fixed. Every answer still goes
+through the quote check, a person can overrule it, every result records how it was made, and `local_only()` is
+honoured everywhere (one more place now).
+
+**What Claude may see (three defects of 0.11).**
+- A check's written summary was overwritten by the local model's note, because the `:local` part is answered after
+  the main part and both stored their rationale on the claim. The summary is shown to a Claude chat through the
+  connector's `get_check`, so a local model paraphrasing a licensed passage could have handed its words to the
+  cloud. The summary and the model of a claim are now the main part's only (`tasks._store_check`).
+- Removing a document never relabelled the tasks still waiting that held its passages (a check by queue, a theme name,
+  a concept link), so Claude Code could still be handed the removed document's text. `remove_document` now relabels
+  them, as a changed setting does; a task of a removed document counts as *No AI* and leaves the queue.
+- The connector's `add_sources` reported a *No AI* document's title in its warnings (`list_documents` hides it as
+  *Restricted document 3*). Hidden there too.
+
+**Defects in checks and judgements.**
+- A check queued again under a new prompt version (`enlens refresh`) wiped a person's own judgements when the new
+  answer was stored. A judgement now survives any second answer, and the earlier AI judgement joins the excerpt's
+  history ("answered again").
+- The Results list and a result page disagreed about *waiting*: the list looked at the last task row only (with 0.11
+  that is usually the `:person` or `:local` part) and never treated a `:local` part not read yet as waiting. One rule
+  (`_round_waiting`) for both.
+- A judgement on an excerpt no model read (waiting for you) counted as a correction of the AI (the result's
+  "Judgements you changed", the Excel summary). It is a review, not a change.
+- The single part a person reworded under *Look before checking* was lost when the check went by queue (the wording
+  was stored only for two or more parts). Stored for one part too.
+- A `:local` part whose answers were rejected three times was invisible: the round said done, the excerpt said read by
+  "ai", no error was shown. The result now says so (`local_failed`), lists the technical details, and *Read them again
+  on this computer* tries the part once more (`POST …/read-local` retries failed local parts); the progress says it
+  while the check runs.
+- The progress panel did not know the `note` step 0.11 added (the local model could not be reached, the local
+  excerpts were read on this computer): it opened a phantom part and said nothing. Notes are kept and shown under the
+  steps (`notes` in the tracker's state).
+- `more_passages` reported a wrong round number when nothing more was found (the number of parts plus one).
+- The SDG pack's `verify_set` prompt was not told about excerpts read elsewhere when a set was split (the check prompt
+  was); it is now.
+- The ledger over-reported for a Claude chat: the connector shows the chat the excerpts alone, but the passage before
+  each (its context in the app) was recorded as sent. `record_sent(context=False)` for that route; the chat's
+  `refers_to` instruction no longer mentions text it is never shown.
+- A model test by queue (comparing labels, the benchmark) wrote every passage to the ledger before Claude Code took
+  anything, so a test stopped at once still said they were sent. The copy's own ledger is carried into the project's
+  afterwards, so only what Claude Code took is recorded.
+
+**Waiting, stopping, claiming.**
+- A check waiting for Claude Code never stopped waiting when its document was set to *Only a local AI* meanwhile
+  (the task had left the queue; no session would ever answer it). `wait_for` now returns with a plain message.
+- *Stop* had no effect while Ollama or another local server was still reading the prompt: the response is sent
+  with the first token, so there was nothing to close yet, and the model went on generating the whole answer (and
+  the next task queued behind it). The reader now closes the response the moment it arrives.
+- The Claude API client retries once at most (the SDK's default of two could hold a task for three times the
+  timeout; a Stop in the app took effect only when the call returned).
+- `enlens queue run` (answering the queue here) claimed each task unconditionally, overwriting a claim a Claude Code
+  session had made in between, so both answered it. It is now the same compare-and-set as `next_tasks`, and a task
+  taken meanwhile is skipped.
+
+**Settings, projects, the app.**
+- On a `--local-only` installation whose settings file still said `allow_cloud: true` (from before the switch), every
+  settings save was refused ("Cloud models are switched off…"), the page sends the stored value back, and the switch
+  to clear it is hidden in local-only mode: nothing could be changed at all. `load_settings` now turns both cloud
+  permissions off under `local_only()`.
+- `POST /api/settings/key` was the one cloud setting that did not honour `local_only()`: 403 now.
+- A quick look failed with "Invalid cross-device link" when the data folder is on another disk than the temporary
+  folder (Windows `--home D:\…`, a tmpfs `/tmp`), leaving an empty project behind. `shutil.move`, and nothing is left
+  on failure. The three raw-body uploads (documents, project zips, quick looks) share one body reader.
+- Creating a project whose name was a stale link (the linked folder gone) made the new project at the old external
+  path; it is made in the data folder and the link dropped.
+- Started from the icon, Ollama was launched only when it was the main AI: with Claude as the main AI and Ollama as
+  the local model for restricted documents (or the embedding server), it was not, and *Only a local AI* excerpts
+  silently fell to your judgement. It starts whenever any route uses it.
+- Numbers in JSON bodies (`k`, `n`, `limit`, `seed`) answered with Python's own message when they were not numbers;
+  now "k must be a whole number." like the query values. `start_label_compare` checks the codebook and whether AI
+  labels exist before starting a job instead of failing inside it. `GET …/passages/<id>/terms` gives 404 for an
+  unknown passage as its siblings do. `POST /api/quit` is documented in `docs/API.md`.
+- `enlens prepare theme` made naming tasks whose representatives included *Only a local AI* passages; the queue
+  refused them, so such themes were never named. It asks for Claude-readable representatives only, as the app does,
+  and counts what was queued. `enlens prepare link` counted pairs for which no task was made. `enlens prepare check
+  --file` dropped the `framework` and `code` columns of the CSV. `enlens queue withdraw` without a kind removed the
+  tasks of every kind but left the waiting hypotheses behind. `make-tasks audit-vca` re-checked every claim
+  (`--sample` defaulted to 1.0 instead of the pack's 0.1).
+- `enlens update` on a git copy read the installed extras after the merge, against the new `pyproject.toml`: an extra
+  whose packages grew counted as "not installed" and was dropped by the reinstall (OCR or pdfminer silently gone
+  after an update). They are read before the merge. On Python 3.10 without `tomli` every extra was dropped (the
+  table is now read line by line there). On a detached HEAD the advice was a command git refuses; it says `git
+  checkout main`. `update_release` ignored a failed `post-install` and did not pin uv to its own Python as the
+  install line does.
+- `install.sh` piped uv's installer into `sh`: a failed download went unnoticed and the line ended with "uv was
+  installed, but cannot be found". It downloads to a file first and says "Are you online?"; `install.ps1` checks the
+  installer's exit code.
+- Choosing the Claude API on a one-line install said `pip install 'enlens-claims[anthropic]'`, which a uv tool
+  install cannot do; the message now gives the `uv tool install` line for the release's wheel.
+- `evaluation.py` had a backslash inside an f-string expression: a SyntaxError on Python 3.10 and 3.11 (the one-line
+  install uses 3.12, so it showed only on git copies; four tests failed there). The whole suite passes on 3.11 now.
+- A Claude Code plugin file with an opening `---` and no closing one made `check_files` raise instead of listing the
+  problem; a `.docx` that is not a zip, has no document inside or holds malformed XML stopped the whole ingest
+  instead of being listed under *failed* with the rest going on; a very long "sentence" cut at the length limit lost
+  one character where there was no space to cut at.
+- The Profile's keyword pass cached each code's denominator by the address of the index's `idf` dictionary; after the
+  index was rebuilt (documents added, another project opened) CPython reused the address and the old corpus's
+  denominators were used (verified: a coverage of 0.021 where 0.105 was right). The totals now live for one pass.
+
+**Needless work removed (measured on a 150-document, 13,000-passage, one-million-mention project).**
+- The label lookups per passage (`WHERE framework=? AND passage_id=?`, two or three per passage in an AI pass) were
+  planned over the framework index alone (a project has no statistics): 5.9 ms each at 52,000 labels against 0.014 ms
+  with an index on `(passage_id, framework)`, which every project gets on its next open; `DELETE … WHERE task_id=?`
+  per answered label task was a full scan (an index on `task_id`).
+- Removing a document ran four statements per passage, each a full scan of embeddings, theme members, tasks and
+  results (0.62 s for an 87-passage document with 13,000 tasks; tens of seconds on a large project, holding the
+  write lock). One set-based statement per table.
+- `passages_with_code` (every Search with a code filter) read every label of the codebook (0.47 s at 36,000); the
+  code is now in the query. A theme's page read every member of the run with its text (0.115 s per page); only the
+  theme's own, merged and moved-in rows are read. The glossary read every mention of the corpus per page (280 ms at a
+  million); a term's own document count is kept with it. The term build re-tokenised the same spelling for every
+  mention (a third of the build); spellings are cached per build. Term vectors of terms a rebuild dropped stayed for
+  good (a few MB a rebuild); pruned.
+- A search export ran the whole search once per thousand lines (50 times for 50,000 hits); once now.
+- The Results list with a filter ran the five whole-table reads of `history` twice; once, with the counts over all
+  and the filter applied in memory. An Excel download computed the history and every result two or three times
+  (one sheet each); a `ResultCache` computes them once for all the sheets.
+- `_usable_embedder` ran the full embedding status (three counts over the embeddings) per check, per batch item and
+  per result page; one row is enough. The document viewer's blocks view also fetched up to 200 passage texts it
+  never used. The FlexiConc export was read into memory as a whole (hundreds of MB with embeddings); streamed.
+  "Ask a stronger model" probed the model server twice. The quick-look list was rewritten on every `/api/state`.
+  `advance_queued` read the settings and built a router per hypothesis per 2-second poll; once per call. Changing a
+  document's setting on a big project took seconds because the project's default was re-read per task (1.25 s with
+  nothing changed for 8,000 tasks); read once, and unchanged rows are not written. The chain numbering of references
+  was O(chains × mentions) after every window; one pass. The FlexiConc themes loop walked every sentence of a
+  document per passage; bisection.
+- The page: the queue notice (with *Start Claude Code*) was rebuilt on every 500 ms poll, losing focus and letting a
+  second click send a second start; the `/queue` request kept being sent for boxes no longer on the page (about two a
+  second while Claude Code ran); the "Look before checking" watcher and the Settings watchers (model test, Claude Code
+  install) kept polling after leaving the page; a job's end drew the queue panel twice; the Documents table was
+  rebuilt (a fresh request) after every setting change, losing the ticks, and the Profile drew twice on load; a
+  follow-up on a result fetched it twice.
+
+**Redundant code removed.** `gui/core.py` (a 0.4 alias of `home`), `home._first_chat_model`, `access.split_by_level`,
+`llm.OpenAICompatibleBackend`, `_probe` (folded into `models(timeout)`), `OllamaBackend.reserve`, `ingest.doc_text`,
+`references.references_table`, `_payload_json`, `stamp`, an unused connection in `profile.compare_sample`, the
+`terms_by_doc` cache nobody wrote, `installation.post_install(quiet)`, duplicated name tables (`ROUTE_NAMES`,
+`OFF_COMPUTER` live in `routing.py` only), three term-cleaning routines (one, `schema.clean_terms`), two
+`round_base`, `_installation` beside `installation.info()`, the no-op entries of `MODEL_JOB_KINDS`, two identical
+branches in `analysis.interaction_table`, `REPEAT_SAMPLE`, inner imports of modules already imported, and seven
+guards around `make_embedder` that already does the check. In the page: dead exports (`frag`, `iconText`,
+`GRADE_VERB`, `FOUND_BY*`, `balanceSentence`, `GRADE_ICON`, `PROMISE`, `plainSection`, the unreachable "starred"
+codes), unused imports, five copies each of `plural`/`shortTitle`/`runningJob`/`heatCell`/`jobCard` folded into
+`lib.js` and `progress.js`, 74 CSS rules whose classes no file uses (the 0.6 evidence-balance block, the pre-0.9
+settings layout, radio cards…), the duplicate rules at the end of `v09.css` folded into their originals, and the nav
+`title` attributes `app.js` overwrote. `features.js` marks Documents and Results as *AI optional* (both start AI
+jobs: "Let the AI read this document", "Read the new documents", a second opinion). The auditor's name is computed
+in one place (`auditorName` in `lib.js`); the typed-model input has a label; the part sections of a result can take
+focus. The release's CSS is in `gui/static/v0111.css`.
+
+Tests: 37 new (`tests/test_0111_bug_hunt.py`), one per defect above where it can be shown: the summary after a
+chatty local model and the connector's view of it; the queue after a document is removed; the chat's ledger rows;
+the hidden title; waiting that ends when the task leaves the queue; a task Claude Code took meanwhile; a model test
+stopped before a batch; relabelling only what changed; a person's judgement after a second answer; the list and the
+page agreeing; a judgement on a person's excerpt; the reworded single part; the round number; a failed local part
+and its retry; the verifier's prompt; local-only with a stale `allow_cloud`; a stale link; the tracker's notes; the
+app's plain numbers, 404 and the 403 key; Ollama started for the restricted model; a Stop before the first token;
+the API client's retries; the extra hint; `prepare` by queue, `prepare check --file`, `queue withdraw`; the update's
+extras and the detached HEAD; the pyproject reader; the installer; a bad Word file; the forced cut; coverage totals;
+the indexes and the set-based removal; `passages_with_code`; a theme's passages under merges and moves; the search
+export; the front matter; the page files. Two 0.9 and 0.5 tests follow the changes (`history` and `sources` marked
+optional; `pick_chat_model` instead of the removed alias; the connector test imports `home`).
+
+**Not yet done.**
+- The Stop while a local server reads the prompt, the Claude API's retries and the one-line install's `curl` change
+  were tested with stand-ins and by reading; a real Ollama, a real key and a real Mac or Windows were not at hand.
+  The install line is exercised by the release workflow on the three systems.
+- Two optimisations the review measured were left for later as larger changes: `history()` and `evidence_map()`
+  still parse every check task's payload (full passage texts) only to count passages and collect document ids, and
+  the term build's `_grams` still tests every token pair (`_edge_ok`); both matter only on projects of hundreds of
+  documents.
+- `annotate.check_placement` (the F7 acceptance measure) has no caller yet; it stays for that measure.
+- Everything in the *Not yet done* of 0.11.0 still stands (a real signed-in Claude Code with `--disallowedTools`,
+  the account kind from `claude auth status`, a real local model reading restricted excerpts).
+
 ## 0.11.0 (October 2026): per-document AI settings
 
 Until now the choice was all or nothing: `local_only()` switched cloud models off for a whole installation and a

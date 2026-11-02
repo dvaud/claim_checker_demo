@@ -2,61 +2,22 @@
 // concept: its wordings, the documents that discuss it, the passages as concordance lines, and related concepts
 // (a person accepts or rejects the links proposed by search by meaning or by the AI).
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, debounce, navigate, switchControl } from "../lib.js";
-import { simpleProgress, MiniJob } from "./progress.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob } from "../lib.js";
+import { MiniJob, jobCard as jobCardOf } from "./progress.js";
 
 const PAGE = 50;       // glossary entries per page
 const LINES = 50;      // concordance lines per page
 
 // "green hydrogen" -> "Green hydrogen" (a name written with capitals stays as it is)
 const cap = (s) => (s && /^[a-z]/.test(s) && !/[A-Z]/.test(s) ? s[0].toUpperCase() + s.slice(1) : s || "");
-const plural = (n, one, many) => `${fmt.num(n)} ${n === 1 ? one : many || one + "s"}`;
 const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}&mode=phrase`;
 const conceptHref = (tid) => `#/concepts/${encodeURIComponent(tid)}`;
 const checkHref = (text) => `#/check?text=${encodeURIComponent(text)}`;
-const shortTitle = (t, n = 70) => { t = (t || "untitled").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 2).trimEnd() + "…" : t; };
 
-// A job shown in a card: a bar with what it is doing, its time and a Stop button. `onEnd(job)` runs when it ends.
-function jobCard(box, jobId, title, labelFn, onEnd) {
-  const stop = h("button", { class: "btn btn-sm btn-outline-danger", type: "button" }, icon("stop", { size: 13 }), "Stop");
-  const pb = h("div", { "aria-live": "polite" });
-  const head = h("h2", {}, title);
-  const holder = h("div", { class: "card" }, h("div", { class: "card-head" }, head, stop), pb);
-  stop.addEventListener("click", async () => {
-    stop.disabled = true;
-    try { await api("POST", `/api/jobs/${P(jobId)}/cancel`); } catch (e) { showError(e); stop.disabled = false; }
-  });
-  box.hidden = false;
-  replace(box, holder);
-  const w = watchJob(jobId, (job) => {
-    replace(pb, simpleProgress(job, labelFn));
-    if (TERMINAL.has(job.state)) stop.hidden = true;
-  });
-  w.promise.then((job) => {
-    if (job.state === "error") {
-      head.textContent = "It did not work";
-      replace(pb, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {},
-        h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : job.error_kind === "internal" ? "Something went wrong inside the app." : (job.error || "It could not finish.")),
-        job.error_kind === "backend" || job.error_kind === "internal" ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")) : null,
-        job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)));
-    } else if (job.state === "cancelled") {
-      head.textContent = "Stopped";
-      replace(pb, h("p", { class: "muted", style: { margin: 0 } }, "Stopped. Nothing was changed."));
-    }
-    if (onEnd) onEnd(job);
-  }).catch(showError);
-  return w;
-}
+// A glossary job in a card (progress.js): a stopped build changes nothing.
+const jobCard = (box, jobId, title, labelFn, onEnd) => jobCardOf(box, jobId, title, labelFn, onEnd, { stoppedText: "Stopped. Nothing was changed." });
 
 const glossaryLabel = (p) => (p.total ? `Reading the documents: ${fmt.num(p.done || 0)} of ${fmt.num(p.total)} passages` : "Reading the documents…");
-
-// A running job of one of these kinds for this project, if any.
-async function runningJob(project, kinds) {
-  try {
-    const jobs = (await api("GET", "/api/jobs")).jobs || [];
-    return jobs.find((j) => j.project === project && kinds.includes(j.kind) && !TERMINAL.has(j.state)) || null;
-  } catch (_) { return null; }
-}
 
 // ---------------------------------------------------------------------------------------------
 // the glossary

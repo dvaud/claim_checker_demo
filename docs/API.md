@@ -138,7 +138,10 @@ while `local_only` is true). `project` sets the current project.
 (`enlens-gui --local-only`, `ENLENS_LOCAL_ONLY=1`, or a file `local_only` in the data folder): hide the cloud option.
 
 `POST /api/settings/key` `{"key": "sk-ant-…", "remember": false}` → `{"key": {...}}`. Without `remember` the key is
-kept in memory for this run only. `DELETE /api/settings/key` forgets both.
+kept in memory for this run only. `DELETE /api/settings/key` forgets both. 403 when `local_only` is true (0.11.1).
+
+`POST /api/quit` → `{"stopping": true, "jobs_stopped": n}`: stops the app ("Quit ENLENS" in the sidebar) once the
+running jobs have stopped (at most 20 s); 409 when this copy was not started in a way that can be stopped from here.
 
 `GET /api/servers` → local model servers running now (probed in parallel, < 1 s):
 ```json

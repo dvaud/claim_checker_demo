@@ -287,5 +287,5 @@ export async function renderCheck(view, params, query) {
         h("li", {}, h("strong", {}, "Verify. "), "Every quote is checked against the document, word for word. An answer whose quote cannot be found in the document is rejected and the AI is asked again."),
         h("li", {}, h("strong", {}, "Answer. "), "You get an answer such as “supported”, “contradicted” or “mixed evidence”, with the quotes, so you can judge for yourself. “No evidence found” means just that: the documents may still say it in other words.")))));
 
-  return () => { if (watcher) watcher.stop(); };
+  return () => { if (watcher) watcher.stop(); if (prepareWatcher) prepareWatcher.stop(); };
 }

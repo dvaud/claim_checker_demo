@@ -1,6 +1,6 @@
 // The live progress panel of a check (also used for batches and "read more"): updated in place from the job's
 // progress every poll, so running spinners do not restart and the page does not flicker.
-import { App, h, icon, replace, clear, fmt, cancelJob, toast, showError, queueNotice } from "../lib.js";
+import { App, api, h, icon, replace, clear, fmt, cancelJob, showError, queueNotice, watchJob, TERMINAL, P } from "../lib.js";
 
 const STEP_ICON = { pending: "circle", running: "loader", done: "circle-check" };
 const plainPhase = (phase) => ({ waiting: "The AI is getting ready and reading", thinking: "The AI is thinking it over", writing: "The AI is writing down its judgement", done: "The AI has finished" }[phase] || "The AI is working");
@@ -24,16 +24,19 @@ export class ProgressPanel {
     this.decompBox = h("div", { class: "decomp-box", hidden: true });
     this.partsBox = h("div", { class: "parts-box" });
     this.modelBox = h("div", { class: "model-line", hidden: true });
+    this.notesBox = h("ul", { class: "progress-notes small", hidden: true });
     this.expect = h("p", { class: "muted small expect" }, App.settings().backend === "claude_code"
       ? "Claude Code reads it once you press Start Claude Code (or type the command in Claude Code). You can move around the app, or close it: the check waits in the queue, and its answer appears under Results."
       : "An AI model running on your own computer can take a few minutes. You can move around the app meanwhile; the check keeps running.");
     this.techOpen = false;
-    this.body = h("div", { class: "progress-body" }, this.batchBox, this.decompBox, this.partsBox, this.modelBox, this.expect);
+    this.body = h("div", { class: "progress-body" }, this.batchBox, this.decompBox, this.partsBox, this.modelBox, this.notesBox, this.expect);
     this.el.append(this.head, this.body, this.live);
     this.jobId = null;
     this.batchIndex = null;
     this.lastLive = "";
     this.liveAt = 0;
+    this.queueEl = null;       // the queue notice, kept across polls so its buttons keep focus and state
+    this.queueKey = "";
   }
 
   async stop() {
@@ -132,11 +135,16 @@ export class ProgressPanel {
         h("div", { class: "tech-body" }, h("div", { class: "mono small" }, m.line || ""),
           m.tail && m.phase !== "done" ? h("div", { class: "model-tail", "aria-hidden": "true" }, h("span", {}, m.tail)) : null));
       tech.addEventListener("toggle", () => { this.techOpen = tech.open; });
-      if (m.phase === "queue") replace(this.modelBox, queueNotice({ ...(m.queue || {}), text: plain }));
-      else replace(this.modelBox,
+      if (m.phase === "queue") this.drawQueue({ ...(m.queue || {}), text: plain });
+      else { this.queueEl = null; replace(this.modelBox,
         h("div", { class: "ml-head" }, icon(phaseIcon, { size: 14 }), h("span", {}, running && (m.seconds || 0) >= 1 ? `${plain} · ${fmt.secs(m.seconds)}` : plain)),
-        tech);
-    } else this.modelBox.hidden = true;
+        tech); }
+    } else { this.modelBox.hidden = true; this.queueEl = null; }
+
+    // 0.11: what happened to the excerpts of restricted documents (read here by the local model, or waiting for you)
+    const notes = p.notes || [];
+    this.notesBox.hidden = notes.length === 0;
+    if (notes.length !== this.notesBox.childElementCount) replace(this.notesBox, ...notes.map((n) => h("li", {}, n)));
 
     // errors
     if (job.state === "error") {
@@ -156,6 +164,25 @@ export class ProgressPanel {
       this.lastLive = announce;
       this.liveAt = now;
     }
+  }
+
+  // The queue notice is built once and kept while the queue's state is the same: a poll every half second must not
+  // replace its Start Claude Code button under the person's pointer or focus (or let a second start through).
+  // Only the count being answered is written in place; the Start Claude Code element keeps itself current.
+  drawQueue(q) {
+    const key = JSON.stringify([q.text, !!q.paused, q.paused_text || "", q.command || "", q.privacy || "", q.estimate || ""]);
+    if (!this.queueEl || !this.queueEl.isConnected || key !== this.queueKey) {
+      this.queueKey = key;
+      this.queueEl = queueNotice(q);
+      replace(this.modelBox, this.queueEl);
+      return;
+    }
+    const head = this.queueEl.querySelector(".qn-head");
+    let n = head.querySelector(".qn-answered");
+    if (q.being_answered) {
+      if (!n) { n = h("span", { class: "muted small qn-answered" }); head.appendChild(n); }
+      n.textContent = ` · ${q.being_answered} being answered now`;
+    } else if (n) n.remove();
   }
 
   row(key, label, state, detail, seconds) {
@@ -245,4 +272,40 @@ export function simpleProgress(job, labelFn) {
       h("span", { style: { width: `${Math.max(2, pct)}%` } })));
 }
 
-export { toast };
+// A job in a card: a bar with what it is doing, its time and a Stop button. `onEnd(job)` runs when it ends.
+// opts: small (h3), plain (card-plain), stoppedText. Returns the watcher (stop it when the page is left).
+export function jobCard(box, jobId, title, labelFn, onEnd, opts = {}) {
+  const stop = h("button", { class: "btn btn-sm btn-outline-danger", type: "button" }, icon("stop", { size: 13 }), "Stop");
+  const pb = h("div", { "aria-live": "polite" });
+  const head = h(opts.small ? "h3" : "h2", {}, title);
+  const holder = h("div", { class: "card" + (opts.plain ? " card-plain" : "") }, h("div", { class: "card-head" }, head, stop), pb);
+  stop.addEventListener("click", async () => {
+    stop.disabled = true;
+    try { await api("POST", `/api/jobs/${P(jobId)}/cancel`); } catch (e) { showError(e); stop.disabled = false; }
+  });
+  box.hidden = false;
+  replace(box, holder);
+  const w = watchJob(jobId, (job) => {
+    replace(pb, simpleProgress(job, labelFn));
+    if (TERMINAL.has(job.state)) stop.hidden = true;
+  });
+  w.promise.then((job) => {
+    if (job.state === "error") {
+      head.textContent = "It did not work";
+      replace(pb, jobError(job));
+    } else if (job.state === "cancelled") {
+      head.textContent = "Stopped";
+      replace(pb, h("p", { class: "muted", style: { margin: 0 } }, opts.stoppedText || "Stopped. What was done so far is kept."));
+    }
+    if (onEnd) onEnd(job);
+  }).catch(showError);
+  return w;
+}
+
+// Why a job did not work, in plain words, with the technical message folded away.
+export function jobError(job) {
+  return h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {},
+    h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : job.error_kind === "internal" ? "Something went wrong inside the app." : (job.error || "It could not finish.")),
+    job.error_kind === "backend" || job.error_kind === "internal" ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")) : null,
+    job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null));
+}

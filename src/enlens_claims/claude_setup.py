@@ -98,7 +98,10 @@ def frontmatter(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---\n"):
         return {}
-    head = text[4:text.index("\n---", 4)]
+    end = text.find("\n---", 4)
+    if end < 0:  # never closed: no front matter (check_files then lists what is missing instead of failing)
+        return {}
+    head = text[4:end]
     out = {}
     for line in head.splitlines():
         if ":" in line and not line.startswith(" "):

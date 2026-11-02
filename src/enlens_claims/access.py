@@ -29,6 +29,7 @@ import sqlite3
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
+from . import routing
 from .store import Workspace, now
 
 LEVELS = ("cloud", "local", "none")
@@ -37,8 +38,8 @@ LABEL = {"cloud": "Claude may read it", "local": "Only a local AI", "none": "No 
 WHO = {"cloud": "The chosen route: Claude Code, the Claude API, or a local model",
        "local": "A local model server on this computer, or a person",
        "none": "A person only. Search, keyword Profile, Concepts and Themes without AI still work"}
-OFF_COMPUTER = ("claude_code", "anthropic")
-ROUTE_NAMES = {"claude_code": "Claude Code", "anthropic": "Claude API", "chat": "Claude app (connector)"}
+OFF_COMPUTER = routing.OFF_COMPUTER  # one table for every module (0.11.1)
+ROUTE_NAMES = routing.ROUTE_NAMES
 PROMISE = ("Documents you mark as local stay on this computer. ENLENS never sends their text to Claude, in any "
            "feature, and shows you how much of every other document it has sent.")
 _KEEP = object()
@@ -141,9 +142,11 @@ def shares(cx_or_ws, doc_ids: Iterable[str] | None = None) -> dict[str, dict]:
     return out
 
 
-def levels(cx_or_ws, doc_ids: Iterable[str] | None = None, budget: bool = True) -> dict[str, str]:
+def levels(cx_or_ws, doc_ids: Iterable[str] | None = None, budget: bool = True,
+           dflt: str | None = None) -> dict[str, str]:
     """The setting that applies to each document now: its own, else the project's default; a `cloud` document whose
-    cap is reached counts as `local` (with `budget`)."""
+    cap is reached counts as `local` (with `budget`). `dflt` is the project's default when the caller has it already
+    (a loop over many tasks: finding it means reading the project's config)."""
     if isinstance(cx_or_ws, sqlite3.Connection):
         cx = cx_or_ws
         ws = None
@@ -152,7 +155,8 @@ def levels(cx_or_ws, doc_ids: Iterable[str] | None = None, budget: bool = True) 
         ws = cx_or_ws
         cx = ws._conn()
         q = cx.execute
-    dflt = default(ws) if ws is not None else _default_from_cx(cx)
+    if dflt is None:
+        dflt = default(ws) if ws is not None else _default_from_cx(cx)
     ids = list(dict.fromkeys(doc_ids)) if doc_ids is not None else None
     if ids is not None and not ids:
         return {}
@@ -160,9 +164,10 @@ def levels(cx_or_ws, doc_ids: Iterable[str] | None = None, budget: bool = True) 
     rows = q(sql + (f" WHERE doc_id IN ({','.join('?' * len(ids))})" if ids is not None else ""), ids or []).fetchall()
     out: dict[str, str] = {}
     capped = []
+    only_local = _local_only()
     for r in rows:
         lv = r[1] if r[1] in LEVELS else dflt
-        if lv == "cloud" and _local_only():
+        if lv == "cloud" and only_local:
             lv = "local"
         out[r[0]] = lv
         if budget and lv == "cloud" and r[2] is not None:
@@ -219,7 +224,7 @@ def ids_in(payload: Any) -> tuple[set[str], set[str]]:
     return pids, dids
 
 
-def label_payload(cx, payload: Any) -> str:
+def label_payload(cx, payload: Any, dflt: str | None = None) -> str:
     """The most restricted setting of the documents a task's payload names (`cloud` for a task without document
     text, such as the search words of a hypothesis). A passage no longer in the project counts as its document."""
     pids, dids = ids_in(payload)
@@ -228,7 +233,7 @@ def label_payload(cx, payload: Any) -> str:
     by_p = doc_of_passages(cx, pids)
     docs = set(dids) | set(by_p.values())
     missing = pids - set(by_p)
-    lv = levels(cx, docs) if docs else {}
+    lv = levels(cx, docs, dflt=dflt) if docs else {}
     out = most(lv.values())
     if missing and not docs:
         return "none"  # passages of a removed document, and nothing else to go by: keep them here
@@ -249,14 +254,15 @@ def relabel(cx, task_ids: Iterable[str] | None = None) -> int:
         sql += f" AND task_id IN ({','.join('?' * len(ids))})"
         args = ids
     n = 0
+    dflt = _default_from_cx(cx)  # once, not per task (0.11.1: a settings change on a big project took seconds)
     for r in cx.execute(sql, args).fetchall():
         try:
-            lv = label_payload(cx, json.loads(r["payload_json"] or "{}"))
+            lv = label_payload(cx, json.loads(r["payload_json"] or "{}"), dflt=dflt)
         except (ValueError, TypeError):
             lv = "none"
         if lv != (r["access"] or "cloud"):
             n += 1
-        cx.execute("UPDATE tasks SET access=? WHERE task_id=?", (lv, r["task_id"]))
+            cx.execute("UPDATE tasks SET access=? WHERE task_id=?", (lv, r["task_id"]))
         if lv != "cloud":
             cx.execute("UPDATE tasks SET queued=0, queued_at=NULL, claimed_by=NULL, claimed_at=NULL WHERE task_id=? "
                        "AND COALESCE(queued, 0)=1", (r["task_id"],))
@@ -446,16 +452,6 @@ class Readers:
         return self.for_level(lv)
 
 
-def split_by_level(ws_or_cx, items: list[dict], key: str = "doc_id") -> dict[str, list[dict]]:
-    """Items (passages with a doc_id) grouped by their document's setting, in their order."""
-    docs = [it[key] for it in items if it.get(key)]
-    lv = levels(ws_or_cx, docs)
-    out: dict[str, list[dict]] = {k: [] for k in LEVELS}
-    for it in items:
-        out[lv.get(it.get(key), "none")].append(it)
-    return out
-
-
 def allowed_docs(ws: Workspace, allowed: set[str]) -> set[str]:
     """The documents whose setting is one of `allowed`."""
     return {d for d, lv in levels(ws).items() if lv in allowed}
@@ -485,12 +481,15 @@ def _with_context(cx, payload: Any, pids: set[str]) -> set[str]:
     return pids | extra
 
 
-def record_sent(cx, task_id: str | None, payload: Any, route: str, feature: str | None = None) -> int:
-    """Write one ledger row per passage (and context passage) of this payload, as it leaves for a cloud model."""
+def record_sent(cx, task_id: str | None, payload: Any, route: str, feature: str | None = None,
+                context: bool = True) -> int:
+    """Write one ledger row per passage (and, with `context`, the passage shown before it) of this payload, as it
+    leaves for a cloud model. A Claude chat is shown the excerpts without their context (`context=False`)."""
     pids, _dids = ids_in(payload)
     if not pids:
         return 0
-    pids = _with_context(cx, payload, pids)
+    if context:
+        pids = _with_context(cx, payload, pids)
     docs = doc_of_passages(cx, pids)
     at = now()
     rows = [(p, docs[p], route, task_id, at, feature) for p in sorted(pids) if p in docs]

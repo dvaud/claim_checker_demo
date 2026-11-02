@@ -1,7 +1,7 @@
 // First run. When the AI model is already set up (someone installed the app), the user starts by naming a project
 // and adding documents. The model step appears only when no model works yet.
 import { App, api, h, icon, replace, clear, toast, showError, field, navigate, store } from "../lib.js";
-import { testResult, plainTestResult, claudeSetupCard } from "./settings.js";
+import { plainTestResult, claudeSetupCard } from "./settings.js";
 import { linkProjectDialog, importProjectDialog } from "./projects.js";
 
 function rerender() { window.dispatchEvent(new HashChangeEvent("hashchange")); }
@@ -148,4 +148,3 @@ async function modelStep(body) {
     out);
 }
 
-export { testResult };

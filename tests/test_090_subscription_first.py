@@ -160,7 +160,7 @@ def test_the_page_puts_exploring_first_and_marks_the_ai():
     feats = (static / "features.js").read_text(encoding="utf-8")
     feats = feats[feats.index("export const FEATURES"):]
     for key, ai in (("search", "none"), ("profile", "optional"), ("concepts", "optional"), ("themes", "optional"),
-                    ("check", "uses"), ("batch", "uses"), ("history", "none"), ("sources", "none")):
+                    ("check", "uses"), ("batch", "uses"), ("history", "optional"), ("sources", "optional")):  # 0.11.1: both start AI jobs
         block = feats[feats.index(f"  {key}: {{"):]
         assert f'ai: "{ai}"' in block[:block.index("\n  },")], key
     app = (static / "app.js").read_text(encoding="utf-8")

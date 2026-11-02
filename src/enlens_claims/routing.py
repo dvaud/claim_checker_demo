@@ -87,7 +87,9 @@ HELPER_MODEL = {"enlens-labeller": "haiku", "enlens-linker": "haiku", "enlens-na
 TO_AUDITOR = ("check", "reread", "split", "verify", "verify_set")
 
 ROUTE_NAMES = {"claude_code": "Claude Code", "anthropic": "Claude API", "local": "local model server",
-               "ollama": "local model server", "baseline": "offline demo", "file": "file queue"}
+               "ollama": "local model server", "baseline": "offline demo", "file": "file queue",
+               "chat": "Claude app (connector)"}
+OFF_COMPUTER = frozenset({"anthropic", "claude_code"})   # the backends whose passages leave this computer
 
 
 def route_of(backend_name: str) -> str:

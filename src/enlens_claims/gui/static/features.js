@@ -12,7 +12,7 @@ export const SECTIONS = {
 // ai: "none" (never uses the AI), "optional" (works without it; the AI can add to it), "uses" (the AI does the work)
 export const FEATURES = {
   sources: {
-    section: "project", title: "Documents", icon: "book-open", href: "#/sources", ai: "none",
+    section: "project", title: "Documents", icon: "book-open", href: "#/sources", ai: "optional",
     what: "Add your reports, papers and web pages, say who may read each with AI, and open one to read it with its codes, key terms and references.",
   },
   search: {
@@ -44,7 +44,7 @@ export const FEATURES = {
     what: "A list of hypotheses (pasted or from a spreadsheet), checked one after the other.",
   },
   history: {
-    section: "check", title: "Results", icon: "history", href: "#/history", ai: "none",
+    section: "check", title: "Results", icon: "history", href: "#/history", ai: "optional",
     what: "Every hypothesis checked in this project: the answers, your reviews, the evidence map and Excel downloads.",
   },
 };

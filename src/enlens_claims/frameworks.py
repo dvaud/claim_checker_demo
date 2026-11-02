@@ -82,12 +82,14 @@ class Framework:
             self._index = (cs, BM25(toks), {c.code: set(t) for c, t in zip(cs, toks)})
         return self._index
 
-    def scores(self, text: str, toks: list[str] | None = None) -> dict[str, float]:
-        """BM25 score of every code that shares a word with the text, plus the lexicon's common phrasings."""
+    def scores(self, text: str, toks: list[str] | None = None, lex_hits: set[str] | None = None) -> dict[str, float]:
+        """BM25 score of every code that shares a word with the text, plus the lexicon's common phrasings (`lex_hits`
+        when the caller matched them already)."""
         cs, bm, _sets = self._bm()
         scores = {cs[i].code: s for i, s in bm.sparse(tokens(text) if toks is None else toks).items()}
         top = max(scores.values(), default=0.0)
-        for code in self.lexicon_hits(text):  # common phrasings the code texts do not use ("water stress", "jobs")
+        hits = self.lexicon_hits(text) if lex_hits is None else lex_hits
+        for code in hits:  # common phrasings the code texts do not use ("water stress", "jobs")
             scores[code] = scores.get(code, 0.0) + 10 + top
         return scores
 
@@ -98,7 +100,7 @@ class Framework:
         if self._lex is None:  # the patterns are lower case: matching lower-cased text is faster than re.I
             self._lex = [(re.compile(p.lower()), c) for p, c in self.lexicon if c in self.codes]
         low = text.lower()
-        return {c for rx, c in self._lex if c not in () and rx.search(low)}
+        return {c for rx, c in self._lex if rx.search(low)}
 
     def code_stems(self, code: str) -> set[str]:
         return self._bm()[2].get(code, set())

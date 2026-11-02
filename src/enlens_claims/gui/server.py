@@ -321,7 +321,7 @@ class App:
         s = self.settings()
         out = self.project_summary(name)
         out["passages"] = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'") or 0)
-        out["search"] = embed.status(ws, s.get("embed_model") if s.get("embed_backend") != "off" else None,
+        out["search"] = embed.status(ws, s.get("embed_model"),
                                      home.make_embedder(s))
         out["ai_access"] = access.project_info(ws)
         out["frameworks"] = [fw.info() for fw in frameworks.available(ws).values()]
@@ -336,7 +336,7 @@ class App:
             d.update(acc.get(d["doc_id"], {}))
         return {"documents": docs, "ai_access": access.project_info(ws),
                 "restricted_model": home.restricted_choice(s),
-                "search": embed.status(ws, s.get("embed_model") if s.get("embed_backend") != "off" else None,
+                "search": embed.status(ws, s.get("embed_model"),
                                        home.make_embedder(s))}
 
     def document(self, name: str, doc_id: str, offset: int, limit: int, view: str = "") -> dict:
@@ -348,7 +348,8 @@ class App:
         out = dict(d[0])
         out["file"] = re.sub(r".*[/\\]", "", out.pop("path") or "")
         out["total_passages"] = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE doc_id=?", (doc_id,)) or 0)
-        out["passages"] = [dict(r) for r in ws.query(
+        # the blocks view (the document viewer) reads by page or paragraph and never the passages (0.11.1)
+        out["passages"] = [] if view == "blocks" else [dict(r) for r in ws.query(
             "SELECT passage_id, seq, page, section, start, end, text FROM passages WHERE doc_id=? ORDER BY seq LIMIT ? OFFSET ?",
             (doc_id, max(1, min(limit, 200)), max(0, offset)))]
         out["offset"] = offset
@@ -413,10 +414,18 @@ class App:
     def hypotheses(self, name: str, q: dict) -> dict:
         ws = self.ws(name)
         thr = _float(q, "threshold", self.settings()["threshold"])
-        rows = claimcheck.history(ws, thr, query=_str(q, "q"), status=_str(q, "status"), batch_id=_str(q, "batch"))
+        # one pass over the project (0.11.1: a filtered list ran the five whole-table reads of history twice), the
+        # counts over every hypothesis, the rows filtered here by the same rules
+        text, status, batch = (_str(q, "q") or "").lower().strip(), _str(q, "status"), _str(q, "batch")
+        rows = claimcheck.history(ws, thr)
         counts: dict[str, int] = {}
-        for r in claimcheck.history(ws, thr) if (_str(q, "q") or _str(q, "status") or _str(q, "batch")) else rows:
+        for r in rows:
             counts[r["status"]] = counts.get(r["status"], 0) + 1
+        if text or status or batch:
+            rows = [r for r in rows if (not text or text in (r["text"] or "").lower())
+                    and (not status or r["status"] == status) and (not batch or r["batch_id"] == batch)]
+            if batch:
+                rows.reverse()  # a set reads in the order it was typed
         limit = int(_float(q, "limit", 0))
         return {"hypotheses": rows[:limit] if limit else rows, "counts": counts, "threshold": thr}
 
@@ -577,7 +586,7 @@ class App:
         be, model = self.backend()
 
         def run(job: Job):
-            n = claimcheck.run_local_parts(ws, [hyp_id], access.Readers(be, model))
+            n = claimcheck.run_local_parts(ws, [hyp_id], access.Readers(be, model), retry_failed=True)
             taskqueue.advance(ws, [hyp_id])
             return {"hyp_id": hyp_id, "parts": n,
                     "status": claimcheck.hypothesis_result(ws, hyp_id, self.settings()["threshold"])["status"]}
@@ -631,7 +640,7 @@ class App:
         s = self.settings()
         if not ws.scalar("SELECT 1 FROM user_claims WHERE claim_id=?", (claim_id,)):
             raise ApiError(404, "No such claim.")
-        k = int(body.get("k") or s["k"])
+        k = _body_int(body, "k", int(s["k"]), 1, 100)
         terms = [str(t) for t in (body.get("terms") or []) if str(t).strip()] or None
         if isinstance(body.get("terms"), str):
             terms = [t.strip() for t in body["terms"].split(",") if t.strip()] or None
@@ -790,7 +799,7 @@ class App:
         the new documents. Neither uses the chat model; a problem with either is reported, not fatal."""
         from .. import profile, terms
 
-        emb = _usable_embedder(ws, home.make_embedder(s)) if s.get("embed_backend") != "off" else None
+        emb = _usable_embedder(ws, home.make_embedder(s))
         job.progress = {"done": 0, "total": 0, "file": "", "phase": "glossary"}
         try:
             stats["glossary"] = terms.build(ws, progress=lambda d, n: job.progress.update(done=d, total=n),
@@ -833,7 +842,7 @@ class App:
             return None
 
     MODEL_JOB_KINDS = {"label": ("label",), "link": ("link",), "wordings": ("expand",), "theme-names": ("theme",),
-                       "resolve": ("resolve",), "stronger": (), "queue-run": ()}
+                       "resolve": ("resolve",)}  # the task kinds Stop withdraws from the queue; others: none
 
     def _model_job(self, kind: str, title: str, name: str, fn, steps=("grade",)) -> Job:
         """A job that uses the chat model: progress as done/total, the model's own progress, Stop. By queue (0.8)
@@ -883,8 +892,8 @@ class App:
                 return 0
 
         fw = self.settings().get("profile_framework") or "sdg"
-        run = ws.query("SELECT run_id FROM theme_runs ORDER BY created_at DESC LIMIT 1") if n(
-            "SELECT COUNT(*) FROM theme_runs") else []
+        runs = n("SELECT COUNT(*) FROM theme_runs")
+        run = ws.query("SELECT run_id FROM theme_runs ORDER BY created_at DESC LIMIT 1") if runs else []
         return {
             "documents": n("SELECT COUNT(*) FROM documents"),
             "passages": n("SELECT COUNT(*) FROM passages WHERE section='body'"),
@@ -892,7 +901,7 @@ class App:
                         "labels": n("SELECT COUNT(*) FROM labels WHERE framework=?", (fw,)),
                         "documents": n("SELECT COUNT(DISTINCT doc_id) FROM labels WHERE framework=?", (fw,))},
             "concepts": {"terms": n("SELECT COUNT(*) FROM terms"), "concepts": n("SELECT COUNT(*) FROM concepts")},
-            "themes": {"runs": n("SELECT COUNT(*) FROM theme_runs"),
+            "themes": {"runs": runs,
                        "themes": n("SELECT COUNT(*) FROM themes WHERE run_id=?", (run[0]["run_id"],)) if run else 0,
                        "latest": run[0]["run_id"] if run else None},
             "references": n("SELECT COUNT(DISTINCT doc_id) FROM mentions"),
@@ -903,12 +912,17 @@ class App:
     def start_stronger(self, name: str, task_id: str) -> Job:
         """"Ask a stronger model" on one answered task (a round of a check): read again once by the model it steps
         up to on this route."""
+        from .. import routing
+
         ws = self.ws(name)
         t = ws.query("SELECT kind, status, step FROM tasks WHERE task_id=?", (task_id,))
         if not t:
             raise ApiError(404, "No such task.")
-        be, _model = self.backend((t[0]["kind"],))
-        r = getattr(be, "router", None)
+        # the route's router from the settings (0.11.1: building a backend here probed the model server once for
+        # the check and once more for the job)
+        s = self.settings()
+        r = (routing.from_settings(s, large=s.get("ollama_model") or s.get("openai_model") or "")
+             if s.get("routing", True) and s.get("backend") != "baseline" else None)
         if r is None or not r.step_up(t[0]["kind"]):
             raise ApiError(400, "There is no stronger model for this on the AI model chosen in Settings.")
         with tasks_mod.queueing(self.queue_mode()):
@@ -975,7 +989,7 @@ class App:
             raise ApiError(400, "doc_ids must be a list of document ids.")
         if not profile.pass1_status(ws, fw)["done"]:
             raise ApiError(409, "Find the codes by keywords first (it takes seconds): the AI reads the passages they found.")
-        limit = int(body["limit"]) if body.get("limit") else None
+        limit = _body_int(body, "limit", None, 1, 10 ** 7)
         job = self._model_job("label", f"The AI labels passages ({fw})", name, lambda job, be, model, prog:
                                profile.run_labels(ws, fw, be, model, docs, bool(body.get("all_passages")), limit,
                                                   progress=prog, should_stop=job.cancel.is_set))
@@ -987,7 +1001,11 @@ class App:
 
         ws = self.ws(name)
         fw = str(body.get("framework") or self.settings().get("profile_framework") or "sdg")
-        n = max(5, min(int(body.get("n") or 50), 200))
+        frameworks.get(fw, ws)  # a plain mistake is reported at once, not as a failed job (0.11.1)
+        if not ws.scalar("SELECT 1 FROM labels WHERE framework=? AND source='model' LIMIT 1", (fw,)):
+            raise ApiError(409, "No passage has AI labels yet in this codebook: there is nothing to compare with.")
+        n = _body_int(body, "n", 50, 5, 200)
+
         def compare(job, be, model, prog):
             if self.queue_mode():  # 0.8.1: by queue, on a scratch copy; labels are read by the label model
                 from ..routing import ALIASES
@@ -1042,10 +1060,10 @@ class App:
 
         ws = self.ws(name)
         s = self.settings()
-        k = int(body.get("k") or s.get("themes_k") or 20)
-        seed = int(body.get("seed") or 0)
+        k = _body_int(body, "k", int(s.get("themes_k") or 20), 2, 60)
+        seed = _body_int(body, "seed", 0, 0, 10 ** 9)
         mode = str(body.get("mode") or "auto")
-        emb = home.make_embedder(s) if s.get("embed_backend") != "off" else None
+        emb = home.make_embedder(s)
         embed_model = getattr(emb, "model", None)
         themes.choose_mode(ws, mode, embed_model)  # a plain mistake (no embeddings for "meaning") is reported at once
 
@@ -1085,11 +1103,18 @@ class App:
 
     def start_quicklook(self, filename: str, path: Path) -> tuple[str, Job]:
         """A temporary project named after the file; its ingest job ends with the glossary and the codes."""
+        import shutil
+
         ws = home.create_quicklook(filename, self.settings().get("project"))
         name = ws.root.name
         folder = home.upload_folder(ws, "quicklook")
         target = folder / (re.sub(r'[\x00-\x1f<>:"|?*/\\]', "_", Path(filename).name).strip(" .") or "document.pdf")
-        path.replace(target)
+        try:
+            shutil.move(str(path), str(target))  # 0.11.1: a data folder on another disk than the temp folder
+        except OSError:  # no empty quick look is left behind
+            home.keep_project(name)
+            shutil.rmtree(ws.root, ignore_errors=True)
+            raise
         home.update_settings({"project": name})
         job = self.start_ingest(name, {"batch": "quicklook"})
         job.kind = "quicklook"
@@ -1108,7 +1133,7 @@ class App:
             raise ApiError(400, str(e)) from e
         kinds = tuple(k for k in (body.get("kinds") or ["verify_set"]) if k in ("verify_set", "extract", "split", "label")) \
             or ("verify_set",)
-        n = max(1, min(int(body.get("n") or 10), 100))
+        n = _body_int(body, "n", 10, 1, 100)
         be, model = self.backend(kinds)
         q = self.queue_mode()
         if q:  # 0.8.1: by queue, on a scratch copy of the reference; each kind on its routed model unless one is chosen
@@ -1201,8 +1226,8 @@ def _usable_embedder(ws, emb):
     """Use semantic search only when the project has vectors from this model."""
     if emb is None:
         return None
-    st = embed.status(ws, emb.model)
-    return emb if st["embedded"] else None
+    # one row is enough (0.11.1: the full status, three counts over the embeddings, ran per check and per result page)
+    return emb if ws.scalar("SELECT 1 FROM embeddings WHERE model=? LIMIT 1", (emb.model,)) else None
 
 
 def _check_options(body: dict, s: dict) -> dict:
@@ -1234,6 +1259,19 @@ def _list(q: dict, key: str) -> list[str] | None:
 
 def _bool(q: dict, key: str) -> bool:
     return (_str(q, key) or "").lower() in ("1", "true", "yes", "on")
+
+
+def _body_int(body: dict, key: str, default: int | None, lo: int, hi: int) -> int | None:
+    """A whole number from a JSON body, in plain language when it is not one (0.11.1: Python's own message was
+    shown). `default` when the key is absent or empty (None stays None)."""
+    v = body.get(key)
+    if v is None or v == "":
+        return default
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        raise ApiError(400, f"{key} must be a whole number.") from None
+    return max(lo, min(v, hi))
 
 
 def _int(q: dict, key: str, default: int, lo: int, hi: int) -> int:
@@ -1289,8 +1327,9 @@ def _installation() -> dict:
     from .. import installation
 
     try:
-        return {"kind": installation.kind(), "system": installation.system(), "line": installation.install_line(),
-                "releases": f"https://github.com/{installation.REPO}/releases"}
+        i = installation.info()  # one description of the installation (0.11.1: the app kept its own copy)
+        return {"kind": i["kind"], "system": installation.system(), "line": i["install_line"],
+                "releases": i["releases"], "updates": i["updates"]}
     except Exception:  # noqa: BLE001
         return {"kind": "pip", "system": installation.system(), "line": "", "releases": ""}
 
@@ -1633,6 +1672,9 @@ class Handler(BaseHTTPRequestHandler):
         return {"settings": s, "backend_label": home.backend_label(s)}
 
     def post_key(self, q):
+        if home.local_only():  # 0.11.1: the one cloud setting that did not honour it
+            raise ApiError(403, "Cloud models are switched off on this computer by whoever installed ENLENS: a Claude "
+                                "API key cannot be used here.")
         body = self._body()
         key = str(body.get("key") or "").strip()
         if not key:
@@ -1802,22 +1844,17 @@ class Handler(BaseHTTPRequestHandler):
     def delete_document(self, name, doc_id, q):
         return {"removed": self.app.ws(name).remove_document(doc_id)}
 
-    def post_upload(self, name, q):
-        ws = self.app.ws(name)
-        raw = _str(q, "name") or unquote(self.headers.get("X-Filename") or "") or "upload"  # each decoded once
-        fname = re.split(r"[/\\]", raw)[-1]
-        fname = re.sub(r'[\x00-\x1f<>:"|?*]', "_", fname).strip(" .") or "upload"
-        if fname.startswith("."):
-            fname = "_" + fname
+    def _body_size(self) -> int:
+        """The size of a raw upload, refused above MAX_UPLOAD (the connection is closed: the body is not read)."""
         n = int(self.headers.get("Content-Length") or 0)
         if n > MAX_UPLOAD:
             self.close_connection = True
             raise ApiError(413, "Files larger than 2 GB are not accepted.")
+        return n
+
+    def _save_body(self, target: Path, n: int, allow_empty: bool = False) -> None:
+        """Stream the raw request body of `n` bytes into `target` (one copy of this for the three uploads, 0.11.1)."""
         self._consumed = True
-        folder = home.upload_folder(ws, _str(q, "batch"))
-        target = folder / fname
-        if not target.resolve().is_relative_to(folder.resolve()):
-            raise ApiError(400, "That file name is not accepted.")
         left = n
         with open(target, "wb") as f:
             while left > 0:
@@ -1826,9 +1863,23 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 f.write(chunk)
                 left -= len(chunk)
-        if left:
+        if left or (not n and not allow_empty):
             target.unlink(missing_ok=True)
             raise ApiError(400, "The upload was cut off.")
+
+    def post_upload(self, name, q):
+        ws = self.app.ws(name)
+        raw = _str(q, "name") or unquote(self.headers.get("X-Filename") or "") or "upload"  # each decoded once
+        fname = re.split(r"[/\\]", raw)[-1]
+        fname = re.sub(r'[\x00-\x1f<>:"|?*]', "_", fname).strip(" .") or "upload"
+        if fname.startswith("."):
+            fname = "_" + fname
+        n = self._body_size()
+        folder = home.upload_folder(ws, _str(q, "batch"))
+        target = folder / fname
+        if not target.resolve().is_relative_to(folder.resolve()):
+            raise ApiError(400, "That file name is not accepted.")
+        self._save_body(target, n, allow_empty=True)
         return {"batch": folder.name, "name": fname, "size": n}
 
     def post_ingest(self, name, q):
@@ -1925,8 +1976,10 @@ class Handler(BaseHTTPRequestHandler):
             from ..runs import hypothesis_task_ids, provenance_table
 
             buf = io.BytesIO()
-            claimcheck.write_xlsx(claimcheck.export_table(ws, thr, [hyp_id], every_excerpt=True), buf, "Excerpts",
-                                  summary=claimcheck.summary_table(ws, thr, [hyp_id]),
+            cache = claimcheck.ResultCache(ws, thr)
+            cache._results[hyp_id] = res
+            claimcheck.write_xlsx(claimcheck.export_table(ws, thr, [hyp_id], every_excerpt=True, cache=cache), buf,
+                                  "Excerpts", summary=claimcheck.summary_table(ws, thr, [hyp_id], cache=cache),
                                   extra=[("How these results were made",
                                           provenance_table(ws, hypothesis_task_ids(ws, [hyp_id])))])
             fname = _filename(f"ENLENS - {res['text'][:60]}", "xlsx")
@@ -1948,9 +2001,10 @@ class Handler(BaseHTTPRequestHandler):
             from ..terms import key_terms_table
 
             buf = io.BytesIO()
-            claimcheck.write_xlsx(claimcheck.export_table(ws, thr), buf, "Excerpts",
-                                  summary=claimcheck.summary_table(ws, thr),
-                                  extra=[("Map", claimcheck.map_table(claimcheck.evidence_map(ws, thr))),
+            cache = claimcheck.ResultCache(ws, thr)  # the history and every result once, for all the sheets
+            claimcheck.write_xlsx(claimcheck.export_table(ws, thr, cache=cache), buf, "Excerpts",
+                                  summary=claimcheck.summary_table(ws, thr, cache=cache),
+                                  extra=[("Map", claimcheck.map_table(claimcheck.evidence_map(ws, thr, cache=cache))),
                                          ("Key terms per document", key_terms_table(ws)),
                                          ("How these results were made",
                                           provenance_table(ws, kinds=("check", "reread", "second", "expand",
@@ -1987,24 +2041,10 @@ class Handler(BaseHTTPRequestHandler):
 
         from .. import bundle
 
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > MAX_UPLOAD:
-            self.close_connection = True
-            raise ApiError(413, "Files larger than 2 GB are not accepted.")
-        self._consumed = True
-        tmp = Path(tempfile.mkdtemp(prefix="enlens-import-"))
-        try:
-            path = tmp / "in.zip"
-            left = n
-            with open(path, "wb") as f:
-                while left > 0:
-                    chunk = self.rfile.read(min(left, 1 << 20))
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    left -= len(chunk)
-            if left or not n:
-                raise ApiError(400, "The upload was cut off.")
+        n = self._body_size()
+        with tempfile.TemporaryDirectory(prefix="enlens-import-") as tmp:
+            path = Path(tmp) / "in.zip"
+            self._save_body(path, n)
             if bundle.is_move_zip(path):  # 0.10: everything from another computer
                 try:
                     moved = bundle.import_all(path)
@@ -2026,10 +2066,6 @@ class Handler(BaseHTTPRequestHandler):
                 if name in home.list_projects() or (home.home() / "projects" / name).exists():
                     raise ApiError(409, f"A project called {name!r} already exists. Choose another name.")
             bundle.import_project(path, home.home() / "projects" / name)
-        finally:
-            import shutil
-
-            shutil.rmtree(tmp, ignore_errors=True)
         home.update_settings({"project": name})
         return {"project": self.app.project_summary(name)}
 
@@ -2077,29 +2113,11 @@ class Handler(BaseHTTPRequestHandler):
         fname = re.split(r"[/\\]", raw)[-1] or "document.pdf"
         if not re.search(r"\.(pdf|docx|html?|txt|md)$", fname, re.I):
             raise ApiError(400, "A quick look reads one PDF, Word (.docx), web page (HTML), text or Markdown file.")
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > MAX_UPLOAD:
-            self.close_connection = True
-            raise ApiError(413, "Files larger than 2 GB are not accepted.")
-        self._consumed = True
-        tmp = Path(tempfile.mkdtemp(prefix="enlens-quick-"))
-        path = tmp / "upload"
-        left = n
-        with open(path, "wb") as f:
-            while left > 0:
-                chunk = self.rfile.read(min(left, 1 << 20))
-                if not chunk:
-                    break
-                f.write(chunk)
-                left -= len(chunk)
-        if left or not n:
-            raise ApiError(400, "The upload was cut off.")
-        try:
+        n = self._body_size()
+        with tempfile.TemporaryDirectory(prefix="enlens-quick-") as tmp:
+            path = Path(tmp) / "upload"
+            self._save_body(path, n)
             name, job = self.app.start_quicklook(fname, path)
-        finally:
-            import shutil
-
-            shutil.rmtree(tmp, ignore_errors=True)
         return {"project": self.app.project_summary(name), "job": job.view()}
 
     def post_keep(self, name, q):
@@ -2131,12 +2149,8 @@ class Handler(BaseHTTPRequestHandler):
 
         ws = self.app.ws(name)
         text = _str(q, "q") or ""
-        res = concordance.search(ws, text, sort=_str(q, "sort") or "doc", offset=0, limit=1000, **self._search_args(q))
+        res = concordance.search(ws, text, sort=_str(q, "sort") or "doc", offset=0, limit=None, **self._search_args(q))
         rows = concordance.table(res)
-        if res["total"] > 1000:  # the rest, page by page
-            for off in range(1000, min(res["total"], 50000), 1000):
-                rows += concordance.table(concordance.search(ws, text, sort=_str(q, "sort") or "doc", offset=off,
-                                                             limit=1000, **self._search_args(q)))
         stem = _filename(f"ENLENS search - {text[:40]}", fmt)
         if fmt == "xlsx":
             col = concordance.collocates(ws, text, **{k: v for k, v in self._search_args(q).items()})
@@ -2287,7 +2301,10 @@ class Handler(BaseHTTPRequestHandler):
     def get_passage_terms(self, name, passage_id, q):
         from .. import terms
 
-        return {"terms": terms.key_terms(self.app.ws(name), passage_id=passage_id, n=_int(q, "n", 5, 1, 20))}
+        ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM passages WHERE passage_id=?", (passage_id,)):
+            raise ApiError(404, "No such passage.")
+        return {"terms": terms.key_terms(ws, passage_id=passage_id, n=_int(q, "n", 5, 1, 20))}
 
     # themes (F4)
     def get_themes(self, name, q):
@@ -2295,7 +2312,7 @@ class Handler(BaseHTTPRequestHandler):
 
         ws = self.app.ws(name)
         s = self.app.settings()
-        emb = home.make_embedder(s) if s.get("embed_backend") != "off" else None
+        emb = home.make_embedder(s)
         try:
             mode, why = themes.choose_mode(ws, "auto", getattr(emb, "model", None))
         except ValueError as e:
@@ -2401,19 +2418,14 @@ class Handler(BaseHTTPRequestHandler):
         from .. import flexiconc_export
 
         ws = self.app.ws(name)
-        tmp = Path(tempfile.mkdtemp(prefix="enlens-fc-"))
-        try:
-            out = tmp / "flexiconc.sqlite"
+        with tempfile.TemporaryDirectory(prefix="enlens-fc-") as tmp:
+            out = Path(tmp) / "flexiconc.sqlite"
             emb = self.app.settings().get("embed_model") if self.app.settings().get("embed_backend") != "off" else None
             flexiconc_export.export(ws, out, framework=_str(q, "framework") or self.app.settings().get("profile_framework")
                                     or "sdg", embed_model=emb or None, embeddings=bool(emb))
-            body = out.read_bytes()
-        finally:
-            import shutil
-
-            shutil.rmtree(tmp, ignore_errors=True)
-        return self._send(200, body, "application/vnd.sqlite3",
-                          {"Content-Disposition": _disposition(_filename(f"{name} - FlexiConc", "sqlite"))})
+            # streamed from the file (0.11.1): with embeddings the export of a large project is hundreds of MB
+            self._stream(out, "application/vnd.sqlite3",
+                         {"Content-Disposition": _disposition(_filename(f"{name} - FlexiConc", "sqlite"))})
 
     def get_annotated_zip(self, name, hyp_id, q):
         from .. import annotate

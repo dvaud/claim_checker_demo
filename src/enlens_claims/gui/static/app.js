@@ -1,6 +1,6 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, copyLine, watchJob, startClaude } from "./lib.js";
-import { FEATURES, aiTag } from "./features.js";
+import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude } from "./lib.js";
+import { FEATURES } from "./features.js";
 import { renderCheck } from "./views/check.js";
 import { renderResult } from "./views/result.js";
 import { renderHistory } from "./views/history.js";
@@ -68,7 +68,9 @@ async function route() {
   setNav(nav);
   closeDrawer();
   for (const d of document.querySelectorAll("#project-switch details[open], #jobs-indicator details[open], #queue-indicator details[open]")) d.open = false;
-  document.title = `${{ overview: "Overview", check: "Check a hypothesis", history: "Results", batch: "Check several", sources: "Documents", settings: "Settings", search: "Search", profile: "Profile", concepts: "Concepts", themes: "Themes" }[nav] || "ENLENS"} · ENLENS`;
+  const pageName = { overview: "Overview", check: "Check a hypothesis", history: "Results", batch: "Check several", sources: "Documents", settings: "Settings", search: "Search", profile: "Profile", concepts: "Concepts", themes: "Themes" }[nav]
+    || { "/setup": "Set up", "/projects": "Projects" }[pathPart] || "";
+  document.title = pageName ? `${pageName} · ENLENS` : "ENLENS";
   quickLookBanner(document.getElementById("quicklook-banner"));
   // Each page renders into its own container: a render still in flight when the hash changes again writes into a
   // detached element and cannot disturb the new page.
@@ -215,7 +217,13 @@ async function drawJobs() {
 // ---------------------------------------------------------------------------------------------
 let queueTimer = null;
 let queueBusy = false;
-async function renderQueue() {
+let queueSoon = null;
+// A job's end reaches this twice (App.refresh and jobsChanged): the calls of one moment are drawn once.
+function renderQueue() {
+  clearTimeout(queueSoon);
+  queueSoon = setTimeout(drawQueueOnce, 50);
+}
+async function drawQueueOnce() {
   if (queueBusy) return;
   queueBusy = true;
   try { await drawQueue(); } finally { queueBusy = false; }

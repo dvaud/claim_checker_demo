@@ -99,7 +99,7 @@ def test_default_model_is_one_in_memory_then_the_newest(home):
     assert pick(models, modified={"c-model:7b": "2026-09-01T10:00:00Z", "a-model:7b": "2026-01-01T00:00:00Z"}) == "c-model:7b"
     assert pick(models, loaded=["nomic-embed-text:latest", "b-model:7b"],
                 modified={"c-model:7b": "2026-09-01T10:00:00Z"}) == "b-model:7b"  # in memory wins; embedders never
-    assert pick(["nomic-embed-text:latest"]) == "" and home._first_chat_model(models) == "a-model:7b"
+    assert pick(["nomic-embed-text:latest"]) == "" and home.pick_chat_model(models) == "a-model:7b"
 
     srv, url = fake_servers.start("ollama")
     try:

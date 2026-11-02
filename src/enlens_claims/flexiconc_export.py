@@ -142,8 +142,9 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
         vecs = (model, embed.vectors(ws, model)) if model else None
         if vecs and vecs[1] is None:
             vecs = None
-    terms_by_doc: dict[str, list] = {}
     from .terms import key_terms
+
+    has_terms = bool(ws.scalar("SELECT 1 FROM terms LIMIT 1"))
 
     stats = {"documents": 0, "sentences": 0, "labelled_sentences": 0, "chains": 0, "clusters": 0, "embeddings": 0}
     cx = sqlite3.connect(out)
@@ -174,10 +175,7 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
                 cur = best.get(sid)
                 if cur is None or (_RANK[r["source"]], -(r["confidence"] or 0)) < (_RANK[cur["source"]], -(cur["confidence"] or 0)):
                     best[sid] = r
-            kt = terms_by_doc.get(doc_id)
-            if kt is None:
-                kt = {k["term_id"]: k["score"] for k in key_terms(ws, doc_id=doc_id, n=30)} if ws.scalar(
-                    "SELECT 1 FROM terms LIMIT 1") else {}
+            kt = {k["term_id"]: k["score"] for k in key_terms(ws, doc_id=doc_id, n=30)} if has_terms else {}
             spans: dict[int, list] = {}
             if kt:
                 q = ",".join("?" * len(kt))
@@ -224,10 +222,12 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
                     t = theme_of.get(p["passage_id"])
                     if not t:
                         continue
-                    for i, (a, b) in enumerate(sents):
-                        if p["start"] <= a < p["end"]:
-                            members.setdefault(t[0], []).append({"sentence_id": i, "text": text[a:b], "start": a, "end": b,
-                                                                 "similarity": round(t[1], 4), "theme": names.get(t[0], "")})
+                    # the sentences starting inside the passage, found by bisection (0.11.1: every sentence of the
+                    # document was walked for every passage)
+                    for i in range(bisect.bisect_left(starts, p["start"]), bisect.bisect_left(starts, p["end"])):
+                        a, b = sents[i]
+                        members.setdefault(t[0], []).append({"sentence_id": i, "text": text[a:b], "start": a, "end": b,
+                                                             "similarity": round(t[1], 4), "theme": names.get(t[0], "")})
                 for tid, ms in sorted(members.items()):
                     cx.execute("INSERT INTO clusters VALUES (?,?,?)", (doc_id, tid, json.dumps(ms, ensure_ascii=False)))
                     stats["clusters"] += 1

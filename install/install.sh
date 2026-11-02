@@ -43,7 +43,10 @@ find_uv() {
 UV="$(find_uv || true)"
 if [ -z "$UV" ]; then
   say "1/4  Getting uv, which installs ENLENS and its own Python…"
-  curl -LsSf https://astral.sh/uv/install.sh | sh >"$tmp/uv.log" 2>&1 || { cat "$tmp/uv.log" >&2; fail "uv could not be installed."; }
+  # downloaded to a file first (0.11.1): in a pipe a failed download went unnoticed, and the line went on to say
+  # that uv "cannot be found" instead of that the computer is offline
+  curl -LsSf -o "$tmp/uv-install.sh" https://astral.sh/uv/install.sh || fail "uv's installer could not be downloaded. Are you online?"
+  sh "$tmp/uv-install.sh" >"$tmp/uv.log" 2>&1 || { cat "$tmp/uv.log" >&2; fail "uv could not be installed."; }
   UV="$(find_uv || true)"
   [ -n "$UV" ] || fail "uv was installed, but cannot be found. Open a new Terminal window and run the line again."
 else

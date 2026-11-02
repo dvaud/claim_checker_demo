@@ -26,7 +26,7 @@ import json
 import uuid
 from typing import Any, Callable
 
-from . import access, frameworks, tasks
+from . import access, frameworks, routing, schema, tasks
 from .search import neighbours, passage_index, rank_passages  # noqa: F401  (re-exported for callers)
 from .store import Workspace, now
 from .textutil import find_quote
@@ -120,10 +120,11 @@ def effective(v) -> dict:
 
 
 def changed_by_person(v) -> bool:
-    """Whether a person's judgement differs from the AI's (agreeing with the AI is a review, not a change)."""
+    """Whether a person's judgement differs from the AI's (agreeing with the AI is a review, not a change). An
+    excerpt no model read (0.11, waiting for the person) has no AI judgement to change."""
     v = dict(v)
     uv = v.get("user_verdict")
-    if not uv:
+    if not uv or v.get("model") == PERSON:
         return False
     ai = v.get("verdict") if v.get("verdict") in ("supports", "partially_supports", "refutes") else "not_relevant"
     return uv != ai
@@ -310,27 +311,34 @@ def _add_task(ws: Workspace, task_id: str, kind: str, model: str, payload: dict)
 # read (or local ones without a local model) into `…:person`, which no model answers: they wait for a person's
 # judgement. The round is still shown as one; each excerpt says who read it.
 # ---------------------------------------------------------------------------------------------
-PART_SUFFIXES = (":local", ":person")
+PART_SUFFIXES = tasks.PART_SUFFIXES
 PERSON = "person"
-
-
-def round_base(task_id: str) -> str:
-    for suf in PART_SUFFIXES:
-        if task_id.endswith(suf):
-            return task_id[: -len(suf)]
-    return task_id
+round_base = tasks.round_base
+ROUTE_NAMES = routing.ROUTE_NAMES
 
 
 def _rounds(ws: Workspace, cid: str) -> list[list]:
     """The check's rounds in order, each the list of its parts (task rows)."""
-    groups: dict[str, list] = {}
-    for t in _check_tasks(ws, cid):
-        groups.setdefault(round_base(t["task_id"]), []).append(t)
-    return list(groups.values())
+    return _group_rounds(_check_tasks(ws, cid))
 
 
 def _main_part(parts: list):
     return next((t for t in parts if t["task_id"] == round_base(t["task_id"])), None)
+
+
+def _group_rounds(task_rows: list) -> list[list]:
+    """Task rows of one claim grouped into rounds (each the list of its parts), in order."""
+    groups: dict[str, list] = {}
+    for t in task_rows:
+        groups.setdefault(round_base(t["task_id"]), []).append(t)
+    return list(groups.values())
+
+
+def _round_waiting(parts: list) -> bool:
+    """Whether a round still waits: in the queue for Claude Code, or a `:local` part not read yet (the same rule for
+    the result page, the Results list and the map, 0.11.1)."""
+    return any(_queued_open(t) or (t["task_id"].endswith(":local") and t["status"] in ("pending", "retry"))
+               for t in parts)
 
 
 def _round_status(parts: list) -> str:
@@ -448,24 +456,31 @@ def _run_round(ws: Workspace, parts: dict[str, str], backend, model: str, reader
                             "your judgement", {})
         else:
             try:
-                tasks.run_one(ws, parts["local"], got[0], got[1])
+                lok, _errs = tasks.run_one(ws, parts["local"], got[0], got[1])
+                if not lok:  # 0.11.1: said on the progress and the result, instead of passing in silence
+                    say("note", "The local model's answers for the excerpts of documents marked Only a local AI could "
+                                "not be used; they are shown without a judgement", {})
             except BackendError as e:
                 _to_person(ws, parts["local"])
                 say("note", f"The local model could not be reached ({e}); those excerpts wait for your judgement", {})
     return ok
 
 
-def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=None) -> int:
+def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=None, retry_failed: bool = False) -> int:
     """Answer the local parts of rounds that wait (made by a check by queue or in a Claude chat), with the local model
-    for restricted documents; without one they wait for a person. Returns the number of parts handled."""
+    for restricted documents; without one they wait for a person. With `retry_failed` ("Read them now" on the
+    result, 0.11.1) a local part whose answers could not be used is tried again. Returns the number of parts handled."""
     from .llm import BackendError
 
     if readers is None:
         readers = access.Readers(None, "")
-    rows = ws.query("SELECT task_id, payload_json FROM tasks WHERE kind='check' AND status IN ('pending', 'retry') AND "
-                    "substr(task_id, -6) = ':local'")
+    rows = ws.query("SELECT task_id, payload_json, status FROM tasks WHERE kind='check' AND status IN "
+                    f"('pending', 'retry'{', ' + repr('failed') if retry_failed else ''}) AND substr(task_id, -6) = ':local'")
     n = 0
     for r in rows:
+        if r["status"] == "failed":
+            with ws.connect() as cx:
+                cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=?", (r["task_id"],))
         cid = json.loads(r["payload_json"]).get("subject_id")
         if hyp_ids is not None:
             hid = ws.scalar("SELECT hyp_id FROM user_claims WHERE claim_id=?", (cid,))
@@ -503,16 +518,7 @@ def _stopper(should_stop: Callable[[], bool] | None) -> Callable[[], None]:
 MAX_PARTS = 6
 
 
-def clean_terms(terms) -> list[str]:
-    """Search words as a person or a model gives them: trimmed, at most 80 characters each, no repeats, at most 40."""
-    if isinstance(terms, str):
-        terms = terms.replace(";", ",").split(",")
-    out: list[str] = []
-    for t in terms or []:
-        t = " ".join(str(t).split()).strip("\"'")
-        if t and len(t) <= 80 and t.lower() not in {x.lower() for x in out}:
-            out.append(t)
-    return out[:40]
+clean_terms = schema.clean_terms
 
 
 def _given_parts(parts, text: str) -> list[dict]:
@@ -724,9 +730,10 @@ def queue_check(ws: Workspace, text: str, router, framework: str | None = None, 
     new_hypothesis(ws, text, fw, code, options, batch_id, hyp_id=hid)
     with ws.connect() as cx:
         cx.execute("UPDATE hypotheses SET queue='waiting', model=? WHERE hyp_id=?", (model, hid))
-        if given is not None and len(given) > 1:
-            cx.execute("UPDATE hypotheses SET parts_json=?, decomposed=1 WHERE hyp_id=?",
-                       (json.dumps([{"text": p["text"], "role": p["role"]} for p in given], ensure_ascii=False), hid))
+        if given is not None:  # also one part, which a person may have reworded (0.11.1: that edit was lost)
+            cx.execute("UPDATE hypotheses SET parts_json=?, decomposed=? WHERE hyp_id=?",
+                       (json.dumps([{"text": p["text"], "role": p["role"]} for p in given], ensure_ascii=False),
+                        int(len(given) > 1), hid))
     if given is None and decompose:
         with tasks.queueing():
             _add_task(ws, f"decompose:{hid}", "decompose", (router.model("decompose") if router else None) or "sonnet",
@@ -762,33 +769,40 @@ def advance_queued(ws: Workspace, hyp_ids: list[str] | None = None) -> list[str]
         sql += f" AND hyp_id IN ({','.join('?' * len(hyp_ids))})"
         args = list(hyp_ids)
     waiting = []
+    rows = ws.query(sql, args)
+    r = _queue_router() if rows else None  # once per call (0.11.1: the settings were read per hypothesis per poll)
     with tasks.queueing():
-        for h in ws.query(sql, args):
+        for h in rows:
             try:
-                if _advance_one(ws, dict(h)):
+                if _advance_one(ws, dict(h), r):
                     waiting.append(h["hyp_id"])
             except (KeyError, ValueError):
                 continue  # the hypothesis was deleted meanwhile
     return waiting
 
 
-def _advance_one(ws: Workspace, h: dict) -> bool:
+def _queue_router():
+    """The router of the Claude Code route from the settings (None when they cannot be read)."""
     from .routing import from_settings
 
-    hid, text = h["hyp_id"], h["text"]
-    opts = json.loads(h["options_json"] or "{}")
     try:
         from .home import load_settings
 
-        r = from_settings(load_settings(), route="claude_code")
+        return from_settings(load_settings(), route="claude_code")
     except Exception:  # noqa: BLE001
-        r = None
+        return None
+
+
+def _advance_one(ws: Workspace, h: dict, r=None) -> bool:
+    hid, text = h["hyp_id"], h["text"]
+    opts = json.loads(h["options_json"] or "{}")
     claims = ws.query("SELECT * FROM user_claims WHERE hyp_id=? ORDER BY part, rowid", (hid,))
     if not claims:
         plan = [{"text": text, "role": None, "part": 0}]
         if opts.get("prepared", {}).get("parts") and h.get("parts_json"):
             got = json.loads(h["parts_json"])
-            plan = [{"text": p["text"], "role": p.get("role"), "part": i} for i, p in enumerate(got, 1)]
+            plan = ([{"text": got[0]["text"], "role": None, "part": 0}] if len(got) == 1 else
+                    [{"text": p["text"], "role": p.get("role"), "part": i} for i, p in enumerate(got, 1)])
         elif opts.get("decompose") and not opts.get("prepared", {}).get("parts"):
             t = ws.query("SELECT status FROM tasks WHERE task_id=?", (f"decompose:{hid}",))
             if t and t[0]["status"] in ("pending", "retry"):
@@ -1027,7 +1041,7 @@ def open_check(ws: Workspace, text: str, terms: list[str] | None = None, target:
     """Pick the passages for a claim and return them; the grades come back through `submit_grades`."""
     if not ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'"):
         raise ValueError("This project has no readable documents yet. Add sources first.")
-    terms = [str(t) for t in (terms or []) if str(t).strip()][:40]
+    terms = clean_terms(terms)
     cid = new_claim(ws, text, target, {"k": k, "per_doc": per_doc, "expand": bool(terms), "doc_ids": doc_ids or [],
                                        "backend": "chat", "model": model}, framework=framework)
     with ws.connect() as cx:
@@ -1048,7 +1062,8 @@ def _chat_round(ws: Workspace, parts: dict[str, str]) -> dict:
     shown = _shown(json.loads(main)) if main else []
     if main:
         with ws.connect() as cx:
-            access.record_sent(cx, parts["main"], json.loads(main), access.ROUTE_NAMES["chat"], "check")
+            # the chat sees the excerpts alone (`_shown`): no context passage enters the ledger (0.11.1)
+            access.record_sent(cx, parts["main"], json.loads(main), access.ROUTE_NAMES["chat"], "check", context=False)
     n = _part_counts(ws, {k: v for k, v in parts.items() if k != "main"})
     out: dict = {"passages": shown}
     if n:
@@ -1083,7 +1098,7 @@ def more_passages(ws: Workspace, cid: str, k: int = 8, model: str = CHAT_MODEL, 
     seen = {p["passage_id"] for r in rounds for p in json.loads(r["payload_json"])["passages"]}
     opts = json.loads(uc["options_json"] or "{}")
     old_terms = json.loads(uc["terms_json"] or "[]")
-    new_terms = [str(t) for t in (terms or []) if str(t).strip()][:40]
+    new_terms = clean_terms(terms)
     if new_terms:
         with ws.connect() as cx:
             merged = old_terms + [t for t in new_terms if t not in old_terms]
@@ -1091,10 +1106,10 @@ def more_passages(ws: Workspace, cid: str, k: int = 8, model: str = CHAT_MODEL, 
     picked = rank_passages(ws, uc["text"], new_terms or old_terms, k=k, per_doc=int(opts.get("per_doc", 2)),
                            doc_ids=(doc_ids if doc_ids is not None else opts.get("doc_ids")) or None, exclude=seen,
                            embedder=embedder, require_terms=bool(new_terms), second_pass=bool(opts.get("second_pass")))
-    if not picked:
-        return {"check_id": cid, "round": len(rounds) + 1, "passages": []}
-    payload = _payload(ws, cid, uc["text"], uc["target"], uc.get("framework"), picked, new_terms or old_terms)
     n = len(groups) + 1
+    if not picked:
+        return {"check_id": cid, "round": n, "passages": []}
+    payload = _payload(ws, cid, uc["text"], uc["target"], uc.get("framework"), picked, new_terms or old_terms)
     parts = _add_round(ws, cid, f"check:{cid}:r{n}" if groups else f"check:{cid}", payload, model, tuple(main_levels),
                        _local_configured() if local_reader is None else local_reader)
     if model == CHAT_MODEL:  # a Claude chat (the connector): it is shown the excerpts it may read
@@ -1155,8 +1170,6 @@ def locate(ws: Workspace, items: list[tuple]) -> dict:
       kept, how far into the document it starts.
     `span` says what the whole excerpt covers ("page 2, paragraphs 3–4", "pages 2–3", "paragraphs 1–6 of 8").
     """
-    import bisect
-
     out: dict = {}
     if not items:
         return out
@@ -1261,8 +1274,6 @@ def _breaks(ws: Workspace, items: list[tuple[str, str, int, int]]) -> dict[str, 
     heads: dict[str, list[tuple[int, int]]] = {}
     for r in ws.query(f"SELECT doc_id, start, end FROM headings WHERE doc_id IN ({q}) ORDER BY doc_id, start", docs):
         heads.setdefault(r["doc_id"], []).append((r["start"], r["end"]))
-    import bisect
-
     for pid, doc, a, b in items:
         if a is None or b is None:
             continue
@@ -1305,16 +1316,17 @@ def _readers_of(ws: Workspace, parts: list) -> dict[str, str]:
         if _is_person(t):
             out[t["task_id"]] = "you"
             continue
+        local_part = t["task_id"].endswith(":local")  # read by the local model, whatever came of it (0.11.1)
         r = ws.query("SELECT route, model FROM results WHERE task_id=? AND valid=1 ORDER BY attempt DESC LIMIT 1",
                      (t["task_id"],))
         if not r:
-            out[t["task_id"]] = "waiting" if t["status"] in ("pending", "retry") else "ai"
+            out[t["task_id"]] = "waiting" if t["status"] in ("pending", "retry") else ("local" if local_part else "ai")
             continue
         route, model = r[0]["route"] or "", r[0]["model"] or ""
-        if route in ("Claude Code", "Claude API") or model == CHAT_MODEL or model.startswith("claude"):
-            out[t["task_id"]] = "claude"
-        elif t["task_id"].endswith(":local") or route in ("local model server", "offline demo"):
+        if local_part or route in (ROUTE_NAMES["local"], ROUTE_NAMES["baseline"]):
             out[t["task_id"]] = "local"
+        elif route in (ROUTE_NAMES["claude_code"], ROUTE_NAMES["anthropic"]) or model == CHAT_MODEL or model.startswith("claude"):
+            out[t["task_id"]] = "claude"
         else:
             out[t["task_id"]] = "ai"
     return out
@@ -1466,8 +1478,7 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
         out["waiting_local"] += item["waiting_local"]
         out["passages"].append(item)
     statuses = [_round_status(g) for g in groups]
-    waiting = any(_queued_open(t) or (t["task_id"].endswith(":local") and t["status"] in ("pending", "retry"))
-                  for t in groups[-1])
+    waiting = _round_waiting(groups[-1])
     out["status"] = _status_of_rounds(statuses, vs, thr, stage, waiting)
     out["status_any"] = _status_of_rounds(statuses, vs, 0.0, stage, waiting)
     out["waiting"] = out["status"] == "waiting"
@@ -1478,6 +1489,14 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
         bad = next((t for t in groups[-1] if t["status"] in ("failed", "retry")), groups[-1][-1])
         err = ws.query("SELECT errors_json FROM results WHERE task_id=? ORDER BY attempt DESC LIMIT 1", (bad["task_id"],))
         out["errors"] = json.loads(err[0][0]) if err else []
+    # a `:local` part that failed while the main part succeeded (0.11.1: it was invisible): its excerpts are shown
+    # with no judgement, and the result says why
+    failed_local = [t for t in groups[-1] if t["task_id"].endswith(":local") and t["status"] == "failed"]
+    if failed_local:
+        err = ws.query("SELECT errors_json FROM results WHERE task_id=? ORDER BY attempt DESC LIMIT 1",
+                       (failed_local[0]["task_id"],))
+        out["local_failed"] = {"passages": sum(len(json.loads(t["payload_json"])["passages"]) for t in failed_local),
+                               "errors": (json.loads(err[0][0]) if err else [])[:5]}
     _reference_locations(ws, out["passages"])
     out["who"] = who_says_what(out["passages"])
     out["disagreements"] = sum(1 for x in out["passages"] if x["second"] and not x["second"]["agrees"])
@@ -1536,7 +1555,7 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     out["second_read"] = len(with_second)
     out["disagreements"] = sum(1 for x in with_second if not x["second"]["agrees"])
     out["disagreements_to_review"] = sum(1 for x in with_second if not x["second"]["agrees"] and not x["reviewed"])
-    out["docs_added_since"] = new_documents(ws, hyp_id, parts=parts)
+    out["docs_added_since"] = new_documents(ws, hyp_id)
     out["docs_added_since_matching"] = sum(1 for d in out["docs_added_since"] if d["matching"])
     return out
 
@@ -1561,7 +1580,7 @@ def _shown_docs(rounds: list) -> set[str]:
     return {p["doc_id"] for r in rounds for p in json.loads(r["payload_json"])["passages"]}
 
 
-def new_documents(ws: Workspace, hyp_id: str, parts: list[dict] | None = None, matching: bool = True) -> list[dict]:
+def new_documents(ws: Workspace, hyp_id: str, matching: bool = True) -> list[dict]:
     """Documents added to the project after a hypothesis was checked (or after its new documents were last read)
     that none of its rounds read from: [{doc_id, title, added_at, matching}]. `matching` says whether the document
     has an excerpt that shares a word with the hypothesis or its search words (keyword search, nothing is read).
@@ -1679,7 +1698,7 @@ def second_opinion(ws: Workspace, hyp_ids: list[str], backend, main_model: str, 
 
 
 def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | None = None,
-                 hyp_ids: list[str] | None = None) -> dict:
+                 hyp_ids: list[str] | None = None, cache=None) -> dict:
     """Which documents say what about which hypotheses, as a grid (computed in a few queries).
 
     `cells[hyp_id][doc_id]` = {"side": "supports" | "partly" | "refutes" | "both", "excerpts": n}, by the rule of
@@ -1688,7 +1707,10 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     that answer, and is `key` when it decides at least two answers and a fifth of them.
     """
     thr = _threshold(ws, threshold)
-    hs = history(ws, thr, batch_id=batch_id)
+    if cache is not None and batch_id is None and cache.thr == thr:
+        hs = cache.history()
+    else:
+        hs = history(ws, thr, batch_id=batch_id)
     if hyp_ids is not None:
         keep = set(hyp_ids)
         hs = [h for h in hs if h["hyp_id"] in keep]
@@ -1847,8 +1869,8 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         rounds.setdefault(cid, []).append(r)
     ver: dict[str, list] = {}
     ai_of: dict[tuple[str, str], str | None] = {}
-    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict FROM verifications "
-                      "WHERE subject_kind='user_claim'"):
+    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model FROM "
+                      "verifications WHERE subject_kind='user_claim'"):
         e = effective(v)
         e["_changed"] = changed_by_person(v)
         e["_ai_judged"] = v["verdict"] in ("supports", "partially_supports", "refutes")
@@ -1888,8 +1910,9 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             rs = rounds.get(c["claim_id"], [])
             vs = ver.get(c["claim_id"], [])
             all_vs += vs
-            sts = [r["status"] for r in rs]
-            wt = bool(rs) and _queued_open(rs[-1])
+            groups = _group_rounds(rs)  # by round, as the result page does (0.11.1: the two disagreed on "waiting")
+            sts = [_round_status(g) for g in groups]
+            wt = bool(groups) and _round_waiting(groups[-1])
             st.append(_status_of_rounds(sts, vs, thr, c["stage"], wt))
             st_any.append(_status_of_rounds(sts, vs, 0.0, c["stage"], wt))
             for r in rs:
@@ -2001,17 +2024,38 @@ def _local_dt(iso: str | None):
         return iso or ""
 
 
+class ResultCache:
+    """The history and the results of a project at one strictness, computed once for an Excel file (0.11.1: the
+    sheets of one download each ran the history and every hypothesis's result again, two or three times over)."""
+
+    def __init__(self, ws: Workspace, threshold: float | None = None):
+        self.ws = ws
+        self.thr = _threshold(ws, threshold)
+        self._history: list[dict] | None = None
+        self._results: dict[str, dict] = {}
+
+    def history(self) -> list[dict]:
+        if self._history is None:
+            self._history = history(self.ws, self.thr)
+        return self._history
+
+    def result(self, hyp_id: str) -> dict:
+        if hyp_id not in self._results:
+            self._results[hyp_id] = hypothesis_result(self.ws, hyp_id, self.thr)
+        return self._results[hyp_id]
+
+
 def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[str] | None = None,
-                 every_excerpt: bool = True) -> list[dict]:
+                 every_excerpt: bool = True, cache: ResultCache | None = None) -> list[dict]:
     """Rows for a spreadsheet a person will read: the app's own words, local times, notes and corrections.
 
     One row per excerpt read, the ones judged not about the hypothesis included (without `every_excerpt`, only the
     judged ones); a hypothesis without any excerpt still gets one row.
     """
-    thr = _threshold(ws, threshold)
-    ids = hyp_ids if hyp_ids is not None else [h["hyp_id"] for h in history(ws, thr)]
+    cache = cache or ResultCache(ws, threshold)
+    ids = hyp_ids if hyp_ids is not None else [h["hyp_id"] for h in cache.history()]
     rows = []
-    results = [hypothesis_result(ws, hid, thr) for hid in ids]
+    results = [cache.result(hid) for hid in ids]
     seconds = any(r["second_read"] for r in results)  # columns for a second model only when one was asked
     for res in results:
         n_parts = len(res["parts"])
@@ -2072,14 +2116,17 @@ def strictness_text(thr: float) -> str:
     return f"{word}: judgements count if the AI was at least {round(thr * 100)}% sure; yours always count"
 
 
-def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[str] | None = None) -> list[dict]:
+def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[str] | None = None,
+                  cache: ResultCache | None = None) -> list[dict]:
     """One row per hypothesis, in the app's words: the answer, who says what, and how much a person reviewed."""
-    thr = _threshold(ws, threshold)
+    cache = cache or ResultCache(ws, threshold)
+    thr = cache.thr
     rows = []
-    for h in history(ws, thr):
-        if hyp_ids is not None and h["hyp_id"] not in hyp_ids:
+    wanted = set(hyp_ids) if hyp_ids is not None else None
+    for h in cache.history():
+        if wanted is not None and h["hyp_id"] not in wanted:
             continue
-        res = hypothesis_result(ws, h["hyp_id"], thr)
+        res = cache.result(h["hyp_id"])
         parts = res["parts"]
         rows.append({
             "Checked on": _local_dt(res["created_at"]),
@@ -2117,7 +2164,7 @@ def write_xlsx(rows: list[dict], path_or_buffer, title: str = "Results", summary
     widths = {"Hypothesis": 50, "Part checked": 40, "Quote": 70, "Document": 40, "Your comment on this excerpt": 40,
               "Your notes on this result": 40, "Excerpt (the text the AI read)": 90, "Answer for each part": 60,
               "Strictness": 40, "About another group (AI's note)": 30, "What the quote refers to (AI)": 30,
-              "Words that found this excerpt": 25, "Quote": 70, "Reason": 40, "Representative passages": 90,
+              "Words that found this excerpt": 25, "Reason": 40, "Representative passages": 90,
               "Name": 30, "Key terms": 40, "Description": 50, "Left": 45, "Right": 45}
     wb = Workbook()
     sheets = ([("Summary", summary)] if summary is not None else []) + [(title, rows)] + list(extra or [])

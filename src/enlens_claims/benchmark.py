@@ -155,8 +155,6 @@ def run(ws: Workspace, backend, model: str | None, kinds=("verify_set", "extract
                     if raw is None:
                         raise ValueError("Claude Code gave no answer to this task")
                 else:
-                    from . import access
-
                     access.sending(ws, payload, backend, f"{kind} (model test)", t["task_id"])
                     raw = backend.complete(kind, system, user, model, payload)
             except Exception as e:  # keep going: one failure should not stop the benchmark

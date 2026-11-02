@@ -1,6 +1,6 @@
 // Evidence map: hypotheses as rows, documents as columns, each cell the side a document takes on a hypothesis
 // (judgements that count at the strictness; a person's always count), with symbols as well as colours.
-import { App, api, h, icon, replace, clear, showError, download, pageHead, statusBadge, emptyState, P, strictness } from "../lib.js";
+import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle } from "../lib.js";
 
 const SIDE = {
   supports: { symbol: "+", word: "supports", cls: "m-sup", icon: "circle-check" },
@@ -45,7 +45,7 @@ export async function renderMap(view, params, query) {
   if (notes.length) view.appendChild(h("div", { class: "map-notes" }, notes));
 
   // ---- the grid
-  const short = (t) => { t = (t || "untitled").replace(/\s+/g, " ").trim(); return t.length > 60 ? t.slice(0, 58).trimEnd() + "…" : t; };
+  const short = (t) => shortTitle(t, 60);
   const table = h("table", { class: "map-table" });
   const thead = h("thead", {}, h("tr", {},
     h("th", { scope: "col", class: "map-hyp-head" }, "Hypothesis"),

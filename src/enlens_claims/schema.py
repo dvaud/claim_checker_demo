@@ -192,20 +192,26 @@ class CheckOut(BaseModel):
     rationale: Optional[str] = None
 
 
+def clean_terms(terms) -> list[str]:
+    """Search words as a person or a model gives them: trimmed, at most 80 characters each, no repeats, at most 40
+    (one routine for the model's answer and a person's words, 0.11.1)."""
+    if isinstance(terms, str):
+        terms = terms.replace(";", ",").split(",")
+    out: list[str] = []
+    for t in terms or []:
+        t = " ".join(str(t).split()).strip("\"'")
+        if t and len(t) <= 80 and t.lower() not in {x.lower() for x in out}:
+            out.append(t)
+    return out[:40]
+
+
 class ExpandOut(BaseModel):
     terms: list[str] = Field(min_length=1)
 
     @field_validator("terms", mode="before")
     @classmethod
     def _clean(cls, v):
-        if isinstance(v, str):
-            v = [t for t in v.replace(";", ",").split(",")]
-        out: list[str] = []
-        for t in v or []:
-            t = str(t).strip().strip("\"'")
-            if t and len(t) <= 80 and t.lower() not in {x.lower() for x in out}:
-                out.append(t)
-        return out[:40]
+        return clean_terms(v)
 
 
 PART_ROLES = ("condition", "mechanism", "outcome", "comparison", "scope", "component")

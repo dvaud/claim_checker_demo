@@ -88,7 +88,7 @@ def info() -> dict:
 
 
 def post_install(by: str | None = "script", icon: bool = True, open_app: bool = False, home: str | None = None,
-                 local_only: bool | None = None, quiet: bool = False) -> dict:
+                 local_only: bool | None = None) -> dict:
     """What an installer does last (`enlens post-install`). Returns what was done, with a message to print."""
     from . import claude_setup
     from . import home as core

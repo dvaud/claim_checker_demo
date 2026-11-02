@@ -51,7 +51,16 @@ instead? `enlens update` pulls the new version (see *For developers*).
   of a document Claude may read.
 - **Know your account's terms.** *Set up Claude* explains what happens to the text Claude reads on a personal or a
   work plan, with a link to Anthropic's own page.
-- Projects made before 0.11 work exactly as before until you change a setting. Full notes: `CHANGELOG.md`.
+- Projects made before 0.11 work exactly as before until you change a setting.
+- **0.11.1 is a deep clean, no new features.** Every part of the code was read again: about forty defects fixed (a
+  check's summary could carry the local model's words to a Claude chat; a removed document's text could still reach
+  Claude Code; a check waiting for Claude Code never stopped waiting after its document was set to local; *Stop* did
+  nothing while a local model was still reading; a person's judgements were lost when a check was answered again;
+  the Results list and a result page disagreed about *waiting*; a local-only installation could not change any
+  setting; `enlens update` could drop OCR or pdfminer; Python 3.10 and 3.11 could not import one module), needless
+  work removed (label lookups hundreds of times faster on large projects, removing a document in milliseconds instead
+  of seconds, one search per export, one pass per Excel file), and redundant code and page styles taken out.
+  Full notes: `CHANGELOG.md`.
 
 ## Earlier releases
 
@@ -233,7 +242,7 @@ see docs/MODEL_CHOICE.md) set them.
 
 - [docs/MANUAL.md](docs/MANUAL.md): the manual (app, command line, connector, models, the SDG pack).
 - [docs/API.md](docs/API.md): the local app's HTTP API.
-- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.10.0), including the defects fixed.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.11.1), including the defects fixed.
 - [docs/USER_TESTS.md](docs/USER_TESTS.md): the first-time user tests behind the app (0.5.1 to 0.7.0).
 - [docs/MODEL_CHOICE.md](docs/MODEL_CHOICE.md): which model each task needs, measured on the pilot (0.8: the method
   and the empty tables, until the runs are made).

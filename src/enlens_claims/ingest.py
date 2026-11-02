@@ -155,11 +155,21 @@ def _read_docx(path: Path) -> tuple[list[str], str | None, set[str]]:
     footnotes, comments and text boxes are left out."""
     import xml.etree.ElementTree as ET
 
-    with zipfile.ZipFile(path) as zf:
-        info = zf.getinfo("word/document.xml")
+    try:
+        zf = zipfile.ZipFile(path)
+    except zipfile.BadZipFile as e:  # 0.11.1: listed under failed like any other unreadable file, not a crash
+        raise ValueError("not a Word file (not a .docx package)") from e
+    with zf:
+        try:
+            info = zf.getinfo("word/document.xml")
+        except KeyError as e:
+            raise ValueError("not a Word file (no document inside)") from e
         if info.file_size > DOCX_MAX:
             raise ValueError("The Word file's text is too large to read.")
-        root = ET.fromstring(zf.read(info))
+        try:
+            root = ET.fromstring(zf.read(info))
+        except ET.ParseError as e:
+            raise ValueError(f"the Word file's text could not be read ({e})") from e
         title = None
         try:
             core = ET.fromstring(zf.read("docProps/core.xml"))
@@ -705,9 +715,10 @@ def make_passages(text: str, spans: list[tuple[int, int]], max_chars: int = 1100
             # break very long "sentences" (tables, run-on extraction) at whitespace
             while b - a > max_chars:
                 cut = text.rfind(" ", a + min_chars, a + max_chars)
-                cut = cut if cut > a else a + max_chars
+                forced = cut <= a
+                cut = cut if not forced else a + max_chars
                 sents.append((a, cut))
-                a = cut + 1
+                a = cut if forced else cut + 1  # a forced cut lands on a character, not a space (0.11.1)
             if b > a:
                 sents.append((a, b))
     out: list[Passage] = []
@@ -998,8 +1009,3 @@ def _store_document(ws: Workspace, doc: "Document", raw: RawDoc, f: Path, dec: d
             [(f"{doc.doc_id}:{p.seq:04d}", doc.doc_id, p.seq, p.page, p.start, p.end, doc.text[p.start:p.end], p.section)
              for p in doc.passages])
         ws.bump_corpus(cx)
-
-
-def doc_text(ws: Workspace, doc_id: str) -> str:
-    return ws.scalar("SELECT text FROM documents WHERE doc_id=?", (doc_id,)) or ""
-

@@ -77,8 +77,8 @@ class Grade(BaseModel):
                                                      "period than the claim names, say so in a few words (then the "
                                                      "grade is at most partially_supports); otherwise null")
     refers_to: str | None = Field(None, description="When the quote depends on a word like 'it' or 'the plant', the "
-                                                    "named form it refers to, copied exactly from the passage or from "
-                                                    "the text shown before it; otherwise null")
+                                                    "named form it refers to, copied exactly from the passage; "
+                                                    "otherwise null")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -109,7 +109,6 @@ def _find_check(check_id: str):
 
 def _summary(ws, check_id: str) -> dict:
     r = claimcheck.result(ws, check_id)
-    hidden = access.restricted_titles(ws)
     lv = access.levels(ws, {p["doc_id"] for p in r["passages"]})
     evidence, restricted = [], {"supports": 0, "partially_supports": 0, "refutes": 0, "waiting_for_the_user": 0,
                                 "waiting_for_the_local_model": 0}
@@ -122,7 +121,7 @@ def _summary(ws, check_id: str) -> dict:
             continue
         if p["verdict"]:
             evidence.append({"grade": p["verdict"], "confidence": p["confidence"], "quote": p["quote"],
-                             "document": hidden.get(p["doc_id"], p["title"]), "page": p["page"],
+                             "document": p["title"], "page": p["page"],
                              **({"about_another_group": p["scope_note"]} if p.get("scope_note") else {})})
     out = {"check_id": check_id, "claim": r["claim"], "status": r["status"],
            "status_text": claimcheck.STATUS_TEXT.get(r["status"], r["status"]),
@@ -165,7 +164,8 @@ def _ingest(ws, path: str, exclude: list[str] | None, ai_access: str | None = No
            "readable_passages_added": sum(d["passages"] for d in added), "already_in_project": stats["duplicates"],
            "without_text": stats["empty"]}
     out["ai_access"] = access.default(ws) if ai_access is None else ai_access
-    warn = [{"title": d["title"], "warning": d["check"]} for d in added if d["check"]]
+    hidden = access.restricted_titles(ws)  # a No-AI document's title is not told to the chat (as list_documents)
+    warn = [{"title": hidden.get(d["doc_id"], d["title"]), "warning": d["check"]} for d in added if d["check"]]
     if warn:
         out["warnings"] = warn
     if stats.get("excluded"):

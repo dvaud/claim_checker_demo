@@ -107,15 +107,7 @@ export function replace(el, ...children) {
   return el;
 }
 
-export function frag(...children) {
-  return append(document.createDocumentFragment(), children);
-}
-
 export { icon };
-
-export function iconText(name, text, cls) {
-  return h("span", { class: "it " + (cls || "") }, icon(name), h("span", {}, text));
-}
 
 // A passage with its quote highlighted: text nodes around a <mark>, built from character offsets.
 // With `breaks` (0.6: [{at, kind: "paragraph" | "heading", end}], offsets in the unbroken text) the text is laid out
@@ -230,7 +222,7 @@ export const fmt = {
     return c === null || c === undefined ? "" : Number(c).toFixed(2);
   },
   plural(n, one, many) {
-    return `${fmt.num(n)} ${n === 1 ? one : (many || one + "s")}`;
+    return plural(n, one, many);
   },
   bytes(n) {
     if (n < 1024) return `${n} B`;
@@ -239,11 +231,20 @@ export const fmt = {
   },
 };
 
+// "3 documents", "1 passage": the count and the word, the plural by adding s unless given.
+export function plural(n, one, many) {
+  return `${fmt.num(n)} ${n === 1 ? one : (many || one + "s")}`;
+}
+// A title cut to n characters, with an ellipsis; "untitled" when empty.
+export function shortTitle(t, n = 70) {
+  t = (t || "untitled").replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n - 2).trimEnd() + "…" : t;
+}
+// "page 3" -> "Page 3"
+export const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
 // Plain vocabulary, used consistently on every screen. Technical names stay available in "details" places.
 export const GRADE_TEXT = { supports: "Supports", partially_supports: "Partly supports", refutes: "Contradicts" };
-export const GRADE_VERB = { supports: "support it", partially_supports: "partly support it", refutes: "contradict it" };
-export const FOUND_BY = { keywords: "found because it uses the same words", meaning: "found by search by meaning (other words, same thing)", both: "found by the same words and by search by meaning" };
-export const FOUND_BY_SHORT = { keywords: "same words", meaning: "search by meaning", both: "same words + search by meaning" };
 // Short status words for dense places (tables, chips); the full texts from /api/state are used on the answer card.
 export const STATUS_SHORT = { supported: "Supported", partially_supported: "Partly supported", contested: "Mixed evidence", contradicted: "Contradicted", uncertain: "Only uncertain evidence", unsupported: "No evidence found", no_passages: "Nothing matched", not_checked: "Not finished", failed: "Did not work", waiting: "Waiting for Claude Code" };
 export const KIND_TEXT = { pdf: "PDF", html: "web page", text: "text", txt: "text", md: "Markdown", markdown: "Markdown", docx: "Word" };
@@ -263,6 +264,15 @@ export function strictness(t) {
   if (v <= 0.65) return "normal";
   if (v <= 0.8) return "strict";
   return "very strict";
+}
+// 0.8: the auditor gives second opinions and reads the hard cases again on a Claude route (Claude Code, the Claude
+// API with a model per task): Opus, or Fable when switched on in Settings. null on a local route, or with the model
+// per task switched off. `opts.claude` / `opts.fable` override the settings (the Settings page has them from
+// /api/routing).
+export function auditorName(s = App.settings(), opts = {}) {
+  const claude = opts.claude !== undefined ? opts.claude : (["claude_code", "anthropic"].includes(s.backend) && s.routing !== false);
+  if (!claude) return null;
+  return (opts.fable !== undefined ? opts.fable : s.use_fable) ? "fable" : "opus";
 }
 // One sentence counting documents, from the backend's balance (a document can be on more than one side).
 export function docsCountSentence(bal) {
@@ -292,29 +302,6 @@ export function partsSentence(parts, status) {
   const names = bad.map((p) => `Part ${p.part} ${PART_PHRASE[p.status] || p.status}`);
   const list = names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0];
   return `The hypothesis holds only if every part holds. ${list}, so the whole hypothesis ${PART_PHRASE[status] || status}.`;
-}
-
-// One sentence on the overall direction of the evidence, from the document counts.
-export function balanceSentence(bal) {
-  if (!bal) return "";
-  const sup = bal.docs_supporting || 0, part = bal.docs_partly || 0, ref = bal.docs_refuting || 0;
-  const total = sup + part + ref;
-  const docs = (n) => `${n} ${n === 1 ? "document" : "documents"}`;
-  const parts = [];
-  if (sup) parts.push(`${docs(sup)} ${sup === 1 ? "supports" : "support"} it`);
-  if (part) parts.push(`${sup ? docs(part) : docs(part)} partly ${part === 1 ? "supports" : "support"} it`);
-  if (ref) parts.push(`${docs(ref)} ${ref === 1 ? "contradicts" : "contradict"} it`);
-  if (!total) return "None of the excerpts read gives evidence for or against it.";
-  const list = parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts[0];
-  const lean = bal.lean;
-  let head = "";
-  if (lean === null || lean === undefined) head = "";
-  else if (lean >= 0.5) head = "Leans clearly towards support: ";
-  else if (lean > 0.15) head = "Leans towards support: ";
-  else if (lean <= -0.5) head = "Leans clearly against: ";
-  else if (lean < -0.15) head = "Leans against: ";
-  else head = "The evidence is balanced: ";
-  return head + list.charAt(0).toUpperCase() + list.slice(1) + ".";
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -410,18 +397,20 @@ export function confirmDialog({ title, message, confirmText = "Confirm", typeToC
 // ---------------------------------------------------------------------------------------------
 // downloads through fetch, so the token travels in a header rather than a link
 // ---------------------------------------------------------------------------------------------
-export async function download(path, filename) {
+// `filename` is used as given; otherwise the server's name, then `fallback`. Returns the response (its headers).
+export async function download(path, filename, fallback) {
   const res = await api("GET", path, undefined, { raw: true });
   const blob = await res.blob();
   const cd = res.headers.get("Content-Disposition") || "";
   const m = /filename="?([^";]+)"?/.exec(cd);
-  const name = filename || (m && m[1]) || "download";
+  const name = filename || (m && m[1]) || fallback || "download";
   const url = URL.createObjectURL(blob);
   const a = h("a", { href: url, download: name });
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return res;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -461,6 +450,14 @@ export function watchJob(jobId, onTick, interval = 500) {
 
 export async function cancelJob(jobId) {
   return api("POST", `/api/jobs/${P(jobId)}/cancel`);
+}
+
+// A running job of one of these kinds for this project, if any (`test(job)`: a further condition).
+export async function runningJob(project, kinds, test) {
+  try {
+    const jobs = (await api("GET", "/api/jobs")).jobs || [];
+    return jobs.find((j) => j.project === project && kinds.includes(j.kind) && !TERMINAL.has(j.state) && (!test || test(j))) || null;
+  } catch (_) { return null; }
 }
 
 const jobListeners = new Set();
@@ -634,6 +631,14 @@ export function kv(label, value, cls) {
   return h("div", { class: "kv " + (cls || "") }, h("dt", {}, label), h("dd", {}, value));
 }
 
+// A heat cell of a documents × codes (or themes × documents) grid, on a log scale so one very large cell does not
+// leave the others pale: classes `<prefix>-cell <prefix>-l0..4` (profile-viewer.css, concepts-themes.css).
+export function heatCell(n, max, label, prefix, onClick) {
+  const level = n ? Math.max(1, Math.min(4, Math.ceil((4 * Math.log1p(n)) / Math.log1p(max)))) : 0;
+  return h("td", { class: `map-cell ${prefix}-cell ${prefix}-l${level}`, title: `${label}: ${plural(n, "passage")}`, onClick: n ? onClick : null },
+    h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·"));
+}
+
 export function pageHead(title, opts = {}) {
   return h("header", { class: "page-head" },
     h("div", { class: "page-head-main" },
@@ -665,7 +670,7 @@ export function queueNotice(q, opts = {}) {
   const est = q.estimate || "";
   return h("div", { class: `queue-notice ${q.paused ? "queue-paused" : ""}`, role: "status" },
     h("div", { class: "qn-head" }, icon(q.paused ? "pause" : "inbox", { size: 15 }), h("strong", {}, q.text || "Waiting for Claude Code"),
-      q.being_answered ? h("span", { class: "muted small" }, ` · ${q.being_answered} being answered now`) : null),
+      q.being_answered ? h("span", { class: "muted small qn-answered" }, ` · ${q.being_answered} being answered now`) : null),
     est && !q.paused ? h("div", { class: "muted small" }, est.charAt(0).toUpperCase() + est.slice(1) + ".") : null,
     q.paused && q.paused_text ? h("p", { class: "small", style: { margin: "4px 0" } }, q.paused_text) : null,
     App.project ? startClaude(App.project, { command: q.command }) : null,
@@ -720,7 +725,8 @@ export function startClaude(project, opts = {}) {
     }
     if (q.claude && q.claude.signed_in === false) parts.push(h("p", { class: "small" }, icon("info", { size: 12 }), " Sign in to Claude Code once: open a terminal, type ", h("code", {}, "claude"), " and sign in with your Claude plan."));
     replace(box, ...parts, r.running ? null : typeIt);
-    if (r.running) timer = setTimeout(() => queueFetch(project).then(() => draw(true)).catch(() => {}), 4000);
+    // the page may have moved on (or re-drawn its panel) by then: a detached box fetches nothing
+    if (r.running) timer = setTimeout(() => { if (box.isConnected) queueFetch(project).then(() => draw(true)).catch(() => {}); }, 4000);
     else if (r.seconds !== undefined && opts.onDone && box.dataset.wasRunning === "1") opts.onDone();
     box.dataset.wasRunning = r.running ? "1" : "0";
   }

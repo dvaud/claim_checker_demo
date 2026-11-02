@@ -142,19 +142,14 @@ def infer_interactions(ws: Workspace, strict: bool = False) -> int:
 def interaction_table(ws: Workspace) -> list[dict]:
     agg: dict[tuple[str, str, str], dict] = {}
     for r in ws.query("SELECT * FROM interactions"):
-        kind = r["kind"]
-        if kind == "stated":
-            rel = "stated"
-            t1, t2 = r["from_target"], r["to_target"]
-        else:
-            rel = kind.replace("inferred_", "")
-            t1, t2 = r["from_target"], r["to_target"]
+        rel = r["kind"].replace("inferred_", "")  # "stated" stays as it is
+        t1, t2 = r["from_target"], r["to_target"]
         key = (t1, t2, rel)
         g = agg.setdefault(key, {"from": t1, "to": t2, "relation": rel, "docs": set(), "scores": [], "quotes": []})
         g["docs"].add(r["doc_id"])
         if r["score"] is not None:
             g["scores"].append(r["score"])
-        if r["quote"] and kind == "stated":
+        if r["quote"] and rel == "stated":
             g["quotes"].append({"quote": r["quote"], "doc_id": r["doc_id"], "page": r["page"]})
     out = []
     for g in agg.values():

@@ -151,8 +151,9 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--any-passage", action="store_true",
                    help="extract --per-target: also rank passages that do not name hydrogen or a derivative")
     p.add_argument("--beyond-cited", action="store_true", help="verify-vca: search all documents, not only cited ones")
-    p.add_argument("--sample", type=float, default=1.0,
-                   help="verify-claims / audit-vca: fraction of claims to re-check (audit-vca needs --model)")
+    p.add_argument("--sample", type=float, default=None,
+                   help="verify-claims / audit-vca: fraction of claims to re-check (all, or a tenth for audit-vca; "
+                        "audit-vca needs --model)")
 
     def backend_args(p, default="auto"):
         p.add_argument("--backend", default=default, choices=["auto", "ollama", "local", "anthropic", "baseline"],
@@ -484,9 +485,9 @@ def _main(argv: list[str] | None = None) -> int:
             if not a.model:
                 print("audit-vca needs --model: the second model whose answers are compared with the first.")
                 return 1
-            _print({"created": tasks.make_audit_vca(ws, a.model, a.sample)})
+            _print({"created": tasks.make_audit_vca(ws, a.model, 0.1 if a.sample is None else a.sample)})
         else:
-            _print({"created": tasks.make_verify_claims(ws, a.model, a.sample)})
+            _print({"created": tasks.make_verify_claims(ws, a.model, 1.0 if a.sample is None else a.sample)})
     elif a.cmd == "run":
         be = _backend(a, (a.kind,), ws)
         model = a.model if (a.model or be.name == "anthropic") else _model(a, be, ws)
@@ -801,7 +802,8 @@ def _cmd_08(a, ws) -> int:
 
                 terms.ensure(ws)
                 pairs = terms.proposed_pairs(ws, a.limit or 200)
-                made["tasks"] = len([terms.make_link_task(ws, x, y, r.model("link"), {"cloud"}) for x, y in pairs])
+                made["tasks"] = len([t for t in (terms.make_link_task(ws, x, y, r.model("link"), {"cloud"})
+                                                 for x, y in pairs) if t])  # a pair of restricted terms makes none
             elif a.kind == "theme":
                 from . import themes
 
@@ -809,12 +811,13 @@ def _cmd_08(a, ws) -> int:
                 if not run:
                     print("Problem: there is no set of themes yet: run `enlens themes` first.", file=sys.stderr)
                     return 1
-                themes.make_name_tasks(ws, run, r.model("theme"))
+                # representatives from documents Claude may read only (0.11.1: with the local ones too, a theme with
+                # a restricted representative made a task the queue refused, so it was never named)
+                themes.make_name_tasks(ws, run, r.model("theme"), {"cloud"})
                 ids = [x[0] for x in ws.query("SELECT task_id FROM tasks WHERE kind='theme' AND substr(task_id, 1, ?) = ? "
                                               "AND status != 'done'", (len(f"theme:{run}:"), f"theme:{run}:"))]
                 with ws.connect() as cx:
-                    tk.mark_queued(cx, ids)
-                made["tasks"] = len(ids)
+                    made["tasks"] = tk.mark_queued(cx, ids)
             elif a.kind == "resolve":
                 from . import references
 
@@ -835,7 +838,8 @@ def _cmd_08(a, ws) -> int:
                     print("Problem: give the hypothesis, or --file.", file=sys.stderr)
                     return 1
                 batch = claimcheck._new_id("b") if len(items) > 1 else None
-                made["checks"] = [claimcheck.queue_check(ws, it["text"], r, k=a.k or 8, per_doc=a.per_doc,
+                made["checks"] = [claimcheck.queue_check(ws, it["text"], r, framework=it.get("framework"),
+                                                         code=it.get("code"), k=a.k or 8, per_doc=a.per_doc,
                                                          expand=not a.no_expand, decompose=a.decompose, batch_id=batch)
                                   for it in items]
         name = _project_name(ws)
@@ -848,7 +852,7 @@ def _cmd_08(a, ws) -> int:
         _print(taskqueue.set_order(ws, a.kind or "", action))
         return 0
     if action == "withdraw":
-        if a.kind in ("decompose", "expand", "check"):
+        if a.kind in ("decompose", "expand", "check", None):  # no kind: everything, the waiting checks included
             for (hid,) in ws.query("SELECT hyp_id FROM hypotheses WHERE queue='waiting'"):
                 claimcheck.delete_hypothesis(ws, hid)
         _print({"withdrawn": taskqueue.withdraw(ws, [a.kind] if a.kind else None)})
