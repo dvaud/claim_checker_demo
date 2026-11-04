@@ -19,7 +19,8 @@ they support a statement, with every quote checked against the source. It runs o
 2. **Press *Set up Claude*** on the first screen. It installs Claude Code if it is missing (it shows you the command
    first), opens a window where you sign in once with your Claude plan, and adds the ENLENS plugin.
 3. **Name a project and add your documents** (PDF, Word, web pages, text, or a zip of them). ENLENS asks who may read
-   them with AI: *Claude may read them*, *Only a local AI*, or *No AI*.
+   them with AI: *Claude may read them*, *Only a local AI*, or *No AI*. Using Zotero? The *Bibliography* page brings in
+   a collection and the PDFs Zotero keeps.
 4. **Explore and check.** Where AI work waits (labels, theme names, a check), press **Start Claude Code**; the
    results appear as they come in.
 
@@ -36,29 +37,32 @@ Used ENLENS on another computer? Choose *Import from another computer* on the fi
 Your projects and settings (in the folder `enlens` in your home folder) are never touched. Installed from a git copy
 instead? `enlens update` pulls the new version (see *For developers*).
 
-## New in 0.12: a calmer result page, and work that says when it is not running
+## New in 0.13: your Zotero bibliography next to your documents
 
-- **The result page is where the work starts, so it is now the easiest page to read.** At the top, one card holds
-  the answer: which documents support, partly support or contradict it and where, at most one caution (say, *it
-  rests on a single document and on two excerpts you have not reviewed*), and one button, **Next to review**.
-  Then the evidence, then *Ask another AI model*, then your notes and the downloads. Longer explanations moved behind
-  a small (?); serif type is only used for your hypothesis and the documents' own words.
-- **Each excerpt card reads the same way**: its judgement, the document and the place, then the quote, highlighted
-  in its judgement's colour, with a sentence either side. One row of actions on every card: **Agree**, **Not about
-  this**, **Judge differently…**, then *In context* (the whole excerpt, the document, the original file) and
-  *Details* (how it was read, and asking the AI to read it again).
-- **Dismiss an excerpt in one click.** *Not about this* records your judgement and moves the excerpt to the list of
-  excerpts that are not about the hypothesis (with *Undo*), so only relevant material stays in the evidence.
-- **The sidebar says when nothing runs.** Work that waits for Claude Code while nothing answers it no longer shows
-  *1 task running* with a pulsing dot: it shows **1 task not running · Waiting for Claude Code to start** in amber,
-  with a pause mark, and its panel has the *Start Claude Code* button. Once Claude Code takes the work, it is
-  *running* again.
+- **Bring in a Zotero collection in one click.** The new *Bibliography* page reads a collection (or your whole
+  library, or a group library) from the Zotero app on your computer: Zotero 7 or later, with *Settings → Advanced →
+  Allow other applications on this computer to communicate with Zotero* ticked once. Nothing goes over the internet,
+  and Zotero is only read. No Zotero app at hand? Use a file exported from Zotero, Mendeley or EndNote (BibTeX, RIS,
+  CSL JSON or Zotero's CSV).
+- **No document added twice.** Each work is linked to the document you already have: by itself when it is the same
+  file or has the same DOI; when only its title, an author or the year are on the document's first pages, the pair
+  waits for one click (*Same work* or *Not the same*), shown next to the place where the title stands. A PDF you
+  added as "download (3).pdf" now shows *Verhoeven and Okafor (2025)* in the Documents list.
+- **Your list of works to find.** Every work without a document, with its authors, year, DOI link, web address and
+  *Open in Zotero*, and *Download the list* as a spreadsheet. The PDFs Zotero already keeps for them are added in one
+  go, read where Zotero keeps them, each linked to its work. Documents you add later are matched as they come in.
+- **Documents Zotero does not have** are listed too, so you see the gaps in your library as well.
+- Your decisions are kept when you update from Zotero or switch to another collection or file.
 
 ## Earlier releases
 
-- **0.11**: choose who may read each document with AI (*Claude may read it*, *Only a local AI*, *No AI*), enforced
-  in every feature, with a record of what Claude has read; a stronger model's answer is the answer (with a mark of the
-  first one), a second opinion is shown beside it, and *Start Claude Code* asks for attention while work waits.
+- **0.12**: a calmer result page: one card with the answer, at most one caution and *Next to review*; every
+  excerpt card reads the same way, with *Agree*, *Not about this* (one click, with *Undo*) and *Judge differently*;
+  the sidebar says *not running* when work waits for Claude Code and nothing answers it.
+- **0.11**: choose who may read each document with AI (*Claude may read it*, *Only a local AI*, *No AI*), enforced in
+  every feature, with a record of what Claude has read; 0.11.1 a deep clean (about forty defects fixed, large projects
+  much faster); 0.11.2 a stronger model's answer becomes the answer, with a mark of the first one; 0.11.3 *Start Claude
+  Code* asks for attention while work waits for it.
 - **0.10**: install with one pasted line and update with `enlens update`; *Set up Claude* in one button; move every
   project to another computer; the icon always opens the version installed.
 - **0.9**: subscription first (Claude Code on your own plan is the AI) and exploring first (Overview, Search,
@@ -262,6 +266,7 @@ see docs/MODEL_CHOICE.md) set them.
 | `terms.py` | The glossary (C-value terms, abbreviations), concepts and their links, key terms |
 | `themes.py` | Themes: spherical k-means (numpy or pure Python), c-TF-IDF names, a person's edits |
 | `references.py` | References inside a document (chains), and what a quote's "it" refers to |
+| `bibliography.py` | The bibliography (0.13): Zotero read through its local API, BibTeX / RIS / CSL JSON / CSV files, matching works with documents |
 | `annotate.py` | Highlighted PDFs (pdfminer boxes, pypdf lines, OCR) and HTML copies |
 | `flexiconc_export.py`, `runs.py`, `acceptance.py` | The FlexiConc export; runs and "How these results were made"; the 0.7 acceptance measures |
 | `mcp_server.py` | The connector for the Claude app and Claude Code (0.8: also the queue tools) |
@@ -276,7 +281,8 @@ tag `vX.Y.Z` into a draft GitHub Release (tests, the package, the two scripts wi
 `tools/dev_server.py` runs the app against fake local models (for interface work; `--fresh-user` shows the app as a
 new user would find it, with the remote-work demo documents in `tools/demo_corpus/`; `--claude-code` with a fake
 Claude Code answering the queue; `--claude-cli` with a stand-in `claude` program the app sets up and starts, 0.9;
-`--claude-install` with Claude Code still to be installed and signed in to, `--no-tesseract` without Tesseract, 0.10);
+`--claude-install` with Claude Code still to be installed and signed in to, `--no-tesseract` without Tesseract, 0.10;
+`--zotero` with a stand-in Zotero for the Bibliography page, 0.13);
 `tools/pdf_to_text.py` turns a
 folder of PDFs into page-preserving text files; `tools/eval_second_pass.py` measures the second sorting pass on the
 pilot. The green hydrogen pilot (workspace, report, run notes) is in

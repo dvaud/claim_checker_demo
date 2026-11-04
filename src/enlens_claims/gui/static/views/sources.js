@@ -79,6 +79,7 @@ export async function renderSources(view) {
         h("div", { class: "field" }, h("label", { class: "field-label", for: "src-path" }, "Add a whole folder on this computer"), h("div", { class: "row", style: { flexWrap: "nowrap" } }, pathInput, pathBtn),
           h("div", { class: "field-help" }, "Type or paste the full path of a folder (or of a zip file). The files are read where they are, nothing is copied.")),
         field("Leave out files whose name matches", excludeInput, { help: "Patterns separated by spaces; * stands for anything. Applies to everything you add." }),
+        h("p", { class: "small", style: { margin: "0 0 10px" } }, icon("library", { size: 13 }), " From Zotero: on the ", h("a", { href: "#/bibliography" }, "Bibliography"), " page, bring in a collection; the PDFs Zotero keeps are added in one go, and each document is linked to its work."),
         h("p", { class: "muted small", style: { margin: 0 } }, "For technical users: a zip may contain a manifest.csv (columns file, reference, doi) naming the work each file is; an ai_access column (cloud, local or none) and an ai_note column set each file's AI setting."))));
   view.appendChild(addCard);
   view.appendChild(progressBox);
@@ -134,6 +135,12 @@ export async function renderSources(view) {
     if (st.not_in_manifest && st.not_in_manifest.length) bits.push(h("p", { class: "muted small" }, `Not named in the manifest: ${st.not_in_manifest.slice(0, 10).join(", ")}${st.not_in_manifest.length > 10 ? "…" : ""}`));
     if (st.glossary_error || st.codes_error) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, "The documents were added, but " + (st.glossary_error ? "the glossary of terms" : "the codes found by keywords") + " could not be updated. Update them from the Concepts or Profile page."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, st.glossary_error || st.codes_error)))));
     if (st.semantic_index_error) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, "The documents were added, but search by meaning could not be set up for them, so they are searched by their words only."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, st.semantic_index_error)))));
+    // 0.13: the works of the bibliography the new documents are
+    const bib = st.bibliography;
+    if (bib && (bib.linked || bib.confirm)) bits.push(h("p", { class: "it" }, icon("library", { size: 14 }), h("span", {},
+      [bib.linked ? `${bib.linked} ${bib.linked === 1 ? "was linked to its work" : "were linked to their works"} in the bibliography` : null,
+        bib.confirm ? `${bib.confirm} ${bib.confirm === 1 ? "waits" : "wait"} for you to confirm ${bib.confirm === 1 ? "its work" : "their works"}` : null].filter(Boolean).join("; ") + ": ",
+      h("a", { href: "#/bibliography" }, "see Bibliography"), ".")));
     const newDocsLine = h("div", { "aria-live": "polite" });
     if (added) bits.push(newDocsLine);
     replace(holder.querySelector(".pb"), h("div", { class: "stack" }, bits));
@@ -264,7 +271,9 @@ export async function renderSources(view) {
       c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); });
       const row = h("tr", {},
         h("td", { class: "pick-col" }, c),
-        h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)), h("div", { class: "doc-file" }, d.file)),
+        h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
+          h("div", { class: "doc-file" }, d.file),
+          d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null),
         h("td", { "data-label": "Type" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
         h("td", { "data-label": "Added", class: "small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
@@ -393,8 +402,12 @@ export async function renderDocument(view, [docId], query) {
     h("p", { class: "eyebrow" }, from ? [back, " "] : null, h("a", { href: "#/sources", class: "it" }, icon("book-open", { size: 12 }), "All documents")),
     h("h1", { id: "page-title", tabindex: "-1", class: "serif", style: { fontWeight: 500 } }, d.title || d.file),
     h("div", { class: "result-meta", style: { marginTop: "6px" } }, h("span", {}, d.file), h("span", { class: "sep" }, "·"), h("span", {}, KIND_TEXT[d.kind] || d.kind || ""), d.n_pages ? [h("span", { class: "sep" }, "·"), h("span", {}, `${d.n_pages} pages`)] : null,
-      d.n_pages && blockUnit(blocks[0]) === "pages" && totalBlocks === d.n_pages ? null : [h("span", { class: "sep" }, "·"), h("span", {}, `${totalBlocks} ${blockUnit(blocks[0])}`)], d.doi ? [h("span", { class: "sep" }, "·"), h("span", {}, `doi ${d.doi}`)] : null,
+      d.n_pages && blockUnit(blocks[0]) === "pages" && totalBlocks === d.n_pages ? null : [h("span", { class: "sep" }, "·"), h("span", {}, `${totalBlocks} ${blockUnit(blocks[0])}`)], d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.doi}`, target: "_blank", rel: "noopener noreferrer", title: "Opens the publisher's page in your browser" }, `doi ${d.doi}`)] : null,
       d.scanned ? [h("span", { class: "sep" }, "·"), h("span", { class: "it" }, icon("eye", { size: 12 }), d.scanned)] : null),
+    d.bib ? h("p", { class: "dv-bib" }, icon("library", { size: 13 }), h("span", {}, "In your ", h("a", { href: "#/bibliography" }, "bibliography"), ": ", h("strong", {}, d.bib.cite || d.bib.title)),
+      d.bib.title && d.bib.title !== d.title ? [h("span", { class: "sep" }, "·"), h("span", { class: "serif" }, d.bib.title)] : null,
+      d.bib.doi && d.bib.doi !== d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.bib.doi}`, target: "_blank", rel: "noopener noreferrer" }, `doi ${d.bib.doi}`)] : null,
+      d.bib.link ? [h("span", { class: "sep" }, "·"), h("a", { href: d.bib.link }, "Open in Zotero")] : null) : null,
     h("div", { class: "row dv-head-row", style: { marginTop: "8px", gap: "8px 14px" } },
       originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
       h("span", { class: "muted small" }, d.original && d.original.available ? (d.kind === "pdf" && quoteText ? "Opens in a new tab at that page; the quote is highlighted below." : "Opens in a new tab, as the file was when it was added.") : ""),

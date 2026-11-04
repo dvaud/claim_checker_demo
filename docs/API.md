@@ -762,13 +762,60 @@ that no session has taken yet out of the queue; a check by queue is removed whol
   | "linux", "line", "releases"}`, and `ocr` adds `"install"` when Tesseract is missing: `{"text", "command", "link",
   "link_text"}` for this system.
 
+### The bibliography: Zotero, or an exported file (0.13)
+
+A project can hold one bibliography: the works of a Zotero library or collection, read from the Zotero app on this
+computer through its local API (Zotero 7 or later, `http://127.0.0.1:23119/api/`, switched on in Zotero under
+*Settings → Advanced → Allow other applications on this computer to communicate with Zotero*), or of a file exported
+from a reference manager (BibTeX, RIS, CSL JSON, Zotero's CSV). Nothing goes over the internet; Zotero is only read.
+
+- `GET /api/zotero` → `{"state": "ready" | "not_running" | "api_off" | "too_old" | "failed", "url", "libraries":
+  [{"id": "user" | "group-<id>", "name"}], "detail"}` (`libraries` when ready).
+- `GET /api/zotero/collections?library=user` → `{"collections": [{"key", "name", "parent", "items", "depth"}]}` in
+  tree order (`items`: the works directly in it). 409 with `kind` `zotero_<state>` when Zotero cannot be read.
+- `POST /api/projects/<p>/bibliography` → job (kind `bibliography`), one of:
+  `{"zotero": {"library": "user", "collection": "<key>" | null, "subcollections": true}}` (null: the whole library),
+  `{"file": {"name": "refs.bib", "text": "…"}}`, or `{"update": true}` (the same Zotero library and collection again).
+  It replaces the bibliography; a person's decisions are kept for every work that is in the new one too (by its key,
+  else its DOI, else its title and year). `progress`: `{"phase": "works" | "attachments" | "files" | "checksums" |
+  "matching", "done", "total"}`. `result`: the counts below. 400 for a file that is not a bibliography, a file without
+  works, or `update` of a bibliography read from a file.
+- `GET /api/projects/<p>/bibliography` → `{"bibliography": null}` before one is brought in; else
+  `{"bibliography": {"kind": "zotero" | "file", "library", "library_name", "collection", "collection_name",
+  "subcollections", "name", "format", "format_text", "pulled_at", "works"}, "counts": {"works", "linked", "confirm",
+  "to_find", "not_in", "files"}, "linked": [Pair], "confirm": [Pair], "to_find": [Work], "not_in": [Document],
+  "ai_access": project info}`. A Work: `{"key", "title", "cite": "Verhoeven and Okafor (2025)", "authors", "year",
+  "type", "container", "doi", "url", "link": "zotero://select/…" | null, "file": name of a file Zotero keeps | null}`.
+  A Pair: `{"work", "doc": {"doc_id", "title", "file", "kind", "pages", "added_at"}, "status": "auto" | "confirmed" |
+  "probable", "method": "file" | "doi" | "title" | "person", "score"}`; a probable one adds `"evidence": {"title":
+  "whole" | "main" | "words", "author", "year", "excerpt", "start", "end", "page"}` (the title's place on the
+  document, `start`/`end` within `excerpt`).
+- How a work and a document are linked: by themselves when a file the work has and the document are the same file
+  (the same checksum) or they have the same DOI (`auto`); proposed (`probable`) when the work's title stands on the
+  document's first pages with an author or the year (a title of one or two words needs both); a document or work
+  already linked gets no proposal, and a pair a person rejected is never proposed again. Adding documents matches
+  them again: the ingest job's `result` adds `"bibliography": {"linked", "confirm"}` for the new documents.
+- `PUT /api/projects/<p>/bibliography/links` `{"item_key", "doc_id", "decision": "same" | "different" | "clear"}` →
+  the view above. `same` confirms a proposal or links by hand; `different` rejects a proposal or undoes a link;
+  `clear` forgets the person's word.
+- `POST /api/projects/<p>/bibliography/confirm-all` `{}` → `{"confirmed": n, …the view}`.
+- `POST /api/projects/<p>/bibliography/files` `{"ai_access": "cloud" | "local" | "none", "item_keys": [...]?}` → an
+  ingest job (title "Adding Zotero's files") of the files the bibliography has for works without a document, read
+  where they are. 400 when there is none.
+- `GET /api/projects/<p>/bibliography/to-find.xlsx` and `.csv` (downloads; `?token=` allowed): the works without a
+  document: Title, Authors, Year, Type, Published in, DOI, DOI link, Web address, Open in Zotero, File in Zotero.
+- `DELETE /api/projects/<p>/bibliography` `{}` → `{"removed": n, …the view}`: the works and links go; documents and
+  Zotero are not touched.
+- `GET /api/projects/<p>/documents` adds `"bib"` per document (`{"cite", "title", "doi", "link", "url", "type",
+  "container"}` of its linked work, or null); `GET /api/projects/<p>/documents/<id>` adds the same `"bib"`.
+
 ### Jobs
 
 `GET /api/jobs` → `{"jobs": [Job summary]}` newest first. `GET /api/jobs/<id>` → full Job:
 ```json
 {"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "second-opinion" |
          "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
-         "claude-install" | …,
+         "claude-install" | "bibliography" | …,
  "title": "…", "queue": false,
  "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
  "created_at": 1793136448.87, "started_at": … | null, "finished_at": … | null, "seconds": 19.9,

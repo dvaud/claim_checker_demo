@@ -124,6 +124,15 @@ CREATE TABLE IF NOT EXISTS task_claims(claim_id TEXT PRIMARY KEY, kind TEXT, mod
 -- moment it left: one row per passage per sending (and per passage shown before it as context)
 CREATE TABLE IF NOT EXISTS ai_sent(passage_id TEXT, doc_id TEXT, route TEXT, task_id TEXT, sent_at TEXT, feature TEXT);
 CREATE INDEX IF NOT EXISTS ix_ai_sent_doc ON ai_sent(doc_id, passage_id);
+
+-- 0.13: the project's bibliography (a Zotero library or collection, or an exported file; see bibliography.py): its
+-- works, and which document each work is. status: 'auto' (the same file or DOI), 'probable' (the title, an author or
+-- the year on the first pages; a person confirms it), 'confirmed' or 'rejected' (a person's word, kept across matches)
+CREATE TABLE IF NOT EXISTS bib_items(item_key TEXT PRIMARY KEY, item_type TEXT, title TEXT, creators_json TEXT,
+  year TEXT, doi TEXT, url TEXT, container TEXT, isbn TEXT, link TEXT, files_json TEXT, seq INT);
+CREATE TABLE IF NOT EXISTS bib_links(item_key TEXT, doc_id TEXT, status TEXT, method TEXT, score REAL,
+  evidence_json TEXT, decided_at TEXT, PRIMARY KEY(item_key, doc_id));
+CREATE INDEX IF NOT EXISTS ix_bib_links_doc ON bib_links(doc_id);
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
@@ -384,7 +393,7 @@ class Workspace:
         with self.connect() as cx:
             for t in ("documents", "pages", "paragraphs", "headings", "passages", "embeddings", "doc_refs", "claims",
                       "claim_targets", "evidence", "interactions", "verifications", "labels", "terms", "term_mentions",
-                      "concepts", "concept_terms", "theme_runs", "themes", "theme_members", "mentions"):
+                      "concepts", "concept_terms", "theme_runs", "themes", "theme_members", "mentions", "bib_links"):
                 out[t] = cx.execute(f"DELETE FROM {t}").rowcount
             kinds = ("('extract','verify','verify_set','expand','check','decompose','reread','second','label','link',"
                      "'theme','resolve')")
@@ -441,6 +450,7 @@ class Workspace:
             cx.execute("DELETE FROM paragraphs WHERE doc_id=?", (doc_id,))
             cx.execute("DELETE FROM headings WHERE doc_id=?", (doc_id,))
             cx.execute("DELETE FROM doc_refs WHERE doc_id=?", (doc_id,))
+            cx.execute("DELETE FROM bib_links WHERE doc_id=?", (doc_id,))  # 0.13: its work goes back to "to find"
             out["documents"] = cx.execute("DELETE FROM documents WHERE doc_id=?", (doc_id,)).rowcount
             # 0.11.1: tasks not answered yet that still hold its passages (a check, a theme name, a concept link) are
             # relabelled now, so none of them is handed to Claude Code after the document is gone

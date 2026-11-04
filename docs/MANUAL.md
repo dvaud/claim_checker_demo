@@ -180,7 +180,7 @@ which part of the app it belongs to (*Explore the documents* or *Check hypothese
 the sidebar a filled **AI** mark means the feature needs the AI, a dashed one that the AI is optional, and no mark
 that it never uses the AI (0.9).
 
-**The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, then **Explore the documents**
+**The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, *Bibliography* (0.13), then **Explore the documents**
 (Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results). At the
 bottom, under the line that says where text goes, *Settings*, *Theme* and *Quit ENLENS* sit together (0.10.1); every
 *Settings* tab shows the version of ENLENS at the top right, and clicking it opens *Technical → Where your data is*
@@ -417,6 +417,53 @@ temporary project and opens it at its key terms: search it, see its codes and re
 **For FlexiConc / Cross-Doc** (Projects page) downloads the project as one SQLite file in the FlexiConc layout of
 the Cross-Doc SDG Explorer (documents, sentences with their code, reference chains, theme clusters and, with an
 embedding model, embeddings), for tools that read that format.
+
+### The bibliography: Zotero (0.13)
+
+*Bibliography* (in the sidebar, under *Documents*) puts your Zotero library, or one collection of it, next to the
+project's documents. It answers three questions: which works of the bibliography do I have, which do I still need
+to find, and which documents are not in my bibliography. It uses no AI.
+
+**Bringing it in.** ENLENS reads Zotero from the Zotero app on this computer: Zotero 7 or later, open, with *Settings
+→ Advanced → Allow other applications on this computer to communicate with Zotero* ticked once. Choose the library
+(My Library, or a group library), a collection (or *The whole library*) and whether its subcollections come along,
+and press *Bring in the bibliography*. Nothing goes over the internet, no Zotero account or key is needed, and Zotero
+is only read, never changed. The page says plainly when Zotero is not open, does not allow it yet (with the box to
+tick), or is too old. Without the app, *Use an exported file instead* takes a file exported from Zotero (right-click a
+collection → *Export Collection…*: BibTeX, RIS, CSL JSON or CSV) or from Mendeley, EndNote and other reference
+managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zotero keeps come along too.
+
+**The four lists.** Four tiles at the top count them and open each one:
+
+- *Please confirm*: a work whose title stands on the first pages of a document, with an author or the year. The work
+  and the document are side by side, with the place on the document where the title stands, highlighted, and what was
+  found (*Found on page 1: the whole title, the author Lindqvist, the year 2025*). *Same work* links them; *Not the
+  same* means the pair is never proposed again. *Confirm all* takes every pair at once.
+- *To find*: the works without a document, with their authors, year, type, where they were published, a DOI link,
+  their web address and *Open in Zotero*. *Download the list* gives them as a spreadsheet, your to-download list.
+  When Zotero keeps a file (a PDF, a saved web page, a Word file) for some of them, a card offers *Add these files to
+  the project*: they are read where Zotero keeps them (nothing is copied), after you say who may read them with AI
+  (the project's choice is preselected), and each is linked to its work. *Link a document* says by hand which
+  document a work is.
+- *Linked*: each work with its document, and how they were linked: *Same file* (a file Zotero keeps for the work is
+  the very file you added, by its checksum), *Same DOI* (the document prints the work's DOI), *You confirmed it* or
+  *You linked it*. *Unlink* undoes a link for good (*Undo* in the message brings it back).
+- *Not in the bibliography*: the documents no work is linked to. Add them to Zotero and press *Update from Zotero*, or
+  *Link to a work* by hand.
+
+**Keeping it up to date.** *Update from Zotero* reads the same collection again; *Use another collection or file*
+replaces the bibliography. Your decisions are kept for every work that is still there, even when it comes from
+another source (by its Zotero key, else its DOI, else its title and year). Documents you add later are matched as
+they come in: the message after adding says how many were linked and how many wait for you. A document linked to a
+work shows its reference (*Verhoeven and Okafor (2025)*) in the Documents list, and in the document viewer with its
+DOI and *Open in Zotero*. *Remove the bibliography* takes the works and links out of the project; documents and Zotero
+stay as they are.
+
+**What the matching does not do.** A scanned PDF without a text layer has no title to find until text recognition
+(OCR) has read it. The same title in different years (an annual report) is told apart by the year printed nearest the
+title; when both are close, both pairs are shown for you to choose. A book and one of its chapters, or a translation,
+are at best proposed. A document that only cites a work is not taken for it: the title must stand on its first pages
+as a title, not as words spread over them.
 
 ### Settings
 
@@ -730,6 +777,7 @@ claimed for 30 minutes), `submit_answers` (each answer quote-checked: stored, or
 | second_opinions | A second model's grade of each excerpt it read again (never used for an answer) |
 | task_claims | 0.8: the batches of queued tasks handed out to Claude Code: who took them, when, model, helper; `tasks.queued`, `claimed_by`, `step`, `again` and `results.route`, `helper`, `step` belong with it |
 | meta | Thresholds used by the pack, and the corpus version (search indexes are rebuilt when it changes) |
+| bib_items, bib_links | 0.13: the bibliography's works (title, creators, year, DOI, web address, Zotero link, the files Zotero keeps with their checksums) and which document each is (`status`: `auto` for the same file or DOI, `probable`, `confirmed` or `rejected` by a person; `method`: `file`, `doi`, `title`, `person`); where it came from is in `meta` (`bibliography`) |
 | vca_targets, vca_refs, doc_refs, claims, claim_targets, evidence, interactions, vca_claims, reviews | The SDG pack (section 13) |
 
 Open it with any SQLite tool. Offsets in `evidence` and `verifications` index into `documents.text`. Removing one
@@ -747,6 +795,10 @@ first screen (or *Projects → Import a project (.zip)*, which takes both kinds 
 ---
 
 ## 8. Privacy and copyright
+
+**Zotero (0.13).** The Bibliography page reads Zotero through the Zotero app's own connection on this computer
+(`127.0.0.1`, port 23119), never through Zotero's servers, and only reads. The works' details stay in the project;
+nothing about them is sent to Claude.
 
 ### Who may read each document with AI (0.11)
 

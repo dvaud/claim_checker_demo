@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.13.0 (November 2026): your Zotero bibliography next to your documents
+
+Researchers keep their literature in Zotero, and most of it has no PDF in the project: until now ENLENS knew only the
+documents added to it, so finding out which works were still missing, and which PDFs already added were which work,
+was done by hand, and a PDF without metadata stayed "download (3).pdf". 0.13 adds a **Bibliography** page: bring in a
+Zotero collection (or the whole library) in one click, and ENLENS links each work to the document you already have,
+lists the works still to find, and the documents Zotero does not have. Zotero is read from the Zotero app on this
+computer, never through the internet, and only read. No AI is used; nothing about what is sent to Claude changed.
+
+**Bringing in a bibliography.**
+- From Zotero 7 or later through its local API (`http://127.0.0.1:23119/api/`, switched on once in Zotero under
+  *Settings → Advanced → Allow other applications on this computer to communicate with Zotero*): My Library or a group
+  library, a collection with or without its subcollections, or the whole library. No Zotero account or key. The page
+  says plainly when Zotero is not open, does not allow it yet (with the box to tick), or is too old (Zotero 6).
+- Or a file exported from Zotero, Mendeley, EndNote and others: **BibTeX** (accents, `@string`, organisations in
+  braces, Zotero's `file` field), **RIS**, **CSL JSON** (Zotero's item links kept) and **Zotero's CSV**.
+- *Update from Zotero* reads the same collection again; *Use another collection or file* replaces it. A person's
+  decisions follow each work, even to another source (by its Zotero key, else its DOI, else its title and year).
+
+**Matching works and documents, without adding anything twice.**
+- Linked by themselves: the **same file** (a file Zotero keeps for the work has the checksum of a document already
+  added) or the **same DOI** (from the document's first pages or file name; Zotero's DOI field, its *Extra* field, or
+  a doi.org address).
+- **Proposed** (*Please confirm*): the work's title on a document's first pages, with an author or the year; a title of
+  one or two words needs both. Each pair shows the work and the document side by side, the place on the document
+  where the title stands (highlighted, with its page), and what was found. *Same work*, *Not the same* (never proposed
+  again), *Confirm all*; *Undo* in the message.
+- Not fooled by a document that only cites a work: the title must stand on the first pages as a phrase, or nearly all
+  its words close together on the title page, not spread over the text ("In the 2024 staff survey…" is not the
+  survey). Editions of one report: the year printed nearest the title decides; near ties are shown for the person.
+- Documents added later are matched as they come in (the message after adding says how many were linked and how
+  many wait), and a document removed sends its work back to *To find*.
+
+**The lists.**
+- *To find*: authors, year, type, where published, a DOI link, the web address and *Open in Zotero*, with a filter,
+  and **Download the list** (Excel: title, authors, year, type, published in, DOI, DOI link, web address, Zotero link,
+  file in Zotero): the to-download list.
+- **Zotero's files in one go**: when Zotero keeps a PDF (or a saved web page, a Word file) for works without a
+  document, *Add these files to the project* reads them where Zotero keeps them (nothing copied), after the usual
+  question of who may read them with AI (the project's choice preselected), and links each to its work.
+- *Linked* (how: same file, same DOI, you confirmed it, you linked it; *Unlink*) and *Not in the bibliography* (*Link
+  to a work* by hand); *Link a document* on a work to find.
+- A linked document shows its reference (*Verhoeven and Okafor (2025)*) under its file name in the Documents list, and
+  in the document viewer with its DOI and *Open in Zotero*. *More ways to add* on the Documents page points to it.
+
+**Usability problems fixed on the way.**
+- The DOI in a document's header was plain text; it is a link to the publisher's page now.
+
+**For developers.** `bibliography.py` (the Zotero client, the four file formats, storage and matching), tables
+`bib_items` and `bib_links`, nine endpoints (`docs/API.md`, *The bibliography*), the page `views/bibliography.js` and
+`v013.css`. `tests/fake_zotero.py` is a stand-in for Zotero's local API, used by the tests and by
+`tools/dev_server.py --zotero` (`--zotero api_off | old | closed` for the other states; with `--corpus social`, a
+library for the remote-work demo documents).
+
+**Tests:** `tests/test_0130_bibliography.py`: each file format (accents, organisations, file paths, continued RIS
+lines, Zotero links in CSL JSON and CSV, a file that is not a bibliography); Zotero's states (ready with a group
+library, the box not ticked, Zotero 6, not open) and that only this computer is asked; pulling a collection with and
+without subcollections, the whole library and a group library, notes left out, DOIs from *Extra* and doi.org
+addresses, attachments' files but not web links; the matching (same file, same DOI, a title with the year near it, an
+edition only mentioned, a document that cites a work, short titles); a person's word kept across matches and across a
+change of source; a removed document; the whole flow through the app (bring in, the documents' references, adding
+Zotero's file with its AI setting, a document added later, confirming, the Excel and CSV lists, updating, a file,
+bad requests, Zotero switched off); the page's shell, styles (colour tokens only) and that every new route is in
+`docs/API.md`. Checked in Chrome with the stand-in Zotero: bringing in a collection, each list, confirming, linking by
+hand, adding Zotero's file, the Documents list and the document viewer, Zotero not open and not allowed; light and
+dark, 390 px; no console errors.
+
+**Not yet done:** not tried with a real Zotero 7 (only the stand-in, built from Zotero's documentation of the local
+API; in particular the attachments' file paths through `/file/view/url`, and group libraries). Zotero's web API
+(api.zotero.org, for a library not on this computer) is not used. Results, citations in exports and the Search still
+name a document by the title read from its file, not by its work in the bibliography. Files Zotero keeps as linked
+files relative to a base folder are found only through Zotero itself, not from an exported file.
+
 ## 0.12.0 (November 2026): a calmer result page, and work that says when it is not running
 
 After the checks have run, the result page is where the actual work starts: reading the answer, reviewing the

@@ -16,6 +16,10 @@
 - with `--claude-install` (0.10): Claude Code chosen but not on the computer yet, and signed out: "Set up Claude"
   runs a stand-in installer (tests/fake_claude_installer.py, 3 s), opens a stand-in sign-in that signs in after 6 s,
   and adds the plugin. Combine with `--empty` for a new user's first screen.
+- with `--zotero` (0.13): a stand-in Zotero answering like the Zotero app's local API, with a library for the
+  remote-work demo corpus (use it with `--corpus social` or `--fresh-user`): one work whose PDF is the very file in
+  the project, three found by their title, one with a PDF to add, works still to find. `--zotero api_off` is a Zotero
+  whose box "Allow other applications…" is not ticked, `--zotero old` a Zotero 6, `--zotero closed` no Zotero open.
 """
 from __future__ import annotations
 
@@ -68,6 +72,8 @@ def main() -> int:
     ap.add_argument("--mixed", action="store_true",
                     help="0.11: the Demo project's documents have each AI setting (one Claude may read, one only a local "
                          "AI, one no AI), Claude Code is the AI and the fake local model reads the restricted one")
+    ap.add_argument("--zotero", nargs="?", const="ready", choices=["ready", "api_off", "old", "closed"],
+                    help="0.13: a stand-in Zotero (its local API) with a library for the remote-work demo corpus")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -181,6 +187,23 @@ def main() -> int:
                         print(f"fake Claude Code: {e}", file=sys.stderr)
 
         threading.Thread(target=session, daemon=True).start()
+    if a.zotero:
+        import socket
+
+        import fake_zotero
+
+        panel = next((p for p in (home_dir / "demo_sources" / "panel_study_wellbeing.pdf",
+                                  home_dir / "My documents" / "Remote work literature" / "panel_study_wellbeing.pdf")
+                      if p.exists()), None)
+        z = fake_zotero.demo_library(home_dir / "Zotero" / "storage", same_as=panel, make_pdf=make_pdf)
+        z.mode = a.zotero if a.zotero in ("api_off", "old") else "ready"
+        url = z.start()
+        if a.zotero == "closed":  # a port nothing answers on
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                url = f"http://127.0.0.1:{sock.getsockname()[1]}"
+        os.environ["ENLENS_ZOTERO_URL"] = url
+        print(f"stand-in Zotero: {url} ({a.zotero})")
     srv, app = make_server("127.0.0.1", a.port)
     app.stop = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()  # "Quit ENLENS" works here too
     app.launcher = a.fresh_user  # a new user starts it from the ENLENS icon

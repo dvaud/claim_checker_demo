@@ -16,6 +16,7 @@ import { renderConcepts, renderConcept } from "./views/concepts.js";
 import { renderThemes, renderThemeRun, renderTheme } from "./views/themes.js";
 import { quickLookBanner } from "./views/quicklook.js";
 import { renderOverview } from "./views/overview.js";
+import { renderBibliography } from "./views/bibliography.js";
 
 const ROUTES = [
   [/^\/?$/, "overview", renderOverview],
@@ -27,6 +28,7 @@ const ROUTES = [
   [/^\/batch$/, "batch", renderBatch],
   [/^\/sources$/, "sources", renderSources],
   [/^\/doc\/([^/]+)$/, "sources", renderDocument],
+  [/^\/bibliography$/, "bibliography", renderBibliography],   // 0.13
   [/^\/settings(?:\/([^/]+))?$/, "settings", renderSettings],
   [/^\/setup$/, "", renderSetup],
   [/^\/projects$/, "", renderProjects],
@@ -199,11 +201,11 @@ async function drawJobs() {
     head, icon("chevron-up", { size: 14 }));
   const menu = h("div", { class: "ps-menu" });
   const linkFor = (j) => ({ check: "#/check", prepare: "#/check", batch: "#/batch", more: "#/history", reread: "#/history", "read-new": "#/history", "second-opinion": "#/history", ingest: "#/sources", index: "#/sources", benchmark: "#/settings/test",
-    keywords: "#/profile", label: "#/profile", "label-compare": "#/profile", terms: "#/concepts", link: "#/concepts", wordings: "#/concepts", themes: "#/themes", "theme-names": "#/themes", resolve: "#/sources", quicklook: "#/sources", "claude-install": "#/settings/model" }[j.kind] || "#/check");
+    keywords: "#/profile", label: "#/profile", "label-compare": "#/profile", terms: "#/concepts", link: "#/concepts", wordings: "#/concepts", themes: "#/themes", "theme-names": "#/themes", resolve: "#/sources", quicklook: "#/sources", "claude-install": "#/settings/model", bibliography: "#/bibliography" }[j.kind] || "#/check");
   const kindIcon = { check: "flask", prepare: "eye", batch: "list-checks", more: "search", reread: "refresh", "read-new": "book-open", "second-opinion": "cpu", ingest: "upload", index: "sparkles", benchmark: "cpu",
-    keywords: "tag", label: "tag", "label-compare": "scale", terms: "network", link: "network", wordings: "network", themes: "shapes", "theme-names": "shapes", resolve: "link", quicklook: "eye", "claude-install": "download" };
+    keywords: "tag", label: "tag", "label-compare": "scale", terms: "network", link: "network", wordings: "network", themes: "shapes", "theme-names": "shapes", resolve: "link", quicklook: "eye", "claude-install": "download", bibliography: "library" };
   const kindText = { check: "Check", prepare: "Look before checking", batch: "Several hypotheses", more: "More evidence", reread: "Reading an excerpt again", "read-new": "Reading the new documents", "second-opinion": "Second AI model", ingest: "Adding documents", index: "Search by meaning set-up", benchmark: "Model test",
-    keywords: "Codes by keywords", label: "The AI labels passages", "label-compare": "Comparing labels", terms: "Building the glossary", link: "The AI relates concepts", wordings: "Other wordings", themes: "Finding themes", "theme-names": "Naming themes", resolve: "Following references", quicklook: "Quick look", "claude-install": "Installing Claude Code" };
+    keywords: "Codes by keywords", label: "The AI labels passages", "label-compare": "Comparing labels", terms: "Building the glossary", link: "The AI relates concepts", wordings: "Other wordings", themes: "Finding themes", "theme-names": "Naming themes", resolve: "Following references", quicklook: "Quick look", "claude-install": "Installing Claude Code", bibliography: "Bringing in the bibliography" };
   const withJob = new Set(["check", "batch", "more", "read-new", "second-opinion"]);
   const row = (j) => h("a", { class: "job-row", href: linkFor(j) + (withJob.has(j.kind) ? `?job=${encodeURIComponent(j.id)}` : ""), title: ["check", "prepare", "batch"].includes(j.kind) ? (j.title || "") : null },
     icon(kindIcon[j.kind] || "circle", { size: 14 }),

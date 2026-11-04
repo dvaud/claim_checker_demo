@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .. import __version__, access, claimcheck, embed, frameworks, home, ingest, taskqueue
+from .. import __version__, access, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import tasks as tasks_mod
 from ..llm import BackendError, detect_local
 from ..claude_setup import setup_info as claude_setup_info
@@ -368,8 +368,10 @@ class App:
         s = self.settings()
         docs = document_overview(ws)
         acc = access.documents_view(ws)  # 0.11: who may read each one with AI, and how much Claude has read
+        cites = bibliography.doc_citations(ws)  # 0.13: the work of the bibliography each document is
         for d in docs:
             d.update(acc.get(d["doc_id"], {}))
+            d["bib"] = cites.get(d["doc_id"])
         return {"documents": docs, "ai_access": access.project_info(ws),
                 "restricted_model": home.restricted_choice(s),
                 "search": embed.status(ws, s.get("embed_model"),
@@ -389,6 +391,7 @@ class App:
             "SELECT passage_id, seq, page, section, start, end, text FROM passages WHERE doc_id=? ORDER BY seq LIMIT ? OFFSET ?",
             (doc_id, max(1, min(limit, 200)), max(0, offset)))]
         out["offset"] = offset
+        out["bib"] = bibliography.doc_citations(ws).get(doc_id)  # 0.13
         info = self.original(ws, doc_id)
         out["original"] = {"available": info["available"], "reason": info["reason"], "name": info["name"]}
         if view == "blocks":  # the document as a reader cites it: by page, or by paragraph for files without pages
@@ -777,9 +780,11 @@ class App:
         return self._job("second-opinion", f"Second model {second} on {len(ids)} "
                          f"{'hypothesis' if len(ids) == 1 else 'hypotheses'}", name, run, withdraw=("second",), ws=ws)
 
-    def start_ingest(self, name: str, body: dict) -> Job:
+    def start_ingest(self, name: str, body: dict, paths: list[Path] | None = None, title: str = "Adding sources") -> Job:
+        """Add documents: an upload batch, a folder or file path typed by the person, or (0.13) the files the
+        bibliography has for works without a document (`paths`)."""
         ws = self.ws(name)
-        inputs: list[Path] = []
+        inputs: list[Path] = list(paths or [])
         if body.get("batch"):
             folder = ws.root / "uploads" / re.sub(r"[^A-Za-z0-9_-]", "", str(body["batch"]))
             if not folder.is_dir():
@@ -826,9 +831,67 @@ class App:
                     stats["semantic_index_error"] = str(e)
             if stats["added"] and not job.cancel.is_set():
                 self._after_adding(ws, job, stats, [d["doc_id"] for d in stats["documents_added"]], s)
+            if stats["added"] and bibliography.has(ws):  # 0.13: which works of the bibliography the new ones are
+                try:
+                    bibliography.match(ws)
+                    stats["bibliography"] = bibliography.new_links(ws, {d["doc_id"] for d in stats["documents_added"]})
+                except Exception as e:  # noqa: BLE001 - the documents are added; the links can be made again
+                    stats["bibliography_error"] = str(e)
             return stats
 
-        return self.jobs.start("ingest", "Adding sources", name, run, uses_model=False)
+        return self.jobs.start("ingest", title, name, run, uses_model=False)
+
+    # -- 0.13: the bibliography (Zotero, or an exported file) -----------------------------------------------------
+    def start_bibliography(self, name: str, body: dict) -> Job:
+        ws = self.ws(name)
+        z, f = body.get("zotero"), body.get("file")
+        if body.get("update"):
+            src = ws.meta("bibliography") or {}
+            if src.get("kind") != "zotero":
+                raise ApiError(400, "Only a bibliography read from Zotero can be updated: for a file, add the newer "
+                                    "file instead.")
+            z = {"library": src.get("library"), "collection": src.get("collection"),
+                 "subcollections": src.get("subcollections", True)}
+
+        def progress(job: Job):
+            return lambda **kw: setattr(job, "progress", kw)
+
+        if isinstance(f, dict):
+            fname = str(f.get("name") or "bibliography")[:200]
+            fmt, works = bibliography.parse_file(fname, str(f.get("text") or ""))
+            if not works:
+                raise ApiError(400, f"No works were found in {fname}.")
+
+            def run(job: Job):
+                return bibliography.save(ws, works, {"kind": "file", "name": fname, "format": fmt},
+                                         progress=progress(job))
+        elif isinstance(z, dict):
+            library = str(z.get("library") or "user")
+            collection = str(z["collection"]) if z.get("collection") else None
+            if not bibliography.LIBRARY_RE.match(library) or (collection and not bibliography.KEY_RE.match(collection)):
+                raise ApiError(400, "Choose a library and a collection of your Zotero.")
+
+            def run(job: Job):
+                works, src = bibliography.pull_zotero(library, collection, bool(z.get("subcollections", True)),
+                                                      progress=progress(job), should_stop=job.cancel.is_set)
+                if job.cancel.is_set():
+                    return None
+                libs = {x["id"]: x["name"] for x in bibliography.zotero_status().get("libraries") or []}
+                src["library_name"] = libs.get(library) or ("My Library" if library == "user" else "Group library")
+                return bibliography.save(ws, works, src, progress=progress(job))
+        else:
+            raise ApiError(400, "Choose a Zotero collection or an exported file.")
+        return self.jobs.start("bibliography", "Bringing in the bibliography", name, run, uses_model=False)
+
+    def start_bibliography_files(self, name: str, body: dict) -> Job:
+        """Add the files the bibliography has (Zotero's PDFs) for works without a document: read where they are."""
+        ws = self.ws(name)
+        keys = body.get("item_keys")
+        paths = bibliography.files_to_add(ws, [str(k) for k in keys] if isinstance(keys, list) else None)
+        if not paths:
+            raise ApiError(400, "There is no file to add: every work with a file in Zotero has its document already.")
+        return self.start_ingest(name, {"ai_access": body.get("ai_access"), "ai_note": body.get("ai_note")}, paths,
+                                 "Adding Zotero's files")
 
     def _after_adding(self, ws, job: Job, stats: dict, new_docs: list[str], s: dict) -> None:
         """After documents are added (0.7): the glossary (F3) is rebuilt and the codebook's keyword pass (F2) reads
@@ -1546,10 +1609,20 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", r"/api/claude-setup/claude-code", "post_install_claude_code"),
     ("POST", r"/api/claude-setup/sign-in", "post_claude_sign_in"),
     ("GET", r"/api/move\.zip", "get_move_zip"),
+    # 0.13: the bibliography (Zotero, read on this computer, or an exported file)
+    ("GET", r"/api/zotero", "get_zotero"),
+    ("GET", r"/api/zotero/collections", "get_zotero_collections"),
+    ("GET", rf"/api/projects/{P}/bibliography", "get_bibliography"),
+    ("POST", rf"/api/projects/{P}/bibliography", "post_bibliography"),
+    ("DELETE", rf"/api/projects/{P}/bibliography", "delete_bibliography"),
+    ("PUT", rf"/api/projects/{P}/bibliography/links", "put_bibliography_link"),
+    ("POST", rf"/api/projects/{P}/bibliography/confirm-all", "post_bibliography_confirm_all"),
+    ("POST", rf"/api/projects/{P}/bibliography/files", "post_bibliography_files"),
+    ("GET", rf"/api/projects/{P}/bibliography/to-find\.(csv|xlsx)", "get_bibliography_export"),
 ]]
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
-             "get_ai_sent_csv"}
+             "get_ai_sent_csv", "get_bibliography_export"}
 # (these may take the token as ?token=, for plain links)
 
 
@@ -1959,6 +2032,61 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_ingest(self, name, q):
         return {"job": self.app.start_ingest(name, self._body()).view()}
+
+    # -- 0.13: the bibliography ------------------------------------------------------------------
+    def get_zotero(self, q):
+        return bibliography.zotero_status()
+
+    def get_zotero_collections(self, q):
+        try:
+            return {"collections": bibliography.zotero_collections(_str(q, "library") or "user")}
+        except bibliography.ZoteroError as e:
+            raise ApiError(409, str(e), f"zotero_{e.kind}") from None
+
+    @staticmethod
+    def _bib(ws) -> dict:
+        """The page's view of the bibliography, with the project's AI choice (for adding Zotero's files)."""
+        return {**bibliography.view(ws), "ai_access": access.project_info(ws)}
+
+    def get_bibliography(self, name, q):
+        return self._bib(self.app.ws(name))
+
+    def post_bibliography(self, name, q):
+        return {"job": self.app.start_bibliography(name, self._body()).view()}
+
+    def delete_bibliography(self, name, q):
+        self._body()
+        ws = self.app.ws(name)
+        return {**bibliography.remove(ws), **self._bib(ws)}
+
+    def put_bibliography_link(self, name, q):
+        body = self._body()
+        ws = self.app.ws(name)
+        bibliography.decide(ws, str(body.get("item_key") or ""), str(body.get("doc_id") or ""),
+                            str(body.get("decision") or ""))
+        return self._bib(ws)
+
+    def post_bibliography_confirm_all(self, name, q):
+        self._body()
+        ws = self.app.ws(name)
+        n = bibliography.confirm_all(ws)
+        return {"confirmed": n, **self._bib(ws)}
+
+    def post_bibliography_files(self, name, q):
+        return {"job": self.app.start_bibliography_files(name, self._body()).view()}
+
+    def get_bibliography_export(self, name, fmt, q):
+        ws = self.app.ws(name)
+        rows = bibliography.to_find_rows(ws) or [{"Title": "Every work of the bibliography has its document.",
+                                                 "Authors": "", "Year": "", "Type": "", "Published in": "", "DOI": "",
+                                                 "DOI link": "", "Web address": "", "Open in Zotero": "",
+                                                 "File in Zotero": ""}]
+        stem = _filename(f"ENLENS works to find - {name} - {time.strftime('%Y-%m-%d')}", fmt)
+        if fmt == "xlsx":
+            buf = io.BytesIO()
+            claimcheck.write_xlsx(rows, buf, "Works to find")
+            return self._send(200, buf.getvalue(), XLSX, {"Content-Disposition": _disposition(stem)})
+        return self._send(200, _csv(rows), "text/csv; charset=utf-8", {"Content-Disposition": _disposition(stem)})
 
     def post_index(self, name, q):
         return {"job": self.app.start_index(name).view()}

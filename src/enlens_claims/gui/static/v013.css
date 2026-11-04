@@ -1,0 +1,87 @@
+/* 0.13: the Bibliography page (Zotero, or an exported file), and a document's reference in the Documents list and
+   the document viewer. Only the colour tokens of app.css: light and dark both follow. */
+
+.bib-top > .card { margin-bottom: 16px; }
+
+/* where the bibliography comes from, and the four lists as tiles */
+.bib-source { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.bib-source-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: none;
+  border-radius: 10px; background: var(--accent-soft); color: var(--accent-text); }
+.bib-source-line { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.bib-source .muted.small { margin: 2px 0 0; }
+.bib-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.bib-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; text-align: left;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font: inherit;
+  cursor: pointer; transition: border-color .15s, background .15s; }
+.bib-tile:hover { border-color: var(--border-strong); background: var(--surface-3); }
+.bib-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.bib-tile.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.bib-tile-n { font-size: 1.45rem; font-weight: 650; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.bib-tile-label { display: inline-flex; align-items: center; gap: 5px; font-size: .84rem; color: var(--text-2); }
+.bib-tile.on .bib-tile-label { color: var(--accent-text); }
+.bib-tile-confirm:not(.on) .bib-tile-n { color: var(--partly); }
+@media (max-width: 700px) { .bib-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* bringing it in */
+.bib-form .bib-fields { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.bib-form .bib-fields .field { margin: 0; min-width: 200px; }
+.bib-form .bib-fields .field.grow { flex: 1 1 280px; }
+.bib-form .bib-fields .select { width: 100%; }
+.bib-found { color: var(--ok); font-weight: 550; margin: 0 0 10px; }
+.bib-subs { display: inline-flex; gap: 8px; align-items: center; margin-top: 10px; font-size: .92rem; cursor: pointer; }
+.bib-subs[hidden] { display: none; }
+.bib-file { margin-top: 12px; }
+.bib-privacy { margin: 12px 0 0; display: flex; align-items: center; gap: 4px; }
+
+/* the lists */
+.bib-list-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
+.bib-list-head p { margin: 0; color: var(--text-2); min-width: 16em; }
+.bib-filter { width: 15em; max-width: 100%; }
+.bib-work { min-width: 0; }
+.bib-title { font-family: var(--font-serif); font-size: 1rem; line-height: 1.35; overflow-wrap: anywhere; }
+.bib-meta { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; margin-top: 3px; font-size: .8rem; color: var(--muted); }
+.bib-meta .sep { color: var(--faint); }
+.bib-meta a { color: var(--accent-text); }
+.bib-doc-title { font-weight: 600; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.bib-doc-title:hover { color: var(--accent-text); text-decoration: underline; }
+.bib-table td { vertical-align: top; }
+.bib-table th { white-space: nowrap; }
+.bib-table td.actions { white-space: nowrap; text-align: right; }
+.bib-has-file { color: var(--ok); }
+@media (max-width: 860px) { .table-responsive td.bib-nofile { display: none; } }
+.bib-more { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.bib-more:empty { display: none; }
+.bib-remove { margin-top: 28px; }
+
+/* a probable pair: the work and the document side by side, the place where the title stands, two answers */
+.bib-pair { margin-bottom: 12px; }
+.bib-pair-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 700px) { .bib-pair-cols { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+.bib-label { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: .74rem; font-weight: 600;
+  letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.bib-why { margin: 12px 0 6px; color: var(--text-2); }
+.bib-excerpt { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--border-strong); background: var(--surface-2);
+  border-radius: 0 6px 6px 0; font-family: var(--font-serif); font-size: .92rem; line-height: 1.5; color: var(--text-2);
+  overflow-wrap: anywhere; }
+.bib-excerpt mark { background: var(--mark); color: var(--text); border-bottom: 2px solid var(--mark-line); padding: 0 1px; }
+
+/* Zotero's files for works without a document */
+.bib-files { margin-bottom: 14px; border-color: var(--accent); }
+.bib-files-head { display: flex; gap: 12px; align-items: flex-start; }
+.bib-files-head h3 { margin: 0; font-size: 1rem; }
+.bib-files .access-choice { margin-top: 12px; }
+
+/* linking by hand */
+.bib-pick-list { max-height: min(50vh, 420px); overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.bib-pick-opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.bib-pick-opt:last-child { border-bottom: 0; }
+.bib-pick-opt:hover { background: var(--surface-2); }
+.bib-pick-opt input { margin-top: 4px; flex: none; }
+.bib-pick-opt > span { display: flex; flex-direction: column; min-width: 0; }
+.bib-pick-title { overflow-wrap: anywhere; }
+
+/* a document's reference: in the Documents list and in the document viewer */
+.doc-cite { display: flex; font-size: .8rem; color: var(--text-2); margin-top: 2px; }
+.dv-bib { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 6px 0 0; font-size: .86rem; color: var(--text-2); }
+.dv-bib .sep { color: var(--faint); }
+.dv-bib a { color: var(--accent-text); }

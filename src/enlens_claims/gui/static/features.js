@@ -15,6 +15,10 @@ export const FEATURES = {
     section: "project", title: "Documents", icon: "book-open", href: "#/sources", ai: "optional",
     what: "Add your reports, papers and web pages, say who may read each with AI, and open one to read it with its codes, key terms and references.",
   },
+  bibliography: {
+    section: "project", title: "Bibliography", icon: "library", href: "#/bibliography", ai: "none",
+    what: "Your Zotero library or a collection of it, matched with the documents: which works you have, which you still need to find, and which documents Zotero does not have.",
+  },
   search: {
     section: "explore", title: "Search", icon: "text-search", href: "#/search", ai: "none",
     what: "Every place a word or phrase occurs in the documents, one line per place, with the words around it.",
