@@ -31,8 +31,15 @@ PRONOUN = re.compile(r"^\W*(it|its|it's|this|that|these|those|they|them|their|th
                      r"the latter|the former|both|either|neither|there|here)\b", re.I)
 
 
+# 0.12: "There is no evidence that…", "It is unclear whether…", "It seems that…": a dummy subject that refers to
+# nothing, so the reader is not asked to check what it refers to
+EXPLETIVE = re.compile(r"^\W*(there\s+(is|are|was|were|has|have|had|will|would|may|might|seems?|appears?|remains?)\b"
+                       r"|it\s+(is|was|seems|appears|remains)\s+(not\s+)?(\w+\s+)?(that|whether|how|why|what|if)\b"
+                       r"|it\s+(seems|appears)\b)", re.I)
+
+
 def opens_with_pronoun(quote: str | None) -> bool:
-    return bool(quote) and bool(PRONOUN.match(quote))
+    return bool(quote) and bool(PRONOUN.match(quote)) and not EXPLETIVE.match(quote)
 
 
 def context_before(ws: Workspace, passage_id: str, chars: int = CONTEXT_CHARS) -> tuple[str, int | None]:

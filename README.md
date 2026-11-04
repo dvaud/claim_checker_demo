@@ -36,46 +36,29 @@ Used ENLENS on another computer? Choose *Import from another computer* on the fi
 Your projects and settings (in the folder `enlens` in your home folder) are never touched. Installed from a git copy
 instead? `enlens update` pulls the new version (see *For developers*).
 
-## New in 0.11: per-document AI settings
+## New in 0.12: a calmer result page, and work that says when it is not running
 
-- **Choose who may read each document with AI.** One project can mix documents Claude may read with documents that
-  must stay on your computer, such as a licensed PDF or an interview transcript. Each document is *Claude may read
-  it*, *Only a local AI* or *No AI*: asked when you add documents, and changed any time in the column *AI* of the
-  Documents page (tick several to change them together; add a note on why).
-- **Enforced in the code, in every feature.** Documents marked *Only a local AI* or *No AI* are never sent to Claude:
-  not in checks, the Profile, themes, concepts, references or the connector. In a check, Claude reads what it may,
-  a model on your computer reads the *Only a local AI* excerpts, and the *No AI* ones wait for your own judgement;
-  each excerpt says who read it.
-- **See what Claude has read.** The column *Sent to Claude* shows how much of each document Claude has read, with
-  the passages, when and why; *Settings → Technical* downloads the whole list for your records. You can cap how much
-  of a document Claude may read.
-- **Know your account's terms.** *Set up Claude* explains what happens to the text Claude reads on a personal or a
-  work plan, with a link to Anthropic's own page.
-- Projects made before 0.11 work exactly as before until you change a setting.
-- **0.11.1 is a deep clean, no new features.** Every part of the code was read again: about forty defects fixed (a
-  check's summary could carry the local model's words to a Claude chat; a removed document's text could still reach
-  Claude Code; a check waiting for Claude Code never stopped waiting after its document was set to local; *Stop* did
-  nothing while a local model was still reading; a person's judgements were lost when a check was answered again;
-  the Results list and a result page disagreed about *waiting*; a local-only installation could not change any
-  setting; `enlens update` could drop OCR or pdfminer; Python 3.10 and 3.11 could not import one module), needless
-  work removed (label lookups hundreds of times faster on large projects, removing a document in milliseconds instead
-  of seconds, one search per export, one pass per Excel file), and redundant code and page styles taken out.
-- **0.11.2: a stronger model's answer is the answer.** When a stronger model reads a check's excerpts again and
-  finds, say, *supported* where the first model found *partly supported*, the result now shows **Supported** with a
-  small mark *at first: partly supported* (hover it for which models and how many judgements changed); the Results
-  list and the Excel summary say the same. Under each result, **Ask another AI model** now offers two clearly
-  different buttons: *Ask a stronger model* (its judgements replace the first AI's, so the answer can change) and
-  *Get a second opinion* (only shown beside the first, never changes the answer). On each excerpt a second opinion
-  is one plain line with both readings, and a switch shows which sentence each of them quoted. Full notes:
-  `CHANGELOG.md`.
-- **0.11.3: a button you cannot miss.** While work waits for Claude Code, its step keeps spinning, which looks as if
-  something were already reading. Now, a few seconds after work starts waiting, **Start Claude Code** pulses and says
-  *Nothing runs until you press it.* The button is also on the line of a follow-up on a result (a stronger model, a
-  second opinion, reading again), where before you could only type the command, and the one that stops Claude Code
-  is called *Stop Claude Code*, so it is no longer mixed up with the job's own *Stop*.
+- **The result page is where the work starts, so it is now the easiest page to read.** At the top, one card holds
+  the answer: which documents support, partly support or contradict it and where, at most one caution (say, *it
+  rests on a single document and on two excerpts you have not reviewed*), and one button, **Next to review**.
+  Then the evidence, then *Ask another AI model*, then your notes and the downloads. Longer explanations moved behind
+  a small (?); serif type is only used for your hypothesis and the documents' own words.
+- **Each excerpt card reads the same way**: its judgement, the document and the place, then the quote, highlighted
+  in its judgement's colour, with a sentence either side. One row of actions on every card: **Agree**, **Not about
+  this**, **Judge differently…**, then *In context* (the whole excerpt, the document, the original file) and
+  *Details* (how it was read, and asking the AI to read it again).
+- **Dismiss an excerpt in one click.** *Not about this* records your judgement and moves the excerpt to the list of
+  excerpts that are not about the hypothesis (with *Undo*), so only relevant material stays in the evidence.
+- **The sidebar says when nothing runs.** Work that waits for Claude Code while nothing answers it no longer shows
+  *1 task running* with a pulsing dot: it shows **1 task not running · Waiting for Claude Code to start** in amber,
+  with a pause mark, and its panel has the *Start Claude Code* button. Once Claude Code takes the work, it is
+  *running* again.
 
 ## Earlier releases
 
+- **0.11**: choose who may read each document with AI (*Claude may read it*, *Only a local AI*, *No AI*), enforced
+  in every feature, with a record of what Claude has read; a stronger model's answer is the answer (with a mark of the
+  first one), a second opinion is shown beside it, and *Start Claude Code* asks for attention while work waits.
 - **0.10**: install with one pasted line and update with `enlens update`; *Set up Claude* in one button; move every
   project to another computer; the icon always opens the version installed.
 - **0.9**: subscription first (Claude Code on your own plan is the AI) and exploring first (Overview, Search,

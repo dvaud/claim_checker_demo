@@ -1,0 +1,353 @@
+/* ENLENS 0.12: work that is not running says so in the sidebar, and the result page is calmer. Colour tokens of
+   app.css only, so light and dark both work. */
+
+/* ---- sidebar: work that waits for Claude Code with nothing answering it is "not running", in the warning colour,
+   with a still pause mark (no pulsing dot) */
+.jobs-hold summary { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
+.jobs-hold-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.jobs-hold-text strong { font-weight: 650; }
+.jobs-hold-sub { font-size: .76rem; color: var(--text-2); }
+.jobs-hold-part { color: var(--warn); font-weight: 600; }
+.job-row .job-state.job-hold { color: var(--warn); font-weight: 600; }
+.jobs-hold-start { padding: 6px 8px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.jobs-hold-start > p { margin: 0 0 6px; color: var(--text); }
+.jobs-hold-start > p svg { color: var(--warn); vertical-align: -2px; }
+/* the button says the same as the line above it, and the queue panel just below has the command to type */
+.jobs-hold-start .start-claude .sc-start .muted, .jobs-hold-start .start-claude .sc-type { display: none; }
+/* the jobs and queue lists open in place, in the sidebar: framed, so they read as one panel (their rule to open
+   upwards never applied, as they are not positioned) */
+.sidebar-foot .jobs > .ps-menu { margin-top: 6px; padding: 6px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
+
+/* ---- the result page (views/result.js), scoped to .result so other pages keep their styles.
+   Four sizes: 1.65rem the hypothesis · 1.05rem section titles and part claims · 1rem the answer sentence and the
+   excerpts · .875rem everything else (text, facts, chips, buttons). Two weights: 400 and 600. Serif only for the
+   hypothesis and the documents' own words. Colour: green, amber, red and purple for the judgements only; grey for
+   facts and states; the accent for actions. Icons on buttons and judgement marks only. */
+.result { --r-text: .875rem; --r-small: .875rem; }
+/* one card style on the page: a 1-px edge, no shadow; the judgement marks carry the colour */
+.result .card { padding: 20px 22px; box-shadow: none; }
+.result .card-head { margin-bottom: 10px; }
+.result h1, .result h2, .result h3, .result :where(details.fold) > summary { font-weight: 600; }
+/* buttons in one weight; only the page's main button and a card's own action (Agree, Take back) are bold */
+.result .btn { font-weight: 400; }
+.result .btn-primary, .result .agree-btn { font-weight: 600; }
+.result .card-head h2, .result .ev-section-head h2, .result .downloads h2 { font-size: 1.05rem; }
+.result .result-hyp { font-weight: 400; }
+.result .muted.small, .result .small, .result .badge, .result .chip, .result .btn, .result .btn-sm, .result .input, .result .mono, .result .pop { font-size: var(--r-small); }
+.result .badge-lg { font-size: 1rem; }
+/* a judgement or an answer is a soft colour, not a bordered pill that reads as a button; "only uncertain evidence"
+   is grey with a dashed edge, so amber keeps one meaning (partly supports) */
+.result .badge { border-color: transparent; }
+.result .badge.status-uncertain { color: var(--text-2); background: var(--surface-3); }
+
+.result .card-verdict, .result .answer-waiting { border-left: 1px solid var(--border); }
+.result .help-mark { color: var(--muted); text-decoration: none; display: inline-flex; vertical-align: middle; padding: 2px; margin-left: 2px; border-radius: 50%; }
+.result .help-mark:hover, .result .help-mark[aria-expanded="true"] { color: var(--accent-text); }
+
+/* the header: the hypothesis, then one quiet line */
+.result-head .result-meta { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: var(--r-small); color: var(--muted); }
+.result-head .result-meta a { color: inherit; }
+.result-head .result-read { display: inline; font-size: inherit; color: inherit; margin: 0; }
+.result-head .unread-line { flex-basis: 100%; display: block; margin-top: 2px; }
+.result-head .unread-line[hidden] { display: none; }
+
+/* the answer: the answer and who judged it, one sentence, who says what, one caution, one button */
+.result .answer { padding: 22px 24px 18px; }
+.result .answer-status { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 12px; }
+.result .basis-text { font-size: var(--r-small); color: var(--text-2); }
+.result .answer-sentence { font-size: 1rem; line-height: 1.5; margin: 0 0 14px; max-width: 48em; color: var(--text); }
+.result .answer .who { margin: 0 0 14px; padding: 0; border-top: 0; }
+/* who says what: one document per row, its sides with their judgement marks */
+.result .who-list { list-style: none; margin: 0 0 14px; padding: 0; border-top: 0; display: grid; gap: 8px; }
+.result .who-list li { margin: 0; min-width: 0; }
+.result .who-list .who-title { display: block; white-space: normal; overflow: visible; color: var(--text); font-size: var(--r-text); }
+.result .who-sides { display: block; font-size: var(--r-small); color: var(--text-2); }
+.result .who-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--none); }
+.result .who-dot.who-supports { background: var(--ok); } .result .who-dot.who-partly { background: var(--partly); } .result .who-dot.who-refutes { background: var(--bad); }
+.result .part-shared { margin: 0 0 10px; font-size: var(--r-small); color: var(--text-2); }
+.result .ask-model { margin: 10px 0 0; font-size: var(--r-small); color: var(--text-2); }
+.result .passage-broken { gap: .7em; }
+.result .answer-added { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); font-size: var(--r-text); }
+.result .answer-added > svg { flex: none; margin-top: 3px; color: var(--accent); }
+.result .answer-added p { margin: 0; }
+.result .answer-added .fold > summary { padding: 2px 0; font-size: var(--r-small); font-weight: 400; }
+.result .added-list { margin: 4px 0 0; padding-left: 1.1em; font-size: var(--r-small); }
+.result .answer .whats-new, .result .answer .run-summary { margin: 0 0 12px; font-size: var(--r-text); }
+.result .answer-part-list { margin: 0 0 14px; }
+.result .answer-part-list a { text-decoration: none; }
+/* a split answer: claim | answer | documents, aligned */
+.result .part-grid { list-style: none; padding: 0; display: grid; grid-template-columns: minmax(0, max-content) auto auto; justify-content: start; gap: 6px 18px; align-items: center; }
+.result .part-grid li { display: contents; }
+.result .part-grid .part-claim-link { color: var(--text); font-size: 1rem; }
+.result .part-grid .part-answer { display: inline-flex; gap: 6px; align-items: center; }
+.result .answer-part-list a:hover { text-decoration: underline; }
+.result .part-docs { font-size: var(--r-small); color: var(--text-2); white-space: nowrap; }
+.result .answer-next { display: block; max-width: none; margin: 8px 0 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.result .answer-next-text { margin: 0 0 12px; font-size: var(--r-text); color: var(--text); max-width: 52em; }
+.result .answer-next-text.answer-caution { display: flex; gap: 8px; align-items: flex-start; }
+.result .answer-caution > svg { flex: none; margin-top: 2px; color: var(--text-2); }
+.result .answer-next-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.result .answer-next .btn svg { color: currentColor; margin-top: 0; }
+.result .next-review { font-size: var(--r-text); }
+.result .answer-next-actions .link-btn { font-size: var(--r-small); }
+
+/* the evidence: the title with the switch, two short lines, then each part's excerpts straight on the page */
+.result .ev-section-head { margin: 30px 0 0; }
+.result .ev-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 4px; }
+.result .ev-section-sub { margin: 2px 0 0; font-size: var(--r-small); color: var(--text-2); }
+.result .ev-section-sub .ev-count, .result .ev-section-sub .ev-rules { display: block; }
+.result .ev-section-sub .link-btn { color: var(--accent-text); }
+.result .ev-section-head .view-toggle { margin: 0; gap: 2px; }
+/* the switch between cards and table: plain tabs, the chosen one underlined (no filled button) */
+.result .view-toggle .seg-btn { border: 0; background: none; border-radius: 0; color: var(--text-2); font-weight: 400; padding: .3rem .5rem; border-bottom: 2px solid transparent; }
+.result .view-toggle .seg-btn.seg-on { color: var(--text); font-weight: 600; border-bottom-color: var(--text); background: none; }
+.result .rounds-fold { margin: 0 0 10px; }
+.result .rounds-fold > summary, .result .also-read > summary { font-size: var(--r-small); font-weight: 400; color: var(--text-2); padding: 2px 0; }
+.result .rounds-fold .rounds { margin: 4px 0 4px 18px; }
+.result .rounds-read { margin: 4px 0 6px 18px; font-size: var(--r-small); color: var(--text-2); }
+.result .ex-table-card { margin-top: 12px; }
+.result .part-card { margin: 14px 0 0; padding: 0; border: 0; background: none; box-shadow: none; border-radius: 0; }
+.result .part-card + .part-card { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--border); }
+.result .part-head { margin-bottom: 6px; }
+.result .part-head .part-claim { font-size: 1rem; }
+.result .part-head .part-claim { font-family: var(--font-ui); font-weight: 600; color: var(--text); }
+.result .part-head .pn { display: inline; font: inherit; color: inherit; margin: 0; }
+.result .eyebrow { font-size: var(--r-small); font-weight: 400; }
+.result .ev-src .also-in { white-space: nowrap; }
+/* "In context" and "Details": quiet, but visibly something to click */
+.result .judge-row .ctx-toggle, .result .judge-row .more-toggle { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.result .judge-row .ctx-toggle:hover, .result .judge-row .more-toggle:hover { color: var(--accent-strong); background: none; }
+.result .judge-opt[aria-pressed="true"] { background: var(--surface-2); border-color: var(--text-2); }
+.result .dl-link { justify-self: start; font-size: var(--r-small); }
+.result .ask-facts .ask-fact { margin: 0 0 6px; font-size: var(--r-small); color: var(--text-2); }
+.result .ask-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.result .ev-notes .has-tip { cursor: help; }
+.result .part-status { flex-direction: row; align-items: center; }
+.result .part-sentence { margin: 0 0 10px; font-size: var(--r-text); color: var(--text-2); }
+.result .who-inline { border: 0; border-bottom: 1px solid var(--border); box-shadow: none; padding: 10px 0 4px; margin: 6px 0 10px; }
+.result .rounds { margin: 0; gap: 4px; }
+.result .round-row { padding: 0; border: 0; background: none; font-size: var(--r-small); color: var(--text-2); }
+.result .round-row.round-new { padding-left: 8px; box-shadow: inset 2px 0 0 var(--ok-line); }
+.result .round-row p { margin: 0; }
+.result .round-head, .result .round-readers, .result .ai-note { display: flex; flex-wrap: nowrap; gap: 6px; align-items: flex-start; }
+.result .round-head > span, .result .ai-note > span { min-width: 0; }
+.result .round-head svg, .result .ai-note svg { flex: none; margin-top: 2px; }
+.result .ev-list { gap: 14px; }
+
+/* an excerpt card: the judgement and two facts (the document links at the far end); the source; one line of notes;
+   the quote in its context; one row of actions in fixed slots */
+.result .ev { padding: 14px 18px 10px; border-left: 1px solid var(--border); }
+.result .ev-yours { box-shadow: none; }
+.result .ev-top { gap: 4px 12px; margin-bottom: 8px; font-size: var(--r-small); }
+.result .ev-top .spacer { flex: 1; }
+.result .new-badge { background: var(--surface-2); color: var(--text-2); }
+/* a reviewed card sits back on the page (no fill, a dashed edge), so the ones still to review stand out; an
+   uncounted judgement keeps its colour, says "Not counted" first and comes after the counted ones */
+.result .ev, .result .ev-uncounted { background: var(--surface); }
+.result .ev[data-reviewed="1"] { background: transparent; border-style: dashed; }
+.result .ev-yours-fact svg { color: var(--text-2); }
+.result .ev-uncounted-fact { color: var(--text-2); }
+.result .ev-top .read-by { color: var(--text-2); }
+.result .ev-fact { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
+.result .ev-yours-fact { color: var(--text-2); font-weight: 400; }
+.result .ev-src { font-size: var(--r-text); font-weight: 400; margin-bottom: 4px; }
+.result .ev-src { color: var(--text-2); }
+.result .ev-src .title { color: var(--text); }
+.result .ev-src .page { margin-left: 0; font-weight: 400; color: var(--text-2); }
+.result .ev-src-links { display: inline-flex; flex-wrap: wrap; gap: 0 2px; margin-right: -6px; }
+.result .ev-top .ev-src-links .btn, .result .ev-top .orig-link.ev-link > a { padding-top: .15rem; padding-bottom: .15rem; }
+.result .ev-notes { margin: 6px 0 0; font-size: var(--r-small); color: var(--text-2); }
+.result .ev-notes .help-mark { vertical-align: -3px; }
+.result .ev-doclink { margin: 4px 0 0; font-size: var(--r-small); color: var(--text-2); }
+.result .ev-doclink .orig-link a { color: var(--accent-text); }
+.result .ev-notes .sep { color: var(--muted); }
+.result .ev-note-btn { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; font-size: inherit; text-align: left; }
+.result .ev-note-btn:hover { color: var(--accent-text); }
+.result .so-note .help-mark { vertical-align: -3px; }
+.result .so-seg { color: var(--accent-text); font-size: inherit; }
+.result .so-seg-on { color: var(--text); font-weight: 600; text-decoration: none; cursor: default; }
+.result .ev .passage { font-size: 1rem; margin-top: 4px; color: var(--text-2); }   /* the context grey, the quote in full colour */
+.result .ev .passage mark.quote { color: var(--text); }
+.result .ellip { color: var(--muted); user-select: none; }
+.result .quote-by { margin: 4px 0 6px; }
+.result .user-note { background: none; padding: 0; color: var(--text-2); font-size: var(--r-small); font-weight: 400; }
+.result .user-note .muted { font-weight: 400; }
+.result .btn-suffix { font-weight: 400; color: var(--text-2); }
+.result .ev-tech-list dt { color: var(--muted); font-weight: 400; }
+.result .ev-tech-list dd { color: var(--text); }
+.result .judge { margin-top: 10px; }
+.result .judge-row { gap: 6px 10px; }
+.result .judge-row > .spacer { flex: 0 0 14px; }   /* the ways to see more right after the judging buttons */
+.result .judge-row > span[aria-live] { min-width: 0; }
+.result .agree-box { flex-direction: row; align-items: center; gap: 4px 10px; flex-wrap: wrap; }
+.result .agree-btn { min-width: 0; color: var(--text); }
+/* fixed slots, so the actions sit in the same place on every card */
+/* fixed widths, so "In context" and "Details" sit in the same place on every card, whatever the labels */
+.result .judge-row .agree-btn { width: 6.5rem; justify-content: center; }
+.result .judge-row .dismiss-btn, .result .judge-row > .slot-gap { width: 7.5rem; justify-content: center; }
+.result .judge-row .judge-toggle { width: 9rem; justify-content: center; }
+/* the card's own action, Agree (or Take back), is the one button; the other judging actions are quiet text, and the
+   ways to see more (in context, original file, read again, details) quieter still */
+.result .judge-row .agree-btn { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-weight: 600; }
+.result .judge-row .agree-btn:hover { border-color: var(--muted); background: var(--surface-2); }
+.result .judge-row .dismiss-btn, .result .judge-row .judge-toggle { border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 400; }
+.result .judge-row .dismiss-btn:hover, .result .judge-row .judge-toggle:hover { background: var(--surface-2); }
+.result .judge-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.result .judge-opt { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 7px; padding: .3rem .65rem; font-weight: 400; }
+/* a card's toggle shows that its panel is open */
+.result .judge-row .judge-toggle[aria-expanded="true"] { background: var(--surface-2); border-color: var(--border-strong); }
+.result .judge-row .more-toggle[aria-expanded="true"], .result .judge-row .ctx-toggle[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
+.result .judge-list { font-size: var(--r-small); }
+.result .judge-opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.result .ev-second svg { color: var(--text-2); }
+/* one document on both sides, drawn once */
+.result .lbl-short { display: none; }
+.result .judge-reread { margin-top: 6px; }
+.result .found { margin: 0 0 14px; }
+.result .found-head { font-size: var(--r-small); margin: 0 0 6px; }
+.result .found-part { margin: 0 0 10px; }
+.result .found-claim { margin: 0 0 2px; font-size: var(--r-small); color: var(--text-2); }
+.result .found .rounds-read { margin: 0 0 4px; }
+.result .dismiss-btn { color: var(--text); }
+.result .judge-diff > summary { font-size: var(--r-small); }
+.result .judge-body { padding: 8px 0 0; border: 0; background: none; margin: 0; }
+/* the other judgements: plain radio rows, not pills that look like the judgement marks */
+
+.result .mark-sentence { border-top: 0; padding-top: 0; }
+.result .mark-sentence { margin-top: 8px; }
+.result .mark-sentence .mark-head { font-size: var(--r-small); color: var(--text-2); }
+.result .mark-list:not([hidden]) { display: inline-flex; flex-wrap: wrap; gap: 6px 8px; flex-basis: 100%; }
+.result .ev-link { font-size: var(--r-small); font-weight: 400; color: var(--text-2); padding: .3rem .45rem; }
+.result .ev-link:hover { color: var(--accent-text); background: var(--surface-2); }
+.result .orig-link.ev-link { padding: 0; background: none; }
+.result .orig-link.ev-link > a { font-size: var(--r-small); font-weight: 400; color: var(--text-2); padding: .3rem .45rem; }
+.result .orig-link.ev-link > a:hover { color: var(--accent-text); background: var(--surface-2); }
+/* the judge and More panels open under the action row, which never moves */
+.result .panel-toggle { font-size: var(--r-small); color: var(--text); padding: .3rem .45rem; }
+.result .panel-toggle svg { transition: transform .12s ease; }
+.result .panel-toggle[aria-expanded="true"] svg, .result .ctx-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.result .ctx-toggle svg { transition: transform .12s ease; }
+.result .judge-tool { border: 1px solid var(--border-strong); background: var(--surface); font-weight: 400; }
+
+.result .more-toggle { font-weight: 400; color: var(--text-2); border: 0; background: none; }
+.result .more-toggle:hover { color: var(--accent-text); }
+.result .judge-panel:not([hidden]), .result .ev-more-panel:not([hidden]) { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.result .ev-more-actions { margin: 0 0 10px; }
+.result .ev-tech-label { margin: 0 0 4px; font-size: var(--r-small); font-weight: 600; color: var(--text-2); }
+.result .ev-tech-list { font-size: var(--r-small); display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; }
+.result .ev-tech-list > div { display: contents; }
+.result .ev-tech-list dt::after { content: ""; }
+.result .judge-caption { margin: 0 0 4px; font-size: var(--r-small); color: var(--text-2); }
+.result .ev .context { margin-top: 10px; }
+
+/* finding more evidence, under a part's excerpts */
+.result .also-read { margin-top: 14px; }
+.result .more-row { margin-top: 16px; display: block; }
+.result .more-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.result .more-line { margin: 6px 0 0; font-size: var(--r-small); color: var(--text-2); }
+.result .more-terms:not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 10px; }
+
+/* a check waiting for Claude Code: the answer card is the queue notice, without a box of its own */
+.result .answer-waiting .queue-notice { margin: 0; padding: 0; border: 0; background: none; }
+.result .answer-waiting .sc-type-fold > summary { font-size: var(--r-small); font-weight: 400; color: var(--text-2); }
+.result .answer-waiting .sc-start { flex-direction: column; align-items: flex-start; gap: 4px; }
+/* its pulse as a soft glow (0.11.3's ring read as a focus outline here) */
+.result .answer-waiting .start-claude .btn.sc-nudge { animation: sc-glow 1.6s ease-out infinite; }
+@keyframes sc-glow {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
+  70%, 100% { box-shadow: 0 0 12px 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .result .answer-waiting .start-claude .btn.sc-nudge { animation: none; box-shadow: 0 0 10px 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+}
+
+/* the other AI models: two columns, no boxes */
+.result .ask-card { margin-top: 30px; }
+.result .ask-rows { margin-top: 2px; }
+.result .ask-state > svg { flex: none; margin-top: 3px; color: var(--accent); }
+.result .ask-jobs { gap: 6px; margin-top: 12px; }
+
+/* notes, downloads, and the last row: technical details and Delete */
+.result .note-card, .result .downloads { margin-top: 16px; }
+.result .note-card .note-head { margin-bottom: 8px; }
+.result .note-card .note-head strong { font-size: 1.05rem; font-weight: 600; }
+.result .dl-rows { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; align-items: center; }
+.result .dl-row { display: contents; }
+.result .dl-row > .btn { justify-self: stretch; justify-content: flex-start; }
+.result .dl-what { font-size: var(--r-small); color: var(--text-2); }
+.result .dl-what.dl-wide { grid-column: 1 / -1; }
+.result .note-card textarea::placeholder { color: var(--text-2); }
+/* Delete stays where it is when Technical details opens beside it */
+.result .result-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 16px; margin: 18px 2px 8px; font-size: var(--r-small); }
+.result .result-foot > .tech-card { margin: 0; padding: 0; border: 0; }
+.result .result-foot > .tech-card > summary { font-size: var(--r-small); font-weight: 400; color: var(--text-2); padding: 2px 0; }
+.result .tech-card .details-body { background: none; border: 0; box-shadow: none; padding: 6px 0 0; }
+.result .danger-link { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); text-decoration: none; padding: 2px 0; }
+.result .danger-link:hover { color: var(--bad); text-decoration: underline; }
+
+/* the quote, tinted in its judgement's colour, so the mark and the highlight say the same; grey when it does not
+   count or is not about the hypothesis */
+.result mark.quote { background: color-mix(in srgb, var(--none-line) 45%, transparent); box-shadow: none; color: var(--text); }
+.result .ev-supports mark.quote { background: color-mix(in srgb, var(--ok-line) 45%, transparent); }
+.result .ev-partially_supports mark.quote { background: color-mix(in srgb, var(--partly-line) 45%, transparent); }
+.result .ev-refutes mark.quote { background: color-mix(in srgb, var(--bad-line) 45%, transparent); }
+
+/* the quote stays easy to spot, and the cards' edges visible, in the dark theme */
+:root[data-theme="dark"] .result .ev, :root[data-theme="dark"] .result .card { border-color: var(--border-strong); }
+:root[data-theme="dark"] .result .badge.grade-partially_supports, :root[data-theme="dark"] .result .badge.status-partially_supported { color: color-mix(in srgb, var(--partly) 75%, #fff); }
+:root[data-theme="dark"] .result .ev-supports mark.quote { background: color-mix(in srgb, var(--ok) 30%, transparent); box-shadow: inset 0 -2px 0 var(--ok); }
+:root[data-theme="dark"] .result .ev-partially_supports mark.quote { background: color-mix(in srgb, var(--partly) 24%, transparent); box-shadow: inset 0 -2px 0 var(--partly); }
+:root[data-theme="dark"] .result .ev .passage { color: color-mix(in srgb, var(--text-2) 82%, var(--surface)); }
+:root[data-theme="dark"] .result .ev-refutes mark.quote { background: color-mix(in srgb, var(--bad) 30%, transparent); box-shadow: inset 0 -2px 0 var(--bad); }
+:root[data-theme="dark"] .result .ev-none mark.quote { background: color-mix(in srgb, var(--none) 30%, transparent); box-shadow: inset 0 -2px 0 var(--none); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .result .ev, :root:not([data-theme="light"]) .result .card { border-color: var(--border-strong); }
+  :root:not([data-theme="light"]) .result .badge.grade-partially_supports, :root:not([data-theme="light"]) .result .badge.status-partially_supported { color: color-mix(in srgb, var(--partly) 75%, #fff); }
+  :root:not([data-theme="light"]) .result .ev-supports mark.quote { background: color-mix(in srgb, var(--ok) 30%, transparent); box-shadow: inset 0 -2px 0 var(--ok); }
+  :root:not([data-theme="light"]) .result .ev-partially_supports mark.quote { background: color-mix(in srgb, var(--partly) 24%, transparent); box-shadow: inset 0 -2px 0 var(--partly); }
+  :root:not([data-theme="light"]) .result .ev .passage { color: color-mix(in srgb, var(--text-2) 82%, var(--surface)); }
+  :root:not([data-theme="light"]) .result .ev-refutes mark.quote { background: color-mix(in srgb, var(--bad) 30%, transparent); box-shadow: inset 0 -2px 0 var(--bad); }
+  :root:not([data-theme="light"]) .result .ev-none mark.quote { background: color-mix(in srgb, var(--none) 30%, transparent); box-shadow: inset 0 -2px 0 var(--none); }
+}
+
+@media (max-width: 860px) {
+  .result .card, .result .answer { padding: 16px; }
+  .result .part-card { padding: 0; }
+  .result .part-card + .part-card { padding-top: 22px; }
+  .result .dl-rows { grid-template-columns: 1fr; gap: 2px; }
+  .result .dl-row > .btn { justify-self: start; margin-top: 10px; }
+  .result .downloads .dl-rows { display: block; }
+  .result .downloads .dl-row { display: block; margin: 0 0 8px; font-size: var(--r-small); }
+  .result .downloads .dl-row > .dl-link + .dl-what::before { content: " · "; white-space: pre; }
+  .result .ev { padding: 12px 14px 8px; scroll-margin-top: 64px; }
+  .result .ev-link, .result .orig-link.ev-link > a, .result .panel-toggle, .result .ev-doclink a,
+  .result .ev-whole, .result .ev-section-sub .link-btn, .result .ev-note-btn, .result .answer-next-actions .link-btn { min-height: 32px; display: inline-flex; align-items: center; }
+}
+@media (max-width: 600px) {
+  /* the actions of a card on phones: the three judging actions (short labels) on one line, the links on the next */
+  .result .lbl-long { display: none; }
+  .result .lbl-short { display: inline; }
+  .result .judge-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .result .judge-row > * { flex: none; }
+  .result .judge-row .btn { padding-left: .45rem; padding-right: .45rem; }
+  .result .rounds-fold > summary, .result .also-read > summary, .result .result-foot > .tech-card > summary,
+  .result .help-mark, .result .downloads .link-btn, .result .ev-doclink .link-btn { min-height: 32px; display: inline-flex; align-items: center; }
+  .result .help-mark { min-width: 28px; justify-content: center; }
+  .result .who-sides .who-side { display: inline; }
+  .result .who-sides > .sep { display: block; height: 0; overflow: hidden; }
+  .result .judge-row .ev-link, .result .judge-row .orig-link.ev-link > a, .result .judge-row .more-toggle { min-height: 34px; }
+  .result .judge-row > .spacer { display: block; flex: 0 0 100%; height: 0; }
+  .result .part-grid { grid-template-columns: minmax(0, 1fr) auto; }
+  .result .part-grid .part-docs { grid-column: 1 / -1; margin-top: -4px; white-space: normal; }
+  .result .judge-row > span[aria-live]:empty { display: none; }
+  .result .judge-row .btn, .result .judge-row .orig-link > a, .result .judge-opt, .result .save-note { min-height: 32px; }
+  .result .judge-row .agree-btn, .result .judge-row .dismiss-btn, .result .judge-row .judge-toggle { width: auto; min-width: 0; }
+  .result .judge-row { gap: 6px; }
+  .result .judge-row .ev-link, .result .judge-row .orig-link.ev-link > a, .result .judge-row .more-toggle { padding-left: .25rem; padding-right: .25rem; }
+  .result .ev { padding: 12px 10px 8px; }
+  .result .judge-row > .slot-gap { display: none; }
+  .result-head .result-meta { display: block; }
+  .result-head .result-meta > span:not(.sep) { display: block; }
+  .result-head .result-meta .sep { display: none; }
+}

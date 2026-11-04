@@ -184,9 +184,19 @@ async function drawJobs() {
   const active = jobs.filter((j) => !TERMINAL.has(j.state));
   const recent = jobs.filter((j) => TERMINAL.has(j.state)).slice(0, 5);
   box.hidden = !active.length && !recent.length;  // 0.9: nothing to show yet: no empty box in the sidebar
-  const details = h("details", { class: "jobs " + (active.length ? "jobs-active" : "jobs-idle") });
-  const summary = h("summary", {}, active.length ? h("span", { class: "running-dot", "aria-hidden": "true" }) : icon("clock", { size: 14 }),
-    h("span", { class: "grow" }, active.length ? `${active.length} ${active.length === 1 ? "task" : "tasks"} running` : "Nothing running"), icon("chevron-up", { size: 14 }));
+  // 0.12: work that waits for Claude Code with nothing answering it is not running: it says so, in its own colour,
+  // with a still pause mark instead of the pulsing dot
+  const hold = active.filter((j) => j.on_hold);
+  const going = active.filter((j) => !j.on_hold);
+  const tasks = (n) => `${n} ${n === 1 ? "task" : "tasks"}`;
+  const details = h("details", { class: "jobs " + (going.length ? "jobs-active" : hold.length ? "jobs-hold" : "jobs-idle") });
+  let head;
+  if (going.length && hold.length) head = h("span", { class: "grow" }, `${going.length} running`, h("span", { class: "jobs-hold-part" }, ` · ${hold.length} not running`));
+  else if (hold.length) head = h("span", { class: "grow jobs-hold-text" }, h("strong", {}, `${tasks(hold.length)} not running`), h("span", { class: "jobs-hold-sub" }, "Waiting for Claude Code to start"));
+  else head = h("span", { class: "grow" }, active.length ? `${tasks(active.length)} running` : "Nothing running");
+  const summary = h("summary", { title: hold.length ? "Nothing answers this work yet: start Claude Code (in the queue just below, or here) and it runs." : null },
+    going.length ? h("span", { class: "running-dot", "aria-hidden": "true" }) : hold.length ? icon("pause", { size: 14 }) : icon("clock", { size: 14 }),
+    head, icon("chevron-up", { size: 14 }));
   const menu = h("div", { class: "ps-menu" });
   const linkFor = (j) => ({ check: "#/check", prepare: "#/check", batch: "#/batch", more: "#/history", reread: "#/history", "read-new": "#/history", "second-opinion": "#/history", ingest: "#/sources", index: "#/sources", benchmark: "#/settings/test",
     keywords: "#/profile", label: "#/profile", "label-compare": "#/profile", terms: "#/concepts", link: "#/concepts", wordings: "#/concepts", themes: "#/themes", "theme-names": "#/themes", resolve: "#/sources", quicklook: "#/sources", "claude-install": "#/settings/model" }[j.kind] || "#/check");
@@ -198,8 +208,14 @@ async function drawJobs() {
   const row = (j) => h("a", { class: "job-row", href: linkFor(j) + (withJob.has(j.kind) ? `?job=${encodeURIComponent(j.id)}` : ""), title: ["check", "prepare", "batch"].includes(j.kind) ? (j.title || "") : null },
     icon(kindIcon[j.kind] || "circle", { size: 14 }),
     h("span", { class: "job-title" }, j.kind === "check" ? (j.title || "Check") : j.kind === "prepare" ? `${kindText.prepare}${j.title ? ` (${j.title})` : ""}` : j.kind === "read-new" ? (j.title || kindText["read-new"]) : j.kind === "second-opinion" ? `${kindText["second-opinion"]}${/ on (\d+ hypothes\w+)$/.test(j.title || "") ? ` (${/ on (\d+ hypothes\w+)$/.exec(j.title)[1]})` : ""}` : `${kindText[j.kind] || j.kind}${j.kind === "batch" && j.title ? ` (${j.title})` : ""}`),
-    h("span", { class: "job-state" }, j.state === "running" ? `running · ${fmt.secs(j.seconds)}` : j.state === "queued" ? "waiting its turn" : j.state === "done" ? "done" : j.state === "error" ? "did not work" : "stopped"));
+    j.on_hold ? h("span", { class: "job-state job-hold" }, "not running")
+      : h("span", { class: "job-state" }, j.state === "running" ? `running · ${fmt.secs(j.seconds)}` : j.state === "queued" ? "waiting its turn" : j.state === "done" ? "done" : j.state === "error" ? "did not work" : "stopped"));
   if (!active.length && !recent.length) menu.appendChild(h("div", { class: "muted small", style: { padding: "6px 8px" } }, "Work that takes a while (checks, adding documents) shows up here, so you can move around the app and come back to it."));
+  if (hold.some((j) => j.project === App.project)) {
+    menu.appendChild(h("div", { class: "jobs-hold-start" },
+      h("p", { class: "small" }, icon("pause", { size: 12 }), " ", h("strong", {}, "Not running."), " This work waits in the queue until Claude Code answers it."),
+      startClaude(App.project)));
+  }
   active.forEach((j) => menu.appendChild(row(j)));
   if (active.length && recent.length) menu.appendChild(h("div", { class: "ps-sep" }));
   if (recent.length) menu.appendChild(h("div", { class: "muted small", style: { padding: "2px 8px" } }, "Recent"));

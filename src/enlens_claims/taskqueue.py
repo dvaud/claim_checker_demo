@@ -182,6 +182,22 @@ def _duration(seconds: float | None) -> str | None:
     return f"about {round(m / 60, 1):g} hours"
 
 
+ANSWERING_GAP = 120         # seconds since Claude Code's last answer that still count as answering (between batches)
+
+
+def answering(ws: Workspace) -> bool:
+    """0.12: whether a Claude Code session is working on this project's queue now: a batch taken and not finished, a
+    task claimed, or an answer stored in the last two minutes (a session between two batches). Claude Code started
+    from the app is asked separately (claude_setup.run_state)."""
+    if ws.scalar("SELECT COUNT(*) FROM task_claims WHERE finished_at IS NULL AND expires_at > ?", (now(),)):
+        return True
+    if ws.scalar("SELECT COUNT(*) FROM tasks WHERE COALESCE(queued, 0)=1 AND claimed_by IS NOT NULL AND claimed_by != '' "
+                 "AND claimed_at >= ? AND (status IN ('pending', 'retry') OR (status='done' AND again=1))", (_cutoff(),)):
+        return True
+    last = _ts(ws.scalar("SELECT MAX(received_at) FROM results WHERE route='Claude Code'"))
+    return bool(last and time.time() - last < ANSWERING_GAP)
+
+
 def status(ws: Workspace, project: str | None = None, parallel: int = 2) -> dict:
     """The queue of one project: per kind what waits, is being answered, is done or failed; the groups a run hands
     to the helpers (kind, model, helper); estimates; and whether the work has paused."""

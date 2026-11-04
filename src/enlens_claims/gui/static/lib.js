@@ -192,7 +192,8 @@ export const fmt = {
     if (!iso) return "";
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return String(iso).slice(0, 16).replace("T", " ");
-    return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    // 0.12: in English like the rest of the page ("4 Nov 2026, 19:36"), not in the computer's own language
+    return d.toLocaleString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   },
   dateShort(iso) {
     if (!iso) return "";
@@ -200,7 +201,7 @@ export const fmt = {
     if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
     const now = new Date();
     const sameYear = d.getFullYear() === now.getFullYear();
-    return d.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+    return d.toLocaleDateString("en-GB", sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
   },
   unix(sec) {
     return sec ? fmt.date(new Date(sec * 1000).toISOString()) : "";
@@ -607,7 +608,7 @@ export function emptyState(iconName, title, text, action) {
 }
 
 export function statusBadge(status, opts = {}) {
-  const iconName = { supported: "circle-check", partially_supported: "circle-half", contested: "arrows-opposed", contradicted: "circle-x", uncertain: "help", unsupported: "circle-dashed", no_passages: "search-x", not_checked: "clock", failed: "alert-triangle", waiting: "inbox" }[status] || "circle";
+  const iconName = { supported: "circle-check", partially_supported: "circle-half", contested: "arrows-opposed", contradicted: "circle-x", uncertain: "circle-dot", unsupported: "circle-dashed", no_passages: "search-x", not_checked: "clock", failed: "alert-triangle", waiting: "inbox" }[status] || "circle";
   const text = opts.text || (opts.short ? STATUS_SHORT[status] : null) || App.statusText(status) || status;
   return h("span", { class: `badge status-${status} ${opts.size === "lg" ? "badge-lg" : ""} ${opts.class || ""}`, title: opts.title || (opts.short ? `${App.statusText(status)}. ` : "") + (App.statusHelp(status) || "") || null },
     icon(iconName, { size: opts.size === "lg" ? 20 : 14 }), opts.prefix ? h("span", { class: "badge-prefix" }, opts.prefix, " ") : null, h("span", {}, text));
@@ -681,7 +682,7 @@ export function copyLine(text, label = "Copy", where = "Claude Code") {
 }
 
 // What waits for Claude Code, for a page that waits on it: the line, the estimate, a button that starts Claude Code
-// (0.9), the command to type instead, and the privacy note.
+// (0.9), the command to type instead (opts.foldType: in a fold, 0.12), and the privacy note.
 export function queueNotice(q, opts = {}) {
   if (!q) return null;
   const est = q.estimate || "";
@@ -690,8 +691,8 @@ export function queueNotice(q, opts = {}) {
       q.being_answered ? h("span", { class: "muted small qn-answered" }, ` · ${q.being_answered} being answered now`) : null),
     est && !q.paused ? h("div", { class: "muted small" }, est.charAt(0).toUpperCase() + est.slice(1) + ".") : null,
     q.paused && q.paused_text ? h("p", { class: "small", style: { margin: "4px 0" } }, q.paused_text) : null,
-    App.project ? startClaude(App.project, { command: q.command }) : null,
-    opts.privacy === false ? null : h("div", { class: "muted small", style: { marginTop: "4px" } }, icon("cloud", { size: 12 }), " ", q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic."));
+    App.project ? startClaude(App.project, { command: q.command, foldType: opts.foldType }) : null,
+    opts.privacy === false || opts.foldType ? null : h("div", { class: "muted small", style: { marginTop: "4px" } }, icon("cloud", { size: 12 }), " ", q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic."));
 }
 
 // 0.9: "Start Claude Code": ENLENS starts Claude Code (signed in with its own login, on the researcher's plan) for
@@ -710,7 +711,7 @@ export function startClaude(project, opts = {}) {
     b.classList.add("sc-nudge");
     b.style.animationDelay = `-${Date.now() % NUDGE_PULSE}ms`;  // in step with the other buttons, and across redraws
     hint.classList.add("sc-wake");
-    replace(hint, h("strong", {}, "Nothing runs until you press it."), " Then it works on your Claude plan, in the background, and stops by itself when nothing waits.");
+    if (!opts.foldType) replace(hint, h("strong", {}, "Nothing runs until you press it."), " Then it works on your Claude plan, in the background, and stops by itself when nothing waits.");
   }
   function watchIdle(b, hint) {
     if (!WAIT_SINCE.has(project)) WAIT_SINCE.set(project, Date.now());
@@ -740,6 +741,12 @@ export function startClaude(project, opts = {}) {
     box.dataset.drawn = "1";
     const cmd = opts.command || q.command || `/enlens-run ${project}`;
     const typeIt = h("div", { class: "sc-type" }, h("span", { class: "muted small" }, q.can_start ? "Or type this in Claude Code yourself:" : "In Claude Code (opened in any folder), type:"), copyLine(cmd));
+    // 0.12, opts.foldType (the result page's waiting card): one line under the button; how it works, the command to
+    // type and what is sent sit in a fold
+    const typeBlock = opts.foldType && q.can_start ? h("details", { class: "fold sc-type-fold" }, h("summary", {}, "How it works"),
+      h("p", { class: "small" }, "It works on your Claude plan, in the background, and stops by itself when nothing waits."),
+      h("div", { class: "sc-type" }, h("span", { class: "muted small" }, "Or type this in Claude Code yourself:"), copyLine(cmd)),
+      h("p", { class: "muted small" }, icon("cloud", { size: 12 }), " ", q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic.")) : typeIt;
     const r = q.runner || {};
     const parts = [];
     const idle = idleQueue(q);
@@ -759,7 +766,7 @@ export function startClaude(project, opts = {}) {
         catch (e) { showError(e); }
         busy = false; QUEUE_CACHE.delete(project); draw(false);
       } }, icon("play", { size: 13 }), "Start Claude Code");
-      const hint = h("span", { class: "muted small" }, "Runs on your Claude plan, in the background. It stops by itself when nothing waits.");
+      const hint = h("span", { class: "muted small" }, opts.foldType ? "Nothing runs until you press it." : "Runs on your Claude plan, in the background. It stops by itself when nothing waits.");
       parts.push(h("div", { class: "sc-start" }, b, hint));
       if (idle) watchIdle(b, hint);
       if (r.exit_code !== undefined && r.exit_code !== null && r.exit_code !== 0 && !r.stopped) {
@@ -769,7 +776,7 @@ export function startClaude(project, opts = {}) {
       parts.push(h("p", { class: "small sc-missing" }, icon("info", { size: 12 }), " Claude Code was not found on this computer. ", h("a", { href: "#/settings/model" }, "Set it up"), " to start it from here."));
     }
     if (q.claude && q.claude.signed_in === false) parts.push(h("p", { class: "small" }, icon("info", { size: 12 }), " Sign in to Claude Code once: open a terminal, type ", h("code", {}, "claude"), " and sign in with your Claude plan."));
-    replace(box, ...parts, r.running ? null : typeIt);
+    replace(box, ...parts, r.running ? null : typeBlock);
     // the page may have moved on (or re-drawn its panel) by then: a detached box fetches nothing
     if (r.running) timer = setTimeout(() => { if (box.isConnected) queueFetch(project).then(() => draw(true)).catch(() => {}); }, 4000);
     else if (r.seconds !== undefined && opts.onDone && box.dataset.wasRunning === "1") opts.onDone();

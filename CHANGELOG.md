@@ -1,5 +1,101 @@
 # Changelog
 
+## 0.12.0 (November 2026): a calmer result page, and work that says when it is not running
+
+After the checks have run, the result page is where the actual work starts: reading the answer, reviewing the
+evidence and deciding what to believe. It had grown into the busiest page of the app, with many type styles close
+together, buttons inside explanations, long descriptions and the information all mixed. 0.12 rebuilds it to be the
+easiest page to read, judged against written criteria by an independent reviewer (below). And the sidebar no longer
+says *1 task running* when nothing runs. Every answer still goes through the quote check, a person can overrule it,
+every result records how it was made, and nothing about what leaves the computer changed.
+
+**The sidebar says when nothing runs.**
+- Work that waits for Claude Code while nothing answers it showed *1 task running* with a pulsing dot, beside *1
+  waiting for Claude Code*, in the same colour. It now shows **1 task not running · Waiting for Claude Code to
+  start**, in amber with a still pause mark; its panel has *Start Claude Code* and lists the job as *not running*.
+  With work of both kinds it says *1 running · 1 not running*. Once Claude Code takes the work (started from ENLENS,
+  or `/enlens-run` typed in Claude Code taking or answering a batch, or an answer in the last two minutes) it is
+  *running* again.
+- API: each job of `GET /api/jobs` and of `/api/state` has `on_hold` (`taskqueue.answering`, `Job.waits_on_queue`,
+  `App.job_views`).
+- The jobs and queue panels of the sidebar open in place with a frame of their own (their rule to open upwards never
+  applied, so they opened as loose text over the sidebar).
+
+**The result page, rebuilt to be read.** Before it was changed, eleven criteria were written down for it (the answer
+at a glance, a clear order of sections, a small type scale, one main button per section, short copy, scannable
+evidence cards, low visual noise, the dark theme, phones, nothing lost, polish). An independent reviewer (Claude
+Fable 5.1 at extra-high effort, a new one each round, given only the criteria, screenshots of seven states and the
+code) scored the page against them, and the page was changed and checked again until every criterion scored well.
+- **The answer first, in one card**: the answer, who says what (one row per document, a coloured dot per side and
+  where: *supports it: paragraph 9 · contradicts it: paragraph 5*), one caution in one sentence (*It rests on a
+  single document and on two excerpts you have not reviewed.*), and one button, **Next to review**. A hypothesis
+  checked in parts lists its parts in a small grid (each with its answer and its documents for and against, a
+  document on both sides counted once) under one line on which part decides the answer; the caution then counts only
+  that part's excerpts. Beside the answer: *judged by the AI*, *partly reviewed by you* or *reviewed by you*. It
+  replaces *The AI's first reading*, a coloured warning, two sentences on the documents, a sentence on uncertain
+  judgements, *Reviewed by you: 0 of 8*, a *What to do next* box and a paragraph on strictness.
+- **Then the evidence**, with *Cards* and *Table* as two tabs beside its title and two short lines under it: *2 of 4
+  excerpts count at normal strictness (?)* and *Every quote is checked against its document; your judgement overrides
+  the AI's.* A part of a split hypothesis has a plain heading (*Part 1: …*) and lists its own documents above its
+  excerpts. The excerpts not about the hypothesis stay folded under the cards, and *Read more excerpts* and *Search
+  with other words* follow the evidence they add to.
+- **An excerpt card in a fixed order**: the judgement with at most two quiet facts (*Certainty: medium*, *Certainty:
+  low · not counted*, *Second opinion: partly supports*, *You agreed with the AI*), the document and the place, then
+  the quote with one sentence before and after it (no longer the whole excerpt of up to a page), highlighted in its
+  judgement's colour (green, amber, red, also in the dark theme). The same row of actions on every card: **Agree**,
+  **Not about this** (new: dismisses an excerpt in one click, with Undo; it moves to the excerpts not about the
+  hypothesis), **Judge differently…** (*Edit judgement…* once you have judged: the other judgements, each with its
+  colour dot, under a line that says what your judgement is now; another sentence as the quote; a comment), then
+  quietly **In context** (the whole excerpt, and from there the whole document at this place, the original file or a
+  highlighted copy) and **Details** (the AI's certainty, how the excerpt was found, *Ask the AI to read this again*).
+  An excerpt you have judged sits back on the page (no fill, a dashed edge); one that does not count comes after
+  those that do. Ten cards fit in about three screens, where they took six or more.
+- **Then the other AI models, notes and downloads**: *Ask another AI model* is two rows, *Ask a stronger model* and
+  *Get a second opinion*, each with one line on what it does (the two long explanations, the model picker's paragraph
+  and the boxes inside the box are gone; the models are named in its help mark and under *Technical details*).
+  *Download* is one quiet link per file with one line on what it holds; CSV and JSON are one line *(for
+  programmers)*. *Technical details* (the strictness for this page only, the models and settings, the search words,
+  the AI's notes) and *Delete this result* close the page.
+- **Type and colour**: four type sizes and two weights (bold only for headings, the main button and *Agree*); the
+  serif only for the hypothesis and the documents' text; green, amber, red and purple only for judgements, amber also
+  for the one caution, the accent colour only for actions. No bold labels in running text, no icons on labels, at
+  most two levels of boxes.
+- **While a check waits** for Claude Code, the answer card is the waiting notice with *Start Claude Code* and one
+  line; how it works, the command to type and what is sent sit in a fold (*How it works*).
+- **On a phone** (390 px) a card shows the sentence before the quote and the quote, its actions wrap onto two rows of
+  tap-sized buttons, the parts grid and who says what keep one fact per line, and nothing scrolls sideways.
+
+**Usability problems fixed on the way.**
+- Dates were written in the computer's own language and order (such as *2026. nov. 4. 19:36*) in an English page: now
+  *4 Nov 2026, 19:36* everywhere.
+- A quote that opens with a dummy subject (*There is no evidence that…*, *It is unclear whether…*, *It seems…*) was
+  flagged as starting with a word whose reference should be checked; it no longer is (`references.EXPLETIVE`).
+- *Only uncertain evidence* had a question-mark icon, read as a help mark; it has a dotted circle.
+- **Next to review** goes to the judgements that count first, then those flagged (a second opinion that differs, a
+  note about another group), then the rest, and those with only a comment last; past the evidence it says it goes on
+  to the excerpts not about the hypothesis; from the *Table* it switches to the cards it goes to.
+- A comment is saved on Enter or when you leave the field (a judgement picked meanwhile takes it along); a comment
+  typed and then *In context* clicked could fail to save with an error in the browser.
+
+**Tests:** `tests/test_0120_results_page.py`: a job waiting on Claude Code is `on_hold` while nothing answers and not
+once a stand-in Claude Code takes a batch (over the API, with `tests/fake_claude_cli.py`); an answer more than two
+minutes old does not count as answering; the sidebar's words; the order of the result page's sections; the compact
+card with *Not about this*; the excerpt window (run in Node: the sentences shown around a quote); dummy subjects are
+not references; *Next to review* from the table. Checked in Chrome with the dev server (the social corpus, and the
+stand-in Claude Code for the waiting and uncertain states): seven states of the result page, light and dark, 1280 and
+390 px wide, judging, dismissing, undoing, a comment, *In context*, *Details*, *Next to review*; the sidebar with
+work not running and running; no console errors.
+
+**Not yet done.**
+- The sidebar's *not running* was checked with the stand-in Claude Code only; with a real, signed-in Claude Code
+  started from ENLENS or typed in a terminal (`/enlens-run`), it should turn to *running* within one redraw of the
+  sidebar (5 s) once a batch is taken.
+- The excerpt window cuts at sentence ends found by a simple rule (full stops, question and exclamation marks):
+  abbreviations such as *e.g.* or *Fig. 3* can shorten the sentence shown before the quote; *In context* shows it
+  all.
+- The result page was reviewed in Chrome only (Safari and Firefox not checked); the other pages keep their 0.11
+  layout and type sizes.
+
 ## 0.11.3 (November 2026): a Start Claude Code button you cannot miss
 
 While a check (or any AI work) waits for Claude Code, its step keeps the spinner, and the progress panel's dot keeps

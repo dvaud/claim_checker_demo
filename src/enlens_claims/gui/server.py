@@ -86,6 +86,14 @@ class Job:
             out["result"] = self.result
         return out
 
+    def waits_on_queue(self) -> bool:
+        """0.12: its work waits in the queue for Claude Code right now (not its own steps on this computer)."""
+        if not self.queue or self.state not in ("queued", "running"):
+            return False
+        if self.tracker is not None:
+            return ((self.tracker.model or {}).get("phase")) == "queue"
+        return isinstance(self.progress, dict) and bool(self.progress.get("queue"))
+
 
 class Jobs:
     """Background work. Jobs that use the chat model run one at a time (a local model serves one request well);
@@ -213,6 +221,34 @@ class App:
         job.queue = q
         return job
 
+    def job_views(self, active_only: bool = False) -> list[dict]:
+        """The jobs for the page, each with `on_hold` (0.12): its work waits in the queue for Claude Code and nothing
+        answers it (Claude Code not started from ENLENS, no session typed in Claude Code taking or answering a batch),
+        so it is not running, whatever its state says. Asked once per project."""
+        answering: dict[str, bool] = {}
+        out = []
+        for j in self.jobs.all():
+            if active_only and j.state not in ("queued", "running"):
+                continue
+            v = j.view(full=False)
+            v["on_hold"] = False
+            if j.project and j.waits_on_queue():
+                if j.project not in answering:
+                    answering[j.project] = self.queue_answering(j.project)
+                v["on_hold"] = not answering[j.project]
+            out.append(v)
+        return out
+
+    def queue_answering(self, name: str) -> bool:
+        """0.12: whether something answers the project's queue now: Claude Code started from ENLENS, or a session
+        typed in Claude Code. When that cannot be told, the work is not called on hold."""
+        from .. import claude_setup
+
+        try:
+            return bool(claude_setup.run_state(name).get("running")) or taskqueue.answering(home.open_project(name))
+        except Exception:  # noqa: BLE001 - a project that cannot be opened: say nothing rather than "on hold"
+            return True
+
     def project_summary(self, name: str) -> dict:
         try:
             ws = home.open_project(name)
@@ -249,7 +285,7 @@ class App:
                 "key": {"session": bool(self.session_key), "env": bool(home.env_key()), "stored": bool(home.stored_key())},
                 "statuses": [{"status": k, "text": v, "help": claimcheck.STATUS_HELP.get(k, ""),
                               "next": claimcheck.STATUS_NEXT.get(k, "")} for k, v in claimcheck.STATUS_TEXT.items()],
-                "jobs": [j.view(full=False) for j in self.jobs.all() if j.state in ("queued", "running")],
+                "jobs": self.job_views(active_only=True),
                 "queue": self._queue_summary(current)}
 
     def _queue_summary(self, name: str | None) -> dict | None:
@@ -2485,7 +2521,7 @@ class Handler(BaseHTTPRequestHandler):
         return {"saved": True, "verdict": verdict}
 
     def get_jobs(self, q):
-        return {"jobs": [j.view(full=False) for j in self.app.jobs.all()]}
+        return {"jobs": self.app.job_views()}
 
     def get_job(self, job_id, q):
         return self.app.jobs.get(job_id).view()

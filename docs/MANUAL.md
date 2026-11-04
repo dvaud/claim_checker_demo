@@ -237,73 +237,97 @@ while it is still reading the prompt (0.11.1). You can use the rest of the app m
 
 ### Reading and reviewing a result
 
-The answer box says:
+The page reads from top to bottom in four parts (0.12): the answer, the evidence, the other AI models, then notes and
+downloads. *Technical details* and *Delete this result* close it. It keeps to a few type sizes; green, amber and red
+are the judgements (supports, partly supports, contradicts) and purple is mixed evidence.
 
-- the answer, shown as **the AI's first reading** (an outlined badge) until you have reviewed the judgements, then
-  *Partly reviewed by you* and *Reviewed by you*;
-- what it rests on: the documents by name and the number of excerpts that count, with a caution when it rests on a
-  single document or when one or two unchecked AI judgements decide it;
-- how many judgements were too uncertain to count, how many excerpts you reviewed and changed, and how often you
-  agreed with the AI (an agreement figure, like an inter-coder check);
-- *What to do next*, and your strictness (*Change in Settings*).
+**The answer** is one card:
 
-**Who says what** names the documents on each side with their locations. Below, every excerpt read is shown with
-its judgement, the AI's certainty, whether it counts, the document and where in it ("quote in paragraph 6 of 8 · the
-excerpt covers paragraphs 1–6", "quote on page 2"), and the excerpt with the verified quote highlighted. *Show more
-of the document* shows the paragraphs around it; *Open the whole document here* shows the document by paragraph or
-page, with the quote highlighted, and *Back to the result* returns to the excerpt. Excerpts the AI found not about
-the hypothesis are listed at the bottom, so you can check those too. Excerpts are shown with their paragraphs and
-headings as in the document. **Open the original** opens the file itself: a PDF at the page, a text file with the
-quote highlighted, a web page scrolled to the quote (in browsers that support it).
+- the answer, and beside it who judged it: *judged by the AI*, *partly reviewed by you* or *reviewed by you* (hover
+  it for the AI model);
+- **who says what**: one row per document, with a coloured dot per side and where, e.g. *supports it: paragraph 9 ·
+  contradicts it: paragraph 5*. A hypothesis checked in parts lists its parts instead, each with its answer and its
+  documents for and against, under one line on which part decides the answer (every part must hold); click a part to
+  go to its evidence;
+- at most one caution, when the answer is fragile: *It rests on a single document and on two excerpts you have not
+  reviewed* (or one of the two; for a hypothesis checked in parts, only the parts that decide the answer count);
+- documents added to the project since the check, when there are any, with *Read them* (a further search for this
+  result; the check is not run again, so your reviews are kept);
+- **Next to review**: it goes to the excerpts you have not reviewed, the judgements that count in the answer first
+  (where a second opinion differs, or the AI flagged another group, before the others), then the rest, then those you
+  only commented on. Past the evidence it goes on to the excerpts the AI found not about the hypothesis.
 
-An orange **About another group** flag means the AI thinks the excerpt is about another group, place or period than
-your hypothesis (fully remote workers for a hypothesis about hybrid work): it then counts at most as partly
-supporting. Decide yourself whether it is about your hypothesis.
+When the AI was too unsure to count any excerpt, the card says so in one sentence, and *Next to review* takes you to
+them: your own judgement always counts.
 
-**Ask the AI to read this again** sends one excerpt back to the AI, alone, with your comment as a hint (why you doubt
-it). The card then says "Read again by the AI: was Supports (75%), now Partly supports (59%)", with the AI's reason;
-the earlier judgements are under *Technical details*. Your own judgement, if you gave one, still counts.
+**The evidence** has **Cards** and a compact **Table** (one row per excerpt, with your decisions; click a row to open
+its card) beside its title, and two lines under it: how many excerpts count at your strictness (the (?) explains
+strictness and offers *Try another strictness on this page*), and *Every quote is checked against its document; your
+judgement overrides the AI's.* A hypothesis checked in parts shows each part under its own heading (*Part 1: …*) with
+its own documents above its excerpts.
 
-To review, use **Agree with the AI** or **Judge it differently** (supports, partly supports, contradicts, not about
-this; each saves at once, with Undo). Add a comment, and **mark the sentence you mean** (select it in the excerpt, or
-pick it from a list) when the AI highlighted the wrong one. Your judgement replaces the AI's in the answer and in the
-downloads, always counts whatever the strictness, and shows "AI said: …" beside it. *Go back to the AI's judgement*
-undoes a change. *Next to review* goes to the excerpts you have not reviewed, those that count first. Agreeing with
-an uncertain AI judgement makes it yours, so it then counts. A comment saved without a judgement stays a comment: it
-is not a review and does not count as agreeing. After a save, the card keeps its place on the screen and says where
-it moved in the list.
+Each excerpt card shows, in this order: its judgement with at most two quiet facts (*Certainty: medium*, *Certainty:
+low · not counted* when it is below your strictness, *Second opinion: partly supports*, *You agreed with the AI*,
+*Your judgement (the AI said …)*); the document and where the quote is (*paragraph 6 of 8*); and the quote,
+highlighted in its judgement's colour, with one sentence before and after it (on a phone, the sentence before it).
+Cards that do not count come after those that do; cards you have judged sit back (no fill, a dashed edge). One row of
+actions, the same on every card:
 
-**Keep this result up to date** (under the answer):
+- **Agree** makes the AI's judgement yours (it then counts, whatever the AI's certainty); a note at the bottom says
+  so, and whether the answer changed, with *Undo*. The card then says *You agreed with the AI*, and the button
+  becomes **Take back**.
+- **Not about this** dismisses the excerpt in one click (0.12): your judgement *Not about this* moves it to the
+  excerpts that are not about the hypothesis, under the cards. *Undo* is offered.
+- **Judge differently…** (*Edit judgement…* once you have judged; *Judge this excerpt…* when no AI may read it): the
+  other judgements, each with its colour dot, under a line that says what your judgement is now (each saves at once,
+  with *Undo*), a comment (saved on Enter or when you leave the field), and the sentence you mean when the AI
+  highlighted the wrong one (select it in the excerpt, or pick it from a list). Your judgement replaces the AI's in
+  the answer and in the downloads, always counts whatever the strictness, and the card shows what the AI said. A
+  comment without a judgement stays a comment: it is not a review.
+- **In context** shows the whole excerpt the AI read, with *Open the whole document at this place* (by paragraph or
+  page, the quote highlighted; *Back to the result* returns to the excerpt), *the original file* (a PDF at the page,
+  a text file with the quote highlighted, a web page scrolled to the quote in browsers that support it) and *a
+  highlighted copy* of the document (a PDF, or a web page for a text document), with this hypothesis's judgements
+  highlighted.
+- **Details**: *Ask the AI to read this again* (one excerpt, alone, with your comment as a hint; the card then says
+  what it was and what it is now, and your own judgement still counts), the AI's certainty as a percentage, how the
+  excerpt was found, and the technical facts (span, id, earlier judgements).
 
-- When documents were added to the project after the check, it says how many and how many have matching excerpts.
-  *Read them* reads those documents as a further search; the check is not run again, so your reviews are kept.
-- **Ask another AI model to read these excerpts** offers two different things, side by side (0.11.2):
-  - **Stronger model** (*replaces the AI's judgements*): *Ask a stronger model* has the model checks step up to (on
-    Claude the auditor, Opus or Fable) read every search of the result again, once. Its judgements take the place of
-    the first AI's, so the answer can change. The answer then shows the stronger model's reading with a small mark
-    beside it, e.g. **Supported** *at first: partly supported* (hover or click it for which models and how many
-    judgements changed), and each changed excerpt shows both readings ("Read again by a stronger model: was Partly
-    supports, now Supports"). The same happens on its own when an answer was unsure or rejected twice. Your own
-    judgements stay and count either way. Not offered when the AI chosen in Settings has no stronger model.
-  - **Second opinion** (*only for comparison*): *Get a second opinion* has another model (on Claude the auditor; with
-    a local model, a second local model chosen there or in Settings) read the same excerpts on its own. Each card
-    then shows both readings in one line, "Second opinion differs · The AI: Supports (80%) · Second opinion (opus):
-    Partly supports (70%)" (and yours, when you judged it), and, when the second opinion points to another sentence,
-    *Highlight the quote of: The AI | Second opinion* switches which quote is highlighted. *Next to review* goes to
-    the excerpts where the second opinion differs first. A second opinion never changes the answer; yours does. With
-    local models only one is kept in memory at a time, so this takes a while.
+After a save, the card keeps its place on the screen and says where it moved in the list. *About another group* under
+a quote means the AI thinks the excerpt is about another group, place or period than your hypothesis (fully remote
+workers for a hypothesis about hybrid work): it then counts at most as partly supporting. Excerpts the AI found not
+about the hypothesis are folded under the cards, so you can check those too.
 
-**Look harder**: *Look for more evidence* reads the next excerpts that match the same words; *Search with other
-words* reads excerpts containing words you type (documents often say "telework" where the hypothesis says "remote
-work"). New excerpts are marked *new*, a *Just now* line says what was found, and each search shows the words it
-used. When everything that matches has been read, the button says so.
+Under the cards, **Read more excerpts** reads the next excerpts that match the same words; **Search with other
+words** reads excerpts containing words you type (documents often say "telework" where the hypothesis says "remote
+work"). New excerpts are marked *new*, a *Just now* line in the answer says what was found, and when everything that
+matches has been read, the line above the buttons says so.
 
-Add **notes** (saved automatically). **Download for Excel (.xlsx)**: a *Summary* sheet (one row per hypothesis:
-answer, answer per part, documents per side, excerpts counted and too uncertain, your reviews and changes, notes,
-strictness, the AI model for a methods section) and an *Excerpts* sheet (every excerpt read: judgement, judged by
-you or the AI, the AI's own judgement and certainty, counted or not, quote and who chose it, document, where, your
-comment, the AI's note about another group, its earlier judgement when it read an excerpt again, the second model's
-judgement when one was asked, the full excerpt). CSV and JSON are under *Technical details*, for programmers.
+**Ask another AI model** has two rows (0.11.2); the (?) explains the difference:
+
+- **Ask a stronger model** (*it replaces the AI's judgements; the answer can change*): the model checks step up to
+  (on Claude the auditor, Opus or Fable) reads every search of the result again, once. Its judgements take the place
+  of the first AI's. The answer then shows a small mark beside it, e.g. **Supported** *at first: partly supported*
+  (hover or click it for which models and how many judgements changed), and each changed excerpt shows both readings.
+  The same happens on its own when an answer was unsure or rejected twice. Your own judgements stay and count either
+  way. When the AI chosen in Settings has no stronger model, the card says so, with *Set one* (Settings).
+- **Get a second opinion** (*shown only for comparison: it never changes the answer*): another model (on Claude the
+  auditor; with a local model, a second local model chosen there or in Settings) reads the same excerpts on its own.
+  Each card then says *Second opinion: …* beside the AI's judgement, *Next to review* goes to the excerpts where it
+  differs first, and when it points to another sentence, *Highlight the quote of: the AI / the second opinion*
+  switches which quote is highlighted. With local models only one is kept in memory at a time, so this takes a while.
+
+Add **notes** (saved as you type). **Download**, one link per file: *Excel (.xlsx)*: a *Summary* sheet (one row per
+hypothesis: answer, answer per part, documents per side, excerpts counted and too uncertain, your reviews and
+changes, notes, strictness, the AI model for a methods section) and an *Excerpts* sheet (every excerpt read:
+judgement, judged by you or the AI, the AI's own judgement and certainty, counted or not, quote and who chose it,
+document, where, your comment, the AI's note about another group, its earlier judgement when it read an excerpt
+again, the second model's judgement when one was asked, the full excerpt); *Highlighted documents (.zip)*; *Whole
+project (.zip)*; and *CSV · JSON (for programmers)*. *Technical details* has the strictness slider (this page only),
+the models and settings of the check, what each search looked for and the AI's note on what it read.
+
+A check still **waiting for Claude Code** shows only the waiting card (with *Start Claude Code*), any excerpts
+already read, and your notes; the rest appears when the answer is in.
 
 ### Results and checking several
 
@@ -658,6 +682,10 @@ answered again. An unsure answer (certainty under 0.6), or one rejected twice, g
 
 You follow the progress in ENLENS: on the page that waits, and in the **queue panel** under the jobs in the
 sidebar (per kind: waiting, being answered, done, the model and helper, the estimate; *Do first*, *Hold*, *Remove*).
+Work that waits for Claude Code while nothing answers it (Claude Code not started from ENLENS, no `/enlens-run`
+taking or answering a batch, no answer in the last two minutes) is **not running**, and the jobs line above the queue
+panel says so in amber with a pause mark: *1 task not running · Waiting for Claude Code to start*, with *Start Claude
+Code* in its panel (0.12). Once Claude Code takes the work it says *1 task running* again, with the pulsing dot.
 A check waits under Results as *Waiting for Claude Code*: its search runs in ENLENS at once, and only its search
 words, parts and judging wait. It finishes when the answers arrive, even if the app was closed meanwhile.
 
