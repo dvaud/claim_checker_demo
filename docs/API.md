@@ -143,6 +143,27 @@ kept in memory for this run only. `DELETE /api/settings/key` forgets both. 403 w
 `POST /api/quit` → `{"stopping": true, "jobs_stopped": n}`: stops the app ("Quit ENLENS" in the sidebar) once the
 running jobs have stopped (at most 20 s); 409 when this copy was not started in a way that can be stopped from here.
 
+"Update ENLENS" in the sidebar (0.13.1). `GET /api/state` says `can_quit` and `can_restart`: whether this copy can stop
+itself, and restart itself (started with `enlens-gui` or from the ENLENS icon; the button is shown only then).
+
+- `GET /api/update` → `{"available": bool, "on_disk": bool, "version": running, "latest": "0.13.2" | null,
+  "changes": n | null}`: whether a newer ENLENS waits, the way this copy was installed (the latest GitHub Release
+  for the one-line install: `latest`; new commits on the branch a git copy follows: `changes`), or is installed
+  already while this copy kept running (`on_disk`, `latest` is that version). 409 with the reason when it cannot be
+  updated from here (files of a git copy edited by hand, a download package, no network).
+- `POST /api/update` `{}` → `{"updated": true, "restarting": true, "from", "version", "jobs_stopped": n}`: installs it
+  as `enlens update` does, then restarts on the same address and port (running jobs are stopped first, as for Quit;
+  at most 20 s); `{"updated": false, "restarting": false, "version"}` when nothing newer waits. 409 when the update
+  fails (nothing restarts; the reason is the error), on Windows with the one-line install (quit, then run the install
+  line again), when this copy cannot restart itself, and for a second request while one is updating or restarting.
+- `POST /api/restart` `{}` → `{"restarting": true, "jobs_stopped": n}`: restarts into the version on disk (*Restart
+  now* on the banner *ENLENS X is installed, but Y is still running*); 409 when this copy cannot restart itself.
+
+The restarted copy has a new access token: the page waits until `/` answers with a new `enlens-token` (or answers
+again after not answering) and reloads. On macOS and Linux the same process becomes the new version (`os.execv`),
+in the same terminal; on Windows a new one is started and the old one ends. Started from the icon, it is restarted
+as the icon starts it (`--launcher`, output to `logs/enlens.log`), without opening a new browser tab.
+
 `GET /api/servers` → local model servers running now (probed in parallel, < 1 s):
 ```json
 {"servers": [{"kind": "ollama", "url": "http://localhost:11434", "version": "0.12.3",

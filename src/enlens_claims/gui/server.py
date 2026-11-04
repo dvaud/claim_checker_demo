@@ -20,6 +20,7 @@ import csv
 import io
 import json
 import mimetypes
+import os
 import re
 import secrets
 import sys
@@ -173,6 +174,8 @@ class App:
         self.port = 0
         self.launcher = False      # started from the ENLENS icon (launcher.py)
         self.stop = None           # stops the server ("Quit ENLENS"); set by serve()
+        self.restart = None        # 0.13.1: stops the server and starts the version on disk in its place (serve())
+        self.updating = threading.Lock()  # 0.13.1: one "Update and restart" at a time
 
     # -- helpers ---------------------------------------------------------------------------------
     def settings(self) -> dict:
@@ -278,6 +281,7 @@ class App:
                 "backend_label": home.backend_label(s), "backend_labels": home.BACKEND_LABELS,
                 "projects": projects, "project": current, "local_only": home.local_only(),
                 "launcher": self.launcher, "can_quit": self.stop is not None,
+                "can_restart": self.restart is not None,
                 "context": home.context_plan(s),
                 "restricted": home.restricted_choice(s),   # 0.11: the local model for restricted documents
                 "ocr": ingest.ocr_status(),
@@ -1503,6 +1507,9 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", r"/api/settings/key", "post_key"),
     ("DELETE", r"/api/settings/key", "delete_key"),
     ("POST", r"/api/quit", "post_quit"),
+    ("POST", r"/api/restart", "post_restart"),
+    ("GET", r"/api/update", "get_update"),
+    ("POST", r"/api/update", "post_update"),
     ("GET", r"/api/servers", "get_servers"),
     ("POST", r"/api/servers/test", "post_test"),
     ("GET", r"/api/projects", "get_projects"),
@@ -1842,19 +1849,79 @@ class Handler(BaseHTTPRequestHandler):
         self._body()
         if self.app.stop is None:
             raise ApiError(409, "This app was not started in a way that can be stopped from here.")
+        return {"stopping": True, "jobs_stopped": self._stop_jobs_then(self.app.stop)}
+
+    def _stop_jobs_then(self, finish) -> int:
+        """Stop the running jobs, then call `finish` (stop or restart the app) once this answer has gone out and the
+        stopped jobs have cleaned up (at most 20 s). Returns how many jobs were stopped."""
         running = [j for j in self.app.jobs.all() if j.state in ("queued", "running")]
         for j in running:
             j.cancel.set()
 
-        def later():  # after this answer has gone out, and once stopped jobs have cleaned up (at most 20 s)
+        def later():
             t0 = time.time()
             time.sleep(0.4)
             while any(j.state in ("queued", "running") for j in running) and time.time() - t0 < 20:
                 time.sleep(0.2)
-            self.app.stop()
+            finish()
 
         threading.Thread(target=later, daemon=True).start()
-        return {"stopping": True, "jobs_stopped": len(running)}
+        return len(running)
+
+    def post_restart(self, q):
+        """0.13.1: stop the app and start the version on disk in its place, on the same port (the page reloads)."""
+        self._body()
+        if self.app.restart is None:
+            raise ApiError(409, "This app was not started in a way that can restart itself. Stop it and start it again.")
+        return {"restarting": True, "jobs_stopped": self._stop_jobs_then(self.app.restart)}
+
+    def get_update(self, q):
+        """0.13.1: whether a newer ENLENS waits: the latest GitHub release (the one-line install), or new commits on
+        the branch a git copy follows. A newer version already on disk (updated while this copy ran) counts."""
+        from .. import update as upd
+
+        installed = _installed_version()
+        if upd.version_tuple(installed) > upd.version_tuple(__version__):
+            return {"available": True, "on_disk": True, "version": __version__, "latest": installed}
+        try:
+            r = upd.update(check_only=True)
+        except upd.UpdateError as e:
+            raise ApiError(409, str(e)) from e
+        waiting = r.get("waiting")
+        return {"available": bool(waiting), "on_disk": False, "version": __version__,
+                "latest": waiting if isinstance(waiting, str) else None,
+                "changes": waiting if isinstance(waiting, int) else None}
+
+    def post_update(self, q):
+        """0.13.1, "Update and restart": install the newest ENLENS the way this one was installed (update.py), then
+        restart into it. Nothing restarts when ENLENS is up to date or the update fails."""
+        from .. import update as upd
+
+        self._body()
+        if self.app.restart is None:
+            raise ApiError(409, "This app was not started in a way that can restart itself. Run `enlens update` in a "
+                                "terminal, then start ENLENS again.")
+        if not self.app.updating.acquire(blocking=False):
+            raise ApiError(409, "ENLENS is already being updated.")
+        restarting = False
+        try:
+            installed = _installed_version()
+            if upd.version_tuple(installed) > upd.version_tuple(__version__):  # on disk already: a restart is all
+                r = {"updated": True, "from": __version__, "version": installed}
+            else:
+                try:
+                    r = upd.update()
+                except upd.UpdateError as e:
+                    raise ApiError(409, str(e)) from e
+            if not r.get("updated"):
+                return {"updated": False, "restarting": False, "version": __version__}
+            stopped = self._stop_jobs_then(self.app.restart)
+            restarting = True
+            return {"updated": True, "restarting": True, "from": r.get("from", __version__), "version": r["version"],
+                    "jobs_stopped": stopped}
+        finally:
+            if not restarting:  # kept while restarting: a second click must not update again
+                self.app.updating.release()
 
     def get_servers(self, q):
         return self.app.servers()
@@ -2866,6 +2933,13 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
         return 1
     app.launcher = launcher
     app.stop = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()
+    again = threading.Event()
+
+    def restart():  # 0.13.1: stop, then start the version on disk in this one's place (after serve_forever)
+        again.set()
+        app.stop()
+
+    app.restart = restart
     url = f"http://{'127.0.0.1' if host in ('127.0.0.1', '0.0.0.0', '::') else host}:{srv.server_address[1]}/"
     if launcher and host == "127.0.0.1":
         from . import launcher as _l
@@ -2894,5 +2968,37 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
             from . import launcher as _l
 
             _l.clear_info()
+    if again.is_set():
+        _restart(restart_command(host, app.port, launcher))
     print("ENLENS stopped.")
     return 0
+
+
+def restart_command(host: str, port: int, launcher: bool) -> list[str]:
+    """0.13.1: how the app starts again after "Update and restart": the same Python (the update installed into it),
+    address and port, no new browser tab (the open page reloads itself), and as the icon started it if it did."""
+    cmd = [sys.executable, "-m", "enlens_claims.gui.launch", "--host", host, "--port", str(port), "--headless"]
+    if launcher:
+        cmd += ["--launcher", "--no-start-ollama"]  # Ollama, if it was needed, is running already
+    return cmd
+
+
+def _restart(cmd: list[str]) -> None:
+    """Start the new version. On macOS and Linux this process becomes it (os.execv: same process, same terminal,
+    same Ctrl+C); Windows has no real exec, so there the new one is started beside this one, which then ends. The
+    data folder and local-only setting carry over in the environment (ENLENS_HOME, ENLENS_LOCAL_ONLY)."""
+    print("Restarting ENLENS with the version now installed…", flush=True)
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except (OSError, ValueError):
+        pass
+    try:
+        if os.name == "nt":
+            import subprocess
+
+            subprocess.Popen(cmd, close_fds=True)
+            return
+        os.execv(cmd[0], cmd)
+    except OSError as e:
+        print(f"Could not start ENLENS again ({e}). Open it again from its icon or with enlens-gui.", file=sys.stderr)

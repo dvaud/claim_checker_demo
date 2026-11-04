@@ -29,13 +29,16 @@ Used ENLENS on another computer? Choose *Import from another computer* on the fi
 
 ## Update
 
-1. **Quit ENLENS** (*Quit ENLENS* at the bottom of the sidebar).
-2. **Get the new version:** in Terminal or PowerShell type `enlens update`, or paste the install line again. On
-   Windows, use the install line.
-3. **Open ENLENS again** from its icon.
+1. In ENLENS, choose **Update ENLENS** at the bottom of the sidebar.
+2. If a new version is ready, choose **Update and restart**. ENLENS installs it and starts again; the page opens the
+   new version by itself.
+
+On **Windows** (installed with the install line), quit ENLENS (*Quit ENLENS*) and paste the install line again in
+PowerShell instead. Still on 0.13.0 or earlier (there is no *Update ENLENS* button yet)? Quit ENLENS, type
+`enlens update` in Terminal or PowerShell (or paste the install line again), and open ENLENS again from its icon.
 
 Your projects and settings (in the folder `enlens` in your home folder) are never touched. Installed from a git copy
-instead? `enlens update` pulls the new version (see *For developers*).
+instead? *Update ENLENS* and `enlens update` pull the new version (see *For developers*).
 
 ## New in 0.13: your Zotero bibliography next to your documents
 
@@ -53,6 +56,9 @@ instead? `enlens update` pulls the new version (see *For developers*).
   go, read where Zotero keeps them, each linked to its work. Documents you add later are matched as they come in.
 - **Documents Zotero does not have** are listed too, so you see the gaps in your library as well.
 - Your decisions are kept when you update from Zotero or switch to another collection or file.
+- **Update ENLENS from the app (0.13.1).** *Update ENLENS* at the bottom of the sidebar looks for a new version,
+  installs it and restarts ENLENS; the open page comes back by itself. No terminal needed. When a new version was
+  installed while ENLENS kept running, the notice at the top of every page has *Restart now*.
 
 ## Earlier releases
 

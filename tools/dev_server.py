@@ -20,6 +20,11 @@
   remote-work demo corpus (use it with `--corpus social` or `--fresh-user`): one work whose PDF is the very file in
   the project, three found by their title, one with a PDF to add, works still to find. `--zotero api_off` is a Zotero
   whose box "Allow other applications…" is not ticked, `--zotero old` a Zotero 6, `--zotero closed` no Zotero open.
+- with `--update` (0.13.1): "Update ENLENS" in the sidebar finds a stand-in newer release (nothing is fetched or
+  installed: the install takes 2 s) and restarts the app in this process, with a new token, so the page's wait and
+  reload can be watched. `--update commits` is a git copy with 3 new commits, `--update on-disk` a newer version
+  installed while this one ran (the banner with *Restart now*), `--update none` an ENLENS that is up to date, and
+  `--update fails` an install that fails.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,6 +80,8 @@ def main() -> int:
                          "AI, one no AI), Claude Code is the AI and the fake local model reads the restricted one")
     ap.add_argument("--zotero", nargs="?", const="ready", choices=["ready", "api_off", "old", "closed"],
                     help="0.13: a stand-in Zotero (its local API) with a library for the remote-work demo corpus")
+    ap.add_argument("--update", nargs="?", const="release", choices=["release", "commits", "on-disk", "none", "fails"],
+                    help="0.13.1: Update ENLENS finds a stand-in newer version and restarts the app in this process")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -154,7 +162,6 @@ def main() -> int:
         home.update_settings({"allow_claude_code": True, "backend": "claude_code"})
     if a.claude_install:
         import subprocess
-        import time
 
         from enlens_claims import claude_setup
 
@@ -173,8 +180,6 @@ def main() -> int:
 
         claude_setup._open_window = sign_in_later
     if a.claude_code:
-        import time
-
         import fake_claude_code
 
         def session():
@@ -204,19 +209,86 @@ def main() -> int:
                 url = f"http://127.0.0.1:{sock.getsockname()[1]}"
         os.environ["ENLENS_ZOTERO_URL"] = url
         print(f"stand-in Zotero: {url} ({a.zotero})")
-    srv, app = make_server("127.0.0.1", a.port)
-    app.stop = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()  # "Quit ENLENS" works here too
-    app.launcher = a.fresh_user  # a new user starts it from the ENLENS icon
-    print(f"data folder: {home_dir}\nfake Ollama: {fake_url}\napp: http://127.0.0.1:{srv.server_address[1]}/\n"
-          f"token: {app.token}", flush=True)
+    if a.update:
+        stand_in_update(a.update)
+    port = a.port
     try:
-        srv.serve_forever(poll_interval=0.3)
-    except KeyboardInterrupt:
-        pass
+        while True:
+            srv, app = make_server("127.0.0.1", port)
+            app.stop = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()  # "Quit ENLENS" works too
+            app.launcher = a.fresh_user  # a new user starts it from the ENLENS icon
+            again = threading.Event()
+            drop = None
+            if a.update:  # 0.13.1: "Update ENLENS" restarts the app in this process, with a new token
+                app.restart = lambda: (again.set(), app.stop())
+                drop = track_connections(srv)
+            port = srv.server_address[1]
+            print(f"data folder: {home_dir}\nfake Ollama: {fake_url}\napp: http://127.0.0.1:{port}/\n"
+                  f"token: {app.token}", flush=True)
+            try:
+                srv.serve_forever(poll_interval=0.3)
+            except KeyboardInterrupt:
+                break
+            finally:
+                srv.server_close()
+            if not again.is_set():
+                break
+            drop()
+            time.sleep(1.5)  # as a real restart takes a moment
+            print("restarted (stand-in update)", flush=True)
     finally:
-        srv.server_close()
         fake.shutdown()
     return 0
+
+
+def track_connections(srv):
+    """0.13.1: a function that closes the server's open connections. A real restart replaces the process, which
+    closes them; here the old app's threads would go on answering the page's kept-alive connection with its old
+    token, and the page would never see the restarted app."""
+    import socket
+    import weakref
+
+    conns = weakref.WeakSet()
+    process = srv.process_request
+
+    def track(request, client_address):
+        conns.add(request)
+        process(request, client_address)
+
+    def drop():
+        for c in list(conns):
+            try:
+                c.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    srv.process_request = track
+    return drop
+
+
+def stand_in_update(mode: str) -> None:
+    """0.13.1: `--update`: what update.update() would say, without GitHub, git or uv."""
+    from enlens_claims import __version__, update
+    from enlens_claims.gui import server
+
+    nums = [int(x) for x in __version__.split(".")]
+    newer = ".".join(map(str, nums[:-1] + [nums[-1] + 1]))
+    if mode == "on-disk":
+        server._installed_version = lambda: newer
+        return
+
+    def fake(check_only: bool = False, **_kw) -> dict:
+        if mode == "none":
+            return {"updated": False, "version": __version__, "message": f"ENLENS {__version__} is up to date."}
+        if check_only:
+            return {"updated": False, "version": __version__, "waiting": 3 if mode == "commits" else newer,
+                    "message": "A newer ENLENS is waiting."}
+        time.sleep(2)
+        if mode == "fails":
+            raise update.UpdateError("Could not ask GitHub for the newest ENLENS (URLError: timed out). Are you online?")
+        return {"updated": True, "from": __version__, "version": newer, "message": f"ENLENS updated to {newer}."}
+
+    update.update = fake
 
 
 if __name__ == "__main__":

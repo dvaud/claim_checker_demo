@@ -74,6 +74,15 @@ same Python only when the requirements changed (with the extras already installe
 plugin if one was set up, and says to restart the app if it is running. It changes nothing if files of the copy
 were edited by hand, and never touches the data folder. `enlens update --check` only looks.
 
+**Update ENLENS in the app (0.13.1).** *Update ENLENS* at the bottom of the sidebar does the same as `enlens update`
+without a terminal: it looks for a new version (the latest release, or new commits for a git copy), says which one is
+ready, and with *Update and restart* installs it and restarts ENLENS on the same address. The open page shows
+*Starting ENLENS …* and opens the new version by itself; started from the icon, ENLENS is restarted the same way,
+without a new browser tab. Anything still running (a check, documents being added) stops first, as with *Quit
+ENLENS*, and the dialog says so. If the update fails, the reason is shown and nothing restarts. With the one-line
+install on Windows it says to quit ENLENS and run the install line again (a running program cannot replace itself
+there).
+
 **An icon instead of the terminal.** The one-line install makes it. From a git copy, run once, as the person who will
 use the app:
 
@@ -86,7 +95,8 @@ Start menu; Linux: also in the applications menu). Double-clicking it starts ENL
 terminal window, and opens it in the browser; double-clicking it again while it runs just opens it again. After an
 update (`enlens update`, `git pull`, the install line again), the copy still running is the old version: the icon
 then quits it and starts the new one (0.10.2), unless a check or documents being added still run in it, in which
-case it opens it and every page says *ENLENS X is installed, but Y is still running*, with a *Quit ENLENS* button;
+case it opens it and every page says *ENLENS X is installed, but Y is still running*, with a *Restart now* button
+(0.13.1; before, *Quit ENLENS*);
 the version label in Settings says the same. The icon's picture ships with ENLENS (0.10.2; before, it needed the
 Python package Pillow, and without it the icon was blank); an icon made without its picture gets it the next time
 ENLENS starts. If the
@@ -182,7 +192,8 @@ that it never uses the AI (0.9).
 
 **The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, *Bibliography* (0.13), then **Explore the documents**
 (Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results). At the
-bottom, under the line that says where text goes, *Settings*, *Theme* and *Quit ENLENS* sit together (0.10.1); every
+bottom, under the line that says where text goes, *Settings*, *Theme*, *Update ENLENS* (0.13.1) and *Quit ENLENS*
+sit together (0.10.1); every
 *Settings* tab shows the version of ENLENS at the top right, and clicking it opens *Technical → Where your data is*
 (how this copy was installed and how to update it). The *Overview* shows every feature with one line on what it does, whether it uses the AI and what is
 already made in the project (a profile, a glossary, a set of themes, results), and the AI in use with what is left
@@ -1314,7 +1325,9 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | "Remove all documents" is refused | The project also holds results of the SDG pack (extracted claims, VCA verifications). Remove documents one by one, or run `enlens --ws FOLDER reset-corpus --yes` if you mean it. |
 | Empty document, or "Scanned: no text" | No text layer (scanned). Install Tesseract and the `ocr` extra (section 1) and add the file again, or run OCR yourself (`ocrmypdf in.pdf out.pdf`). |
 | The ENLENS icon is a blank square (macOS) or a plain shortcut (Windows) | It was made before 0.10.2 without Pillow. Open ENLENS once with 0.10.2 or later: it gives the icon its picture (macOS: if Finder still shows the blank one, `killall Finder`). Or make the icon again: `enlens-gui --make-launcher`. |
-| Settings shows an older version after updating | That copy was still running. Choose *Quit ENLENS*, then open ENLENS from its icon (0.10.2 does this by itself when nothing runs). |
+| Settings shows an older version after updating | That copy was still running. Choose *Restart now* on the notice at the top of the page (0.13.1), or *Quit ENLENS* and open ENLENS from its icon (0.10.2 does this by itself when nothing runs). |
+| *Update ENLENS* says it cannot update | It says why. Offline: try again later. Files of a git copy edited by hand: keep them with `git stash` (or undo them), then update. One-line install on Windows: choose *Quit ENLENS* and run the install line again in PowerShell. |
+| The page keeps saying *Starting ENLENS …* | After 90 seconds it says ENLENS did not come back: open it again from its icon (or with `enlens-gui`), and look at `logs/enlens.log` in the data folder for the reason. |
 | Double-clicking the ENLENS icon does nothing | Look at `logs/enlens.log` in the data folder. Run the install line again (one-line install), or `enlens-gui --make-launcher` again after moving or reinstalling Python (git copy). On macOS, if the icon was copied from another computer, right-click it and choose *Open* once. |
 | The install line stops with "does not match the release's checksum" | The download was cut off or changed on the way; nothing was installed. Run the line again later. |
 | The install line on Windows says uv could not install ENLENS | ENLENS is probably running: choose *Quit ENLENS* in it and run the line again. |

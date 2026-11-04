@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.13.1 (November 2026): update ENLENS from the app
+
+Updating meant quitting ENLENS, typing `enlens update` in Terminal or PowerShell (or pasting the install line again)
+and opening ENLENS again: three steps in two places, for researchers who rarely open a terminal. 0.13.1 adds
+**Update ENLENS** at the bottom of the sidebar: it looks for a newer version, installs it the way this ENLENS was
+installed, and restarts ENLENS on the same address. The open page waits and then opens the new version by itself.
+Projects, results and settings are never touched. Nothing about what is sent to an AI changed.
+
+**Update ENLENS.**
+- One click looks for a new version: the latest published release (one-line install), or new commits on the branch
+  a git copy follows. Up to date: a short message says so. Otherwise a dialog says which version is ready and what
+  will happen (*Update and restart*), and warns when a check or documents being added are still running: they stop,
+  as with *Quit ENLENS*, and a stopped check leaves nothing behind.
+- The update is the same as `enlens update`: the release's package checked against its checksums and installed with
+  uv, or `git pull` with the requirements reinstalled only when they changed. When it fails (offline, files of a git
+  copy edited by hand), the reason is shown and nothing restarts. With the one-line install on Windows, where a
+  running program cannot replace itself, it says to quit ENLENS and run the install line again.
+- The restart keeps the address and port, so the open tab finds the new version: while it restarts, the page says
+  *Starting ENLENS* with the new version's number and reloads by itself (after 90 s without an answer, it says how to
+  open ENLENS again). Started from the ENLENS icon, ENLENS is restarted as the icon starts it, without opening another
+  browser tab.
+- A second click while it updates is refused, so nothing is installed twice.
+
+**Restart now.** When ENLENS was updated while it kept running (`enlens update`, `git pull`, the install line), the
+notice *ENLENS X is installed, but Y is still running* now has **Restart now**, which starts the new version in its
+place, instead of *Quit ENLENS* and opening ENLENS again.
+
+**For developers.** `GET /api/update`, `POST /api/update` and `POST /api/restart` (`docs/API.md`); `GET /api/state`
+adds `can_restart`. `serve()` restarts with `os.execv` on macOS and Linux (the same process and terminal) and starts a
+new process on Windows; `restart_command()` builds the command. `tools/dev_server.py --update` is a stand-in update
+that restarts the dev server in place (`--update commits | on-disk | none | fails` for the other cases). The button
+and its endpoints come from Margin 0.2.1, where they were made first.
+
+**Tests:** `tests/test_0131_update_button.py`: the check (a newer release, new commits on a git copy, up to date, a
+reason it cannot update), *Update and restart* (installs once, then restarts once; a second click refused; nothing
+restarts when up to date or when the update fails, and it can be tried again), a newer version already on disk (only
+a restart), a copy that cannot restart itself, *Restart now*, the restart command, the page's button, the routes in
+`docs/API.md`, and a real ENLENS started as the icon starts it that restarts in place (same port, new token, the same
+process) and still quits cleanly. Checked in the browser with the stand-in update: the button, the dialog, the
+restart and the page coming back by itself, *Restart now* on the notice, a failed update; light and dark, 390 px.
+
+**Not yet done:** not tried against a real published release (the tests and the dev server use stand-ins for
+GitHub, git and uv), nor restarted from the real ENLENS icon on a Mac or on Windows. The first version with the
+button must still be installed the old way (`enlens update` or the install line); from 0.13.1 on, the button does it.
+
 ## 0.13.0 (November 2026): your Zotero bibliography next to your documents
 
 Researchers keep their literature in Zotero, and most of it has no PDF in the project: until now ENLENS knew only the

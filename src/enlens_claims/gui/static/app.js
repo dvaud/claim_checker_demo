@@ -331,10 +331,99 @@ function quitInit() {
   btn.addEventListener("click", () => quitApp());
 }
 
+// 0.13.1, "Update ENLENS": installs the newest version (the latest GitHub release, or the branch a git copy follows)
+// and restarts into it; the page reloads by itself once the new version answers
+function updateInit() {
+  const btn = document.getElementById("update-btn");
+  if (!btn || !App.state || !App.state.can_restart) return;
+  replace(btn, icon("arrow-up", { size: 15 }), h("span", {}, "Update ENLENS"));
+  btn.hidden = false;
+  btn.addEventListener("click", () => updateApp(btn));
+}
+
+async function runningJobs() {
+  return (App.state.jobs || []).length || (await api("GET", "/api/jobs").then((r) => r.jobs.filter((j) => !TERMINAL.has(j.state)).length).catch(() => 0));
+}
+
+const RUNNING_NOTE = "Something is still running (a check, or documents being added). Restarting stops it; a check that is stopped leaves nothing behind. ";
+
+async function updateApp(btn) {
+  if (btn.disabled) return;
+  const label = btn.lastChild && btn.lastChild.textContent;
+  btn.disabled = true;
+  if (btn.lastChild) btn.lastChild.textContent = "Looking for updates…";
+  let info;
+  try { info = await api("GET", "/api/update"); } catch (e) { showError(e); return done(); }
+  if (!info.available) { toast(`ENLENS ${info.version} is the newest version.`, "ok"); return done(); }
+  const running = await runningJobs();
+  const what = info.on_disk ? `ENLENS ${info.latest} is installed already; ENLENS restarts to use it.`
+    : info.latest ? `ENLENS ${info.latest} is ready (you have ${info.version}). ENLENS downloads it, installs it and restarts.`
+    : `${info.changes} new change${info.changes === 1 ? " is" : "s are"} waiting (you have ${info.version}). ENLENS fetches ${info.changes === 1 ? "it" : "them"} and restarts.`;
+  const ok = await confirmDialog({
+    title: info.on_disk ? "Restart ENLENS?" : "Update ENLENS?",
+    message: `${what} ${running ? RUNNING_NOTE : ""}Your projects and results are kept.`,
+    confirmText: info.on_disk ? "Restart" : "Update and restart", danger: !!running,
+  });
+  if (!ok) return done();
+  if (btn.lastChild) btn.lastChild.textContent = info.on_disk ? "Restarting…" : "Updating…";
+  let r;
+  try { r = await api("POST", "/api/update", {}); } catch (e) { showError(e); return done(); }
+  if (!r.restarting) { toast(`ENLENS ${r.version} is the newest version.`, "ok"); return done(); }
+  waitForRestart(r.version);
+
+  function done() { btn.disabled = false; if (btn.lastChild && label) btn.lastChild.textContent = label; }
+}
+
+// the restart: a page that says so, then the new version once it answers (a new copy hands out a new token)
+async function restartApp(version) {
+  const running = await runningJobs();
+  const ok = await confirmDialog({
+    title: "Restart ENLENS?",
+    message: `ENLENS ${version} starts in place of ${App.state.version}. ${running ? RUNNING_NOTE : ""}Your projects and results are kept.`,
+    confirmText: "Restart", danger: !!running,
+  });
+  if (!ok) return;
+  try { await api("POST", "/api/restart", {}); } catch (e) { showError(e); return; }
+  waitForRestart(version);
+}
+
+function waitForRestart(version) {
+  const meta = (name) => (document.querySelector(`meta[name="${name}"]`) || {}).content || "";
+  const oldToken = meta("enlens-token");
+  const status = h("p", { class: "muted" }, "This page opens the new version by itself in a moment.");
+  document.title = "ENLENS is restarting";
+  replace(document.body, h("main", { class: "stopped-page", id: "main" },
+    h("img", { src: "/static/logo.svg", alt: "", width: 48, height: 48 }),
+    h("h1", {}, `Starting ENLENS ${version || ""}…`),
+    h("p", {}, "Your projects and results are kept."),
+    status));
+  const t0 = Date.now();
+  let wentDown = false;
+  const poll = async () => {
+    try {
+      const res = await fetch("/", { cache: "no-store" });
+      const page = res.ok ? await res.text() : "";
+      const token = (page.match(/name="enlens-token" content="([^"]*)"/) || [])[1];
+      if (page.includes('name="enlens-version"') && (wentDown || (token !== undefined && token !== oldToken))) {
+        location.reload();
+        return;
+      }
+    } catch (_) { wentDown = true; }
+    if (Date.now() - t0 > 90000) {
+      replace(status, App.state.launcher
+        ? "ENLENS did not come back. Open it again from its icon (on your Desktop, or in Applications)."
+        : "ENLENS did not come back. Start it again the way you started it before (for example with enlens-gui).");
+      return;
+    }
+    setTimeout(poll, 800);
+  };
+  setTimeout(poll, 1200);
+}
+
 // `reason`: 0.10.2, why the person is asked to quit (a newer version is installed), shown in the dialog
 async function quitApp(reason = "") {
   {
-    const running = (App.state.jobs || []).length || (await api("GET", "/api/jobs").then((r) => r.jobs.filter((j) => !TERMINAL.has(j.state)).length).catch(() => 0));
+    const running = await runningJobs();
     const ok = await confirmDialog({
       title: "Quit ENLENS?",
       message: reason + (running
@@ -364,12 +453,14 @@ function renderUpdateBanner() {
   const st = App.state || {};
   const now = st.installed_version;
   if (!now || !st.version || now === st.version) { clear(box); return; }
-  const how = st.can_quit
-    ? `Choose Quit ENLENS, then open ENLENS again${st.launcher ? " from its icon" : ""}.`
+  // 0.13.1: a restart, where this copy can restart itself; quitting otherwise
+  const how = st.can_restart ? "Restart it to use the new version."
+    : st.can_quit ? `Choose Quit ENLENS, then open ENLENS again${st.launcher ? " from its icon" : ""}.`
     : "Stop it and start it again.";
   replace(box, h("div", { class: "notice notice-info update-banner", role: "status" }, icon("refresh"),
     h("div", {}, h("p", {}, h("strong", {}, `ENLENS ${now} is installed, but ${st.version} is still running.`), ` ${how}`)),
-    st.can_quit ? h("button", { class: "btn btn-sm", type: "button", onclick: () => quitApp(`ENLENS ${now} starts when you open it again. `) }, icon("power", { size: 13 }), "Quit ENLENS") : null));
+    st.can_restart ? h("button", { class: "btn btn-sm", type: "button", onclick: () => restartApp(now) }, icon("refresh", { size: 13 }), "Restart now")
+    : st.can_quit ? h("button", { class: "btn btn-sm", type: "button", onclick: () => quitApp(`ENLENS ${now} starts when you open it again. `) }, icon("power", { size: 13 }), "Quit ENLENS") : null));
 }
 
 function closeDrawer() {
@@ -437,6 +528,7 @@ async function boot() {
     return;
   }
   renderJobs();
+  updateInit();
   quitInit();
   route();
   // keep the sidebar fresh when the window regains focus
