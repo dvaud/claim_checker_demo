@@ -247,8 +247,8 @@ are the judgements (supports, partly supports, contradicts) and purple is mixed 
   it for the AI model);
 - **who says what**: one row per document, with a coloured dot per side and where, e.g. *supports it: paragraph 9 ·
   contradicts it: paragraph 5*. A hypothesis checked in parts lists its parts instead, each with its answer and its
-  documents for and against, under one line on which part decides the answer (every part must hold); click a part to
-  go to its evidence;
+  documents for and against, under one line on which part decides the answer (the hypothesis holds only if every part
+  does); click a part to go to its evidence;
 - at most one caution, when the answer is fragile: *It rests on a single document and on two excerpts you have not
   reviewed* (or one of the two; for a hypothesis checked in parts, only the parts that decide the answer count);
 - documents added to the project since the check, when there are any, with *Read them* (a further search for this
@@ -266,8 +266,8 @@ strictness and offers *Try another strictness on this page*), and *Every quote i
 judgement overrides the AI's.* A hypothesis checked in parts shows each part under its own heading (*Part 1: …*) with
 its own documents above its excerpts.
 
-Each excerpt card shows, in this order: its judgement with at most two quiet facts (*Certainty: medium*, *Certainty:
-low · not counted* when it is below your strictness, *Second opinion: partly supports*, *You agreed with the AI*,
+Each excerpt card shows, in this order: its judgement with at most two quiet facts (*Certainty: medium*, *Not counted
+· certainty: low* when it is below your strictness, *Second opinion: partly supports*, *You agreed with the AI*,
 *Your judgement (the AI said …)*); the document and where the quote is (*paragraph 6 of 8*); and the quote,
 highlighted in its judgement's colour, with one sentence before and after it (on a phone, the sentence before it).
 Cards that do not count come after those that do; cards you have judged sit back (no fill, a dashed edge). One row of
@@ -303,7 +303,9 @@ words** reads excerpts containing words you type (documents often say "telework"
 work"). New excerpts are marked *new*, a *Just now* line in the answer says what was found, and when everything that
 matches has been read, the line above the buttons says so.
 
-**Ask another AI model** has two rows (0.11.2); the (?) explains the difference:
+**Ask another AI model** says what has happened (what a second opinion found; that no stronger model is set, with
+*Set one in Settings*), then has two buttons side by side (0.11.2); each button's tooltip says what it does, and the
+(?) explains the difference:
 
 - **Ask a stronger model** (*it replaces the AI's judgements; the answer can change*): the model checks step up to
   (on Claude the auditor, Opus or Fable) reads every search of the result again, once. Its judgements take the place

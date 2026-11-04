@@ -39,31 +39,33 @@ code) scored the page against them, and the page was changed and checked again u
   the AI's.* A part of a split hypothesis has a plain heading (*Part 1: …*) and lists its own documents above its
   excerpts. The excerpts not about the hypothesis stay folded under the cards, and *Read more excerpts* and *Search
   with other words* follow the evidence they add to.
-- **An excerpt card in a fixed order**: the judgement with at most two quiet facts (*Certainty: medium*, *Certainty:
-  low · not counted*, *Second opinion: partly supports*, *You agreed with the AI*), the document and the place, then
+- **An excerpt card in a fixed order**: the judgement with at most two quiet facts (*Certainty: medium*, *Not counted
+  · certainty: low*, *Second opinion: partly supports*, *You agreed with the AI*), the document and the place, then
   the quote with one sentence before and after it (no longer the whole excerpt of up to a page), highlighted in its
   judgement's colour (green, amber, red, also in the dark theme). The same row of actions on every card: **Agree**,
   **Not about this** (new: dismisses an excerpt in one click, with Undo; it moves to the excerpts not about the
   hypothesis), **Judge differently…** (*Edit judgement…* once you have judged: the other judgements, each with its
-  colour dot, under a line that says what your judgement is now; another sentence as the quote; a comment), then
-  quietly **In context** (the whole excerpt, and from there the whole document at this place, the original file or a
+  colour dot, under a line that says what your judgement is now; another sentence as the quote; a comment), then two
+  links, **In context** (the whole excerpt, and from there the whole document at this place, the original file or a
   highlighted copy) and **Details** (the AI's certainty, how the excerpt was found, *Ask the AI to read this again*).
   An excerpt you have judged sits back on the page (no fill, a dashed edge); one that does not count comes after
   those that do. Ten cards fit in about three screens, where they took six or more.
-- **Then the other AI models, notes and downloads**: *Ask another AI model* is two rows, *Ask a stronger model* and
-  *Get a second opinion*, each with one line on what it does (the two long explanations, the model picker's paragraph
-  and the boxes inside the box are gone; the models are named in its help mark and under *Technical details*).
-  *Download* is one quiet link per file with one line on what it holds; CSV and JSON are one line *(for
+- **Then the other AI models, notes and downloads**: *Ask another AI model* says what has happened (a second opinion
+  read 16 excerpts and judged 4 differently; no stronger model is set) and has *Ask a stronger model* and *Get a
+  second opinion* side by side, what each does in its tooltip (the two long explanations, the model picker's
+  paragraph and the boxes inside the box are gone; the models are named in its help mark and under *Technical
+  details*). *Download* is one quiet link per file with one line on what it holds; CSV and JSON are one line *(for
   programmers)*. *Technical details* (the strictness for this page only, the models and settings, the search words,
   the AI's notes) and *Delete this result* close the page.
 - **Type and colour**: four type sizes and two weights (bold only for headings, the main button and *Agree*); the
   serif only for the hypothesis and the documents' text; green, amber, red and purple only for judgements, amber also
-  for the one caution, the accent colour only for actions. No bold labels in running text, no icons on labels, at
-  most two levels of boxes.
+  for the one caution, the accent colour only for actions and links (one link style on the page). No bold labels in
+  running text, no icons on labels, at most two levels of boxes.
 - **While a check waits** for Claude Code, the answer card is the waiting notice with *Start Claude Code* and one
   line; how it works, the command to type and what is sent sit in a fold (*How it works*).
-- **On a phone** (390 px) a card shows the sentence before the quote and the quote, its actions wrap onto two rows of
-  tap-sized buttons, the parts grid and who says what keep one fact per line, and nothing scrolls sideways.
+- **On a phone** (390 px) a card shows the sentence before the quote and the quote, its three judging buttons stay on
+  one line with *In context* and *Details* under them, tap-sized, the parts grid and who says what keep one fact per
+  line, and nothing scrolls sideways.
 
 **Usability problems fixed on the way.**
 - Dates were written in the computer's own language and order (such as *2026. nov. 4. 19:36*) in an English page: now
@@ -75,7 +77,8 @@ code) scored the page against them, and the page was changed and checked again u
   note about another group), then the rest, and those with only a comment last; past the evidence it says it goes on
   to the excerpts not about the hypothesis; from the *Table* it switches to the cards it goes to.
 - A comment is saved on Enter or when you leave the field (a judgement picked meanwhile takes it along); a comment
-  typed and then *In context* clicked could fail to save with an error in the browser.
+  typed and then *In context* or *Use selected text* clicked was lost, or failed to save with an error in the
+  browser; it is now saved first, or kept in the field until the judgement is chosen.
 
 **Tests:** `tests/test_0120_results_page.py`: a job waiting on Claude Code is `on_hold` while nothing answers and not
 once a stand-in Claude Code takes a batch (over the API, with `tests/fake_claude_cli.py`); an answer more than two
