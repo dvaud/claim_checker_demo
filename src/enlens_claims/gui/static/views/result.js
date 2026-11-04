@@ -133,6 +133,17 @@ function windowNode(text, start, end, cls, breaks, [a, b]) {
   const el = passageNode(t, ok ? Math.max(0, start - a) : null, ok ? Math.min(t.length, end - a) : null, "p", `${cls} passage-window`, shifted.length ? shifted : null);
   const broken = el.classList.contains("passage-broken");
   if (broken) for (const line of [...el.children]) if (!line.textContent.trim()) line.remove();
+  // 0.12: a run-in heading that opens a paragraph ("Recommendations.", "Services to citizens.") is shown as a small
+  // heading above its paragraph, not as a sentence of the context (only where a paragraph starts)
+  const paraStart = (i) => i > 0 || a === 0 || (breaks || []).some((x) => x && x.at === a);
+  (broken ? [...el.children] : [el]).forEach((line, i) => {
+    const t = line.firstChild;
+    if (!paraStart(i) || !t || t.nodeType !== 3) return;   // it opens with the quote, or mid-paragraph
+    const m = /^\s*(\p{Lu}[\p{L}’'-]*(?:[ \u00a0][\p{L}’'-]+){0,3}\.)(?:\s+|$)/u.exec(t.textContent);
+    if (!m || m[1].length > 32 || (!t.textContent.slice(m[0].length).trim() && !t.nextSibling)) return;
+    line.insertBefore(h("span", { class: "runin" }, m[1]), t);
+    t.textContent = " " + t.textContent.slice(m[0].length);
+  });
   if (a > 0) (broken ? el.firstElementChild : el).prepend(h("span", { class: "ellip", "aria-hidden": "true" }, "…\u00a0"));
   if (a + t.length < text.length) (broken ? el.lastElementChild : el).append(h("span", { class: "ellip", "aria-hidden": "true" }, "\u00a0…"));
   return el;
@@ -172,6 +183,10 @@ export async function renderResult(view, [hypId], query) {
   const splitResult = () => !!(current && current.decomposed);
   const statusNow = () => current && current.status;
   let waitTimer = null;            // 0.8: a check waiting for Claude Code is looked at again every few seconds
+  // 0.12: a phone turned (or a window resized) across 600 px: the cards' windows are drawn again
+  const narrowMq = matchMedia("(max-width: 600px)");
+  const onNarrow = () => { if (!box.isConnected) { narrowMq.removeEventListener("change", onNarrow); return; } if (current) draw(current); };
+  narrowMq.addEventListener("change", onNarrow);
   const draftNotes = new Map();    // 0.12: "claim|passage" -> a comment typed but not saved yet (kept across re-draws)
   let serversOnce = null;          // 0.12: the model servers, asked once per page (the picker is drawn again on every save)
 
@@ -342,7 +357,7 @@ export async function renderResult(view, [hypId], query) {
     const card = h("section", { class: `card card-verdict v-${st} answer`, "aria-label": "Answer" });
     let sentence = null;
     if (r.decomposed) {
-      sentence = partsLine(parts);
+      sentence = h("span", { title: "The hypothesis holds only if every part does: the part with the weakest evidence decides." }, partsLine(parts));
     }
     else if (st === "uncertain") sentence = judged === 1 ? "1 excerpt is about it, but the AI was too unsure to count it."
       : `${judged} excerpts are about it, but the AI was too unsure to count any of them.`;
@@ -424,10 +439,10 @@ export async function renderResult(view, [hypId], query) {
     if (!bits.length) return docsOf(n);
     const plain = bits.map(([k, w], i) => (i ? `${k} ${w}` : `${docsOf(k)} ${w}`)).join(", ");
     if (bits.reduce((t, [k]) => t + k, 0) <= n) return plain;
-    // 0.12: a document on two sides is one document: "3 documents for, 1 also against", "1 document for and partly
+    // 0.12: a document on two sides is one document: "3 documents for, one of them also against", "1 document for and partly
     // for", "2 documents for, 2 against (3 documents in all)"
     const [[k0, w0], ...rest] = bits;
-    if (k0 === n) return n === 1 ? `${docsOf(1)} ${[w0, ...rest.map(([, w]) => w)].join(" and ")}` : `${docsOf(k0)} ${w0}, ${rest.map(([k, w]) => `${k} also ${w}`).join(", ")}`;
+    if (k0 === n) return n === 1 ? `${docsOf(1)} ${[w0, ...rest.map(([, w]) => w)].join(" and ")}` : `${docsOf(k0)} ${w0}, ${rest.map(([k, w]) => `${k === 1 ? "one" : k} of them also ${w}`).join(", ")}`;
     return `${plain} (${docsOf(n)} in all)`;
   }
 
@@ -444,7 +459,7 @@ export async function renderResult(view, [hypId], query) {
     if (parts.every((p) => p.status === "supported")) return "Every part is supported, so the whole hypothesis is.";
     const bad = decidingParts(parts);
     const and = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0]);
-    return `${bad.length > 1 ? "Parts" : "Part"} ${and(bad.map((p) => p.part))} ${bad.length > 1 ? "decide" : "decides"} the answer: the hypothesis holds only if every part does.`;
+    return `${bad.length > 1 ? "Parts" : "Part"} ${and(bad.map((p) => p.part))} ${bad.length > 1 ? "decide" : "decides"} the answer.`;
   }
 
   function whatsNewText(w, single) {
@@ -535,6 +550,7 @@ export async function renderResult(view, [hypId], query) {
     // 0.12: what has happened first, one line each; then the buttons side by side, what each does in its tooltip
     // (the help mark says it at length)
     const facts = [], buttons = [];
+    let noStronger = null;   // said last: what has happened comes first
     const STRONG_WHAT = "It replaces the AI's judgements; the answer can change.", SECOND_WHAT = "Shown only for comparison: it never changes the answer.";
     const row = (btn, ...what) => {
       const explains = what.length === 1 && (what[0] === STRONG_WHAT || what[0] === SECOND_WHAT);
@@ -556,7 +572,7 @@ export async function renderResult(view, [hypId], query) {
     if (stepping) strongState = `Reading ${stepping === 1 ? "a search" : `${stepping} searches`} again; until then the first reading counts.`;
     if (!current.stronger_model && !stepped && !stepping) {
       // none for this AI: said beside a button that cannot be pressed, so the choice is not hidden
-      row(null, "No stronger model is set. ", h("a", { href: "#/settings/routing" }, "Set one in Settings"), ".");
+      noStronger = h("p", { class: "ask-fact" }, "No stronger model is set. ", h("a", { href: "#/settings/routing" }, "Set one in Settings"), ".");
     } else if ((current.stronger_model && canStep) || stepped || stepping) {
       let strongBtn = null;
       if (current.stronger_model && canStep) {
@@ -580,6 +596,7 @@ export async function renderResult(view, [hypId], query) {
       }
       row(secBtn, secState);
     } else if (secondRead) row(null, secState);
+    if (noStronger) facts.push(noStronger);
     if (facts.length) card.appendChild(h("div", { class: "ask-facts" }, facts));
     if (buttons.length) card.appendChild(h("div", { class: "btn-row ask-buttons" }, buttons));
     if (!auditor && !(secondUsable && !changingSecond)) card.appendChild(secondModelPicker(mainModel, secondUsable ? secondSet : "", busy.some((x) => x.kind === "second-opinion")));
@@ -1027,8 +1044,8 @@ export async function renderResult(view, [hypId], query) {
         fact(p.access === "none" ? "its document is marked No AI" : "its document is marked Only a local AI, and no local model is chosen")]);
     } else {
       append(top, [gradeBadge(p.verdict, false)]);
-      if (p.verdict && !p.counted) append(top, [h("span", { class: "ev-fact ev-uncounted-fact", title: [certaintyHelp(p), "It is below your strictness: it counts once you judge it yourself (agreeing or otherwise)."].filter(Boolean).join(" ") }, word ? `Not counted · certainty: ${word}` : "Not counted")]);
-      else if (p.verdict && word) append(top, [fact(`Certainty: ${word}`, { title: certaintyHelp(p) })]);
+      if (p.verdict && !p.counted) append(top, [h("span", { class: "ev-fact ev-uncounted-fact", title: [certaintyHelp(p), "It is below your strictness: it counts once you judge it yourself (agreeing or otherwise)."].filter(Boolean).join(" ") }, "Not counted")]);
+      if (p.verdict && word) append(top, [fact(`Certainty: ${word}`, { title: certaintyHelp(p) })]);
       else if (!p.verdict && p.waiting_local) append(top, [fact("Waiting for the local model")]);
       else if (p.user_note) append(top, [fact("Your comment", { title: "You wrote a comment on this excerpt but have not judged it: the AI's judgement still counts" })]);
     }
@@ -1055,8 +1072,8 @@ export async function renderResult(view, [hypId], query) {
       (() => {
         const o = (current && current.parts || []).map((x) => [x, (x.passages || []).find((y) => y.passage_id === p.passage_id && about(y))]).filter(([x, y]) => x.claim_id !== part.claim_id && y);
         if (!o.length) return null;
-        const yours = (y) => (y.user_verdict ? `, where you judged it ${y.user_verdict === "not_relevant" ? "not about it" : GRADE_TEXT[y.user_verdict].toLowerCase()}` : "");
-        return h("span", { class: "page also-in", title: "This excerpt was read for each of these parts; each part judges it on its own" }, ` ·\u00a0also in ${o.map(([x, y]) => `part ${x.part}${yours(y)}`).join(" and ")}`);
+        const yours = o.filter(([, y]) => y.user_verdict).map(([x, y]) => ` In part ${x.part} you judged it ${y.user_verdict === "not_relevant" ? "not about it" : GRADE_TEXT[y.user_verdict].toLowerCase()}.`).join("");
+        return h("span", { class: "page also-in", title: `This excerpt was read for each of these parts; each part judges it on its own.${yours}` }, `\u00a0·\u00a0also in ${o.map(([x]) => `part ${x.part}`).join(" and ")}`);
       })(),
       !p.in_corpus ? h("span", { class: "warn-chip", title: "This document was removed from the project after the check" }, icon("alert-triangle", { size: 12 }), "document removed since") : null));
     // a sentence marked before a judgement was chosen is shown, but not saved until the judgement comes
@@ -1214,9 +1231,9 @@ export async function renderResult(view, [hypId], query) {
     // 0.12: the quote's place, short; what the whole excerpt covers is in the title
     const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
     const nb = (t) => String(t).replace(/ /g, "\u00a0");
-    if (hasQuote && p.location) return h("span", { class: "page", title: `The quote is ${/^page/i.test(p.location) ? "on" : "in"} ${p.location}${p.span && p.span !== p.location ? `; ${covers(p.span)}` : ""}.` }, ` ·\u00a0${nb(p.location)}`);
-    if (p.span) return h("span", { class: "page", title: `${cap(covers(p.span))}.` }, ` ·\u00a0${nb(p.span)}`);
-    return p.location ? h("span", { class: "page" }, ` ·\u00a0${nb(p.location)}`) : null;
+    if (hasQuote && p.location) return h("span", { class: "page", title: `The quote is ${/^page/i.test(p.location) ? "on" : "in"} ${p.location}${p.span && p.span !== p.location ? `; ${covers(p.span)}` : ""}.` }, `\u00a0·\u00a0${nb(p.location)}`);
+    if (p.span) return h("span", { class: "page", title: `${cap(covers(p.span))}.` }, `\u00a0·\u00a0${nb(p.span)}`);
+    return p.location ? h("span", { class: "page" }, `\u00a0·\u00a0${nb(p.location)}`) : null;
   }
 
   // the quote's place in the whole document (character offsets), or the excerpt's start when there is no quote
@@ -1347,7 +1364,7 @@ export async function renderResult(view, [hypId], query) {
     function markSentence() {
       const msg = h("span", { class: "muted small mark-msg", "aria-live": "polite" });
       const saveQuote = (text) => {
-        const q = (text || "").replace(/\s+/g, " ").trim();
+        const q = (text || "").replace(/…/g, " ").replace(/\s+/g, " ").trim();
         if (!q) { msg.textContent = "Select a sentence in the excerpt first."; return; }
         if (!(p.text || "").replace(/\s+/g, " ").includes(q)) { msg.textContent = "The selection must be text from this excerpt."; return; }
         msg.textContent = "";
@@ -1365,7 +1382,7 @@ export async function renderResult(view, [hypId], query) {
         const inside = sel && sel.rangeCount && !sel.isCollapsed && passageEl.contains(sel.anchorNode) && passageEl.contains(sel.focusNode);
         if (!inside) { msg.textContent = sel && !sel.isCollapsed ? "The selection must be inside this excerpt." : "Select a sentence in the excerpt first."; return; }
         saveQuote(sel.toString());
-      } }, "Use selected text");
+      } }, "Use it");
       const sentences = splitSentences(p.text).filter((x) => x.length > 12);
       const pick = h("select", { class: "input input-sm", "aria-label": "Or choose a sentence from the excerpt" },
         h("option", { value: "" }, "…or choose a sentence from the list"), sentences.map((x, i) => h("option", { value: String(i) }, x.length > 90 ? x.slice(0, 88) + "…" : x)));
@@ -1377,7 +1394,7 @@ export async function renderResult(view, [hypId], query) {
       useSel.title = `Another sentence than the one highlighted: select it in the excerpt, then press this.${current ? "" : " It is saved with the judgement you choose."}`;
       useSel.className = "btn btn-sm judge-tool";
       return h("div", { class: "mark-sentence" },
-        h("div", { class: "row" }, h("span", { class: "judge-caption" }, "Quote another sentence:"), useSel, listBtn, list, remove),
+        h("div", { class: "row" }, h("span", { class: "judge-caption" }, "Quote another sentence: select it in the excerpt, then"), useSel, listBtn, list, remove),
         msg);
     }
     row.append(judgeBtn, state);
@@ -1445,7 +1462,7 @@ export async function renderResult(view, [hypId], query) {
     moreBtn.title = `The AI reads up to ${k} more excerpts that match the same words.`;   // 0.12: "Look for more evidence"
     termsBtn.title = "Type words your documents might use; the AI reads the excerpts that contain them.";
     row.append(...[
-      none ? h("p", { class: "more-line more-first" }, totalEx && readN >= totalEx ? "Every excerpt in your documents has been read." : `All ${readN} excerpts that share a word with this ${r.decomposed ? "part" : "hypothesis"} have been read.`) : null,
+      none ? h("p", { class: "more-line more-first" }, totalEx && readN >= totalEx ? "Every excerpt in your documents has been read." : "Every matching excerpt has been read.") : null,
       h("div", { class: "more-btns" }, none ? null : moreBtn, termsBtn),
       termsBox, status].filter(Boolean));   // Element.append(null) would write "null"
     return row;

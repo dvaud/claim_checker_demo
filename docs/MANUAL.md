@@ -258,8 +258,9 @@ are the judgements (supports, partly supports, contradicts) and purple is mixed 
   it for the AI model);
 - **who says what**: one row per document, with a coloured dot per side and where, e.g. *supports it: paragraph 9 ·
   contradicts it: paragraph 5*. A hypothesis checked in parts lists its parts instead, each with its answer and its
-  documents for and against, under one line on which part decides the answer (the hypothesis holds only if every part
-  does); click a part to go to its evidence;
+  documents for and against, under one line on which part decides the answer (*Part 1 decides the answer*; hover it:
+  the hypothesis holds only if every part does). A document with excerpts on both sides counts once (*3 documents
+  for, one of them also against*). Click a part to go to its evidence;
 - at most one caution, when the answer is fragile: *It rests on a single document and on two excerpts you have not
   reviewed* (or one of the two; for a hypothesis checked in parts, only the parts that decide the answer count);
 - documents added to the project since the check, when there are any, with *Read them* (a further search for this
@@ -277,12 +278,14 @@ strictness and offers *Try another strictness on this page*), and *Every quote i
 judgement overrides the AI's.* A hypothesis checked in parts shows each part under its own heading (*Part 1: …*) with
 its own documents above its excerpts.
 
-Each excerpt card shows, in this order: its judgement with at most two quiet facts (*Certainty: medium*, *Not counted
-· certainty: low* when it is below your strictness, *Second opinion: partly supports*, *You agreed with the AI*,
-*Your judgement (the AI said …)*); the document and where the quote is (*paragraph 6 of 8*); and the quote,
-highlighted in its judgement's colour, with one sentence before and after it (on a phone, the sentence before it).
-Cards that do not count come after those that do; cards you have judged sit back (no fill, a dashed edge). One row of
-actions, the same on every card:
+Each excerpt card shows, in this order: its judgement with at most two quiet facts (*Certainty: medium*; *Not
+counted* and *Certainty: low* when it is below your strictness; *Second opinion: partly supports*, with its colour
+dot; *You agreed with the AI*; *Your judgement (the AI said …)*); the document and where the quote is (*paragraph 6
+of 8*); and the quote, highlighted in its judgement's colour, with one sentence before and after it (on a phone, the
+sentence before it). A short heading that opens a paragraph of the document (*Recommendations.*) is shown as a small
+heading above it (0.13.2). An excerpt read for another part too says *also in part 1*; hover it for your judgement
+there. Cards that do not count come after those that do; cards you have judged sit back (no fill, a dashed edge). One
+row of actions, the same on every card:
 
 - **Agree** makes the AI's judgement yours (it then counts, whatever the AI's certainty); a note at the bottom says
   so, and whether the answer changed, with *Undo*. The card then says *You agreed with the AI*, and the button
@@ -292,9 +295,9 @@ actions, the same on every card:
 - **Judge differently…** (*Edit judgement…* once you have judged; *Judge this excerpt…* when no AI may read it): the
   other judgements, each with its colour dot, under a line that says what your judgement is now (each saves at once,
   with *Undo*), a comment (saved on Enter or when you leave the field), and the sentence you mean when the AI
-  highlighted the wrong one (select it in the excerpt, or pick it from a list). Your judgement replaces the AI's in
-  the answer and in the downloads, always counts whatever the strictness, and the card shows what the AI said. A
-  comment without a judgement stays a comment: it is not a review.
+  highlighted the wrong one (select it in the excerpt, then *Use it*; or pick it from a list). Your judgement
+  replaces the AI's in the answer and in the downloads, always counts whatever the strictness, and the card shows
+  what the AI said. A comment without a judgement stays a comment: it is not a review.
 - **In context** shows the whole excerpt the AI read, with *Open the whole document at this place* (by paragraph or
   page, the quote highlighted; *Back to the result* returns to the excerpt), *the original file* (a PDF at the page,
   a text file with the quote highlighted, a web page scrolled to the quote in browsers that support it) and *a

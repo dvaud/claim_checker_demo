@@ -77,7 +77,8 @@
 .result .answer-part-list { margin: 0 0 14px; }
 .result .answer-part-list a { text-decoration: none; }
 /* a split answer: claim | answer | documents, aligned */
-.result .part-grid { list-style: none; padding: 0; display: grid; grid-template-columns: minmax(0, max-content) auto auto; justify-content: start; gap: 6px 18px; align-items: center; }
+.result .part-grid { list-style: none; padding: 0; display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; gap: 2px 18px; align-items: center; }
+.result .part-grid .part-docs { grid-column: 1 / -1; margin: 0 0 8px; white-space: normal; }
 .result .part-grid li { display: contents; }
 .result .part-grid .part-claim-link { color: var(--text); font-size: 1rem; }
 .result .part-grid .part-answer { display: inline-flex; gap: 6px; align-items: center; }
@@ -111,8 +112,11 @@
 .result .part-card + .part-card { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--border); }
 .result .part-head { margin-bottom: 6px; }
 .result .part-head .part-claim { font-size: 1rem; }
-.result .part-head .part-claim { font-family: var(--font-ui); font-weight: 600; color: var(--text); }
-.result .part-head .pn { display: inline; font: inherit; color: inherit; margin: 0; }
+.result .part-head .part-claim { font-family: var(--font-ui); font-weight: 400; color: var(--text); }
+.result .part-head .pn { display: inline; font: inherit; font-weight: 600; color: inherit; margin: 0; }
+/* a run-in heading of the document above its paragraph, and the window's paragraphs close together */
+.result .ev .passage .runin { display: block; font-family: var(--font-ui); font-size: var(--r-small); font-weight: 600; color: var(--text-2); margin: 0 0 1px; }
+.result .ev .passage-window.passage-broken { gap: .35em; }
 .result .eyebrow { font-size: var(--r-small); font-weight: 400; }
 .result .ev-src .also-in { white-space: nowrap; }
 /* "In context" and "Details": quiet, but visibly something to click */
@@ -339,7 +343,7 @@
   .result .judge-row .ev-link, .result .judge-row .orig-link.ev-link > a, .result .judge-row .more-toggle { min-height: 34px; }
   .result .judge-row > .spacer { display: block; flex: 0 0 100%; height: 0; }
   .result .part-grid { grid-template-columns: minmax(0, 1fr) auto; }
-  .result .part-grid .part-docs { grid-column: 1 / -1; margin-top: -4px; white-space: normal; }
+  .result .ev-section-sub .help-mark { margin-top: -8px; margin-bottom: -8px; }
   .result .judge-row > span[aria-live]:empty { display: none; }
   .result .judge-row .btn, .result .judge-row .orig-link > a, .result .judge-opt, .result .save-note { min-height: 32px; }
   .result .judge-row .agree-btn, .result .judge-row .dismiss-btn, .result .judge-row .judge-toggle { width: auto; min-width: 0; }

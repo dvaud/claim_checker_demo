@@ -59,6 +59,9 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
 - **Update ENLENS from the app (0.13.1).** *Update ENLENS* at the bottom of the sidebar looks for a new version,
   installs it and restarts ENLENS; the open page comes back by itself. No terminal needed. When a new version was
   installed while ENLENS kept running, the notice at the top of every page has *Restart now*.
+- **A clearer result page (0.13.2).** Short headings of the document show as headings above the quote, an excerpt
+  that does not count says *Not counted* and its certainty like every other card, and a hypothesis in parts counts a
+  document on both sides once.
 
 ## Earlier releases
 

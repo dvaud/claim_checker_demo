@@ -248,7 +248,7 @@ def test_the_page_names_documents_and_reaches_the_cards_from_the_table():
     # a split hypothesis says which way each part's documents lean
     assert "function sidesText(b)" in js and '`${docsOf(k)} ${w}`' in js
     # ... and a document with excerpts on two sides counts once ("3 documents for, 1 of them also against")
-    assert 'bits.reduce((t, [k]) => t + k, 0) <= n' in js and "${k} also ${w}" in js and "in all)" in js
+    assert 'bits.reduce((t, [k]) => t + k, 0) <= n' in js and "of them also ${w}" in js and "in all)" in js
     # the caution of a split hypothesis counts only the parts that decide the answer
     assert "decidingParts(parts).flatMap((x) => x.passages || []).filter((p) => p.counted && !p.reviewed)" in js
     # "Next to review" from the table view goes back to the cards first (it used to say "Everything is reviewed.")

@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.13.2 (November 2026): the result page, finished
+
+0.12 rebuilt the result page and had it scored against eleven written criteria by an independent reviewer, round
+after round; 0.12.0 was released while that work was still going. 0.13.2 brings the last rounds' changes: the same
+page, easier to scan and with a few defects fixed. Every answer still goes through the quote check, a person can
+overrule it, and nothing about what leaves the computer changed.
+
+**Easier to read.**
+- A short heading that opens a paragraph of the document (*Recommendations.*, *Services to citizens.*) is shown as a
+  small heading above its paragraph, instead of reading as a sentence of the context around the quote; the window's
+  paragraphs sit closer together.
+- An excerpt the AI did not count says **Not counted** and then **Certainty: low**, the same certainty label as every
+  other card (it said *Not counted · certainty: low*).
+- A hypothesis checked in parts: each part's documents are on a line under the part (*3 documents for, one of them
+  also against*: a document with excerpts on both sides is counted once), and the answer says *Part 1 decides the
+  answer.*, with the rule (the hypothesis holds only if every part does) in its tooltip. A part's heading reads
+  **Part 1:** and then the claim in regular weight.
+- *Ask another AI model* says what has happened first and what is not set last (*No stronger model is set. Set one in
+  Settings.*).
+- An excerpt read for another part too says *also in part 1*; your judgement there is in its tooltip. When every
+  matching excerpt has been read, the line says *Every matching excerpt has been read.*
+- *Quote another sentence: select it in the excerpt, then* **Use it** (it said *Use selected text*, a button that did
+  nothing until text was selected).
+
+**Defects fixed.**
+- A card's source line could break so that a line began with "·"; the separator now stays with the place (*·
+  paragraph 6 of 8*).
+- A sentence selected across the "…" the card shows where it leaves text out was refused as "not text from this
+  excerpt".
+- A phone turned between portrait and landscape (or a window resized across 600 px) kept the other width's excerpt
+  window until the next change; the cards are drawn again.
+- On a phone, the strictness help mark made its line taller than the line under it.
+
+**Tests:** `tests/test_0132_result_page_polish.py`: the run-in heading's pattern (run in Node), the uncounted card's
+two facts, a document on two sides counted once (run in Node), the source line's separator, a selection across "…",
+the redraw on a width change, the models card's order. Checked in Chrome with the dev server (the social corpus): a
+single and a split hypothesis, light and dark, 1280 and 390 px wide; no console errors.
+
+**Not yet done.** The run-in heading is recognised by its form (up to four words and a full stop at the start of a
+paragraph): a paragraph that opens with a very short sentence (*Prices rose.*) is shown the same way. *In context*
+shows the text as it is.
+
 ## 0.13.1 (November 2026): update ENLENS from the app
 
 Updating meant quitting ENLENS, typing `enlens update` in Terminal or PowerShell (or pasting the install line again)
