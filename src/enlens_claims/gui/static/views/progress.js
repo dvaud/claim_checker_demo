@@ -1,6 +1,6 @@
 // The live progress panel of a check (also used for batches and "read more"): updated in place from the job's
 // progress every poll, so running spinners do not restart and the page does not flicker.
-import { App, api, h, icon, replace, clear, fmt, cancelJob, showError, queueNotice, watchJob, TERMINAL, P } from "../lib.js";
+import { App, api, h, icon, replace, clear, fmt, cancelJob, showError, queueNotice, startClaude, watchJob, TERMINAL, P } from "../lib.js";
 
 const STEP_ICON = { pending: "circle", running: "loader", done: "circle-check" };
 const plainPhase = (phase) => ({ waiting: "The AI is getting ready and reading", thinking: "The AI is thinking it over", writing: "The AI is writing down its judgement", done: "The AI has finished" }[phase] || "The AI is working");
@@ -235,16 +235,23 @@ export class MiniJob {
     } }, icon("stop", { size: 12 }), "Stop");
     this.el = h("div", { class: "mini-job", role: "status" }, h("span", { class: "running-dot", "aria-hidden": "true" }), this.msg, this.time, this.stopBtn);
     this.jobId = null;
+    this.startEl = null;   // 0.11.3: the Start Claude Code block while the job waits for Claude Code
   }
   update(job) {
     this.jobId = job.id;
     const p = job.progress || {};
     const running = job.state === "queued" || job.state === "running";
     const m = p.model;
+    // 0.11.3: a job that waits for Claude Code carries the Start Claude Code button (and the command to type), as
+    // every other place where work waits does; built once, it keeps itself current
+    const wq = running && ((m && m.phase === "queue" && (m.queue || {})) || p.queue);
+    if (wq && !this.startEl && App.project) this.el.appendChild(this.startEl = startClaude(App.project, { command: wq.command }));
+    else if (!wq && this.startEl) { this.startEl.remove(); this.startEl = null; }
+    const typeIt = (cmd) => (this.startEl ? "" : ` (type ${cmd || "/enlens-run"} in Claude Code)`);
     let text = `${this.title}…`;
     if (job.state === "queued") text = `${this.title}: waiting for the AI (another task is using it)`;
-    else if (running && m && m.phase === "queue") text = `${this.title}: ${m.queue && m.queue.paused ? "paused" : "waiting for Claude Code"} (type ${(m.queue && m.queue.command) || "/enlens-run"} in Claude Code)`;
-    else if (running && p.queue) text = `${this.title}: waiting for Claude Code (type ${p.queue.command || "/enlens-run"} in Claude Code)`;
+    else if (running && m && m.phase === "queue") text = `${this.title}: ${m.queue && m.queue.paused ? "paused" : "waiting for Claude Code"}${typeIt(m.queue && m.queue.command)}`;
+    else if (running && p.queue) text = `${this.title}: waiting for Claude Code${typeIt(p.queue.command)}`;
     else if (running && m && m.phase && m.phase !== "done") text = `${this.title}: ${(m.plain || plainPhase(m.phase)).replace(/^The AI/, "the AI")}`;
     else if (running && p.message) text = `${this.title}: ${p.message}`;
     if (job.state === "done") text = "Done.";

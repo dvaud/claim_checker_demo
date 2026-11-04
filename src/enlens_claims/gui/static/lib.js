@@ -702,6 +702,30 @@ export function startClaude(project, opts = {}) {
   let timer = null;
   let busy = false;
   const ago = (s) => (s < 60 ? "just now" : `${Math.round(s / 60)} min ago`);
+  // 0.11.3: an unpressed button asks for attention: the step above it spins, which reads as if work were under way.
+  // A few seconds after work starts waiting with nothing answering it, the button pulses and its line says that
+  // nothing runs until it is pressed. Changed in place, so the button never moves under the pointer.
+  function nudge(b, hint) {
+    if (b.classList.contains("sc-nudge")) return;
+    b.classList.add("sc-nudge");
+    b.style.animationDelay = `-${Date.now() % NUDGE_PULSE}ms`;  // in step with the other buttons, and across redraws
+    hint.classList.add("sc-wake");
+    replace(hint, h("strong", {}, "Nothing runs until you press it."), " Then it works on your Claude plan, in the background, and stops by itself when nothing waits.");
+  }
+  function watchIdle(b, hint) {
+    if (!WAIT_SINCE.has(project)) WAIT_SINCE.set(project, Date.now());
+    const left = NUDGE_AFTER - (Date.now() - WAIT_SINCE.get(project));
+    if (left <= 0) nudge(b, hint);
+    // look again when the nudge is due, then every 5 s: once something answers, draw the new state
+    timer = setTimeout(async () => {
+      if (!b.isConnected || busy) return;
+      let q;
+      const c = QUEUE_CACHE.get(project);
+      try { q = c && c.q && Date.now() - c.at < 3000 ? c.q : await queueFetch(project); } catch (_) { return; }
+      if (!b.isConnected || busy) return;
+      if (idleQueue(q)) watchIdle(b, hint); else draw(true);
+    }, Math.max(left, 0) || 5000);
+  }
   async function draw(useCache) {
     clearTimeout(timer);
     if (!box.isConnected && box.dataset.drawn) return;  // the page moved on
@@ -718,22 +742,26 @@ export function startClaude(project, opts = {}) {
     const typeIt = h("div", { class: "sc-type" }, h("span", { class: "muted small" }, q.can_start ? "Or type this in Claude Code yourself:" : "In Claude Code (opened in any folder), type:"), copyLine(cmd));
     const r = q.runner || {};
     const parts = [];
+    const idle = idleQueue(q);
+    if (!idle) WAIT_SINCE.delete(project);
     if (q.route !== "claude_code") { replace(box, typeIt); return; }
     if (r.running) {
       parts.push(h("div", { class: "sc-running" }, h("span", { class: "running-dot", "aria-hidden": "true" }),
         h("span", {}, h("strong", {}, "Claude Code is working on it"), h("span", { class: "muted small" }, ` · started ${ago(r.seconds || 0)} from ENLENS`)),
         h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => {
           try { await api("POST", `/api/projects/${P(project)}/queue/claude-code/stop`, {}); toast("Claude Code stopped. What it had not answered waits again.", "ok"); QUEUE_CACHE.delete(project); draw(false); } catch (e) { showError(e); }
-        } }, icon("stop", { size: 12 }), "Stop")));
+        } }, icon("stop", { size: 12 }), "Stop Claude Code")));  // 0.11.3: not just "Stop": the job beside it has its own
     } else if (q.can_start && (q.waiting || q.being_answered || opts.always)) {
       const b = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
         if (busy) return;
-        busy = true; b.disabled = true;
+        busy = true; b.disabled = true; b.classList.remove("sc-nudge");
         try { await api("POST", `/api/projects/${P(project)}/queue/claude-code`, {}); toast("Claude Code started. You can keep working; the results appear as they come in.", "ok"); }
         catch (e) { showError(e); }
         busy = false; QUEUE_CACHE.delete(project); draw(false);
       } }, icon("play", { size: 13 }), "Start Claude Code");
-      parts.push(h("div", { class: "sc-start" }, b, h("span", { class: "muted small" }, "Runs on your Claude plan, in the background. It stops by itself when nothing waits.")));
+      const hint = h("span", { class: "muted small" }, "Runs on your Claude plan, in the background. It stops by itself when nothing waits.");
+      parts.push(h("div", { class: "sc-start" }, b, hint));
+      if (idle) watchIdle(b, hint);
       if (r.exit_code !== undefined && r.exit_code !== null && r.exit_code !== 0 && !r.stopped) {
         parts.push(h("details", { class: "fold small" }, h("summary", {}, icon("alert-triangle", { size: 12 }), " The last run stopped with a problem"), h("pre", { class: "mono small sc-report" }, r.report || "(no report)")));
       }
@@ -751,6 +779,12 @@ export function startClaude(project, opts = {}) {
   return box;
 }
 const QUEUE_CACHE = new Map();
+// 0.11.3, the Start Claude Code nudge: when a project's work first waited with nothing answering it (kept per project, as
+// the sidebar draws its button again every 5 s and the progress panel whenever the queue's line changes).
+const NUDGE_AFTER = 5000;
+const NUDGE_PULSE = 1600;  // the length of one pulse in v0113.css (sc-nudge)
+const WAIT_SINCE = new Map();
+const idleQueue = (q) => !!(q && q.route === "claude_code" && q.can_start && !(q.runner || {}).running && q.waiting && !q.being_answered);
 // one request at a time per project; the answer is kept for the next element that draws
 function queueFetch(project) {
   const c = QUEUE_CACHE.get(project) || {};

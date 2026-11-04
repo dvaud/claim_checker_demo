@@ -68,6 +68,11 @@ instead? `enlens update` pulls the new version (see *For developers*).
   *Get a second opinion* (only shown beside the first, never changes the answer). On each excerpt a second opinion
   is one plain line with both readings, and a switch shows which sentence each of them quoted. Full notes:
   `CHANGELOG.md`.
+- **0.11.3: a button you cannot miss.** While work waits for Claude Code, its step keeps spinning, which looks as if
+  something were already reading. Now, a few seconds after work starts waiting, **Start Claude Code** pulses and says
+  *Nothing runs until you press it.* The button is also on the line of a follow-up on a result (a stronger model, a
+  second opinion, reading again), where before you could only type the command, and the one that stops Claude Code
+  is called *Stop Claude Code*, so it is no longer mixed up with the job's own *Stop*.
 
 ## Earlier releases
 
@@ -249,7 +254,7 @@ see docs/MODEL_CHOICE.md) set them.
 
 - [docs/MANUAL.md](docs/MANUAL.md): the manual (app, command line, connector, models, the SDG pack).
 - [docs/API.md](docs/API.md): the local app's HTTP API.
-- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.11.1), including the defects fixed.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.11.3), including the defects fixed.
 - [docs/USER_TESTS.md](docs/USER_TESTS.md): the first-time user tests behind the app (0.5.1 to 0.7.0).
 - [docs/MODEL_CHOICE.md](docs/MODEL_CHOICE.md): which model each task needs, measured on the pilot (0.8: the method
   and the empty tables, until the runs are made).

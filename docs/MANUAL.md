@@ -628,10 +628,18 @@ the Claude desktop app's connector entry is pointed at the new Python too when t
 Claude Code: 120 passages to label · about 25 minutes*, with **Start Claude Code**. ENLENS then starts Claude Code
 in the background for that project (`claude -p "/enlens-run:enlens-run <project>"`, run in the ENLENS folder),
 allowed only the four ENLENS queue tools and its helpers, so a passage that tries to give it instructions can do
-nothing else. The page and the sidebar's queue panel say *Claude Code is working on it*, with *Stop*; it stops by
-itself when nothing waits. *Stop* returns the batches it had taken to the queue at once. If a run ends with a
-problem (a usage limit, for example), the page shows the end of its report. The first start also adds the plugin if
-that was not done yet.
+nothing else. The page and the sidebar's queue panel say *Claude Code is working on it*, with *Stop Claude Code*;
+it stops by itself when nothing waits. *Stop Claude Code* returns the batches it had taken to the queue at once. If a
+run ends with a problem (a usage limit, for example), the page shows the end of its report. The first start also
+adds the plugin if that was not done yet.
+
+Until it is pressed, nothing is answered: the step that waits keeps its spinner, so from 0.11.3 a **Start Claude
+Code** left unpressed for about five seconds while work waits (and nothing answers it) pulses, and the line beside it
+says *Nothing runs until you press it.* (with reduced motion in the computer's settings, it has a still ring
+instead). The pulse stops once it is pressed, or once Claude Code started some other way takes the work. The button
+is wherever work waits: a check's progress, a result that waits, the sidebar's queue panel, and since 0.11.3 also
+the line of a follow-up on a result (reading an excerpt again, reading new documents, a second opinion, a stronger
+model), which used to say only which command to type.
 
 **Or type it yourself.** The same work can be started in Claude Code, opened in any folder:
 

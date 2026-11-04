@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.11.3 (November 2026): a Start Claude Code button you cannot miss
+
+While a check (or any AI work) waits for Claude Code, its step keeps the spinner, and the progress panel's dot keeps
+pulsing, so a researcher who has not pressed **Start Claude Code** yet could take the work for already under way and
+wait for nothing. Every answer still goes through the quote check, a person can overrule it, every result records how
+it was made, and nothing about what leaves the computer changed.
+
+**Start Claude Code asks for attention when it is left unpressed.**
+- About five seconds after work starts waiting with nothing answering it, the button pulses (a ring in the accent
+  colour, every 1.6 s) and the line beside it says **Nothing runs until you press it.** Then it works on your Claude
+  plan, in the background, and stops by itself when nothing waits. With reduced motion in the computer's settings it
+  has a still ring instead.
+- The pulse stops when the button is pressed, and on its own once something answers the work: Claude Code started
+  from ENLENS, or typed in Claude Code (`/enlens-run`) and taking a batch. The button looks again every 5 s while it
+  pulses.
+- The same everywhere the button is: a check's progress, a result that waits, the sidebar's queue panel. The
+  five seconds count per project, so the sidebar (drawn again every 5 s) and a waiting result (every 5 s) neither
+  start them over nor make the pulse stutter (it keeps in step across redraws). The button is changed in place, never
+  replaced under the pointer.
+
+**Usability problems fixed on the way.**
+- A follow-up on a result that waits for Claude Code (a stronger model for the whole result, new in 0.11.2; a second
+  opinion; reading an excerpt again; reading new documents) said only "waiting for Claude Code (type /enlens-run Demo
+  in Claude Code)", with no button. Its line now carries **Start Claude Code** (which pulses the same way) and the
+  command to type, as every other place where work waits does.
+- The button that stops a Claude Code started from ENLENS is called **Stop Claude Code**: beside a job's own *Stop*
+  (the progress panel, and now a follow-up's line), two buttons both called *Stop* did different things.
+- *Claude Code is working on it* keeps its dot beside its words in a narrow place (390 px, the sidebar).
+
+**Tests:** `tests/test_0113_start_nudge.py`: the queue says when work waits unanswered (the page's rule: Claude Code
+chosen and found, work waiting, nothing answering it, nothing started from ENLENS running), and stops saying so when
+a batch is taken by a Claude Code typed elsewhere or when Claude Code runs from ENLENS; nothing to nudge on another
+route; the page's rule, styles and the follow-up's button. Checked in Chrome with the dev server's stand-in Claude Code
+(`--claude-cli`): a check's progress, the sidebar, a stronger model's follow-up line, light and dark, 390 px, reduced
+motion, pressing the button; no console errors.
+
+**Not yet done:** not tried with a real signed-in Claude Code (only the stand-in). The spinner of the waiting step
+itself is unchanged: the button now says that nothing runs, but the step still spins until Claude Code takes the work.
+
 ## 0.11.2 (November 2026): a stronger model's answer, and two clear ways to ask another model
 
 When a check steps up to a stronger model (on its own for an unsure or twice-rejected answer, or because a person
