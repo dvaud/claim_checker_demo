@@ -60,7 +60,14 @@ instead? `enlens update` pulls the new version (see *For developers*).
   setting; `enlens update` could drop OCR or pdfminer; Python 3.10 and 3.11 could not import one module), needless
   work removed (label lookups hundreds of times faster on large projects, removing a document in milliseconds instead
   of seconds, one search per export, one pass per Excel file), and redundant code and page styles taken out.
-  Full notes: `CHANGELOG.md`.
+- **0.11.2: a stronger model's answer is the answer.** When a stronger model reads a check's excerpts again and
+  finds, say, *supported* where the first model found *partly supported*, the result now shows **Supported** with a
+  small mark *at first: partly supported* (hover it for which models and how many judgements changed); the Results
+  list and the Excel summary say the same. Under each result, **Ask another AI model** now offers two clearly
+  different buttons: *Ask a stronger model* (its judgements replace the first AI's, so the answer can change) and
+  *Get a second opinion* (only shown beside the first, never changes the answer). On each excerpt a second opinion
+  is one plain line with both readings, and a switch shows which sentence each of them quoted. Full notes:
+  `CHANGELOG.md`.
 
 ## Earlier releases
 

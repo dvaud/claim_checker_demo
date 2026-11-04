@@ -613,6 +613,23 @@ export function statusBadge(status, opts = {}) {
     icon(iconName, { size: opts.size === "lg" ? 20 : 14 }), opts.prefix ? h("span", { class: "badge-prefix" }, opts.prefix, " ") : null, h("span", {}, text));
 }
 
+// 0.11.2: a small mark beside an answer a stronger model changed: "at first: Partly supported". The stronger model's
+// reading is the answer; the mark keeps the first one in sight (hover or click for the whole story).
+export function strongerMark(before, info = {}, opts = {}) {
+  if (!before) return null;
+  const was = STATUS_SHORT[before] || before;
+  const first = (info.first_models || []).join(", ") || "the first AI model";
+  const strong = (info.models || []).join(", ") || "a stronger model";
+  const n = info.changed || 0;
+  const story = `The first AI model (${first}) found this ${was.toLowerCase()}. A stronger model (${strong}) read the excerpts again${n ? ` and changed ${n} ${n === 1 ? "judgement" : "judgements"}` : ""}; its reading counts, so this is the answer now. Each excerpt it changed shows both readings.`;
+  const label = opts.compact ? `was ${was.toLowerCase()}` : `at first: ${was.toLowerCase()}`;
+  if (opts.plain) return h("span", { class: "was-mark was-plain", title: story }, icon("layers", { size: 11 }), h("span", {}, label));
+  const btn = h("button", { class: "was-mark", type: "button", "aria-label": `Changed by a stronger model; at first ${was.toLowerCase()}` }, icon("layers", { size: 11 }), h("span", {}, label));
+  const wrap = popNote(btn, story, { wide: true });
+  wrap.classList.add("was-wrap");
+  return wrap;
+}
+
 export function gradeBadge(verdict, weak) {
   const names = { supports: "circle-check", partially_supports: "circle-half", refutes: "circle-x" };
   const v = verdict || "none";

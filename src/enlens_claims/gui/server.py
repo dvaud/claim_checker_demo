@@ -934,6 +934,44 @@ class App:
         job.scope = task_id
         return job
 
+    def start_stronger_all(self, name: str, hyp_id: str) -> Job:
+        """"Ask a stronger model" for a whole result (0.11.2): every search a model answered and no stronger model
+        read yet is read again once by the model checks step up to; its judgements replace the first ones."""
+        from .. import routing
+
+        ws = self.ws(name)
+        try:
+            res = claimcheck.hypothesis_result(ws, hyp_id)
+        except KeyError:
+            raise ApiError(404, "No such hypothesis.") from None
+        s = self.settings()
+        r = (routing.from_settings(s, large=s.get("ollama_model") or s.get("openai_model") or "")
+             if s.get("routing", True) and s.get("backend") != "baseline" else None)
+        stronger = r.step_up("check") if r else None
+        if not stronger:
+            raise ApiError(400, "There is no stronger model for this on the AI model chosen in Settings.")
+        ids = [rd["task_id"] for part in res["parts"] for rd in part.get("rounds_info", [])
+               if claimcheck.stronger_eligible(rd)]
+        if not ids:
+            raise ApiError(400, "A stronger model has already read every search of this result.")
+        with tasks_mod.queueing(self.queue_mode()):
+            for tid in ids:
+                tasks_mod.ask_stronger(ws, tid)
+
+        def fn(job, be2, model, prog):
+            counts = 0
+            for i, tid in enumerate(ids):
+                prog(i, len(ids))
+                counts += bool(tasks_mod.answer_again(ws, tid, be2))
+                if job.cancel.is_set():
+                    break
+            prog(len(ids), len(ids))
+            return {"hyp_id": hyp_id, "task_ids": ids, "answered": counts, "model": stronger}
+
+        job = self._model_job("stronger", f"A stronger model ({stronger}) reads the excerpts again", name, fn)
+        job.scope = hyp_id
+        return job
+
     def start_queue_run(self, name: str, body: dict) -> Job:
         """Answer what waits in the queue here, with the AI model of Settings (a local server or the Claude API),
         kind by kind."""
@@ -1464,6 +1502,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/queue/claude-code/stop", "post_claude_code_stop"),
     ("GET", rf"/api/projects/{P}/overview", "get_overview"),
     ("POST", rf"/api/projects/{P}/tasks/{P}/stronger", "post_stronger"),
+    ("POST", rf"/api/projects/{P}/hypotheses/{P}/stronger", "post_stronger_all"),
     ("GET", r"/api/routing", "get_routing"),
     ("GET", r"/api/claude-setup", "get_claude_setup"),
     ("POST", r"/api/claude-setup", "post_claude_setup"),
@@ -2484,6 +2523,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_queue_run(self, name, q):
         return {"job": self.app.start_queue_run(name, self._body()).view()}
+
+    def post_stronger_all(self, name, hyp_id, q):
+        self._body()
+        return {"job": self.app.start_stronger_all(name, hyp_id).view()}
 
     def post_stronger(self, name, task_id, q):
         self._body()

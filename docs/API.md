@@ -401,7 +401,9 @@ Batch job `progress` is the check progress of the current hypothesis plus
 ```
 newest first; `counts` cover the whole project (not the filter). 0.6 adds `docs_added_since` (documents added to the
 project since the check that it has not read from: tag "documents added since") and `disagreements` (excerpts
-where a second model disagrees with the main one: tag "models disagree on N"). `supports`/`partly`/`refutes` count the excerpts whose
+where a second opinion differs from the AI's judgement: tag "second opinion differs on N"). 0.11.2 adds
+`status_before_stronger`: the answer the first model gave when a stronger model read excerpts again and changed it
+(else null). `supports`/`partly`/`refutes` count the excerpts whose
 judgement counts at this threshold, `uncounted` those below it; `docs_*` count documents as the result page does;
 `reviewed` counts the excerpts a person judged (agreeing or not), `corrected` those where they changed the AI's
 judgement, `to_review` the excerpts read that nobody judged yet.
@@ -562,7 +564,8 @@ the number of excerpts that count); `export.csv` the technical CSV (ids, raw ver
 readable ("ENLENS results - <project> - <date>.xlsx"). From 0.6 the *Excerpts* sheet also has "About another group
 (AI's note)" and "AI's earlier judgement (before reading it again)", and, when a second model read any of the
 excerpts, "Second model", "Second model's judgement", "Second model's certainty", "The two models agree". The
-*Summary* sheet has "Excerpts where a second model disagrees" and "Documents added since the check".
+*Summary* sheet has "Excerpts where the second opinion differs" (0.11.2; before: "…a second model disagrees"),
+"Answer before a stronger model read it again" (0.11.2) and "Documents added since the check".
 
 ### Exploring the documents (0.7)
 
@@ -685,6 +688,10 @@ that no session has taken yet out of the queue; a check by queue is removed whol
 - `POST /api/projects/<p>/tasks/<task_id>/stronger` → job (kind `stronger`): "Ask a stronger model": the task (a
   round of a check: `rounds_info[].task_id`) is read once more by the model it steps up to; 400 when it already was,
   or when this route has no stronger model.
+- `POST /api/projects/<p>/hypotheses/<h>/stronger` (0.11.2) → job (kind `stronger`, `scope` the hypothesis id):
+  "Ask a stronger model" for a whole result: every search with `can_step_up` is read once more by the model checks
+  step up to; the job's result is `{"hyp_id", "task_ids", "answered", "model"}`. 404 for an unknown hypothesis, 400
+  when the route has no stronger model or every search was already read again. The result page uses this one.
 - `GET /api/routing` → `{"route", "route_name", "rows": [{"row", "kinds", "title", "model", "step_up", "helper",
   "chosen", "recommended"}], "aliases", "fable", "local_small_model", "second_model", "step_up_below", "routing"}`.
 - `GET /api/claude-setup` → `{"folder", "ready", "commands": ["claude plugin marketplace add …", "claude plugin
@@ -696,6 +703,10 @@ that no session has taken yet out of the queue; a check by queue is removed whol
 - Results: a hypothesis has status `waiting` while a check by queue is not finished; `GET …/hypotheses/<id>` adds
   `stronger_model`, `queue_command`, `queue`, and per part `rounds_info[]` `task_id`, `stepped_up`,
   `stronger_waiting`, `waiting`; an excerpt's `ai_history[].why` is `"stepped up"` for a stronger model's reading.
+  0.11.2 adds, on the hypothesis and on each part, `status_first` (the answer from the first model's readings),
+  `status_before_stronger` (the same when it differs from `status`, else null) and `stronger` (`{}` or
+  `{"excerpts", "changed", "first_models", "models"}`: the excerpts a stronger model read again and how many it
+  judged differently), and per round `can_step_up`. `status` is always the stronger model's reading.
 - Themes carry `number` (1 to n in the order shown) and `merged_from_names`; `PUT …/concepts/links` accepts
   `decision: "undo"`.
 

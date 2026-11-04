@@ -1,6 +1,6 @@
 // Results: every hypothesis checked in the project. Counts come from the API at the current strictness.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark } from "../lib.js";
 import { ProgressPanel } from "./progress.js";
 
 const ORDER = ["supported", "partially_supported", "contested", "contradicted", "uncertain", "unsupported", "no_passages", "not_checked", "failed", "waiting"];
@@ -48,9 +48,9 @@ export async function renderHistory(view, params, query) {
       bits.push(h("div", { class: "hist-action" }, btn, h("span", { class: "muted small" }, `Documents were added since ${withNew.length === 1 ? "this check was" : "these checks were"} run. The AI reads only the new documents; the checks are not run again, so your reviews are kept.`)));
     }
     if (n) {
-      const btn = h("button", { class: "btn btn-sm", type: "button", disabled: !secondSet || secondSet === main }, icon("cpu", { size: 13 }), `Ask a second AI model for ${shown}${batch || q || status ? ` (${n})` : ""}`);
-      btn.addEventListener("click", () => runJob(btn, "second-opinion", `/api/projects/${P(project)}/second-opinion`, batch ? { batch } : { hyp_ids: rows.map((x) => x.hyp_id) }, "The second AI model is reading the excerpts"));
-      bits.push(h("div", { class: "hist-action" }, btn, h("span", { class: "muted small" }, auditor ? `The auditor (${secondSet}) reads the excerpts already read; its judgements are shown beside the first ones and never change an answer. Excerpts it has read are skipped.` : secondSet && secondSet !== main ? `A second model reads the excerpts already read and its judgements are shown beside the main model's; they never change an answer. Excerpts it has read are skipped. ${ONE_MODEL_NOTE}` : ["No second AI model is chosen yet: ", h("a", { href: "#/settings/second" }, "choose one in Settings"), `. ${ONE_MODEL_NOTE}`])));
+      const btn = h("button", { class: "btn btn-sm", type: "button", disabled: !secondSet || secondSet === main }, icon("arrows-opposed", { size: 13 }), `Get a second opinion for ${shown}${batch || q || status ? ` (${n})` : ""}`);
+      btn.addEventListener("click", () => runJob(btn, "second-opinion", `/api/projects/${P(project)}/second-opinion`, batch ? { batch } : { hyp_ids: rows.map((x) => x.hyp_id) }, "A second opinion: another model reads the excerpts"));
+      bits.push(h("div", { class: "hist-action" }, btn, h("span", { class: "muted small" }, auditor ? `Another model (${secondSet}, the auditor) reads the excerpts already read, for comparison only: its judgements are shown beside the first AI's and never change an answer. Excerpts it has read are skipped. (A stronger model, which does replace the judgements, is asked for on each result.)` : secondSet && secondSet !== main ? `Another model (${secondSet}) reads the excerpts already read, for comparison only: its judgements are shown beside the first AI's and never change an answer. Excerpts it has read are skipped. ${ONE_MODEL_NOTE}` : ["No model for second opinions is chosen yet: ", h("a", { href: "#/settings/second" }, "choose one in Settings"), `. ${ONE_MODEL_NOTE}`])));
     }
     actionsBox.hidden = !bits.length;
     bits.forEach((b) => actionsBox.appendChild(b));
@@ -62,7 +62,7 @@ export async function renderHistory(view, params, query) {
       const r = await api("POST", path, body);
       followJob(r.job.id, title, kind);
     } catch (e) {
-      if (e.status === 400 && kind === "second-opinion") toast(e.message, "warn", { action: { href: "#/settings/second", text: "Choose a second model in Settings" } }); else showError(e);
+      if (e.status === 400 && kind === "second-opinion") toast(e.message, "warn", { action: { href: "#/settings/second", text: "Choose a model for second opinions in Settings" } }); else showError(e);
       btn.disabled = false;
     }
   }
@@ -82,7 +82,7 @@ export async function renderHistory(view, params, query) {
           const n = r.passages || 0;
           toast(`The new documents were read for ${hs.length} ${hs.length === 1 ? "result" : "results"}: ${n} more ${n === 1 ? "excerpt" : "excerpts"} read. Reviews are kept.`, "ok", { ttl: 6000 });
         } else if (job.kind === "second-opinion") {
-          toast(r.graded ? `The second AI model has read the excerpts of ${r.hypotheses || 0} ${r.hypotheses === 1 ? "result" : "results"}. Where it disagrees with the main model, the result is tagged below.` : "The second AI model had already read every excerpt of these results: nothing new to read.", "ok", { ttl: 6000 });
+          toast(r.graded ? `The second opinion is in for ${r.hypotheses || 0} ${r.hypotheses === 1 ? "result" : "results"}. Where it differs from the first AI, the result is tagged below; the answers are unchanged.` : "Every excerpt of these results already has a second opinion: nothing new to read.", "ok", { ttl: 6000 });
         }
       } else if (job.state === "error") showError({ message: job.error, kind: job.error_kind });
       await refresh();
@@ -146,9 +146,9 @@ export async function renderHistory(view, params, query) {
               x.to_review ? h("span", { class: "it to-review" }, icon("eye", { size: 11 }), `${x.to_review} to review`) : null,
               x.corrected ? h("span", { class: "it corrected" }, icon("note", { size: 11 }), `${x.corrected} changed by you`) : null,
               x.docs_added_since ? h("span", { class: "it tag-new-docs", title: `${x.docs_added_since} ${x.docs_added_since === 1 ? "document was" : "documents were"} added to the project after this check; open the result to have the AI read them` }, icon("upload", { size: 11 }), `${x.docs_added_since} ${x.docs_added_since === 1 ? "document" : "documents"} added since`) : null,
-              x.disagreements ? h("span", { class: "it tag-disagree", title: "A second AI model judged these excerpts differently from the main model; read them yourself" }, icon("arrows-opposed", { size: 11 }), `models disagree on ${x.disagreements}`) : null,
+              x.disagreements ? h("span", { class: "it tag-disagree", title: "A second opinion (another AI model, for comparison only) judged these excerpts differently from the first AI. The answer is unchanged: open the result and read them yourself." }, icon("arrows-opposed", { size: 11 }), `second opinion differs on ${x.disagreements}`) : null,
               x.note ? h("span", { class: "it", title: x.note }, icon("note", { size: 11 }), "has notes") : null)),
-          h("td", { "data-label": "Answer", class: "verdict-cell" }, statusBadge(x.status, { short: true }),
+          h("td", { "data-label": "Answer", class: "verdict-cell" }, statusBadge(x.status, { short: true }), " ", strongerMark(x.status_before_stronger, {}, { compact: true, plain: true }),
             x.status_any && x.status_any !== x.status ? h("div", { class: "muted small", style: { marginTop: "3px" } }, "If the uncertain judgements counted too: ", STATUS_SHORT[x.status_any] || x.status_any) : null),
           h("td", { "data-label": "Excerpts that count" }, evidenceCell(x)),
           h("td", { "data-label": "Checked", class: "small muted nowrap", title: fmt.date(x.created_at) }, fmt.dateShort(x.created_at)));
@@ -161,7 +161,7 @@ export async function renderHistory(view, params, query) {
   await refresh();
   // a job started here earlier (or from the jobs list) and still running: follow it
   try {
-    const titles = { "read-new": "Reading the new documents", "second-opinion": "The second AI model is reading the excerpts" };
+    const titles = { "read-new": "Reading the new documents", "second-opinion": "A second opinion: another model reads the excerpts" };
     const jobs = (await api("GET", "/api/jobs")).jobs || [];
     const mine = query.job ? jobs.find((j) => j.id === query.job) : null;
     const running = mine && titles[mine.kind] ? mine : jobs.find((j) => j.project === project && titles[j.kind] && !TERMINAL.has(j.state));

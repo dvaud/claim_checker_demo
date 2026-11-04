@@ -2,7 +2,7 @@
 // what (documents, from `balance`), then the evidence as verified quotes. Every count on the page is computed from
 // the same `passages` the cards are drawn from, so sections and numbers always agree. A person's judgement
 // replaces the AI's; it is protected (no silent overwrite) and every save can be undone.
-import { App, api, h, icon, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, partsSentence, queueNotice, auditorName } from "../lib.js";
+import { App, api, h, icon, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, partsSentence, queueNotice, auditorName, strongerMark } from "../lib.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
 
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
@@ -108,6 +108,7 @@ export async function renderResult(view, [hypId], query) {
   const termsResult = new Map();   // claim_id -> inline result of the last search with other words
   const running = new Map();       // job id -> {kind, mini} of a follow-up job of this result (read again, new documents, second model)
   let followNote = null;           // text shown in the follow-ups card after one of its jobs ended
+  const secondShown = new Set();   // 0.11.2: "claim|passage" whose passage highlights the second opinion's quote
   const pendingQuote = new Map();  // "claim|passage" -> {text, start, end}: a sentence marked before a judgement was chosen (not saved yet)
   const visitedNext = new Set();   // cards "Next to review" went to in this session, so it moves on and wraps around
   let disagreeAt = -1;             // where "Next disagreement" is in its cycle
@@ -278,10 +279,10 @@ export async function renderResult(view, [hypId], query) {
     // the same order "Next to review" uses, counted from the same excerpts the cards are drawn from
     const disagreeNew = allPassages.filter((p) => !p.reviewed && p.second && !p.second.agrees).length;
     const scopeNew = allPassages.filter((p) => !p.reviewed && p.scope_note).length;
-    const nextBtn = toReview ? h("button", { class: "btn btn-sm", type: "button", onClick: nextToReview }, icon("arrow-right", { size: 13 }), disagreeNew ? "Next to review (models disagree first)" : scopeNew ? "Next to review (“about another group” first)" : countedUnchecked ? "Next to review (counts first)" : "Next to review") : null;
+    const nextBtn = toReview ? h("button", { class: "btn btn-sm", type: "button", onClick: nextToReview }, icon("arrow-right", { size: 13 }), disagreeNew ? "Next to review (where the second opinion differs first)" : scopeNew ? "Next to review (“about another group” first)" : countedUnchecked ? "Next to review (counts first)" : "Next to review") : null;
     const disagreeAll = allPassages.filter((p) => p.second && !p.second.agrees).length;
-    const disCounter = h("span", { class: "muted small", "aria-live": "polite" }, disagreeAt >= 0 ? `Disagreement ${Math.min(disagreeAt + 1, disagreeAll)} of ${disagreeAll}` : `${disagreeAll} ${disagreeAll === 1 ? "excerpt" : "excerpts"} where the AI models disagree`);
-    const disBtn = disagreeAll ? h("span", { class: "it dis-nav" }, h("button", { class: "btn btn-sm", type: "button", onClick: () => nextDisagreement(disCounter) }, icon("arrows-opposed", { size: 13 }), "Next disagreement"), disCounter) : null;
+    const disCounter = h("span", { class: "muted small", "aria-live": "polite" }, disagreeAt >= 0 ? `${Math.min(disagreeAt + 1, disagreeAll)} of ${disagreeAll}` : `${disagreeAll} ${disagreeAll === 1 ? "excerpt" : "excerpts"} where the second opinion differs`);
+    const disBtn = disagreeAll ? h("span", { class: "it dis-nav" }, h("button", { class: "btn btn-sm", type: "button", onClick: () => nextDisagreement(disCounter) }, icon("arrows-opposed", { size: 13 }), "Next where it differs"), disCounter) : null;
     const review = h("div", { class: "answer-review" }, icon("note", { size: 13 }),
       h("div", {},
         h("span", {}, h("strong", {}, "Reviewed by you: "), `${reviewed.length} of the ${read} excerpts read`, changed ? ` (you changed ${changed})` : "", ". ",
@@ -307,13 +308,14 @@ export async function renderResult(view, [hypId], query) {
     card.appendChild(h("div", { class: "answer-main" },
       h("div", { class: "answer-status" },
         h("div", { class: "answer-status-main" },
-          provisional ? h("span", { class: "status-prefix" }, "The AI's first reading:") : null,
-          statusBadge(st, { size: "lg", text: r.status_text || App.statusText(st), class: provisional ? "badge-provisional" : "" })),
+          provisional ? h("span", { class: "status-prefix" }, r.status_before_stronger ? "The stronger model's reading:" : "The AI's first reading:") : null,
+          statusBadge(st, { size: "lg", text: r.status_text || App.statusText(st), class: provisional ? "badge-provisional" : "" }),
+          strongerMark(r.status_before_stronger, r.stronger)),
         h("span", { class: `basis ${basis[1]}`, title: "Who judged the excerpts this answer rests on" }, icon(basis[1] === "basis-you" ? "circle-check" : basis[1] === "basis-part" ? "circle-half" : "cpu", { size: 13 }), basis[0])),
       basisLine || decides ? h("p", { class: "answer-basis-line" + (decides ? " answer-decides" : "") }, decides ? [h("strong", {}, decides), " "] : null, basisLine || null) : null,
       sentence ? h("p", { class: "answer-sentence" }, sentence) : null,
       r.decomposed ? h("ol", { class: "answer-part-list" }, parts.map((p) => h("li", { class: p.status === "supported" ? "ok" : "notok" },
-        h("a", { href: `#part-${p.part}`, class: "serif", onClick: jumpTo(`part-${p.part}`) }, p.claim), " ", statusBadge(p.status, { short: true })))) : null,
+        h("a", { href: `#part-${p.part}`, class: "serif", onClick: jumpTo(`part-${p.part}`) }, p.claim), " ", statusBadge(p.status, { short: true }), " ", strongerMark(p.status_before_stronger, p.stronger, { compact: true, plain: true })))) : null,
       r.decomposed ? null : h("p", { class: sentence ? "answer-help" : "answer-sentence" }, App.statusHelp(st)),
       base,
       bal.excerpts_uncounted && st !== "uncertain" ? h("p", { class: "answer-help" }, `${bal.excerpts_uncounted} more ${bal.excerpts_uncounted === 1 ? "judgement was" : "judgements were"} too uncertain to count; ${bal.excerpts_uncounted === 1 ? "it is" : "they are"} shown below, marked as not counted.`) : null,
@@ -377,7 +379,7 @@ export async function renderResult(view, [hypId], query) {
     const all = [...box.querySelectorAll(".ev")].filter((e) => e.dataset.disagree === "1");
     if (!all.length) return;
     disagreeAt = (disagreeAt + 1) % all.length;
-    if (counter) counter.textContent = `Disagreement ${disagreeAt + 1} of ${all.length}`;
+    if (counter) counter.textContent = `${disagreeAt + 1} of ${all.length} where the second opinion differs`;
     goToCard(all[disagreeAt]);
   }
 
@@ -400,7 +402,7 @@ export async function renderResult(view, [hypId], query) {
     const disagree = r.disagreements || 0;
     const disagreeNew = r.disagreements_to_review || 0;
     const card = h("section", { class: "card followups", "aria-label": "Keep this result up to date" });
-    card.appendChild(h("div", { class: "card-head" }, h("h2", {}, "Keep this result up to date"), h("span", { class: "muted small" }, "Both keep your reviews and notes.")));
+    card.appendChild(h("div", { class: "card-head" }, h("h2", {}, "Keep this result up to date"), h("span", { class: "muted small" }, "Your reviews and notes are always kept.")));
     const rows = h("div", { class: "followup-rows" });
     card.appendChild(rows);
     const busy = [...running.values()];
@@ -425,30 +427,61 @@ export async function renderResult(view, [hypId], query) {
     }
     rows.appendChild(docsRow);
 
-    // --- second AI model
-    const secRow = h("div", { class: "followup-row" });
-    let secLead, secHelp = null, secBtn = null;
+    // --- another AI model (0.11.2): two distinct choices, side by side. A stronger model *replaces* the first
+    // reading (the answer can change); a second opinion is *only compared* with it (the answer never changes).
+    const askRow = h("div", { class: "followup-row ask-models" });
+    const askHead = h("div", { class: "followup-text" }, icon("cpu", { size: 15 }),
+      h("div", {}, h("p", { class: "followup-lead" }, h("strong", {}, "Ask another AI model to read these excerpts")),
+        h("p", { class: "muted small" }, "Two different things: a stronger model judges them again and its judgements become the answer; a second opinion is only shown beside the first, to point you to excerpts worth reading yourself.")));
+
+    // the stronger model: replaces
+    const rds = (r.parts || []).flatMap((p) => p.rounds_info || []);
+    const canStep = rds.filter((x) => x.can_step_up).length;
+    const stepping = rds.filter((x) => x.stronger_waiting).length;
+    const stepped = rds.filter((x) => x.stepped_up).length;
+    const sInfo = r.stronger || {};
+    let strongState = null, strongBtn = null;
+    if (stepped) {
+      const n = sInfo.changed || 0;
+      strongState = h("p", { class: "small ask-state" }, icon("layers", { size: 12 }), h("span", {}, `${(sInfo.models || []).join(", ") || "A stronger model"} read ${stepped === rds.length ? (stepped === 1 ? "the search" : `all ${stepped} searches`) : `${stepped} of the ${rds.length} searches`} again and ${n ? `changed ${n} ${n === 1 ? "judgement" : "judgements"}` : "kept every judgement"}.`,
+        r.status_before_stronger ? [" The answer was ", h("strong", {}, (STATUS_SHORT[r.status_before_stronger] || "").toLowerCase()), " before."] : ""));
+    }
+    if (stepping) strongState = h("p", { class: "small ask-state" }, icon("inbox", { size: 12 }), ` A stronger model is reading ${stepping === 1 ? "a search" : `${stepping} searches`} again; until then the first reading counts.`);
+    if (!current.stronger_model) {
+      strongState = strongState || h("p", { class: "small muted ask-state" }, "Not available with the AI chosen in ", h("a", { href: "#/settings/routing" }, "Settings"), ": there is no stronger model above the one that judges excerpts.");
+    } else if (canStep) {
+      strongBtn = h("button", { class: "btn btn-sm", type: "button", disabled: busy.some((x) => x.kind === "stronger") }, icon("layers", { size: 13 }), stepped ? `Ask ${current.stronger_model} for the ${canStep === 1 ? "new search" : `${canStep} new searches`}` : `Ask a stronger model (${current.stronger_model})`);
+      strongBtn.addEventListener("click", () => runStronger(strongBtn));
+    } else if (!stepped && !stepping) {
+      strongState = h("p", { class: "small muted ask-state" }, "Nothing a stronger model can read yet.");
+    }
+    const strongBox = h("div", { class: "ask-option ask-replace" },
+      h("div", { class: "ask-title" }, icon("layers", { size: 14 }), h("strong", {}, "Stronger model"), h("span", { class: "ask-tag ask-tag-replace" }, "replaces the AI's judgements")),
+      h("p", { class: "small" }, `${current.stronger_model ? `A stronger model (${current.stronger_model})` : "A stronger model"} judges the excerpts again. Its judgements take the place of the first AI's, so the answer can change; a small mark beside the answer then says what it was at first, and each changed excerpt shows both readings. Once per search.`),
+      strongState, strongBtn);
+
+    // the second opinion: compares
+    let secState = null, secBtn = null;
     const allRead = secondRead >= read && read > 0;
     if (secondRead) {
-      secLead = `A second AI model read ${secondRead === read ? `all ${read}` : `${secondRead} of the ${read}`} excerpts${disagree ? ` and disagrees with the main model on ${disagree}${disagreeNew ? ` (${disagreeNew} not reviewed by you yet)` : ""}.` : " and agrees with the main model on every one."}`;
-      secHelp = disagree ? "“Next to review” in the answer goes to the excerpts where the models disagree first. The second model's judgements never change the answer; yours do." : "Its judgements are shown on each excerpt and never change the answer.";
-    } else {
-      secLead = "Ask a second AI model to read the same excerpts.";
-      secHelp = "A second opinion from another model: where the two disagree, it is worth reading the excerpt yourself. Its judgements are shown beside the main model's and never change the answer.";
+      secState = h("p", { class: "small ask-state" }, icon(disagree ? "arrows-opposed" : "check", { size: 12 }),
+        h("span", {}, `${(r.second_models || []).join(", ") || "The second model"} read ${secondRead === read ? `all ${read}` : `${secondRead} of the ${read}`} excerpts and ${disagree ? `judged ${disagree} differently${disagreeNew ? ` (${disagreeNew} not reviewed by you yet; “Next to review” goes to them first)` : ""}` : "judged every one the same way"}.`));
     }
     if (secondUsable && !changingSecond) {
-      secBtn = h("button", { class: "btn btn-sm", type: "button", disabled: allRead || busy.some((x) => x.kind === "second-opinion") }, icon("cpu", { size: 13 }), secondRead ? (allRead ? "Every excerpt has a second reading" : "Let it read the rest") : "Ask a second AI model");
+      secBtn = h("button", { class: "btn btn-sm", type: "button", disabled: allRead || busy.some((x) => x.kind === "second-opinion") }, icon("arrows-opposed", { size: 13 }), secondRead ? (allRead ? "Every excerpt has a second opinion" : "Second opinion on the rest") : "Get a second opinion");
       secBtn.addEventListener("click", () => runSecondOpinion(secBtn));
     }
-    const chosenLine = secondUsable && !changingSecond ? h("p", { class: "small second-chosen" }, h("span", { class: "muted" }, "Second AI model: "), h("strong", {}, secondSet),
-      auditor ? h("span", { class: "muted" }, " · it can be another model than the one that judged first when Fable is switched on (Settings)") : [" · ",
+    const chosenLine = secondUsable && !changingSecond ? h("p", { class: "small second-chosen" }, h("span", { class: "muted" }, "Model for second opinions: "), h("strong", {}, secondSet),
+      auditor ? null : [" · ",
         h("button", { class: "link-btn", type: "button", onClick: () => { changingSecond = true; draw(current); } }, "change"), h("span", { class: "muted" }, sizeHint(secondSet))]) : null;
-    append(secRow, [h("div", { class: "followup-text" }, icon("cpu", { size: 15 }),
-      h("div", {}, h("p", { class: "followup-lead" }, h("strong", {}, secLead)), h("p", { class: "muted small" }, secHelp),
-        chosenLine,
-        auditor ? null : secondUsable && !changingSecond ? h("p", { class: "muted small" }, ONE_MODEL_NOTE) : secondModelPicker(mainModel, secondUsable ? secondSet : "", busy.some((x) => x.kind === "second-opinion")))),
-      secBtn ? h("div", { class: "followup-action" }, secBtn) : null]);
-    rows.appendChild(secRow);
+    const secondBox = h("div", { class: "ask-option ask-compare" },
+      h("div", { class: "ask-title" }, icon("arrows-opposed", { size: 14 }), h("strong", {}, "Second opinion"), h("span", { class: "ask-tag ask-tag-compare" }, "only for comparison")),
+      h("p", { class: "small" }, "Another model reads the same excerpts on its own. Its judgement is shown on each excerpt beside the first AI's and never changes the answer; where the two differ, read the excerpt and judge it yourself."),
+      chosenLine, secState,
+      auditor ? null : secondUsable && !changingSecond ? h("p", { class: "muted small" }, ONE_MODEL_NOTE) : secondModelPicker(mainModel, secondUsable ? secondSet : "", busy.some((x) => x.kind === "second-opinion")),
+      secBtn);
+    append(askRow, [askHead, h("div", { class: "ask-grid" }, strongBox, secondBox)]);
+    rows.appendChild(askRow);
     if (noteEl) card.appendChild(noteEl);
     card.appendChild(jobsBox);
     return card;
@@ -464,12 +497,12 @@ export async function renderResult(view, [hypId], query) {
   // Choose the second model and ask it, in one step: a select of the other chat models on the server and a button.
   // The choice is saved in Settings (second_model) when the button is pressed.
   function secondModelPicker(mainModel, currentChoice, busy) {
-    const sel = h("select", { class: "select input-sm", "aria-label": "Second AI model", disabled: true }, h("option", { value: "" }, "Looking for other models…"));
-    const ask = h("button", { class: "btn btn-sm btn-primary", type: "button", disabled: true }, icon("cpu", { size: 13 }), "Ask this model for a second opinion");
+    const sel = h("select", { class: "select input-sm", "aria-label": "Model for second opinions", disabled: true }, h("option", { value: "" }, "Looking for other models…"));
+    const ask = h("button", { class: "btn btn-sm btn-primary", type: "button", disabled: true }, icon("cpu", { size: 13 }), "Get a second opinion from this model");
     const state = h("span", { class: "muted small", "aria-live": "polite" });
     const hint = h("p", { class: "muted small", style: { margin: "4px 0 0" } }, "The number before “b” in a model's name is its size, in billions of parameters: a larger model is usually better, but slower. ", ONE_MODEL_NOTE, " ", h("a", { href: "#/settings/second" }, "More in Settings"), ".");
     const box = h("div", { class: "second-pick" },
-      h("p", { class: "muted small", style: { margin: "0 0 4px" } }, currentChoice ? "Choose another of the models on this computer:" : "No second AI model is chosen yet. Pick one of the other models on this computer:"),
+      h("p", { class: "muted small", style: { margin: "0 0 4px" } }, currentChoice ? "Choose another of the models on this computer:" : "No model for second opinions is chosen yet. Pick one of the other models on this computer:"),
       h("div", { class: "row", style: { gap: "6px 8px" } }, sel, ask, currentChoice ? h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { changingSecond = false; draw(current); } }, "Keep it") : null, state),
       hint);
     api("GET", "/api/servers").then((r) => {
@@ -541,17 +574,30 @@ export async function renderResult(view, [hypId], query) {
     } catch (e) { showError(e); btn.disabled = false; }
   }
 
+  async function runStronger(btn) {
+    btn.disabled = true;
+    try {
+      const res = await api("POST", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/stronger`, {});
+      const before = current.status;
+      followJob(res.job.id, "stronger", `A stronger model (${current.stronger_model}) reads the excerpts again`, async (job, fresh) => {
+        const n = (fresh.stronger || {}).changed || 0;
+        followNote = `A stronger model read the excerpts again and ${n ? `changed ${n} ${n === 1 ? "judgement" : "judgements"}` : "kept every judgement"}. Its reading counts${fresh.status !== before ? `: the answer is now ${(STATUS_SHORT[fresh.status] || "").toLowerCase()} (it was ${(STATUS_SHORT[before] || "").toLowerCase()})` : "; the answer stays the same"}.`;
+        toast("The stronger model has read the excerpts again.", "ok", { small: true, ttl: 4000 });
+      });
+    } catch (e) { showError(e); btn.disabled = false; }
+  }
+
   async function runSecondOpinion(btn) {
     btn.disabled = true;
     try {
       const res = await api("POST", `/api/projects/${P(project)}/second-opinion`, { hyp_ids: [hypId] });
-      followJob(res.job.id, "second-opinion", "The second AI model is reading the excerpts", async (job, fresh) => {
+      followJob(res.job.id, "second-opinion", "A second opinion: another model reads the excerpts", async (job, fresh) => {
         const d = fresh.disagreements || 0;
-        followNote = `The second AI model read ${fresh.second_read || 0} ${fresh.second_read === 1 ? "excerpt" : "excerpts"}${d ? ` and disagrees with the main model on ${d}: “Next to review” goes to ${d === 1 ? "it" : "those"} first.` : " and agrees with the main model on every one."}`;
-        toast("The second AI model has read the excerpts.", "ok", { small: true, ttl: 4000 });
+        followNote = `The second opinion is in for ${fresh.second_read || 0} ${fresh.second_read === 1 ? "excerpt" : "excerpts"}${d ? `; it differs from the first AI on ${d}: “Next to review” goes to ${d === 1 ? "it" : "those"} first. The answer is unchanged.` : " and matches the first AI on every one. The answer is unchanged."}`;
+        toast("The second opinion is in.", "ok", { small: true, ttl: 4000 });
       });
     } catch (e) {
-      if (e.status === 400) toast(e.message, "warn", { action: { href: "#/settings/second", text: "Choose a second model in Settings" } }); else showError(e);
+      if (e.status === 400) toast(e.message, "warn", { action: { href: "#/settings/second", text: "Choose a model for second opinions in Settings" } }); else showError(e);
       btn.disabled = false;
     }
   }
@@ -560,10 +606,11 @@ export async function renderResult(view, [hypId], query) {
   async function adoptRunningJobs() {
     let jobs = [];
     try { jobs = (await api("GET", "/api/jobs")).jobs || []; } catch (_) { return; }
-    const titles = { reread: "Reading one excerpt again", "read-new": "Reading the new documents", "second-opinion": "The second AI model is reading the excerpts" };
+    const titles = { reread: "Reading one excerpt again", "read-new": "Reading the new documents", "second-opinion": "A second opinion: another model reads the excerpts", stronger: "A stronger model reads the excerpts again" };
     for (const j of jobs) {
       if (j.project !== project || !titles[j.kind] || TERMINAL.has(j.state) || running.has(j.id)) continue;
-      followJob(j.id, j.kind, titles[j.kind], async () => { followNote = j.kind === "reread" ? "The AI has read an excerpt again." : j.kind === "read-new" ? "The new documents were read." : "The second AI model has read the excerpts."; });
+      if (j.kind === "stronger" && j.scope !== hypId) continue;   // a stronger model for another result
+      followJob(j.id, j.kind, titles[j.kind], async () => { followNote = { reread: "The AI has read an excerpt again.", "read-new": "The new documents were read.", "second-opinion": "The second opinion is in.", stronger: "A stronger model has read the excerpts again; its reading counts." }[j.kind]; });
     }
   }
 
@@ -656,7 +703,7 @@ export async function renderResult(view, [hypId], query) {
       card.appendChild(h("div", { class: "part-head" },
         h("div", { class: "grow" }, h("span", { class: "pn" }, `Part ${part.part} of ${r.parts.length}`), h("p", { class: "part-claim" }, part.claim),
           part.target ? h("div", { style: { marginTop: "6px" } }, codeChip(part.framework, part.target, part.target_description, r.code_label)) : null),
-        h("div", { class: "part-status" }, statusBadge(part.status, { short: true }), h("span", { class: "muted small", style: { maxWidth: "28em", textAlign: "right" } }, part.status === "uncertain" ? "judged, but nothing certain enough to count" : docsCountSentence(part.balance),
+        h("div", { class: "part-status" }, h("span", { class: "it" }, statusBadge(part.status, { short: true }), strongerMark(part.status_before_stronger, part.stronger, { compact: true })), h("span", { class: "muted small", style: { maxWidth: "28em", textAlign: "right" } }, part.status === "uncertain" ? "judged, but nothing certain enough to count" : docsCountSentence(part.balance),
           part.balance && part.balance.docs_counted ? ` Rests on ${part.balance.docs_counted} ${part.balance.docs_counted === 1 ? "document" : "documents"} (${counted} ${counted === 1 ? "excerpt" : "excerpts"}).` : ""))));
       if (App.statusHelp(part.status)) card.appendChild(h("p", { class: "part-help muted small" }, `This part: ${App.statusHelp(part.status)}`));
       const who = whoSaysWhat(part);
@@ -725,10 +772,10 @@ export async function renderResult(view, [hypId], query) {
       const you = p.user_verdict ? (p.user_verdict === "not_relevant" ? null : p.user_verdict) : undefined;
       const agreesYou = you === undefined ? null : (p.second.verdict || null) === you;
       const ok = agreesYou === null ? !!p.second.agrees : agreesYou;
-      return h("span", { class: `it ${ok ? "" : "tag-disagree"}` }, icon(ok ? "check" : "arrows-opposed", { size: 12 }), `${gradeWords(p.second.verdict, p.second.confidence)} · ${agreesYou === null ? (p.second.agrees ? "agrees" : "disagrees") : (agreesYou ? "agrees with you" : "disagrees with you")}`);
+      return h("span", { class: `it ${ok ? "" : "tag-disagree"}` }, icon(ok ? "check" : "arrows-opposed", { size: 12 }), `${gradeWords(p.second.verdict, p.second.confidence)} · ${agreesYou === null ? (p.second.agrees ? "same as the AI" : "differs from the AI") : (agreesYou ? "same as you" : "differs from you")}`);
     };
     const table = h("table", { class: "table table-responsive ex-table" },
-      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "#"), split ? h("th", { scope: "col" }, "Part") : null, h("th", { scope: "col" }, "Document"), h("th", { scope: "col" }, "Where"), h("th", { scope: "col" }, "AI's judgement"), h("th", { scope: "col" }, "Your judgement"), h("th", { scope: "col" }, "Counts"), h("th", { scope: "col" }, "Second AI model"))),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "#"), split ? h("th", { scope: "col" }, "Part") : null, h("th", { scope: "col" }, "Document"), h("th", { scope: "col" }, "Where"), h("th", { scope: "col" }, "AI's judgement"), h("th", { scope: "col" }, "Your judgement"), h("th", { scope: "col" }, "Counts"), h("th", { scope: "col" }, "Second opinion"))),
       h("tbody", {}, rows.map(([part, p], i) => h("tr", { class: `row-link ex-row ex-${p.verdict || "none"}${p.reviewed ? " ex-reviewed" : ""}`, tabindex: "0", onClick: () => open(part, p), onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(part, p); } } },
         h("td", { class: "num muted" }, String(i + 1)),
         split ? h("td", { "data-label": "Part" }, `Part ${part.part}`) : null,
@@ -737,7 +784,7 @@ export async function renderResult(view, [hypId], query) {
         h("td", { "data-label": "AI's judgement" }, h("span", { class: "it" }, icon(p.ai_verdict ? { supports: "circle-check", partially_supports: "circle-half", refutes: "circle-x" }[p.ai_verdict] : "circle-dashed", { size: 12 }), gradeWords(p.ai_verdict, p.confidence)), p.reread ? h("div", { class: "small muted" }, "read again") : null),
         h("td", { "data-label": "Your judgement" }, yours(p)),
         h("td", { "data-label": "Counts" }, p.verdict ? (p.counted ? h("span", { class: "it", style: { color: "var(--ok)" } }, icon("check", { size: 12 }), "counts") : h("span", { class: "muted small" }, "too uncertain")) : h("span", { class: "muted small" }, "not about it")),
-        h("td", { "data-label": "Second AI model", class: "small" }, second(p))))));
+        h("td", { "data-label": "Second opinion", class: "small" }, second(p))))));
     return h("section", { class: "card ex-table-card", "aria-label": "All excerpts read" },
       h("div", { class: "card-head" }, h("h2", {}, `All ${rows.length} excerpts read`), h("span", { class: "muted small" }, "in the same order as the cards; your judgements count whatever the AI's certainty")),
       h("div", { class: "table-wrap" }, table));
@@ -792,23 +839,49 @@ export async function renderResult(view, [hypId], query) {
       h("div", { class: "btn-row" }, btn, h("span", { class: "muted small" }, "Without a local model (Settings → AI) they wait for your judgement."))));
   }
 
-  // 0.8: "Ask a stronger model" on one search round (the excerpts the AI read together), once
+  // What a stronger model did with one search (0.11.2: asking for one is in "Ask another AI model", for the whole result)
   function strongerLine(rd) {
     if (rd.waiting) return h("div", { class: "muted small" }, icon("inbox", { size: 12 }), " Waiting for Claude Code.");
     if (rd.stronger_waiting) return h("div", { class: "muted small" }, icon("inbox", { size: 12 }), " A stronger model reads these excerpts again; until then the first reading counts.");
-    if (rd.stepped_up) return h("div", { class: "muted small" }, icon("layers", { size: 12 }), " A stronger model read these excerpts again; its reading counts (the first one is under Technical details on each excerpt).");
-    if (!current.stronger_model || rd.status !== "done") return null;
-    return h("div", {}, h("button", { class: "btn btn-sm btn-ghost stronger-btn", type: "button", title: "The excerpts of this search are read once more by a stronger model; its judgements replace the AI's first ones (yours stay and still count)", onClick: async (e) => {
-      e.currentTarget.disabled = true;
-      try {
-        const r = await api("POST", `/api/projects/${P(project)}/tasks/${P(rd.task_id)}/stronger`, {});
-        toast(`A stronger model (${current.stronger_model}) reads these ${rd.passages} excerpts again.`, "ok");
-        const w = watchJob(r.job.id, () => {});
-        watchers.push(w);
-        w.promise.then(() => load()).catch(() => load());
-        load();
-      } catch (err) { showError(err); }
-    } }, icon("layers", { size: 13 }), `Ask a stronger model (${current.stronger_model})`));
+    if (rd.stepped_up) return h("div", { class: "muted small" }, icon("layers", { size: 12 }), " A stronger model read these excerpts again; its reading counts (each changed excerpt shows the first one).");
+    return null;
+  }
+
+  // 0.11.2: where the second opinion's quote is in the excerpt (it gives its own), or null
+  function secondQuote(p) {
+    const q = p.second && p.second.verdict ? p.second.quote : null;
+    if (!q) return null;
+    const i = String(p.text || "").indexOf(q);
+    return i >= 0 ? { start: i, end: i + q.length } : null;
+  }
+
+  // 0.11.2: the second opinion beside the first reading, both always in view: who said what, whether they differ,
+  // and a switch for which of the two quotes the passage highlights.
+  function secondOpinionRow(p, part) {
+    const s = p.second;
+    const same = !!s.agrees;
+    const words = (v, c) => v ? gradeWords(v, c) : "not about this";
+    const you = p.user_verdict ? (p.user_verdict === "not_relevant" ? "Not about this" : GRADE_TEXT[p.user_verdict]) : null;
+    const key = pendingKey(p, part);
+    const sq = secondQuote(p);
+    const differentQuote = sq && !(sq.start === p.quote_start && sq.end === p.quote_end);
+    const help = popNote(h("button", { class: "link-btn so-help", type: "button", "aria-label": "What is a second opinion?" }, icon("help", { size: 13 })),
+      "A second opinion is another AI model's own reading of this excerpt, asked for under “Ask another AI model”. It is shown for comparison only and never changes the answer (a stronger model, the other choice there, does). Where the two readings differ, read the excerpt and judge it yourself: your judgement always counts.", { wide: true });
+    const row = h("div", { class: `so-row ${same ? "so-same" : "so-differs"}` },
+      h("span", { class: `so-flag ${same ? "so-flag-same" : "so-flag-differs"}` }, icon(same ? "check" : "arrows-opposed", { size: 12 }), same ? "Second opinion agrees" : "Second opinion differs"),
+      h("dl", { class: "so-pair" },
+        h("div", {}, h("dt", {}, "The AI"), h("dd", {}, words(p.ai_verdict, p.confidence))),
+        h("div", {}, h("dt", {}, `Second opinion${s.model ? ` (${s.model})` : ""}`), h("dd", {}, words(s.verdict, s.confidence))),
+        you ? h("div", {}, h("dt", {}, "You"), h("dd", {}, you)) : null),
+      help);
+    if (differentQuote) {
+      const on = secondShown.has(key);
+      const flip = (v) => () => { if (v === on) return; if (v) secondShown.add(key); else secondShown.delete(key); draw(current); };
+      const seg = (v, label) => h("button", { class: "btn btn-sm seg-btn" + (on === v ? " seg-on" : ""), type: "button", "aria-pressed": on === v ? "true" : "false", onClick: flip(v) }, label);
+      row.appendChild(h("div", { class: "so-flip", role: "group", "aria-label": "Which quote the excerpt highlights" },
+        h("span", { class: "muted small" }, "Highlight the quote of:"), seg(false, p.quote_by === "you" ? "Yours" : "The AI"), seg(true, "Second opinion")));
+    }
+    return row;
   }
 
   function evidenceCard(p, part) {
@@ -849,27 +922,13 @@ export async function renderResult(view, [hypId], query) {
       const chip = h("button", { class: "chip chip-scope", type: "button" }, icon("help", { size: 12 }), h("span", {}, "About another group: ", h("em", {}, p.scope_note)));
       append(top, [popNote(chip, SCOPE_HELP, { wide: true })]);
     }
-    if (p.second) {
-      const s = p.second;
-      const agrees = !!s.agrees;   // with the first AI's own judgement
-      // when the person has judged it, compare with them first (their "not about this" is the model's null)
-      const youSaid = p.user_verdict ? (p.user_verdict === "not_relevant" ? null : p.user_verdict) : undefined;
-      const agreesYou = youSaid === undefined ? null : (s.verdict || null) === youSaid;
-      const text = agreesYou === null ? `Second AI model: ${gradeWords(s.verdict, s.confidence)} — ${agrees ? "agrees" : "disagrees"} with the first AI`
-        : `Second AI model: ${gradeWords(s.verdict, s.confidence)} — ${agreesYou ? "agrees" : "disagrees"} with your judgement (the first AI said ${p.ai_verdict ? GRADE_TEXT[p.ai_verdict] : "not about this"})`;
-      const good = agreesYou === null ? agrees : agreesYou;
-      const chip = h("button", { class: `chip chip-second ${good ? "chip-agrees" : "chip-disagrees"}${!agrees ? " chip-models-differ" : ""}`, type: "button" },
-        icon(good ? "check" : "arrows-opposed", { size: 12 }), h("span", {}, text));
-      append(top, [popNote(chip, (agreesYou === null
-        ? (agrees ? "A second AI model read this excerpt and came to the same judgement as the first AI. " : "A second AI model read this excerpt and judged it differently from the first AI. Where two models disagree, it is worth reading the excerpt yourself: your judgement decides. ")
-        : (agreesYou ? "A second AI model read this excerpt and came to the same judgement as you. " : "A second AI model read this excerpt and judged it differently from you. ") + (agrees ? "It agrees with the first AI. " : "The two AI models disagree with each other. "))
-        + "Second judgements never change the answer.", { wide: true })]);
-    }
     if (isNew) append(top, [h("span", { class: "badge status-supported new-badge" }, "new")]);
     card.appendChild(top);
     if (current && (current.parts || []).length > 1) {
       card.appendChild(h("div", { class: "ev-part muted small" }, icon("split", { size: 12 }), h("span", {}, h("strong", {}, `Part ${part.part} of ${current.parts.length}: `), h("span", { class: "serif" }, part.claim))));
     }
+    const secondBox = p.second ? secondOpinionRow(p, part) : null;
+    if (secondBox) card.appendChild(secondBox);
     const hist = p.ai_history || [];
     if (p.reread && hist.length) {
       const first = hist[0];
@@ -888,7 +947,10 @@ export async function renderResult(view, [hypId], query) {
       whereText(p),
       !p.in_corpus ? h("span", { class: "warn-chip", title: "This document was removed from the project after the check" }, icon("alert-triangle", { size: 12 }), "document removed since") : null));
     // a sentence marked before a judgement was chosen is shown, but not saved until the judgement comes
-    const passageEl = pending && Number.isInteger(pending.start) ? passageNode(p.text, pending.start, pending.end, "p", "passage passage-pending", p.breaks) : passageNode(p.text, p.quote_start, p.quote_end, "p", "passage", p.breaks);
+    const sq = secondQuote(p);
+    const showSecond = sq && secondShown.has(pendingKey(p, part));
+    const passageEl = pending && Number.isInteger(pending.start) ? passageNode(p.text, pending.start, pending.end, "p", "passage passage-pending", p.breaks)
+      : showSecond ? passageNode(p.text, sq.start, sq.end, "p", "passage passage-second", p.breaks) : passageNode(p.text, p.quote_start, p.quote_end, "p", "passage", p.breaks);
     card.appendChild(passageEl);
     if (pending) {
       card.appendChild(h("div", { class: "pending-quote", role: "status" }, icon("highlighter", { size: 13 }),
@@ -896,10 +958,10 @@ export async function renderResult(view, [hypId], query) {
         h("button", { class: "link-btn", type: "button", onClick: () => { pendingQuote.delete(pendingKey(p, part)); draw(current); } }, "Forget this sentence")));
     }
     const hasQuoteNow = Number.isInteger(p.quote_start) && Number.isInteger(p.quote_end) && p.quote_end > p.quote_start;
-    if (hasQuoteNow && p.quote_by && !pending) {
+    if ((hasQuoteNow && p.quote_by || showSecond) && !pending) {
       const aiDiffers = p.quote_by === "you" && p.ai_quote && p.ai_quote !== p.quote;
       card.appendChild(h("div", { class: "quote-by muted small" }, icon("highlighter", { size: 12 }),
-        h("span", {}, p.quote_by === "you" ? "Sentence highlighted by you" : "Sentence highlighted by the AI",
+        h("span", {}, showSecond ? `Sentence highlighted by the second opinion${p.second.model ? ` (${p.second.model})` : ""}` : p.quote_by === "you" ? "Sentence highlighted by you" : "Sentence highlighted by the AI",
           aiDiffers ? [" · The AI pointed to: ", h("q", {}, p.ai_quote)] : null)));
     }
     if (p.refers_to) {  // check-v4: what the quote's "it" or "the plant" is

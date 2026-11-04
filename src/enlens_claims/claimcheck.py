@@ -130,6 +130,42 @@ def changed_by_person(v) -> bool:
     return uv != ai
 
 
+def first_reading(v) -> dict | None:
+    """A verification row as the first model judged it, before a stronger model read it again (0.11.2), or None
+    when no stronger model did. A person's own judgement is kept (it counts either way)."""
+    d = dict(v)
+    hist = json.loads(d.get("ai_history_json") or "[]")
+    before = next((x for x in hist if x.get("why") == "stepped up"), None)
+    if before is None:
+        return None
+    ok = before.get("verdict") in ("supports", "partially_supports", "refutes")
+    d.update(verdict=before.get("verdict") if ok else "not_enough_info",
+             confidence=before.get("confidence") if ok else None, model=before.get("model") or d.get("model"))
+    return d
+
+
+def stronger_eligible(rd: dict) -> bool:
+    """Whether a stronger model can still read a search of a result again (`rounds_info[]` of `result`): a model
+    answered it, and no stronger model read it or was asked to (0.11.2)."""
+    main = next((x for x in rd.get("parts") or [] if x["task_id"] == rd.get("task_id")), None)
+    return (rd.get("status") == "done" and not rd.get("stepped_up") and not rd.get("stronger_waiting")
+            and not rd.get("waiting") and (main is None or main.get("read_by") not in ("you", "waiting")))
+
+
+def _before_stronger(raw_vs: list) -> tuple[list | None, dict]:
+    """The excerpts' effective judgements as they were before a stronger model read them again, and what it changed:
+    (None, {}) when no stronger model read any of them."""
+    firsts = [(v, first_reading(v)) for v in raw_vs]
+    stepped = [(v, f) for v, f in firsts if f is not None]
+    if not stepped:
+        return None, {}
+    grade = lambda x: x["verdict"] if x["verdict"] in GRADES else None  # noqa: E731
+    info = {"excerpts": len(stepped), "changed": sum(1 for v, f in stepped if grade(v) != grade(f)),
+            "first_models": sorted({f["model"] for _v, f in stepped if f.get("model")}),
+            "models": sorted({v["model"] for v, _f in stepped if v.get("model")})}
+    return [effective(f if f is not None else v) for v, f in firsts], info
+
+
 def _graded(vs, thr: float) -> tuple[list, list, list]:
     strong = [v for v in vs if v["confidence"] is not None and v["confidence"] >= thr]
     return ([v for v in strong if v["verdict"] == "supports"], [v for v in strong if v["verdict"] == "partially_supports"],
@@ -1406,6 +1442,8 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                                              for t, pl in zip(g, pls)]})
         for t, pl in zip(g, pls):
             shown += [(r_i, p, t) for p in pl["passages"]]
+    for rd in out["rounds_info"]:  # 0.11.2: whether "Ask a stronger model" can still read this search again
+        rd["can_step_up"] = stronger_eligible(rd)
     by_passage = {v["passage_id"]: v for v in raw_vs}
     locs = _locations(ws, list({p["passage_id"] for _r, p, _t in shown}),
                       {v["passage_id"]: (v["user_start"] if v.get("user_start") is not None else v["start"])
@@ -1481,6 +1519,9 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     waiting = _round_waiting(groups[-1])
     out["status"] = _status_of_rounds(statuses, vs, thr, stage, waiting)
     out["status_any"] = _status_of_rounds(statuses, vs, 0.0, stage, waiting)
+    # 0.11.2: the answer before a stronger model read the excerpts again (its reading counts; the first is kept)
+    vs_first, out["stronger"] = _before_stronger(raw_vs)
+    out["status_first"] = _status_of_rounds(statuses, vs_first, thr, stage, waiting) if vs_first else out["status"]
     out["waiting"] = out["status"] == "waiting"
     out["rounds_task_ids"] = [r["task_id"] for r in rounds]
     out["stepped_up"] = {r["task_id"]: {"step": int(r["step"] or 0), "again": bool(r["again"])} for r in rounds}
@@ -1541,6 +1582,16 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     out["incomplete"] = any(p["status"] in ("failed", "not_checked", "waiting") for p in parts)
     out["queue"] = h.get("queue")
     out["status_text"] = STATUS_TEXT.get(out["status"], out["status"])
+    # 0.11.2: the answer the first model gave, when a stronger model read excerpts again and changed it
+    firsts = [p.get("status_first", p["status"]) for p in parts]
+    out["status_first"] = (firsts[0] if len(firsts) == 1 else aggregate(firsts)) if parts else out["status"]
+    out["status_before_stronger"] = out["status_first"] if out["status_first"] != out["status"] else None
+    st_info = [p["stronger"] for p in parts if p.get("stronger")]
+    out["stronger"] = {"excerpts": sum(x["excerpts"] for x in st_info), "changed": sum(x["changed"] for x in st_info),
+                       "first_models": sorted({m for x in st_info for m in x["first_models"]}),
+                       "models": sorted({m for x in st_info for m in x["models"]})} if st_info else {}
+    for p in parts:
+        p["status_before_stronger"] = p["status_first"] if p.get("status_first", p["status"]) != p["status"] else None
     out["rationale"] = parts[0]["rationale"] if len(parts) == 1 else None
     items = [x for p in parts for x in p["passages"]]
     out["waiting_for_you"] = sum(p["waiting_for_you"] for p in parts)  # 0.11: excerpts no model may read
@@ -1869,8 +1920,12 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         rounds.setdefault(cid, []).append(r)
     ver: dict[str, list] = {}
     ai_of: dict[tuple[str, str], str | None] = {}
-    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model FROM "
-                      "verifications WHERE subject_kind='user_claim'"):
+    first_of: dict[str, list] = {}  # 0.11.2: the excerpts as the first model judged them, where a stronger one read again
+    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model, ai_history_json "
+                      "FROM verifications WHERE subject_kind='user_claim'"):
+        f = first_reading(v)
+        if f is not None:
+            first_of.setdefault(v["subject_id"], []).append(effective(f))
         e = effective(v)
         e["_changed"] = changed_by_person(v)
         e["_ai_judged"] = v["verdict"] in ("supports", "partially_supports", "refutes")
@@ -1901,7 +1956,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         if batch_id and h["batch_id"] != batch_id:
             continue
         parts = claims.get(h["hyp_id"], [])
-        st, st_any, counts, read = [], [], {"supports": 0, "partially_supports": 0, "refutes": 0}, 0
+        st, st_any, st_first, counts, read = [], [], [], {"supports": 0, "partially_supports": 0, "refutes": 0}, 0
         all_vs = []
         uncounted = corrected = reviewed = to_review = disagree = 0
         shown_docs: set[str] = set()
@@ -1915,6 +1970,12 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             wt = bool(groups) and _round_waiting(groups[-1])
             st.append(_status_of_rounds(sts, vs, thr, c["stage"], wt))
             st_any.append(_status_of_rounds(sts, vs, 0.0, c["stage"], wt))
+            if c["claim_id"] in first_of:  # the stepped-up excerpts as first judged, the others as they are
+                firsts = {(x["passage_id"]) for x in first_of[c["claim_id"]]}
+                vf = first_of[c["claim_id"]] + [x for x in vs if x["passage_id"] not in firsts]
+                st_first.append(_status_of_rounds(sts, vf, thr, c["stage"], wt))
+            else:
+                st_first.append(st[-1])
             for r in rs:
                 shown = json.loads(r["payload_json"])["passages"]
                 read += len(shown)
@@ -1938,6 +1999,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             st, st_any = ["waiting"], ["waiting"]
         to_review = max(0, read - reviewed)
         s = st[0] if len(st) == 1 else aggregate(st)
+        s_first = (st_first[0] if len(st_first) == 1 else aggregate(st_first)) if st_first else s
         if status and s != status:
             continue
         first = parts[0] if parts else {"claim_id": h["hyp_id"], "model": None, "options_json": h["options_json"]}
@@ -1956,7 +2018,8 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
                     "docs_partly": bal["docs_partly"], "docs_refuting": bal["docs_refuting"],
                     "passages_read": read, "parts": len(parts), "model": model, "batch_id": h["batch_id"] or "",
                     "lean": bal["lean"], "note": h["note"] or "", "docs_added_since": since,
-                    "disagreements": disagree})
+                    "disagreements": disagree,
+                    "status_before_stronger": s_first if s_first != s else None})
         if limit and len(out) >= limit:
             break
     if batch_id:
@@ -2132,6 +2195,9 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
             "Checked on": _local_dt(res["created_at"]),
             "Hypothesis": res["text"],
             "Answer": STATUS_TEXT.get(res["status"], res["status"]),
+            # 0.11.2: a stronger model read the excerpts again and its reading changed the answer
+            "Answer before a stronger model read it again": STATUS_TEXT.get(res["status_before_stronger"], "")
+            if res.get("status_before_stronger") else "",
             "Answer for each part": "; ".join(f"{i}. {p['claim']}: {STATUS_TEXT.get(p['status'], p['status'])}"
                                               for i, p in enumerate(parts, 1)) if len(parts) > 1 else "",
             "Documents that support it": res["balance"]["docs_supporting"],
@@ -2143,7 +2209,7 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
             "Judgements you reviewed": res["reviewed"],
             "Judgements you changed": res["corrected"],
             "Excerpts not reviewed by you yet": res["to_review"],
-            "Excerpts where a second model disagrees": res["disagreements"] if res["second_read"] else "",
+            "Excerpts where the second opinion differs": res["disagreements"] if res["second_read"] else "",
             "Documents added since the check": len(res["docs_added_since"]),
             "Your notes on this result": res["note"] or "",
             "Code": f"{res.get('code_label') or ''} {res['code']}".strip() if res["code"] else "",

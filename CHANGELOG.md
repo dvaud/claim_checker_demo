@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.11.2 (November 2026): a stronger model's answer, and two clear ways to ask another model
+
+When a check steps up to a stronger model (on its own for an unsure or twice-rejected answer, or because a person
+asked), the stronger model's judgements already replaced the first ones excerpt by excerpt, but nothing at the top of
+the result said that the answer had changed, and the two ways to have another model read the excerpts were easy to
+mix up: *Ask a stronger model* (a small button under each search; replaces the judgements) and *Ask a second AI
+model* (in *Keep this result up to date*; shown beside them only). Every answer still goes through the quote check, a
+person can overrule it, every result records how it was made, and nothing about what leaves the computer changed.
+
+**The stronger model's reading is the answer, with a trace of the first one.**
+- A result whose answer a stronger model changed shows that answer with a small mark beside it: **Supported**
+  *at first: partly supported*. Hover or click it: which model judged first, which read again, how many judgements
+  it changed. Unreviewed, the answer is introduced as "The stronger model's reading:" instead of "The AI's first
+  reading:". Each part of a split hypothesis carries its own mark, and the parts list the short one.
+- The Results list shows the same mark (*was partly supported*) next to the answer, and the Excel *Summary* sheet
+  has the column "Answer before a stronger model read it again".
+- Nothing is hidden: each changed excerpt keeps "Read again by a stronger model (the first reading was by …): was
+  Partly supports, now Supports", and the first judgement stays under *Technical details*. A person's own judgement
+  counts in both readings, so the mark appears only where the models' change made the difference.
+- API: `status_first`, `status_before_stronger` and `stronger` on the hypothesis and on each part, `can_step_up` per
+  search round, `status_before_stronger` on each row of the Results list (`claimcheck.first_reading`,
+  `_before_stronger`, `stronger_eligible`).
+
+**Two distinct choices: replace or compare.**
+- *Keep this result up to date* now has one block, **Ask another AI model to read these excerpts**, with two
+  side-by-side options that say what they do: **Stronger model** (*replaces the AI's judgements*: the answer can
+  change, once per search) with *Ask a stronger model (opus)*, and **Second opinion** (*only for comparison*: never
+  changes the answer) with *Get a second opinion*. Each says what has happened so far (read again, how many
+  judgements changed, what the answer was before; how many excerpts the second opinion judged differently).
+- *Ask a stronger model* now works on the whole result (`POST /api/projects/<p>/hypotheses/<h>/stronger`, one job
+  for every search not read again yet) instead of a small button under each search; the searches keep their one-line
+  note ("A stronger model read these excerpts again; its reading counts"). When the AI chosen in Settings has no
+  stronger model, the block says so instead of hiding the option.
+- "Second AI model" is called **second opinion** everywhere it is shown (the Results action *Get a second opinion
+  for all results*, the tag *second opinion differs on N*, the table column, *Next where it differs*, Settings →
+  *Model for second opinions*), and the routing and Fable texts in Settings say which of the two replaces.
+
+**The second opinion on an excerpt, made readable.** The chip "Second AI model: Partly supports (70%) — disagrees
+with the first AI" (or "…with your judgement (the first AI said …)") is replaced by one line that shows every reading
+at once: *Second opinion differs* (or *agrees*) · **The AI:** Supports (80%) · **Second opinion (opus):** Partly
+supports (70%) · **You:** … when you judged it, with a (?) that explains what a second opinion is. When the second
+opinion quotes another sentence, *Highlight the quote of: The AI | Second opinion* flips which quote the passage
+highlights (the second opinion's in a different colour, and the line under the passage says whose it is); both
+judgements stay in view either way.
+
+**Tests:** `tests/test_0112_stronger_model.py`: the stronger reading is the answer and the first one is reported, on
+the result, each part and the Results list; no mark when the stronger model agrees; a person's judgements count in
+both readings; the whole-result endpoint over the API (404, 400 when already read, 400 when the route has no
+stronger model); the page's two choices.
+
+**Not yet done:** tried with the stand-in Claude Code of the dev server (the job, the waiting state and the redraw);
+not yet with a real signed-in Claude Code, where the stronger model is the auditor (Opus, or Fable when switched on).
+On the Claude routes the stronger model for checks is the auditor, which with Fable off is Opus, the same model that
+checks: stepping up then reads again with the same model (as in 0.8). The Map does not show the mark yet.
+
 ## 0.11.1 (November 2026): a deep clean after 0.11
 
 No new features. Much had been added between 0.7 and 0.11, so every part of the code was read again for defects,

@@ -352,7 +352,7 @@ function modelSection(s, servers, watchers) {
   }
 
   function fableSwitch() {
-    fields.use_fable = switchControl("Let the auditor use Fable", !!s.use_fable, { help: "The auditor gives second opinions and reads the hard cases again (unsure judgements, rejected quotes). It runs on Opus unless this is on. In Claude Code, Fable can be billed from usage credits instead of your plan's limits; the model picker then says “Requires usage credits”." });
+    fields.use_fable = switchControl("Let the auditor use Fable", !!s.use_fable, { help: "The auditor gives second opinions (shown for comparison only) and is the stronger model that reads the hard cases again (unsure judgements, rejected quotes, “Ask a stronger model”; its reading replaces the first). It runs on Opus unless this is on. In Claude Code, Fable can be billed from usage credits instead of your plan's limits; the model picker then says “Requires usage credits”." });
     return fields.use_fable;
   }
 
@@ -447,7 +447,7 @@ function routingSection(s, servers) {
     const selects = {};
     const rows = r.rows.map((row) => {
       let ctl;
-      if (row.row === "second" && !claude) ctl = h("span", { class: "muted small" }, "Set under “Second AI model” below.");
+      if (row.row === "second" && !claude) ctl = h("span", { class: "muted small" }, "Set under “Model for second opinions” below.");
       else if (claude) {
         ctl = h("select", { class: "select select-sm", "aria-label": `Model for ${row.title}` }, h("option", { value: "" }, `${row.recommended === "auditor" ? auditorName(App.settings(), { claude: true, fable: r.fable }) : row.recommended} (recommended)`),
           r.aliases.map((a) => h("option", { value: a, selected: chosen[row.row] === a }, a)));
@@ -483,7 +483,7 @@ function routingSection(s, servers) {
         h("tbody", {}, rows))),
       h("datalist", { id: "routing-models" }, chat.map((m) => h("option", { value: m }))),
       claude ? null : field("Small model (labels and links)", small, { help: "A smaller local model for the many label and link tasks. Leave it empty to use the main model for everything." }),
-      h("p", { class: "muted small" }, icon("info", { size: 13 }), ` A task goes up to the stronger model once: when its answer's certainty is under ${Math.round(r.step_up_below * 100)}%, when two answers in a row were rejected (a quote not found), or when you press “Ask a stronger model” on a result. Both answers are kept; the stronger model's counts.`),
+      h("p", { class: "muted small" }, icon("info", { size: 13 }), ` A task goes up to the stronger model once: when its answer's certainty is under ${Math.round(r.step_up_below * 100)}%, when two answers in a row were rejected (a quote not found), or when you press “Ask a stronger model” on a result. Both answers are kept; the stronger model's counts, and the answer shows a small mark with what it was at first. A second opinion is different: it is only shown beside the first reading and never changes the answer.`),
       r.route === "claude_code" ? null : one,
       h("p", { class: "muted small" }, "The recommended models are the starting points of ENLENS 0.8; the team's runs on the pilot set them (", h("code", {}, "enlens acceptance score --apply"), ")."),
       h("div", { class: "save-row" }, saveBtn, resetBtn, state));
@@ -493,22 +493,22 @@ function routingSection(s, servers) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// A second local chat model for "Ask a second AI model" on results.
+// A second local chat model for "Get a second opinion" on results.
 function secondModelSection(s, servers) {
   const state = h("span", { class: "save-state", "aria-live": "polite" });
   const main = (s.backend === "openai" ? s.openai_model : s.ollama_model) || "";
   const models = [...new Set(servers.flatMap((x) => x.chat_models || []))].filter((m) => m !== main);
   const current = s.second_model || "";
-  const sel = h("select", { class: "select", id: "second-model" }, h("option", { value: "" }, "None (no second opinion)"),
+  const sel = h("select", { class: "select", id: "second-model" }, h("option", { value: "" }, "None (no second opinions)"),
     models.map((m) => h("option", { value: m, selected: m === current }, m)),
     current && !models.includes(current) ? h("option", { value: current, selected: true }, `${current} (not installed now)`) : null);
   const txt = h("input", { class: "input input-mono", type: "text", placeholder: "or type a model name", value: "", "aria-label": "Second model, typed" });
   const saveBtn = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
     const v = txt.value.trim() || sel.value;
-    if (v && v === main) { toast("That is the main model. Choose a different one for the second opinion.", "warn"); return; }
-    try { await save({ second_model: v }, state); txt.value = ""; toast(v ? `Second AI model: ${v}` : "Second AI model: none", "ok", { ttl: 2500 }); } catch (_) { /* shown */ }
+    if (v && v === main) { toast("That is the main model. Choose a different one for second opinions.", "warn"); return; }
+    try { await save({ second_model: v }, state); txt.value = ""; toast(v ? `Model for second opinions: ${v}` : "Model for second opinions: none", "ok", { ttl: 2500 }); } catch (_) { /* shown */ }
   } }, icon("check", { size: 13 }), "Save");
-  return sectionCard("second", "Second AI model", "For “Ask a second AI model” on a result: another chat model on the same server reads the same excerpts, and its judgements are shown beside the main model's. Where the two disagree, the excerpt deserves a careful read. Second judgements never change an answer.",
+  return sectionCard("second", "Model for second opinions", "For “Get a second opinion” on a result: another chat model on the same server reads the same excerpts, and its judgements are shown beside the main model's, for comparison only. Where the two differ, the excerpt deserves a careful read. A second opinion never changes an answer (a stronger model, asked for with “Ask a stronger model”, does).",
     h("div", { class: "fields-2" }, field("Second model", sel, { help: models.length ? `Chat models on the server now, apart from the main one (${main || "none chosen"}).` : "No server answered just now, so the installed models could not be listed." }), field("Not listed?", txt, { help: "Type its name as the server knows it, e.g. llama3.1:8b." })),
     h("p", { class: "muted small" }, icon("info", { size: 13 }), " Only one model is kept in memory at a time: the main model is unloaded before the second one reads, and the second one is unloaded when it is done. So a second opinion takes a while, and is best asked for several results at once (under Results)."),
     h("div", { class: "save-row" }, saveBtn, state));
