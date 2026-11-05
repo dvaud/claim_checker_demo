@@ -25,6 +25,10 @@
   reload can be watched. `--update commits` is a git copy with 3 new commits, `--update on-disk` a newer version
   installed while this one ran (the banner with *Restart now*), `--update none` an ENLENS that is up to date, and
   `--update fails` an install that fails.
+- with `--ollama` (0.13.6): a model on this computer chosen, but no model yet. `--ollama empty` is an Ollama with no
+  model (its *Download* takes 12 s, then the model answers), `--ollama later` an Ollama that starts 15 s after the
+  app (the page notices it by itself), `--ollama none` no Ollama at all. Other servers on this computer (LM Studio…)
+  are not looked for. Combine with `--empty` for a new user's first screen.
 """
 from __future__ import annotations
 
@@ -82,6 +86,8 @@ def main() -> int:
                     help="0.13: a stand-in Zotero (its local API) with a library for the remote-work demo corpus")
     ap.add_argument("--update", nargs="?", const="release", choices=["release", "commits", "on-disk", "none", "fails"],
                     help="0.13.1: Update ENLENS finds a stand-in newer version and restarts the app in this process")
+    ap.add_argument("--ollama", nargs="?", const="empty", choices=["empty", "later", "none"],
+                    help="0.13.6: a model on this computer chosen, but no model yet (empty), Ollama later, or none")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -148,6 +154,21 @@ def main() -> int:
         except ValueError as e:
             print(e)
     fake.delay = a.delay
+    if a.ollama:  # 0.13.6: a model on this computer, with no model yet (only these stand-ins are looked for)
+        from enlens_claims import llm
+
+        llm.OPENAI_PORTS = ()
+        fake.aliases = {"qwen3:8b": fake_servers.FAKE_MODEL, "nomic-embed-text:latest": fake_servers.FAKE_EMBED}
+        fake.installed, fake.pull_seconds = [], 12.0
+        dead = "http://127.0.0.1:9"   # nothing answers there: "no Ollama yet"
+        home.update_settings({"backend": "auto", "ollama_url": fake_url if a.ollama == "empty" else dead,
+                              "ollama_model": "", "embed_backend": "off", "embed_model": ""})
+        if a.ollama == "later":  # the stand-in "starts": the address in Settings points at it after 15 s
+            def start_later():
+                time.sleep(15)
+                home.update_settings({"ollama_url": fake_url})
+                print(f"stand-in Ollama now answers at {fake_url}, with no model")
+            threading.Thread(target=start_later, daemon=True).start()
     if a.no_tesseract:
         ingest.find_tesseract = lambda: ""
         ingest._OCR_STATUS[:] = [0.0, None]

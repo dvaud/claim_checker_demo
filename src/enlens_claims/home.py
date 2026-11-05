@@ -426,7 +426,7 @@ def _make_backend(settings: dict, api_key: str = "", kinds: tuple[str, ...] = ("
                 note = f"{chosen} is not installed; {model} is used instead."
         if not model:
             raise BackendError("Choose an Ollama model in Settings." if inv is None or inv["models"] else
-                               "Ollama has no chat model yet. Install one, for example: ollama pull qwen3:8b")
+                               "Ollama has no chat model yet. Download one in Settings → AI (one button).")
         be = _ollama(settings, settings["ollama_url"], model, think, kinds)
         be.model_note = note
         return be, model
@@ -460,10 +460,10 @@ def _make_backend(settings: dict, api_key: str = "", kinds: tuple[str, ...] = ("
                 if model:
                     return LocalBackend(base_url=srv["url"], seed=_seed(settings)), model
         if found:
-            raise BackendError("A local model server is running but has no chat model. With Ollama: "
-                               "ollama pull qwen3:8b (or another model), then try again.")
-        raise BackendError("No local model server is running. Start Ollama (ollama.com) or LM Studio (lmstudio.ai), "
-                           "or choose the offline demo in Settings.")
+            raise BackendError("A local model server is running but has no chat model. With Ollama, download one "
+                               "in Settings → AI (one button); with another server, load a model in it.")
+        raise BackendError("No local model server is running. Open Ollama (free, from ollama.com) or LM Studio, "
+                           "then download a model in Settings → AI; or choose the offline demo in Settings.")
     return BaselineBackend(), "baseline"
 
 

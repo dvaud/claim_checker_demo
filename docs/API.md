@@ -184,8 +184,27 @@ as the icon starts it (`--launcher`, output to `logs/enlens.log`), without openi
 {"servers": [{"kind": "ollama", "url": "http://localhost:11434", "version": "0.12.3",
               "models": ["bge-m3:latest", "qwen3:8b"], "chat_models": ["qwen3:8b"], "embedding_models": ["bge-m3:latest"],
               "loaded": ["qwen3:8b"], "modified": {"qwen3:8b": "2026-09-30T08:12:00Z", "bge-m3:latest": "…"}},
-             {"kind": "openai", "url": "http://localhost:1234/v1", "models": […], "chat_models": […], "embedding_models": […]}]}
+             {"kind": "openai", "url": "http://localhost:1234/v1", "models": […], "chat_models": […], "embedding_models": […]}],
+ "suggested": [{"name": "qwen3:8b", "use": "chat", "size": "about 5 GB"},
+               {"name": "nomic-embed-text", "use": "embed", "size": "about 0.3 GB"}]}
 ```
+`suggested` (0.13.6): the models the page offers to download into Ollama with one button.
+
+`POST /api/servers/pull` (0.13.6) → downloads models into the Ollama running on this computer, so a local model needs
+no terminal. Body `{"models": ["qwen3:8b", "nomic-embed-text"]}` (one to four names as Ollama's library writes them;
+or `{"model": "qwen3:8b"}`), optionally `"url"`, an Ollama address as `GET /api/servers` lists it, and `"use"`: `ai`
+(the AI that reads the documents: `backend` ollama and its model, plus the embedding model if one was downloaded),
+`restricted` (the local model for documents marked *Only a local AI*) or `embed` (search by meaning). With `use` the
+app chooses the downloaded models itself when the download is done, so closing the page does not lose the choice,
+unless those settings were changed meanwhile (then the person's choice stands and `chosen` is null). Ollama fetches
+the models from ollama.com itself; nothing of the person's is sent, so it is allowed with `--local-only` too. Returns
+`{"job": …}` of kind `model-pull` (one at a time: while one runs, its job is returned). Its `progress` is
+`{"model", "index", "count", "status", "done", "total"}` (bytes of the model being downloaded, as Ollama reports
+them); its `result` `{"url", "models", "listed": {name: the name Ollama lists, e.g. "nomic-embed-text:latest"}, "chosen":
+{the settings it chose} | null}`.
+`POST /api/jobs/<id>/cancel` stops it (Ollama keeps what it has and goes on from there next time). 400 for a name that
+is not one, 409 when no Ollama answers on this computer (or at the address in Settings). A failed download is a job
+`error` in plain words (no such model, not enough disk space, offline).
 
 `POST /api/servers/test` → tests the configured chat model (and embedding model if set):
 `{"ok": true, "backend": "ollama", "model": "qwen3:8b", "model_available": true, "message": "Ollama 0.12.3 is running. …",

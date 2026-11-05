@@ -311,9 +311,10 @@ class _Ollama(BaseHTTPRequestHandler):
         if self.path == "/api/version":
             return self._send(200, {"version": "0.12.6" if aliases else "0.40.5-fake"})
         if self.path == "/api/tags":
+            listed = self.server.installed if self.server.installed is not None else (aliases or MODELS)
             return self._send(200, {"models": [{"name": m, "model": m, "modified_at": self.server.modified.get(m, ""),
                                                 "digest": hashlib.sha256(m.encode()).hexdigest()}
-                                               for m in (aliases or MODELS)]})
+                                               for m in listed]})
         if self.path == "/api/ps":  # models in memory, most recently used first
             return self._send(200, {"models": [{"name": m, "model": m, "expires_at": f"2026-10-28T12:{59 - i:02d}:00Z"}
                                                for i, m in enumerate(self.server.loaded)]})
@@ -330,6 +331,8 @@ class _Ollama(BaseHTTPRequestHandler):
     def do_POST(self):
         req = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         self.server.requests.append((self.path, req))
+        if self.path == "/api/pull":
+            return self._pull(str(req.get("model") or req.get("name") or ""))
         model = req.get("model", "")
         aliases = getattr(self.server, "aliases", None)
         if aliases:  # the dev server's realistic names (a fresh install as a user would have it)
@@ -366,6 +369,42 @@ class _Ollama(BaseHTTPRequestHandler):
                                         "prompt_eval_count": min(tokens, num_ctx), "eval_count": 50})
             return self._stream(model, answer, min(tokens, num_ctx), cap, req.get("think"))
         return self._send(404, {"error": "not found"})
+
+    def _pull(self, name: str):
+        """0.13.6: a download from Ollama's library, as Ollama streams it: the manifest, each part's bytes, the
+        check, then "success" (or {"error"}). `pull_fail` makes it fail, `pull_seconds` makes it take that long."""
+        import time
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.end_headers()
+
+        def send(obj):
+            self.wfile.write((json.dumps(obj) + "\n").encode())
+            self.wfile.flush()
+
+        aliases = self.server.aliases or {}
+        known = name in MODELS or name in aliases or f"{name}:latest" in aliases or name in self.server.pullable
+        try:
+            send({"status": "pulling manifest"})
+            if not known:
+                return send({"error": "pull model manifest: file does not exist"})
+            total, steps = 5_200_000_000 if "embed" not in name else 274_000_000, 10
+            for i in range(1, steps + 1):
+                if self.server.pull_fail and i == 4:
+                    return send({"error": self.server.pull_fail})
+                send({"status": f"pulling {name}", "digest": "sha256:" + hashlib.sha256(name.encode()).hexdigest(),
+                      "total": total, "completed": total * i // steps})
+                time.sleep(self.server.pull_seconds / steps)
+            send({"status": "verifying sha256 digest"})
+            send({"status": "writing manifest"})
+            listed = name if name in MODELS or name in aliases else f"{name}:latest"
+            if self.server.installed is not None and listed not in self.server.installed:
+                self.server.installed.append(listed)
+            self.server.pulled.append(name)
+            send({"status": "success"})
+        except (BrokenPipeError, ConnectionResetError):  # the app stopped the download
+            self.server.disconnects += 1
 
     def _stream(self, model, answer, prompt_tokens, cap, think):
         """Newline-delimited JSON chunks, like Ollama with "stream": true."""
@@ -468,6 +507,11 @@ def start(kind: str = "ollama", port: int = 0, trained_context: int = 32768):
     srv.unloads = []         # models unloaded (keep_alive 0)
     srv.modified = {}        # {model name: ISO time it was pulled}
     srv.contexts = []        # num_ctx of every chat request
+    srv.installed = None     # 0.13.6: None lists every model; a list lists only these (a new Ollama: [])
+    srv.pullable = set()     # names /api/pull knows besides the fake models and the aliases
+    srv.pulled = []          # names downloaded with /api/pull
+    srv.pull_seconds = 0.0   # how long a download takes
+    srv.pull_fail = ""       # an error Ollama reports part-way through a download
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, f"http://127.0.0.1:{srv.server_address[1]}"
 

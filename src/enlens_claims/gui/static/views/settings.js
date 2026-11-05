@@ -3,6 +3,9 @@ import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, wat
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
+import { localModelHelp } from "./local-model.js";
+
+const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 
 // 0.9: Settings as five flat tabs (no section folded inside another). Old links to a section (#/settings/second,
 // #/settings/calibration…) open its tab and scroll to it.
@@ -14,9 +17,9 @@ export async function renderSettings(view, [section]) {
   const s = { ...App.settings() };
   const tab = TAB_OF[section] || "model";
   const watchers = [];   // the jobs this page follows (the model test, installing Claude Code): stopped when it is left
-  let servers = [];
+  let servers = [], info = { servers: [], suggested: [] };
   if (tab === "model" || tab === "advanced" || tab === "documents") {
-    try { servers = (await api("GET", "/api/servers")).servers || []; } catch (_) { servers = []; }
+    try { info = await api("GET", "/api/servers"); servers = info.servers || []; } catch (_) { servers = []; }
   }
   view.appendChild(pageHead("Settings", { actions: versionTag(), sub: {
     model: "Which AI reads your documents: Claude Code on your own Claude plan, a model on this computer, or none.",
@@ -30,14 +33,14 @@ export async function renderSettings(view, [section]) {
   const main = h("div", { class: "stack", style: { gap: "20px" } });
   view.appendChild(main);
   if (tab === "model") {
-    main.append(modelSection(s, servers, watchers));
+    main.append(modelSection(s, servers, watchers, info));
     // 0.11: who reads the documents marked Only a local AI, and what happens to the text Claude reads
-    if (!(App.state && App.state.local_only)) main.append(restrictedModelCard(s, servers, save));
+    if (!(App.state && App.state.local_only)) main.append(restrictedModelCard(s, servers, save, info));
     if (s.backend === "anthropic") main.append(sectionCard("terms", "Your Claude account and your documents", "", termsPanel({ account: "commercial" })));
   }
   else if (tab === "basics") main.append(basicsSection(s));
   else if (tab === "explore") main.append(exploreSection(s), await frameworksSection());
-  else if (tab === "documents") main.append(sectionCard("ocr", "Reading scanned PDFs", "", ocrBlock(s)), embedSection(s, servers));
+  else if (tab === "documents") main.append(sectionCard("ocr", "Reading scanned PDFs", "", ocrBlock(s)), embedSection(s, servers, info));
   else {
     // a local model's own settings (second model, context length) only when a local model answers
     const local = ["auto", "ollama", "openai"].includes(s.backend || "auto");
@@ -223,7 +226,7 @@ async function save(changes, stateEl) {
 }
 
 // ---------------------------------------------------------------------------------------------
-function modelSection(s, servers, watchers) {
+function modelSection(s, servers, watchers, info = { servers }) {
   const localOnly = !!(App.state && App.state.local_only);
   let allowCC = !!s.allow_claude_code;
   const state = h("span", { class: "save-state", "aria-live": "polite" });
@@ -309,11 +312,20 @@ function modelSection(s, servers, watchers) {
   };
 
   function serverList() {
-    if (!servers.length) return h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, "No local model server answered. Start Ollama (ollama.com), then download a model, for example ", h("code", {}, "ollama pull qwen3:8b"), ". Or start LM Studio / llama.cpp with a model loaded."),
-      h("button", { class: "btn btn-sm", type: "button", style: { marginTop: "6px" }, onClick: () => location.reload() }, icon("refresh", { size: 13 }), "Scan again")));
-    return h("div", { class: "server-list" }, servers.map((sv) => h("div", { class: "server" }, icon("circle-check", { size: 14 }),
+    // 0.13.6: no model yet: how to get Ollama (noticed when it starts), or one button that downloads a model into it
+    const help = localModelHelp(info, {
+      use: "ai",   // chosen by the app when the download is done
+      onFound: rerender,
+      onReady: async (r) => {
+        try { await App.refresh(); } catch (_) { /* shown on the page */ }
+        toast(r.chosen ? `${r.chat} reads your documents now, on this computer.` : `${r.chat} is downloaded: choose it below.`, "ok");
+        rerender();
+      },
+    });
+    const list = servers.length ? h("div", { class: "server-list" }, servers.map((sv) => h("div", { class: "server" }, icon("circle-check", { size: 14 }),
       h("div", {}, h("strong", {}, sv.kind === "ollama" ? `Ollama ${sv.version || ""}` : `OpenAI-compatible server`), h("span", { class: "muted" }, ` at ${sv.url}`),
-        h("div", { class: "sv-models" }, `Chat: ${(sv.chat_models || []).join(", ") || "none"} · Embedding: ${(sv.embedding_models || []).join(", ") || "none"}`)))));
+        h("div", { class: "sv-models" }, `Chat: ${(sv.chat_models || []).join(", ") || "none"} · Embedding: ${(sv.embedding_models || []).join(", ") || "none"}`))))) : null;
+    return help ? h("div", { class: "stack" }, list, help) : list;
   }
 
   function drawDetail() {
@@ -413,7 +425,7 @@ function modelSection(s, servers, watchers) {
       const r = await api("POST", "/api/servers/test");
       replace(testOut, testResult(r));
     } catch (e) {
-      replace(testOut, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, e.message), e.kind === "backend" ? h("p", { class: "small" }, "Is the server running? For Ollama: start it, then ", h("code", {}, "ollama pull <model>"), ".") : null)));
+      replace(testOut, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, e.message), e.kind === "backend" ? h("p", { class: "small" }, "Is the server running? For Ollama: open the Ollama app; a model can be downloaded above.") : null)));
     }
     testBtn.disabled = false;
   });
@@ -551,18 +563,24 @@ function contextSection(s) {
 }
 
 // ---------------------------------------------------------------------------------------------
-function embedSection(s, servers) {
+function embedSection(s, servers, info = { servers }) {
   const state = h("span", { class: "save-state", "aria-live": "polite" });
   const kind = h("select", { class: "select" }, [["ollama", "Ollama"], ["openai", "OpenAI-compatible server"], ["off", "Off (keywords only)"]].map(([v, t]) => h("option", { value: v, selected: (s.embed_backend || "ollama") === v }, t)));
   const all = [...new Set(servers.flatMap((x) => x.embedding_models || []))];
   const model = h("input", { class: "input input-mono", type: "text", value: s.embed_model || "", placeholder: "e.g. nomic-embed-text", list: "embed-models" });
   const datalist = h("datalist", { id: "embed-models" }, all.map((m) => h("option", { value: m })));
   const url = h("input", { class: "input input-mono", type: "url", value: s.embed_url || "", placeholder: "optional" });
-  const row = h("div", { class: "fields-3" }, field("Server kind", kind), field("Embedding model", model, { help: all.length ? `Installed: ${all.join(", ")}` : "For Ollama: ollama pull nomic-embed-text" }), field("Address (optional)", url, { help: "Leave empty to use the chat server's address." }));
+  const row = h("div", { class: "fields-3" }, field("Server kind", kind), field("Embedding model", model, { help: all.length ? `Installed: ${all.join(", ")}` : "None installed yet." }), field("Address (optional)", url, { help: "Leave empty to use the chat server's address." }));
+  // 0.13.6: Ollama without an embedding model: one button downloads one, and it is chosen here
+  const pull = localModelHelp(info, { only: "embed", use: "embed", onReady: async (r) => {
+    try { await App.refresh(); } catch (_) { /* shown on the page */ }
+    toast(r.chosen ? `${r.embed} is chosen for search by meaning. Set it up per project under Documents.` : `${r.embed} is downloaded.`, "ok");
+    rerender();
+  } });
   const toggle = () => { row.querySelectorAll(".field")[1].hidden = row.querySelectorAll(".field")[2].hidden = kind.value === "off"; };
   kind.addEventListener("change", toggle); toggle();
   const form = h("form", { onSubmit: async (e) => { e.preventDefault(); try { await save({ embed_backend: kind.value, embed_model: model.value.trim(), embed_url: url.value.trim() }, state); toast("Saved. Set up search by meaning under Documents if needed.", "ok"); } catch (_) { /* shown */ } } },
-    row, datalist, h("div", { class: "save-row" }, h("button", { class: "btn btn-primary", type: "submit" }, icon("check", { size: 14 }), "Save"), state));
+    row, datalist, pull, h("div", { class: "save-row" }, h("button", { class: "btn btn-primary", type: "submit" }, icon("check", { size: 14 }), "Save"), state));
   return sectionCard("embeddings", "Search by meaning (embeddings)", "With an embedding model, excerpts are found by meaning as well as by shared words. It is set up per project under Documents.", form);
 }
 

@@ -84,6 +84,10 @@ instead? The *Update* button and `enlens update` pull the new version (see *For 
 - **Updates that announce themselves (0.13.6).** The *Update* button shows only when there is an update: ENLENS
   looks every two minutes, and a pop-up says which version is ready. *Check for updates* is in *Settings →
   Technical*.
+- **A model on this computer, without a terminal (0.13.6).** Choose *A model on this computer* (first screen or
+  *Settings → AI*): ENLENS says how to get Ollama (free) and notices when it starts, then *Download qwen3:8b* gets a
+  model with one button, with a progress bar and *Stop*. None of your documents are sent. The card for documents
+  marked *Only a local AI* offers the same download.
 - **Room for add-ons (0.13.6).** For developers: an app built on ENLENS adds routes, jobs, tables, its own rules for
   who may read its text, kinds of AI task (quote check included) and pages, in files of its own
   ([docs/EXTENDING.md](docs/EXTENDING.md)). Nothing changes in the app.
@@ -144,10 +148,12 @@ icon. `ENLENS_LOCAL_ONLY=1` or `ENLENS_HOME=<folder>` before the line are built 
 `enlens claude-setup` sets up Claude from a terminal, and `/enlens-run <project>` in Claude Code answers a project's
 waiting work yourself.
 
-No Claude plan? Choose *A model on this computer* (first screen or *Settings → AI*):
+No Claude plan, or documents that must stay on your computer? Choose *A model on this computer* (first screen or
+*Settings → AI*), get [Ollama](https://ollama.com/download) (free) and open it; ENLENS notices it and downloads a
+model with one button. LM Studio, llama.cpp, Jan and vLLM work too. In a terminal instead:
 
 ```bash
-ollama pull qwen3:8b             # any local chat model (Ollama, LM Studio, llama.cpp, Jan, vLLM all work)
+ollama pull qwen3:8b             # any local chat model
 ollama pull nomic-embed-text     # optional: search by meaning as well as by words (bge-m3 for mixed languages)
 ```
 

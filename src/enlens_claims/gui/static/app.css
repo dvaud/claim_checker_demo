@@ -67,6 +67,10 @@ mark.quote {
 .nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
 .nav-icon { display: inline-flex; width: 18px; height: 18px; }
 .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+/* the Update button shows only when there is an update (0.13.6), so it stands out */
+.sidebar-app .btn.update-ready { color: var(--accent); font-weight: 600; }
+.sidebar-app .btn.update-ready:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.sidebar-app .btn.update-ready:disabled { color: var(--text-2); font-weight: 500; }
 
 .main { min-width: 0; }
 .view { max-width: var(--content-w); margin: 0 auto; padding: 32px 36px 80px; }
@@ -282,6 +286,9 @@ details.fold > summary:hover { color: var(--accent-text); }
 .toast-error .icon { color: var(--bad); }
 .toast-link { display: inline-block; margin-top: 4px; font-weight: 600; }
 .toast-out { opacity: 0; transition: opacity .3s; }
+/* the Update pop-up (0.13.6): stays until it is answered */
+.update-popup { border-color: var(--accent); }
+.update-popup-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* dialogs */
@@ -507,6 +514,13 @@ details.fold > summary:hover { color: var(--accent-text); }
 .guide-step { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
 .guide-step .n { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; }
 .guide-step code { display: inline-block; margin-top: 2px; }
+/* a model on this computer without a terminal (0.13.6): get Ollama, then download a model with one button */
+.local-help { display: grid; gap: 8px; margin: 12px 0 4px; }
+.local-help .guide { margin: 0; padding: 0; list-style: none; }
+.local-help p { margin: 0; }
+.local-help .guide-step .btn { margin-left: 4px; vertical-align: middle; }
+.local-looking { color: var(--muted); }
+.local-pull:empty { display: none; }
 
 /* ------------------------------------------------------------------ batch */
 .batch-preview { max-height: 320px; overflow: auto; }

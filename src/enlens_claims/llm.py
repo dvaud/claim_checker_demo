@@ -487,6 +487,58 @@ class OllamaBackend:
         except BackendError:
             return False
 
+    def pull(self, model: str, on_progress=None, should_stop=None) -> str:
+        """Download a model from Ollama's library into this Ollama (0.13.6: a local model needs no terminal).
+
+        Ollama fetches it from ollama.com itself; nothing of the person's is sent. `on_progress(info)` gets
+        {"status", "done", "total"} (bytes, over every part seen so far) as Ollama reports them; `should_stop()`
+        True stops reading, which stops the download (Ollama keeps the parts it has and goes on from there next
+        time). Returns "success" or "stopped"; a refusal or a broken-off download is a BackendError in plain words.
+        """
+        from urllib.error import HTTPError, URLError
+        from urllib.request import Request
+
+        req = Request(f"{self.base_url}/api/pull", data=json.dumps({"model": model, "stream": True}).encode(),
+                      method="POST", headers={"Content-Type": "application/json"})
+        parts: dict[str, tuple[int, int]] = {}
+        status = ""
+        try:
+            with self.opener(req, timeout=self.stall_timeout) as resp:
+                for raw in resp:
+                    if should_stop and should_stop():
+                        return "stopped"
+                    try:
+                        d = json.loads(raw.decode("utf-8", "replace").strip() or "{}")
+                    except ValueError:
+                        continue
+                    if d.get("error"):
+                        raise BackendError(pull_error(model, str(d["error"])))
+                    status = str(d.get("status") or status)
+                    if d.get("digest") and d.get("total"):
+                        parts[str(d["digest"])] = (int(d.get("completed") or 0), int(d["total"]))
+                    if on_progress:
+                        on_progress({"status": status, "done": sum(c for c, _ in parts.values()),
+                                     "total": sum(t for _, t in parts.values())})
+        except HTTPError as e:
+            detail = ""
+            try:
+                detail = json.loads(e.read().decode()).get("error", "")
+            except Exception:
+                pass
+            raise BackendError(pull_error(model, detail or f"{e.code} {e.reason}")) from e
+        except (URLError, ConnectionError, TimeoutError, OSError) as e:
+            if should_stop and should_stop():
+                return "stopped"
+            if not status:
+                raise BackendError(f"Could not reach Ollama at {self.base_url}. Open the Ollama app and try "
+                                   "again.") from e
+            raise BackendError(f"Ollama at {self.base_url} stopped answering while it downloaded {model}. Open the "
+                               "Ollama app and try again: the download goes on from where it stopped.") from e
+        if status != "success":
+            raise BackendError(f"Ollama stopped before {model} was complete. Try again: the download goes on from "
+                               "where it stopped.")
+        return "success"
+
     def _remote(self, model: str) -> bool:
         for m in self._call("/api/tags", timeout=10).get("models", []):
             if model in (m.get("name"), m.get("model")) and m.get("remote_host"):
@@ -812,6 +864,32 @@ class LocalBackend:
 # finding local servers
 # ---------------------------------------------------------------------------------------------
 # Default addresses of local model servers: LM Studio, llama.cpp, Jan, vLLM, KoboldCpp.
+# 0.13.6: the models the app offers to download into Ollama with one button, so a model on this computer needs no
+# terminal. The first reads and judges; the second is for search by meaning (optional).
+SUGGESTED_MODELS = (
+    {"name": "qwen3:8b", "use": "chat", "size": "about 5 GB"},
+    {"name": "nomic-embed-text", "use": "embed", "size": "about 0.3 GB"},
+)
+_MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*){0,2}(:[A-Za-z0-9][A-Za-z0-9._-]*)?")
+
+
+def valid_model_name(name: str) -> bool:
+    """A name Ollama's library could hold (`qwen3:8b`, `library/qwen3:8b`, `hf.co/user/model:Q4_K_M`)."""
+    return isinstance(name, str) and len(name) <= 120 and bool(_MODEL_NAME.fullmatch(name))
+
+
+def pull_error(model: str, error: str) -> str:
+    """Ollama's reason a download failed, in plain words (its own words follow for whoever needs them)."""
+    low = error.lower()
+    if "does not exist" in low or "not found" in low or "manifest unknown" in low:
+        return f"Ollama's library has no model called {model}. Check the name on ollama.com/library."
+    if "no space" in low or ("disk" in low and "full" in low):
+        return f"There is not enough free disk space for {model}. Free some space and try again."
+    if any(w in low for w in ("no such host", "dial tcp", "network", "timeout", "connection refused", "i/o timeout")):
+        return f"Ollama could not reach ollama.com to download {model}. Is this computer online? ({error})"
+    return f"Ollama could not download {model}: {error}"
+
+
 OPENAI_PORTS = ("http://localhost:1234/v1", "http://localhost:8080/v1", "http://localhost:1337/v1",
                 "http://localhost:8000/v1", "http://localhost:5001/v1")
 _DETECTED: dict = {}

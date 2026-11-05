@@ -1,8 +1,10 @@
 """Shared checks of the page's stylesheets (0.13.5).
 
 index.html links ENLENS's stylesheets in release order, then the marker `<!-- release stylesheets end -->`, then
-`site.css` (the installation's own look) last. A release adds its sheet just above the marker, so a test of a
-release's sheet says which sheets it must follow, not that it is linked last.
+`site.css` (the installation's own look) last. Since 0.13.6 a release adds no sheet of its own: new rules go into the
+shared stylesheets (app.css, or the stylesheet of the view it changes), and rules a release changes in an older
+per-release sheet move there too (the sheet goes once it is empty). A test of an older release's sheet says which
+sheets it must follow, not that it is linked last.
 """
 from __future__ import annotations
 

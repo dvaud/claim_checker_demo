@@ -29,6 +29,7 @@ export const JOB_KINDS = {
   resolve: { icon: "link", text: "Following references", link: "#/sources" },
   quicklook: { icon: "eye", text: "Quick look", link: "#/sources" },
   "claude-install": { icon: "download", text: "Installing Claude Code", link: "#/settings/model" },
+  "model-pull": { icon: "download", text: "Downloading a model", link: "#/settings/model" },   // 0.13.6
   bibliography: { icon: "library", text: "Bringing in the bibliography", link: "#/bibliography" },
 };
 

@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import __version__, access, addons, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import tasks as tasks_mod
+from .. import llm
 from ..llm import BackendError, detect_local
 from ..claude_setup import setup_info as claude_setup_info
 from ..store import now as _now
@@ -323,7 +324,61 @@ class App:
         for srv in found:
             srv["chat_models"] = [m for m in srv["models"] if not re.search(r"embed|bge-|e5-|minilm|rerank", m, re.I)]
             srv["embedding_models"] = [m for m in srv["models"] if re.search(r"embed|bge-|e5-|minilm", m, re.I)]
-        return {"servers": found}
+        # 0.13.6: the models the page offers to download into Ollama with one button
+        return {"servers": found, "suggested": [dict(m) for m in llm.SUGGESTED_MODELS]}
+
+    # 0.13.6: what a downloaded model is for, and the settings that choose it (applied when the download is done)
+    PULL_USES = {"ai": ("backend", "ollama_url", "ollama_model", "embed_backend", "embed_model", "embed_url"),
+                 "restricted": ("restricted_server", "restricted_model"),
+                 "embed": ("embed_backend", "embed_model", "embed_url")}
+
+    def pull_models(self, models: list[str], url: str, use: str = "") -> Job:
+        """0.13.6: download models into the Ollama on this computer, one after the other (a job that can be stopped).
+        Ollama fetches them from ollama.com itself; nothing of the person's is sent. With `use` ("ai": the AI that
+        reads the documents; "restricted": the local model for documents marked Only a local AI; "embed": search by
+        meaning) the downloaded models are chosen when the download is done, even if the page was closed meanwhile,
+        unless those settings were changed in the meantime."""
+        running = [j for j in self.jobs.all() if j.kind == "model-pull" and j.state in ("queued", "running")]
+        if running:
+            return running[0]
+        keys = self.PULL_USES.get(use, ())
+        before = {k: self.settings().get(k) for k in keys}
+
+        def choose(listed: dict) -> dict | None:
+            is_embed = lambda m: bool(re.search(r"embed|bge-|e5-|minilm", m, re.I))  # noqa: E731 - as servers() sorts
+            chat = next((v for v in listed.values() if not is_embed(v)), "")
+            emb = next((v for v in listed.values() if is_embed(v)), "")
+            changes: dict = {}
+            if use == "ai" and chat:
+                changes = {"backend": "ollama", "ollama_url": url, "ollama_model": chat}
+            elif use == "restricted" and chat:
+                changes = {"restricted_server": "ollama", "restricted_model": chat}
+            if emb and use in ("ai", "embed"):
+                changes.update({"embed_backend": "ollama", "embed_model": emb, "embed_url": ""})
+            now = self.settings()
+            if not changes or any(now.get(k) != before.get(k) for k in keys):
+                return None   # nothing to choose, or the person chose something else meanwhile: theirs stands
+            home.update_settings(changes)
+            return changes
+
+        def run(job: Job):
+            be = llm.OllamaBackend(base_url=url, stall_timeout=600)
+            got: list[str] = []
+            for i, model in enumerate(models):
+                job.progress = {"model": model, "index": i, "count": len(models), "status": "", "done": 0, "total": 0}
+
+                def tick(info, model=model, i=i):
+                    job.progress = {"model": model, "index": i, "count": len(models), **info}
+
+                if be.pull(model, on_progress=tick, should_stop=job.cancel.is_set) == "stopped":
+                    return None
+                got.append(model)
+                llm._DETECTED.clear()   # the next look at the servers lists it
+            # the names as Ollama lists them (a name without a tag gets ":latest"), to choose them in Settings
+            listed = {m: m if ":" in m.rsplit("/", 1)[-1] else f"{m}:latest" for m in got}
+            return {"url": url, "models": got, "listed": listed, "chosen": choose(listed) if use else None}
+
+        return self.jobs.start("model-pull", "Downloading " + " and ".join(models), None, run, uses_model=False)
 
     def test_backend(self) -> dict:
         s = self.settings()
@@ -338,7 +393,8 @@ class App:
             out["message"] = (f"Ollama {info.get('version', '')} is running. {model}: "
                               f"{(info.get('model') or {}).get('parameters') or '?'} parameters, "
                               f"{(info.get('model') or {}).get('quantization') or '?'}." if out["model_available"]
-                              else f"Ollama is running, but {model} is not installed. Run: ollama pull {model}")
+                              else f"Ollama is running, but {model} is not installed. Choose one of its models in Settings → AI, "
+                                   f"or download one there.")
         elif out["backend"] == "local":
             out["message"] = (f"The server at {info.get('url')} answers and offers {model}." if out["model_available"]
                               else f"The server answers, but does not list {model}.")
@@ -944,7 +1000,7 @@ class App:
         ws = self.ws(name)
         emb = home.make_embedder(self.settings())
         if emb is None:
-            raise ApiError(400, "Choose an embedding model in Settings first (for example: ollama pull nomic-embed-text).")
+            raise ApiError(400, "Choose a model for search by meaning first (Settings → Documents, where Ollama can download nomic-embed-text).")
 
         def run(job: Job):
             job.progress = {"done": 0, "total": 0}
@@ -1542,6 +1598,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", r"/api/update", "post_update"),
     ("GET", r"/api/servers", "get_servers"),
     ("POST", r"/api/servers/test", "post_test"),
+    ("POST", r"/api/servers/pull", "post_pull"),
     ("GET", r"/api/projects", "get_projects"),
     ("POST", r"/api/projects", "post_project"),
     ("POST", r"/api/projects/link", "post_link"),
@@ -1983,6 +2040,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_test(self, q):
         return self.app.test_backend()
+
+    def post_pull(self, q):
+        """0.13.6: download models into the Ollama running on this computer (a job). Body: {"models": [names]}
+        (or {"model": name}), optionally {"url": the Ollama's address, as GET /api/servers lists it} and {"use":
+        "ai" | "restricted" | "embed"}: what to choose them for when the download is done."""
+        body = self._body()
+        use = str(body.get("use") or "")
+        if use and use not in App.PULL_USES:
+            raise ApiError(400, "use must be ai, restricted or embed.")
+        models = body.get("models") if body.get("models") is not None else [body.get("model")]
+        if (not isinstance(models, list) or not 1 <= len(models) <= 4
+                or not all(isinstance(m, str) and llm.valid_model_name(m.strip()) for m in models)):
+            raise ApiError(400, "Name the model to download, as Ollama's library writes it (for example qwen3:8b).")
+        models = list(dict.fromkeys(m.strip() for m in models))
+        url = str(body.get("url") or "").rstrip("/")
+        s = self.app.settings()
+        found = [x for x in detect_local(ollama_url=s.get("ollama_url"), cache_seconds=0) if x["kind"] == "ollama"]
+        srv = next((x for x in found if not url or x["url"].rstrip("/") == url), None)
+        if srv is None:  # only an Ollama that answers on this computer (or at the address in Settings) is asked
+            raise ApiError(409, "No Ollama is running on this computer just now. Open the Ollama app (ollama.com) "
+                                "and try again.")
+        return {"job": self.app.pull_models(models, srv["url"], use).view()}
 
     def get_projects(self, q):
         return {"projects": [self.app.project_summary(n) for n in home.list_projects()]}

@@ -4,6 +4,7 @@ import { App, api, h, icon, replace, clear, toast, showError, field, navigate, s
 import { plainTestResult, claudeSetupCard } from "./settings.js";
 import { linkProjectDialog, importProjectDialog } from "./projects.js";
 import { WELCOME_CARDS } from "../registry.js";
+import { localModelHelp, lookForServers, hasChatModel } from "./local-model.js";
 
 function rerender() { window.dispatchEvent(new HashChangeEvent("hashchange")); }
 
@@ -12,7 +13,10 @@ export async function renderSetup(view) {
   const s = App.settings();
   const cc = s.backend === "claude_code";
   // 0.9: subscription first: a new installation answers with Claude Code; the first step sets it up (or skips it)
-  const modelOk = cc ? store("setup-ai") === "done" : App.modelConfigured();
+  let modelOk = cc ? store("setup-ai") === "done" : App.modelConfigured();
+  // 0.13.6: "a model on this computer" (the automatic choice) counts as set up only when a model answers; it was taken
+  // as ready, so "Use a local model" went straight on to the project and never showed how to get a model
+  if (!cc && modelOk && (s.backend || "auto") === "auto") modelOk = hasChatModel((await lookForServers()).servers);
   const stepsAll = modelOk ? [["Project", "project"], ["Documents", "docs"]] : [["AI", "model"], ["Project", "project"], ["Documents", "docs"]];
   const current = !modelOk ? "model" : !hasProject ? "project" : "docs";
   const idx = stepsAll.findIndex((x) => x[1] === current);
@@ -86,29 +90,31 @@ function sourcesStep(body) {
     h("div", { class: "btn-row" }, h("a", { class: "btn btn-primary btn-lg", href: "#/sources" }, icon("upload", { size: 15 }), "Add documents"), h("a", { class: "btn btn-ghost", href: "#/overview" }, "Skip for now"))));
 }
 
-async function modelStep(body) {
+async function modelStep(body, opts = {}) {
   const s = App.settings();
-  replace(body, h("div", { class: "card" }, h("h2", {}, "Set up the AI model"), h("p", { class: "muted" }, "Looking for AI model services on this computer…")));
-  let servers = [];
-  try { servers = (await api("GET", "/api/servers")).servers || []; } catch (_) { servers = []; }
+  replace(body, h("div", { class: "card" }, h("h2", {}, "A model on this computer"), h("p", { class: "muted" }, "Looking for AI model services on this computer…")));
+  const info = await lookForServers();
+  const servers = (info.servers || []).filter((x) => (x.chat_models || []).length);
   clear(body);
-  const card = h("div", { class: "card" }, h("h2", {}, "Set up a model on this computer"), h("p", { class: "muted" }, "This is the technical part. It is done once, usually by whoever installs the app. If that is not you, ask them; the steps are below."),
+  const card = h("div", { class: "card" }, h("h2", {}, "A model on this computer"),
+    h("p", { class: "muted" }, "Free and private: the model runs on this computer, so your documents never leave it. It needs a fairly recent computer, and judges less well than Claude."),
     App.state.local_only ? null : h("p", { class: "small" }, "Have a Claude plan? ", h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { backend: "claude_code", allow_claude_code: true }); await App.refresh(); rerender(); } catch (e) { showError(e); } } }, "Use Claude Code instead")));
   body.appendChild(card);
 
-  if (!servers.length) {
-    card.appendChild(h("div", { class: "notice notice-warn", style: { margin: "12px 0" } }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "No AI model service is running on this computer.")), h("p", {}, "The easiest one is Ollama, a free program that runs AI models on your own computer:"))));
-    card.appendChild(h("div", { class: "guide" },
-      h("div", { class: "guide-step" }, h("span", { class: "n" }, "1"), h("div", {}, "Install Ollama from ", h("strong", {}, "ollama.com"), " and start it.")),
-      h("div", { class: "guide-step" }, h("span", { class: "n" }, "2"), h("div", {}, "Download a model. In a terminal window, type: ", h("code", {}, "ollama pull qwen3:8b"), h("div", { class: "muted small" }, "About 5 GB. Larger models judge better but need more memory and time."))),
-      h("div", { class: "guide-step" }, h("span", { class: "n" }, "3"), h("div", {}, "Optional, for search by meaning (finding excerpts that use other words): ", h("code", {}, "ollama pull nomic-embed-text"))),
-      h("div", { class: "guide-step" }, h("span", { class: "n" }, "4"), h("div", {}, "Come back here and ", h("button", { class: "btn btn-sm", type: "button", onClick: () => location.reload() }, icon("refresh", { size: 13 }), "look again")))));
-    card.appendChild(h("p", { class: "muted small" }, "LM Studio, llama.cpp, Jan or vLLM work too: start one with a model loaded, then look again."));
+  // 0.13.6: no model yet: how to get Ollama (noticed by itself when it starts), then one button downloads a model
+  const help = localModelHelp(info, {
+    use: "ai",   // the downloaded model becomes the AI (chosen by the app when the download is done)
+    onFound: () => modelStep(body),
+    onReady: async () => { try { await App.refresh(); } catch (_) { /* the test below says so */ } modelStep(body, { test: true }); },
+  });
+  if (help) {
+    card.appendChild(help);
     const alt = h("details", { class: "fold" }, h("summary", {}, "Other options: the Claude API, or trying the app without an AI"),
       h("div", { class: "stack", style: { marginTop: "8px" } },
-        h("div", { class: "cloud-box" }, h("p", { style: { color: "inherit", margin: 0 } }, h("strong", {}, "Claude API (cloud).")), h("p", {}, "Excerpts of your documents are sent to Anthropic's servers. Needs an account key and an explicit opt-in."), h("a", { class: "btn btn-sm", href: "#/settings/model", style: { marginTop: "8px" } }, "Set up in Settings → Advanced")),
+        h("div", { class: "cloud-box" }, h("p", { style: { color: "inherit", margin: 0 } }, h("strong", {}, "Claude API (cloud).")), h("p", {}, "Excerpts of your documents are sent to Anthropic's servers. Needs an account key and an explicit opt-in."), h("a", { class: "btn btn-sm", href: "#/settings/model", style: { marginTop: "8px" } }, "Set up in Settings → AI")),
         h("div", { class: "notice" }, icon("cpu"), h("div", {}, h("p", {}, h("strong", {}, "Demo mode"), " uses a simple word-overlap stand-in instead of an AI. Good for seeing how the app works; its results are not findings."),
           h("button", { class: "btn btn-sm", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { backend: "baseline" }); await App.refresh(); toast("Demo mode selected.", "ok"); rerender(); } catch (e) { showError(e); } } }, "Use demo mode")))));
+    if (App.state.local_only) alt.querySelector(".cloud-box").remove();
     card.appendChild(alt);
     return;
   }
@@ -129,7 +135,7 @@ async function modelStep(body) {
   const next = h("button", { class: "btn btn-primary", type: "button", hidden: true, onClick: () => rerender() }, "Next: your project", icon("arrow-right", { size: 14 }));
   testBtn.addEventListener("click", async () => {
     const sv = servers[Number(serverSel.value)];
-    if (!chatSel.value) { toast("No AI model is installed on this service. In a terminal: ollama pull qwen3:8b", "warn"); return; }
+    if (!chatSel.value) { toast("This service has no model yet: choose another one.", "warn"); return; }
     const changes = sv.kind === "ollama" ? { backend: "ollama", ollama_url: sv.url, ollama_model: chatSel.value } : { backend: "openai", openai_url: sv.url, openai_model: chatSel.value };
     changes.embed_backend = embSel.value ? (sv.kind === "ollama" ? "ollama" : "openai") : "off";
     changes.embed_model = embSel.value || "";
@@ -151,5 +157,6 @@ async function modelStep(body) {
     h("div", { class: "fields-2" }, field("AI model that reads and judges", chatSel, { help: "A model of 8 billion parameters (“8b”) or more judges noticeably better." }), field("Model for search by meaning (optional)", embSel, { help: "Finds excerpts even when they use other words than the hypothesis." })),
     h("div", { class: "btn-row" }, testBtn, next, h("a", { class: "btn btn-ghost", href: "#/settings/model" }, "More options")),
     out);
+  if (opts.test) testBtn.click();   // a model just downloaded: test it at once
 }
 

@@ -22,7 +22,7 @@ from enlens_claims import __version__
 from test_app import Api, home  # noqa: F401  (fixtures)
 from test_0131_update_button import served  # noqa: F401  (fixture)
 from test_0100_setup_and_moving import NEXT, Runs, _releases
-from _static import assert_sheet_after
+from _static import release_sheets
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -211,7 +211,7 @@ console.log(JSON.stringify(out));
 def test_page_files():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     assert '<button class="btn btn-ghost btn-sm" id="update-btn" type="button" hidden></button>' in html
-    assert_sheet_after("/static/v0136.css", "/static/v0134.css")
+    assert "/static/v0136.css" not in release_sheets()  # its rules are in app.css (shared stylesheets)
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     init = app[app.index("function updateInit()"):app.index("function updatePopup(")]
     assert "btn.hidden = false" not in init.split("function showUpdate(")[0]  # never shown before a look
@@ -222,7 +222,7 @@ def test_page_files():
     settings = (STATIC / "views" / "settings.js").read_text(encoding="utf-8")
     assert '"Check for updates"' in settings and "checkUpdate(true)" in settings and "updatesSection()" in settings
     assert 'href: "#/settings/updates"' in settings and 'updates: "advanced"' in settings
-    css = (STATIC / "v0136.css").read_text(encoding="utf-8")
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
     assert ".update-ready" in css and ".update-popup" in css
 
 

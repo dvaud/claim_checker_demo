@@ -1,9 +1,10 @@
 # Changelog
 
-## 0.13.6 (November 2026): updates that announce themselves, and room for add-ons
+## 0.13.6 (November 2026): updates that announce themselves, a local model without a terminal, and room for add-ons
 
 The *Update* button now appears only when there is something to install, with a pop-up that says so, and *Settings*
-can look for an update by hand. Underneath, apps built on ENLENS (Margin is one) get room of their own: pages, jobs,
+can look for an update by hand. A model on this computer, the most private choice, no longer needs a terminal: ENLENS
+notices Ollama when it starts and downloads a model with one button. Underneath, apps built on ENLENS (Margin is one) get room of their own: pages, jobs,
 tables, rules about who may read their text and kinds of AI task, added in their own files instead of edits to
 ENLENS's. Every answer still goes through the quote check, a person can overrule it, and nothing more leaves the
 computer.
@@ -31,6 +32,35 @@ number (0.X.y); small edge cases and background work wait for the next release.
   count, so several computers in one office can look every two minutes; the API is asked only when the page does not
   say, and to install. The server keeps an answer for 100 seconds, so the open tabs share one look;
   `GET /api/update?fresh=1` looks again now. `enlens update --check` asks the API, as before.
+
+**A model on this computer, without a terminal.** Switching to a privacy option has to be easy for anyone. A model on
+this computer was not: the first screen said "This is the technical part… If that is not you, ask them" and listed
+`ollama pull qwen3:8b` to type in a terminal, and Settings did the same.
+- **Get Ollama, then one button.** With no model server running, *A model on this computer* (first screen and
+  *Settings → AI*) shows three steps: get Ollama (free; *Open ollama.com*), open it, download a model here. The page
+  looks again every three seconds while it is open and goes on by itself when Ollama starts. With Ollama running but
+  no model, **Download qwen3:8b** (about 5 GB), with *Also nomic-embed-text* (about 0.3 GB) for search by meaning:
+  a progress bar (*Downloading qwen3:8b (1 of 2)*, *2.1 GB of 5.2 GB*), *Stop* (Ollama keeps what it has and goes on
+  from there next time), and a plain reason when it fails (no such model, not enough disk space, offline). Ollama
+  fetches the model from ollama.com; none of the person's documents are sent, so it works with `--local-only` too.
+- **Chosen when it is done.** On the first screen the downloaded model becomes the AI and is tested at once (*Working.
+  The AI model answered.*, then *Next: your project*). The app makes the choice itself when the download ends, so
+  closing the tab during a 5 GB download loses nothing; a choice the person made meanwhile stands. Coming back to the
+  page during a download shows its progress again, and the sidebar lists it as *Downloading a model*.
+- **The same download where a local model is missing:** *Local model for restricted documents* (Claude reads the
+  rest; documents marked *Only a local AI* need a model on this computer) and *Settings → Documents → Search by
+  meaning* (nomic-embed-text).
+- **Fixed: "Use a local model" skipped the model step.** On the first screen it set the automatic choice, which
+  counted as set up even with no model server running, so the person went straight on to the project and the first
+  AI task failed. The automatic choice now counts as set up only when a model answers.
+- Messages that sent people to a terminal (`ollama pull …` in a check's error, the model test, *Save and test*)
+  point to the download in *Settings → AI* instead. The README, the manual (*Getting started*, *Settings*, *For whoever
+  installs the app*) and `docs/API.md` say so.
+- `POST /api/servers/pull` (a job of kind `model-pull`, one at a time, with `use`: `ai`, `restricted` or `embed`);
+  `GET /api/servers` gains `suggested`; `llm.OllamaBackend.pull`, `llm.SUGGESTED_MODELS`, `llm.valid_model_name`,
+  `llm.pull_error`. Only an Ollama that answers on this computer (or at the address in Settings) is asked.
+- `tools/dev_server.py --ollama [empty|later|none]`: an Ollama with no model (its download takes 12 s), one that
+  starts 15 s after the app, or none.
 
 **Room for add-ons** (docs/EXTENDING.md). Until now an app built on ENLENS had to edit ENLENS's own files to add a
 page's API, a job, a table, a rule about who may read its text, a kind of AI task or a page: the route table, the job
@@ -111,14 +141,32 @@ Overview and the result page. Each has its extension point, read from one module
 - **The result page's back-link** comes from the registry: a check of several still says *part of a set*; a
   hypothesis an add-on made says where it comes from in the line under it, and links back to it above it.
 
+**How releases are made.** From 0.13.6 a release adds no stylesheet of its own: new rules go into the shared
+stylesheets (`app.css`, or the stylesheet of the view it changes), and rules it changes in an older per-release sheet
+move there, the sheet going once it is empty. The Update button's rules are in `app.css` (there is no `v0136.css`).
+Test files are named `test_<X>_<Y>_<Z>_<topic>.py`; older ones keep their names.
+
 **Tests.** The test files of the withdrawn versions are renamed after 0.13.6 (`test_0140_addons.py`,
-`test_0150_task_kinds.py` and `test_0151_page_extensions.py` became `test_0136_addons.py`, `test_0136_task_kinds.py`
-and `test_0136_page_extensions.py`), as is the stylesheet (`v0136.css`).
-- `test_0136_update_check.py`: the kept answer, `?fresh=1`, a failed look, the release page, the shared state in Node,
+`test_0150_task_kinds.py` and `test_0151_page_extensions.py` became `test_0_13_6_addons.py`,
+`test_0_13_6_task_kinds.py` and `test_0_13_6_page_extensions.py`).
+- `test_0_13_6_local_model.py` (14 tests): a download reports its progress and the model then answers; what went
+  wrong, in plain words (no such model, no disk space, offline, Ollama not running); stopping; model names (a name
+  that is not one is refused); the download from the app (the job, its progress for two models, the names Ollama
+  lists, the model test afterwards); the choice made when the download is done (the AI, the restricted model with
+  Claude Code, search by meaning), even with the page closed, and a choice made meanwhile that stands; one download at
+  a time and *Stop*; a failed download; only an Ollama on this computer is asked; allowed with `--local-only`; the
+  messages point to the app; the page files (no terminal on a working screen, the first screen's fix). The stand-in
+  Ollama (`tests/fake_servers.py`) lists no model when asked to and downloads with progress. Checked in headless
+  Chrome with the dev server (`--ollama empty|later|none`, with and without `--empty` and `--claude-code`): the
+  steps, Ollama noticed after it starts, the download, its progress after leaving the page and coming back, the
+  choice after closing the tab, the test and *Next*; light, dark and 390 px wide, no console errors. Against the
+  real Ollama 0.40.14 on this Mac: the message for a model that does not exist, and the start of a download, stopped
+  at once.
+- `test_0_13_6_update_check.py`: the kept answer, `?fresh=1`, a failed look, the release page, the shared state in Node,
   the page files; `test_0131_update_button.py` reads the look from `lib.js`, and `test_0101_settings_and_version.py`
   follows the version tag to *Updates*. Checked in headless Chrome with the dev server (`--update`, `--update none`),
   light and dark.
-- `test_0136_addons.py` (17 tests): ENLENS alone adds nothing; the public names; with the stand-in add-on
+- `test_0_13_6_addons.py` (17 tests): ENLENS alone adds nothing; the public names; with the stand-in add-on
   (`tests/fake_extension`) a route, its token, a download by link, a state key and an Overview key that cannot replace
   ENLENS's, a job of its own that is *not running* until a stand-in Claude Code takes its tasks and then finishes, and
   one stopped with its tasks withdrawn; its table and migration in a new project and in an older one; a hypothesis
@@ -126,7 +174,7 @@ and `test_0136_page_extensions.py`), as is the stylesheet (`v0136.css`).
   refused to Claude Code), cannot loosen a document's setting, and keeps a removed note's text here; a failing floor;
   local-only; a hypothesis hidden from the connector's list and refused when asked for; a fork adding routes in
   `gui/extensions.py`; an add-on that cannot take over ENLENS's route; a failing hook.
-- `test_0136_task_kinds.py` (30 tests): every table against its 0.13.5 value; a test can still change a table
+- `test_0_13_6_task_kinds.py` (30 tests): every table against its 0.13.5 value; a test can still change a table
   (`monkeypatch.setitem`); registering a kind (refused without a quote check, a store function or with ENLENS's name;
   its defaults; taken away again); the quote check itself and its message; and the stand-in add-on's kind
   (`fake_tag`, tags for a note, each quoting it) in every table, routed on Claude Code, the Claude API and a local
@@ -134,7 +182,7 @@ and `test_0136_page_extensions.py`), as is the stylesheet (`v0136.css`).
   before anything is stored, a good one stored with its route), stepping up when unsure, answered by the offline demo,
   named in *How these results were made*, its helper in the Claude Code plugin, its size estimate, and kept on this
   computer when its note is *Only a local AI* or the installation is local-only.
-- `test_0136_page_extensions.py` (5 tests, two run in Node): ENLENS alone keeps its Overview (its sections, cards and
+- `test_0_13_6_page_extensions.py` (5 tests, two run in Node): ENLENS alone keeps its Overview (its sections, cards and
   order), its job rows (a check, a second opinion on three hypotheses, adding documents, looking before checking, an
   unknown kind) and its *part of a set* link (with and without an origin); the stand-in add-on's page module adds a
   section, a feature with a sidebar entry and its state line, a page, a job kind (with a link that depends on the
@@ -143,10 +191,13 @@ and `test_0136_page_extensions.py`), as is the stylesheet (`v0136.css`).
   server: with the stand-in add-on (the name *Fieldnotes*, the *Notes* sidebar entry with its AI mark, the Overview's
   *Your notes* section, the add-on's page, a result's *Back to the note* and *from a note*), and ENLENS alone
   (Overview, Results, Settings), with no console errors.
-- `test_0136_version_numbers.py`: a withdrawn version still running counts as older; the changelog lists none of
+- `test_0_13_6_version_numbers.py`: a withdrawn version still running counts as older; the changelog lists none of
   them, and its versions go down from the top.
 
-**Not yet done.** A hypothesis an add-on creates but never checks (no parts yet) cannot be opened on the result page
+**Not yet done.** A whole model downloaded by a real Ollama from the app (the tests use the stand-in; the real one was
+asked only for a model that does not exist and for the start of a download), and the download on Windows and Linux.
+ENLENS cannot install Ollama itself: getting it is still one download from ollama.com. LM Studio and the other
+servers get no download button (their own apps download models). A hypothesis an add-on creates but never checks (no parts yet) cannot be opened on the result page
 (a script error); ENLENS itself never makes one. An add-on's sidebar entry is added after the page loads, so it
 appears a moment after ENLENS's own. The page does not yet know an add-on's kinds of AI task by name in its own
 lists.

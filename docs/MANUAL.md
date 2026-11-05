@@ -122,10 +122,11 @@ Check the install with the tests (about 15 seconds, no network):
 pytest
 ```
 
-A local model server: install [Ollama](https://ollama.com) and pull a chat model (`ollama pull qwen3:8b`), or start
-the server of [LM Studio](https://lmstudio.ai) (Developer → Start server) with a model loaded. Optionally pull an
-embedding model for search by meaning: `ollama pull nomic-embed-text` (English) or `ollama pull bge-m3` (many
-languages, so an English hypothesis also finds Dutch or French passages). Section 5 helps choose.
+A local model server: install [Ollama](https://ollama.com) and open it; the app then downloads a chat model with one
+button (*Download qwen3:8b*, about 5 GB, 0.13.6), and with it, if you like, an embedding model for search by meaning
+(nomic-embed-text). In a terminal it is `ollama pull qwen3:8b` and `ollama pull nomic-embed-text` (English) or
+`ollama pull bge-m3` (many languages, so an English hypothesis also finds Dutch or French passages). Or start the
+server of [LM Studio](https://lmstudio.ai) (Developer → Start server) with a model loaded. Section 5 helps choose.
 
 The commands are `enlens-gui` (the app), `enlens` (or `python -m enlens_claims`; every command takes `--ws FOLDER`,
 default `./workspace`) and `enlens-mcp` (the connector).
@@ -234,7 +235,12 @@ Claude** (0.10), that does every step still open, in order:
 3. The plugin is not added: ENLENS adds it (as in 0.9).
 
 *Set it up yourself instead* keeps the lines to type. *No Claude plan? Other options* offers a model on this computer
-or no AI for now. When whoever installed the app chose a local model, this step is skipped. Then name a **project**
+or no AI for now. **A model on this computer needs no terminal (0.13.6):** with no model server running, the step says
+how to get Ollama (free, from ollama.com) and notices by itself when it starts; with Ollama running but no model yet,
+*Download qwen3:8b* (about 5 GB) downloads one, with *Also nomic-embed-text* for search by meaning, a progress bar
+and *Stop* (Ollama keeps what it has and goes on from there). Ollama fetches the model from ollama.com; none of your
+documents are sent. The downloaded model becomes the AI and is tested at once. When whoever installed the app chose a
+local model that answers, this step is skipped. Then name a **project**
 (one per set of documents); used ENLENS on another computer before? *Import from another computer* brings every
 project and the settings in one go (section 7). Then **add documents**: choose
 files (PDF, Word .docx, HTML, text, Markdown, zip) or a folder. A Word file keeps its paragraphs, headings and the pages
@@ -517,7 +523,10 @@ Settings has five tabs, each one page with nothing folded inside another (0.9):
   address, model and reasoning switch), **No AI (demo)**, and the **Claude API (team key)** for a shared
   installation, behind a confirmation and *Allow cloud models*. With Claude Code: the set-up checklist and *Set up
   Claude Code* (section 6) and *Let the auditor use Fable*. *Save and test* says whether the AI answers (with Claude
-  Code: whether it is set up).
+  Code: whether it is set up). With a model on this computer chosen but none installed, the same steps as on the
+  first screen: get Ollama, then *Download qwen3:8b* (0.13.6). *Local model for restricted documents* offers the
+  download too, and *Settings → Documents* downloads nomic-embed-text for search by meaning when Ollama has no
+  embedding model.
 - **Checking**: the **strictness** (how sure the AI must be before a judgement counts; it saves at once, applies to
   every result, and reports which answers and counts changed; *Back to normal (60%)*), with **how often you agreed
   with the AI, by its certainty**: a small chart from the excerpts you judged; after 20 judgements it may suggest a
@@ -543,7 +552,8 @@ in memory (so nothing extra is loaded), else the most recently downloaded one, a
 ### For whoever installs the app
 
 - A new installation uses Claude Code on the researcher's own plan (0.9). To use a model on this computer instead,
-  choose it once in *Settings → AI* (or let *automatic* find Ollama or LM Studio) and press *Save and test*; an
+  choose it once in *Settings → AI* (or let *automatic* find Ollama or LM Studio) and press *Save and test*; with
+  Ollama running, *Download qwen3:8b* there gets a model without a terminal (0.13.6); an
   installation that already chose a local model keeps it when it is updated. With an embedding model set
   (*Settings → Documents*), new documents are indexed for search by meaning right away.
 - To make sure nothing can ever be sent to a cloud model, start the app with `enlens-gui --local-only`, set

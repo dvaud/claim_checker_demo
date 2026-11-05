@@ -2,6 +2,7 @@
 // once for a project that has none), the setting of each document on the Documents page, what Claude has read of a
 // document, and the panel "What happens to the text Claude reads" (Set up Claude, Settings → AI).
 import { App, api, h, icon, replace, toast, showError, fmt, P, dialog } from "../lib.js";
+import { localModelHelp } from "./local-model.js";
 
 export const LEVEL = {
   cloud: { title: "Claude may read it", many: "Claude may read them", short: "Claude", icon: "cloud",
@@ -146,7 +147,7 @@ export function termsPanel(opts = {}) {
 }
 
 // Settings → AI: the local model that reads documents marked Only a local AI while Claude reads the rest.
-export function restrictedModelCard(s, servers, save) {
+export function restrictedModelCard(s, servers, save, info = { servers }) {
   const choice = (App.state && App.state.restricted) || {};
   const card = h("section", { class: "card settings-section", id: "s-restricted", "aria-labelledby": "s-restricted-h" },
     h("h2", { id: "s-restricted-h", tabindex: "-1" }, "Local model for restricted documents"));
@@ -168,6 +169,15 @@ export function restrictedModelCard(s, servers, save) {
   });
   card.append(h("p", { class: "lead" }, "Claude never reads documents marked Only a local AI. Choose a model on this computer to read their excerpts in a check, the Profile and the other features; without one, they wait for your own judgement."),
     h("div", { class: "save-row" }, field2("Local model", sel, servers && servers.length ? "Chat models of the model servers running on this computer." : "No model server is running on this computer just now (Ollama, LM Studio…)."), state));
+  // 0.13.6: no model on this computer yet: get Ollama, or download a model into it with one button
+  const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
+  const help = localModelHelp(info, { embed: false, use: "restricted", onFound: rerender, onReady: async (r) => {
+    try { await App.refresh(); } catch (_) { /* shown on the page */ }
+    toast(r.chosen ? `Documents marked Only a local AI are read by ${r.chat}.` : `${r.chat} is downloaded: choose it above.`, "ok");
+    rerender();
+  } });
+  // with no model server at all, the steps to get one stay folded: most people who use Claude never need them
+  if (help) card.append((servers || []).length ? help : h("details", { class: "fold" }, h("summary", {}, "Get a model on this computer (free, no terminal)"), help));
   return card;
 }
 
