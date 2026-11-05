@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount } from "./lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName } from "./lib.js";
 import { FEATURES } from "./features.js";
 import { renderCheck } from "./views/check.js";
 import { renderResult } from "./views/result.js";
@@ -72,7 +72,7 @@ async function route() {
   for (const d of document.querySelectorAll("#project-switch details[open], #jobs-indicator details[open], #queue-indicator details[open]")) d.open = false;
   const pageName = { overview: "Overview", check: "Check a hypothesis", history: "Results", batch: "Check several", sources: "Documents", settings: "Settings", search: "Search", profile: "Profile", concepts: "Concepts", themes: "Themes" }[nav]
     || { "/setup": "Set up", "/projects": "Projects" }[pathPart] || "";
-  document.title = pageName ? `${pageName} · ENLENS` : "ENLENS";
+  document.title = pageName ? `${pageName} · ${appName()}` : appName();
   quickLookBanner(document.getElementById("quicklook-banner"));
   // Each page renders into its own container: a render still in flight when the hash changes again writes into a
   // detached element and cannot disturb the new page.
@@ -244,7 +244,7 @@ async function drawJobs() {
     keywords: "#/profile", label: "#/profile", "label-compare": "#/profile", terms: "#/concepts", link: "#/concepts", wordings: "#/concepts", themes: "#/themes", "theme-names": "#/themes", resolve: "#/sources", quicklook: "#/sources", "claude-install": "#/settings/model", bibliography: "#/bibliography" }[j.kind] || "#/check");
   const kindIcon = { check: "flask", prepare: "eye", batch: "list-checks", more: "search", reread: "refresh", "read-new": "book-open", "second-opinion": "cpu", ingest: "upload", index: "sparkles", benchmark: "cpu",
     keywords: "tag", label: "tag", "label-compare": "scale", terms: "network", link: "network", wordings: "network", themes: "shapes", "theme-names": "shapes", resolve: "link", quicklook: "eye", "claude-install": "download", bibliography: "library" };
-  const kindText = { check: "Check", prepare: "Look before checking", batch: "Several hypotheses", more: "More evidence", reread: "Reading an excerpt again", "read-new": "Reading the new documents", "second-opinion": "Second AI model", ingest: "Adding documents", index: "Search by meaning set-up", benchmark: "Model test",
+  const kindText = { check: "Check", prepare: "Look before checking", batch: "Several hypotheses", more: "More evidence", reread: "Reading an excerpt again", "read-new": "Reading the new documents", "second-opinion": "Second opinion", ingest: "Adding documents", index: "Search by meaning set-up", benchmark: "Model test",
     keywords: "Codes by keywords", label: "The AI labels passages", "label-compare": "Comparing labels", terms: "Building the glossary", link: "The AI relates concepts", wordings: "Other wordings", themes: "Finding themes", "theme-names": "Naming themes", resolve: "Following references", quicklook: "Quick look", "claude-install": "Installing Claude Code", bibliography: "Bringing in the bibliography" };
   const withJob = new Set(["check", "batch", "more", "read-new", "second-opinion"]);
   const row = (j) => h("a", { class: "job-row", href: linkFor(j) + (withJob.has(j.kind) ? `?job=${encodeURIComponent(j.id)}` : ""), title: ["check", "prepare", "batch"].includes(j.kind) ? (j.title || "") : null },
@@ -366,7 +366,7 @@ function themeInit() {
 function quitInit() {
   const btn = document.getElementById("quit-btn");
   if (!btn || !App.state || !App.state.can_quit) return;
-  replace(btn, icon("power", { size: 15 }), h("span", {}, "Quit ENLENS"));
+  replace(btn, icon("power", { size: 15 }), h("span", {}, `Quit ${appName()}`));
   btn.hidden = false;
   btn.addEventListener("click", () => quitApp());
 }
@@ -376,7 +376,7 @@ function quitInit() {
 function updateInit() {
   const btn = document.getElementById("update-btn");
   if (!btn || !App.state || !App.state.can_restart) return;
-  replace(btn, icon("arrow-up", { size: 15 }), h("span", {}, "Update ENLENS"));
+  replace(btn, icon("arrow-up", { size: 15 }), h("span", {}, `Update ${appName()}`));
   btn.hidden = false;
   btn.addEventListener("click", () => updateApp(btn));
 }
@@ -394,13 +394,13 @@ async function updateApp(btn) {
   if (btn.lastChild) btn.lastChild.textContent = "Looking for updates…";
   let info;
   try { info = await api("GET", "/api/update"); } catch (e) { showError(e); return done(); }
-  if (!info.available) { toast(`ENLENS ${info.version} is the newest version.`, "ok"); return done(); }
+  if (!info.available) { toast(`${appName()} ${info.version} is the newest version.`, "ok"); return done(); }
   const running = await runningJobs();
-  const what = info.on_disk ? `ENLENS ${info.latest} is installed already; ENLENS restarts to use it.`
-    : info.latest ? `ENLENS ${info.latest} is ready (you have ${info.version}). ENLENS downloads it, installs it and restarts.`
-    : `${info.changes} new change${info.changes === 1 ? " is" : "s are"} waiting (you have ${info.version}). ENLENS fetches ${info.changes === 1 ? "it" : "them"} and restarts.`;
+  const what = info.on_disk ? `${appName()} ${info.latest} is installed already; ${appName()} restarts to use it.`
+    : info.latest ? `${appName()} ${info.latest} is ready (you have ${info.version}). ${appName()} downloads it, installs it and restarts.`
+    : `${info.changes} new change${info.changes === 1 ? " is" : "s are"} waiting (you have ${info.version}). ${appName()} fetches ${info.changes === 1 ? "it" : "them"} and restarts.`;
   const ok = await confirmDialog({
-    title: info.on_disk ? "Restart ENLENS?" : "Update ENLENS?",
+    title: info.on_disk ? `Restart ${appName()}?` : `Update ${appName()}?`,
     message: `${what} ${running ? RUNNING_NOTE : ""}Your projects and results are kept.`,
     confirmText: info.on_disk ? "Restart" : "Update and restart", danger: !!running,
   });
@@ -408,7 +408,7 @@ async function updateApp(btn) {
   if (btn.lastChild) btn.lastChild.textContent = info.on_disk ? "Restarting…" : "Updating…";
   let r;
   try { r = await api("POST", "/api/update", {}); } catch (e) { showError(e); return done(); }
-  if (!r.restarting) { toast(`ENLENS ${r.version} is the newest version.`, "ok"); return done(); }
+  if (!r.restarting) { toast(`${appName()} ${r.version} is the newest version.`, "ok"); return done(); }
   waitForRestart(r.version);
 
   function done() { btn.disabled = false; if (btn.lastChild && label) btn.lastChild.textContent = label; }
@@ -418,8 +418,8 @@ async function updateApp(btn) {
 async function restartApp(version) {
   const running = await runningJobs();
   const ok = await confirmDialog({
-    title: "Restart ENLENS?",
-    message: `ENLENS ${version} starts in place of ${App.state.version}. ${running ? RUNNING_NOTE : ""}Your projects and results are kept.`,
+    title: `Restart ${appName()}?`,
+    message: `${appName()} ${version} starts in place of ${App.state.version}. ${running ? RUNNING_NOTE : ""}Your projects and results are kept.`,
     confirmText: "Restart", danger: !!running,
   });
   if (!ok) return;
@@ -431,10 +431,10 @@ function waitForRestart(version) {
   const meta = (name) => (document.querySelector(`meta[name="${name}"]`) || {}).content || "";
   const oldToken = meta("enlens-token");
   const status = h("p", { class: "muted" }, "This page opens the new version by itself in a moment.");
-  document.title = "ENLENS is restarting";
+  document.title = `${appName()} is restarting`;
   replace(document.body, h("main", { class: "stopped-page", id: "main" },
-    h("img", { src: "/static/logo.svg", alt: "", width: 48, height: 48 }),
-    h("h1", {}, `Starting ENLENS ${version || ""}…`),
+    h("img", { src: brand().logo, alt: "", width: 48, height: 48 }),
+    h("h1", {}, `Starting ${appName()} ${version || ""}…`),
     h("p", {}, "Your projects and results are kept."),
     status));
   const t0 = Date.now();
@@ -451,8 +451,8 @@ function waitForRestart(version) {
     } catch (_) { wentDown = true; }
     if (Date.now() - t0 > 90000) {
       replace(status, App.state.launcher
-        ? "ENLENS did not come back. Open it again from its icon (on your Desktop, or in Applications)."
-        : "ENLENS did not come back. Start it again the way you started it before (for example with enlens-gui).");
+        ? `${appName()} did not come back. Open it again from its icon (on your Desktop, or in Applications).`
+        : `${appName()} did not come back. Start it again the way you started it before (for example with enlens-gui).`);
       return;
     }
     setTimeout(poll, 800);
@@ -465,21 +465,21 @@ async function quitApp(reason = "") {
   {
     const running = await runningJobs();
     const ok = await confirmDialog({
-      title: "Quit ENLENS?",
+      title: `Quit ${appName()}?`,
       message: reason + (running
         ? "Something is still running (a check, or documents being added). Quitting stops it; a check that is stopped leaves nothing behind. Your projects and results are kept."
-        : "ENLENS stops on this computer. Your projects and results are kept."),
-      confirmText: "Quit ENLENS", danger: !!running,
+        : `${appName()} stops on this computer. Your projects and results are kept.`),
+      confirmText: `Quit ${appName()}`, danger: !!running,
     });
     if (!ok) return;
     try { await api("POST", "/api/quit", {}); } catch (e) { showError(e); return; }
     const again = App.state.launcher
-      ? "To open it again, double-click the ENLENS icon (on your Desktop, or in Applications)."
+      ? `To open it again, double-click the ${appName()} icon (on your Desktop, or in Applications).`
       : "To open it again, start it the way you started it before (for example with enlens-gui).";
-    document.title = "ENLENS has stopped";
+    document.title = `${appName()} has stopped`;
     replace(document.body, h("main", { class: "stopped-page", id: "main" },
-      h("img", { src: "/static/logo.svg", alt: "", width: 48, height: 48 }),
-      h("h1", {}, "ENLENS has stopped"),
+      h("img", { src: brand().logo, alt: "", width: 48, height: 48 }),
+      h("h1", {}, `${appName()} has stopped`),
       h("p", {}, "You can close this tab. Your projects and results are kept."),
       h("p", { class: "muted" }, again)));
   }
@@ -495,12 +495,12 @@ function renderUpdateBanner() {
   if (!now || !st.version || now === st.version) { clear(box); return; }
   // 0.13.1: a restart, where this copy can restart itself; quitting otherwise
   const how = st.can_restart ? "Restart it to use the new version."
-    : st.can_quit ? `Choose Quit ENLENS, then open ENLENS again${st.launcher ? " from its icon" : ""}.`
+    : st.can_quit ? `Choose Quit ${appName()}, then open ${appName()} again${st.launcher ? " from its icon" : ""}.`
     : "Stop it and start it again.";
   replace(box, h("div", { class: "notice notice-info update-banner", role: "status" }, icon("refresh"),
-    h("div", {}, h("p", {}, h("strong", {}, `ENLENS ${now} is installed, but ${st.version} is still running.`), ` ${how}`)),
+    h("div", {}, h("p", {}, h("strong", {}, `${appName()} ${now} is installed, but ${st.version} is still running.`), ` ${how}`)),
     st.can_restart ? h("button", { class: "btn btn-sm", type: "button", onclick: () => restartApp(now) }, icon("refresh", { size: 13 }), "Restart now")
-    : st.can_quit ? h("button", { class: "btn btn-sm", type: "button", onclick: () => quitApp(`ENLENS ${now} starts when you open it again. `) }, icon("power", { size: 13 }), "Quit ENLENS") : null));
+    : st.can_quit ? h("button", { class: "btn btn-sm", type: "button", onclick: () => quitApp(`${appName()} ${now} starts when you open it again. `) }, icon("power", { size: 13 }), `Quit ${appName()}`) : null));
 }
 
 function closeDrawer() {
@@ -554,6 +554,23 @@ function navIcons() {
   }
 }
 
+// 0.13.5: the app's name, words and logo come from brand.json (and add-ons): index.html keeps ENLENS's as a
+// fallback for the moment before the state arrives, and is never edited to rename the app.
+function applyBrand() {
+  const b = brand();
+  for (const a of document.querySelectorAll("a.brand")) a.setAttribute("aria-label", `${b.name} home`);
+  for (const img of document.querySelectorAll("a.brand img")) img.setAttribute("src", b.logo);
+  const big = document.querySelector(".sidebar .brand-text");
+  if (big) { big.querySelector("strong").textContent = b.name; big.querySelector("small").textContent = b.tagline || ""; }
+  const small = document.querySelector(".brand-small span");
+  if (small) small.textContent = b.name;
+  const fav = document.querySelector('link[rel="icon"]');
+  if (fav) fav.setAttribute("href", b.logo);
+  let meta = document.querySelector('meta[name="description"]');
+  if (!meta) { meta = document.createElement("meta"); meta.name = "description"; document.head.appendChild(meta); }
+  meta.content = b.description || "";
+}
+
 async function boot() {
   themeInit();
   drawerInit();
@@ -567,6 +584,7 @@ async function boot() {
     replace(document.getElementById("view"), h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message)));
     return;
   }
+  applyBrand();
   renderJobs();
   updateInit();
   quitInit();

@@ -665,17 +665,17 @@ def make_second_backend(settings: dict, api_key: str = ""):
         return be, (be.router.api_id(alias) if b == "anthropic" else alias)
     second = (settings.get("second_model") or "").strip()
     if not second:
-        raise ValueError("Choose a second model in Settings first.")
+        raise ValueError("Choose a model for second opinions in Settings first.")
     if b == "baseline":
-        raise ValueError("The offline demo has no second model. Choose a local model in Settings.")
+        raise ValueError("The offline demo cannot give second opinions. Choose a local model in Settings.")
     key = {"anthropic": "anthropic_model", "openai": "openai_model"}.get(b, "ollama_model")
     changed = {**settings, key: second}
     if b == "auto":
         changed.update(ollama_model=second, openai_model=second)
     be, model = make_backend(changed, api_key, kinds=("second",))
     if model != second:
-        raise BackendError(f"The second model {second} is not installed on the model server. Install it, or choose "
-                           "another second model in Settings.")
+        raise BackendError(f"The model for second opinions, {second}, is not installed on the model server. Install it, or "
+                           "choose another one in Settings.")
     return be, model
 
 

@@ -45,7 +45,7 @@ def test_heat_levels_outrank_the_row_hover():
 
 
 def test_darkest_cell_has_its_own_token_in_every_theme():
-    app = (STATIC / "app.css").read_text("utf-8")
+    app = (STATIC / "tokens.css").read_text("utf-8")  # 0.13.5: the tokens moved out of app.css
     assert app.count("--heat-4:") == 3  # light, dark by system setting, dark by choice
     for f in ("concepts-themes.css", "profile-viewer.css"):
         assert "var(--heat-4)" in (STATIC / f).read_text("utf-8")

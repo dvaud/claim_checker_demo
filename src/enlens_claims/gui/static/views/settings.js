@@ -42,7 +42,7 @@ export async function renderSettings(view, [section]) {
     // a local model's own settings (second model, context length) only when a local model answers
     const local = ["auto", "ollama", "openai"].includes(s.backend || "auto");
     main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s, watchers), ledgerSection(), dataSection()].filter(Boolean));
-    if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (a second model, the context length) show here when a local model is chosen under AI."));
+    if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (the model for second opinions, the context length) show here when a local model is chosen under AI."));
   }
   if (section && section !== tab) setTimeout(() => { const t = document.getElementById(`s-${section}`); if (t) t.scrollIntoView({ block: "start" }); }, 80);
   return () => watchers.forEach((w) => w.stop());
@@ -503,14 +503,14 @@ function secondModelSection(s, servers) {
   const sel = h("select", { class: "select", id: "second-model" }, h("option", { value: "" }, "None (no second opinions)"),
     models.map((m) => h("option", { value: m, selected: m === current }, m)),
     current && !models.includes(current) ? h("option", { value: current, selected: true }, `${current} (not installed now)`) : null);
-  const txt = h("input", { class: "input input-mono", type: "text", placeholder: "or type a model name", value: "", "aria-label": "Second model, typed" });
+  const txt = h("input", { class: "input input-mono", type: "text", placeholder: "or type a model name", value: "", "aria-label": "Model for second opinions, typed" });
   const saveBtn = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
     const v = txt.value.trim() || sel.value;
     if (v && v === main) { toast("That is the main model. Choose a different one for second opinions.", "warn"); return; }
     try { await save({ second_model: v }, state); txt.value = ""; toast(v ? `Model for second opinions: ${v}` : "Model for second opinions: none", "ok", { ttl: 2500 }); } catch (_) { /* shown */ }
   } }, icon("check", { size: 13 }), "Save");
   return sectionCard("second", "Model for second opinions", "For “Get a second opinion” on a result: another chat model on the same server reads the same excerpts, and its judgements are shown beside the main model's, for comparison only. Where the two differ, the excerpt deserves a careful read. A second opinion never changes an answer (a stronger model, asked for with “Ask a stronger model”, does).",
-    h("div", { class: "fields-2" }, field("Second model", sel, { help: models.length ? `Chat models on the server now, apart from the main one (${main || "none chosen"}).` : "No server answered just now, so the installed models could not be listed." }), field("Not listed?", txt, { help: "Type its name as the server knows it, e.g. llama3.1:8b." })),
+    h("div", { class: "fields-2" }, field("Model for second opinions", sel, { help: models.length ? `Chat models on the server now, apart from the main one (${main || "none chosen"}).` : "No server answered just now, so the installed models could not be listed." }), field("Not listed?", txt, { help: "Type its name as the server knows it, e.g. llama3.1:8b." })),
     h("p", { class: "muted small" }, icon("info", { size: 13 }), " Only one model is kept in memory at a time: the main model is unloaded before the second one reads, and the second one is unloaded when it is done. So a second opinion takes a while, and is best asked for several results at once (under Results)."),
     h("div", { class: "save-row" }, saveBtn, state));
 }

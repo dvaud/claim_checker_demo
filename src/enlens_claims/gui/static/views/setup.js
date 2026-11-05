@@ -1,6 +1,6 @@
 // First run. When the AI model is already set up (someone installed the app), the user starts by naming a project
 // and adding documents. The model step appears only when no model works yet.
-import { App, api, h, icon, replace, clear, toast, showError, field, navigate, store } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, field, navigate, store, brand, appName } from "../lib.js";
 import { plainTestResult, claudeSetupCard } from "./settings.js";
 import { linkProjectDialog, importProjectDialog } from "./projects.js";
 
@@ -19,8 +19,8 @@ export async function renderSetup(view) {
   const steps = h("ol", { class: "setup-steps", "aria-label": "Steps" },
     stepsAll.map(([t, key], i) => h("li", { class: `setup-step ${i === idx ? "active" : i < idx ? "done" : ""}`, "aria-current": i === idx ? "step" : null }, h("span", { class: "n" }, i < idx ? icon("check", { size: 12 }) : String(i + 1)), t)));
   const wrap = h("div", { class: "setup" },
-    h("div", { class: "hero" }, h("p", { class: "eyebrow" }, "Welcome"), h("h1", { id: "page-title", tabindex: "-1" }, "Explore your documents, and check what they say"),
-      h("p", {}, "ENLENS reads your reports, papers and interview notes. Search them, see which topics and codes each one addresses, follow concepts and themes across them, and check a hypothesis against them, with the exact quotes so you can judge for yourself."),
+    h("div", { class: "hero" }, h("p", { class: "eyebrow" }, "Welcome"), h("h1", { id: "page-title", tabindex: "-1" }, brand().welcome_title),
+      h("p", {}, brand().welcome_text),
       modelOk && !cc ? h("p", { class: "it small", style: { color: "var(--ok)" } }, icon("house", { size: 14 }), h("span", {}, "The AI model is set up and runs on this computer: your documents never leave it.")) : null),
     steps);
   view.appendChild(wrap);
@@ -36,7 +36,7 @@ function claudeStep(body) {
   const next = () => { store("setup-ai", "done"); rerender(); };
   const nextBtn = h("button", { class: "btn btn-lg", type: "button", onClick: next }, "Next: your project", icon("arrow-right", { size: 14 }));
   replace(body, h("div", { class: "card" }, h("h2", {}, "The AI: Claude, on your own Claude plan"),
-    h("p", { class: "muted" }, "ENLENS uses Claude Code, signed in with your Claude subscription, for the AI parts (labels, theme names, checks). Search, keyword profiles, the glossary and themes work without any AI. Your documents stay on this computer; only the passages inside the AI's tasks are sent to Anthropic."),
+    h("p", { class: "muted" }, `${appName()} uses Claude Code, signed in with your Claude subscription, for the AI parts (labels, theme names, checks). Search, keyword profiles, the glossary and themes work without any AI. Your documents stay on this computer; only the passages inside the AI's tasks are sent to Anthropic.`),
     claudeSetupCard({ onReady: () => { nextBtn.classList.add("btn-primary"); } }),
     h("div", { class: "btn-row", style: { marginTop: "14px" } }, nextBtn),
     h("details", { class: "fold", style: { marginTop: "10px" } }, h("summary", {}, "No Claude plan? Other options"),
@@ -67,10 +67,10 @@ function projectStep(body) {
   } },
     h("div", { class: "field" }, h("label", { class: "field-label", for: "proj-name" }, "Project name"), input, h("div", { class: "field-help" }, "A project is one set of documents you explore together (and the hypotheses you check against them), for example one literature review. You can make more later.")),
     err,
-    h("div", { class: "btn-row" }, btn, h("button", { class: "btn btn-ghost", type: "button", onClick: () => linkProjectDialog() }, "Open an existing ENLENS project folder (advanced)")));
+    h("div", { class: "btn-row" }, btn, h("button", { class: "btn btn-ghost", type: "button", onClick: () => linkProjectDialog() }, `Open an existing ${appName()} project folder (advanced)`)));
   // 0.10: a new computer can take everything from the old one instead
-  const moving = h("div", { class: "card card-plain move-in" }, h("div", { class: "it" }, icon("monitor", { size: 16 }), h("strong", {}, "Used ENLENS on another computer?")),
-    h("p", { class: "muted small" }, "Bring all your projects and settings here in one go, from the file made with “Move ENLENS to another computer” on the old one."),
+  const moving = h("div", { class: "card card-plain move-in" }, h("div", { class: "it" }, icon("monitor", { size: 16 }), h("strong", {}, `Used ${appName()} on another computer?`)),
+    h("p", { class: "muted small" }, `Bring all your projects and settings here in one go, from the file made with “Move ${appName()} to another computer” on the old one.`),
     h("button", { class: "btn btn-sm", type: "button", onClick: () => importProjectDialog({ move: true }) }, icon("upload", { size: 13 }), "Import from another computer"));
   replace(body, h("div", { class: "card" }, h("h2", {}, "Give your project a name"), form), moving);
   setTimeout(() => input.focus(), 50);

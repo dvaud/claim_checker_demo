@@ -587,7 +587,7 @@ export async function renderResult(view, [hypId], query) {
 
     // the second opinion: compares
     const allSecond = secondRead >= read && read > 0;
-    const secState = secondRead ? `The second model read ${secondRead === read ? `all ${read}` : `${secondRead} of the ${read}`} excerpts and ${disagree ? `judged ${disagree} differently` : "judged every one the same way"}.` : SECOND_WHAT;
+    const secState = secondRead ? `The second opinion read ${secondRead === read ? `all ${read}` : `${secondRead} of the ${read}`} excerpts and ${disagree ? `judged ${disagree} differently` : "judged every one the same way"}.` : SECOND_WHAT;
     if (secondUsable && !changingSecond) {
       let secBtn = null;
       if (!allSecond) {
@@ -626,7 +626,7 @@ export async function renderResult(view, [hypId], query) {
       replace(sel, models.length ? [h("option", { value: "" }, "Choose a model…"), models.map((m) => h("option", { value: m, selected: m === currentChoice }, m))] : h("option", { value: "" }, "No other model is installed"));
       sel.disabled = !models.length;
       ask.disabled = !sel.value || busy;
-      if (!models.length) state.textContent = "Ask whoever installed the app to add a second model (for Ollama: ollama pull <model>).";
+      if (!models.length) state.textContent = "Ask whoever installed the app to add a model for second opinions (for Ollama: ollama pull <model>).";
       sel.addEventListener("change", () => { ask.disabled = !sel.value || busy; });
     }).catch(() => { replace(sel, h("option", { value: "" }, "The model server did not answer")); });
     ask.addEventListener("click", async () => {

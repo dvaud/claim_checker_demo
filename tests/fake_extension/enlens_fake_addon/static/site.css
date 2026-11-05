@@ -1,0 +1,4 @@
+/* the stand-in add-on's look: a theme through the tokens only */
+:root { --accent: #8a3b12; }
+:root[data-theme="dark"] { --accent: #f0a46c; }
+.fake-addon-card { border-style: dashed; }

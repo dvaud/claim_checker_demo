@@ -217,8 +217,9 @@ def draw_icon(size: int = 512):
         from PIL import Image, ImageDraw
     except ImportError:
         return None
-    s = size / 64
-    big = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    k = 4  # 0.13.5: drawn 4 times larger, then scaled down: smooth edges
+    s = size * k / 64
+    big = Image.new("RGBA", (size * k, size * k), (0, 0, 0, 0))
     d = ImageDraw.Draw(big)
     for i in range(56, 0, -1):  # the gradient disc, from the edge inwards
         t = i / 56
@@ -232,7 +233,7 @@ def draw_icon(size: int = 512):
         d.line([(23 * s, y * s), (x2 * s, y * s)], fill=cream, width=max(1, round(3 * s)))
     d.line([(37.5 * s, 38.5 * s), (40.5 * s, 41.5 * s), (46.5 * s, 35.5 * s)], fill=(0xff, 0xd3, 0x6a, 255),
            width=max(1, round(3.2 * s)), joint="curve")
-    return big
+    return big.resize((size, size), Image.LANCZOS)
 
 
 def _put_icon(dest: Path, ext: str) -> bool:

@@ -109,3 +109,9 @@ UNRELATED_HTML = """<html><head><title>Bird migration notes</title></head><body>
 <p>Swallows migrate south in autumn. They fly long distances over the Sahara every year.</p>
 <p>Ringing studies show that many birds return to the same nest site in spring, often within a few metres.</p>
 <script>var x = 1;</script></body></html>"""
+
+
+def api_docs() -> str:
+    """0.13.5: the API as documented: docs/API.md and every other docs/*API*.md (an add-on's own, ADDON_API.md)."""
+    docs = Path(__file__).resolve().parent.parent / "docs"
+    return "\n".join(f.read_text(encoding="utf-8") for f in sorted(docs.glob("*API*.md")))

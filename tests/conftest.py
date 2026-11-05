@@ -7,6 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from addon_fixtures import addon, local_addon  # noqa: E402,F401  (0.13.5: add-on fixtures)
 from helpers import PAPER_A_PAGES, REPORT_B_TEXT, UNRELATED_HTML, make_pdf, make_vca_workbook  # noqa: E402
 
 from enlens_claims.store import Workspace  # noqa: E402

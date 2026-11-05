@@ -1,0 +1,2 @@
+[enlens.extensions]
+fake = enlens_fake_addon

@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .. import __version__, access, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
+from .. import __version__, access, addons, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import tasks as tasks_mod
 from ..llm import BackendError, detect_local
 from ..claude_setup import setup_info as claude_setup_info
@@ -278,6 +278,7 @@ class App:
             current = next((p["name"] for p in projects if not p.get("temporary")), names[0])
             home.update_settings({"project": current})
         return {"version": __version__, "installed_version": _installed_version(), "home": str(home.home()), "settings": s,
+                "brand": addons.brand(),   # 0.13.5: the app's name and words (static/brand.json and add-ons)
                 "backend_label": home.backend_label(s), "backend_labels": home.BACKEND_LABELS,
                 "projects": projects, "project": current, "local_only": home.local_only(),
                 "launcher": self.launcher, "can_quit": self.stop is not None,
@@ -760,7 +761,7 @@ class App:
         main_be, main = self.backend()
         be, second = home.make_second_backend(s, self.api_key())
         if second == main and not getattr(be, "router", None):
-            raise ApiError(400, "The second model is the same as the main model. Choose another one in Settings.")
+            raise ApiError(400, "The model for second opinions is the same as the main model. Choose another one in Settings.")
         if str(s.get("num_ctx", "auto")).lower() == "auto" and hasattr(be, "num_ctx"):
             # just long enough for the longest set of excerpts these checks read
             system = estimate_tokens(prompts.system_prompt("second"))
@@ -782,7 +783,7 @@ class App:
             return claimcheck.second_opinion(ws, ids, be, main, second, progress=tracker.step,
                                              should_stop=job.cancel.is_set)
 
-        return self._job("second-opinion", f"Second model {second} on {len(ids)} "
+        return self._job("second-opinion", f"Second opinion from {second} on {len(ids)} "
                          f"{'hypothesis' if len(ids) == 1 else 'hypotheses'}", name, run, withdraw=("second",), ws=ws)
 
     def start_ingest(self, name: str, body: dict, paths: list[Path] | None = None, title: str = "Adding sources") -> Job:
@@ -1810,6 +1811,16 @@ class Handler(BaseHTTPRequestHandler):
         rel = path.lstrip("/")
         if rel.startswith("static/"):
             rel = rel[len("static/"):]
+        if rel == "site.css":  # 0.13.5: the installation's own look, then each add-on's
+            return self._send(200, addons.site_css(), "text/css; charset=utf-8")
+        if rel.startswith("addons/"):  # 0.13.5: an add-on package's page files
+            target = addons.static_file(rel[len("addons/"):])
+            if target is None:
+                raise ApiError(404, "Not found.")
+            ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):
+                ctype += "; charset=utf-8"
+            return self._send(200, target.read_bytes(), ctype)
         target = (STATIC / rel).resolve()
         if not target.is_relative_to(STATIC.resolve()) or not target.is_file():
             raise ApiError(404, "Not found.")

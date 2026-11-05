@@ -55,7 +55,7 @@ export async function renderHistory(view, params, query) {
       btn.addEventListener("click", () => runJob(btn, "second-opinion", `/api/projects/${P(project)}/second-opinion`, batch ? { batch } : { hyp_ids: rows.map((x) => x.hyp_id) }, "A second opinion: another model reads the excerpts"));
       // 0.13.3: one short line beside the button; the whole explanation is in its help mark
       const ready = secondSet && secondSet !== main;
-      const why = `Another model (${secondSet || "the second model"}${auditor ? ", the auditor" : ""}) reads the excerpts already read, for comparison only: its judgements are shown beside the first AI's and never change an answer. Excerpts it has read are skipped.${auditor ? " A stronger model, which does replace the judgements, is asked for on each result." : ` ${ONE_MODEL_NOTE}`}`;
+      const why = `Another model (${secondSet || "the model for second opinions"}${auditor ? ", the auditor" : ""}) reads the excerpts already read, for comparison only: its judgements are shown beside the first AI's and never change an answer. Excerpts it has read are skipped.${auditor ? " A stronger model, which does replace the judgements, is asked for on each result." : ` ${ONE_MODEL_NOTE}`}`;
       bits.push(h("div", { class: "hist-action" }, btn, h("span", { class: "muted small" },
         ready ? ["For comparison only: the answers do not change.", helpMark("About a second opinion", why)]
           : ["No model for second opinions is chosen yet: ", h("a", { href: "#/settings/second" }, "choose one in Settings"), "."])));

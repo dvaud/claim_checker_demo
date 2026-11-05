@@ -1,0 +1,8 @@
+{
+  "name": "ENLENS",
+  "tagline": "explore and check your documents",
+  "welcome_title": "Explore your documents, and check what they say",
+  "welcome_text": "ENLENS reads your reports, papers and interview notes. Search them, see which topics and codes each one addresses, follow concepts and themes across them, and check a hypothesis against them, with the exact quotes so you can judge for yourself.",
+  "description": "Explore your documents and check hypotheses against them, with verified quotes.",
+  "logo": "/static/logo.svg"
+}

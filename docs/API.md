@@ -20,6 +20,8 @@ the model service chosen in Settings.
   img-src 'self' data:; font-src 'self' data:; connect-src 'self'`. No inline `<script>`, no external resources.
 - **Static files**: `GET /static/<file>` serves files from the `static/` folder (also `/<file>` with an extension).
   Any path without an extension returns `index.html` (use hash routing anyway: `#/check`, `#/h/<id>` …).
+  0.13.5: `GET /static/site.css` is the installation's own `site.css` followed by each add-on package's;
+  `GET /static/addons/<add-on>/<file>` serves an add-on package's page files (docs/EXTENDING.md).
 - **JSON in, JSON out.** Request bodies are JSON objects (`Content-Type: application/json`), except uploads (raw bytes).
 - **Errors**: status 4xx/5xx with `{"error": "plain-language message", "kind": "request" | "backend" | "internal"}`.
   `kind: "backend"` (HTTP 502) means the model service is the problem (not running, model missing, key wrong): offer
@@ -89,8 +91,11 @@ when nothing was graded. `who` lists the same documents by side (see the hypothe
  "project": "Demo",
  "key": {"session": false, "env": false, "stored": false},
  "statuses": [{"status": "supported", "text": "Supported by a source", "help": "…"}, …],
- "jobs": [Job summaries of queued/running jobs]}
+ "jobs": [Job summaries of queued/running jobs],
+ "brand": {"name": "ENLENS", "tagline": "explore and check your documents", "welcome_title": "…", "welcome_text": "…",
+           "description": "…", "logo": "/static/logo.svg"}}
 ```
+`brand` (0.13.5): the app's name and words, from `static/brand.json` and any add-on's `BRAND` (docs/EXTENDING.md).
 `backend` values: `auto` (first local server found: Ollama, then LM Studio, llama.cpp, Jan, vLLM), `ollama`,
 `openai` (an OpenAI-compatible local server at `openai_url`), `anthropic` (cloud; allowed only when `allow_cloud`),
 `baseline` (offline demo, word overlap). Text leaves the computer only with `anthropic`.

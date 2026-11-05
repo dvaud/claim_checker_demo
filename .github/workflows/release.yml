@@ -2,6 +2,8 @@
 # Linux, macOS and Windows, and uploads everything to a DRAFT GitHub Release: check it, then press Publish (the
 # install line always takes the latest published release). Run it by hand ("Run workflow") to build test copies
 # without a release: they are attached to the run.
+# 0.13.5: the macOS install test is its own job and does not hold up the draft, since GitHub's Mac runners can
+# stay unavailable for hours. Check that it is green (or re-run it) before pressing Publish.
 name: Release
 
 on:
@@ -47,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       ENLENS_NO_OPEN: "1"
@@ -81,6 +83,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
           & $py -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
           if ($LASTEXITCODE -ne 0) { throw "the connector did not start" }
+
+  try-install-mac:
+    name: One-line install on macos-latest (does not hold up the draft)
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      ENLENS_NO_OPEN: "1"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: enlens-release
+      - name: Install with install.sh (the built package)
+        shell: bash
+        run: |
+          ENLENS_WHEEL="$(ls "$PWD"/dist/enlens_claims-*.whl)" sh dist/install.sh
+          export PATH="$HOME/.local/bin:$PATH"
+          BIN="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
+          "$BIN/enlens" --help > /dev/null
+          PY="$(uv tool dir 2>/dev/null || echo "$HOME/.local/share/uv/tools")/enlens-claims/bin/python"
+          "$PY" -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
+          "$PY" -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
 
   release:
     name: Draft the GitHub Release

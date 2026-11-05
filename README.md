@@ -73,6 +73,9 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
 - **Which Claude account answers (0.13.4).** Hover *Claude, on your plan* at the bottom of the sidebar to see the
   account Claude Code is signed in to (*you@university.nl*, *Team plan · University of Amsterdam*). *Settings → AI*
   names it too.
+- **Fixes (0.13.5).** Accented file names in zips made with Finder's *Compress* come out right; *Import a project*
+  takes a project folder zipped by hand; a smoother icon; *second opinion* everywhere. For developers: room for apps
+  built on ENLENS (`site.css`, `brand.json`, add-on modules; see [docs/EXTENDING.md](docs/EXTENDING.md)).
 
 ## Earlier releases
 
@@ -261,6 +264,8 @@ see docs/MODEL_CHOICE.md) set them.
 
 - [docs/MANUAL.md](docs/MANUAL.md): the manual (app, command line, connector, models, the SDG pack).
 - [docs/API.md](docs/API.md): the local app's HTTP API.
+- [docs/EXTENDING.md](docs/EXTENDING.md): building an app on ENLENS without editing its files (0.13.5): the local
+  layer, add-on modules, and what each extension point does.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each release (0.5 to 0.11.3), including the defects fixed.
 - [docs/USER_TESTS.md](docs/USER_TESTS.md): the first-time user tests behind the app (0.5.1 to 0.7.0).
 - [docs/MODEL_CHOICE.md](docs/MODEL_CHOICE.md): which model each task needs, measured on the pilot (0.8: the method

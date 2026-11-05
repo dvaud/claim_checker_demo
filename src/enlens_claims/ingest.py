@@ -799,14 +799,33 @@ def build_document(raw: RawDoc, max_chars: int = 1100, min_chars: int = 200) -> 
 MAX_UNPACKED = 8 * 1024 ** 3   # bytes written from the zips of one ingest, nested ones included (zip bombs)
 
 
-def _safe_extract(zf: zipfile.ZipFile, dest: Path, budget: list[int] | None = None) -> list[Path]:
+def zip_name(info: zipfile.ZipInfo) -> str:
+    """The name of a file in a zip. Zips that do not mark their names as UTF-8 (Finder's Compress, for one) are read
+    by Python as code page 437, which garbles accented names ("másolat" became "ma╠üsolat"): they are read again as
+    UTF-8 when they are that."""
+    name = info.filename
+    if not info.flag_bits & 0x800:
+        try:
+            name = name.encode("cp437").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    return name
+
+
+def _safe_extract(zf: zipfile.ZipFile, dest: Path, budget: list[int] | None = None, strip: str = "") -> list[Path]:
+    """Unpack `zf` into `dest`. With `strip` (a folder in the zip, ending in "/"), only what is in that folder is
+    unpacked, without the folder itself."""
     out = []
     root = dest.resolve()
     budget = budget if budget is not None else [MAX_UNPACKED]
     for info in zf.infolist():
-        name = info.filename
+        name = zip_name(info)
         if info.is_dir() or name.startswith("__MACOSX") or Path(name).name.startswith("._"):
             continue
+        if strip:
+            if not name.startswith(strip) or name == strip:
+                continue
+            name = name[len(strip):]
         if info.file_size > budget[0]:
             break  # the rest would exceed the budget: stop unpacking
         budget[0] -= info.file_size

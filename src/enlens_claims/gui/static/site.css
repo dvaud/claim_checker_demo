@@ -1,0 +1,5 @@
+/* site.css: this installation's own look (0.13.5). ENLENS ships it empty and its releases never edit it.
+
+   It is linked after every stylesheet of ENLENS (index.html: under "release stylesheets end"), so what is here wins.
+   An app built on ENLENS, or a fork, puts its look here: override the tokens of tokens.css for colours and faces,
+   and add rules for anything else. See docs/EXTENDING.md. */

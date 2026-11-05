@@ -12,6 +12,7 @@ from pathlib import Path
 from enlens_claims import __version__
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
+from _static import defined_tokens
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -64,7 +65,7 @@ def test_page_files_of_the_release():
     assert '<link rel="stylesheet" href="/static/v0101.css">' in html
     assert html.index("/static/v010.css") < html.index("/static/v0101.css")
     css = (STATIC / "v0101.css").read_text(encoding="utf-8")
-    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", (STATIC / "app.css").read_text(encoding="utf-8")))
+    defined = defined_tokens()  # 0.13.5: the tokens are in tokens.css
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
     assert used and used <= defined, used - defined
     # the hidden Quit button stays hidden although the foot's buttons are flex items

@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.13.5 (November 2026): fixes found while building on ENLENS, and room for apps built on it
+
+Margin, a writing companion built on ENLENS, found a few ENLENS defects on the way, fixed them first and now gives
+them back. 0.13.5 also starts making room for apps built on ENLENS: until now such an app had to edit ENLENS's own
+files to change even its name or colours, and every one of those edits clashed with the next ENLENS release. For
+people who use ENLENS nothing changes apart from the fixes: every answer still goes through the quote check, a person
+can overrule it, and nothing more leaves the computer.
+
+**Fixes.**
+- **Accented names in zips.** Zips made with Finder's *Compress* do not mark their file names as UTF-8, so accented
+  names came out garbled ("másolat" became "ma╠üsolat"). A name is now read again as UTF-8 when it is that.
+- **A project folder zipped by hand.** *Import a project* takes a zip of the project's folder itself (Finder's
+  *Compress*, Windows' *Send to compressed folder*), not only one made with *Download as a zip*. Its documents are
+  pointed at the unpacked copies. A zip holding several projects says so and names them.
+- **A smoother icon.** The icon is drawn four times larger and scaled down, so its edges are smooth at every size
+  (the icon files that ship with ENLENS are drawn again).
+- **"Second opinion" everywhere.** 0.11.2 renamed the second AI model *second opinion*, but a few places still said
+  "second model": the job's name in the sidebar and progress panel (*Second AI model*), its progress lines (*The
+  second model is reading 12 excerpts*), the line under a result, the errors when none is chosen, when it is the
+  main model or not installed, *How these results were made*, and the setting in *Settings*. They now say *second
+  opinion* (or *the model for second opinions*). The Excel columns keep naming the model (*Second model*).
+- **Release workflow.** The macOS one-line install test is its own job, and the draft release no longer waits for it
+  (GitHub's Mac runners can be unavailable for hours). Check that it is green before publishing.
+- **Steadier tests.** `test_make_backend` asked the computer's real Ollama, so it failed when an Ollama with a model
+  was running; it now asks a closed port. The restart test counted a restart that began between two of its reads as
+  an error instead of "not answering yet". `test_08_queue.py` expected the Claude API to start checks on Opus; since
+  0.13.3 they start on Sonnet.
+
+**Room for apps built on ENLENS** (docs/EXTENDING.md).
+- **The local layer**: a short list of files ENLENS creates once and its releases never edit: `site.css`,
+  `brand.json`, `gui/extensions.py`, `docs/ADDON_API.md` and `docs/ADDON_MANUAL.md`.
+- **`site.css` last.** `index.html` marks the end of ENLENS's stylesheets with `<!-- release stylesheets end -->`;
+  each release adds its sheet above it, and `site.css` (empty in ENLENS) always loads last.
+- **Theme tokens in `tokens.css`.** The colour, type, shadow and size tokens moved from the top of `app.css` into
+  `tokens.css`, loaded first. Another look overrides them in `site.css`; nobody edits `app.css` for it. Nothing
+  changes on screen.
+- **One branding file.** `brand.json` holds the app's name, tagline, welcome title and text, short description and
+  logo. `GET /api/state` returns it as `brand`, and the page takes the name in the sidebar, the window title, the
+  welcome screen and the *Update*, *Restart* and *Quit* buttons and messages from it.
+- **Add-on modules.** A fork fills in `gui/extensions.py`; a separate package names its module under the entry point
+  `enlens.extensions`. ENLENS reads both (`enlens_claims/addons.py`); in 0.13.5 a module can set `BRAND` and a
+  folder of page files (`STATIC`, served at `/static/addons/<add-on>/`, its `site.css` added to `/static/site.css`).
+  An add-on that fails to load is left out and ENLENS starts anyway.
+
+**Tests.** `test_0135_fixes.py`: a Finder zip's accented name, a project folder zipped by hand (and a zip with two
+projects, and one with none), a downloaded project still importing, the icon's smooth edges, no "second model" left
+in the places listed. `test_0135_local_layer.py`: the marker and `site.css` last, `site.css` empty, the tokens in
+`tokens.css` only, `brand.json` in `/api/state`, the page naming the app from it, the local layer's files, and the
+stand-in add-on (`tests/fake_extension/`, found through its entry point) changing the name and the look without any
+change to `index.html`, `app.css` or the page code; a fork doing the same in `gui/extensions.py`; a broken add-on
+leaving ENLENS running. `tests/_static.py` (`release_sheets`, `assert_sheet_after`) replaces the "linked last"
+checks of `test_0133_app_wide_polish.py` and `test_0134_claude_account.py`; the routes-are-documented tests read
+every `docs/*API*.md`.
+
+**Not yet done.** Other pages still say "ENLENS" in their help texts (Settings, Projects, Documents): they describe
+ENLENS's own install and update, and are left for the page extension points (0.15). Add-ons cannot yet add routes,
+jobs, tables or AI tasks: that is 0.14 and 0.15.
+
 ## 0.13.4 (November 2026): which Claude account answers
 
 Claude Code works on the Claude plan it is signed in to, and until now ENLENS only said *Claude, on your plan*: with

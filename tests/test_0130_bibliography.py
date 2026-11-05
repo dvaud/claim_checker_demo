@@ -16,6 +16,8 @@ import pytest
 from fake_zotero import FakeZotero
 from helpers import make_pdf
 from test_app import api, home  # noqa: F401  (fixtures)
+from _static import defined_tokens
+from helpers import api_docs
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -449,12 +451,11 @@ def test_the_page_shell_and_documents():
     sources = (STATIC / "views" / "sources.js").read_text()
     assert 'class: "doc-cite it"' in sources and 'class: "dv-bib"' in sources and "see Bibliography" in sources
     css = (STATIC / "v013.css").read_text()
-    root = (STATIC / "app.css").read_text()
-    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", root))
+    defined = defined_tokens()  # 0.13.5: the tokens are in tokens.css
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
     assert used and used <= defined, used - defined
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b", css)  # colours only through the tokens (light and dark)
-    api_md = (ROOT / "docs" / "API.md").read_text()
+    api_md = api_docs()  # 0.13.5: every docs/*API*.md
     from enlens_claims.gui.server import ROUTES
 
     for _m, rx, name in ROUTES:

@@ -24,6 +24,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
+import unicodedata
 import zipfile
 from pathlib import Path
 
@@ -96,9 +97,53 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _project_folder(names: list[str]) -> str:
+    """Where in a project zip the project is: "" when its database is at the top (a zip made with "Download as a
+    zip"), or the folder that holds it ("Tovertafel/") when the project's folder itself was zipped, as Finder's
+    Compress or Windows' "Send to compressed folder" do."""
+    dbs = [n for n in names if not n.startswith("__MACOSX") and (n == "enlens.sqlite" or n.endswith("/enlens.sqlite"))]
+    if "enlens.sqlite" in dbs:
+        return ""
+    if len(dbs) == 1:
+        return dbs[0][:-len("enlens.sqlite")]
+    if dbs:
+        folders = ", ".join(sorted(d[:-len("/enlens.sqlite")] for d in dbs)[:6])
+        raise ValueError(f"This zip holds {len(dbs)} projects ({folders}). Import one project at a time: zip each "
+                         "project's folder on its own, or use “Download as a zip” in the app they come from.")
+    raise ValueError("This zip holds no ENLENS project (there is no enlens.sqlite in it). To add documents, "
+                     "use Add documents instead.")
+
+
+def relocate_documents(db: Path, relative, new_root: Path) -> int:
+    """Point the documents of the project database `db` at their files in `new_root`. `relative(parts)` gives, for
+    the parts of a recorded path, its parts inside the project folder (or None when it was not in it); a path is
+    changed only when that file is there. Returns how many were changed."""
+    root = Path(new_root).resolve()
+    n = 0
+    cx = sqlite3.connect(db)
+    try:
+        with cx:
+            for doc_id, path in cx.execute("SELECT doc_id, path FROM documents").fetchall():
+                if not path or not Path(path).is_absolute():
+                    continue
+                rel = relative(Path(path.replace("\\", "/")).parts)
+                if not rel:
+                    continue
+                # the same name may be written with accents composed or not (macOS decomposes them)
+                target = next((t for t in (root.joinpath(*(unicodedata.normalize(f, x) for x in rel)).resolve()
+                                           for f in ("NFC", "NFD")) if t.is_file()), None)
+                if target and target != Path(path) and target.is_relative_to(root):
+                    cx.execute("UPDATE documents SET path=? WHERE doc_id=?", (str(target), doc_id))
+                    n += 1
+    finally:
+        cx.close()
+    return n
+
+
 def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
-    """Unpack a project zip into the folder `dest` (which must not exist yet, or be empty) and open it."""
-    from .ingest import _safe_extract
+    """Unpack a project zip into the folder `dest` (which must not exist yet, or be empty) and open it. The zip is one
+    made with export_project, or a project folder zipped by hand (0.13.5)."""
+    from .ingest import _safe_extract, zip_name
 
     zip_path, dest = Path(zip_path), Path(dest)
     if not zipfile.is_zipfile(zip_path):
@@ -106,10 +151,7 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
     if dest.exists() and any(dest.iterdir()):
         raise ValueError(f"The folder {dest} is not empty: choose another name.")
     with zipfile.ZipFile(zip_path) as zf:
-        names = set(zf.namelist())
-        if "enlens.sqlite" not in names:
-            raise ValueError("This zip holds no ENLENS project (there is no enlens.sqlite in it). To add documents, "
-                             "use Add documents instead.")
+        prefix = _project_folder([zip_name(i) for i in zf.infolist()])
         total = sum(i.file_size for i in zf.infolist())
         if total > MAX_IMPORT:
             raise ValueError(f"The project in this zip is larger than {MAX_IMPORT // 1024 ** 3} GB unpacked.")
@@ -118,7 +160,7 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
         try:
-            _safe_extract(zf, staging, [MAX_IMPORT])
+            _safe_extract(zf, staging, [MAX_IMPORT], strip=prefix)
             if not (staging / "enlens.sqlite").is_file():
                 raise ValueError("The project's database could not be unpacked.")
             try:
@@ -154,6 +196,11 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
             target = (root / arc).resolve()
             if target.is_relative_to(root) and target.is_file():
                 cx.execute("UPDATE documents SET path=? WHERE doc_id=?", (str(target), doc_id))
+    if prefix and not files:
+        # a project folder zipped by hand: its documents still point into the folder it was zipped from
+        name = prefix.rstrip("/").rsplit("/", 1)[-1]
+        relocate_documents(dest / "enlens.sqlite", lambda parts: parts[len(parts) - parts[::-1].index(name):]
+                           if name in parts[:-1] else None, root)
     for sub in ("tasks", "results", "exports", "report"):
         (dest / sub).mkdir(exist_ok=True)
     (dest / "bundle.json").unlink(missing_ok=True)

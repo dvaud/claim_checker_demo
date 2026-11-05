@@ -520,7 +520,7 @@ Settings has five tabs, each one page with nothing folded inside another (0.9):
   meaning**.
 - **Technical**: **AI model per task** (which model answers each kind of task, what it steps up to, the helper on
   Claude Code, a choice per kind, *Use the recommended models*, and for local servers the small model for labels and
-  links); with a local model, the **second AI model** and the **context length** (automatic by default, see section
+  links); with a local model, the **model for second opinions** and the **context length** (automatic by default, see section
   5) with *Sort the best excerpts again by wording* (off; see the changelog of 0.6.0); **Repeatable results** (the
   seed sent with every request, 42 by default, and a test of whether the server gives the same answer twice); *Test a
   model before trusting it* (section 5); and where your data is.
@@ -626,7 +626,7 @@ the answer's JSON schema, so even small models give valid JSON; the rest depends
   most memory for the model itself. It stays the same between requests, because Ollama reloads the model when it
   changes. Settings → Technical shows the length in use and takes a fixed number instead. With LM Studio or
   llama.cpp set it when loading the model (16,384 covers every task of the app).
-- **Memory.** ENLENS loads no model of its own and makes one model call at a time. The second AI model unloads the
+- **Memory.** ENLENS loads no model of its own and makes one model call at a time. A second opinion unloads the
   main model first (Ollama) and unloads itself when it is done, so two models are never in memory together; LM
   Studio and other OpenAI-compatible servers have no standard way to unload a model, so there their own setting
   (LM Studio can be set to keep only one model loaded) decides.

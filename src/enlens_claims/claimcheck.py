@@ -1694,10 +1694,10 @@ def second_opinion(ws: Workspace, hyp_ids: list[str], backend, main_model: str, 
     say = _adapt(progress)
     stop = _stopper(should_stop)
     if not second_model:
-        raise ValueError("Choose a second model in Settings first.")
+        raise ValueError("Choose a model for second opinions in Settings first.")
     if second_model == main_model and getattr(backend, "name", "") not in ("claude_code", "anthropic"):
         # on Claude the auditor gives the second opinion; it may run on the same model as the checker (Opus)
-        raise ValueError("The second model must be another model than the main one.")
+        raise ValueError("The model for second opinions must be another model than the main one.")
     todo = []
     restricted = 0
     may = access.backend_levels(backend)
@@ -1740,14 +1740,14 @@ def second_opinion(ws: Workspace, hyp_ids: list[str], backend, main_model: str, 
     try:
         for n, (tid, payload) in enumerate(plan, 1):
             stop()
-            say("grade", f"The second model is reading {len(payload['passages'])} excerpts ({n} of {len(plan)})",
+            say("grade", f"The second opinion is reading {len(payload['passages'])} excerpts ({n} of {len(plan)})",
                 {"index": n, "total": len(plan)})
             ok, _errs = tasks.run_one(ws, tid, backend, second_model)
             out["graded" if ok else "failed"] += 1
     finally:
         if unload and unload(second_model):
             out["unloaded"].append(second_model)
-    say("grade_done", f"The second model read the excerpts of {len(hyp_ids)} "
+    say("grade_done", f"The second opinion read the excerpts of {len(hyp_ids)} "
         f"{'hypothesis' if len(hyp_ids) == 1 else 'hypotheses'}", {"ok": not out["failed"]})
     return out
 

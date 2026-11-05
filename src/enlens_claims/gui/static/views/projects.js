@@ -32,7 +32,7 @@ export function importProjectDialog(opts = {}) {
     title: opts.move ? "Bring ENLENS from another computer" : "Import a project (.zip)",
     body: h("div", {},
       opts.move ? h("p", { class: "muted" }, "On the other computer, open Projects and choose “Download everything (.zip)” under Move ENLENS to another computer. Bring that file here (a USB stick, a shared folder, an e-mail to yourself), then choose it below.")
-        : h("p", { class: "muted" }, "A zip made with “Download as a zip”, from this or another computer: the documents, the results and the notes come with it, as a new project. A zip of everything (from “Move ENLENS to another computer”) works here too."),
+        : h("p", { class: "muted" }, "A zip made with “Download as a zip”, from this or another computer: the documents, the results and the notes come with it, as a new project. A project folder zipped by hand works too, and so does a zip of everything (from “Move ENLENS to another computer”)."),
       field("Zip file", file), status, moveNote, nameField, err),
     actions: [{ text: "Cancel", value: null }, {
       text: "Import", value: true, primary: true, id: "dlg-confirm",

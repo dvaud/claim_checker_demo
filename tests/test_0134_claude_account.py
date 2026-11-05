@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
+from _static import assert_sheet_after
 
 FAKE = str(Path(__file__).with_name("fake_claude_cli.py"))
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"
@@ -147,11 +148,9 @@ def test_the_sidebar_card_and_the_settings_checklist():
 
 
 def test_the_card_stylesheet():
-    index = (STATIC / "index.html").read_text()
-    sheets = re.findall(r'<link rel="stylesheet" href="([^"]+)"', index)
-    assert sheets[-1] == "/static/v0134.css" and sheets.index("/static/v0133.css") == len(sheets) - 2
+    assert_sheet_after("/static/v0134.css", "/static/v0133.css")  # 0.13.5: tests/_static.py
     css = (STATIC / "v0134.css").read_text()
-    # light and dark both work: the colour tokens of app.css only
+    # light and dark both work: the colour tokens of tokens.css only
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", css)
     assert ".privacy-wrap:hover .privacy-card" in css and ".privacy-wrap:focus-within .privacy-card" in css
     assert ".privacy-quiet" in css and "@media (hover: none)" in css and "overflow-wrap: anywhere" in css

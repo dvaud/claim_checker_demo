@@ -8,6 +8,7 @@
 - a real launched copy restarts in place: same port, a new token, and it still quits cleanly;
 - the page has the button, and docs/API.md the new routes.
 """
+import http.client
 import os
 import socket
 import subprocess
@@ -22,6 +23,7 @@ import pytest
 from enlens_claims import __version__
 
 from test_app import Api, home  # noqa: F401  (fixtures)
+from helpers import api_docs
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -187,8 +189,11 @@ def test_a_launched_copy_restarts_in_place(home, tmp_path):  # noqa: F811
         live = launcher.running(timeout=0.5)
         if not live:
             return None
-        page = urllib.request.urlopen(live["url"], timeout=5).read().decode()
-        return live["url"].rstrip("/"), page.split('name="enlens-token" content="')[1].split('"')[0]
+        try:
+            page = urllib.request.urlopen(live["url"], timeout=5).read().decode()
+            return live["url"].rstrip("/"), page.split('name="enlens-token" content="')[1].split('"')[0]
+        except (OSError, IndexError, http.client.HTTPException):
+            return None  # 0.13.5: a restart began between the two: "not answering yet", not an error
 
     try:
         assert _wait(lambda: token_now() is not None, timeout=15), "ENLENS did not start"
@@ -222,7 +227,7 @@ def test_page_files():
 def test_the_routes_are_documented():
     from enlens_claims.gui.server import ROUTES
 
-    api_md = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
+    api_md = api_docs()  # 0.13.5: every docs/*API*.md
     for method, rx, _name in ROUTES:
         path = rx.pattern.strip("^$")
         if path in ("/api/restart", "/api/update"):

@@ -370,7 +370,7 @@ def test_routing_on_the_claude_api_and_on_a_local_server(home, corpus, monkeypat
     try:
         home.update_settings({"allow_cloud": True, "backend": "anthropic"})
         be, model = core.make_backend(home.load_settings(), "good-key")
-        assert model == "claude-opus-5-5" and be.router.route == "anthropic"
+        assert model == "claude-sonnet-5-5" and be.router.route == "anthropic"   # checks start on Sonnet
         r = profile.run_labels(ws, "sdg", be, model, limit=2)
         assert r["read"] == 2
         sent = [b["model"] for path, b in srv.requests if path.startswith("/v1/messages")]

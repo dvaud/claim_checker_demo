@@ -478,6 +478,17 @@ export function jobsChanged() { for (const fn of jobListeners) { try { fn(); } c
 // ---------------------------------------------------------------------------------------------
 // app state
 // ---------------------------------------------------------------------------------------------
+// 0.13.5: the app's name and words, from static/brand.json and add-ons (GET /api/state "brand"). Page code names the
+// app with appName(), never with a fixed "ENLENS", so an app built on ENLENS is named right everywhere it shows.
+export const DEFAULT_BRAND = {
+  name: "ENLENS", tagline: "explore and check your documents", logo: "/static/logo.svg",
+  welcome_title: "Explore your documents, and check what they say",
+  welcome_text: "ENLENS reads your reports, papers and interview notes. Search them, see which topics and codes each one addresses, follow concepts and themes across them, and check a hypothesis against them, with the exact quotes so you can judge for yourself.",
+  description: "Explore your documents and check hypotheses against them, with verified quotes.",
+};
+export function brand() { return { ...DEFAULT_BRAND, ...((App.state && App.state.brand) || {}) }; }
+export function appName() { return brand().name; }
+
 export const App = {
   state: null,          // GET /api/state
   project: null,        // current project name
@@ -808,7 +819,7 @@ export function startClaude(project, opts = {}) {
     if (q.route !== "claude_code") { replace(box, typeIt); return; }
     if (r.running) {
       parts.push(h("div", { class: "sc-running" }, h("span", { class: "running-dot", "aria-hidden": "true" }),
-        h("span", {}, h("strong", {}, "Claude Code is working on it"), h("span", { class: "muted small" }, ` · started ${ago(r.seconds || 0)} from ENLENS`)),
+        h("span", {}, h("strong", {}, "Claude Code is working on it"), h("span", { class: "muted small" }, ` · started ${ago(r.seconds || 0)} from ${appName()}`)),
         h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => {
           try { await api("POST", `/api/projects/${P(project)}/queue/claude-code/stop`, {}); toast("Claude Code stopped. What it had not answered waits again.", "ok"); QUEUE_CACHE.delete(project); draw(false); } catch (e) { showError(e); }
         } }, icon("stop", { size: 12 }), "Stop Claude Code")));  // 0.11.3: not just "Stop": the job beside it has its own
@@ -866,6 +877,6 @@ export function tesseractHelp(ocr) {
     h("p", { class: "small" }, "Scanned pages need Tesseract, a free text-recognition program. ", how.text),
     how.command ? copyLine(how.command, "Copy", "a terminal") : null,
     h("p", { class: "small" }, how.link ? h("a", { href: how.link, target: "_blank", rel: "noopener" }, how.link_text || "How to install it") : null,
-      how.link ? " · " : null, "ENLENS notices it within a minute; then add the document again."),
+      how.link ? " · " : null, `${appName()} notices it within a minute; then add the document again.`),
     py.length ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("p", { class: "small" }, `Also missing in ENLENS's Python: ${py.join(", ")}. Install them with `, h("code", {}, "pip install 'enlens-claims[ocr]'"), " (the one-line install brings them).")) : null);
 }

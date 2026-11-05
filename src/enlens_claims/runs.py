@@ -126,7 +126,7 @@ def provenance_table(ws: Workspace, task_ids: list[str] | None = None, kinds: tu
         args += list(kinds)
     sql += (" GROUP BY r.kind, r.model, r.digest, r.prompt_version, r.seed, r.settings_json, COALESCE(r.route, ''), "
             "COALESCE(r.helper, '') ORDER BY r.kind, first")
-    names = {"check": "Checking hypotheses", "reread": "Reading an excerpt again", "second": "Second model",
+    names = {"check": "Checking hypotheses", "reread": "Reading an excerpt again", "second": "Second opinion",
              "expand": "Search words", "decompose": "Splitting a hypothesis", "label": "Codebook labels",
              "link": "How concepts relate", "theme": "Theme names", "resolve": "References in a document",
              "extract": "Extracting claims (SDG pack)", "verify_set": "Checking VCA claims (SDG pack)",
