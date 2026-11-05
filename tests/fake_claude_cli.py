@@ -43,7 +43,13 @@ def main(argv: list[str]) -> int:
     if argv[:2] == ["auth", "status"]:
         st = _state()
         logged_in = st.get("logged_in", not os.environ.get("FAKE_CLAUDE_LOGGED_OUT"))
-        print(json.dumps({"loggedIn": bool(logged_in), "authMethod": "claude.ai" if logged_in else "none"}))
+        out = {"loggedIn": bool(logged_in), "authMethod": "claude.ai" if logged_in else "none"}
+        if logged_in:  # 0.13.4: the account, as Claude Code reports it (FAKE_CLAUDE_EMAIL, _ORG, _PLAN change it)
+            out["email"] = os.environ.get("FAKE_CLAUDE_EMAIL", "researcher@example.org")
+            for key, env in (("orgName", "FAKE_CLAUDE_ORG"), ("subscriptionType", "FAKE_CLAUDE_PLAN")):
+                if os.environ.get(env):
+                    out[key] = os.environ[env]
+        print(json.dumps(out))
         return 0
     if not argv:  # the interactive start: the person signs in
         st = _state()

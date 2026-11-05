@@ -30,7 +30,10 @@ def rules(selector: str) -> str:
 def test_the_stylesheet_is_linked_last_and_uses_the_colour_tokens_only(api):  # noqa: F811
     index = (STATIC / "index.html").read_text()
     assert index.index("/static/v013.css") < index.index("/static/v0133.css")
-    assert re.findall(r'<link rel="stylesheet" href="([^"]+)"', index)[-1] == "/static/v0133.css"
+    sheets = re.findall(r'<link rel="stylesheet" href="([^"]+)"', index)
+    # after every earlier sheet: only a later release's own sheet may follow it (0.13.4: v0134.css)
+    later = sheets[sheets.index("/static/v0133.css") + 1:]
+    assert all(re.fullmatch(r"/static/v01(3[4-9]|[4-9]\d?)\.css", x) for x in later), later
     # light and dark both work: no colour of its own, only the tokens of app.css
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", CSS)
     st, body = api("GET", "/static/v0133.css", token=False)

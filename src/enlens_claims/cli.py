@@ -901,6 +901,8 @@ def _claude_setup(a) -> int:
             print(f"\nThe plugin is added to Claude Code ({st.get('version') or path}).")
             if st.get("signed_in") is False:
                 print("Claude Code is not signed in yet: open it once (type claude) and sign in with your Claude plan.")
+            elif who := claude_setup.account_words(st):  # 0.13.4: which account answers
+                print(f"Claude Code is signed in as {who}.")
             print("In the app, press Start Claude Code where work waits, or type /enlens-run <project> in Claude Code "
                   "(restart Claude Code first if it was open).")
             return 0

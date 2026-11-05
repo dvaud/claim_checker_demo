@@ -1,0 +1,25 @@
+/* ENLENS 0.13.4: the sidebar's AI line ("Claude, on your plan") opens a small card on hover or keyboard focus: the
+   account Claude Code is signed in to, where the text goes, and where to change it. It was the browser's own
+   tooltip, which appeared late and could not name the account. Drawn like the help notes (.pop): a thin edge and the
+   popover shadow; it opens upwards, as the line sits at the foot of the sidebar. */
+.privacy-wrap { position: relative; }
+.privacy-card {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 40;
+  padding: 9px 11px; font-size: .84rem; line-height: 1.45; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: var(--shadow);
+  visibility: hidden; opacity: 0; transition: opacity .12s ease, visibility 0s linear .12s;
+}
+.privacy-card p { margin: 0; }
+.privacy-card > * + * { margin-top: 6px; }
+.privacy-card-muted { color: var(--muted); }
+.privacy-account { display: flex; flex-direction: column; padding-bottom: 7px; border-bottom: 1px solid var(--border); }
+/* an address is one long word: it breaks anywhere rather than run out of the card */
+.privacy-account strong { font-weight: 600; overflow-wrap: anywhere; }
+.privacy-wrap:hover .privacy-card, .privacy-wrap:focus-within .privacy-card {
+  visibility: visible; opacity: 1; transition-delay: .15s, 0s;
+}
+/* Escape closes it until the pointer or the focus leaves */
+.privacy-wrap.privacy-quiet .privacy-card { visibility: hidden; opacity: 0; transition: none; }
+/* a touch screen has no hover: a tap opens Settings, which names the account too (Settings → AI) */
+@media (hover: none) { .privacy-card { display: none; } }
+@media (prefers-reduced-motion: reduce) { .privacy-card { transition: none; } }

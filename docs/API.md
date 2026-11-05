@@ -738,6 +738,11 @@ that no session has taken yet out of the queue; a check by queue is removed whol
 - `GET /api/claude-setup[?refresh=1]` adds `"status"`: `{"found", "path", "version", "signed_in": true | false |
   null, "written", "installed": true | false | null, "plugin_version", "ready", "local_only"}` (from `claude
   --version`, `claude auth status` and `claude plugin list --json`; cached for 30 s, `refresh=1` reads again).
+- 0.13.4: the status adds `"email"`, `"org_name"` and `"auth_method"`: the account Claude Code says it is signed in
+  to (`email`, `orgName`, `authMethod` of `claude auth status`), `""` when it is not signed in or does not say; one
+  line of text each, at most 200 characters. (`"plan"` and `"account"`, from 0.11, are its plan and the kind of
+  terms.) Only the set-up status carries them (here, and in `POST /api/servers/test`'s `"claude"`): not
+  `/api/state`, not the queue's `"claude"`.
 - `POST /api/claude-setup` `{}` prepares the plugin and, when Claude Code is found, adds it to Claude Code →
   `{..., "steps": [{"step", "ok", "text"}], "status", "commands", "problems"}`; `{"write_only": true}` only writes
   the plugin (as 0.8); `{"check": true}` also starts the connector to check it.

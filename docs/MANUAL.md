@@ -235,7 +235,12 @@ copying it.
 
 The sidebar always says where text goes: *Claude, on your plan · Only the passages of AI tasks leave this computer*
 (the default from 0.9), *Private · The AI runs on this computer* with a local model, or that excerpts are sent to the
-Claude API if a shared installation allowed it (section 6).
+Claude API if a shared installation allowed it (section 6). Hover that line, or reach it with the Tab key, for a
+short card (0.13.4): on Claude Code it names the account Claude Code is signed in to (*Signed in to Claude Code as
+you@university.nl*, *Team plan · University of Amsterdam*; the organisation only on a Team or Enterprise plan),
+then where the text goes and where to change it. Escape closes it. *Settings → AI* names the account as well, under
+*Signed in with your Claude plan*, and so does `enlens claude-setup`. ENLENS reads it from Claude Code (`claude auth
+status`); the login itself stays with Claude Code.
 
 ### Checking a hypothesis
 
@@ -1349,6 +1354,7 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | The install line stops with "does not match the release's checksum" | The download was cut off or changed on the way; nothing was installed. Run the line again later. |
 | The install line on Windows says uv could not install ENLENS | ENLENS is probably running: choose *Quit ENLENS* in it and run the line again. |
 | *Set up Claude* cannot install Claude Code | No network, or the installer was blocked. Install it with Anthropic's set-up page (linked under *Technical details*), then press *Set up Claude* again. |
+| Claude Code answers with the wrong Claude account | The sidebar card (hover *Claude, on your plan*) and *Settings → AI* name the account it uses. To switch, type `claude auth logout` in Terminal or PowerShell, then press *Check again* and *Set up Claude* in *Settings → AI*: it opens the sign-in window, where you sign in with the other account. |
 | *Set up Claude* keeps waiting for the sign-in | Finish signing in in the window it opened (and in the browser page that window opened), then press *I have signed in*. No window? Open Terminal or PowerShell, type `claude`, and sign in. |
 | "The original file is no longer at …" | The file was moved or renamed after it was added; the app still has its text. Put it back, or add it again. |
 | A document is listed under `mostly_unreadable` | The PDF's fonts have no character map. Get another copy (often the publisher's) or OCR it, `reset-corpus` or ingest the new copy, and run `match-sources` again. |

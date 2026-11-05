@@ -1,7 +1,7 @@
 // 0.9: the Overview: the start page of a project. Exploring the documents comes first (Search, Profile, Concepts,
 // Themes, one document), checking hypotheses second. Each feature says in one line what it does, whether it uses the
 // AI, and what is already made in this project.
-import { App, api, h, icon, P, pageHead, plural } from "../lib.js";
+import { App, api, h, icon, P, pageHead, plural, claudeStatus } from "../lib.js";
 import { FEATURES, aiTag } from "../features.js";
 import { quickLookButton } from "./quicklook.js";
 
@@ -71,8 +71,7 @@ function aiLine(o) {
       h("div", { class: "muted small" }, s.backend === "claude_code" ? "Only the passages inside its tasks are sent to Anthropic." : p.plain)),
     h("a", { class: "btn btn-sm btn-ghost", href: "#/settings/model" }, "Change"));
   if (s.backend === "claude_code") {
-    api("GET", "/api/claude-setup").then((r) => {
-      const st = r.status || {};
+    claudeStatus().then((st) => {  // 0.13.4: the answer the sidebar asked for too
       if (st.ready) {
         box.querySelector(".grow .muted").append(o.waiting ? ` ${plural(o.waiting, "task waits", "tasks wait")} for it now.` : " Ready.");
         return;

@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude } from "./lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount } from "./lib.js";
 import { FEATURES } from "./features.js";
 import { renderCheck } from "./views/check.js";
 import { renderResult } from "./views/result.js";
@@ -162,13 +162,53 @@ export async function switchProject(name) {
   } catch (e) { showError(e); }
 }
 
+// 0.13.4: hovering the line (or reaching it with the keyboard) opens a small card with what the tooltip said and, on
+// Claude Code, the account it is signed in to. Escape closes it; it stays open while the pointer is on it.
 function renderPrivacy() {
   const box = document.getElementById("privacy-indicator");
   const p = App.privacy();
-  const a = h("a", { class: `privacy privacy-${p.where}${App.settings().backend === "claude_code" ? " privacy-plan" : ""}`, href: "#/settings", title: `${p.plain} AI model: ${p.detail}. Change it in Settings.` },
+  const plan = App.settings().backend === "claude_code";
+  const card = h("div", { class: "privacy-card", id: "privacy-card", role: "tooltip" });
+  const a = h("a", { class: `privacy privacy-${p.where}${plan ? " privacy-plan" : ""}`, href: "#/settings", "aria-describedby": "privacy-card" },
     icon(p.icon, { size: 16 }),
     h("div", {}, h("strong", {}, p.label), h("span", {}, p.short || p.plain)));
-  replace(box, a);
+  const wrap = h("div", { class: "privacy-wrap" }, a, card);
+  const fill = () => replace(card,
+    plan ? accountPart(claudeSeenNow()) : null,
+    h("p", {}, p.plain),
+    plan ? null : h("p", { class: "privacy-card-muted" }, `AI model: ${p.detail}`),
+    h("p", { class: "privacy-card-muted" }, "Change it in Settings."));
+  fill();
+  if (plan) {
+    const ask = () => claudeStatus().then(() => { if (card.isConnected) fill(); }).catch(() => {
+      if (!claudeSeenNow()) { rememberClaude({ unknown: true }); fill(); }
+    });
+    ask();  // the card is ready before the first hover; a hover a minute later asks again
+    wrap.addEventListener("mouseenter", ask);
+    a.addEventListener("focus", ask);
+  }
+  const quiet = (on) => wrap.classList.toggle("privacy-quiet", on);
+  a.addEventListener("keydown", (e) => { if (e.key === "Escape") quiet(true); });
+  wrap.addEventListener("mouseleave", () => quiet(false));
+  a.addEventListener("blur", () => quiet(false));
+  replace(box, wrap);
+}
+
+// Which account Claude Code uses, for the card: what it says, or what is still to set up.
+function accountPart(st) {
+  const acc = claudeAccount(st);
+  if (acc) {
+    return h("div", { class: "privacy-account" },
+      h("span", { class: "privacy-card-muted" }, "Signed in to Claude Code as"),
+      h("strong", {}, acc.email || "an account it does not name"),
+      acc.plan ? h("span", { class: "privacy-card-muted" }, acc.plan + (acc.org ? ` · ${acc.org}` : "")) : null);
+  }
+  const say = !st ? "Asking Claude Code which account it uses…"
+    : st.unknown ? "Could not ask Claude Code which account it uses."
+    : !st.found ? "Claude Code is not on this computer yet: Settings → AI sets it up."
+    : st.signed_in === false ? "Claude Code is not signed in yet: Settings → AI signs you in."
+    : "Claude Code does not say which account it is signed in to.";
+  return h("div", { class: "privacy-account" }, h("span", {}, say));
 }
 
 let jobsTimer = null;

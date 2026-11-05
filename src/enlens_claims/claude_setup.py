@@ -221,6 +221,29 @@ def _run(args: list[str], timeout: float = 60) -> tuple[int, str]:
 _STATUS: dict = {"at": 0.0, "value": None}
 
 
+def _said(value, limit: int = 200) -> str:
+    """A text Claude Code reported, made safe to show: a string, on one line, without control characters, not too long."""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[\x00-\x1f\x7f]+", " ", value).strip()[:limit]
+
+
+def account_words(st: dict) -> str:
+    """0.13.4: which account Claude Code is signed in to, in one line ("you@uni.nl, Team plan (Uni)"), or "" when it
+    is not signed in or does not say. The organisation is named only on a Team or Enterprise plan: on Pro and Max it
+    is usually Claude's own "…'s Organization"."""
+    if not st.get("signed_in"):
+        return ""
+    plan = str(st.get("plan") or "")
+    words = [st.get("email") or ""]
+    if plan:
+        org = st.get("org_name") if plan in ("team", "enterprise") else ""
+        words.append(f"{plan.capitalize()} plan" + (f" ({org})" if org else ""))
+    elif str(st.get("auth_method") or "").lower() in ("api_key", "console"):
+        words.append("a Claude Console account")
+    return ", ".join(w for w in words if w)
+
+
 def status(refresh: bool = False) -> dict:
     """What is ready for Claude Code, for the app's set-up checklist (cached for half a minute):
     `found` (and `path`, `version`), `signed_in` (True, False, or None when Claude Code does not say), the plugin
@@ -230,7 +253,8 @@ def status(refresh: bool = False) -> dict:
         return _STATUS["value"]
     info = setup_info()
     out = {"found": False, "path": "", "version": "", "signed_in": None, "written": info["ready"], "installed": None,
-           "plugin_version": "", "ready": False, "local_only": core.local_only()}
+           "plugin_version": "", "ready": False, "local_only": core.local_only(), "email": "", "org_name": "",
+           "auth_method": ""}
     path = "" if out["local_only"] else find_claude()
     if path:
         out.update(found=True, path=path)
@@ -247,6 +271,12 @@ def status(refresh: bool = False) -> dict:
                               "commercial" if plan in ("team", "enterprise") else
                               "commercial" if str(auth.get("authMethod") or "").lower() in ("api_key", "console") else "")
             out["plan"] = plan
+            # 0.13.4: which account Claude Code is signed in to, for the sidebar and Settings → AI. Only what Claude
+            # Code itself reports (the address and the organisation); the login stays with Claude Code.
+            if out["signed_in"]:
+                out.update(email=_said(auth.get("email") or auth.get("emailAddress")),
+                           org_name=_said(auth.get("orgName") or auth.get("organizationName")),
+                           auth_method=_said(auth.get("authMethod"), 40))
         except (ValueError, AttributeError):
             out["signed_in"] = None
         code, text = _run([path, "plugin", "list", "--json"], timeout=30)

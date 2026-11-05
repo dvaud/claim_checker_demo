@@ -70,6 +70,9 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
 - **Titles from Zotero (0.13.3).** A document linked to a work in your bibliography takes the work's title from Zotero
   everywhere in ENLENS. The title in the file stays visible on the document page and comes back if you unlink the
   work.
+- **Which Claude account answers (0.13.4).** Hover *Claude, on your plan* at the bottom of the sidebar to see the
+  account Claude Code is signed in to (*you@university.nl*, *Team plan · University of Amsterdam*). *Settings → AI*
+  names it too.
 
 ## Earlier releases
 

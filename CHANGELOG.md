@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.13.4 (November 2026): which Claude account answers
+
+Claude Code works on the Claude plan it is signed in to, and until now ENLENS only said *Claude, on your plan*: with
+an account at home and one at the university, there was no way to see from ENLENS which one was answering (and so
+which terms apply to the text it reads). 0.13.4 names the account. Nothing else changes: every answer still goes
+through the quote check, a person can overrule it, and nothing more leaves the computer.
+
+- **The sidebar's *Claude, on your plan* line names the account.** Hovering it (or reaching it with the Tab key)
+  opens a small card: *Signed in to Claude Code as you@university.nl*, the plan (*Team plan · University of
+  Amsterdam*), where the text goes and where to change it. It replaces the browser's own tooltip, which appeared
+  late and said less. It opens quickly, stays open while the pointer is on it (so the address can be copied), and
+  Escape closes it. When Claude Code is not signed in or not installed yet, the card says so and points to *Settings
+  → AI*. The organisation is named only on a Team or Enterprise plan: on Pro and Max it is usually Claude's own
+  "…'s Organization", which adds nothing. The other AI routes keep the same card without an account (where the text goes,
+  the model, where to change it).
+- **Settings → AI** says the same under *Signed in with your Claude plan* (*you@university.nl · Team plan ·
+  University of Amsterdam*; it said *Pro, Max, Team or Enterprise*), so it can be seen on a phone too, where there is
+  no hover.
+- **`enlens claude-setup`** ends with *Claude Code is signed in as you@university.nl, Team plan (University of
+  Amsterdam).*
+- **Where it comes from:** `claude auth status`, which ENLENS already asked whether Claude Code is signed in. ENLENS
+  now keeps three more of its fields (`email`, `orgName`, `authMethod`) in the set-up status, only while Claude Code
+  says it is signed in, as one line of plain text each (control characters removed, at most 200 characters). The
+  login itself stays with Claude Code. The address is only shown (in the page and on the command line): ENLENS does
+  not write it into its files (the settings, a check's record, an export), nor into `/api/state` or the queue's
+  answers, and with `--local-only` Claude Code is not asked at all.
+- **One answer for the whole page.** The sidebar, the *Overview*'s AI line and *Settings → AI* share what Claude
+  Code last said (asked again after a minute at most, and at once when *Settings → AI* reads it afresh, e.g. after
+  *Check again* or a sign-in), instead of the Overview and Settings each asking for themselves.
+
+**Tests.** `test_0134_claude_account.py` (10 tests): the account from the stand-in Claude Code (Team, Enterprise,
+Max), signed out, an older Claude Code that names no account, a Claude Console account, odd values (line breaks,
+escape codes, a 500-character address, a number), `--local-only`, the address in `/api/claude-setup` and not in
+`/api/state` or the queue, `enlens claude-setup`'s line, the page code and the stylesheet. The stand-in
+(`tests/fake_claude_cli.py`) now reports an address (`FAKE_CLAUDE_EMAIL`, `FAKE_CLAUDE_ORG` and `FAKE_CLAUDE_PLAN`
+change it). `test_0133_app_wide_polish.py` lets a later release's stylesheet follow `v0133.css`.
+Checked in Chrome: the card on hover and on keyboard focus, Escape, signed out, a very long address and
+organisation (they wrap inside the card), light and dark, and *Settings → AI* at 390 px, with no console errors.
+
+**Not yet done.** Tried against the real Claude Code 2.1.318 only to learn the fields `claude auth status` prints
+(`email`, `orgName`, `subscriptionType`); the app itself was tried with the stand-in. A Claude Code signed in with an
+API key, or through Amazon Bedrock or Google Vertex, names no Claude account: the card then says Claude Code does
+not say which account it is signed in to (untested with a real one). Switching accounts stays in Claude Code
+(`claude auth logout`, then *Set up Claude* signs you in again; see the manual's troubleshooting table).
+
 ## 0.13.3 (November 2026): every page as calm as the result page, and titles from Zotero
 
 0.12 rebuilt the result page against eleven written criteria (the answer at a glance, a clear order, a small type

@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName, helpMark } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName, helpMark, rememberClaude, claudeAccount } from "../lib.js";
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -794,6 +794,14 @@ function dataSection() {
 // with Anthropic's installer (after the person has seen and confirmed the command), opens a window where the person
 // signs in with their Claude plan (ENLENS never sees the login) and waits for it, then adds the plugin. Doing it by
 // hand stays one fold below. Used in Settings → AI and on the first-run page.
+// 0.13.4: the account Claude Code is signed in to, as it says it ("you@uni.nl · Team plan · Uni"); the kinds of plan
+// when it does not say.
+function accountText(st) {
+  const acc = claudeAccount(st);
+  if (!acc || !acc.email) return acc && acc.plan ? acc.plan : "Pro, Max, Team or Enterprise";
+  return [acc.email, acc.plan, acc.org].filter(Boolean).join(" · ");
+}
+
 export function claudeSetupCard(opts = {}) {
   const box = h("div", { class: "card card-plain cc-card", style: { padding: "14px 16px" } }, h("p", { class: "muted small" }, "Looking for Claude Code on this computer…"));
   const log = h("div", { class: "cc-progress", "aria-live": "polite" });
@@ -804,7 +812,8 @@ export function claudeSetupCard(opts = {}) {
     h("div", {}, h("strong", {}, title), text ? h("span", { class: "small" }, text) : null));
   const say = (...children) => replace(log, h("div", { class: "cc-now" }, ...children));
   const working = (text) => say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("span", {}, text));
-  const fresh = async () => { info = await api("GET", "/api/claude-setup?refresh=1"); return info.status || {}; };
+  // 0.13.4: what it reads is the sidebar's too (the account on its "Claude, on your plan" card)
+  const fresh = async () => { info = await api("GET", "/api/claude-setup?refresh=1"); return rememberClaude(info.status || {}); };
 
   async function installClaudeCode() {
     const line = info.installer || "curl -fsSL https://claude.ai/install.sh | bash";
@@ -918,7 +927,7 @@ export function claudeSetupCard(opts = {}) {
       h("ol", { class: "cc-steps" },
         step(st.found ? true : busy ? null : false, "Claude Code on this computer", st.found ? (st.version || "found") : "Not on this computer yet. The button installs it with Anthropic's installer (it shows you the command first)."),
         step(st.signed_in === true ? true : st.signed_in === false ? false : null, "Signed in with your Claude plan",
-          st.signed_in === true ? "Pro, Max, Team or Enterprise" : st.signed_in === false ? "Not yet. The button opens a window where you sign in once." : "Claude Code asks you to sign in once; the button opens the window for it."),
+          st.signed_in === true ? accountText(st) : st.signed_in === false ? "Not yet. The button opens a window where you sign in once." : "Claude Code asks you to sign in once; the button opens the window for it."),
         step(st.installed === true ? true : st.found ? false : null, "The ENLENS plugin added to Claude Code",
           st.installed ? "It adds /enlens-run, its helpers and the ENLENS connector." : "The button adds it (nothing else in Claude Code is changed).")),
       h("div", { class: "btn-row" }, btn),
@@ -927,6 +936,6 @@ export function claudeSetupCard(opts = {}) {
       h("p", { class: "muted small", style: { marginTop: "10px" } }, "Then press ", h("strong", {}, "Start Claude Code"), " wherever work waits (or in the sidebar): ENLENS starts Claude Code in the background on this project's work, and the results appear as they come in. You can also type ", h("code", {}, `/enlens-run ${App.project || "<project>"}`), " in Claude Code yourself."),
       manual);
   }
-  api("GET", "/api/claude-setup").then((r) => { info = r; draw(); }).catch(() => draw());
+  api("GET", "/api/claude-setup").then((r) => { info = r; rememberClaude(r.status || {}); draw(); }).catch(() => draw());
   return box;
 }

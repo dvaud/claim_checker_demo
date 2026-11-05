@@ -522,6 +522,31 @@ export const App = {
   },
 };
 
+// 0.13.4: what Claude Code says about itself (found, signed in, which account), shared by the sidebar and Settings:
+// asked again after a minute at most (the server asks Claude Code itself, and keeps the answer half a minute).
+const claudeSeen = { at: 0, status: null, pending: null };
+export function claudeStatus(maxAge = 60000) {
+  if (claudeSeen.status && Date.now() - claudeSeen.at < maxAge) return Promise.resolve(claudeSeen.status);
+  if (!claudeSeen.pending) {
+    claudeSeen.pending = api("GET", "/api/claude-setup").then((r) => rememberClaude(r.status || {}))
+      .finally(() => { claudeSeen.pending = null; });
+  }
+  return claudeSeen.pending;
+}
+// The answer last seen (or null), and a fresher one from Settings (Check again, a sign-in), so the sidebar has it too.
+export function claudeSeenNow() { return claudeSeen.status; }
+export function rememberClaude(st) { claudeSeen.status = st || {}; claudeSeen.at = Date.now(); return claudeSeen.status; }
+
+// Which account Claude Code is signed in to, in words: { email, plan: "Team plan", org } or null when it is not
+// signed in (or does not say). The organisation only on a Team or Enterprise plan: on Pro and Max it is usually Claude's
+// own "…'s Organization".
+export function claudeAccount(st) {
+  if (!st || st.signed_in !== true) return null;
+  const plan = st.plan ? `${st.plan[0].toUpperCase()}${st.plan.slice(1)} plan`
+    : /^(api_key|console)$/i.test(st.auth_method || "") ? "Claude Console account" : "";
+  return { email: st.email || "", plan, org: ["team", "enterprise"].includes(st.plan) ? (st.org_name || "") : "" };
+}
+
 export function store(key, value) {
   try {
     if (value === undefined) return localStorage.getItem("enlens." + key);
