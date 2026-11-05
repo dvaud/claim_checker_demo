@@ -1,5 +1,116 @@
 # Changelog
 
+## 0.13.3 (November 2026): every page as calm as the result page, and titles from Zotero
+
+0.12 rebuilt the result page against eleven written criteria (the answer at a glance, a clear order, a small type
+scale, one main button per section, short copy, scannable cards, low visual noise, the dark theme, phones, nothing
+lost, polish); the other pages kept their 0.11 layout and type sizes. 0.13.3 brings what that page taught to every
+page, without redesigning any of them: the same pages, easier to scan. Checks also move to Sonnet, and a document
+linked to a work of your bibliography takes the work's title. Every answer still goes through the quote check and a
+person can overrule it. What leaves the computer is the same, except that an AI task made after a document is linked
+carries the work's title instead of the file's (see *Titles from your bibliography*).
+
+**One look on every page.**
+- **A few type sizes and two weights.** Page titles, section titles (1.05rem), text, and one small size (.875rem) for
+  everything secondary. Bold only for headings, the page's main button and the labels of form fields; every other
+  button, the folds (*More options*, *What happens when you check*, *Start over or remove the project*) and the links
+  inside notices were semi-bold and are now regular.
+- **One card style:** a thin edge, no shadow; the *Overview* cards no longer jump on hover. In *Settings → AI*, *What
+  happens to the text Claude reads* is no longer a third box inside the Claude box inside the card.
+- **Colour only where it means something.** The sidebar's **AI** marks and the AI line above each title were purple,
+  the colour of *Mixed evidence*, and *No AI needed* was green, the colour of *Supports*: they are grey now (a filled
+  mark: needs AI; a dashed one: optional). Grey too: *N to review* in *Results* (it was amber, the colour of *partly
+  supports*) and what is already made on the *Overview* (*3 results*, *57 terms*, which were green). An answer in the
+  *Results* list is a soft colour without a border (a bordered pill reads as a button), and *Only uncertain evidence*
+  is grey, so amber keeps one meaning.
+- **The line above a title** reads *Explore the documents · No AI needed*, in sentence case and the regular weight
+  (it was spaced capitals and a coloured pill); on a phone a wrapped line never begins with "·".
+
+**Short copy, the details one step away.**
+- **Subtitles of one line** on *Documents*, *Bibliography*, *Search*, *Profile*, *Concepts*, *Themes*, *Check a
+  hypothesis*, *Check several*, *Results* and the *Evidence map*. They no longer repeat the project's name, which is
+  in the sidebar and the top bar (*Every hypothesis checked in this project, newest first.*).
+- **Help marks (?)** as on the result page, for what a passage is (*Search*, in the results' heading: it was a
+  paragraph under it), what a second opinion does (*Results*: the line beside the button now says *For comparison
+  only: the answers do not change.*; it was four sentences), the auditor (*Settings → AI*, *Let the auditor use
+  Fable*: one line) and how the AI labels passages (*Profile*: one sentence, and its count line is no longer bold in
+  the middle of the text).
+- **The Overview cards** say what each feature does; what it is for is the card's tooltip (it was a second, grey
+  paragraph). The AI line says *Only the passages inside its tasks are sent to Anthropic. Ready.*
+- **Check a hypothesis:** the line under the buttons says how long a check takes; *Look before checking* explains
+  itself in its tooltip, as it already did.
+- **The document page:** *Open the original* and *Download a highlighted copy* are two quiet links on one line; where
+  the original opens is in its tooltip (the sentence beside it and *The text as the app reads it.* are gone).
+
+**Downloads as quiet links.** *Results*: *Download all: Excel (.xlsx) · CSV (for programmers)* under *Show as a map*
+(the head had three buttons, one of them a filled main button). *Search*: *Download Excel (.xlsx) · CSV* (two
+buttons). *Profile*, *Themes* and the *Evidence map*: *Download Excel (.xlsx)*; on *Profile* it appears once there is
+a profile to download (it was a disabled button before).
+
+**Checks on Sonnet.** Judging excerpts (a check, and reading one excerpt again) goes to Sonnet instead of Opus; the
+plugin's checker helper runs Sonnet at high effort. A judgement it is unsure of (certainty under 0.6), two rejected
+answers and *Ask a stronger model* still go to the auditor (Opus, or Fable when switched on), and second opinions
+stay on the auditor. On the Claude API, checks use `claude-sonnet-5-5`, and the model field of *Settings → AI* (it
+said *Model for judging excerpts*) is now the *Stronger model* a task steps up to. *Settings → Technical → AI model
+per task* can set checks back to Opus. (`routing.CLAUDE_DEFAULTS`, `HELPER_MODEL`,
+`claude_plugin/agents/enlens-checker.md`, `docs/MODEL_CHOICE.md`.)
+
+**Titles from your bibliography.** A document linked to a work of the bibliography (the same file, the same DOI, or a
+pair you confirmed or linked by hand) is now called by the work's title from Zotero, or from the exported file. This
+applies everywhere: the Documents list, the document page, Search, a check's excerpts and its exports. A PDF's own
+title is often a file name, a running head or a draft's first line (*RMI_report_final_v3 (draft for comments)*).
+- The title read from the file is kept. The document page shows it under the bibliography line (*Title in the file:
+  …*), and so does the *Linked* list on *Bibliography*, whose filter finds it too. It is not shown when the two
+  differ only in case, accents, quote marks or dashes.
+- When no work is linked any more (*Unlink*, another collection or file, *Remove the bibliography*), the document
+  gets its own title back. A title edited in Zotero follows with *Update from Zotero*. A document linked to several
+  works takes the first one's.
+- The matching always reads the file's own title, so a borrowed title never proposes a work.
+- A check made before the link keeps on record the title the AI was shown. Its result page and exports show the title
+  the document has now, as the list of documents behind an answer already did. AI tasks made after the link carry the
+  work's title; documents marked *No AI* are still *Restricted document N* to Claude Code.
+- For developers: `documents.file_title` (a migration) holds the file's own title while the work's replaces it, and
+  `bibliography._sync_titles` runs at the end of every match and when the bibliography is removed. `GET
+  …/documents/<id>` and the Bibliography's pairs add `file_title` (`docs/API.md`). The keyword index rebuilds when a
+  title changes, through a `titles_version` in its cache key, without marking themes, glossaries or profiles out of
+  date.
+
+**Defects fixed.**
+- On a phone, the *Search* page scrolled sideways: the hidden labels of each line's buttons escaped the table's
+  frame. The frames of the tables that scroll (Search, the documents, the evidence map, the search inside a document)
+  now hold them.
+- *Profile* showed a disabled *Download for Excel* button before any profile existed.
+- On a phone, the bibliography line of the document page wrapped as a row: the library icon could stand alone on a
+  line, and a line could begin with "· Open in Zotero". Each part now has its own line beside the icon.
+- A note opened from a help mark near the right edge of the window ran off it (the second opinion's on *Results*); it
+  now moves left to stay in view, on every page (`popNote`).
+
+**Tests:** `tests/test_0133_app_wide_polish.py`: the stylesheet linked last and served, colour tokens only; the type
+sizes and the two weights; cards without shadows and no third box in *Settings*; grey AI marks, states and counts,
+answers without borders; downloads as links on *Results*, *Search* and *Profile* (shown only once there is a
+profile); the help marks; every page subtitle one short line without the project's name; the document page's two
+links; the table frames that hold their hidden labels; the bibliography line of the document page on a phone.
+`tests/test_0133_zotero_titles.py`: links by file and by DOI (the file's title kept); proposed and unlinked documents
+(own title); a confirmed proposal; unlinked and linked again; another bibliography with the same title but no DOI or
+year (the matching reads the file's own title); a title edited in Zotero; a document with no title of its own; the
+bibliography removed; Search's index rebuilt with the new titles; a check made before the link shows the new title
+while its stored task keeps the old one; the endpoints and the two pages. `tests/test_08_queue.py` follows checks to
+Sonnet (the router, the queue and the checker helper's model and effort). Checked in Chrome with the dev server (the
+social corpus, the stand-in Claude Code and Zotero): every page in light and dark at 1280 px and at 390 px; no
+console errors, and no page scrolls sideways.
+
+**Not yet done.**
+- Not a redesign: *Settings*, the add area of *Documents* and the concept and theme pages keep their layout and only
+  take the shared rules; the sidebar keeps its smaller type. *Bibliography*'s *Download the list* is still a button.
+- Checks on Sonnet were tried with the stand-in Claude Code only. A plugin set up before 0.13.3 runs its checker
+  helper on Sonnet already (ENLENS names the model for each batch) but at the normal effort until the plugin is
+  written again: `enlens update` does that (then `/plugin marketplace update enlens` in Claude Code), or `enlens
+  claude-setup` on a git copy.
+- Titles from the bibliography were tried with the stand-in Zotero only. There is no way yet to keep the file's own
+  title for one linked document.
+- Checked in Chrome only; the head of *Results* stacks its button and links with `:has()` (Safari 15.4, Firefox 121
+  and later).
+
 ## 0.13.2 (November 2026): the result page, finished
 
 0.12 rebuilt the result page and had it scored against eleven written criteria by an independent reviewer, round

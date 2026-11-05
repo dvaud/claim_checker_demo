@@ -1,6 +1,6 @@
 // Evidence map: hypotheses as rows, documents as columns, each cell the side a document takes on a hypothesis
 // (judgements that count at the strictness; a person's always count), with symbols as well as colours.
-import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle } from "../lib.js";
+import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks } from "../lib.js";
 
 const SIDE = {
   supports: { symbol: "+", word: "supports", cls: "m-sup", icon: "circle-check" },
@@ -18,9 +18,10 @@ export async function renderMap(view, params, query) {
   let m;
   try { m = await api("GET", `/api/projects/${P(project)}/map?${qs}`); } catch (e) { showError(e); m = { hypotheses: [], documents: [], cells: {} }; }
   const hyps = m.hypotheses || [], docs = m.documents || [], cells = m.cells || {};
-  const xlsx = h("button", { class: "btn btn-sm", type: "button", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) }, icon("download", { size: 13 }), "Download for Excel (.xlsx)");
+  // 0.13.3: the download is a quiet link, as on the result page
+  const xlsx = downloadLinks([{ text: "Excel (.xlsx)", title: "Three sheets: a summary, every excerpt read, and this map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) }]);
   view.appendChild(pageHead("Evidence map", {
-    sub: `Which documents are behind which answers in project “${project}”: one row per hypothesis, one column per document that has an excerpt that counts.`,
+    sub: "Which documents are behind which answers: one row per hypothesis, one column per document with an excerpt that counts.",
     actions: [h("a", { class: "btn btn-sm", href: batch ? `#/history?batch=${encodeURIComponent(batch)}` : "#/history" }, icon("history", { size: 13 }), batch ? "Back to the set" : "All results"), xlsx],
   }));
   if (batch) view.appendChild(h("div", { class: "batch-banner", style: { marginBottom: "12px" } }, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${hyps.length} ${hyps.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), h("a", { class: "btn btn-sm btn-ghost", href: "#/map" }, "Show all results")));

@@ -383,11 +383,12 @@ class App:
 
     def document(self, name: str, doc_id: str, offset: int, limit: int, view: str = "") -> dict:
         ws = self.ws(name)
-        d = ws.query("SELECT doc_id, title, path, kind, n_pages, n_chars, doi, added_at FROM documents WHERE doc_id=?",
-                     (doc_id,))
+        d = ws.query("SELECT doc_id, title, file_title, path, kind, n_pages, n_chars, doi, added_at FROM documents "
+                     "WHERE doc_id=?", (doc_id,))
         if not d:
             raise ApiError(404, "No such document.")
         out = dict(d[0])
+        out["file_title"] = bibliography.file_title(d[0])  # 0.13.3: the title read from the file, if replaced
         out["file"] = re.sub(r".*[/\\]", "", out.pop("path") or "")
         out["total_passages"] = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE doc_id=?", (doc_id,)) or 0)
         # the blocks view (the document viewer) reads by page or paragraph and never the passages (0.11.1)

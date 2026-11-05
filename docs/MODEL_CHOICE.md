@@ -47,7 +47,7 @@ repeatability, seconds per task, pass mark, passes) with the chosen default and 
 | expand, decompose | Sonnet | Opus | the main model |
 | theme | Sonnet | Opus | the main model |
 | resolve | Sonnet | Opus | the main model |
-| check, reread | Opus | the auditor (Opus, or Fable if switched on) | the main model |
+| check, reread | Sonnet (high effort) | the auditor (Opus, or Fable if switched on) | the main model |
 | second | the auditor | none | the second model |
 | SDG pack: extract | Sonnet | Opus | the main model |
 | SDG pack: split | Opus | the auditor | the main model |

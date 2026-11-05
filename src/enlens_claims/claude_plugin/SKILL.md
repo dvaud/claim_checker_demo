@@ -28,7 +28,7 @@ Arguments: `$ARGUMENTS`
 2. Start helpers, at most N at the same time (several Agent calls in one message), in the order the groups are
    listed. For each group start the subagent named `enlens-run:<helper>` (for example `enlens-run:enlens-labeller`).
    Pass the `model` parameter with the group's model whenever it differs from that helper's own model
-   (labeller and linker: haiku; namer, reader and extractor: sonnet; checker and auditor: opus). Give it this prompt,
+   (labeller and linker: haiku; namer, reader, extractor and checker: sonnet; auditor: opus). Give it this prompt,
    filled in:
 
    > Project: <project>. Kind: <kind>. Model: <model>. Helper: <helper>. Take batches with

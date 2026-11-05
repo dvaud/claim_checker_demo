@@ -140,7 +140,7 @@ def test_every_ai_button_waits_for_claude_code_and_gets_its_answers(api, corpus)
     assert by_kind["expand"] == {("enlens-namer", "sonnet")}
     assert by_kind["decompose"] == {("enlens-reader", "sonnet")}
     assert by_kind["resolve"] == {("enlens-reader", "sonnet")}
-    assert by_kind["check"] == {("enlens-checker", "opus")} and by_kind["reread"] == {("enlens-checker", "opus")}
+    assert by_kind["check"] == {("enlens-checker", "sonnet")} and by_kind["reread"] == {("enlens-checker", "sonnet")}
     assert by_kind["second"] == {("enlens-auditor", "opus")}
     assert any(e["resent"] for e in log), "a wrong quote is sent back and answered again"
     assert api("GET", "/api/projects/P/queue")[1]["waiting"] == 0
@@ -280,14 +280,15 @@ def test_the_router_names_a_model_per_kind():
 
     r = routing.from_settings({"backend": "claude_code"})
     assert [r.model(k) for k in ("label", "link", "expand", "decompose", "theme", "resolve", "check", "second")] == \
-        ["haiku", "haiku", "sonnet", "sonnet", "sonnet", "sonnet", "opus", "opus"]
+        ["haiku", "haiku", "sonnet", "sonnet", "sonnet", "sonnet", "sonnet", "opus"]
     assert r.step_up("label") == "sonnet" and r.step_up("theme") == "opus" and r.step_up("second") is None
+    assert r.step_up("check") == "opus" and r.model("verify") == "opus"   # checks on Sonnet, the auditor on Opus
     assert r.helper("check") == "enlens-checker" and r.helper("check", 1) == "enlens-auditor"
     f = routing.from_settings({"backend": "claude_code", "use_fable": True})
     assert f.model("second") == "fable" and f.step_up("check") == "fable"
     api_r = routing.from_settings({"backend": "anthropic", "anthropic_model": "claude-opus-5-5"})
     assert api_r.call_model("label") == "claude-haiku-5-5" and api_r.call_model("label", 1) == "claude-sonnet-5-5"
-    assert api_r.call_model("check") == "claude-opus-5-5" and api_r.helper("check") is None
+    assert api_r.call_model("check") == "claude-sonnet-5-5" and api_r.helper("check") is None
     o = routing.from_settings({"backend": "claude_code", "task_models": {"claude": {"label": "sonnet"}}})
     assert o.model("label") == "sonnet" and o.step_up("label") == "opus"
     local = routing.from_settings({"backend": "ollama"}, large="big")
@@ -445,6 +446,7 @@ def test_the_plugin_files_are_as_claude_code_expects(home):
     for f in sorted((plug / "agents").glob("*.md")):
         fm = claude_setup.frontmatter(f)
         assert fm["name"] == f.stem and fm["description"] and fm["model"] == routing.HELPER_MODEL[f.stem]
+        assert fm.get("effort") == ("high" if f.stem == "enlens-checker" else None)   # checks: Sonnet at high effort
         assert {t.strip() for t in fm["tools"].split(",")} <= queue_tools
     skill = claude_setup.frontmatter(plug / "SKILL.md")
     assert skill["name"] == "enlens-run" and "$ARGUMENTS" in (plug / "SKILL.md").read_text()

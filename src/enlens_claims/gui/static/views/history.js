@@ -1,6 +1,6 @@
 // Results: every hypothesis checked in the project. Counts come from the API at the current strictness.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark, helpMark, downloadLinks } from "../lib.js";
 import { ProgressPanel } from "./progress.js";
 
 const ORDER = ["supported", "partially_supported", "contested", "contradicted", "uncertain", "unsupported", "no_passages", "not_checked", "failed", "waiting"];
@@ -14,10 +14,13 @@ export async function renderHistory(view, params, query) {
   const watchers = [];
   let rowsNow = [];
 
-  const xlsx = h("button", { class: "btn btn-primary btn-sm", type: "button", title: "Three sheets: a summary, every excerpt read, and the evidence map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) }, icon("download", { size: 14 }), "Download all for Excel (.xlsx)");
-  const csv = h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "Technical CSV: ids, raw judgement words, UTC times", onClick: () => download(`/api/projects/${P(project)}/export.csv?threshold=${threshold}`).catch(showError) }, icon("download", { size: 13 }), "CSV for programmers");
+  // 0.13.3: the downloads are one quiet line of links, as on the result page; the map is the page's one button
+  const downloads = downloadLinks([
+    { text: "Excel (.xlsx)", title: "Three sheets: a summary, every excerpt read, and the evidence map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) },
+    { text: "CSV", note: "(for programmers)", title: "Technical CSV: ids, raw judgement words, UTC times", onClick: () => download(`/api/projects/${P(project)}/export.csv?threshold=${threshold}`).catch(showError) },
+  ], { label: "Download all:" });
   const mapLink = h("a", { class: "btn btn-sm", href: "#/map" }, icon("layers", { size: 14 }), "Show as a map");
-  view.appendChild(pageHead("Results", { eyebrow: featureEyebrow("history"), sub: `Every hypothesis checked in project “${project}”, newest first. Open one to read the evidence.`, actions: [mapLink, xlsx, csv] }));
+  view.appendChild(pageHead("Results", { eyebrow: featureEyebrow("history"), sub: "Every hypothesis checked in this project, newest first.", actions: [mapLink, downloads] }));
 
   const search = h("input", { class: "input", type: "search", placeholder: "Find a hypothesis…", value: q, "aria-label": "Find a hypothesis" });
   const chips = h("div", { class: "chips", role: "group", "aria-label": "Show only" });
@@ -50,7 +53,12 @@ export async function renderHistory(view, params, query) {
     if (n) {
       const btn = h("button", { class: "btn btn-sm", type: "button", disabled: !secondSet || secondSet === main }, icon("arrows-opposed", { size: 13 }), `Get a second opinion for ${shown}${batch || q || status ? ` (${n})` : ""}`);
       btn.addEventListener("click", () => runJob(btn, "second-opinion", `/api/projects/${P(project)}/second-opinion`, batch ? { batch } : { hyp_ids: rows.map((x) => x.hyp_id) }, "A second opinion: another model reads the excerpts"));
-      bits.push(h("div", { class: "hist-action" }, btn, h("span", { class: "muted small" }, auditor ? `Another model (${secondSet}, the auditor) reads the excerpts already read, for comparison only: its judgements are shown beside the first AI's and never change an answer. Excerpts it has read are skipped. (A stronger model, which does replace the judgements, is asked for on each result.)` : secondSet && secondSet !== main ? `Another model (${secondSet}) reads the excerpts already read, for comparison only: its judgements are shown beside the first AI's and never change an answer. Excerpts it has read are skipped. ${ONE_MODEL_NOTE}` : ["No model for second opinions is chosen yet: ", h("a", { href: "#/settings/second" }, "choose one in Settings"), `. ${ONE_MODEL_NOTE}`])));
+      // 0.13.3: one short line beside the button; the whole explanation is in its help mark
+      const ready = secondSet && secondSet !== main;
+      const why = `Another model (${secondSet || "the second model"}${auditor ? ", the auditor" : ""}) reads the excerpts already read, for comparison only: its judgements are shown beside the first AI's and never change an answer. Excerpts it has read are skipped.${auditor ? " A stronger model, which does replace the judgements, is asked for on each result." : ` ${ONE_MODEL_NOTE}`}`;
+      bits.push(h("div", { class: "hist-action" }, btn, h("span", { class: "muted small" },
+        ready ? ["For comparison only: the answers do not change.", helpMark("About a second opinion", why)]
+          : ["No model for second opinions is chosen yet: ", h("a", { href: "#/settings/second" }, "choose one in Settings"), "."])));
     }
     actionsBox.hidden = !bits.length;
     bits.forEach((b) => actionsBox.appendChild(b));

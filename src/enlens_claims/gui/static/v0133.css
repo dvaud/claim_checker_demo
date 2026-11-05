@@ -1,0 +1,83 @@
+/* ENLENS 0.13.3: the result page's rules (0.12, v012.css) for the whole app. Not a redesign: the same pages, with
+   one type scale, two weights, one card style, colour only where it means something, and quiet downloads.
+   - Type: page titles 1.55rem, section titles 1.05rem, text 1rem (15 px), everything small .875rem.
+   - Weights: 600 for headings, the main button and labels of form fields; 400 for every other button, folds and text.
+   - Cards: a 1-px edge, no shadow; at most two levels of boxes.
+   - Colour: green, amber, red and purple are the judgements' colours; the AI marks, states and counts are grey; the
+     accent is for actions and links.
+   Colour tokens of app.css only, so light and dark both work. */
+
+/* ---- type and weight */
+h1, h2, h3, h4 { font-weight: 600; }
+h2 { font-size: 1.05rem; }
+.ov-section-head h2, .section-title h2, .card-head h2 { font-size: 1.05rem; }
+small, .small, .field-help, .btn-sm, .badge, .chip, .chip-btn { font-size: .875rem; }
+.btn { font-weight: 400; }
+.btn-primary, .btn-danger { font-weight: 600; }
+details.fold > summary { font-weight: 400; }
+.notice a:not(.btn), .moved-note .link-btn { font-weight: 400; }
+.code-btn .code-txt strong { font-weight: 600; }
+
+/* ---- the line above a page title: where the page belongs, then whether it uses the AI, in grey */
+.eyebrow { font-size: .875rem; font-weight: 400; }
+.fe-section { text-transform: none; letter-spacing: 0; font-size: .875rem; font-weight: 400; color: var(--muted); }
+.feature-eyebrow { gap: 0; }
+/* the separator ends the first part, so a line that wraps on a phone never begins with "·" */
+.feature-eyebrow .fe-section::after { content: "·"; margin: 0 8px; }
+.ai-tag, .ai-tag.ai-none, .ai-tag.ai-optional, .ai-tag.ai-uses {
+  padding: 0; border: 0; border-radius: 0; background: none; color: var(--muted); font-size: .875rem; font-weight: 400;
+}
+.page-sub { max-width: 46em; }
+
+/* ---- one card style: a 1-px edge, no shadow, no jump on hover */
+.card, .ov-card, .ov-grid-small .ov-card { box-shadow: none; }
+.ov-card:hover { transform: none; }
+.ov-card h3 { font-size: 1rem; }
+.ov-card p { font-size: .875rem; }
+/* Settings → AI: the privacy panel sits inside the Claude box, which sits inside the card: drawn without a third box */
+.cc-card .terms-panel { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 12px 0 0; margin-top: 12px; background: none; }
+
+/* ---- colour only where it means something */
+/* the sidebar's AI marks were purple, the colour of "Mixed evidence": now grey (filled = needs AI, dashed = optional) */
+.nav-ai { font-weight: 600; }
+.nav-ai-uses { background: var(--text-2); border-color: var(--text-2); color: var(--surface); }
+.nav-ai-optional { color: var(--muted); border-color: var(--muted); }
+/* states and counts are facts, not judgements */
+.ov-state.ov-made { color: var(--text-2); }
+.to-review { color: var(--text-2); font-weight: 400; }
+/* an answer is a soft colour, not a bordered pill that reads as a button; "only uncertain evidence" is grey, so amber
+   keeps one meaning (partly supports) */
+.badge { border-color: transparent; }
+.badge.status-uncertain { color: var(--text-2); background: var(--surface-3); }
+
+/* ---- the help mark of the result page, on every page */
+.help-mark { color: var(--muted); text-decoration: none; display: inline-flex; vertical-align: middle; padding: 2px; margin-left: 2px; border-radius: 50%; }
+.help-mark:hover, .help-mark[aria-expanded="true"] { color: var(--accent-text); }
+h2 .defined-wrap { font-size: .875rem; font-weight: 400; }
+
+/* ---- downloads: one quiet line of links */
+.dl-links { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .875rem; color: var(--text-2); }
+.dl-links > .icon { color: var(--muted); }
+.dl-links .dl-sep { color: var(--muted); }
+.page-head-actions:has(> .dl-links) { flex-direction: column; align-items: flex-end; gap: 8px; }
+.feature-eyebrow { white-space: nowrap; }
+
+/* ---- the document page: the two links on one line */
+.dv-head-row .link-btn.it { display: inline-flex; align-items: center; gap: 4px; font-size: .875rem; }
+.dv-head-row .orig-link a { font-size: .875rem; }
+
+/* ---- tables that scroll inside their frame: the hidden labels of their buttons (position: absolute) escaped the
+   frame and made the whole page scroll sideways on a phone (Search, 390 px wide); positioned, the frame holds them */
+.kwic-wrap, .table-wrap, .map-wrap, .dv-kwic { position: relative; }
+
+/* ---- on a phone: the head's actions start at the left edge, under the title */
+@media (max-width: 600px) {
+  /* the document page's bibliography line: one part per line beside the icon (wrapped as a row, the icon could stand
+     alone on a line and a line could begin with "·") */
+  .dv-bib { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 6px; row-gap: 2px; align-items: baseline; }
+  .dv-bib > .icon { grid-column: 1; grid-row: 1; align-self: start; margin-top: 3px; }
+  .dv-bib > .sep { display: none; }
+  .dv-bib > :not(.icon):not(.sep) { grid-column: 2; }
+  .page-head-actions:has(> .dl-links) { align-items: flex-start; }
+  .feature-eyebrow { white-space: normal; }
+}

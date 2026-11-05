@@ -16,7 +16,7 @@ export async function renderSources(view) {
   const project = App.project;
   let info;
   try { info = await api("GET", `/api/projects/${P(project)}`); } catch (e) { showError(e); info = { search: null, passages: 0 }; }
-  view.appendChild(pageHead("Documents", { eyebrow: featureEyebrow("sources"), sub: `The reports, papers and web pages of project “${project}” that you explore and check hypotheses against. Open one to read it with its codes, key terms and references.` }));
+  view.appendChild(pageHead("Documents", { eyebrow: featureEyebrow("sources"), sub: "The reports, papers and web pages you explore and check hypotheses against. Open one to read it." }));
 
   const watchers = [];
 
@@ -397,7 +397,8 @@ export async function renderDocument(view, [docId], query) {
   let tab = DOC_TABS.some(([k]) => k === query.tab) ? query.tab : null;
   let framework = query.framework || App.settings().profile_framework || "sdg";
 
-  const copyBtn = h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => highlightedCopy() }, icon("highlighter", { size: 13 }), "Download a highlighted copy");
+  // 0.13.3: the original and the highlighted copy are two quiet links on one line, as on the result page
+  const copyBtn = h("button", { class: "link-btn it", type: "button", title: "A copy of the document with its quotes and labels highlighted", onClick: () => highlightedCopy() }, icon("highlighter", { size: 13 }), "Download a highlighted copy");
   view.appendChild(h("header", { class: "page-head" }, h("div", { class: "page-head-main" },
     h("p", { class: "eyebrow" }, from ? [back, " "] : null, h("a", { href: "#/sources", class: "it" }, icon("book-open", { size: 12 }), "All documents")),
     h("h1", { id: "page-title", tabindex: "-1", class: "serif", style: { fontWeight: 500 } }, d.title || d.file),
@@ -408,11 +409,12 @@ export async function renderDocument(view, [docId], query) {
       d.bib.title && d.bib.title !== d.title ? [h("span", { class: "sep" }, "·"), h("span", { class: "serif" }, d.bib.title)] : null,
       d.bib.doi && d.bib.doi !== d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.bib.doi}`, target: "_blank", rel: "noopener noreferrer" }, `doi ${d.bib.doi}`)] : null,
       d.bib.link ? [h("span", { class: "sep" }, "·"), h("a", { href: d.bib.link }, "Open in Zotero")] : null) : null,
+    // 0.13.3: the heading is the work's title; the one read from the file stays visible, on a line of its own
+    d.file_title ? h("p", { class: "muted small dv-file-title", style: { margin: "4px 0 0" } }, "Title in the file: ", h("span", { class: "serif" }, d.file_title)) : null,
     h("div", { class: "row dv-head-row", style: { marginTop: "8px", gap: "8px 14px" } },
       originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
-      h("span", { class: "muted small" }, d.original && d.original.available ? (d.kind === "pdf" && quoteText ? "Opens in a new tab at that page; the quote is highlighted below." : "Opens in a new tab, as the file was when it was added.") : ""),
       copyBtn),
-    span ? h("p", { class: "muted small", style: { marginTop: "6px" } }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : h("p", { class: "muted small", style: { marginTop: "6px" } }, "The text as the app reads it."))));
+    span ? h("p", { class: "muted small", style: { marginTop: "6px" } }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null)));
 
   // ----------------------------------------------------------------- the text, with layers of highlights
   const nodeAt = new WeakMap();        // text node -> document offset of its first character

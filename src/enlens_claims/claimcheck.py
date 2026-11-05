@@ -1450,11 +1450,15 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                        for v in raw_vs if v.get("start") is not None or v.get("user_start") is not None})
     breaks = _breaks(ws, [(pid, lc["doc_id"], lc["start"], lc["end"]) for pid, lc in locs.items()])
     seconds = _second_opinions(ws, [claim_id]).get(claim_id, {})
+    # 0.13.3: the title a document has now (the work's title from the bibliography), not the one the check stored;
+    # a document removed since keeps the stored one
+    titles_now = {r["doc_id"]: r["title"] for r in ws.query("SELECT doc_id, title FROM documents")}
     for n, (r_i, p, part) in enumerate(shown, 1):
         v = by_passage.get(p["passage_id"])
         loc = locs.get(p["passage_id"], {})
-        item = {"n": n, "round": r_i, "passage_id": p["passage_id"], "doc_id": p["doc_id"], "title": p["title"],
-                "page": p["page"], "location": loc.get("location") or (f"page {p['page']}" if p["page"] else None),
+        item = {"n": n, "round": r_i, "passage_id": p["passage_id"], "doc_id": p["doc_id"],
+                "title": titles_now[p["doc_id"]] if p["doc_id"] in titles_now else p["title"], "page": p["page"],
+                "location": loc.get("location") or (f"page {p['page']}" if p["page"] else None),
                 "position_pct": loc.get("position_pct"), "doc_start": loc.get("start"),
                 "span": loc.get("span") or (f"page {p['page']}" if p["page"] else None), "text": p["text"],
                 "found_by": p.get("found_by") or "keywords",

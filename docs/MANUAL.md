@@ -188,7 +188,15 @@ The app is written for researchers who do not program: plain words on every work
 technical details only under *Technical details* and *Settings → Technical*. Each feature says, above its title,
 which part of the app it belongs to (*Explore the documents* or *Check hypotheses*) and whether it uses the AI; in
 the sidebar a filled **AI** mark means the feature needs the AI, a dashed one that the AI is optional, and no mark
-that it never uses the AI (0.9).
+that it never uses the AI (0.9). The marks are grey (0.13.3): green, amber, red and purple are kept for the
+judgements and answers.
+
+**One look on every page (0.13.3).** Every page follows the rules of the result page: a title and one short line
+under it; a few type sizes, and bold only for headings and the page's main button; cards with a thin edge and no
+shadow; a longer explanation behind a small **(?)** that opens on hover or click (what a passage is, what a second
+opinion does, the auditor, how the AI labels passages); and downloads as one quiet line of links (*Download
+Excel (.xlsx) · CSV*) instead of buttons. The *Overview* cards say what each feature does; hover a card for what it
+is for.
 
 **The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, *Bibliography* (0.13), then **Explore the documents**
 (Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results). At the
@@ -350,9 +358,10 @@ already read, and your notes; the rest appears when the answer is in.
 **Results** lists every hypothesis with its answer, the excerpts that count (and how many were too uncertain), tags
 such as *part of a set*, *checked in 2 parts*, *N to review*, *N changed by you*, *has notes*, *N documents added
 since*, *second opinion differs on N*, and the date; an answer a stronger model changed carries the small mark *was
-partly supported* (or whatever it was at first). Search, filter by answer, open one, or **Download all for Excel** (with a
-*Map* sheet). *Read the new documents for all N* brings every result with documents added since up to date in one go;
-*Get a second opinion for all results* does the same for second opinions.
+partly supported* (or whatever it was at first). Search, filter by answer, open one, or download them all
+(*Download all: Excel (.xlsx)*, with a *Map* sheet, or *CSV (for programmers)*, under *Show as a map*). *Read the new
+documents for all N* brings every result with documents added since up to date in one go; *Get a second opinion for
+all results* does the same for second opinions (for comparison only: the answers do not change; its (?) says more).
 
 **Show as a map** shows all results (or one set) as a grid: one row per hypothesis, one column per document, and in
 each cell + supports, (+) partly supports, − contradicts or ± both, with the number of excerpts that count. It flags
@@ -461,7 +470,9 @@ managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zo
   document a work is.
 - *Linked*: each work with its document, and how they were linked: *Same file* (a file Zotero keeps for the work is
   the very file you added, by its checksum), *Same DOI* (the document prints the work's DOI), *You confirmed it* or
-  *You linked it*. *Unlink* undoes a link for good (*Undo* in the message brings it back).
+  *You linked it*. *Unlink* undoes a link for good (*Undo* in the message brings it back). A linked document is
+  called by its work's title everywhere in ENLENS (0.13.3); when the file's own title says something else, it stays
+  under the file name (*Title in the file: …*).
 - *Not in the bibliography*: the documents no work is linked to. Add them to Zotero and press *Update from Zotero*, or
   *Link to a work* by hand.
 
@@ -469,8 +480,11 @@ managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zo
 replaces the bibliography. Your decisions are kept for every work that is still there, even when it comes from
 another source (by its Zotero key, else its DOI, else its title and year). Documents you add later are matched as
 they come in: the message after adding says how many were linked and how many wait for you. A document linked to a
-work shows its reference (*Verhoeven and Okafor (2025)*) in the Documents list, and in the document viewer with its
-DOI and *Open in Zotero*. *Remove the bibliography* takes the works and links out of the project; documents and Zotero
+work takes the work's title (0.13.3): in the Documents list, on the document page, in Search, in a check's excerpts
+and in the exports. The document page also shows the title read from the file, which comes back when no work is
+linked any more; a title edited in Zotero follows with *Update from Zotero*. The document also shows its reference
+(*Verhoeven and Okafor (2025)*) in the Documents list, and on the document page with its DOI and *Open in Zotero*.
+*Remove the bibliography* takes the works and links out of the project; documents and Zotero
 stay as they are.
 
 **What the matching does not do.** A scanned PDF without a text layer has no title to find until text recognition
@@ -737,7 +751,7 @@ model), which used to say only which command to type.
 ```
 
 `/enlens-run` hands each kind of task to a helper agent on the model ENLENS names for it (labels and links on
-Haiku, theme names, references and search words on Sonnet, checks on Opus; for the SDG pack, extraction on Sonnet,
+Haiku, theme names, references, search words and checks on Sonnet; for the SDG pack, extraction on Sonnet,
 splitting the VCA and checking its claims on Opus, audits on the auditor; *AI model per task* in Settings) and
 reports what is done and what is left. The helpers can use only the ENLENS queue tools: they see nothing but the
 passages handed out and write nothing but answers. Every answer is quote-checked; a wrong quote is sent back and
@@ -791,7 +805,7 @@ claimed for 30 minutes), `submit_answers` (each answer quote-checked: stored, or
 | second_opinions | A second model's grade of each excerpt it read again (never used for an answer) |
 | task_claims | 0.8: the batches of queued tasks handed out to Claude Code: who took them, when, model, helper; `tasks.queued`, `claimed_by`, `step`, `again` and `results.route`, `helper`, `step` belong with it |
 | meta | Thresholds used by the pack, and the corpus version (search indexes are rebuilt when it changes) |
-| bib_items, bib_links | 0.13: the bibliography's works (title, creators, year, DOI, web address, Zotero link, the files Zotero keeps with their checksums) and which document each is (`status`: `auto` for the same file or DOI, `probable`, `confirmed` or `rejected` by a person; `method`: `file`, `doi`, `title`, `person`); where it came from is in `meta` (`bibliography`) |
+| bib_items, bib_links | 0.13: the bibliography's works (title, creators, year, DOI, web address, Zotero link, the files Zotero keeps with their checksums) and which document each is (`status`: `auto` for the same file or DOI, `probable`, `confirmed` or `rejected` by a person; `method`: `file`, `doi`, `title`, `person`); where it came from is in `meta` (`bibliography`); 0.13.3: `documents.file_title` keeps the file's own title while a linked work's title replaces it (`meta` `titles_version` rebuilds the keyword index) |
 | vca_targets, vca_refs, doc_refs, claims, claim_targets, evidence, interactions, vca_claims, reviews | The SDG pack (section 13) |
 
 Open it with any SQLite tool. Offsets in `evidence` and `verifications` index into `documents.text`. Removing one

@@ -10,6 +10,9 @@ A work and a document are linked by themselves when they are the same file (a fi
 document have the same checksum) or have the same DOI. A work whose title, and an author or the year, are found on the
 first pages of a document is a *probable* link that a person confirms. A person's decisions (the same work, not the
 same, linked by hand) survive every new match and every update of the bibliography.
+
+0.13.3: a document linked to a work is called by the work's title everywhere (a PDF's own title is often a file name,
+a journal's running head or nothing at all). The title read from the file is kept and comes back when the link goes.
 """
 from __future__ import annotations
 
@@ -721,6 +724,7 @@ def remove(ws: Workspace) -> dict:
         n = cx.execute("DELETE FROM bib_items").rowcount
         cx.execute("DELETE FROM bib_links")
         cx.execute("DELETE FROM meta WHERE key='bibliography'")
+        _sync_titles(cx)  # 0.13.3: every document gets its own title back
     return {"removed": n}
 
 
@@ -767,8 +771,9 @@ def match(ws: Workspace) -> dict:
     work whose title and an author or the year are on a document's first pages is proposed (probable). A person's
     decisions are never overruled, and a document or work already linked gets no proposal."""
     items = [dict(r) for r in ws.query("SELECT item_key, title, creators_json, year, doi, files_json FROM bib_items")]
-    docs = [dict(r) for r in ws.query(f"SELECT doc_id, path, sha1, title, doi, substr(text, 1, {HEAD_CHARS}) AS head "
-                                      "FROM documents")]
+    # the title read from the file (a document linked before is called by its work's title; that must not match)
+    docs = [dict(r) for r in ws.query("SELECT doc_id, path, sha1, COALESCE(file_title, title) AS title, doi, "
+                                      f"substr(text, 1, {HEAD_CHARS}) AS head FROM documents")]
     decided = {(r["item_key"], r["doc_id"]): r["status"] for r in
                ws.query("SELECT item_key, doc_id, status FROM bib_links WHERE status IN ('confirmed', 'rejected')")}
     linked_items = {k for (k, _d), s in decided.items() if s == "confirmed"}
@@ -859,7 +864,36 @@ def match(ws: Workspace) -> dict:
         cx.executemany("INSERT OR IGNORE INTO bib_links(item_key, doc_id, status, method, score, evidence_json) "
                        "VALUES (?,?,?,?,?,?)",
                        [(k, d, "probable", "title", s, json.dumps(ev, ensure_ascii=False)) for k, d, s, ev in probable])
+        _sync_titles(cx)
     return counts(ws)
+
+
+def _sync_titles(cx) -> int:
+    """0.13.3: a document linked to a work (the same file, the same DOI, or a person's word) takes the work's title;
+    the title read from the file goes to `file_title` and comes back when no work is linked any more. A document
+    linked to several works takes the first one's (the order of the bibliography, as `doc_citations`). Returns how
+    many titles changed; the keyword index (search.passage_index) is rebuilt when any did."""
+    want: dict[str, str] = {}
+    for doc_id, title in cx.execute("SELECT l.doc_id, b.title FROM bib_links l JOIN bib_items b ON "
+                                    "b.item_key=l.item_key WHERE l.status IN ('auto', 'confirmed') ORDER BY b.seq"):
+        if title and title.strip():
+            want.setdefault(doc_id, title.strip())
+    changed = 0
+    for doc_id, title, own in cx.execute("SELECT doc_id, title, file_title FROM documents").fetchall():
+        new = want.get(doc_id)
+        if new is not None and new != title:
+            cx.execute("UPDATE documents SET title=?, file_title=? WHERE doc_id=?",
+                       (new, (title or "") if own is None else own, doc_id))
+        elif new is None and own is not None:
+            cx.execute("UPDATE documents SET title=?, file_title=NULL WHERE doc_id=?", (own or None, doc_id))
+        else:
+            continue
+        changed += 1
+    if changed:
+        row = cx.execute("SELECT value FROM meta WHERE key='titles_version'").fetchone()
+        cx.execute("INSERT OR REPLACE INTO meta VALUES ('titles_version', ?)",
+                   (json.dumps(int(json.loads(row[0]) if row else 0) + 1),))
+    return changed
 
 
 def _year_distance(toks: list[str], title: list[str], year: str | None) -> int:
@@ -1016,8 +1050,10 @@ def view(ws: Workspace) -> dict:
         return {"bibliography": None}
     works = {r["item_key"]: _work_view(r) for r in ws.query("SELECT * FROM bib_items ORDER BY seq")}
     docs = {r["doc_id"]: {"doc_id": r["doc_id"], "title": r["title"], "file": re.sub(r".*[/\\]", "", r["path"] or ""),
-                          "kind": r["kind"], "pages": r["n_pages"], "added_at": r["added_at"]}
-            for r in ws.query("SELECT doc_id, title, path, kind, n_pages, added_at FROM documents ORDER BY title")}
+                          "kind": r["kind"], "pages": r["n_pages"], "added_at": r["added_at"],
+                          "file_title": file_title(r)}
+            for r in ws.query("SELECT doc_id, title, file_title, path, kind, n_pages, added_at FROM documents "
+                              "ORDER BY title")}
     links = [dict(r) for r in ws.query("SELECT item_key, doc_id, status, method, score, evidence_json, decided_at "
                                        "FROM bib_links")]
     linked, confirm, seen_items, seen_docs = [], [], set(), set()
@@ -1045,6 +1081,13 @@ def view(ws: Workspace) -> dict:
                        "to_find": len(to_find), "not_in": len(not_in),
                        "files": sum(1 for w in to_find if w["file"])},
             "linked": linked, "confirm": confirm, "to_find": to_find, "not_in": not_in}
+
+
+def file_title(r) -> str | None:
+    """The title read from the file of a document that took its work's title, to show next to it: None when it has
+    its own, or when the two have the same words (only case, accents, quote marks or dashes differ)."""
+    own = r["file_title"]
+    return own if own and _tokens(own) != _tokens(r["title"] or "") else None
 
 
 def files_to_add(ws: Workspace, keys: list[str] | None = None) -> list[Path]:

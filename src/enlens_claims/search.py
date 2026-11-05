@@ -32,8 +32,9 @@ MAX_CACHED = 4
 
 
 def _key(ws: Workspace, all_sections: bool = False) -> tuple:
-    row = ws.query("SELECT COUNT(*), MAX(rowid) FROM passages")[0]
-    return (str(ws.db_path.resolve()), ws.corpus_version(), row[0], row[1], bool(all_sections))
+    # 0.13.3: and the titles' version (a document takes its work's title from the bibliography; see bibliography.py)
+    row = ws.query("SELECT COUNT(*), MAX(rowid), (SELECT value FROM meta WHERE key='titles_version') FROM passages")[0]
+    return (str(ws.db_path.resolve()), ws.corpus_version(), row[0], row[1], row[2], bool(all_sections))
 
 
 def passage_index(ws: Workspace, all_sections: bool = False) -> PassageIndex:

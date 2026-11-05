@@ -228,7 +228,10 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               # (a person's note, it changes nothing), and an optional cap on the share Claude may read (percent)
               ("documents", "ai_access", "TEXT"), ("documents", "ai_note", "TEXT"), ("documents", "ai_budget", "REAL"),
               # 0.11: the most restricted setting of the documents a task's text comes from (see access.py)
-              ("tasks", "access", "TEXT")]
+              ("tasks", "access", "TEXT"),
+              # 0.13.3: the title read from the file, kept while the title of the work it is linked to in the
+              # bibliography replaces it (NULL: the document has its own title; see bibliography._sync_titles)
+              ("documents", "file_title", "TEXT")]
 
 
 def _migrate(cx: sqlite3.Connection) -> None:

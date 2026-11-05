@@ -58,7 +58,9 @@ CLAUDE_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "label": ("haiku", "sonnet"), "link": ("haiku", "sonnet"),
     "expand": ("sonnet", "opus"), "decompose": ("sonnet", "opus"),
     "theme": ("sonnet", "opus"), "resolve": ("sonnet", "opus"),
-    "check": ("opus", "auditor"), "reread": ("opus", "auditor"),
+    # checks start on Sonnet (its helper runs at high effort, see agents/enlens-checker.md); an unsure or twice
+    # rejected judgement goes to the auditor, so the second opinion and the step-up stay on Opus (or Fable)
+    "check": ("sonnet", "auditor"), "reread": ("sonnet", "auditor"),
     "second": ("auditor", None),
     # the SDG pack. extract is bulk work (hundreds to thousands of passages, every claim tagged with SDG targets,
     # directions and quotes): Sonnet, and an answer it is unsure of (a claim under 0.6) or two rejected answers go to
@@ -81,7 +83,7 @@ HELPERS = {"label": "enlens-labeller", "link": "enlens-linker", "theme": "enlens
            "extract": "enlens-extractor", "split": "enlens-extractor", "verify": "enlens-checker",
            "verify_set": "enlens-checker", "audit": "enlens-auditor"}
 HELPER_MODEL = {"enlens-labeller": "haiku", "enlens-linker": "haiku", "enlens-namer": "sonnet",
-                "enlens-reader": "sonnet", "enlens-extractor": "sonnet", "enlens-checker": "opus",
+                "enlens-reader": "sonnet", "enlens-extractor": "sonnet", "enlens-checker": "sonnet",
                 "enlens-auditor": "opus"}
 # the kinds whose stepped-up tasks go to the auditor (they judge excerpts, or set the reference claims)
 TO_AUDITOR = ("check", "reread", "split", "verify", "verify_set")

@@ -22,7 +22,7 @@ export async function renderBibliography(view) {
   const base = `/api/projects/${P(project)}`;
   view.appendChild(pageHead("Bibliography", {
     eyebrow: featureEyebrow("bibliography"),
-    sub: "Your Zotero library, or one collection of it, next to this project’s documents: which works you have, which you still need to find, and which documents are not in your bibliography.",
+    sub: "Your Zotero library next to this project’s documents: which works you have and which you still need to find.",
   }));
   const watchers = [];
   const top = h("div", { class: "bib-top" });
@@ -231,7 +231,9 @@ export async function renderBibliography(view) {
     w.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${w.doi}`, target: "_blank", rel: "noopener noreferrer", class: "it", title: `Open doi.org/${w.doi} in your browser` }, "DOI", icon("external-link", { size: 11 }))] : null,
     w.url && !w.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: w.url, target: "_blank", rel: "noopener noreferrer", class: "it", title: w.url }, "Web page", icon("external-link", { size: 11 }))] : null,
     w.link ? [h("span", { class: "sep" }, "·"), h("a", { href: w.link, class: "it", title: "Shows this work in Zotero" }, "Open in Zotero")] : null];
-  const docCell = (d) => h("div", { class: "bib-doc" }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}`, class: "bib-doc-title" }, d.title || d.file), h("div", { class: "doc-file" }, d.file));
+  // 0.13.3: a linked document is called by its work's title; the title read from the file is under its file name
+  const docCell = (d) => h("div", { class: "bib-doc" }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}`, class: "bib-doc-title" }, d.title || d.file), h("div", { class: "doc-file" }, d.file),
+    d.file_title ? h("div", { class: "muted small bib-own-title" }, "Title in the file: ", d.file_title) : null);
 
   async function decide(item_key, doc_id, decision, msg, undo) {
     try {
@@ -349,7 +351,7 @@ export async function renderBibliography(view) {
     if (!rows.length) { box.appendChild(emptyState("link", "Nothing linked yet", "A work is linked to its document when they are the same file or have the same DOI, or when you confirm a pair.")); return; }
     const tbody = h("tbody", {});
     let filter = "";
-    const drawRows = () => replace(tbody, rows.filter((r) => !filter || `${r.work.title} ${r.work.authors} ${r.doc.title} ${r.doc.file}`.toLowerCase().includes(filter)).map((r) => h("tr", {},
+    const drawRows = () => replace(tbody, rows.filter((r) => !filter || `${r.work.title} ${r.work.authors} ${r.doc.title} ${r.doc.file} ${r.doc.file_title || ""}`.toLowerCase().includes(filter)).map((r) => h("tr", {},
       h("td", {}, workCell(r.work)),
       h("td", { "data-label": "Document" }, docCell(r.doc)),
       h("td", { "data-label": "How", class: "small nowrap" }, r.status === "confirmed" ? (r.method === "person" ? HOW.person : HOW.title) : HOW[r.method] || r.method),

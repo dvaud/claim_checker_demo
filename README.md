@@ -62,6 +62,14 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
 - **A clearer result page (0.13.2).** Short headings of the document show as headings above the quote, an excerpt
   that does not count says *Not counted* and its certainty like every other card, and a hypothesis in parts counts a
   document on both sides once.
+- **Every page as calm as the result page (0.13.3).** One short line under each title, bold only for headings and
+  the main button, grey AI marks (green, amber, red and purple now always mean a judgement), longer explanations
+  behind a small (?), and downloads as one quiet line of links. On a phone, *Search* no longer scrolls sideways.
+- **Checks on Sonnet (0.13.3).** Judging excerpts goes to Sonnet at high effort instead of Opus; an unsure
+  judgement, *Ask a stronger model* and second opinions still go to Opus (or Fable).
+- **Titles from Zotero (0.13.3).** A document linked to a work in your bibliography takes the work's title from Zotero
+  everywhere in ENLENS. The title in the file stays visible on the document page and comes back if you unlink the
+  work.
 
 ## Earlier releases
 
@@ -99,10 +107,10 @@ kept next to the AI's in the Excel download.
 
 The AI is Claude, through Claude Code signed in with your own Claude plan (Pro, Max, Team or Enterprise). ENLENS sets
 Claude Code up by itself and starts it when you press *Start Claude Code*; each kind of task goes to the right model
-(labels on Haiku, theme names on Sonnet, checks on Opus). Your documents, results and reviews stay on your computer:
-only the passages inside the AI's tasks, from documents Claude may read, are sent to Anthropic. A model on your own
-computer (Ollama, LM Studio…) and a shared installation on the Claude API remain available, and whoever installs it
-can switch everything off the computer off for good (`--local-only`).
+(labels on Haiku, theme names and checks on Sonnet, second opinions on Opus). Your documents, results and reviews
+stay on your computer: only the passages inside the AI's tasks, from documents Claude may read, are sent to
+Anthropic. A model on your own computer (Ollama, LM Studio…) and a shared installation on the Claude API remain
+available, and whoever installs it can switch everything off the computer off for good (`--local-only`).
 
 The app is written for researchers who do not program: plain language on every working screen; each feature says
 what it does and whether it uses the AI; technical details are kept under *Technical details* and
@@ -223,7 +231,7 @@ whole project to a colleague as one zip.
 | --- | --- | --- | --- |
 | Codebook labels, concept links | Haiku | Sonnet | the small model (if chosen) |
 | Search words, splitting, theme names, references | Sonnet | Opus | the main model |
-| Judging excerpts, reading one again | Opus | the auditor | the main model |
+| Judging excerpts, reading one again | Sonnet (high effort) | the auditor | the main model |
 | Second opinion | the auditor (Opus, or Fable if switched on) | | the second model |
 
 A task steps up once: when its answer's certainty is under 0.6, after two rejected answers, or when you press *Ask a

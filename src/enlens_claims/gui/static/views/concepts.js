@@ -35,7 +35,7 @@ export async function renderConcepts(view, params, query) {
   let q = query.q || "", sort = ["docs", "mentions", "name"].includes(query.sort) ? query.sort : "docs", offset = Math.max(0, Number(query.offset) || 0);
   const watchers = [];
 
-  view.appendChild(pageHead("Concepts", { eyebrow: featureEyebrow("concepts"), sub: `The terms the documents of project “${project}” use, grouped into concepts. Open one to follow it across the documents: where it appears, how it is written, and what it is related to.` }));
+  view.appendChild(pageHead("Concepts", { eyebrow: featureEyebrow("concepts"), sub: "The terms the documents use, grouped into concepts you can follow from one document to the next." }));
 
   const jobBox = h("section", { class: "section", hidden: true, "aria-label": "Progress" });
   const statusBox = h("div");

@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName, helpMark } from "../lib.js";
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -343,7 +343,7 @@ function modelSection(s, servers, watchers) {
     } else if (backend === "openai") {
       detail.append(serverList(), h("div", { class: "fields-2" }, field("Server address", fields.openai_url, { help: "The /v1 base URL of LM Studio, llama.cpp, Jan, vLLM…" }), fields.openaiModel = modelPicker("m-openai", s.openai_model, openaiSrv ? openaiSrv.chat_models : [], "leave empty for the first model listed")));
     } else if (backend === "anthropic") {
-      detail.append(cloudBox, field("Model for judging excerpts", fields.anthropic_model, { help: "For example claude-opus-5-5. The other kinds of task use their own model: see “AI model per task” under Technical." }), keyBox(), fableSwitch());
+      detail.append(cloudBox, field("Stronger model", fields.anthropic_model, { help: "For example claude-opus-5-5: a task an AI model was unsure of goes to it once. Checks start on Sonnet; each kind of task has its own model (“AI model per task” under Technical)." }), keyBox(), fableSwitch());
     } else if (backend === "claude_code") {
       detail.append(claudeCodeBox(), fableSwitch());
     } else {
@@ -352,7 +352,8 @@ function modelSection(s, servers, watchers) {
   }
 
   function fableSwitch() {
-    fields.use_fable = switchControl("Let the auditor use Fable", !!s.use_fable, { help: "The auditor gives second opinions (shown for comparison only) and is the stronger model that reads the hard cases again (unsure judgements, rejected quotes, “Ask a stronger model”; its reading replaces the first). It runs on Opus unless this is on. In Claude Code, Fable can be billed from usage credits instead of your plan's limits; the model picker then says “Requires usage credits”." });
+    fields.use_fable = switchControl("Let the auditor use Fable", !!s.use_fable, { help: ["It runs on Opus unless this is on; Fable can be billed from usage credits.",   // 0.13.3: one line, the rest in its help mark
+      helpMark("About the auditor", "The auditor gives second opinions (shown for comparison only) and is the stronger model that reads the hard cases again (unsure judgements, rejected quotes, “Ask a stronger model”; its reading replaces the first). It runs on Opus unless this is on. In Claude Code, Fable can be billed from usage credits instead of your plan's limits; the model picker then says “Requires usage credits”.")] });
     return fields.use_fable;
   }
 

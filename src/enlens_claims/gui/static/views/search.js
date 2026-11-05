@@ -2,7 +2,7 @@
 // (a concordance). No hypothesis and no AI are needed. Clicking a word of a line adds it to the search; Shift-click
 // makes a phrase. A line opens its document at the words, or starts a check about what it says.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, download, pageHead, emptyState, fmt, P, navigate } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks } from "../lib.js";
 
 const MODES = [
   ["any", "any of the words"],
@@ -56,7 +56,7 @@ export async function renderSearch(view, params, query) {
   };
   const semantic = !!(info.search && info.search.embedded);
   view.appendChild(pageHead("Search the documents", { eyebrow: featureEyebrow("search"),
-    sub: `Every place words occur in the ${fmt.plural(docs.length, "document")} of project “${project}”, one line per place, with the words around it. No AI model is used (only search by meaning uses the embedding model).`,
+    sub: `Every place words occur in the ${fmt.plural(docs.length, "document")}, one line per place, with the words around it.`,
   }));
 
   // ---------------------------------------------------------------- the form
@@ -78,7 +78,7 @@ export async function renderSearch(view, params, query) {
       h("label", {}, "Find", modeSel), nearBox, docSel,
       h("label", { title: "Without this, “price” also finds “prices” and “priced”." }, exact, "exact words only"),
       h("label", { title: "Reference lists and title pages are left out of checks; include them here." }, allSec, "include reference lists"),
-      h("label", { title: semantic ? "Whole passages that say the same thing in other words" : "Turn on search by meaning under Settings → Documents first." }, meaning, "search by meaning")),
+      h("label", { title: semantic ? "Whole passages that say the same thing in other words (uses the embedding model, on this computer; no AI model)" : "Turn on search by meaning under Settings → Documents first." }, meaning, "search by meaning")),
     h("details", { class: "fold", open: !!st.code }, h("summary", {}, "Only passages with a code"),
       h("div", { class: "search-opts", style: { marginTop: "6px" } }, h("label", {}, "Code", codeIn),
         h("span", { class: "muted small" }, "A code of the Profile page, written as codebook:code (sdg:6.4). Only passages labelled with it are searched."))));
@@ -140,9 +140,10 @@ export async function renderSearch(view, params, query) {
     const sortSel = h("select", { class: "select input-sm", "aria-label": "Sort the lines" }, SORTS.map(([v, t]) => h("option", { value: v, selected: v === st.sort }, t)));
     sortSel.addEventListener("change", () => { st.sort = sortSel.value; st.offset = 0; go_(); });
     out.appendChild(h("div", { class: "section-title", style: { flexWrap: "wrap" } },
-      h("h2", {}, `${fmt.plural(r.total, "place")} in ${fmt.plural(r.passages, "passage")} of ${fmt.plural(r.documents, "document")}`),
+      // 0.13.3: what a passage is sits in the heading's help mark, not in a paragraph under it
+      h("h2", {}, `${fmt.plural(r.total, "place")} in ${fmt.plural(r.passages, "passage")} of ${fmt.plural(r.documents, "document")}`,
+        helpMark("What is a passage?", "A passage is the stretch of text the app reads as one unit, up to about 1,100 characters: a few paragraphs together, or part of a long one. “Where” gives the page and paragraph of the original.")),
       h("span", { class: "muted" }, `searched for: ${r.words.join(", ")}`)));
-    out.appendChild(h("p", { class: "muted small", style: { margin: "-4px 0 8px" } }, "A passage is the stretch of text the app reads as one unit, up to about 1,100 characters: a few paragraphs together, or part of a long one. “Where” gives the page and paragraph of the original."));
     if (r.rarest && r.words.length > 1) out.appendChild(h("p", { class: "muted small", style: { margin: "-4px 0 8px" } }, `One line for each place of “${r.rarest}”, the rarest of the words, in passages that have all of them; the other words may be further away in the same passage (open it to see them).`));
     if (r.other_forms && r.other_forms.length) out.appendChild(otherForms(r.other_forms));
     // counts per document first
@@ -154,9 +155,10 @@ export async function renderSearch(view, params, query) {
     out.appendChild(perDoc);
     const tools = h("div", { class: "pager" },
       h("label", { class: "it" }, "Sort ", sortSel),
-      h("div", { class: "btn-row" },
-        h("button", { class: "btn btn-sm", type: "button", onClick: () => download(`/api/projects/${P(project)}/search.xlsx?${apiQs()}`).catch(showError) }, icon("download", { size: 13 }), "Excel (.xlsx)"),
-        h("button", { class: "btn btn-sm", type: "button", onClick: () => download(`/api/projects/${P(project)}/search.csv?${apiQs()}`).catch(showError) }, icon("download", { size: 13 }), "CSV")));
+      downloadLinks([
+        { text: "Excel (.xlsx)", onClick: () => download(`/api/projects/${P(project)}/search.xlsx?${apiQs()}`).catch(showError) },
+        { text: "CSV", onClick: () => download(`/api/projects/${P(project)}/search.csv?${apiQs()}`).catch(showError) },
+      ]));
     out.appendChild(tools);
     const rows = r.lines.map((x) => {
       const node = h("mark", {}, ...wordSpans(x.node, addWord));

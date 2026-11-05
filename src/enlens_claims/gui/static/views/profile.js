@@ -4,7 +4,7 @@
 // says why it is there; a person can agree, change or reject it (in the document viewer, Codes panel).
 // The pieces shared with the document viewer (the AI-labelling card, the keyword pass, wording) are exported from here.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark } from "../lib.js";
 import { jobCard } from "./progress.js";
 
 const pct = (x) => `${Math.round((x || 0) * 100)}%`;
@@ -94,11 +94,13 @@ export function aiLabelCard({ project, framework, docIds = null, watchers, onEnd
     const bits = [];
     bits.push(h("p", { class: compact ? "small" : "", style: { margin: "6px 0" } },
       toRead === 0 && plan.already_read ? "The AI has read all these passages. " : plan.already_read ? "Passages the AI has not read yet count with their keyword codes (provisional). " : "The keyword profile is provisional. ",
-      "The AI reads ", all ? "every passage" : "each passage with a candidate code", ", says which codes really apply (as the main topic or a mention), and gives a quote and a reason for each. It resumes where it stopped and never reads a passage twice."));
+      "The AI reads ", all ? "every passage" : "each passage with a candidate code", " and says which codes really apply, with a quote and a reason.",
+      // 0.13.3: the details are one step away, in a help mark
+      helpMark("How the AI labels passages", "The AI says for each code whether it is the passage's main topic or a mention, and gives a quote and a reason for each. It resumes where it stopped and never reads a passage twice.")));
     const counts = all
       ? `${plural(plan.passages || 0, "passage")}${one ? " in this document" : ""}: ${fmt.num(plan.already_read || 0)} already read, ${fmt.num(toRead)} to read.`
       : `${plural(plan.with_candidates || 0, "passage")} of ${fmt.num(plan.passages || 0)}${one ? " in this document" : ""} ${plan.with_candidates === 1 ? "has" : "have"} a candidate code: ${fmt.num(plan.already_read || 0)} already read, ${fmt.num(toRead)} to read.`;
-    bits.push(h("p", { class: "pf-ai-counts", style: { margin: "0 0 6px" } }, h("strong", {}, counts), est ? ` ${cap(aboutTime(est))} with this model.` : toRead ? " How long it takes is not known yet: it is measured on the first passages." : ""));
+    bits.push(h("p", { class: "pf-ai-counts", style: { margin: "0 0 6px" } }, counts, est ? ` ${cap(aboutTime(est))} with this model.` : toRead ? " How long it takes is not known yet: it is measured on the first passages." : ""));
     if (where.where === "cloud") bits.push(h("p", { class: "muted small it", style: { margin: "0 0 6px" } }, icon("cloud", { size: 13 }), ` ${where.sent || "The passages are sent to the Claude API (cloud)."}`));
     if (run.error) {
       bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, "The AI model is not available, so it cannot label passages now."),
@@ -277,12 +279,12 @@ export async function renderProfile(view, params, query) {
   }
 
   function draw() {
-    const xlsx = h("button", { class: "btn btn-sm", type: "button", disabled: !prof.pass1.done,
-      onClick: (e) => { const b = e.currentTarget; b.disabled = true; download(`${base}/profile.xlsx?framework=${encodeURIComponent(framework)}&level=${level}`).catch(showError).finally(() => { b.disabled = false; }); } },
-      icon("download", { size: 13 }), "Download for Excel (.xlsx)");
+    // 0.13.3: the download is a quiet link, shown once there is a profile to download (it was a disabled button)
+    const xlsx = prof.pass1.done ? downloadLinks([{ text: "Excel (.xlsx)",
+      onClick: (e) => { const b = e.currentTarget; b.disabled = true; download(`${base}/profile.xlsx?framework=${encodeURIComponent(framework)}&level=${level}`).catch(showError).finally(() => { b.disabled = false; }); } }]) : null;
     replace(head, pageHead("Profile", { eyebrow: featureEyebrow("profile"),
-      sub: `Which codes of a codebook the documents of project “${project}” address, how much and where. Every label says why it is there, and you can agree, change or reject it in the document.`,
-      actions: [xlsx],
+      sub: "Which codes of a codebook the documents address, how much and where.",
+      actions: xlsx,
     }));
     drawControls();
     drawSummary();

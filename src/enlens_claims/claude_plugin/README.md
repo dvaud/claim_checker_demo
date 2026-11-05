@@ -31,7 +31,7 @@ what waits, for example *Waiting for Claude Code: 120 passages to label*. Then, 
 ```
 
 Each kind of task goes to a helper on the model ENLENS names for it: labels and links on Haiku, theme names,
-references and search words on Sonnet, checks on Opus. Unsure answers go once to a stronger model. You follow the
+references, search words and checks on Sonnet, second opinions on Opus. Unsure answers go once to a stronger model. You follow the
 progress in the ENLENS app.
 
 A run can stop at any moment (a usage limit, a closed laptop, Ctrl+C): a batch handed out and not answered returns to

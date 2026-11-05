@@ -55,10 +55,10 @@ export async function renderOverview(view) {
 
 function card(key, [made, text], href, opts = {}) {
   const f = FEATURES[key];
-  return h("a", { class: "ov-card", href },
+  return h("a", { class: "ov-card", href, title: !opts.compact && f.use ? f.use : null },
     h("div", { class: "ov-card-head" }, h("span", { class: "ov-card-icon" }, icon(f.icon, { size: opts.compact ? 15 : 18 })), h("h3", {}, opts.title || f.title)),
     h("p", {}, opts.what || f.what),
-    !opts.compact && f.use ? h("p", { class: "ov-use" }, f.use) : null,
+    // 0.13.3: what it is for is the card's tooltip, so a card says one thing (it was a second, grey paragraph)
     h("div", { class: "ov-card-foot" }, aiTag(f.ai), text ? h("span", { class: `ov-state ${made ? "ov-made" : ""}` }, made ? icon("circle-check", { size: 13 }) : null, text) : null));
 }
 
@@ -68,7 +68,7 @@ function aiLine(o) {
   const p = App.privacy();
   const box = h("div", { class: "ov-ai" }, icon(p.icon, { size: 18 }),
     h("div", { class: "grow" }, h("strong", {}, s.backend === "claude_code" ? "AI: Claude Code, on your Claude plan" : `AI: ${p.label}`),
-      h("div", { class: "muted small" }, s.backend === "claude_code" ? "The AI buttons prepare the work here; Claude Code answers it. Only the passages inside the tasks are sent to Anthropic." : p.plain)),
+      h("div", { class: "muted small" }, s.backend === "claude_code" ? "Only the passages inside its tasks are sent to Anthropic." : p.plain)),
     h("a", { class: "btn btn-sm btn-ghost", href: "#/settings/model" }, "Change"));
   if (s.backend === "claude_code") {
     api("GET", "/api/claude-setup").then((r) => {

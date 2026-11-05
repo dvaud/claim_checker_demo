@@ -244,7 +244,7 @@ priority). `scanned_no_text`: PDFs with scanned pages that stayed without text (
 `empty_files` and is not added.
 
 `GET /api/projects/<p>/documents/<doc_id>?offset=0&limit=50` → document details with its passages:
-`{"doc_id", "title", "file", "kind", "n_pages", "n_chars", "doi", "added_at", "total_passages", "offset",
+`{"doc_id", "title", "file_title", "file", "kind", "n_pages", "n_chars", "doi", "added_at", "total_passages", "offset",
 "passages": [{"passage_id", "seq", "page", "section": "body"|"references"|"reference_like"|"unreadable", "text"}]}`.
 With `&view=blocks` (use `limit=500`) it adds the document as a reader cites it: `"blocks": [{"label": "Page 2,
 paragraph 3" | "Paragraph 6" | "Page 2" | "The whole text", "n", "page": 2 | null, "paragraph": 3 | null, "start",
@@ -807,15 +807,21 @@ from a reference manager (BibTeX, RIS, CSL JSON, Zotero's CSV). Nothing goes ove
   "to_find", "not_in", "files"}, "linked": [Pair], "confirm": [Pair], "to_find": [Work], "not_in": [Document],
   "ai_access": project info}`. A Work: `{"key", "title", "cite": "Verhoeven and Okafor (2025)", "authors", "year",
   "type", "container", "doi", "url", "link": "zotero://select/…" | null, "file": name of a file Zotero keeps | null}`.
-  A Pair: `{"work", "doc": {"doc_id", "title", "file", "kind", "pages", "added_at"}, "status": "auto" | "confirmed" |
-  "probable", "method": "file" | "doi" | "title" | "person", "score"}`; a probable one adds `"evidence": {"title":
-  "whole" | "main" | "words", "author", "year", "excerpt", "start", "end", "page"}` (the title's place on the
-  document, `start`/`end` within `excerpt`).
+  A Pair: `{"work", "doc": {"doc_id", "title", "file", "kind", "pages", "added_at", "file_title"}, "status": "auto" |
+  "confirmed" | "probable", "method": "file" | "doi" | "title" | "person", "score"}`; a probable one adds
+  `"evidence": {"title": "whole" | "main" | "words", "author", "year", "excerpt", "start", "end", "page"}` (the
+  title's place on the document, `start`/`end` within `excerpt`).
 - How a work and a document are linked: by themselves when a file the work has and the document are the same file
   (the same checksum) or they have the same DOI (`auto`); proposed (`probable`) when the work's title stands on the
   document's first pages with an author or the year (a title of one or two words needs both); a document or work
   already linked gets no proposal, and a pair a person rejected is never proposed again. Adding documents matches
   them again: the ingest job's `result` adds `"bibliography": {"linked", "confirm"}` for the new documents.
+- A linked document (`auto` or `confirmed`) takes its work's title (0.13.3): its `title` everywhere (the documents,
+  search, a check's excerpts and exports) is the work's, and `file_title` (in a Pair's `doc` and in
+  `GET …/documents/<doc_id>`) is the title read from the file, `null` when the two are the same or the document is not
+  linked. When no work is linked any more (`different`, another bibliography, `DELETE`), the file's own title comes
+  back. A document linked to several works takes the first one's (the bibliography's order). The matching always reads
+  the file's own title.
 - `PUT /api/projects/<p>/bibliography/links` `{"item_key", "doc_id", "decision": "same" | "different" | "clear"}` →
   the view above. `same` confirms a proposal or links by hand; `different` rejects a proposal or undoes a link;
   `clear` forgets the person's word.

@@ -17,7 +17,7 @@ export async function renderCheck(view, params, query) {
   if (query.text) { draft.text = String(query.text).slice(0, 2000); session("draft", { ...draft }); }  // "Check a hypothesis about this…"
   const nDocs = docs.length;
 
-  view.appendChild(pageHead("Check a hypothesis", { eyebrow: featureEyebrow("check"), sub: `The app looks through the ${nDocs} ${nDocs === 1 ? "document" : "documents"} of project “${project}”, the AI reads the excerpts that match, and every quote is verified against the document.` }));
+  view.appendChild(pageHead("Check a hypothesis", { eyebrow: featureEyebrow("check"), sub: `The AI reads the excerpts of the ${nDocs} ${nDocs === 1 ? "document" : "documents"} that match it, and every quote is checked against its document.` }));
   if (query.text) view.appendChild(h("p", { class: "muted small", style: { margin: "-6px 0 12px" } }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check."));
 
   if (!App.modelConfigured()) {
@@ -113,7 +113,7 @@ export async function renderCheck(view, params, query) {
   }
   const form = h("form", { class: "hyp-form card" },
     h("div", { class: "field" }, h("label", { class: "field-label", for: "hyp" }, "Your hypothesis"), ta, hint, splitHint),
-    h("div", { class: "btn-row", style: { margin: "4px 0 14px" } }, runBtn, lookBtn, h("span", { class: "muted small" }, "Takes a moment to a few minutes, depending on the AI model. “Look before checking” shows the parts and search words first, so you can change them.")),
+    h("div", { class: "btn-row", style: { margin: "4px 0 14px" } }, runBtn, lookBtn, h("span", { class: "muted small" }, "Takes a moment to a few minutes, depending on the AI model.")),
     prepBox,
     tagRow,
     options);

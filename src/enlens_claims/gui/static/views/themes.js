@@ -2,7 +2,7 @@
 // themes (a "run") is shown as a list with size bars, a theme × document grid and, with a profile, a theme × code
 // grid; a person can rename themes, merge two, move a passage, and let the AI name them. Older sets are kept.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, confirmDialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, confirmDialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks } from "../lib.js";
 import { simpleProgress, MiniJob, jobError } from "./progress.js";
 
 const PASSAGES = 30;   // passages per page on a theme's page
@@ -83,7 +83,7 @@ export async function renderThemes(view, params, query) {
   const runs = info.runs || [];
   if (runs.length) return renderRun(view, runs[0].run_id, info, query);
   const watchers = [];
-  view.appendChild(pageHead("Themes", { eyebrow: featureEyebrow("themes"), sub: `What the documents of project “${project}” are about, grouped into themes: an overview before you form hypotheses. Each theme shows its key terms, how many passages it holds, the documents they come from, and the passages that represent it best.` }));
+  view.appendChild(pageHead("Themes", { eyebrow: featureEyebrow("themes"), sub: "What the documents are about, grouped into themes: an overview before you form hypotheses." }));
   const card = findCard(project, info, watchers);
   view.appendChild(card);
   const running = await runningJob(project, ["themes"]);
@@ -146,10 +146,11 @@ async function renderRun(view, runId, info, query) {
     const namedByModel = v.themes.filter((t) => t.name_source === "model").length;
     const nameBtn = h("button", { class: "btn btn-sm", type: "button", disabled: !!nameJob.firstChild }, icon("sparkles", { size: 13 }), namedByModel ? "Let the AI name the themes again" : "Let the AI name the themes");
     nameBtn.addEventListener("click", () => nameThemes(nameBtn));
-    const xlsx = h("button", { class: "btn btn-sm", type: "button", onClick: () => download(`${base}/export.xlsx?framework=${encodeURIComponent(framework)}`).catch(showError) }, icon("download", { size: 13 }), "Download for Excel (.xlsx)");
+    // 0.13.3: the download is a quiet link; naming the themes is the head's one button
+    const xlsx = downloadLinks([{ text: "Excel (.xlsx)", onClick: () => download(`${base}/export.xlsx?framework=${encodeURIComponent(framework)}`).catch(showError) }]);
     replace(head, pageHead("Themes", {
       eyebrow: latest ? featureEyebrow("themes") : h("span", {}, icon("history", { size: 12 }), ` An earlier set of themes, found ${fmt.date(r.created_at)} · `, h("a", { href: "#/themes" }, "Show the newest")),
-      sub: `${plural(v.themes.length, "theme")} in ${plural(r.passages, "passage")} of ${plural(nDocs, "document")} of project “${project}”, found ${modeWords(r.mode)} on ${fmt.date(r.created_at)}. Open a theme to read its passages.`,
+      sub: `${plural(v.themes.length, "theme")} in ${plural(r.passages, "passage")} of ${plural(nDocs, "document")}, found ${modeWords(r.mode)} on ${fmt.date(r.created_at)}. Open a theme to read its passages.`,
       actions: [nameBtn, xlsx],
     }));
     clear(notes);

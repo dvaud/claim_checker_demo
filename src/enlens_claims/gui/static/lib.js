@@ -169,7 +169,17 @@ export function popNote(trigger, explanation, opts = {}) {
   const pop = h("span", { class: "pop" + (opts.wide ? " pop-wide" : ""), role: "note", hidden: true }, explanation);
   let pinned = false;
   trigger.setAttribute("aria-expanded", "false");
-  const show = (on) => { pop.hidden = !on; trigger.setAttribute("aria-expanded", on ? "true" : "false"); };
+  const show = (on) => {
+    pop.hidden = !on; trigger.setAttribute("aria-expanded", on ? "true" : "false");
+    // 0.13.3: a note opened near the right edge (a help mark at the end of a long line) is moved left to stay in the
+    // window, instead of running off it
+    pop.style.transform = "";
+    if (on) {
+      const r = pop.getBoundingClientRect(), room = document.documentElement.clientWidth - 8;
+      const shift = r.right > room ? Math.min(r.right - room, r.left - 8) : 0;
+      if (shift > 0) pop.style.transform = `translateX(${-Math.round(shift)}px)`;
+    }
+  };
   trigger.addEventListener("click", () => { pinned = !pinned; show(pinned); });
   trigger.addEventListener("mouseenter", () => show(true)); trigger.addEventListener("mouseleave", () => { if (!pinned) show(false); });
   trigger.addEventListener("focus", () => show(true)); trigger.addEventListener("blur", () => { if (!pinned) show(false); });
@@ -655,6 +665,25 @@ export function heatCell(n, max, label, prefix, onClick) {
   const level = n ? Math.max(1, Math.min(4, Math.ceil((4 * Math.log1p(n)) / Math.log1p(max)))) : 0;
   return h("td", { class: `map-cell ${prefix}-cell ${prefix}-l${level}`, title: `${label}: ${plural(n, "passage")}`, onClick: n ? onClick : null },
     h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·"));
+}
+
+// 0.13.3: the result page's help mark, for every page: a small (?) whose explanation opens on hover, focus or click,
+// so a page says one short line and keeps the longer explanation one step away.
+export function helpMark(label, text, opts = {}) {
+  return popNote(h("button", { class: "link-btn help-mark", type: "button", "aria-label": label }, icon("help", { size: opts.size || 13 })),
+    text, { wide: opts.wide !== false });
+}
+
+// 0.13.3: downloads as one quiet line of links, as on the result page (Download: Excel (.xlsx) · CSV), instead of a
+// row of buttons that compete with the page's main action. items: [{ text, title, onClick, note }]
+export function downloadLinks(items, opts = {}) {
+  const parts = [];
+  items.filter(Boolean).forEach((it, i) => {
+    if (i) parts.push(h("span", { class: "dl-sep", "aria-hidden": "true" }, "·"));
+    parts.push(h("button", { class: "link-btn", type: "button", title: it.title || null, onClick: it.onClick }, it.text));
+    if (it.note) parts.push(h("span", { class: "muted" }, it.note));
+  });
+  return h("span", { class: "dl-links" }, icon("download", { size: 13 }), h("span", { class: "dl-label" }, opts.label || "Download"), parts);
 }
 
 export function pageHead(title, opts = {}) {
