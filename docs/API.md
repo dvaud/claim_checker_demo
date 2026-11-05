@@ -875,68 +875,13 @@ from a reference manager (BibTeX, RIS, CSL JSON, Zotero's CSV). Nothing goes ove
 - `GET /api/projects/<p>/documents` adds `"bib"` per document (`{"cite", "title", "doi", "link", "url", "type",
   "container"}` of its linked work, or null); `GET /api/projects/<p>/documents/<id>` adds the same `"bib"`.
 
-### Checking citations (0.13.7)
-
-A text (the person's draft, pasted or read from a file, or a document of the project) is read for its citations:
-author-year ones in brackets and in the sentence, and numbered ones (`[3]`, `[2–4]`) when the text ends with its
-numbered reference list. Each gets the claim in front of it (`claim`, and `claim_at`, where it stands in `sentence`)
-and the sentences before it (`before`). Each cited work is looked up in the bibliography; a work whose document is in
-the project gets a check of its own (a hypothesis with `origin` `"citation"` and the reference's id as `origin_id`),
-against that document only, with the claim's sentences in its payload as `claim_context` (shown to the AI as context,
-never as evidence; the prompt version stays `check-v4`) and `citing` (`{"text_id", "ref_id"}`). Checks of citations
-are left out of `GET /api/projects/<p>/hypotheses`, the evidence map, the Results downloads and the Overview's
-`hypotheses`; `GET /api/projects/<p>/hypotheses/<id>` opens them as any other (`options.citation` holds the sentence
-and the work). Finding citations uses no AI.
-
-- `GET /api/projects/<p>/citations` → `{"texts": [text summary, newest first], "has_bibliography": bool,
-  "ai_access": {...the project's AI settings}}`. A summary: the view's `text` with `citations`, `works`, `counts`,
-  `notices`, `ready`, `accurate`, `checking`.
-- `POST /api/projects/<p>/citations` → the view of the new text. One of `{"text", "title"?, "ai_access"?}` (pasted),
-  `{"upload": {"batch", "name"}, "title"?, "ai_access"?}` (a file sent to `POST /api/projects/<p>/uploads` first: read
-  as documents are read, then deleted; it never becomes a document) or `{"doc_id", "title"?}` (a document of the
-  project, which keeps its own AI setting). `ai_access` (`cloud`, `local`, `none`; the project's default when left
-  out) says who may read the draft's claims with AI. 400 for a text without citations or an unknown setting; 404 for
-  an unknown document.
-- `GET /api/projects/<p>/citations/<text>` → the view: `{"text": {"text_id", "title", "source": "paste" | "file" |
-  "document", "source_text", "doc_id", "file_name", "ai_access", "level" (the setting that applies now; local-only
-  turns cloud into local), "created_at", "numeric_unread" (numbered citations without a reference list), "cut"},
-  "refs": [...], "counts": {group: n}, "notices", "citations", "works", "ready", "accurate", "checking",
-  "has_bibliography", "bibliography_works": [{"key", "cite", "title"}]}`. A ref (one cited work of one citation):
-  `{"ref_id", "cite_id", "n", "raw", "marker", "kind": "paren" | "narrative" | "numeric", "page" (of the text),
-  "sentence", "claim", "claim_at": [start, end] | null, "before", "state", "state_text", "work": {...the bibliography
-  view of the work} | null, "how": "auto" | "ambiguous" | "none" | "person", "candidates": [work], "documents":
-  [{"doc_id", "title"}], "proposed" (documents waiting for confirmation), "hyp_id", "status" (the check's),
-  "verdict": "accurate" | "partly" | "contradicted" | "mixed" | "not_found" | "unsure" | "failed" | "checking" | null,
-  "verdict_text", "verdict_help", "quote": {"verdict", "quote", "page", "doc_id", "title"} | null, "reviewed",
-  "corrected"}`. `state`: `ready` (a work with its document, not checked), `checked`, `no_work` (not in the
-  bibliography; `candidates` are the same author's other years), `ambiguous` (several works match), `no_document`,
-  `to_confirm` (its document waits on the Bibliography page), `same_document`, `ignored`, `contrast` (cited for
-  another view: "but see", "contra"; left out until put back). References not checked and not decided by a person are
-  matched again on every read, so a work or document added later is used.
-- `PUT /api/projects/<p>/citations/<text>` `{"title"?, "ai_access"?}` → the view. A document's text keeps the
-  document's setting (400). Tasks not answered yet take the new setting at once.
-- `DELETE /api/projects/<p>/citations/<text>` `{}` → `{"deleted": id}`: the text, its citations and their checks.
-- `POST /api/projects/<p>/citations/<text>/check` `{"ref_ids"?: [...], "again"?: bool}` → job (kind `citations`,
-  `scope` the text's id; by queue when Claude Code is the AI): every ready reference (or those of `ref_ids`; with
-  `again`, checked ones are checked anew), one check each, as *Check several* does. `result`: `{"text_id",
-  "checked": [hyp_id], "errors", "stopped", "total"}`. 400 when none is ready. Search words are asked of the AI
-  only when the text's claims may go to the model that proposes them; the excerpts are split by the most restricted
-  of their document's setting and the text's (`access.text_floor`).
-- `PUT /api/projects/<p>/citations/<text>/refs/<ref>` `{"item_key": key | null}` (the work it is; null: back to the
-  matching; a check against another work is removed) or `{"ignored": bool}` (not a citation) → the view.
-- `GET /api/projects/<p>/citations/<text>/export.xlsx` (a download; `?token=` allowed): one row per cited work: #,
-  Page of your text, Sentence, Claim checked, Citation, Work, Title, Answer, Quote from the source, Page in the
-  source, Document.
-- `GET /api/projects/<p>/overview` adds `"citations": {"texts", "refs", "checked"}`; its `hypotheses` leaves the
-  checks of citations out.
-
 ### Jobs
 
 `GET /api/jobs` → `{"jobs": [Job summary]}` newest first. `GET /api/jobs/<id>` → full Job:
 ```json
 {"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "second-opinion" |
          "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
-         "claude-install" | "bibliography" | "citations" | …,
+         "claude-install" | "bibliography" | …,
  "title": "…", "queue": false,
  "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
  "created_at": 1793136448.87, "started_at": … | null, "finished_at": … | null, "seconds": 19.9,

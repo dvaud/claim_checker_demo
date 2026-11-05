@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.13.8 (November 2026): Check citations taken out again
+
+After trying it, *Check citations* (0.13.7) does not fit ENLENS: ENLENS is for exploring your documents and checking
+hypotheses against them, and checking a draft's citations is a task of its own. It continues as a separate project,
+and 0.13.8 takes it out of ENLENS cleanly. Everything else 0.13.7 brought stays: a model on this computer without a
+terminal, and the fix for add-ons below.
+
+**What goes.**
+- The *Check citations* page, its sidebar entry (between *Check several* and *Results*), its Overview card and its
+  job in the sidebar. The *Check hypotheses* row of the Overview has its three cards again (the compact grid's rule is
+  back in `v09.css`, as in 0.13.6).
+- On the result page: the *In your text:* line, *Back to the citations* and the exception to the single-document
+  caution, all only for checks of citations.
+- For developers: `citations.py`, `views/citations.js` and its rules in `app.css`; the eight `/citations` endpoints
+  (`docs/API.md`) and the job kind `citations`; the tables `cite_texts`, `citations` and `cite_refs` in the schema of
+  new projects; `check_hypothesis(extra=)` and `queue_check(extra=)`; a check payload's `claim_context`, `cited` and
+  `citing`, and the prompt's *THE CLAIM IN ITS TEXT* (the prompt is `check-v4` as before); `history(citations=)` and
+  the filters that kept checks of citations out of Results, the evidence map and the downloads; `access.citing_level`
+  and `access.text_floor`; `tools/dev_server.py --citations`; the manual's *Checking citations*;
+  `tests/test_0_13_7_citations.py`. The code stays in the history (commit `50d4dfe`, tag `v0.13.7`).
+
+**What stays.**
+- **The fix for add-ons found while building it.** An add-on's floor (`access.register_floor`, 0.13.6) on a check's
+  payload labelled the round as restricted, yet its excerpts were still routed by their documents' settings alone (to
+  the main model, which refused them, or the queue never handed them out). A round still gives each excerpt the most
+  restricted of its document's setting and the add-on's floor (`claimcheck._add_round`, now with `access.floor`
+  directly), so it goes to the local model or to the person.
+- **Your data.** Nothing in your projects is deleted. A project opened with 0.13.7 keeps the three tables, unused.
+  Checks made by *Check citations* are ordinary checks now: they show under *Results*, in the evidence map, the
+  downloads and the Overview's count; remove one with *Delete* on its result page. One thing to know: such a check of
+  a draft marked *Only a local AI* or *No AI* no longer has the draft's setting to go by, so a Claude chat can list
+  it through the connector and its unfinished tasks follow the documents' settings alone. Made one with 0.13.7?
+  Delete it under *Results*.
+
+**Tests:** `tests/test_0_13_8_citations_removed.py` (3 tests): an add-on's floor goes with every excerpt of a round
+(local model, the person, or the main model for a note Claude may read; it fails without the fix); *Check citations*
+is gone from the code, the page files, the schema, the prompt and the documentation, and the Overview's compact row
+is as in 0.13.6; a project that used *Check citations* keeps its data and opens (its check under Results, opened,
+counted and deleted like any other). `tests/test_0_13_6_page_extensions.py` expects the three cards of 0.13.6 again.
+
+Checked in headless Chrome with `tools/dev_server.py`: the sidebar, the Overview and a result page, in light and dark
+and at 390 px, with no console errors.
+
+**Not yet done.** Nothing in 0.13.8 needs a real Claude Code or Zotero; the leftover data was tried with a project
+made for the test, not with one that used *Check citations* for real.
+
 ## 0.13.7 (November 2026): check your citations against their sources, and a local model without a terminal
 
 With the bibliography in place (0.13), ENLENS knows which work each of your documents is. 0.13.7 uses that to check the

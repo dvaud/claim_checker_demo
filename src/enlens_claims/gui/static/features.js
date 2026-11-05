@@ -6,7 +6,7 @@ import { h, icon } from "./lib.js";
 // 0.13.6: `sub` and `compact`: the section's line and card size on the Overview (registry.js builds it from these)
 export const SECTIONS = {
   explore: { title: "Explore the documents", short: "Explore", sub: "Start here: no hypothesis needed." },
-  check: { title: "Check hypotheses", short: "Check", sub: "When you have a statement, or a text with citations, to test against the documents.", compact: true },
+  check: { title: "Check hypotheses", short: "Check", sub: "When you have a statement to test against the documents.", compact: true },
   project: { title: "Your project", short: "Project" },
 };
 
@@ -50,10 +50,6 @@ export const FEATURES = {
   batch: {
     section: "check", title: "Check several", icon: "list-checks", href: "#/batch", ai: "uses",
     what: "A list of hypotheses (pasted or from a spreadsheet), checked one after the other.",
-  },
-  citations: {  // 0.13.7
-    section: "check", title: "Check citations", icon: "quote", href: "#/citations", ai: "uses",
-    what: "Whether each source your text cites says what the text says it does, with the excerpt that shows it.",
   },
   history: {
     section: "check", title: "Results", icon: "history", href: "#/history", ai: "optional",

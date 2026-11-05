@@ -52,6 +52,7 @@
 .ov-card-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-top: 6px; }
 .ov-state { font-size: .82rem; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
 .ov-state.ov-made { color: var(--ok); }
+.ov-grid-small { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .ov-grid-small .ov-card { padding: 12px 14px; box-shadow: none; }
 .ov-grid-small .ov-card-icon { width: 28px; height: 28px; }
 .ov-empty-docs { margin-bottom: 18px; }

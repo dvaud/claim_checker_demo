@@ -93,15 +93,9 @@ instead? The *Update* button and `enlens update` pull the new version (see *For 
   *Settings → AI*): ENLENS says how to get Ollama (free) and notices when it starts, then *Download qwen3:8b* gets a
   model with one button, with a progress bar and *Stop*. None of your documents are sent. The card for documents
   marked *Only a local AI* offers the same download.
-- **Check your citations (0.13.7).** The new *Check citations* page reads your draft for its citations, such as
-  *(Smith & Jones, 2020)*, *Lindqvist et al. (2025) found that …* or *[3]* with a numbered reference list, and checks
-  each claim against the cited work's own document in your project, and no other. A citation whose source says it is
-  marked *Source accurate*; when the source says only part of it, does not say it or says otherwise, you get a notice
-  with the excerpt that shows why, and the result page where you can overrule the AI. A citation that cannot be
-  checked yet says what it needs (the work is not in your Zotero library, or its PDF is not in the project yet).
-  Paste your text, choose its file (it is not added to your documents) or pick a document of the project; you choose
-  who may read your draft with AI, as for documents. Finding the citations uses no AI; an Excel file lists every
-  citation with its answer.
+- **Check citations taken out again (0.13.8).** The *Check citations* page of 0.13.7 is not part of ENLENS any
+  more; it continues as a project of its own. Nothing in your projects is deleted: checks it made show under
+  *Results* like any other.
 
 ## Earlier releases
 
@@ -135,8 +129,7 @@ format. Most of that needs no AI at all; what the AI adds is quoted, checked aga
 When you have a statement to test, ENLENS also checks it: supported, partly supported, contradicted or mixed
 evidence, with the exact words of each source, where they are (page or paragraph), and a quote checked character by
 character against the source text. You review the AI's judgements like a co-coder's; your judgements count and are
-kept next to the AI's in the Excel download. Writing yourself? *Check citations* checks each citation in your draft
-against the work it cites, in your Zotero library and your documents.
+kept next to the AI's in the Excel download.
 
 The AI is Claude, through Claude Code signed in with your own Claude plan (Pro, Max, Team or Enterprise). ENLENS sets
 Claude Code up by itself and starts it when you press *Start Claude Code*; each kind of task goes to the right model

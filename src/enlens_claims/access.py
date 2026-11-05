@@ -271,34 +271,9 @@ def floor(cx, payload: Any, dflt: str | None = None) -> str:
     return most(out) if out else "cloud"
 
 
-def citing_level(cx, payload: Any, dflt: str | None = None) -> str:
-    """0.13.7: how far the claim of a task may go when it comes from a citation in a text (`payload["citing"]`): the
-    text's own setting (a draft's, or its document's). `cloud` for every other task."""
-    c = payload.get("citing") if isinstance(payload, dict) else None
-    if not isinstance(c, dict):
-        return "cloud"
-    from .citations import level_of
-
-    try:
-        return level_of(cx, c.get("text_id"), dflt)
-    except Exception:  # noqa: BLE001 - when in doubt, the claim stays on this computer
-        return "none"
-
-
-def text_floor(cx, payload: Any, dflt: str | None = None) -> str:
-    """How far the text a task carries besides its documents' passages may go (the claim of a citation, an add-on's
-    own text): the most restricted of the citation's text and the add-ons' floors. A check gives each excerpt the most
-    restricted of this and its document's setting, so it is read by a model allowed to read both (0.13.7)."""
-    return most([floor(cx, payload, dflt), citing_level(cx, payload, dflt)])
-
-
 def hidden_hypotheses(ws: Workspace) -> set[str]:
-    """The hypotheses the add-ons keep out of the connector, and (0.13.7) the checks of citations from a text Claude
-    may not read."""
+    """The hypotheses the add-ons keep out of the connector."""
     out: set[str] = set()
-    from .citations import hidden
-
-    out |= hidden(ws)
     for fn in _hooks(_HIDDEN):
         try:
             out |= set(fn(ws) or ())
@@ -310,8 +285,8 @@ def hidden_hypotheses(ws: Workspace) -> set[str]:
 def label_payload(cx, payload: Any, dflt: str | None = None) -> str:
     """The most restricted setting of the documents a task's payload names (`cloud` for a task without document
     text, such as the search words of a hypothesis). A passage no longer in the project counts as its document.
-    0.13.6: and of the add-ons' floors for it. 0.13.7: and of the text a citation's claim comes from."""
-    fl = text_floor(cx, payload, dflt)
+    0.13.6: and of the add-ons' floors for it."""
+    fl = floor(cx, payload, dflt)
     out = _label_docs(cx, payload, dflt)
     return most([fl, out]) if fl != "cloud" else out
 

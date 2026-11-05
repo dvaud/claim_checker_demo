@@ -165,12 +165,10 @@ def _second_view(out: dict) -> dict:
 
 
 _BEFORE = re.compile(r"BEFORE P(\d+) \(for refers_to only[^\n]*\n.*?(?=P\1 \| )", re.S)
-_CITING = re.compile(r"\n\nTHE CLAIM IN ITS TEXT:.*?(?=\n\nP\d+ \| |\Z)", re.S)  # 0.13.7: context, never graded
 
 
 def _answer(system: str, user: str, varied: bool = False, model: str = "") -> dict:
     user = _BEFORE.sub("", user)  # check-v4 shows the text before an excerpt (for refers_to only): never graded
-    user = _CITING.sub("", user)
     out = _answer1(system, user, varied)
     return _second_view(out) if model == SECOND and system.startswith("You check whether") else out
 
