@@ -26,6 +26,8 @@ export const JOB_KINDS = {
   wordings: { icon: "network", text: "Other wordings", link: "#/concepts" },
   themes: { icon: "shapes", text: "Finding themes", link: "#/themes" },
   "theme-names": { icon: "shapes", text: "Naming themes", link: "#/themes" },
+  // a new theme in place of a removed one; its scope is the set of themes
+  "theme-new": { icon: "shapes", text: "Finding a new theme", link: (j) => (j.scope ? `#/themes/${encodeURIComponent(j.scope)}` : "#/themes") },
   resolve: { icon: "link", text: "Following references", link: "#/sources" },
   quicklook: { icon: "eye", text: "Quick look", link: "#/sources" },
   "claude-install": { icon: "download", text: "Installing Claude Code", link: "#/settings/model" },

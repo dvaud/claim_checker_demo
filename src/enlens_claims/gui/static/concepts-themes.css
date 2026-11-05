@@ -112,3 +112,28 @@
   .ct-change .select { width: 100%; }
   .ct-gloss td.num, .ct-docs td.num { display: inline-block; width: auto; margin-right: 14px; }
 }
+
+/* ------------------------------------------------------------------ themes: remove one, and find a new one in its place (0.14.0) */
+/* a new theme, on the list */
+.chip.th-new { color: var(--accent-text); background: var(--accent-soft); font-size: .76rem; display: inline-flex; align-items: center; gap: 3px; }
+.th-item.th-flash { animation: th-flash 2.4s ease-out 1; }
+@keyframes th-flash {
+  0%, 30% { box-shadow: var(--shadow), 0 0 0 3px var(--accent); }
+  100% { box-shadow: var(--shadow), 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .th-item.th-flash { animation: none; outline: 2px solid var(--accent); outline-offset: 2px; } }
+
+/* the removed themes, folded under the list */
+.th-removed > summary { font-weight: 600; }
+.th-removed > p { margin: 6px 0 8px; }
+.th-removed-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.th-removed-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  padding: 8px 12px; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--surface-2); }
+.th-removed-main { min-width: 0; flex: 1 1 260px; overflow-wrap: anywhere; }
+.th-removed-name { font-family: var(--font-serif); color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--faint); }
+.th-removed-name:hover, .th-removed-name:focus-visible { color: var(--accent-text); text-decoration: underline; }
+.th-removed-acts { gap: 6px; }
+
+/* a removed theme's page, and a new theme's */
+.th-removed-note p, .th-new-note p { margin: 0 0 4px; }
+.th-new-note a, .th-removed-note a { overflow-wrap: anywhere; }

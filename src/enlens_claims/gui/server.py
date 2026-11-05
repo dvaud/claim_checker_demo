@@ -1089,7 +1089,8 @@ class App:
                         "documents": n("SELECT COUNT(DISTINCT doc_id) FROM labels WHERE framework=?", (fw,))},
             "concepts": {"terms": n("SELECT COUNT(*) FROM terms"), "concepts": n("SELECT COUNT(*) FROM concepts")},
             "themes": {"runs": runs,
-                       "themes": n("SELECT COUNT(*) FROM themes WHERE run_id=?", (run[0]["run_id"],)) if run else 0,
+                       "themes": n("SELECT COUNT(*) FROM themes WHERE run_id=? AND removed_at IS NULL",
+                                   (run[0]["run_id"],)) if run else 0,
                        "latest": run[0]["run_id"] if run else None},
             "references": n("SELECT COUNT(DISTINCT doc_id) FROM mentions"),
             "hypotheses": n("SELECT COUNT(*) FROM hypotheses"),
@@ -1312,6 +1313,40 @@ class App:
         return self._model_job("theme-names", "The AI names the themes", name,
                                lambda job, be, model, prog: themes.name_with_model(ws, run_id, be, model, prog,
                                                                                    job.cancel.is_set))
+
+    def start_new_theme(self, name: str, run_id: str, body: dict) -> Job:
+        """A new theme in place of a removed one (themes.new_theme): on this computer, no AI."""
+        from .. import themes
+
+        ws = self.ws(name)
+        if not ws.scalar("SELECT 1 FROM theme_runs WHERE run_id=?", (run_id,)):
+            raise ApiError(404, "No such set of themes.")
+        replaces = body.get("replaces")
+        if isinstance(replaces, bool) or not isinstance(replaces, int):
+            raise ApiError(400, "Say which removed theme the new one takes the place of (replaces).")
+        row = ws.query("SELECT removed_at, replaces FROM themes WHERE run_id=? AND theme_id=?", (run_id, replaces))
+        if not row:
+            raise ApiError(404, "No such theme.")
+        if not row[0]["removed_at"]:
+            raise ApiError(400, "A new theme is found in place of a removed one: remove this theme first.")
+        if ws.scalar("SELECT 1 FROM themes WHERE run_id=? AND replaces=?", (run_id, replaces)):
+            raise ApiError(400, "A new theme was found in place of this one already.")
+        if any(j.kind == "theme-new" and j.project == name and j.scope == run_id and j.state in ("queued", "running")
+               for j in self.jobs.all()):   # one at a time: two would take the same passages
+            raise ApiError(409, "A new theme is being found for these themes already. Wait until it is ready.")
+
+        words = {"vectors": "reading the passages", "search": "looking where a new theme fits",
+                 "name": "naming it by its key terms"}
+
+        def run(job: Job):
+            job.progress = {"done": 0, "total": 0, "phase": "vectors", "message": words["vectors"]}
+            tid = themes.new_theme(ws, run_id, replaces, progress=lambda phase, d, n: job.progress.update(
+                phase=phase, done=d, total=n, message=words.get(phase, "")), should_stop=job.cancel.is_set)
+            return {"theme_id": tid, "replaces": replaces}
+
+        job = self.jobs.start("theme-new", "Finding a new theme", name, run, uses_model=False)
+        job.scope = run_id
+        return job
 
     def start_resolve(self, name: str, doc_id: str, body: dict) -> Job:
         from .. import references
@@ -1680,6 +1715,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", rf"/api/projects/{P}/themes/{P}/export\.xlsx", "get_themes_export"),
     ("PUT", rf"/api/projects/{P}/themes/{P}/edit", "put_theme_edit"),
     ("POST", rf"/api/projects/{P}/themes/{P}/name", "post_theme_names"),
+    ("POST", rf"/api/projects/{P}/themes/{P}/new", "post_new_theme"),
     ("GET", rf"/api/projects/{P}/themes/{P}/{P}", "get_theme"),
     ("GET", rf"/api/projects/{P}/documents/{P}/references", "get_references"),
     ("POST", rf"/api/projects/{P}/documents/{P}/references", "post_references"),
@@ -2765,6 +2801,9 @@ class Handler(BaseHTTPRequestHandler):
     def post_theme_names(self, name, run_id, q):
         self._body()
         return {"job": self.app.start_theme_names(name, run_id).view()}
+
+    def post_new_theme(self, name, run_id, q):
+        return {"job": self.app.start_new_theme(name, run_id, self._body()).view()}
 
     def get_theme(self, name, run_id, theme_id, q):
         from .. import themes

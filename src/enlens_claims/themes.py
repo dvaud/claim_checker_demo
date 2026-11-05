@@ -18,6 +18,14 @@ representative passages that is checked like every other quote.
 A person can rename a theme, merge two, or move a passage to another theme. The edits are stored as reviews under
 the run's key (mode, k, seed and embedding model), so they apply again to a re-run with the same seed. Older runs are
 kept until they are deleted, to compare the themes before and after documents are added.
+
+A person can also remove a theme that is not relevant (running headers, reference lists, a topic outside the
+question): its passages are left out of the themes until it is brought back. A new theme can then be found in its
+place (`new_theme`): one more step of the same k-means, with every other centre fixed. Each theme is split in two, the
+half that fits it least well is tried as the heart of a new theme, the one that draws most passages closer to it than
+to their own theme wins, and it is refined; it takes only passages that are closer to it than to their own theme and
+to every removed theme, so it does not grow back into what was removed. Removals and new themes belong to one run: they are
+stored on its rows, not as reviews under its key.
 """
 from __future__ import annotations
 
@@ -38,6 +46,8 @@ MIN_PASSAGES = 5
 MAX_ITER = 60
 MODES = ("auto", "meaning", "words")
 CENTROID_TERMS = 400      # words mode: terms kept per centre (the rest are tiny weights)
+MIN_NEW = 3               # a new theme needs at least this many passages
+TRIES = 8                 # hearts of a new theme refined, the best first, until one keeps MIN_NEW passages
 
 
 def _h(*parts) -> str:
@@ -251,38 +261,15 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
     counts = terms.passage_term_counts(ws)
     say("cluster", 0, 1)
     t0 = time.time()
-    without_vector = 0
+    vecs, keep = _vectors(ws, mode, embed_model, rows, counts)
+    without_vector = len(rows) - len(keep) if mode == "meaning" else 0
     if mode == "meaning":
-        import numpy as np
-
-        from . import embed
-
-        vs = embed.vectors(ws, embed_model)
-        keep = [r for r in rows if r["passage_id"] in vs.pos]
-        without_vector = len(rows) - len(keep)
-        X = vs.matrix[[vs.pos[r["passage_id"]] for r in keep]]
-        X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
-        assign, sim, _C = kmeans_dense(X, k, seed, should_stop)
-        rows = keep
+        assign, sim, _C = kmeans_dense(vecs, k, seed, should_stop)
     else:
-        n_pass = len(rows)
-        dfp = Counter()
-        for r in rows:
-            for t in counts.get(r["passage_id"], ()):
-                dfp[t] += 1
-        vecs, keep = [], []
-        for r in rows:
-            c = counts.get(r["passage_id"])
-            if not c:
-                continue
-            v = {t: (1 + math.log(f)) * math.log(n_pass / dfp[t]) for t, f in c.items() if dfp[t] < n_pass}
-            if v:
-                vecs.append(_unit_sparse(v))
-                keep.append(r)
         if len(keep) < k:
             raise ValueError("Too few passages have terms of the glossary to group them by words.")
         assign, sim, _C = kmeans_sparse(vecs, k, seed, should_stop)
-        rows = keep
+    rows = keep
     seconds = round(time.time() - t0, 1)
     # theme ids: by size, largest first (ties: the smallest passage id), so the same run gives the same ids
     groups: dict[int, list[int]] = defaultdict(list)
@@ -291,41 +278,17 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
     order = sorted(groups, key=lambda j: (-len(groups[j]), min(rows[i]["passage_id"] for i in groups[j])))
     renum = {j: n for n, j in enumerate(order, 1)}
     say("name", 0, 1)
-    info = {r["term_id"]: r["label"] for r in ws.query("SELECT term_id, label FROM terms")}
-    stems_of = {r["term_id"]: r["stems"].split(" ") for r in ws.query("SELECT term_id, stems FROM terms")}
-    total_tf: Counter = Counter()
-    per: dict[int, Counter] = defaultdict(Counter)
-    for i, j in enumerate(assign):
-        c = counts.get(rows[i]["passage_id"], {})
-        per[renum[j]].update(c)
-        total_tf.update(c)
-    avg = sum(sum(c.values()) for c in per.values()) / max(1, len(per))
+    key_terms = _key_terms(ws, {renum[j]: [rows[i]["passage_id"] for i in groups[j]] for j in order}, counts)
     created = now()
     rid = "r" + _h(mode, k, seed, embed_model, ws.corpus_version(), created, len(rows))
     rkey = run_key(mode, k, seed, embed_model if mode == "meaning" else None)
     theme_rows, member_rows = [], []
     for j in order:
         tid = renum[j]
-        c = per[tid]
-        size_c = sum(c.values()) or 1
-        scored = sorted(((cnt / size_c) * math.log(1 + avg / total_tf[t]), t) for t, cnt in c.items() if t in info)
-        key_terms = [info[t] for t in _distinct([t for _s, t in sorted(scored, key=lambda x: (-x[0], x[1]))[:30]],
-                                                stems_of)[:10]]
         members = sorted(groups[j], key=lambda i: (-sim[i], rows[i]["passage_id"]))
-        reps, used = [], set()
-        for i in members:
-            if rows[i]["doc_id"] not in used:
-                reps.append(rows[i]["passage_id"])
-                used.add(rows[i]["doc_id"])
-            if len(reps) >= 3:
-                break
-        for i in members:
-            if len(reps) >= 3:
-                break
-            if rows[i]["passage_id"] not in reps:
-                reps.append(rows[i]["passage_id"])
-        name = " · ".join(key_terms[:3]) or f"Theme {tid}"
-        theme_rows.append((rid, tid, name, None, json.dumps(key_terms, ensure_ascii=False), len(groups[j]),
+        reps = _pick_reps([(rows[i]["passage_id"], rows[i]["doc_id"]) for i in members])
+        name = " · ".join(key_terms[tid][:3]) or f"Theme {tid}"
+        theme_rows.append((rid, tid, name, None, json.dumps(key_terms[tid], ensure_ascii=False), len(groups[j]),
                            json.dumps(reps), "terms", None, None))
         for i in groups[j]:
             member_rows.append((rid, tid, rows[i]["passage_id"], round(float(sim[i]), 5)))
@@ -335,9 +298,86 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
         cx.execute("INSERT INTO theme_runs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                    (rid, mode, k, seed, embed_model if mode == "meaning" else None, None, created, len(rows), rkey,
                     json.dumps(settings), ws.corpus_version()))
-        cx.executemany("INSERT INTO themes VALUES (?,?,?,?,?,?,?,?,?,?)", theme_rows)
-        cx.executemany("INSERT INTO theme_members VALUES (?,?,?,?)", member_rows)
+        cx.executemany(f"INSERT INTO themes({_THEME_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)", theme_rows)
+        cx.executemany("INSERT INTO theme_members(run_id, theme_id, passage_id, similarity) VALUES (?,?,?,?)",
+                       member_rows)
     return rid
+
+
+# the columns of a theme as a run finds it (a removed theme and a new one have two more: removed_at, replaces)
+_THEME_COLS = "run_id, theme_id, name, description, terms_json, size, reps_json, name_source, quotes_json, model"
+
+
+def _vectors(ws: Workspace, mode: str, embed_model: str | None, rows: list[dict], counts: dict) -> tuple:
+    """The passages' vectors for a mode, and the rows that have one (in the same order): unit rows of a numpy matrix
+    by meaning, unit sparse vectors (TF-IDF over the term index, its IDF over all `rows`) by words."""
+    if mode == "meaning":
+        import numpy as np
+
+        from . import embed
+
+        vs = embed.vectors(ws, embed_model) if embed_model else None
+        if vs is None or vs.np is None:
+            raise ValueError("The passages' embeddings of these themes are gone (search by meaning was set up again, "
+                             "or numpy is missing). Find the themes again.")
+        keep = [r for r in rows if r["passage_id"] in vs.pos]
+        X = vs.matrix[[vs.pos[r["passage_id"]] for r in keep]]
+        return X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12), keep
+    n_pass = len(rows)
+    dfp: Counter = Counter()
+    for r in rows:
+        for t in counts.get(r["passage_id"], ()):
+            dfp[t] += 1
+    vecs, keep = [], []
+    for r in rows:
+        c = counts.get(r["passage_id"])
+        if not c:
+            continue
+        v = {t: (1 + math.log(f)) * math.log(n_pass / dfp[t]) for t, f in c.items() if dfp[t] < n_pass}
+        if v:
+            vecs.append(_unit_sparse(v))
+            keep.append(r)
+    return vecs, keep
+
+
+def _key_terms(ws: Workspace, groups: dict[int, list[str]], counts: dict) -> dict[int, list[str]]:
+    """Each theme's key terms (at most 10): class-based TF-IDF of the term index over the themes' passages."""
+    info = {r["term_id"]: r["label"] for r in ws.query("SELECT term_id, label FROM terms")}
+    stems_of = {r["term_id"]: r["stems"].split(" ") for r in ws.query("SELECT term_id, stems FROM terms")}
+    total_tf: Counter = Counter()
+    per: dict[int, Counter] = {}
+    for tid, pids in groups.items():
+        c: Counter = Counter()
+        for p in pids:
+            c.update(counts.get(p, {}))
+        per[tid] = c
+        total_tf.update(c)
+    avg = sum(sum(c.values()) for c in per.values()) / max(1, len(per))
+    out = {}
+    for tid, c in per.items():
+        size_c = sum(c.values()) or 1
+        scored = sorted(((cnt / size_c) * math.log(1 + avg / total_tf[t]), t) for t, cnt in c.items() if t in info)
+        out[tid] = [info[t] for t in _distinct([t for _s, t in sorted(scored, key=lambda x: (-x[0], x[1]))[:30]],
+                                               stems_of)[:10]]
+    return out
+
+
+def _pick_reps(members: list[tuple[str, str]], n: int = 3) -> list[str]:
+    """The passages that represent a theme: of its (passage id, document id), nearest the centre first, the first n
+    from different documents, topped up with the next nearest."""
+    reps, used = [], set()
+    for pid, doc in members:
+        if doc not in used:
+            reps.append(pid)
+            used.add(doc)
+        if len(reps) >= n:
+            return reps
+    for pid, _doc in members:
+        if len(reps) >= n:
+            break
+        if pid not in reps:
+            reps.append(pid)
+    return reps
 
 
 def _distinct(ids: list[str], stems_of: dict[str, list[str]]) -> list[str]:
@@ -370,8 +410,9 @@ def runs(ws: Workspace) -> list[dict]:
         d["named_by_model"] = int(ws.scalar("SELECT COUNT(*) FROM themes WHERE run_id=? AND name_source='model'",
                                             (r["run_id"],)) or 0)
         merges = _edits(ws, d["run_key"])["merges"]
-        ids = [x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (r["run_id"],))]
-        d["themes_now"] = sum(1 for t in ids if _final(merges, t) == t)   # after the person's merges
+        ids = [x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=? AND removed_at IS NULL",
+                                      (r["run_id"],))]
+        d["themes_now"] = sum(1 for t in ids if _final(merges, t) == t)   # after the person's merges and removals
         out.append(d)
     return out
 
@@ -407,13 +448,18 @@ def _edits(ws: Workspace, rkey: str) -> dict:
 
 def edit(ws: Workspace, run_id: str, what: str, theme_id: int | None = None, value=None,
          passage_id: str | None = None, reviewer: str = "") -> None:
-    """rename (value: the new name, "" to undo), merge (theme_id into value; None to undo), or move (passage_id to
-    the theme `value`; None to undo)."""
+    """rename (value: the new name, "" to undo), merge (theme_id into value; None to undo), move (passage_id to
+    the theme `value`; None to undo), or remove (value true: leave the theme and its passages out of the themes;
+    false: bring it back). A removed theme takes no merge and no passage; a passage can be moved out of it."""
     r = ws.query("SELECT run_key FROM theme_runs WHERE run_id=?", (run_id,))
     if not r:
         raise KeyError(run_id)
     rkey = r[0][0]
     ids = {x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (run_id,))}
+    removed = {x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=? AND removed_at IS NOT NULL",
+                                      (run_id,))}
+    merges = _edits(ws, rkey)["merges"] if what == "remove" else {}
+    gone = "That theme was removed: bring it back first."
     with ws.connect() as cx:
         if what == "rename":
             if theme_id not in ids:
@@ -424,6 +470,8 @@ def edit(ws: Workspace, run_id: str, what: str, theme_id: int | None = None, val
         elif what == "merge":
             if theme_id not in ids or (value is not None and int(value) not in ids) or value == theme_id:
                 raise ValueError("Choose two different themes of this run.")
+            if value is not None and (theme_id in removed or int(value) in removed):
+                raise ValueError(gone)
             cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at) "
                        "VALUES ('theme', ?, 'merge', 'change', ?, ?, ?)",
                        (f"{rkey}:{theme_id}", str(int(value)) if value is not None else "", reviewer, now()))
@@ -432,11 +480,26 @@ def edit(ws: Workspace, run_id: str, what: str, theme_id: int | None = None, val
                 raise KeyError(passage_id)
             if value is not None and int(value) not in ids:
                 raise KeyError(value)
+            if value is not None and int(value) in removed:
+                raise ValueError(gone)
             cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at) "
                        "VALUES ('theme_member', ?, 'theme', 'change', ?, ?, ?)",
                        (f"{rkey}:{passage_id}", str(int(value)) if value is not None else "", reviewer, now()))
+        elif what == "remove":
+            if theme_id not in ids:
+                raise KeyError(theme_id)
+            if _final(merges, theme_id) != theme_id:
+                raise ValueError("That theme is merged into another one: remove that one, or separate them first.")
+            if value:
+                shown = [t for t in ids - removed if _final(merges, t) == t]
+                if shown == [theme_id]:
+                    raise ValueError("It is the last theme shown. Find the themes again instead.")
+                cx.execute("UPDATE themes SET removed_at=COALESCE(removed_at, ?) WHERE run_id=? AND theme_id=?",
+                           (now(), run_id, theme_id))
+            else:
+                cx.execute("UPDATE themes SET removed_at=NULL WHERE run_id=? AND theme_id=?", (run_id, theme_id))
         else:
-            raise ValueError("what must be rename, merge or move.")
+            raise ValueError("what must be rename, merge, move or remove.")
 
 
 def _final(merges: dict[int, int], t: int) -> int:
@@ -458,8 +521,9 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
     run_row = dict(r[0])
     ed = _edits(ws, run_row["run_key"])
     themes = {t["theme_id"]: dict(t) for t in ws.query("SELECT * FROM themes WHERE run_id=? ORDER BY theme_id", (run_id,))}
-    members = [dict(m) for m in ws.query("SELECT m.passage_id, m.theme_id, m.similarity, p.doc_id FROM theme_members m "
-                                         "JOIN passages p ON p.passage_id=m.passage_id WHERE m.run_id=?", (run_id,))]
+    members = [dict(m) for m in ws.query("SELECT m.passage_id, m.theme_id, m.similarity, m.found_in, p.doc_id FROM "
+                                         "theme_members m JOIN passages p ON p.passage_id=m.passage_id WHERE m.run_id=?",
+                                         (run_id,))]
     for m in members:
         moved = ed["moves"].get(m["passage_id"])
         m["moved"] = bool(moved and moved in themes)
@@ -468,7 +532,8 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
     for m in members:
         by_theme[m["theme_id"]].append(m)
     titles = {d["doc_id"]: d["title"] or "" for d in ws.query("SELECT doc_id, title FROM documents")}
-    out_themes = []
+    name_of = lambda x: ed["names"].get(x) or themes[x]["name"]  # noqa: E731
+    out_themes, removed_themes = [], []
     rep_ids = []
     for tid, t in themes.items():
         if tid in ed["merges"] and _final(ed["merges"], tid) != tid:
@@ -481,19 +546,28 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
         for x in merged_from:
             terms_ += [w for w in json.loads(themes[x]["terms_json"] or "[]") if w not in terms_]
         rep_ids += reps
-        out_themes.append({"theme_id": tid, "name": ed["names"].get(tid) or t["name"], "name_source":
-                           "person" if tid in ed["names"] else t["name_source"], "description": t["description"],
-                           "quotes": json.loads(t["quotes_json"] or "null"), "model": t["model"], "terms": terms_[:10],
-                           "size": len(ms), "documents": [{"doc_id": d, "title": titles.get(d, ""), "passages": n}
-                                                          for d, n in docs.most_common()],
-                           "representatives": reps, "merged_from": merged_from,
-                           "moved_in": sum(1 for m in ms if m["moved"])})
+        # a theme found in place of a removed one: which themes its passages were in before it took them
+        drawn = Counter(_final(ed["merges"], m["found_in"]) for m in ms if m["found_in"] in themes)
+        (removed_themes if t.get("removed_at") else out_themes).append({
+            "theme_id": tid, "name": name_of(tid), "name_source":
+            "person" if tid in ed["names"] else t["name_source"], "description": t["description"],
+            "quotes": json.loads(t["quotes_json"] or "null"), "model": t["model"], "terms": terms_[:10],
+            "size": len(ms), "documents": [{"doc_id": d, "title": titles.get(d, ""), "passages": n}
+                                           for d, n in docs.most_common()],
+            "representatives": reps, "merged_from": merged_from,
+            "moved_in": sum(1 for m in ms if m["moved"]),
+            "removed": bool(t.get("removed_at")), "removed_at": t.get("removed_at"),
+            "replaces": ({"theme_id": t["replaces"], "name": name_of(t["replaces"])}
+                         if t.get("replaces") in themes else None),
+            "replaced_by": [{"theme_id": x, "name": name_of(x)} for x, o in themes.items() if o.get("replaces") == tid],
+            "drawn_from": [{"theme_id": x, "name": name_of(x), "passages": n} for x, n in drawn.most_common()]})
     out_themes.sort(key=lambda t: (-t["size"], t["theme_id"]))
-    # 0.8: numbered 1 to n in the order shown (no gaps after a merge); theme_id stays the stable id for links
-    for i, t in enumerate(out_themes, 1):
-        t["number"] = i
-        t["merged_from_names"] = [{"theme_id": x, "name": ed["names"].get(x) or themes[x]["name"]}
-                                  for x in t["merged_from"]]
+    removed_themes.sort(key=lambda t: (-t["size"], t["theme_id"]))
+    # 0.8: numbered 1 to n in the order shown (no gaps after a merge); theme_id stays the stable id for links. A
+    # removed theme has no number: it is not one of the themes.
+    for i, t in enumerate(out_themes + removed_themes, 1):
+        t["number"] = i if not t["removed"] else None
+        t["merged_from_names"] = [{"theme_id": x, "name": name_of(x)} for x in t["merged_from"]]
     reps_text = {}
     if rep_ids:
         q = ",".join("?" * len(rep_ids))
@@ -505,15 +579,16 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
                                           "start": p["start"], "end": p["end"],
                                           "page": p["page"], "text": p["text"],
                                           "location": (where.get(p["passage_id"]) or {}).get("span") or ""}
-    for t in out_themes:
+    for t in out_themes + removed_themes:
         t["representatives"] = [reps_text[p] for p in t["representatives"] if p in reps_text]
+    shown = {t["theme_id"] for t in out_themes}   # the passages of a removed theme are left out of the grids
     doc_grid = {str(t["theme_id"]): {d["doc_id"]: d["passages"] for d in t["documents"]} for t in out_themes}
     code_grid = None
     if framework:
         from . import profile
 
         labs = profile.effective(ws, framework)
-        theme_of = {m["passage_id"]: m["theme_id"] for m in members}
+        theme_of = {m["passage_id"]: m["theme_id"] for m in members if m["theme_id"] in shown}
         cg: dict[str, Counter] = defaultdict(Counter)
         for lb in labs:
             t = theme_of.get(lb["passage_id"])
@@ -526,10 +601,14 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
                      "codes": sorted({c for v in cg.values() for c in v}, key=lambda c: (order.get(c, 10 ** 6), c))}
     run_row["settings"] = json.loads(run_row.pop("settings_json") or "{}")
     run_row["stale"] = run_row["corpus_version"] != ws.corpus_version()
-    return {"run": run_row, "themes": out_themes, "doc_grid": doc_grid, "code_grid": code_grid,
+    return {"run": run_row, "themes": out_themes, "removed": removed_themes, "doc_grid": doc_grid,
+            "code_grid": code_grid,
             "documents": [{"doc_id": d, "title": titles.get(d, "")} for d in
-                          sorted({m["doc_id"] for m in members}, key=lambda d: titles.get(d, "").lower())],
-            "edits": {"renamed": len(ed["names"]), "merged": len(ed["merges"]), "moved": len(ed["moves"])}}
+                          sorted({m["doc_id"] for m in members if m["theme_id"] in shown},
+                                 key=lambda d: titles.get(d, "").lower())],
+            "edits": {"renamed": len(ed["names"]), "merged": len(ed["merges"]), "moved": len(ed["moves"]),
+                      "removed": len(removed_themes),
+                      "added": sum(1 for t in themes.values() if t.get("replaces") is not None)}}
 
 
 def theme_passages(ws: Workspace, run_id: str, theme_id: int, offset: int = 0, limit: int = 50) -> dict:
@@ -560,12 +639,193 @@ def theme_passages(ws: Workspace, run_id: str, theme_id: int, offset: int = 0, l
     where = locate(ws, [(p["passage_id"], p["passage_id"], None) for p in page])
     for p in page:
         p["location"] = (where.get(p["passage_id"]) or {}).get("span") or ""
-    t = next((x for x in v["themes"] if x["theme_id"] == theme_id), None)
+    # a removed theme can be read too: its passages can be moved out of it into a theme that is shown
+    t = next((x for x in v["themes"] + v["removed"] if x["theme_id"] == theme_id), None)
     if t is None:
         raise KeyError(theme_id)
     return {"theme": t, "total": len(rows), "offset": offset, "passages": page,
             "others": [{"theme_id": x["theme_id"], "number": x["number"], "name": x["name"]} for x in v["themes"]
                        if x["theme_id"] != theme_id]}
+
+
+# ---------------------------------------------------------------------------------------------
+# a new theme in place of a removed one
+# ---------------------------------------------------------------------------------------------
+def _new_id(run_id: str, taken: set[int]) -> int:
+    """An id for a new theme: above a run's own (1 to k), and different from one run to the next, so a rename of a
+    new theme (a review under the run's key, which runs with the same settings share) never lands on another run's."""
+    n = 0
+    while True:
+        tid = 1000 + int(_h(run_id, "new", n), 16) % 9_000_000
+        if tid not in taken:
+            return tid
+        n += 1
+
+
+def _sims(vecs, centres: list, dense: bool) -> list[list[float]]:
+    """The similarity of each vector to each centre (one row per vector)."""
+    if not centres:
+        return [[] for _ in range(len(vecs))]
+    if dense:
+        import numpy as np
+
+        return (vecs @ np.stack(centres).T).tolist()
+    inv = _inverted(centres)
+    return [_sdot(v, inv, len(centres)) for v in vecs]
+
+
+def _centre(vecs, idx: list[int], dense: bool):
+    """The unit mean of the vectors at idx (a sparse one keeps its CENTROID_TERMS heaviest terms, as in a run)."""
+    if dense:
+        import numpy as np
+
+        c = vecs[idx].sum(axis=0)
+        return c / (np.linalg.norm(c) or 1.0)
+    s: dict[str, float] = defaultdict(float)
+    for i in idx:
+        for t, w in vecs[i].items():
+            s[t] += w
+    return _unit_sparse(dict(sorted(s.items(), key=lambda x: (-x[1], x[0]))[:CENTROID_TERMS]))
+
+
+def new_theme(ws: Workspace, run_id: str, replaces: int, progress: Callable[[str, int, int], None] | None = None,
+              should_stop: Callable[[], bool] | None = None) -> int:
+    """Find a new theme in place of the removed theme `replaces`; returns its id.
+
+    One more step of the run's k-means with every other centre fixed. The passages the run put in a theme that is
+    shown (not moved there by a person) can join it; each removed theme stays as a centre of its own that keeps the
+    passages closer to it, so the new theme does not grow back into what was removed. Each theme shown is split in
+    two inside itself (spherical 2-means, the run's seed), and the half that fits the theme's centre less well is a
+    heart (a single passage is too narrow a heart for TF-IDF vectors: it draws almost nothing). Each heart is scored
+    by how much closer it is than their own theme to the passages it would take, and the best are refined (members,
+    centre, again) until one keeps MIN_NEW passages. Those passages move to the new theme, which is named by its key
+    terms like the others; the themes they come from keep their names."""
+    from . import terms
+
+    say = progress or (lambda *a: None)
+    rr = ws.query("SELECT * FROM theme_runs WHERE run_id=?", (run_id,))
+    if not rr:
+        raise KeyError(run_id)
+    run_row = dict(rr[0])
+    trows = {r["theme_id"]: dict(r) for r in ws.query("SELECT theme_id, name, reps_json, removed_at, replaces FROM themes "
+                                                      "WHERE run_id=?", (run_id,))}
+    if replaces not in trows:
+        raise KeyError(replaces)
+    ed = _edits(ws, run_row["run_key"])
+    name_of = lambda x: ed["names"].get(x) or trows[x]["name"]  # noqa: E731
+    if not trows[replaces]["removed_at"]:
+        raise ValueError("A new theme is found in place of a removed one: remove this theme first.")
+    earlier = [x for x, t in trows.items() if t["replaces"] == replaces]
+    if earlier:
+        raise ValueError(f"“{name_of(earlier[0])}” was found in place of it already. Remove that one to find "
+                         "another in its place.")
+
+    say("vectors", 0, 1)
+    terms.ensure(ws, should_stop=should_stop)
+    counts = terms.passage_term_counts(ws)
+    rows, _dropped = _passages(ws)
+    dense = run_row["mode"] == "meaning"
+    vecs, keep = _vectors(ws, run_row["mode"], run_row["embed_model"], rows, counts)
+    pos = {r["passage_id"]: i for i, r in enumerate(keep)}
+    doc_of = {r["passage_id"]: r["doc_id"] for r in keep}
+    removed = {x for x, t in trows.items() if t["removed_at"]}
+    eligible: list[tuple[str, int, float]] = []          # (passage, the theme the run put it in, its similarity)
+    shown_in: list[int] = []                              # the theme each of them is shown in (merges applied)
+    left_out: dict[int, list[int]] = defaultdict(list)   # a removed theme: its passages (vector positions)
+    groups: dict[int, list[str]] = defaultdict(list)     # a theme that is shown: its passages (for the key terms)
+    for m in ws.query("SELECT passage_id, theme_id, similarity FROM theme_members WHERE run_id=? ORDER BY passage_id",
+                      (run_id,)):
+        moved = ed["moves"].get(m["passage_id"])
+        moved = moved if moved in trows else None
+        t = _final(ed["merges"], moved or m["theme_id"])
+        if t in removed:
+            if m["passage_id"] in pos:
+                left_out[t].append(pos[m["passage_id"]])
+            continue
+        groups[t].append(m["passage_id"])
+        if moved is None and m["passage_id"] in pos:
+            eligible.append((m["passage_id"], m["theme_id"], float(m["similarity"])))
+            shown_in.append(t)
+    if len(eligible) < 2 * MIN_NEW:
+        raise ValueError("Too few passages are left in the themes to find a new one.")
+    idx = [pos[p] for p, _t, _s in eligible]
+    sub = vecs[idx] if dense else [vecs[i] for i in idx]   # their vectors, in the same order
+
+    say("search", 0, 1)
+    # what a passage must be closer to the new theme than: its own theme, and every removed theme
+    sinks = [_centre(vecs, ix, dense) for _t, ix in sorted(left_out.items()) if ix]
+    bar = [max([own, *to_removed]) for (_p, _t, own), to_removed in zip(eligible, _sims(sub, sinks, dense))]
+    # the hearts tried: each theme shown, split in two (spherical 2-means inside it, the run's seed); the half that
+    # fits the theme's own centre less well is a heart
+    in_theme: dict[int, list[int]] = defaultdict(list)
+    for i, t in enumerate(shown_in):
+        in_theme[t].append(i)
+    hearts = []
+    for t, ix in sorted(in_theme.items()):
+        if len(ix) < 2 * MIN_NEW:
+            continue
+        part = sub[ix] if dense else [sub[i] for i in ix]
+        assign, _s, _c = (kmeans_dense if dense else kmeans_sparse)(part, 2, run_row["seed"] or 0, should_stop)
+        halves = [[i for i, a in zip(ix, assign) if a == h] for h in (0, 1)]
+        if min(len(h) for h in halves) < MIN_NEW:
+            continue
+        far = min(halves, key=lambda h: (sum(eligible[i][2] for i in h) / len(h), h[0]))
+        hearts.append(_centre(sub, far, dense))
+    # each scored by how much closer than their bar it is to the passages it would take
+    gain = [0.0] * len(hearts)
+    for row, b in zip(_sims(sub, hearts, dense), bar):
+        for j, s in enumerate(row):
+            if s > b:
+                gain[j] += s - b
+    found = None
+    for j in sorted(range(len(hearts)), key=lambda j: (-gain[j], j))[:TRIES]:
+        c, mem = hearts[j], None
+        for _it in range(MAX_ITER):
+            if should_stop and should_stop():
+                raise _stopped()
+            sim = [row[0] for row in _sims(sub, [c], dense)]
+            new = [i for i, (s, b) in enumerate(zip(sim, bar)) if s > b]
+            if len(new) < MIN_NEW or new == mem:
+                break
+            mem = new
+            c = _centre(sub, mem, dense)
+        else:  # not settled: the members of the last centre
+            sim = [row[0] for row in _sims(sub, [c], dense)]
+            new = [i for i, (s, b) in enumerate(zip(sim, bar)) if s > b]
+        if len(new) >= MIN_NEW:
+            found = (new, sim)
+            break
+    if found is None:
+        raise ValueError("No new theme could be found: the passages left fit their own themes better than any new "
+                         "one. Find the themes again with more themes instead.")
+
+    say("name", 0, 1)
+    mem, sim = found
+    taken = {eligible[i][0]: (eligible[i][1], round(float(sim[i]), 5)) for i in mem}
+    new_id = _new_id(run_id, set(trows))
+    for t in groups:
+        groups[t] = [p for p in groups[t] if p not in taken]
+    groups[new_id] = sorted(taken)
+    key_terms = _key_terms(ws, {t: ps for t, ps in groups.items() if ps}, counts)[new_id]
+    reps = _pick_reps([(p, doc_of[p]) for p in sorted(taken, key=lambda p: (-taken[p][1], p))])
+    losers = {old for old, _s in taken.values()}
+    with ws.connect() as cx:
+        cx.executemany("UPDATE theme_members SET theme_id=?, similarity=?, found_in=? WHERE run_id=? AND passage_id=?",
+                       [(new_id, s, old, run_id, p) for p, (old, s) in taken.items()])
+        cx.execute(f"INSERT INTO themes({_THEME_COLS}, replaces) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                   (run_id, new_id, " · ".join(key_terms[:3]) or "New theme", None,
+                    json.dumps(key_terms, ensure_ascii=False), len(taken), json.dumps(reps), "terms", None, None,
+                    replaces))
+        # the themes the passages came from: their size, and representatives that are still theirs
+        for t in losers:
+            left = cx.execute("SELECT m.passage_id, p.doc_id FROM theme_members m JOIN passages p ON "
+                              "p.passage_id=m.passage_id WHERE m.run_id=? AND m.theme_id=? ORDER BY m.similarity DESC, "
+                              "m.passage_id", (run_id, t)).fetchall()
+            old_reps = json.loads(trows[t]["reps_json"] or "[]")
+            reps_t = old_reps if not any(p in taken for p in old_reps) else _pick_reps([(a, b) for a, b in left])
+            cx.execute("UPDATE themes SET size=?, reps_json=? WHERE run_id=? AND theme_id=?",
+                       (len(left), json.dumps(reps_t), run_id, t))
+    return new_id
 
 
 # ---------------------------------------------------------------------------------------------
@@ -683,12 +943,13 @@ def name_with_model(ws: Workspace, run_id: str, backend, model: str, progress: C
 
 
 def tables(ws: Workspace, run_id: str, framework: str | None = None) -> list[tuple[str, list[dict]]]:
-    """Excel sheets: the themes, themes by document, and (with a profile) themes by code."""
+    """Excel sheets: the themes, themes by document, (with a profile) themes by code, and the themes removed."""
     v = view(ws, run_id, framework)
     themes_rows = [{"Theme": t["number"], "Name": t["name"], "Named by": {"terms": "key terms (no model)",
                                                                            "model": "the AI", "person": "you"}.get(
         t["name_source"], t["name_source"]), "Description": t["description"] or "", "Passages": t["size"],
         "Key terms": ", ".join(t["terms"]), "Documents": len(t["documents"]),
+        "Found in place of": t["replaces"]["name"] if t["replaces"] else "",
         "Representative passages": "\n\n".join(f"{p['title']} ({p['location']}): {p['text'][:400]}"
                                                for p in t["representatives"])} for t in v["themes"]]
     docs = v["documents"]
@@ -708,4 +969,9 @@ def tables(ws: Workspace, run_id: str, framework: str | None = None) -> list[tup
                 row[c] = cg["cells"].get(str(t["theme_id"]), {}).get(c, "") or ""
             by_code.append(row)
         sheets.append(("Themes by code", by_code))
+    if v["removed"]:
+        sheets.append(("Removed themes", [{"Name": t["name"], "Passages left out": t["size"],
+                                           "Key terms": ", ".join(t["terms"]), "Removed": t["removed_at"] or "",
+                                           "New theme in its place": ", ".join(x["name"] for x in t["replaced_by"])}
+                                          for t in v["removed"]]))
     return sheets

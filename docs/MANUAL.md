@@ -442,6 +442,16 @@ and by code. Rename, merge and move passages (kept and reapplied to a new set wi
 name the themes* gives names and short descriptions with checked quotes. A small project gets fewer themes than
 asked (about three passages a theme).
 
+A theme that is not relevant to you (running headers, reference lists, a topic outside your question) can be
+**removed**: its passages are left out of the themes, the grids and the downloads, and it waits under *Removed
+themes* at the foot of the list, where *Bring it back* undoes it. *Remove and find a new theme* also looks for a new
+theme in its place, on this computer and without AI: among the passages that fit their own theme least well, it
+finds the group that sits closer to a new centre than to the theme it is in, and moves it into a new theme named by
+its key terms (the themes it takes passages from keep their names). It never takes passages that are closer to a
+theme you removed, so the removed theme does not come back under another name. A new theme says which theme it
+replaces and where its passages come from; remove it too to find another. Removals and new themes belong to that
+set of themes only.
+
 **In a document.** Besides *Codes*: **Key terms** (the terms that set the document apart; point at one to underline it
 in the text), **References** (*Follow the references*: the AI reads the document three passages at a time and links
 "it", "they" or "the study" to the name they stand for; select a name in the text to see every later mention), and

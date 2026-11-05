@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased (for 0.14.0): remove a theme, and find a new one in its place
+
+**Remove a theme you do not need, and find a new one in its place.** A set of themes often has one or two that say
+nothing about your question (running headers, reference lists, a topic outside your research). Now you can take them
+out, and let ENLENS look for a theme it missed.
+- **Remove…** on each theme (on the list and on its page) asks *Just remove it* or **Remove and find a new theme**.
+  A removed theme's passages are left out of the themes, the grids and the Excel file; it waits under **Removed
+  themes** at the foot of the list, crossed out, with **Bring it back**. Its page still opens, so a passage that
+  matters can be moved into a theme you keep. The last theme shown, a theme merged into another, and merges or moves
+  into a removed theme are refused.
+- **A new theme in its place**, found on this computer without AI. Every theme shown is split in two
+  inside itself (2-means, the set's seed); the half that fits its theme least well becomes a candidate, the one that
+  draws most passages closer to it than to their own theme wins, and it is refined with every other theme fixed. It
+  takes only passages the clustering placed (never one you moved), and never one closer to a theme you removed, so
+  the removed theme does not come back under another name. The new theme is named by its key terms like the others;
+  the themes it takes passages from keep their names (and new representatives where theirs moved). It is marked
+  *new: found in place of “…”*, and its page says which themes its passages come from. *Find a new theme in its
+  place* also sits beside each removed theme; once per removed theme (remove the new one to find another).
+- *Let the AI name the other N themes* names a new theme without renaming the others. *Your changes* counts removed
+  and new themes; they belong to that set of themes only (renames, merges and moves still apply again to a new set
+  with the same settings).
+- Excel: *Found in place of* on the themes, and a *Removed themes* sheet. The FlexiConc export leaves removed themes'
+  passages out. The Overview counts the themes shown.
+- `PUT …/themes/<run>/edit {what: "remove", theme_id, value: true|false}` and `POST …/themes/<run>/new {replaces}`
+  (job `theme-new`); three new columns, added to a project when it opens: `themes.removed_at`, `themes.replaces`,
+  `theme_members.found_in` (the theme a passage was in before a new theme took it).
+
+**Tests.** `tests/test_0_14_0_remove_themes.py` (7 tests), on six generated topics in twelve documents: removing
+and bringing back (left out of the list, the grids, the counts and the Excel themes; its page opens; a passage moved
+out of it; merges and moves into it refused); the last theme and a merged one; a new theme by words (one topic, never
+the removed one's, nothing of the removed theme, where its passages came from, representatives kept right, the same
+result from the same set, once per removed theme, a second new theme in place of the first, renamed, named by the
+AI); by meaning, on planted embeddings, a new theme that splits a mixed one; through the app (refusals, the job, the
+export, bringing back); a project from before gains the columns; the page and its rules in `concepts-themes.css` (colour
+tokens only). Checked in headless Chrome with `tools/dev_server.py` and the generated corpus: remove and find a new
+theme from the list, the new theme's page, the removed theme's page, the removed themes in light and dark and at
+390 px, bringing one back, with no console errors and no sideways scroll.
+
+**Not yet done.** A removed theme's passages are not left out of search, the profile or checks: only out of the
+themes. A new theme is not named by the AI by itself; press *Let the AI name the other themes*. When the passages
+left fit their themes well (a small project, or themes of fewer than six passages), no new theme is found, and the
+message says to find the themes again with more themes.
+
 ## 0.13.8 (November 2026): Check citations taken out again
 
 After trying it, *Check citations* (0.13.7) does not fit ENLENS: ENLENS is for exploring your documents and checking

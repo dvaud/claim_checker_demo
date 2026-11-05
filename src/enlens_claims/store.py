@@ -234,7 +234,11 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               ("documents", "file_title", "TEXT"),
               # 0.13.6: where a hypothesis comes from: "batch" (Check several) or an add-on's own kind, and the id of
               # what it comes from there (NULL: typed by a person, or made before 0.13.6)
-              ("hypotheses", "origin", "TEXT"), ("hypotheses", "origin_id", "TEXT")]
+              ("hypotheses", "origin", "TEXT"), ("hypotheses", "origin_id", "TEXT"),
+              # a theme a person removed as not relevant, and when (NULL: shown); a theme found in place of
+              # a removed one (that theme's id; NULL: found by the run); a passage such a theme took from another
+              # theme (the theme it was in before; NULL: where the run put it)
+              ("themes", "removed_at", "TEXT"), ("themes", "replaces", "INT"), ("theme_members", "found_in", "INT")]
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:

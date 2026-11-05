@@ -680,15 +680,28 @@ every answer they store records the model, its digest, the prompt version, the s
 
 #### Themes (F4)
 
-- `GET /api/projects/<p>/themes` → `{runs, auto_mode, auto_why, k}`; each run has `themes_now` (after merges).
+- `GET /api/projects/<p>/themes` → `{runs, auto_mode, auto_why, k}`; each run has `themes_now` (after merges and
+  removals).
 - `POST /api/projects/<p>/themes {k?, seed?, mode?: auto|meaning|words}` → job: a new set of themes (spherical
   k-means; the same documents and settings give the same themes). A small project gets fewer themes than `k`
   (about three passages a theme); fewer than 5 passages is an error.
 - `GET /api/projects/<p>/themes/<run>?framework=` → the themes (names, key terms, size, documents,
-  representative passages), `doc_grid` and `code_grid`. `GET …/themes/<run>/<theme_id>?offset=&limit=` → one theme
-  and its passages. `DELETE …/themes/<run>`.
-- `PUT /api/projects/<p>/themes/<run>/edit {what: rename|merge|move, theme_id?, value?, passage_id?}`: kept as
-  reviews, so they survive a new set with the same settings; `value: null` (or `""` for a name) undoes.
+  representative passages), `removed` (the themes a person removed, without a `number`), `doc_grid` and
+  `code_grid` (without the removed themes' passages). Each theme has `removed`, `removed_at`, `replaces` (`{theme_id,
+  name}` of the removed theme a new theme was found in place of, or null), `replaced_by` and `drawn_from` (`[{theme_id,
+  name, passages}]`: the themes a new theme took its passages from); `edits` also counts `removed` and `added`.
+  `GET …/themes/<run>/<theme_id>?offset=&limit=` → one theme (a removed one too) and its passages. `DELETE
+  …/themes/<run>`.
+- `PUT /api/projects/<p>/themes/<run>/edit {what: rename|merge|move|remove, theme_id?, value?, passage_id?}`:
+  rename, merge and move are kept as reviews, so they survive a new set with the same settings; `value: null` (or
+  `""` for a name) undoes. `remove` with `value: true` leaves a theme and its passages out of the themes, `false`
+  brings it back; it belongs to this set only. A removed theme takes no merge and no moved passage (400), and the
+  last theme shown cannot be removed.
+- `POST /api/projects/<p>/themes/<run>/new {replaces: <theme_id>}` → job (`theme-new`, scope: the run): a new theme
+  in place of a removed one, on this computer and without AI (one more k-means step with the other centres fixed;
+  it takes only passages closer to it than to their own theme and to every removed theme). Its result is
+  `{theme_id, replaces}`. A theme that is not removed, or already has a new theme in its place, is a 400; while
+  another new theme is being found for the same set, a 409.
 - `POST /api/projects/<p>/themes/<run>/name` → job: the AI names the themes (task `theme`, quotes checked).
 - `GET /api/projects/<p>/themes/<run>/export.xlsx`.
 

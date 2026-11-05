@@ -1,6 +1,8 @@
 // Themes (F4): the passages of the project grouped into themes, as an overview before forming hypotheses. A set of
 // themes (a "run") is shown as a list with size bars, a theme × document grid and, with a profile, a theme × code
 // grid; a person can rename themes, merge two, move a passage, and let the AI name them. Older sets are kept.
+// A theme that is not relevant can be removed (its passages are left out until it is brought back), and a new theme
+// found in its place, on this computer without AI (POST …/new, job "theme-new").
 import { featureEyebrow } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, confirmDialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks } from "../lib.js";
 import { simpleProgress, MiniJob, jobError } from "./progress.js";
@@ -17,6 +19,15 @@ const PHASE = { terms: "Updating the glossary of terms…", cluster: "Grouping t
 function starter(t) {
   const s = t.name_source !== "terms" ? t.name : (t.terms && t.terms[0]) || t.name;
   return (s && /^[a-z]/.test(s) ? s[0].toUpperCase() + s.slice(1) : s || "") + " ";
+}
+
+// "Remove this theme?": "remove" (just remove it), "replace" (remove it and find a new theme in its place) or null.
+function askRemove(t) {
+  const body = h("div", {},
+    h("p", { style: { marginTop: 0 } }, `Its ${plural(t.size, "passage")} are left out of the themes, the grids and the Excel file. It waits under “Removed themes”, where you can bring it back.`),
+    h("p", {}, h("strong", {}, "Remove and find a new theme"), " also looks for a new theme in its place, on this computer and without AI: the passages that fit their own theme least well, grouped by what they share. It never takes passages that are closer to a theme you removed, so this one does not come back under another name."));
+  return dialog({ title: `Remove “${shortTitle(t.name, 60)}”?`, body,
+    actions: [{ text: "Cancel", value: null }, { text: "Just remove it", value: "remove" }, { text: "Remove and find a new theme", value: "replace", primary: true }] });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -126,12 +137,16 @@ async function renderRun(view, runId, info, query) {
   const head = h("div");
   const notes = h("div");
   const nameJob = h("div");
+  const newJob = h("div");      // a new theme being found in place of a removed one
+  let finding = false;          // one at a time
+  let openRemoved = false;      // the removed themes' fold opens after a removal
   const tabs = h("div", { class: "view-toggle", role: "group", "aria-label": "How to show the themes" });
   const tabBox = h("div");
+  const removedBox = h("div");
   const runsBox = h("section", { class: "section", "aria-labelledby": "th-runs-h" });
   const again = findCard(project, info, watchers, { again: true });
   const againFold = h("details", { class: "fold th-again" }, h("summary", {}, "Find the themes again (more or fewer themes, or after adding documents)"), h("div", { style: { marginTop: "8px" } }, again));
-  view.append(head, notes, nameJob, againFold, tabs, tabBox, runsBox);
+  view.append(head, notes, nameJob, newJob, againFold, tabs, tabBox, removedBox, runsBox);
 
   async function reload() {
     try { v = await api("GET", `${base}?framework=${encodeURIComponent(framework)}`); } catch (e) { showError(e); return; }
@@ -144,23 +159,29 @@ async function renderRun(view, runId, info, query) {
     const r = v.run;
     const nDocs = (v.documents || []).length;
     const namedByModel = v.themes.filter((t) => t.name_source === "model").length;
-    const nameBtn = h("button", { class: "btn btn-sm", type: "button", disabled: !!nameJob.firstChild }, icon("sparkles", { size: 13 }), namedByModel ? "Let the AI name the themes again" : "Let the AI name the themes");
+    const byTerms = v.themes.filter((t) => t.name_source === "terms").length;   // a new theme, for one
+    const nameBtn = h("button", { class: "btn btn-sm", type: "button", disabled: !!nameJob.firstChild }, icon("sparkles", { size: 13 }),
+      !namedByModel ? "Let the AI name the themes" : byTerms ? `Let the AI name the other ${plural(byTerms, "theme")}` : "Let the AI name the themes again");
     nameBtn.addEventListener("click", () => nameThemes(nameBtn));
     // 0.13.3: the download is a quiet link; naming the themes is the head's one button
     const xlsx = downloadLinks([{ text: "Excel (.xlsx)", onClick: () => download(`${base}/export.xlsx?framework=${encodeURIComponent(framework)}`).catch(showError) }]);
     replace(head, pageHead("Themes", {
       eyebrow: latest ? featureEyebrow("themes") : h("span", {}, icon("history", { size: 12 }), ` An earlier set of themes, found ${fmt.date(r.created_at)} · `, h("a", { href: "#/themes" }, "Show the newest")),
-      sub: `${plural(v.themes.length, "theme")} in ${plural(r.passages, "passage")} of ${plural(nDocs, "document")}, found ${modeWords(r.mode)} on ${fmt.date(r.created_at)}. Open a theme to read its passages.`,
+      sub: `${plural(v.themes.length, "theme")}${(v.removed || []).length ? ` (${(v.removed || []).length} removed)` : ""} in ${plural(r.passages, "passage")} of ${plural(nDocs, "document")}, found ${modeWords(r.mode)} on ${fmt.date(r.created_at)}. Open a theme to read its passages.`,
       actions: [nameBtn, xlsx],
     }));
     clear(notes);
     if (r.stale) notes.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "12px" } }, icon("alert-triangle"),
       h("p", {}, "Documents were added or removed since these themes were found, so they leave out the changes. Find the themes again to include them; this set is kept, so you can compare.")));
     const ed = v.edits || {};
-    const bits = [ed.renamed ? plural(ed.renamed, "theme") + " renamed" : null, ed.merged ? plural(ed.merged, "merge") : null, ed.moved ? plural(ed.moved, "passage") + " moved" : null].filter(Boolean);
-    if (bits.length) notes.appendChild(h("p", { class: "muted small", style: { margin: "0 0 10px" } }, icon("note", { size: 12 }), ` Your changes: ${bits.join(", ")}. They are kept, and apply again when the themes are found again with the same number of themes.`));
+    const bits = [ed.renamed ? plural(ed.renamed, "theme") + " renamed" : null, ed.merged ? plural(ed.merged, "merge") : null, ed.moved ? plural(ed.moved, "passage") + " moved" : null,
+      ed.removed ? plural(ed.removed, "theme") + " removed" : null, ed.added ? plural(ed.added, "new theme") + " found" : null].filter(Boolean);
+    const again_ = ed.renamed || ed.merged || ed.moved ? " Renames, merges and moves are kept, and apply again when the themes are found again with the same number of themes." : "";
+    const own = ed.removed || ed.added ? " Removed and new themes belong to this set only." : "";
+    if (bits.length) notes.appendChild(h("p", { class: "muted small", style: { margin: "0 0 10px" } }, icon("note", { size: 12 }), ` Your changes: ${bits.join(", ")}.${again_}${own}`));
     drawTabs();
     drawTab();
+    drawRemoved();
     drawRuns();
   }
 
@@ -186,7 +207,7 @@ async function renderRun(view, runId, info, query) {
       const docs = t.documents || [];
       const pct = Math.round((t.size / max) * 100);
       const reps = t.representatives || [];
-      const li = h("li", { class: "th-item card" },
+      const li = h("li", { class: "th-item card", id: `th-${t.theme_id}` },
         h("div", { class: "th-item-head" },
           h("span", { class: "th-num", "aria-hidden": "true" }, String(t.number ?? t.theme_id)),
           h("div", { class: "th-item-main" },
@@ -194,7 +215,8 @@ async function renderRun(view, runId, info, query) {
             h("div", { class: "th-meta" },
               h("span", { class: "chip" + (t.name_source === "person" ? " chip-yours" : "") }, NAMED_BY[t.name_source] || ""),
               t.merged_from && t.merged_from.length ? h("span", { class: "chip" }, `${t.merged_from.length === 1 ? "1 theme" : `${t.merged_from.length} themes`} merged in`) : null,
-              t.moved_in ? h("span", { class: "chip" }, `${plural(t.moved_in, "passage")} moved here`) : null))),
+              t.moved_in ? h("span", { class: "chip" }, `${plural(t.moved_in, "passage")} moved here`) : null,
+              t.replaces ? h("span", { class: "chip th-new", title: "Found in place of a theme you removed" }, icon("shapes", { size: 11 }), ` new: found in place of “${shortTitle(t.replaces.name, 40)}”`) : null))),
         t.description ? h("p", { class: "th-desc" }, t.description) : null,
         t.quotes && t.quotes.name && t.quotes.name.quote && t.name_source === "model" ? h("p", { class: "muted small th-quote" }, icon("quote", { size: 12 }), " The AI's name rests on: ", h("q", { class: "serif" }, t.quotes.name.quote)) : null,
         h("div", { class: "th-size" },
@@ -207,7 +229,8 @@ async function renderRun(view, runId, info, query) {
         h("div", { class: "btn-row th-acts" },
           h("a", { class: "btn btn-sm", href }, icon("eye", { size: 13 }), "Open"),
           h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => renameTheme(t) }, icon("type", { size: 13 }), "Rename"),
-          h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: v.themes.length < 2, onClick: () => mergeTheme(t) }, icon("split", { size: 13 }), "Merge into…")));
+          h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: v.themes.length < 2, onClick: () => mergeTheme(t) }, icon("split", { size: 13 }), "Merge into…"),
+          h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: v.themes.length < 2 || finding, title: v.themes.length < 2 ? "The last theme cannot be removed" : null, onClick: () => removeTheme(t) }, icon("circle-minus", { size: 13 }), "Remove…")));
       ol.appendChild(li);
     }
     return ol;
@@ -275,6 +298,30 @@ async function renderRun(view, runId, info, query) {
     return wrap;
   }
 
+  // ---- the themes removed: left out of the list and the grids, until they are brought back
+  function drawRemoved() {
+    clear(removedBox);
+    const rm = v.removed || [];
+    if (!rm.length) return;
+    const items = rm.map((t) => {
+      const replaced = (t.replaced_by || []).length > 0;
+      return h("li", { class: "th-removed-item" },
+        h("div", { class: "th-removed-main" },
+          h("a", { href: themeHref(runId, t.theme_id), class: "th-removed-name" }, t.name),
+          h("span", { class: "muted small" }, ` · ${plural(t.size, "passage")} left out`,
+            replaced ? [" · replaced by ", (t.replaced_by || []).map((x, i) => [i ? ", " : "", h("a", { href: themeHref(runId, x.theme_id) }, `“${shortTitle(x.name, 50)}”`)])] : null)),
+        h("div", { class: "btn-row th-removed-acts" },
+          replaced ? null : h("button", { class: "btn btn-sm", type: "button", disabled: finding, onClick: () => startNew(t) }, icon("shapes", { size: 13 }), "Find a new theme in its place"),
+          h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => bringBack(t) }, icon("refresh", { size: 13 }), "Bring it back")));
+    });
+    const fold = h("details", { class: "fold th-removed", open: openRemoved },
+      h("summary", {}, `Removed themes (${rm.length})`),
+      h("p", { class: "muted small" }, "Their passages are left out of the themes, the grids and the Excel file. Open one to move a passage that matters into a theme you keep."),
+      h("ul", { class: "th-removed-list" }, items));
+    fold.addEventListener("toggle", () => { openRemoved = fold.open; });
+    removedBox.appendChild(h("section", { class: "section", "aria-label": "Removed themes" }, fold));
+  }
+
   // ---- the list of sets of themes
   function drawRuns() {
     clear(runsBox);
@@ -333,6 +380,48 @@ async function renderRun(view, runId, info, query) {
     await edit({ what: "merge", theme_id: t.theme_id, value: Number(sel.value) }, "Themes merged.");
   }
 
+  // ---- remove a theme, bring it back, find a new theme in its place
+  async function removeTheme(t) {
+    const r = await askRemove(t);
+    if (!r) return;
+    openRemoved = true;
+    if (!(await edit({ what: "remove", theme_id: t.theme_id, value: true }, `“${shortTitle(t.name, 60)}” removed.`))) return;
+    if (r === "replace") startNew(t);
+  }
+  async function bringBack(t) {
+    await edit({ what: "remove", theme_id: t.theme_id, value: false }, `“${shortTitle(t.name, 60)}” is one of the themes again.`);
+  }
+  async function startNew(t) {
+    finding = true;
+    drawRemoved(); drawTab();
+    try { const r = await api("POST", `${base}/new`, { replaces: t.theme_id }); followNew(r.job.id, t.name); }
+    catch (e) { finding = false; drawRemoved(); drawTab(); showError(e); }
+  }
+  function followNew(jobId, name) {
+    finding = true;
+    const m = new MiniJob({ title: name ? `Finding a new theme in place of “${shortTitle(name, 50)}”` : "Finding a new theme" });
+    replace(newJob, h("div", { style: { marginBottom: "12px" } }, m.el,
+      h("p", { class: "muted small", style: { margin: "6px 0 0" } }, "On this computer, without AI: the passages that fit their own theme least well are grouped by what they share into a new theme, named by its key terms. The themes it takes passages from keep their names.")));
+    const w = watchJob(jobId, (job) => m.update(job));
+    watchers.push(w);
+    w.promise.then(async (job) => {
+      finding = false;
+      clear(newJob);
+      if (job.state === "done" && job.result && job.result.theme_id != null) {
+        await reload();
+        const t = v.themes.find((x) => x.theme_id === job.result.theme_id);
+        toast(t ? `A new theme was found: “${shortTitle(t.name, 60)}” (${plural(t.size, "passage")}).` : "A new theme was found.", "ok");
+        const el = t && tab === "list" ? document.getElementById(`th-${t.theme_id}`) : null;
+        if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("th-flash"); }
+        return;
+      }
+      if (job.state === "error") replace(newJob, h("div", { style: { marginBottom: "12px" } }, jobError(job)));
+      else toast("Stopped. No new theme was made.", "info", { small: true });
+      drawRemoved();
+      drawTab();
+    }).catch(showError);
+  }
+
   // ---- the AI names the themes
   function nameThemes(btn) {
     btn.disabled = true;
@@ -365,6 +454,8 @@ async function renderRun(view, runId, info, query) {
   if (running) { again.follow(running.id, null); againFold.open = true; }
   const naming = await runningJob(project, ["theme-names"]);
   if (naming) followNames(naming.id);
+  const newOne = await runningJob(project, ["theme-new"], (j) => j.scope === runId);
+  if (newOne) { followNew(newOne.id, null); drawRemoved(); drawTab(); }
   return () => watchers.forEach((w) => w.stop());
 }
 
@@ -432,7 +523,7 @@ export async function renderTheme(view, [runId, themeId], query) {
       if (r === "save" && (!name || name === t.name)) return;
       if (await edit({ what: "rename", theme_id: t.theme_id, value: name }, name ? "Theme renamed." : "The earlier name is back.")) reload();
     });
-    const mergeBtn = h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: !d.others.length }, icon("split", { size: 13 }), "Merge into…");
+    const mergeBtn = h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: !d.others.length || t.removed }, icon("split", { size: 13 }), "Merge into…");
     mergeBtn.addEventListener("click", async () => {
       const sel = h("select", { class: "select" }, d.others.map((x) => h("option", { value: String(x.theme_id) }, `${x.number ?? x.theme_id}. ${x.name}`)));
       const r = await dialog({ title: "Merge two themes", body: h("div", {}, h("p", {}, "All passages of ", h("strong", {}, `“${t.name}”`), " join the theme you choose. You can undo it on that theme's page."), h("label", { class: "field" }, h("span", { class: "field-label" }, "Merge into"), sel)),
@@ -440,19 +531,49 @@ export async function renderTheme(view, [runId, themeId], query) {
       if (r !== "merge") return;
       if (await edit({ what: "merge", theme_id: t.theme_id, value: Number(sel.value) }, "Themes merged.")) navigate(themeHref(runId, sel.value));
     });
+    // remove it (the list follows a new theme being found), or bring it back
+    const removeBtn = t.removed ? null : h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: !d.others.length, onClick: async () => {
+      const r = await askRemove(t);
+      if (!r || !(await edit({ what: "remove", theme_id: t.theme_id, value: true }, `“${shortTitle(t.name, 60)}” removed.`))) return;
+      if (r === "replace") { try { await api("POST", `${base}/new`, { replaces: t.theme_id }); } catch (e) { showError(e); } }
+      navigate(runHref(runId));
+    } }, icon("circle-minus", { size: 13 }), "Remove…");
     replace(head, h("header", { class: "page-head" },
       h("div", { class: "page-head-main" },
         h("p", { class: "eyebrow" }, h("a", { href: runHref(runId), class: "it" }, icon("shapes", { size: 12 }), "All themes")),
         h("h1", { id: "page-title", tabindex: "-1", class: "serif th-title" }, t.name),
         h("div", { class: "result-meta", style: { marginTop: "6px" } },
-          h("span", {}, `Theme ${t.number ?? t.theme_id}`), h("span", { class: "sep" }, "·"),
+          h("span", {}, t.removed ? "Removed theme" : `Theme ${t.number ?? t.theme_id}`), h("span", { class: "sep" }, "·"),
           h("span", {}, `${plural(t.size, "passage")} from ${plural(docs.length, "document")}`), h("span", { class: "sep" }, "·"),
           h("span", {}, NAMED_BY[t.name_source] || ""))),
       h("div", { class: "page-head-actions" },
         h("a", { class: "btn btn-primary btn-sm", href: `#/check?text=${encodeURIComponent(starter(t))}` }, icon("flask", { size: 13 }), "Check a hypothesis about this theme"),
-        renameBtn, mergeBtn)));
+        renameBtn, mergeBtn, removeBtn)));
 
     clear(body);
+    if (t.removed) {
+      const replaced = (t.replaced_by || []).length > 0;
+      body.appendChild(h("div", { class: "notice notice-warn th-removed-note", style: { marginBottom: "16px" } }, icon("circle-minus"),
+        h("div", {}, h("p", {}, "You removed this theme: its passages are left out of the themes, the grids and the Excel file. To keep a passage that matters, move it into a theme below."),
+          replaced ? h("p", { class: "small" }, "Found in its place: ", t.replaced_by.map((x, i) => [i ? ", " : "", h("a", { href: themeHref(runId, x.theme_id) }, `“${x.name}”`)]), ".") : null,
+          h("div", { class: "btn-row", style: { marginTop: "6px" } },
+            h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: async (e) => {
+              e.currentTarget.disabled = true;
+              if (await edit({ what: "remove", theme_id: t.theme_id, value: false }, `“${shortTitle(t.name, 60)}” is one of the themes again.`)) reload();
+              else e.currentTarget.disabled = false;
+            } }, icon("refresh", { size: 13 }), "Bring it back"),
+            replaced ? null : h("button", { class: "btn btn-sm", type: "button", onClick: async (e) => {
+              e.currentTarget.disabled = true;
+              try { await api("POST", `${base}/new`, { replaces: t.theme_id }); navigate(runHref(runId)); }
+              catch (err) { showError(err); e.currentTarget.disabled = false; }
+            } }, icon("shapes", { size: 13 }), "Find a new theme in its place")))));
+    }
+    if (t.replaces) {
+      const from = t.drawn_from || [];
+      body.appendChild(h("div", { class: "notice notice-info th-new-note", style: { marginBottom: "16px" } }, icon("shapes"),
+        h("div", {}, h("p", {}, "A new theme, found in place of ", h("a", { href: themeHref(runId, t.replaces.theme_id) }, `“${t.replaces.name}”`), ", which you removed. Its passages fitted the themes they were in least well."),
+          from.length ? h("p", { class: "small" }, "They come from ", from.map((x, i) => [i ? (i === from.length - 1 ? " and " : ", ") : "", h("a", { href: themeHref(runId, x.theme_id) }, `“${shortTitle(x.name, 50)}”`), ` (${x.passages})`]), ".") : null)));
+    }
     // the AI's description, with its checked quotes
     if (t.description || (t.name_source === "model" && t.quotes)) {
       const q = t.quotes || {};

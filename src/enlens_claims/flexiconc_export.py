@@ -133,7 +133,9 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
         ed = _edits(ws, rk)
         for m in ws.query("SELECT passage_id, theme_id, similarity FROM theme_members WHERE run_id=?", (run_id,)):
             moved = ed["moves"].get(m["passage_id"])
-            theme_of[m["passage_id"]] = (_final(ed["merges"], moved or m["theme_id"]), m["similarity"])
+            t = _final(ed["merges"], moved or m["theme_id"])
+            if t in names:  # a removed theme's passages are left out of the themes
+                theme_of[m["passage_id"]] = (t, m["similarity"])
     vecs = None
     if embeddings:
         from . import embed
