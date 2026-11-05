@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.14.0 (November 2026): room for add-ons
+
+An app built on ENLENS (Margin is one) had to edit ENLENS's own files to add a page's API, a job, a table, or a rule
+about who may read its text: the route table, the job lists, the database schema, the access checks. Every one of
+those edits clashed with the next ENLENS release. 0.14.0 gives each of them an extension point, so an add-on adds
+them in files of its own (docs/EXTENDING.md). ENLENS on its own is unchanged: every extension point is empty, every
+answer still goes through the quote check, a person can overrule it, and nothing more leaves the computer.
+
+**The server.**
+- **Routes.** An add-on module's `ROUTES` (method, pattern, handler) are tried after ENLENS's own, with the same
+  token. A handler is a function `handler(h, *groups, q)` or the name of one of ENLENS's handlers. `DOWNLOADS` names
+  the handlers a plain link may call with `?token=`.
+- **Extra keys.** `state(app)` adds keys to `GET /api/state`, `overview(ws)` to a project's Overview. They never
+  replace one of ENLENS's keys, and a hook that fails adds nothing (the page still opens).
+- **A public interface for jobs.** `App.start_job`, `App.start_queued_job`, `App.follow_queued` and `App.wire` are
+  the public names of `_job`, `_model_job`, `_follow_queued` and `_wire` (which keep working); `App.ws`,
+  `App.backend` and `App.queue_mode` are documented as public. An add-on's job is listed in `/api/jobs` and the
+  sidebar, can be stopped (its waiting tasks leave the queue), and is *not running* while its tasks wait for Claude
+  Code with nothing answering them.
+
+**The database.**
+- **Tables and columns.** An add-on's `SCHEMA`, `MIGRATIONS` and `INDEXES` run in every project as it is opened,
+  after ENLENS's own and in the same idempotent way (a column is added only when missing). Odd table or column names
+  are refused.
+- **Where a hypothesis comes from.** Hypotheses gain two columns, `origin` and `origin_id`, and
+  `claimcheck.create_hypothesis` (the new public name of `new_hypothesis`, which keeps working) takes `origin=` and
+  `origin_id=`, as do `check_hypothesis` and `queue_check`. *Check several* records `batch` and its batch id; a
+  hypothesis typed by a person has none. Results and the history return both.
+
+**Access.**
+- `access.register_floor(fn)`: an add-on says how far a task's text may go because of what it knows about it (text
+  the add-on manages, with an AI setting of its own). The task keeps the most restricted of that and its documents'
+  settings: a floor can only restrict, never loosen, and one that fails counts as *No AI*.
+- `access.register_hidden(fn)`: hypotheses the connector must not show; `list_checks` leaves them out and the other
+  tools refuse to open them.
+- Both feed the checks ENLENS already makes, so `local_only()` and the per-document settings still decide. ENLENS
+  loads the add-ons before it labels a task, so a hook an add-on registers when it is imported always counts.
+
+**Tests.** `test_0140_addons.py` (17 tests): ENLENS alone adds nothing; the public names; with the stand-in add-on
+(`tests/fake_extension`) a route, its token, a download by link, a state key and an Overview key that cannot replace
+ENLENS's, a job of its own that is *not running* until a stand-in Claude Code takes its tasks and then finishes, and
+one stopped with its tasks withdrawn; its table and migration in a new project and in an older one; a hypothesis with
+an origin (and *Check several*'s); a floor that keeps a task on the local model (and out of the queue, and refused to
+Claude Code), cannot loosen a document's setting, and keeps a removed note's text here; a failing floor; local-only;
+a hypothesis hidden from the connector's list and refused when asked for; a fork adding routes in
+`gui/extensions.py`; an add-on that cannot take over ENLENS's route; a failing hook.
+
+**Not yet done.** An add-on job's name in the sidebar is its kind (*fake-labels*) until the page's extension points
+(0.15) let it name and link its jobs. A new kind of AI task still needs edits in ENLENS's files (0.15).
+
 ## 0.13.5 (November 2026): fixes found while building on ENLENS, and room for apps built on it
 
 Margin, a writing companion built on ENLENS, found a few ENLENS defects on the way, fixed them first and now gives

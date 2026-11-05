@@ -96,6 +96,10 @@ when nothing was graded. `who` lists the same documents by side (see the hypothe
            "description": "…", "logo": "/static/logo.svg"}}
 ```
 `brand` (0.13.5): the app's name and words, from `static/brand.json` and any add-on's `BRAND` (docs/EXTENDING.md).
+0.14: an add-on may add keys of its own (its `state(app)`); they never replace one of these. Its routes are documented
+in `docs/ADDON_API.md` and come after ENLENS's own (docs/EXTENDING.md). `GET /api/projects/<p>/overview` may carry an
+add-on's counts the same way, and a hypothesis's result and history rows carry `origin` and `origin_id` (where it
+comes from: `batch`, an add-on's own kind, or none).
 `backend` values: `auto` (first local server found: Ollama, then LM Studio, llama.cpp, Jan, vLLM), `ollama`,
 `openai` (an OpenAI-compatible local server at `openai_url`), `anthropic` (cloud; allowed only when `allow_cloud`),
 `baseline` (offline demo, word overlap). Text leaves the computer only with `anthropic`.

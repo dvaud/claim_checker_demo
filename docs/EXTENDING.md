@@ -93,6 +93,105 @@ BRAND = {"name": "Fieldnotes", "tagline": "notes from the field", "logo": "/stat
 
 Page code names the app with `appName()` (or `brand()`) from `lib.js`, never with a fixed "ENLENS".
 
+## Routes, downloads and extra keys (0.14)
+
+An add-on module adds routes to the app's API. They are tried after ENLENS's own, so an add-on cannot take over one
+of ENLENS's routes, and every one needs the page's token like ENLENS's:
+
+```python
+def get_drafts(h, name, q):            # h: the request handler; h.app: the app; h._body(): the JSON body
+    ws = h.app.ws(name)                 # the project (404 when there is none)
+    return {"drafts": [dict(r) for r in ws.query("SELECT draft_id, title FROM drafts")]}
+
+def get_drafts_csv(h, name, q):         # a download: it sends its own answer and returns None
+    h._send(200, b"draft_id,title\n", "text/csv; charset=utf-8")
+
+ROUTES = [("GET", r"/api/projects/([^/]+)/drafts", get_drafts),
+          ("GET", r"/api/projects/([^/]+)/drafts\.csv", get_drafts_csv)]
+DOWNLOADS = {"get_drafts_csv"}          # handlers a plain link may call with ?token=
+```
+
+A handler is a function `handler(h, *groups, q)` (the pattern's groups, URL-decoded, then the query string) or the
+name of one of ENLENS's handler methods. Document the routes in `docs/ADDON_API.md`.
+
+Two functions add keys to what the page reads. A key ENLENS has (or an earlier add-on added) is never replaced, and a
+hook that fails adds nothing:
+
+```python
+def state(app):  return {"drafts_enabled": True}                       # GET /api/state
+def overview(ws): return {"drafts": ws.scalar("SELECT COUNT(*) FROM drafts")}   # a project's Overview
+```
+
+## Jobs (0.14)
+
+Long work runs as a job, the same way ENLENS's own does. The app's public interface:
+
+| Method | What it does |
+| --- | --- |
+| `app.ws(name)` | The project, or a 404 for the page. |
+| `app.backend(kinds=…)` | The main model's backend and model, as Settings say. |
+| `app.queue_mode()` | Whether Claude Code answers (the AI's tasks wait in the queue for it). |
+| `app.start_job(kind, title, name, fn, uses_model=True, withdraw=(), ws=None)` | A job; `fn(job)` does the work. |
+| `app.start_queued_job(kind, title, name, fn, withdraw=None)` | A job that uses the AI; `fn(job, backend, model, progress)`. |
+| `app.follow_queued(job, ws, hyp_ids, tracker)` | Follow checks made by queue until Claude Code has answered them. |
+| `app.wire(job, backend, tracker=None)` | Let a backend see the job's Stop and report its progress. |
+
+An add-on's job is a job like any other: it is listed in `GET /api/jobs` and the sidebar, it can be stopped
+(`POST /api/jobs/<id>/cancel`; `fn` checks `job.cancel.is_set()`), and it is *not running* (`on_hold`) while its tasks
+wait in the queue with nothing answering them. `withdraw` names the kinds of task that Stop takes back out of the
+queue. The names before 0.14 (`_job`, `_model_job`, `_follow_queued`, `_wire`) keep working.
+
+## Tables and columns (0.14)
+
+```python
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS drafts(draft_id TEXT PRIMARY KEY, title TEXT, text TEXT, ai_access TEXT, created_at TEXT);
+"""
+MIGRATIONS = [("drafts", "ai_note", "TEXT")]           # (table, column, type): added when a project lacks it
+INDEXES = "CREATE INDEX IF NOT EXISTS ix_drafts_created ON drafts(created_at);"
+```
+
+Every project runs them as it is opened, after ENLENS's own and in the add-ons' order: `SCHEMA`, then the
+`MIGRATIONS`, then `INDEXES`. Write them so that running them again changes nothing (`IF NOT EXISTS`); a column is
+added only when it is missing. Table and column names are plain names (letters, digits and `_`).
+
+**Where a hypothesis comes from.** `claimcheck.create_hypothesis(ws, text, …, origin="draft", origin_id=draft_id)`
+records it in the hypothesis's `origin` and `origin_id` columns, so an add-on that makes hypotheses needs no column
+or argument of its own. `check_hypothesis` and `queue_check` take the same two arguments. ENLENS uses `origin="batch"`
+for *Check several*; a hypothesis typed by a person has none. Results and the history return both.
+
+## Access (0.14)
+
+Two hooks feed the checks ENLENS already makes. They only ever restrict more:
+
+```python
+from enlens_claims import access
+
+def draft_floor(cx, payload, dflt):
+    """A task holding a draft's text may go no further than the draft's own AI setting."""
+    d = payload.get("draft_id") if isinstance(payload, dict) else None
+    if not d:
+        return None                     # nothing to say about this task
+    row = cx.execute("SELECT ai_access FROM drafts WHERE draft_id=?", (d,)).fetchone()
+    return (row[0] or dflt or "cloud") if row else "none"
+
+def drafts_kept_here(ws):
+    """The hypotheses the connector (a Claude chat) must not show."""
+    return {r[0] for r in ws.query("SELECT h.hyp_id FROM hypotheses h JOIN drafts d ON h.origin='draft' "
+                                   "AND h.origin_id=d.draft_id WHERE COALESCE(d.ai_access, 'cloud') != 'cloud'")}
+
+access.register_floor(draft_floor)
+access.register_hidden(drafts_kept_here)
+```
+
+- `register_floor(fn)`: `fn(cx, payload, dflt)` returns `"cloud"`, `"local"`, `"none"` or None. Every task takes the
+  most restricted of its documents' settings and every floor's, so a task holding a draft marked *Only a local AI*
+  is never handed to Claude Code, and the guard refuses it to any cloud model. A floor that fails counts as `none`.
+- `register_hidden(fn)`: `fn(ws)` returns hypothesis ids. The connector leaves them out of `list_checks` and refuses
+  to open them. A hook that fails hides every hypothesis.
+
+ENLENS loads the add-ons before it decides anything, so hooks an add-on registers when it is imported always count.
+
 ## Rules that no add-on gets round
 
 `home.local_only()` (switched off cloud models), the per-document AI settings and the quote check apply to anything

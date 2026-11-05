@@ -26,7 +26,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import sqlite3
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 
 from . import routing
@@ -224,9 +224,74 @@ def ids_in(payload: Any) -> tuple[set[str], set[str]]:
     return pids, dids
 
 
+# ---------------------------------------------------------------------------------------------
+# 0.14: hooks for add-ons (docs/EXTENDING.md). They only ever restrict more: a floor raises the setting a task must
+# keep, and hidden hypotheses are left out of the connector. local_only() and the documents' own settings still
+# decide; an add-on cannot loosen them.
+# ---------------------------------------------------------------------------------------------
+_FLOORS: list[Callable] = []
+_HIDDEN: list[Callable] = []
+
+
+def register_floor(fn: Callable) -> Callable:
+    """`fn(cx, payload, dflt)` says how far a task's text may go because of what the add-on knows about it ("cloud",
+    "local" or "none"; None: nothing to say), for instance text the add-on manages that has an AI setting of its
+    own. The task keeps the most restricted of that and its documents' settings. Returns `fn`; registering it again
+    changes nothing."""
+    if fn not in _FLOORS:
+        _FLOORS.append(fn)
+    return fn
+
+
+def register_hidden(fn: Callable) -> Callable:
+    """`fn(ws)` returns the ids of hypotheses the connector (a Claude chat) must not show or open. Returns `fn`."""
+    if fn not in _HIDDEN:
+        _HIDDEN.append(fn)
+    return fn
+
+
+def _hooks(kind: list) -> list[Callable]:
+    from .addons import load
+
+    load()  # an add-on package registers its hooks when it is imported: never decide before that
+    return list(kind)
+
+
+def floor(cx, payload: Any, dflt: str | None = None) -> str:
+    """The most restricted setting the add-ons' floors give a payload (`cloud`: none restricts it). A floor that
+    fails counts as `none`: when in doubt, the text stays on this computer and no AI reads it."""
+    out = []
+    for fn in _hooks(_FLOORS):
+        try:
+            lv = fn(cx, payload, dflt)
+        except Exception:  # noqa: BLE001
+            lv = "none"
+        if lv is not None:
+            out.append(lv if lv in LEVELS else "none")
+    return most(out) if out else "cloud"
+
+
+def hidden_hypotheses(ws: Workspace) -> set[str]:
+    """The hypotheses the add-ons keep out of the connector."""
+    out: set[str] = set()
+    for fn in _hooks(_HIDDEN):
+        try:
+            out |= set(fn(ws) or ())
+        except Exception:  # noqa: BLE001 - a hook that fails hides every hypothesis it could be about: all of them
+            return {r[0] for r in ws.query("SELECT hyp_id FROM hypotheses")}
+    return out
+
+
 def label_payload(cx, payload: Any, dflt: str | None = None) -> str:
     """The most restricted setting of the documents a task's payload names (`cloud` for a task without document
-    text, such as the search words of a hypothesis). A passage no longer in the project counts as its document."""
+    text, such as the search words of a hypothesis). A passage no longer in the project counts as its document.
+    0.14: and of the add-ons' floors for it."""
+    fl = floor(cx, payload, dflt)
+    out = _label_docs(cx, payload, dflt)
+    return most([fl, out]) if fl != "cloud" else out
+
+
+def _label_docs(cx, payload: Any, dflt: str | None = None) -> str:
     pids, dids = ids_in(payload)
     if not pids and not dids:
         return "cloud"

@@ -231,21 +231,42 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               ("tasks", "access", "TEXT"),
               # 0.13.3: the title read from the file, kept while the title of the work it is linked to in the
               # bibliography replaces it (NULL: the document has its own title; see bibliography._sync_titles)
-              ("documents", "file_title", "TEXT")]
+              ("documents", "file_title", "TEXT"),
+              # 0.14: where a hypothesis comes from: "batch" (Check several) or an add-on's own kind, and the id of
+              # what it comes from there (NULL: typed by a person, or made before 0.14)
+              ("hypotheses", "origin", "TEXT"), ("hypotheses", "origin_id", "TEXT")]
+
+
+def _add_columns(cx: sqlite3.Connection, migrations) -> None:
+    """Add the columns (table, column, type) a table does not have yet; each only once."""
+    for table, col, typ in migrations:
+        cols = {r[1] for r in cx.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            cx.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
 
 
 def _migrate(cx: sqlite3.Connection) -> None:
     """Add columns introduced after a workspace was created, and give checks from 0.4 a hypothesis record."""
-    for table, col, typ in MIGRATIONS:
-        cols = {r[1] for r in cx.execute(f"PRAGMA table_info({table})")}
-        if col not in cols:
-            cx.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    _add_columns(cx, MIGRATIONS)
     # a 0.4 claim check is a hypothesis with one part (the claim itself); its target was an SDG target
     cx.execute("INSERT OR IGNORE INTO hypotheses(hyp_id, text, framework, code, options_json, decomposed, rationale, model, "
                "created_at) SELECT claim_id, text, CASE WHEN COALESCE(target, '') != '' THEN 'sdg' END, NULLIF(target, ''), "
                "options_json, 0, rationale, model, created_at FROM user_claims WHERE hyp_id IS NULL")
     cx.execute("UPDATE user_claims SET hyp_id=claim_id, part=0, "
                "framework=CASE WHEN COALESCE(target, '') != '' THEN 'sdg' END WHERE hyp_id IS NULL")
+
+
+def _setup_addons(cx: sqlite3.Connection) -> None:
+    """0.14: each add-on's tables, columns and indexes, after ENLENS's own and in the add-ons' order, the same
+    idempotent way (docs/EXTENDING.md)."""
+    from .addons import database
+
+    for db in database():
+        if db["schema"]:
+            cx.executescript(db["schema"])
+        _add_columns(cx, db["migrations"])
+        if db["indexes"]:
+            cx.executescript(db["indexes"])
 
 
 def now() -> str:
@@ -294,6 +315,7 @@ class Workspace:
             cx.executescript(SCHEMA)
             _migrate(cx)
             cx.executescript(INDEXES)
+            _setup_addons(cx)
             cx.commit()
         finally:
             cx.close()

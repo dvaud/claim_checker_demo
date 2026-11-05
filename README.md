@@ -76,6 +76,8 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
 - **Fixes (0.13.5).** Accented file names in zips made with Finder's *Compress* come out right; *Import a project*
   takes a project folder zipped by hand; a smoother icon; *second opinion* everywhere. For developers: room for apps
   built on ENLENS (`site.css`, `brand.json`, add-on modules; see [docs/EXTENDING.md](docs/EXTENDING.md)).
+- **Room for add-ons (0.14).** For developers: an app built on ENLENS adds routes, jobs, tables and its own rules
+  for who may read its text, in files of its own ([docs/EXTENDING.md](docs/EXTENDING.md)). Nothing changes in the app.
 
 ## Earlier releases
 

@@ -102,7 +102,10 @@ def _project(name: str | None):
 def _find_check(check_id: str):
     for name in core.list_projects():
         ws = core.open_project(name)
-        if ws.scalar("SELECT 1 FROM user_claims WHERE claim_id=?", (check_id,)):
+        hyp = ws.query("SELECT hyp_id FROM user_claims WHERE claim_id=?", (check_id,))
+        if hyp:
+            if hyp[0][0] in access.hidden_hypotheses(ws):  # 0.14: an add-on keeps it on this computer
+                raise ValueError("This check is kept on this computer by the user: it is not shown here.")
             return name, ws
     raise ValueError(f"No check {check_id!r} in any project.")
 
@@ -313,7 +316,8 @@ def build_server():
     @_friendly
     def list_checks(project: Optional[str] = None, limit: int = 20) -> dict:
         name, ws = _project(project)
-        rows = claimcheck.history(ws)[: max(1, int(limit))]
+        hidden = access.hidden_hypotheses(ws)  # 0.14: hypotheses an add-on keeps out of a chat
+        rows = [h for h in claimcheck.history(ws) if h["hyp_id"] not in hidden][: max(1, int(limit))]
         return {"project": name, "checks": [{"check_id": h["claim_id"], "checked_at": h["created_at"], "claim": h["claim"],
                                               "status": h["status"],
                                               "status_text": claimcheck.STATUS_TEXT.get(h["status"], h["status"]),

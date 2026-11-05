@@ -10,24 +10,34 @@ import pytest
 FAKE = Path(__file__).with_name("fake_extension")
 
 
+def _forget_open_projects():
+    from enlens_claims import home
+
+    home._OPEN.clear()
+
+
 @pytest.fixture
 def addon():
     """The stand-in add-on, found through its entry point like an installed package."""
     import importlib
 
-    from enlens_claims import addons
+    from enlens_claims import access, addons
 
+    hooks = list(access._FLOORS), list(access._HIDDEN)  # the add-on registers its own when imported
     sys.path.insert(0, str(FAKE))
     importlib.invalidate_caches()
     import enlens_fake_addon
 
     addons.load(refresh=True)
     assert "fake" in addons.names(), addons.errors()
+    _forget_open_projects()  # opened again, a project gains the add-on's tables
     yield enlens_fake_addon
     sys.path.remove(str(FAKE))
+    access._FLOORS[:], access._HIDDEN[:] = hooks
     for name in [m for m in sys.modules if m == "enlens_fake_addon" or m.startswith("enlens_fake_addon.")]:
         del sys.modules[name]
     addons.load(refresh=True)
+    _forget_open_projects()
 
 
 @pytest.fixture

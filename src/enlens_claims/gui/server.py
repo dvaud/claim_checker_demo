@@ -205,10 +205,15 @@ class App:
         """0.8: Claude Code (the researcher's own plan) answers: the AI buttons prepare tasks and wait for them."""
         return self.settings().get("backend") == "claude_code"
 
-    def _job(self, kind: str, title: str, name: str | None, fn, uses_model: bool = True,
-             withdraw: tuple[str, ...] = (), ws=None) -> Job:
+    # -- 0.14: the public interface for add-ons (docs/EXTENDING.md). The old private names keep working. -----------
+    def start_job(self, kind: str, title: str, name: str | None, fn, uses_model: bool = True,
+                  withdraw: tuple[str, ...] = (), ws=None) -> Job:
         """A job; by queue (Claude Code) its tasks wait in the queue and it does not hold the model's turn. Stopping
-        it takes its tasks that no session has taken yet back out of the queue (`withdraw`: their kinds)."""
+        it takes its tasks that no session has taken yet back out of the queue (`withdraw`: their kinds).
+
+        `fn(job)` does the work and returns the job's result; it checks `job.cancel.is_set()` to stop. The job shows
+        in GET /api/jobs and the sidebar, can be stopped (POST /api/jobs/<id>/cancel), and is "not running"
+        (`on_hold`) while its tasks wait in the queue with nothing answering them."""
         q = self.queue_mode()
         since = _now()
 
@@ -223,6 +228,8 @@ class App:
         job = self.jobs.start(kind, title, name, run, uses_model=uses_model and not q)
         job.queue = q
         return job
+
+    _job = start_job  # the name before 0.14
 
     def job_views(self, active_only: bool = False) -> list[dict]:
         """The jobs for the page, each with `on_hold` (0.12): its work waits in the queue for Claude Code and nothing
@@ -277,21 +284,23 @@ class App:
         if current is None and s.get("project") and names:  # the project was removed: open another one
             current = next((p["name"] for p in projects if not p.get("temporary")), names[0])
             home.update_settings({"project": current})
-        return {"version": __version__, "installed_version": _installed_version(), "home": str(home.home()), "settings": s,
-                "brand": addons.brand(),   # 0.13.5: the app's name and words (static/brand.json and add-ons)
-                "backend_label": home.backend_label(s), "backend_labels": home.BACKEND_LABELS,
-                "projects": projects, "project": current, "local_only": home.local_only(),
-                "launcher": self.launcher, "can_quit": self.stop is not None,
-                "can_restart": self.restart is not None,
-                "context": home.context_plan(s),
-                "restricted": home.restricted_choice(s),   # 0.11: the local model for restricted documents
-                "ocr": ingest.ocr_status(),
-                "installation": _installation(),
-                "key": {"session": bool(self.session_key), "env": bool(home.env_key()), "stored": bool(home.stored_key())},
-                "statuses": [{"status": k, "text": v, "help": claimcheck.STATUS_HELP.get(k, ""),
-                              "next": claimcheck.STATUS_NEXT.get(k, "")} for k, v in claimcheck.STATUS_TEXT.items()],
-                "jobs": self.job_views(active_only=True),
-                "queue": self._queue_summary(current)}
+        out = {"version": __version__, "installed_version": _installed_version(), "home": str(home.home()), "settings": s,
+               "brand": addons.brand(),   # 0.13.5: the app's name and words (static/brand.json and add-ons)
+               "backend_label": home.backend_label(s), "backend_labels": home.BACKEND_LABELS,
+               "projects": projects, "project": current, "local_only": home.local_only(),
+               "launcher": self.launcher, "can_quit": self.stop is not None,
+               "can_restart": self.restart is not None,
+               "context": home.context_plan(s),
+               "restricted": home.restricted_choice(s),   # 0.11: the local model for restricted documents
+               "ocr": ingest.ocr_status(),
+               "installation": _installation(),
+               "key": {"session": bool(self.session_key), "env": bool(home.env_key()), "stored": bool(home.stored_key())},
+               "statuses": [{"status": k, "text": v, "help": claimcheck.STATUS_HELP.get(k, ""),
+                             "next": claimcheck.STATUS_NEXT.get(k, "")} for k, v in claimcheck.STATUS_TEXT.items()],
+               "jobs": self.job_views(active_only=True),
+               "queue": self._queue_summary(current)}
+        out.update(addons.state(self, set(out)))  # 0.14: an add-on's keys, never in place of ENLENS's
+        return out
 
     def _queue_summary(self, name: str | None) -> dict | None:
         """What waits in the current project's queue, for the sidebar (0.8)."""
@@ -475,11 +484,14 @@ class App:
         return {"hypotheses": rows[:limit] if limit else rows, "counts": counts, "threshold": thr}
 
     # -- jobs ------------------------------------------------------------------------------------
-    def _wire(self, job: Job, be, tracker: Tracker | None = None) -> None:
+    def wire(self, job: Job, be, tracker: Tracker | None = None) -> None:
+        """Let the backend `be` see the job's Stop and report its progress (0.14: public; `_wire` before)."""
         if hasattr(be, "should_stop"):
             be.should_stop = job.cancel.is_set
         if tracker is not None and hasattr(be, "progress"):
             be.progress = tracker.model_report
+
+    _wire = wire  # the name before 0.14
 
     def start_check(self, name: str, body: dict) -> Job:
         ws = self.ws(name)
@@ -526,9 +538,10 @@ class App:
 
         return self.jobs.start("check", text[:120], name, run, uses_model=True)
 
-    def _follow_queued(self, job: Job, ws, hyp_ids: list[str], tracker: Tracker, poll: float = 2.0) -> None:
+    def follow_queued(self, job: Job, ws, hyp_ids: list[str], tracker: Tracker, poll: float = 2.0) -> None:
         """Follow checks by queue until Claude Code has answered their steps; their steps are taken as the answers
-        arrive (here, or in the connector). Stop withdraws the checks that are still waiting."""
+        arrive (here, or in the connector). Stop withdraws the checks that are still waiting. (0.14: public;
+        `_follow_queued` before.)"""
         shown: dict[str, str] = {}
         t0 = time.time()
         readers = access.Readers(None, "")  # 0.11: the local model for restricted documents (Claude reads the rest)
@@ -570,6 +583,8 @@ class App:
                                                                       "check")
             tracker.model_report({"phase": "queue", "seconds": time.time() - t0, **taskqueue.queue_info(ws, kind)})
             time.sleep(poll)
+
+    _follow_queued = follow_queued
 
     def start_prepare(self, name: str, body: dict) -> Job:
         """The parts and extra search words a check would use, for the person to look at and edit first."""
@@ -949,9 +964,13 @@ class App:
     MODEL_JOB_KINDS = {"label": ("label",), "link": ("link",), "wordings": ("expand",), "theme-names": ("theme",),
                        "resolve": ("resolve",)}  # the task kinds Stop withdraws from the queue; others: none
 
-    def _model_job(self, kind: str, title: str, name: str, fn, steps=("grade",)) -> Job:
+    def start_queued_job(self, kind: str, title: str, name: str, fn, steps=("grade",),
+                         withdraw: tuple[str, ...] | None = None) -> Job:
         """A job that uses the chat model: progress as done/total, the model's own progress, Stop. By queue (0.8)
-        the progress also says what waits for Claude Code."""
+        the progress also says what waits for Claude Code, and the job is "not running" while nothing answers.
+
+        `fn(job, backend, model, progress)` does the work; `progress(done, total)` updates the bar. Stop takes the
+        tasks of the kinds in `withdraw` that wait in the queue back out (0.14: public; `_model_job` before)."""
         be, model = self.backend()  # one context length for every kind: Ollama never reloads the model
 
         def run(job: Job):
@@ -962,7 +981,11 @@ class App:
                     job.progress.update(model=info)
             return fn(job, be, model, lambda d, n: job.progress.update(done=d, total=n))
 
-        return self._job(kind, title, name, run, withdraw=self.MODEL_JOB_KINDS.get(kind, ()), ws=self._ws_or_none(name))
+        return self.start_job(kind, title, name, run,
+                              withdraw=self.MODEL_JOB_KINDS.get(kind, ()) if withdraw is None else tuple(withdraw),
+                              ws=self._ws_or_none(name))
+
+    _model_job = start_queued_job  # the name before 0.14
 
     def _ws_or_none(self, name: str | None):
         try:
@@ -999,7 +1022,7 @@ class App:
         fw = self.settings().get("profile_framework") or "sdg"
         runs = n("SELECT COUNT(*) FROM theme_runs")
         run = ws.query("SELECT run_id FROM theme_runs ORDER BY created_at DESC LIMIT 1") if runs else []
-        return {
+        out = {
             "documents": n("SELECT COUNT(*) FROM documents"),
             "passages": n("SELECT COUNT(*) FROM passages WHERE section='body'"),
             "profile": {"framework": fw, "keyword": n("SELECT COUNT(*) FROM labels WHERE framework=? AND source='keyword'", (fw,)),
@@ -1013,6 +1036,8 @@ class App:
             "hypotheses": n("SELECT COUNT(*) FROM hypotheses"),
             "waiting": (self._queue_summary(name) or {}).get("waiting", 0),
         }
+        out.update(addons.overview(ws, set(out)))  # 0.14: an add-on's counts, never in place of ENLENS's
+        return out
 
     def start_stronger(self, name: str, task_id: str) -> Job:
         """"Ask a stronger model" on one answered task (a round of a check): read again once by the model it steps
@@ -1768,18 +1793,21 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin")
             if origin and urlparse(origin).netloc.lower() != (self.headers.get("Host") or "").lower():
                 raise ApiError(403, "Requests from other web sites are not accepted.")
-            for m, rx, name in ROUTES:
+            routes = ROUTES + addons.routes()  # 0.14: an add-on's routes come after ENLENS's own
+            downloads = DOWNLOADS | addons.downloads()
+            for m, rx, name in routes:
                 mt = rx.match(path)
                 if mt and m == method:
-                    token = self.headers.get("X-Enlens-Token") or (_str(q, "token") if name in DOWNLOADS else None)
+                    hname = addons.handler_name(name)
+                    token = self.headers.get("X-Enlens-Token") or (_str(q, "token") if hname in downloads else None)
                     if not token or not secrets.compare_digest(token, self.app.token):
                         raise ApiError(401, "Missing or wrong token. Reload the page.")
                     args = [unquote(g) for g in mt.groups()]
-                    out = getattr(self, name)(*args, q=q)
+                    out = getattr(self, name)(*args, q=q) if isinstance(name, str) else name(self, *args, q=q)
                     if out is not None:
                         self._json(200, out)
                     return
-            if any(rx.match(path) for _m, rx, _n in ROUTES):
+            if any(rx.match(path) for _m, rx, _n in routes):
                 raise ApiError(405, "Method not allowed.")
             raise ApiError(404, "No such API endpoint.")
         except ApiError as e:
