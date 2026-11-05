@@ -28,43 +28,23 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import access, prompts, routing, runs
+from . import access, prompts, routing, runs, taskkinds
 from .store import Workspace, now
 
 CLAIM_MINUTES = 30
 PAUSED_AFTER = 180          # seconds without an answer, nothing claimed and work waiting: the run has paused
 TOKEN_BUDGET = 15000        # the most a batch's prompts may hold (well under the connector's 25,000-token output cap)
 CONNECTOR_CAP = 25000       # the connector's output cap: the system prompt and the task prompts of a batch together
-BATCH = {"label": 20, "link": 10, "theme": 5, "expand": 5, "decompose": 5, "resolve": 4, "check": 1, "reread": 1,
-         "second": 1,
-         # the SDG pack (0.8.1): its system prompts are sent once a batch; extract's holds the 169 targets (~11,000
-         # tokens), so its batch is bounded by CONNECTOR_CAP as well
-         "split": 5, "extract": 8, "verify": 10, "verify_set": 3}
-# the researcher's own requests first, then small jobs, then the bulk; the SDG pack's batch pipeline last
-ORDER = ("decompose", "expand", "check", "reread", "second", "theme", "link", "label", "resolve",
-         "split", "verify_set", "verify", "extract")
+# 0.15: views of the registry (taskkinds.py): the batch a claim takes, the order the queue is answered in (the
+# researcher's own requests first, then small jobs, then the bulk; the SDG pack's batch pipeline last), and the
+# names the queue panel uses
+BATCH = taskkinds.Table("batch")
+ORDER = taskkinds.Names(lambda k: k.task and k.batch is not None and k.order is not None, key=lambda k: k.order)
 KINDS = ORDER
 
-NOUN = {"label": ("passage to label", "passages to label"), "link": ("pair of terms", "pairs of terms"),
-        "theme": ("theme to name", "themes to name"), "expand": ("set of search words", "sets of search words"),
-        "decompose": ("hypothesis to split", "hypotheses to split"),
-        "resolve": ("window of references", "windows of references"),
-        "check": ("set of excerpts to judge", "sets of excerpts to judge"),
-        "reread": ("excerpt to read again", "excerpts to read again"),
-        "second": ("set of excerpts for a second opinion", "sets of excerpts for a second opinion"),
-        "split": ("justification to split", "justifications to split"),
-        "extract": ("passage to extract claims from", "passages to extract claims from"),
-        "verify": ("claim and passage to check", "claims and passages to check"),
-        "verify_set": ("VCA claim to check", "VCA claims to check")}
-SHORT = {"label": "labels", "link": "pairs of terms", "theme": "theme names", "expand": "sets of search words",
-         "decompose": "hypotheses to split", "resolve": "windows of references", "check": "sets of excerpts",
-         "reread": "excerpts to read again", "second": "second opinions", "split": "justifications to split",
-         "extract": "passages to extract", "verify": "claims to check", "verify_set": "VCA claims to check"}
-KIND_TITLE = {"label": "Codebook labels", "link": "How concepts relate", "theme": "Theme names",
-              "expand": "Search words", "decompose": "Splitting hypotheses", "resolve": "References in documents",
-              "check": "Judging excerpts", "reread": "Reading an excerpt again", "second": "Second opinions",
-              "split": "SDG pack: splitting justifications", "extract": "SDG pack: extracting claims",
-              "verify": "SDG pack: checking claims", "verify_set": "SDG pack: checking VCA claims"}
+NOUN = taskkinds.Table("noun")
+SHORT = taskkinds.Table("short")
+KIND_TITLE = taskkinds.Table("title")
 
 PRIVACY_LINE = ("Claude Code sends the passages inside the tasks it takes to Anthropic; your documents, results and "
                 "reviews stay on this computer.")

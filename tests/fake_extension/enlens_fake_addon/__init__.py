@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from enlens_claims import access, claimcheck
+from enlens_claims import access, claimcheck, taskkinds
 
 # ---- 0.13.5: the name and the look -------------------------------------------------------------------------------
 BRAND = {"name": "Fieldnotes", "tagline": "a stand-in app on ENLENS", "welcome_title": "Welcome to Fieldnotes",
@@ -23,6 +23,8 @@ STATIC = Path(__file__).with_name("static")
 # ---- 0.14: tables ------------------------------------------------------------------------------------------------
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fake_notes(note_id TEXT PRIMARY KEY, text TEXT, ai_access TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS fake_tags(note_id TEXT, tag TEXT, quote TEXT, confidence REAL, model TEXT,
+  PRIMARY KEY(note_id, tag));
 """
 MIGRATIONS = [("fake_notes", "colour", "TEXT")]
 INDEXES = "CREATE INDEX IF NOT EXISTS ix_fake_notes_colour ON fake_notes(colour);"
@@ -111,3 +113,60 @@ def _hidden(ws):
 
 access.register_floor(_floor)
 access.register_hidden(_hidden)
+
+
+# ---- 0.15: a kind of AI task of its own -------------------------------------------------------------------------
+# The AI gives a note's tags, each with the sentence of the note it comes from. ENLENS checks the answer against
+# TagsOut and every quote against the note's text before store_tags sees it.
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class Tag(BaseModel):
+    tag: str = Field(min_length=1, max_length=40)
+    quote: str
+    confidence: float = Field(ge=0, le=1)
+
+
+class TagsOut(BaseModel):
+    tags: list[Tag] = Field(default_factory=list, max_length=5)
+
+
+def tags_system() -> str:
+    return ("You tag a researcher's note with up to five short tags. For each tag, quote the sentence of the note it "
+            'comes from exactly. Output format\n{"tags": [{"tag": "water", "quote": "...", "confidence": 0.8}]}')
+
+
+def tags_user(payload: dict) -> str:
+    return f"NOTE:\n{payload['text']}"
+
+
+def store_tags(cx, t, payload, obj, model):
+    for x in obj["tags"]:
+        cx.execute("INSERT OR REPLACE INTO fake_tags(note_id, tag, quote, confidence, model) VALUES (?,?,?,?,?)",
+                   (payload["fake_note_id"], x["tag"], x["quote"], x["confidence"], model))
+    return True, []
+
+
+def tags_demo(payload: dict) -> dict:
+    """The offline demo: the note's first sentence, tagged with its first long word."""
+    first = payload["text"].split(". ")[0].strip()
+    word = next((w.strip(".,").lower() for w in first.split() if len(w) > 4), "note")
+    return {"tags": [{"tag": word, "quote": first, "confidence": 0.5}]}
+
+
+TAG_KIND = taskkinds.register(taskkinds.TaskKind(
+    name="fake_tag", prompt_version="fake-tag-v1", system=tags_system, user=tags_user, schema=TagsOut,
+    quote_from=lambda payload: payload["text"], store=store_tags, certainty="tags",
+    claude=("haiku", "sonnet"), local="small", helper="fake-tagger",
+    helper_file=str(Path(__file__).with_name("agents") / "fake-tagger.md"), helper_model="haiku",
+    batch=7, order=7.5, noun=("note to tag", "notes to tag"), short="notes to tag", title="Tagging notes",
+    run_name="Tags of notes", output_cap=300, demo=tags_demo, size=lambda k, max_chars: 600 + max_chars))
+
+
+def tag_task(cx, note_id: str, text: str) -> str:
+    """Make the task that tags a note (the add-on's own code would do this from a button)."""
+    from enlens_claims import tasks
+
+    tid = f"fake_tag:{note_id}"
+    tasks._insert_task(cx, tid, "fake_tag", "haiku", {"fake_note_id": note_id, "text": text})
+    return tid

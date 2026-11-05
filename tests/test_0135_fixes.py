@@ -116,5 +116,7 @@ def test_second_opinion_everywhere():
             assert old not in text, old
     assert '"second-opinion": "Second opinion"' in page["app.js"]
     assert "The second opinion read" in page["views/result.js"]
-    assert '"second": "Second opinion"' in src["enlens_claims.runs"]
+    from enlens_claims import taskkinds  # 0.15: the run's name lives in the registry
+
+    assert taskkinds.get("second").run_name == "Second opinion"
     assert "The model for second opinions is the same as the main model" in src["enlens_claims.gui.server"]

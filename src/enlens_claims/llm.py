@@ -15,6 +15,7 @@ import os
 import re
 from typing import Protocol
 
+from . import taskkinds
 from .textutil import content_words, overlap, split_sentences
 
 
@@ -36,7 +37,7 @@ class _BudgetReached(Exception):
         self.thinking = thinking
 
 
-JUDGING = frozenset({"check", "reread", "second"})   # the task kinds where reasoning can help: judging excerpts
+JUDGING = taskkinds.NameSet(lambda k: k.judging)   # the task kinds where reasoning can help: judging excerpts
 
 
 def estimate_tokens(text: str) -> int:
@@ -47,8 +48,7 @@ def estimate_tokens(text: str) -> int:
 # Longest answer each task kind needs, in tokens. A reasoning model gets THINK_ALLOWANCE on top for its reasoning.
 # Without a cap a model that loops (endless blank space in the JSON, or reasoning that never ends) runs until the
 # context is full, which on a laptop takes longer than any timeout.
-OUTPUT_CAP = {"expand": 400, "decompose": 800, "check": 1500, "verify_set": 1500, "verify": 600, "split": 1500,
-              "extract": 3000, "reread": 600, "second": 1500, "label": 1500, "link": 700, "theme": 500, "resolve": 2500}
+OUTPUT_CAP = taskkinds.Table("output_cap")  # 0.15: a view of the registry (taskkinds.py)
 DEFAULT_SEED = 42   # sent with every request (0.7): with temperature 0 the same input gives the same answer
 THINK_ALLOWANCE = 4096
 
@@ -972,6 +972,9 @@ class BaselineBackend:
             return json.dumps(self._theme(payload))
         if kind == "resolve":
             return json.dumps({"chains": []})  # the demo finds no references (it cannot read)
+        k = taskkinds.get(kind)
+        if k is not None and k.demo is not None:  # 0.15: an add-on's kind gives its own offline answer
+            return json.dumps(k.demo(payload))
         raise ValueError(kind)
 
     def _label(self, payload: dict) -> dict:

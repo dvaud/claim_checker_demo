@@ -23,7 +23,10 @@ def addon():
 
     from enlens_claims import access, addons
 
+    from enlens_claims import taskkinds
+
     hooks = list(access._FLOORS), list(access._HIDDEN)  # the add-on registers its own when imported
+    kinds = dict(taskkinds._REG)
     sys.path.insert(0, str(FAKE))
     importlib.invalidate_caches()
     import enlens_fake_addon
@@ -34,6 +37,8 @@ def addon():
     yield enlens_fake_addon
     sys.path.remove(str(FAKE))
     access._FLOORS[:], access._HIDDEN[:] = hooks
+    taskkinds._REG.clear()
+    taskkinds._REG.update(kinds)
     for name in [m for m in sys.modules if m == "enlens_fake_addon" or m.startswith("enlens_fake_addon.")]:
         del sys.modules[name]
     addons.load(refresh=True)

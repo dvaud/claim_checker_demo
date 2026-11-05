@@ -78,6 +78,8 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
   built on ENLENS (`site.css`, `brand.json`, add-on modules; see [docs/EXTENDING.md](docs/EXTENDING.md)).
 - **Room for add-ons (0.14).** For developers: an app built on ENLENS adds routes, jobs, tables and its own rules
   for who may read its text, in files of its own ([docs/EXTENDING.md](docs/EXTENDING.md)). Nothing changes in the app.
+- **One registry for AI tasks (0.15).** For developers: each kind of AI task is described once
+  (`taskkinds.py`), and an add-on can register a kind of its own, quote check included. Nothing changes in the app.
 
 ## Earlier releases
 

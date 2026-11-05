@@ -28,24 +28,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from . import taskkinds
+
 STEP_UP_BELOW = 0.6
 
-# the kinds the router knows: the kinds of 0.7 and 0.8, the SDG pack's kinds (routed only when queued), and the role
-# "audit" (a second-model audit of the SDG pack's answers, see `task_kind`)
+# 0.15: the kinds the router knows, their models and helpers, and Settings' rows are views of the registry
+# (taskkinds.py), so a kind an add-on registers is routed like ENLENS's own. "audit" is a role (a second-model audit
+# of the SDG pack's answers, see `task_kind`), not a kind of task.
 SDG_KINDS = ("split", "extract", "verify", "verify_set")
-KINDS = ("label", "link", "expand", "decompose", "theme", "resolve", "check", "reread", "second") + SDG_KINDS + ("audit",)
-# how the Settings table groups them (one row each)
-ROWS = (("label", ("label",), "Codebook labels (profile)"),
-        ("link", ("link",), "How concepts relate"),
-        ("expand", ("expand", "decompose"), "Search words and splitting a hypothesis"),
-        ("theme", ("theme",), "Theme names"),
-        ("resolve", ("resolve",), "References in a document"),
-        ("check", ("check", "reread"), "Judging excerpts (checks, reading again)"),
-        ("second", ("second", "audit"), "Second opinion (and audits of the SDG pack)"),
-        ("extract", ("extract",), "SDG pack: impact claims from passages"),
-        ("split", ("split",), "SDG pack: splitting the VCA's justifications"),
-        ("verify", ("verify", "verify_set"), "SDG pack: checking claims against their sources"))
-ROW_OF = {k: row for row, kinds, _t in ROWS for k in kinds}
+KINDS = taskkinds.Names(lambda k: k.claude is not None)
+# how the Settings table groups them (one row each): (row, its kinds, its title)
+ROWS = taskkinds.Rows()
+ROW_OF = taskkinds.Table("row")
 
 ALIASES = ("haiku", "sonnet", "opus", "fable")
 # the Claude API's ids for the aliases (Models overview, October 2026); "opus" follows Settings' anthropic_model
@@ -53,40 +47,18 @@ API_IDS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "
            "fable": "claude-fable-5-1"}
 LADDER = ("haiku", "sonnet", "opus")
 
-# kind: (first model, the model it steps up to; "auditor" = Opus, or Fable when the researcher switched it on)
-CLAUDE_DEFAULTS: dict[str, tuple[str, str | None]] = {
-    "label": ("haiku", "sonnet"), "link": ("haiku", "sonnet"),
-    "expand": ("sonnet", "opus"), "decompose": ("sonnet", "opus"),
-    "theme": ("sonnet", "opus"), "resolve": ("sonnet", "opus"),
-    # checks start on Sonnet (its helper runs at high effort, see agents/enlens-checker.md); an unsure or twice
-    # rejected judgement goes to the auditor, so the second opinion and the step-up stay on Opus (or Fable)
-    "check": ("sonnet", "auditor"), "reread": ("sonnet", "auditor"),
-    "second": ("auditor", None),
-    # the SDG pack. extract is bulk work (hundreds to thousands of passages, every claim tagged with SDG targets,
-    # directions and quotes): Sonnet, and an answer it is unsure of (a claim under 0.6) or two rejected answers go to
-    # Opus; claims under accept_confidence wait for a person anyway. split is small (one task per VCA target) but
-    # its claims become the reference everything else is checked against: Opus (the pilot used Fable). verify and
-    # verify_set judge excerpts, as a check does: Opus, stepping up to the auditor.
-    "extract": ("sonnet", "opus"), "split": ("opus", "auditor"),
-    "verify": ("opus", "auditor"), "verify_set": ("opus", "auditor"),
-    "audit": ("auditor", None),
-}
-LOCAL_DEFAULTS: dict[str, str] = {"label": "small", "link": "small", "expand": "large", "decompose": "large",
-                                  "theme": "large", "resolve": "large", "check": "large", "reread": "large",
-                                  "second": "second", "extract": "large", "split": "large", "verify": "large",
-                                  "verify_set": "large", "audit": "second"}
+# kind: (first model, the model it steps up to; "auditor" = Opus, or Fable when the researcher switched it on).
+# The reasons for each choice are with the kinds, in taskkinds.py.
+CLAUDE_DEFAULTS = taskkinds.Table("claude")
+LOCAL_DEFAULTS = taskkinds.Table("local")
 
 # the helper agents of the Claude Code plugin (G2), by kind; a stepped-up check goes to the auditor
-HELPERS = {"label": "enlens-labeller", "link": "enlens-linker", "theme": "enlens-namer", "expand": "enlens-namer",
-           "resolve": "enlens-reader", "decompose": "enlens-reader", "check": "enlens-checker",
-           "reread": "enlens-checker", "second": "enlens-auditor",
-           "extract": "enlens-extractor", "split": "enlens-extractor", "verify": "enlens-checker",
-           "verify_set": "enlens-checker", "audit": "enlens-auditor"}
-HELPER_MODEL = {"enlens-labeller": "haiku", "enlens-linker": "haiku", "enlens-namer": "sonnet",
-                "enlens-reader": "sonnet", "enlens-extractor": "sonnet", "enlens-checker": "sonnet",
-                "enlens-auditor": "opus"}
+HELPERS = taskkinds.Table("helper")
+HELPER_MODEL = taskkinds.HelperModels({"enlens-labeller": "haiku", "enlens-linker": "haiku", "enlens-namer": "sonnet",
+                                       "enlens-reader": "sonnet", "enlens-extractor": "sonnet",
+                                       "enlens-checker": "sonnet", "enlens-auditor": "opus"})
 # the kinds whose stepped-up tasks go to the auditor (they judge excerpts, or set the reference claims)
-TO_AUDITOR = ("check", "reread", "split", "verify", "verify_set")
+TO_AUDITOR = taskkinds.Names(lambda k: k.to_auditor)
 
 ROUTE_NAMES = {"claude_code": "Claude Code", "anthropic": "Claude API", "local": "local model server",
                "ollama": "local model server", "baseline": "offline demo", "file": "file queue",
@@ -116,11 +88,11 @@ def certainty(kind: str, obj) -> float | None:
     gives none (an empty answer, or a kind without confidences)."""
     if not isinstance(obj, dict):
         return None
-    if kind == "verify":  # one verdict with its confidence
+    k = taskkinds.get(kind)
+    items = k.certainty if k else None  # 0.15: the answer's list whose items carry a confidence, from the registry
+    if items == ".":  # one verdict with its confidence (verify)
         c = obj.get("confidence")
         return float(c) if isinstance(c, (int, float)) and not isinstance(c, bool) else None
-    items = {"label": "labels", "link": "relations", "check": "evidence", "reread": "evidence",
-             "second": "evidence", "verify_set": "evidence", "audit": "evidence", "extract": "claims"}.get(kind)
     if not items:
         return None
     confs = []

@@ -192,6 +192,55 @@ access.register_hidden(drafts_kept_here)
 
 ENLENS loads the add-ons before it decides anything, so hooks an add-on registers when it is imported always count.
 
+## A kind of AI task of its own (0.15)
+
+Every kind of task the AI answers is one `TaskKind` in `enlens_claims/taskkinds.py`. The tables the other modules
+keep (`routing.KINDS`, `CLAUDE_DEFAULTS`, `HELPERS`, `taskqueue.ORDER`, `BATCH`, the names, `prompts.VERSIONS`,
+`llm.OUTPUT_CAP`, `llm.JUDGING`, `tasks.HANDLERS`…) are views of the registry, so a kind an add-on registers is
+queued, routed, stepped up, answered offline, stored and named like ENLENS's own:
+
+```python
+from pydantic import BaseModel
+from enlens_claims import taskkinds
+
+class ClaimsOut(BaseModel):
+    claims: list[dict]
+
+def store_claims(cx, t, payload, answer, model):     # answer: already checked against ClaimsOut and every quote
+    for c in answer["claims"]:
+        cx.execute("INSERT INTO draft_claims(draft_id, quote, claim) VALUES (?,?,?)",
+                   (payload["draft_id"], c["quote"], c["claim"]))
+    return True, []                                    # (ok, problems): problems send the answer back
+
+taskkinds.register(taskkinds.TaskKind(
+    name="draft_claims", prompt_version="draft-claims-v1",
+    system=lambda: "You list the claims in a part of a draft…",   # the system prompt
+    user=lambda payload: f"PART OF A DRAFT:\n{payload['text']}",  # the task's own prompt
+    schema=ClaimsOut, quote_from=lambda payload: payload["text"], store=store_claims,
+    certainty="claims",                 # the answer's list whose items carry `confidence` (an unsure answer steps up)
+    claude=("sonnet", "opus"), local="large", helper="enlens-reader",
+    batch=4, order=2.5,                 # the queue: tasks per batch; after "expand" (2), before "check" (3)
+    noun=("part of a draft", "parts of a draft"), short="parts of drafts", title="Claims in drafts",
+    run_name="Finding the claims in a draft", output_cap=1500,
+    demo=lambda payload: {"claims": []},          # the offline demo's answer
+    size=lambda k, max_chars: 6000))              # the longest task prompt, in characters
+```
+
+**The quote check is required.** A kind without `quote_from` is refused. ENLENS checks every answer of an add-on's
+kind before its store function sees it: against `schema`, then every string under a key in `quote_fields` (default
+`quote`), at any depth, must be found in the text `quote_from(payload)` gives (case, spacing and typography aside).
+An answer that fails goes back with its problems, as for ENLENS's own kinds.
+
+**The guard holds.** A task of an add-on's kind is made with `tasks._insert_task` like any other, so it takes the
+setting of the documents (and floors) its payload names, is handed to Claude Code only when that is *cloud*, is
+refused to a cloud model otherwise, and nothing leaves the computer under `--local-only`.
+
+**Its own helper (optional).** `helper_file` (an agent `.md` in the plugin's format, tools limited to the queue's)
+and `helper_model` give the kind a Claude Code helper of its own; the plugin ENLENS writes then carries it.
+
+**Defaults.** What a kind does not say: its own Settings row, Sonnet stepping up to Opus (a large local model), a
+batch of 5 at the end of the queue, an answer of up to 2,000 tokens.
+
 ## Rules that no add-on gets round
 
 `home.local_only()` (switched off cloud models), the per-document AI settings and the quote check apply to anything

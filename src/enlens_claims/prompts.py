@@ -3,14 +3,11 @@ from __future__ import annotations
 
 import json
 
+from . import taskkinds
 from .taxonomy import targets_reference_text
 
-VERSIONS = {"extract": "extract-v1", "split": "split-v2", "verify": "verify-v1", "verify_set": "verify-set-v1",
-            "expand": "expand-v2", "check": "check-v4", "decompose": "decompose-v1",
-            "reread": "check-v4",   # reading one excerpt again uses the check prompt
-            "second": "check-v4",   # so does a second model grading the excerpts already read
-            # 0.7
-            "label": "label-v1", "link": "link-v1", "theme": "theme-v1", "resolve": "resolve-v1"}
+# 0.15: a view of the registry (taskkinds.py): check, reread and second share the check prompt (check-v4)
+VERSIONS = taskkinds.Table("prompt_version")
 
 _JSON_RULE = ("Answer with one JSON object and nothing else: no prose, no code fences. "
               "Copy every quote character for character from the text you were given, including odd spacing or "
@@ -37,6 +34,9 @@ def _targets_block() -> str:
 
 
 def system_prompt(kind: str) -> str:
+    k = taskkinds.get(kind)
+    if k is not None and k.system is not None:  # 0.15: an add-on's kind builds its own
+        return k.system()
     if kind == "extract":
         return f"""You extract evidence-backed impact claims from scientific and policy texts about the green hydrogen value chain,
 for a Value Chain Assessment against the UN Sustainable Development Goals.
@@ -260,6 +260,9 @@ Answer with one JSON object and nothing else: no prose, no code fences."""
 
 
 def user_prompt(kind: str, payload: dict) -> str:
+    k = taskkinds.get(kind)
+    if k is not None and k.user is not None:  # 0.15: an add-on's kind builds its own
+        return k.user(payload)
     if kind == "extract":
         parts = [f"DOCUMENT: {payload.get('title') or 'untitled'}"]
         if payload.get("doi"):

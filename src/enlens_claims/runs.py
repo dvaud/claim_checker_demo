@@ -20,7 +20,7 @@ import json
 import statistics
 import uuid
 
-from . import prompts
+from . import prompts, taskkinds
 from .store import Workspace, now
 
 FIELDS = ("model", "digest", "prompt_version", "seed", "num_ctx", "think", "think_budget", "backend")
@@ -126,11 +126,7 @@ def provenance_table(ws: Workspace, task_ids: list[str] | None = None, kinds: tu
         args += list(kinds)
     sql += (" GROUP BY r.kind, r.model, r.digest, r.prompt_version, r.seed, r.settings_json, COALESCE(r.route, ''), "
             "COALESCE(r.helper, '') ORDER BY r.kind, first")
-    names = {"check": "Checking hypotheses", "reread": "Reading an excerpt again", "second": "Second opinion",
-             "expand": "Search words", "decompose": "Splitting a hypothesis", "label": "Codebook labels",
-             "link": "How concepts relate", "theme": "Theme names", "resolve": "References in a document",
-             "extract": "Extracting claims (SDG pack)", "verify_set": "Checking VCA claims (SDG pack)",
-             "verify": "Checking claims (SDG pack)", "split": "Splitting justifications (SDG pack)"}
+    names = taskkinds.Table("run_name")  # 0.15: from the registry (taskkinds.py)
     out = []
     claude_code = False
     for r in ws.query(sql, args):

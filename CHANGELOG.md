@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.15.0 (November 2026): one registry for the kinds of AI task
+
+A new kind of AI task touched eight modules: its schema (`schema.py`), its prompt and prompt version (`prompts.py`),
+its store function (`tasks.py`), its models, step-up and Claude Code helper (`routing.py`), its batch size, place in
+the queue and names (`taskqueue.py`), its name in *How these results were made* (`runs.py`), its answer's token
+limit and offline answer (`llm.py`) and its size estimate (`home.py`). 0.15.0 describes each kind once, in
+`taskkinds.py`, and an add-on can register a kind of its own. For people who use ENLENS nothing changes: every answer
+still goes through the quote check, a person can overrule it, and nothing more leaves the computer.
+
+- **One definition per kind.** A `TaskKind` holds the name, prompt version and prompt builders; the answer's schema,
+  where the quote check reads and the store function; the Claude models (first, steps up to), the local model, the
+  helper, Settings' row; the batch size and place in the queue; the names (singular, plural, the queue's line, the
+  run's name); the answer's token limit, the offline demo's answer and the size estimate.
+- **The tables are built from it.** `routing.KINDS`, `ROWS`, `ROW_OF`, `CLAUDE_DEFAULTS`, `LOCAL_DEFAULTS`,
+  `HELPERS`, `HELPER_MODEL`, `TO_AUDITOR`, `prompts.VERSIONS`, `tasks.KINDS`, `CORPUS_KINDS`, `HANDLERS`,
+  `taskqueue.BATCH`, `ORDER`, `NOUN`, `SHORT`, `KIND_TITLE`, `llm.JUDGING`, `OUTPUT_CAP` and the run names are live
+  views of the registry, so a kind registered later appears in all of them. Each equals its 0.14 value (a test
+  writes the 0.14 values out). `routing.KINDS` and `tasks.KINDS` list the same kinds in another order (where order
+  never mattered); `routing.certainty` reads which list of an answer carries confidences from the registry.
+- **The quote check is required.** `taskkinds.register` refuses a kind without `quote_from` (or without a prompt,
+  prompt version or store function), and a name ENLENS uses. ENLENS checks an add-on kind's answers against its
+  schema and every quote against the text `quote_from` gives before the add-on's store function sees them.
+- **The guard and local-only hold.** An add-on's tasks are made, labelled, queued and refused like ENLENS's own.
+- **Its own helper.** A kind may bring a Claude Code helper agent (`helper_file`, `helper_model`): the plugin ENLENS
+  writes carries it, and the plugin check holds it to the queue's tools.
+
+**Tests.** `test_0150_task_kinds.py` (29 tests): every table against its 0.14 value; a test can still change a table
+(`monkeypatch.setitem`); registering a kind (refused without a quote check, a store function or with ENLENS's name;
+its defaults; taken away again); the quote check itself; and the stand-in add-on's kind (`fake_tag`, tags for a note,
+each quoting it) in every table, routed on Claude Code, the Claude API and a local server, with its own Settings row
+and certainty, through the queue (a made-up quote and a broken answer refused before anything is stored, a good one
+stored with its route), stepping up when unsure, answered by the offline demo, named in *How these results were
+made*, its helper in the Claude Code plugin, its size estimate, and kept on this computer when its note is
+*Only a local AI* or the installation is local-only.
+
+**Not yet done.** The page does not yet know an add-on's kinds by name in its own lists (0.15.x).
+
 ## 0.14.0 (November 2026): room for add-ons
 
 An app built on ENLENS (Margin is one) had to edit ENLENS's own files to add a page's API, a job, a table, or a rule

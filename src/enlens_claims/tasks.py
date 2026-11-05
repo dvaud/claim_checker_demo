@@ -18,7 +18,7 @@ from typing import Any, Iterable
 
 from pydantic import ValidationError
 
-from . import access, prompts
+from . import access, prompts, taskkinds
 from .retrieve import BM25, H2_RE
 from .schema import (CheckOut, DecomposeOut, ExpandOut, ExtractOut, ImpactClaimOut, InteractionOut, SplitOut,
                      VerifyOut, VerifySetOut)
@@ -28,11 +28,10 @@ from .taxonomy import targets
 from .textutil import find_quote, normalise
 from .textutil import tokens_v1 as tokens  # the SDG pack keeps the 0.4 tokenizer, so its selections do not change
 
-KINDS = ("split", "extract", "verify", "verify_set", "expand", "check", "decompose", "reread", "second",
-         "label", "link", "theme", "resolve")
+KINDS = taskkinds.Names(lambda k: k.task)  # 0.15: a view of the registry (taskkinds.py)
 # 0.7: the kinds whose passages are the user's own corpus at large (not a check they started): handing them to an
 # outside worker through the file queue sends those passages off this computer, so the command line says so
-CORPUS_KINDS = ("label", "link", "theme", "resolve")
+CORPUS_KINDS = taskkinds.Names(lambda k: k.corpus)
 MAX_ATTEMPTS = 3
 
 
@@ -450,8 +449,7 @@ def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = Non
         cx.execute("SAVEPOINT handler")  # an answer that is not accepted changes nothing that was stored before
         try:
             obj = parse_json(raw)
-            handler = HANDLERS[t["kind"]]
-            ok, errors = handler(cx, t, payload, obj, model)
+            ok, errors = _store_answer(cx, t, payload, obj, model)
         except (ValueError, ValidationError) as e:
             errors = _errs(e) if isinstance(e, ValidationError) else [str(e)]
             ok = False
@@ -481,6 +479,21 @@ def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = Non
                     json.dumps(prov["settings"]) if prov.get("settings") else None,
                     route or (prov.get("settings") or {}).get("route"), helper, int(t["step"] or 0), claimed_at))
     return ok, errors
+
+
+def _store_answer(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
+    """Store an answer with its kind's store function. 0.15: an add-on's kind is checked first by ENLENS: its schema,
+    then every quote against the text the kind names (`quote_from`); the store function sees only what passed."""
+    kind = taskkinds.get(t["kind"])
+    if kind is None or kind.store is None:
+        raise ValueError(f"unknown task kind {t['kind']!r}")
+    if not kind.core:
+        if kind.schema is not None:
+            obj = kind.schema.model_validate(obj).model_dump()
+        problems = taskkinds.check_quotes(kind, payload, obj)
+        if problems:
+            return False, problems
+    return kind.store(cx, t, payload, obj, model)
 
 
 def _store_extract(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
@@ -897,10 +910,14 @@ def _store_resolve(cx, t, payload, obj, model):
     return store_resolve(cx, t, payload, obj, model)
 
 
-HANDLERS = {"extract": _store_extract, "split": _store_split, "verify": _store_verify, "verify_set": _store_verify_set,
-            "expand": _store_expand, "check": _store_check, "decompose": _store_decompose, "reread": _store_reread,
-            "second": _store_second, "label": _store_label, "link": _store_link, "theme": _store_theme,
-            "resolve": _store_resolve}
+for _kind, _store in {"extract": _store_extract, "split": _store_split, "verify": _store_verify,
+                     "verify_set": _store_verify_set, "expand": _store_expand, "check": _store_check,
+                     "decompose": _store_decompose, "reread": _store_reread, "second": _store_second,
+                     "label": _store_label, "link": _store_link, "theme": _store_theme,
+                     "resolve": _store_resolve}.items():
+    taskkinds.attach(_kind, store=_store)
+# 0.15: the store function of each kind, ENLENS's and the add-ons', from the registry
+HANDLERS = taskkinds.Table("store")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1256,8 +1273,7 @@ def check_results(ws: Workspace, paths: Iterable[str | Path]) -> dict[str, Any]:
                 errors: list[str] = []
                 try:
                     obj = parse_json(rec.get("output", rec.get("text", "")))
-                    handler = HANDLERS[t["kind"]]
-                    ok, errors = handler(cx, t, json.loads(t["payload_json"]), obj, rec.get("model") or t["model"])
+                    ok, errors = _store_answer(cx, t, json.loads(t["payload_json"]), obj, rec.get("model") or t["model"])
                 except (ValueError, ValidationError) as e:
                     ok, errors = False, (_errs(e) if isinstance(e, ValidationError) else [str(e)])
                 finally:
