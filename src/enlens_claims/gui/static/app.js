@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName } from "./lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY } from "./lib.js";
 import { FEATURES, SECTIONS } from "./features.js";
 import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
 import localExtensions from "./extensions.js";
@@ -64,7 +64,7 @@ async function route() {
     try { await api("PUT", "/api/settings", { project: App.state.projects[0].name }); await App.refresh(); } catch (e) { showError(e); }
   }
   let match = null, nav = "", render = null;
-  for (const [rx, n, r] of [...ROUTES, ...PAGE_ROUTES]) {  // 0.15.1: an add-on's pages come after the core ones
+  for (const [rx, n, r] of [...ROUTES, ...PAGE_ROUTES]) {  // 0.13.6: an add-on's pages come after the core ones
     const m = rx.exec(pathPart);
     if (m) { match = m; nav = n; render = r; break; }
   }
@@ -242,7 +242,7 @@ async function drawJobs() {
     going.length ? h("span", { class: "running-dot", "aria-hidden": "true" }) : hold.length ? icon("pause", { size: 14 }) : icon("clock", { size: 14 }),
     head, icon("chevron-up", { size: 14 }));
   const menu = h("div", { class: "ps-menu" });
-  // 0.15.1: each kind's link, icon and name are in registry.js (JOB_KINDS), where an add-on adds its own
+  // 0.13.6: each kind's link, icon and name are in registry.js (JOB_KINDS), where an add-on adds its own
   const row = (j) => {
     const v = jobRow(j);
     return h("a", { class: "job-row", href: v.href, title: v.tooltip }, icon(v.icon, { size: 14 }), h("span", { class: "job-title" }, v.text),
@@ -369,13 +369,52 @@ function quitInit() {
 }
 
 // 0.13.1, "Update ENLENS": installs the newest version (the latest GitHub release, or the branch a git copy follows)
-// and restarts into it; the page reloads by itself once the new version answers
+// and restarts into it; the page reloads by itself once the new version answers.
+// 0.13.6: the button shows only when there is something to install. The page looks when it opens and every two
+// minutes (checkUpdate in lib.js); a new version also pops up once, in the corner. Without one, Settings → Technical
+// has Check for updates. A failed look (offline, a git copy edited by hand) stays quiet here: Settings says why.
 function updateInit() {
   const btn = document.getElementById("update-btn");
+  Updates.install = () => updateApp(btn);
   if (!btn || !App.state || !App.state.can_restart) return;
-  replace(btn, icon("arrow-up", { size: 15 }), h("span", {}, `Update ${appName()}`));
-  btn.hidden = false;
   btn.addEventListener("click", () => updateApp(btn));
+  onUpdateSeen((info) => showUpdate(btn, info));
+  const look = () => checkUpdate().catch(() => {});
+  look();
+  setInterval(look, UPDATE_EVERY);
+  // a computer that slept, or a tab left in the background, looks again when it is back in front
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - Updates.at > UPDATE_EVERY) look(); });
+}
+
+// what a look found: the button (with the version), and the pop-up once per version
+function showUpdate(btn, info) {
+  if (btn.disabled) return;  // updating now: the button says so
+  if (!info || !info.available) { btn.hidden = true; return; }
+  const to = info.latest ? `Update to ${info.latest}` : `Update ${appName()}`;
+  replace(btn, icon("arrow-up", { size: 15 }), h("span", {}, to));
+  btn.classList.add("update-ready");
+  btn.title = info.on_disk ? `${appName()} ${info.latest} is installed: restart to use it`
+    : info.latest ? `${appName()} ${info.latest} is ready (you have ${info.version})`
+    : `${info.changes} new change${info.changes === 1 ? "" : "s"} for this copy of ${appName()}`;
+  btn.hidden = false;
+  if (!info.on_disk) updatePopup(info);  // a version already on disk has the banner above the page
+}
+
+// the pop-up: in the corner until it is answered. "Later" keeps it away for this version; the button stays.
+function updatePopup(info) {
+  const box = document.getElementById("toasts");
+  const key = info.latest || `changes-${info.changes}`;
+  if (!box || box.querySelector(".update-popup") || store("update-later") === key) return;
+  const later = () => { store("update-later", key); t.remove(); };
+  const t = h("div", { class: "toast toast-info update-popup", role: "status" }, icon("arrow-up"),
+    h("div", { class: "toast-body" },
+      h("div", {}, h("strong", {}, info.latest ? `${appName()} ${info.latest} is available.` : `An update for ${appName()} is available.`),
+        ` You have ${info.version}. Updating restarts ${appName()}; your projects and results are kept.`),
+      h("div", { class: "update-popup-actions" },
+        h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => { t.remove(); Updates.install(); } }, "Update and restart"),
+        h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: later }, "Later"))),
+    h("button", { class: "icon-btn", type: "button", "aria-label": "Later", onClick: later }, icon("x")));
+  box.appendChild(t);
 }
 
 async function runningJobs() {
@@ -390,8 +429,8 @@ async function updateApp(btn) {
   btn.disabled = true;
   if (btn.lastChild) btn.lastChild.textContent = "Looking for updates…";
   let info;
-  try { info = await api("GET", "/api/update"); } catch (e) { showError(e); return done(); }
-  if (!info.available) { toast(`${appName()} ${info.version} is the newest version.`, "ok"); return done(); }
+  try { info = await checkUpdate(); } catch (e) { showError(e); return done(); }
+  if (!info.available) { toast(`${appName()} ${info.version} is the newest version.`, "ok"); done(); btn.hidden = true; return; }
   const running = await runningJobs();
   const what = info.on_disk ? `${appName()} ${info.latest} is installed already; ${appName()} restarts to use it.`
     : info.latest ? `${appName()} ${info.latest} is ready (you have ${info.version}). ${appName()} downloads it, installs it and restarts.`
@@ -405,7 +444,7 @@ async function updateApp(btn) {
   if (btn.lastChild) btn.lastChild.textContent = info.on_disk ? "Restarting…" : "Updating…";
   let r;
   try { r = await api("POST", "/api/update", {}); } catch (e) { showError(e); return done(); }
-  if (!r.restarting) { toast(`${appName()} ${r.version} is the newest version.`, "ok"); return done(); }
+  if (!r.restarting) { toast(`${appName()} ${r.version} is the newest version.`, "ok"); done(); btn.hidden = true; return; }
   waitForRestart(r.version);
 
   function done() { btn.disabled = false; if (btn.lastChild && label) btn.lastChild.textContent = label; }
@@ -532,7 +571,7 @@ const AI_BADGE = {
   optional: ["AI", "Works without the AI; the AI can add to it"],
   none: ["", "No AI needed"],
 };
-// 0.15.1: an add-on's feature with `nav` gets a sidebar entry, after the last entry of its section (or under a new
+// 0.13.6: an add-on's feature with `nav` gets a sidebar entry, after the last entry of its section (or under a new
 // group heading for a section of its own). Each entry is decorated once.
 function addonNav() {
   const nav = document.getElementById("nav");
@@ -571,7 +610,7 @@ function navIcons() {
   }
 }
 
-// 0.15.1: the page modules of add-ons: the fork's static/extensions.js (empty in ENLENS), then each add-on package's
+// 0.13.6: the page modules of add-ons: the fork's static/extensions.js (empty in ENLENS), then each add-on package's
 // (GET /api/state "addon_pages"). One that fails is left out; the page still works.
 async function loadExtensions() {
   const into = { FEATURES, SECTIONS };

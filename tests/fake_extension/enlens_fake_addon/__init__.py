@@ -20,7 +20,7 @@ BRAND = {"name": "Fieldnotes", "tagline": "a stand-in app on ENLENS", "welcome_t
          "not_a_brand_key": "ignored"}
 STATIC = Path(__file__).with_name("static")
 
-# ---- 0.14: tables ------------------------------------------------------------------------------------------------
+# ---- 0.13.6: tables ------------------------------------------------------------------------------------------------
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fake_notes(note_id TEXT PRIMARY KEY, text TEXT, ai_access TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS fake_tags(note_id TEXT, tag TEXT, quote TEXT, confidence REAL, model TEXT,
@@ -30,7 +30,7 @@ MIGRATIONS = [("fake_notes", "colour", "TEXT")]
 INDEXES = "CREATE INDEX IF NOT EXISTS ix_fake_notes_colour ON fake_notes(colour);"
 
 
-# ---- 0.14: routes ------------------------------------------------------------------------------------------------
+# ---- 0.13.6: routes ------------------------------------------------------------------------------------------------
 def hello(h, q):
     return {"hello": "from the stand-in add-on", "project": h.app.settings().get("project")}
 
@@ -79,7 +79,7 @@ ROUTES = [
 DOWNLOADS = {"get_notes_csv"}
 
 
-# ---- 0.14: extra keys --------------------------------------------------------------------------------------------
+# ---- 0.13.6: extra keys --------------------------------------------------------------------------------------------
 def state(app):
     return {"fake": {"ready": True}, "version": "not the add-on's to change"}
 
@@ -88,7 +88,7 @@ def overview(ws):
     return {"fake_notes": int(ws.scalar("SELECT COUNT(*) FROM fake_notes") or 0), "documents": -1}
 
 
-# ---- 0.14: access ------------------------------------------------------------------------------------------------
+# ---- 0.13.6: access ------------------------------------------------------------------------------------------------
 def _floor(cx, payload, dflt):
     """A task holding a note's text may go no further than the note's setting."""
     nid = payload.get("fake_note_id") if isinstance(payload, dict) else None
@@ -115,7 +115,7 @@ access.register_floor(_floor)
 access.register_hidden(_hidden)
 
 
-# ---- 0.15: a kind of AI task of its own -------------------------------------------------------------------------
+# ---- 0.13.6: a kind of AI task of its own -------------------------------------------------------------------------
 # The AI gives a note's tags, each with the sentence of the note it comes from. ENLENS checks the answer against
 # TagsOut and every quote against the note's text before store_tags sees it.
 from pydantic import BaseModel, Field  # noqa: E402

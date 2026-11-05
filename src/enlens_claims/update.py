@@ -129,13 +129,17 @@ def installed_extras(pyproject: Path) -> list[str]:
 
 
 def update(check_only: bool = False, root: Path | None = None, run: Runner = _run,
-           python: str | None = None) -> dict:
-    """Bring this ENLENS up to date, the way it was installed (see the module's notes). Returns what happened."""
+           python: str | None = None, quick: bool = False) -> dict:
+    """Bring this ENLENS up to date, the way it was installed (see the module's notes). Returns what happened.
+    `quick` (0.13.6, the app's check every two minutes): a one-line install learns the newest version from GitHub's
+    release page, which GitHub's limit of 60 API requests an hour does not count."""
     if root is None and source_root() is None:
         from . import installation
 
         k = installation.kind()
         if k == "script":
+            if quick and check_only:
+                return update_release(check_only=True, run=run, peek=_peek)
             return update_release(check_only=check_only, run=run)
         if k == "package":
             raise UpdateError("This ENLENS came as a download for this system: download the newest one from "
@@ -251,6 +255,12 @@ def version_tuple(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in m.group(1).split(".")) if m else ()
 
 
+# 0.13.6: 0.14.0, 0.15.0 and 0.15.1 were numbered higher than their changes called for (they changed nothing for
+# people using ENLENS), so they were withdrawn and their changes are part of 0.13.6. A copy of one of them that is
+# still running is older than any later ENLENS, whatever its number says.
+WITHDRAWN = frozenset({"0.14.0", "0.15.0", "0.15.1"})
+
+
 def latest_release(fetch: Fetch = _fetch, repo: str | None = None) -> dict:
     """The latest published release: {"version", "tag", "wheel_url", "wheel", "sums_url", "notes", "url"}."""
     from .installation import REPO
@@ -268,6 +278,42 @@ def latest_release(fetch: Fetch = _fetch, repo: str | None = None) -> dict:
             "url": str(data.get("html_url") or "")}
 
 
+def _peek(url: str) -> str:
+    """Where `url` sends the browser (its redirect), without following it."""
+    from urllib.error import HTTPError
+    from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+    class _Stay(HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):  # noqa: ANN002, ANN003 - urllib's own signature
+            return None  # urllib then raises HTTPError with the 302 and its Location
+
+    req = Request(url, method="HEAD", headers={"User-Agent": "enlens-update"})
+    try:
+        with build_opener(_Stay).open(req, timeout=20) as r:
+            return r.headers.get("Location") or ""
+    except HTTPError as e:
+        if 300 <= e.code < 400:
+            return e.headers.get("Location") or ""
+        raise
+
+
+Peek = Callable[[str], str]
+
+
+def latest_version(peek: Peek = _peek, repo: str | None = None) -> str:
+    """0.13.6: the newest release's version, from where github.com/…/releases/latest redirects to
+    (…/releases/tag/v0.13.6). A web page, not the API: GitHub's limit of 60 API requests an hour for each address
+    does not count it, so the app can ask every two minutes on every computer in an office. "" when it cannot tell."""
+    from .installation import REPO
+
+    try:
+        where = peek(f"https://github.com/{repo or REPO}/releases/latest")
+    except Exception as e:  # noqa: BLE001 - offline, GitHub down: say it plainly
+        raise UpdateError(f"Could not ask GitHub for the newest ENLENS ({type(e).__name__}: {e}). Are you online?") from e
+    m = re.search(r"/releases/tag/([^/?#]+)", where or "")
+    return m.group(1).lstrip("v") if m else ""
+
+
 def find_uv() -> str:
     found = shutil.which("uv")
     if found:
@@ -281,14 +327,17 @@ def find_uv() -> str:
 
 
 def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = _fetch, workdir: Path | None = None,
-                   windows: bool | None = None) -> dict:
-    """Install the newest GitHub Release over a one-line install (see the module's notes)."""
+                   windows: bool | None = None, peek: Peek | None = None) -> dict:
+    """Install the newest GitHub Release over a one-line install (see the module's notes). With `peek` (0.13.6), a
+    check reads the newest version from the release page (`latest_version`), and asks the API only when the page does
+    not say."""
     import tempfile
 
     from . import __version__, installation
 
-    rel = latest_release(fetch)
     have = __version__
+    seen = latest_version(peek) if check_only and peek is not None else ""
+    rel = {"version": seen} if seen else latest_release(fetch)
     if not rel["version"] or version_tuple(rel["version"]) <= version_tuple(have):
         return {"updated": False, "version": have, "message": f"ENLENS {have} is up to date."}
     if check_only:

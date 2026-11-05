@@ -1,0 +1,10 @@
+/* ENLENS 0.13.6: the sidebar's Update button shows only when there is an update, so it stands out; its pop-up. */
+
+/* ---------------------------------------------------------------- the Update button, when it shows */
+.sidebar-app .btn.update-ready { color: var(--accent); font-weight: 600; }
+.sidebar-app .btn.update-ready:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.sidebar-app .btn.update-ready:disabled { color: var(--text-2); font-weight: 500; }
+
+/* ---------------------------------------------------------------- the pop-up: stays until it is answered */
+.update-popup { border-color: var(--accent); }
+.update-popup-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

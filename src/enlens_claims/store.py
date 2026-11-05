@@ -232,8 +232,8 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               # 0.13.3: the title read from the file, kept while the title of the work it is linked to in the
               # bibliography replaces it (NULL: the document has its own title; see bibliography._sync_titles)
               ("documents", "file_title", "TEXT"),
-              # 0.14: where a hypothesis comes from: "batch" (Check several) or an add-on's own kind, and the id of
-              # what it comes from there (NULL: typed by a person, or made before 0.14)
+              # 0.13.6: where a hypothesis comes from: "batch" (Check several) or an add-on's own kind, and the id of
+              # what it comes from there (NULL: typed by a person, or made before 0.13.6)
               ("hypotheses", "origin", "TEXT"), ("hypotheses", "origin_id", "TEXT")]
 
 
@@ -257,7 +257,7 @@ def _migrate(cx: sqlite3.Connection) -> None:
 
 
 def _setup_addons(cx: sqlite3.Connection) -> None:
-    """0.14: each add-on's tables, columns and indexes, after ENLENS's own and in the add-ons' order, the same
+    """0.13.6: each add-on's tables, columns and indexes, after ENLENS's own and in the add-ons' order, the same
     idempotent way (docs/EXTENDING.md)."""
     from .addons import database
 

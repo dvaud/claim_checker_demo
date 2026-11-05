@@ -29,16 +29,21 @@ Used ENLENS on another computer? Choose *Import from another computer* on the fi
 
 ## Update
 
-1. In ENLENS, choose **Update ENLENS** at the bottom of the sidebar.
-2. If a new version is ready, choose **Update and restart**. ENLENS installs it and starts again; the page opens the
-   new version by itself.
+ENLENS looks for a new version when it opens and every two minutes after. When there is one:
+
+1. A pop-up in the corner says so, and **Update to …** appears at the bottom of the sidebar.
+2. Choose **Update and restart** (in the pop-up, or from the sidebar button). ENLENS installs it and starts again;
+   the page opens the new version by itself.
+
+*Later* puts the pop-up away for that version; the sidebar button stays until you update. To look yourself, use
+**Check for updates** in *Settings → Technical*.
 
 On **Windows** (installed with the install line), quit ENLENS (*Quit ENLENS*) and paste the install line again in
-PowerShell instead. Still on 0.13.0 or earlier (there is no *Update ENLENS* button yet)? Quit ENLENS, type
+PowerShell instead. Still on 0.13.0 or earlier (there is no *Update* button yet)? Quit ENLENS, type
 `enlens update` in Terminal or PowerShell (or paste the install line again), and open ENLENS again from its icon.
 
 Your projects and settings (in the folder `enlens` in your home folder) are never touched. Installed from a git copy
-instead? *Update ENLENS* and `enlens update` pull the new version (see *For developers*).
+instead? The *Update* button and `enlens update` pull the new version (see *For developers*).
 
 ## New in 0.13: your Zotero bibliography next to your documents
 
@@ -76,13 +81,14 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
 - **Fixes (0.13.5).** Accented file names in zips made with Finder's *Compress* come out right; *Import a project*
   takes a project folder zipped by hand; a smoother icon; *second opinion* everywhere. For developers: room for apps
   built on ENLENS (`site.css`, `brand.json`, add-on modules; see [docs/EXTENDING.md](docs/EXTENDING.md)).
-- **Room for add-ons (0.14).** For developers: an app built on ENLENS adds routes, jobs, tables and its own rules
-  for who may read its text, in files of its own ([docs/EXTENDING.md](docs/EXTENDING.md)). Nothing changes in the app.
-- **One registry for AI tasks (0.15).** For developers: each kind of AI task is described once
-  (`taskkinds.py`), and an add-on can register a kind of its own, quote check included. Nothing changes in the app.
-- **Room in the page (0.15.1).** For developers: an add-on adds pages, sidebar entries, Overview cards, job names,
-  welcome cards and a result's link back to where it came from, from a page module of its own. Nothing changes in
-  the app.
+- **Updates that announce themselves (0.13.6).** The *Update* button shows only when there is an update: ENLENS
+  looks every two minutes, and a pop-up says which version is ready. *Check for updates* is in *Settings →
+  Technical*.
+- **Room for add-ons (0.13.6).** For developers: an app built on ENLENS adds routes, jobs, tables, its own rules for
+  who may read its text, kinds of AI task (quote check included) and pages, in files of its own
+  ([docs/EXTENDING.md](docs/EXTENDING.md)). Nothing changes in the app.
+- **Version numbers (0.13.6).** 0.14.0, 0.15.0 and 0.15.1 were withdrawn: they changed nothing in the app, and their
+  changes are part of 0.13.6. Installed one of them with the install line? Paste the install line once more.
 
 ## Earlier releases
 

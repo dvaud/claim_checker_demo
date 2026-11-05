@@ -89,7 +89,7 @@ def write_plugin(target: Path | None = None) -> Path:
         (plug / name).write_text(_fill((SOURCE / name).read_text("utf-8")), encoding="utf-8")
     for f in sorted((SOURCE / "agents").glob("*.md")):
         (plug / "agents" / f.name).write_text(_fill(f.read_text("utf-8")), encoding="utf-8")
-    from . import taskkinds  # 0.15: an add-on kind's own helper agent
+    from . import taskkinds  # 0.13.6: an add-on kind's own helper agent
 
     for h, f in taskkinds.addon_helpers().items():
         (plug / "agents" / f"{h}.md").write_text(_fill(Path(f).read_text("utf-8")), encoding="utf-8")
@@ -130,7 +130,7 @@ def check_files(root: Path | None = None) -> list[str]:
     allowed = set(TOOL_PREFIX + t for t in QUEUE_TOOLS)
     from . import taskkinds
 
-    for h in list(HELPERS) + list(taskkinds.addon_helpers()):  # 0.15: and an add-on kind's own helper
+    for h in list(HELPERS) + list(taskkinds.addon_helpers()):  # 0.13.6: and an add-on kind's own helper
         f = plug / "agents" / f"{h}.md"
         if not f.exists():
             problems.append(f"agents/{h}.md is missing")

@@ -33,7 +33,7 @@ ENLENS releases **never edit** these files. ENLENS ships each one empty, or hold
 | `src/enlens_claims/gui/static/site.css` | The installation's own look. Linked last, so it wins. |
 | `src/enlens_claims/gui/static/brand.json` | The app's name and words. |
 | `src/enlens_claims/gui/extensions.py` | The fork's add-on module. |
-| `src/enlens_claims/gui/static/extensions.js` | The fork's page module (0.15.1). |
+| `src/enlens_claims/gui/static/extensions.js` | The fork's page module (0.13.6). |
 | `docs/ADDON_API.md` | The routes the app adds, documented like `docs/API.md`. |
 | `docs/ADDON_MANUAL.md` | The manual for what the app adds. |
 
@@ -94,7 +94,7 @@ BRAND = {"name": "Fieldnotes", "tagline": "notes from the field", "logo": "/stat
 
 Page code names the app with `appName()` (or `brand()`) from `lib.js`, never with a fixed "ENLENS".
 
-## Routes, downloads and extra keys (0.14)
+## Routes, downloads and extra keys (0.13.6)
 
 An add-on module adds routes to the app's API. They are tried after ENLENS's own, so an add-on cannot take over one
 of ENLENS's routes, and every one needs the page's token like ENLENS's:
@@ -123,7 +123,7 @@ def state(app):  return {"drafts_enabled": True}                       # GET /ap
 def overview(ws): return {"drafts": ws.scalar("SELECT COUNT(*) FROM drafts")}   # a project's Overview
 ```
 
-## Jobs (0.14)
+## Jobs (0.13.6)
 
 Long work runs as a job, the same way ENLENS's own does. The app's public interface:
 
@@ -140,9 +140,9 @@ Long work runs as a job, the same way ENLENS's own does. The app's public interf
 An add-on's job is a job like any other: it is listed in `GET /api/jobs` and the sidebar, it can be stopped
 (`POST /api/jobs/<id>/cancel`; `fn` checks `job.cancel.is_set()`), and it is *not running* (`on_hold`) while its tasks
 wait in the queue with nothing answering them. `withdraw` names the kinds of task that Stop takes back out of the
-queue. The names before 0.14 (`_job`, `_model_job`, `_follow_queued`, `_wire`) keep working.
+queue. The names before 0.13.6 (`_job`, `_model_job`, `_follow_queued`, `_wire`) keep working.
 
-## Tables and columns (0.14)
+## Tables and columns (0.13.6)
 
 ```python
 SCHEMA = """
@@ -161,7 +161,7 @@ records it in the hypothesis's `origin` and `origin_id` columns, so an add-on th
 or argument of its own. `check_hypothesis` and `queue_check` take the same two arguments. ENLENS uses `origin="batch"`
 for *Check several*; a hypothesis typed by a person has none. Results and the history return both.
 
-## Access (0.14)
+## Access (0.13.6)
 
 Two hooks feed the checks ENLENS already makes. They only ever restrict more:
 
@@ -193,7 +193,7 @@ access.register_hidden(drafts_kept_here)
 
 ENLENS loads the add-ons before it decides anything, so hooks an add-on registers when it is imported always count.
 
-## A kind of AI task of its own (0.15)
+## A kind of AI task of its own (0.13.6)
 
 Every kind of task the AI answers is one `TaskKind` in `enlens_claims/taskkinds.py`. The tables the other modules
 keep (`routing.KINDS`, `CLAUDE_DEFAULTS`, `HELPERS`, `taskqueue.ORDER`, `BATCH`, the names, `prompts.VERSIONS`,
@@ -242,7 +242,7 @@ and `helper_model` give the kind a Claude Code helper of its own; the plugin ENL
 **Defaults.** What a kind does not say: its own Settings row, Sonnet stepping up to Opus (a large local model), a
 batch of 5 at the end of the queue, an answer of up to 2,000 tokens.
 
-## The page (0.15.1)
+## The page (0.13.6)
 
 A page module adds pages, sidebar entries, Overview cards, job names, welcome cards and the result page's link back
 to where a hypothesis comes from. A fork fills in `static/extensions.js` (ENLENS ships `export default {};`); a
@@ -282,7 +282,7 @@ export default {
   The link may be a function of the job, for a page per item: `link: (j) => \`#/drafts/${j.scope}\``.
   A kind nobody names shows the job's own title.
 - **welcome**: cards on the first-run welcome screen, under the welcome text (`brand.json`).
-- **origins**: for a hypothesis made with `origin=` (0.14), the result page's eyebrow and meta line link back to it.
+- **origins**: for a hypothesis made with `origin=` (0.13.6), the result page's eyebrow and meta line link back to it.
 
 All of it lives in `registry.js` (`applyExtensions`), which never replaces one of ENLENS's entries. A page module
 that fails to load is left out and the page still works.

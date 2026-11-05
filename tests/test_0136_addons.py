@@ -1,4 +1,4 @@
-"""0.14: room for add-ons in the server, the database and access (docs/EXTENDING.md).
+"""0.13.6: room for add-ons in the server, the database and access (docs/EXTENDING.md).
 
 The stand-in add-on (tests/fake_extension, a package found through its entry point) adds a route, a download, a
 state key, an Overview key, its own table with a migration, hypotheses with an origin, a job that waits in the queue

@@ -220,7 +220,9 @@ def test_page_files():
     assert html.index('id="update-btn"') < html.index('id="quit-btn"')
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "function updateInit()" in app and "updateInit();\n  quitInit();" in app
-    assert 'api("GET", "/api/update")' in app and 'api("POST", "/api/update", {})' in app
+    assert 'api("POST", "/api/update", {})' in app
+    lib = (STATIC / "lib.js").read_text(encoding="utf-8")  # 0.13.6: the look is shared (checkUpdate)
+    assert 'api("GET", fresh ? "/api/update?fresh=1" : "/api/update")' in lib
     assert 'api("POST", "/api/restart", {})' in app and "location.reload()" in app
 
 

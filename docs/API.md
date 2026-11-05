@@ -96,7 +96,7 @@ when nothing was graded. `who` lists the same documents by side (see the hypothe
            "description": "…", "logo": "/static/logo.svg"}}
 ```
 `brand` (0.13.5): the app's name and words, from `static/brand.json` and any add-on's `BRAND` (docs/EXTENDING.md).
-0.14: an add-on may add keys of its own (its `state(app)`); they never replace one of these. Its routes are documented
+0.13.6: an add-on may add keys of its own (its `state(app)`); they never replace one of these. Its routes are documented
 in `docs/ADDON_API.md` and come after ENLENS's own (docs/EXTENDING.md). `GET /api/projects/<p>/overview` may carry an
 add-on's counts the same way, and a hypothesis's result and history rows carry `origin` and `origin_id` (where it
 comes from: `batch`, an add-on's own kind, or none).
@@ -153,13 +153,19 @@ kept in memory for this run only. `DELETE /api/settings/key` forgets both. 403 w
 running jobs have stopped (at most 20 s); 409 when this copy was not started in a way that can be stopped from here.
 
 "Update ENLENS" in the sidebar (0.13.1). `GET /api/state` says `can_quit` and `can_restart`: whether this copy can stop
-itself, and restart itself (started with `enlens-gui` or from the ENLENS icon; the button is shown only then).
+itself, and restart itself (started with `enlens-gui` or from the ENLENS icon; the button is shown only then, and
+since 0.13.6 only when there is an update).
 
 - `GET /api/update` → `{"available": bool, "on_disk": bool, "version": running, "latest": "0.13.2" | null,
   "changes": n | null}`: whether a newer ENLENS waits, the way this copy was installed (the latest GitHub Release
   for the one-line install: `latest`; new commits on the branch a git copy follows: `changes`), or is installed
   already while this copy kept running (`on_disk`, `latest` is that version). 409 with the reason when it cannot be
   updated from here (files of a git copy edited by hand, a download package, no network).
+  0.13.6: the page asks when it opens and every two minutes, and shows the button only when `available`. The answer
+  (or the 409 and its reason) is kept for 100 seconds, so the open tabs share one look; `GET /api/update?fresh=1`
+  (*Check for updates* in Settings) looks again now. A version already on disk is seen at once. The one-line install
+  reads the newest version from where `github.com/…/releases/latest` redirects to, which GitHub's API limit does not
+  count; the API is asked only when that page does not say. `POST /api/update` forgets the kept answer.
 - `POST /api/update` `{}` → `{"updated": true, "restarting": true, "from", "version", "jobs_stopped": n}`: installs it
   as `enlens update` does, then restarts on the same address and port (running jobs are stopped first, as for Quit;
   at most 20 s); `{"updated": false, "restarting": false, "version"}` when nothing newer waits. 409 when the update

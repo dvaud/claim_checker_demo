@@ -49,7 +49,8 @@ def test_the_settings_page_shows_the_version():
     assert 'pageHead("Settings", { actions: versionTag(),' in js
     tag = js[js.index("function versionTag()"):]
     tag = tag[:tag.index("\n}\n")]
-    assert "st.version || VERSION" in tag and 'href: "#/settings/data"' in tag and 'class: `version-tag' in tag
+    # 0.13.6: it opens Technical → Updates (Check for updates), just above Where your data is
+    assert "st.version || VERSION" in tag and 'href: "#/settings/updates"' in tag and 'class: `version-tag' in tag
 
 
 def test_the_version_reaches_the_page(api):  # noqa: F811

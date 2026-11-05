@@ -1,7 +1,7 @@
-"""0.15: one registry for the kinds of AI task (taskkinds.py, docs/EXTENDING.md).
+"""0.13.6: one registry for the kinds of AI task (taskkinds.py, docs/EXTENDING.md).
 
 - Every table the eight modules kept (routing.KINDS, taskqueue.ORDER, BATCH, HELPERS, the names, the limits…) is now
-  built from the registry, and equals its 0.14 value (below, written out as it was).
+  built from the registry, and equals its 0.13.5 value (below, written out as it was).
 - An add-on registers a kind of its own; one without a quote check is refused.
 - The stand-in add-on's kind (`fake_tag`) goes through the queue, the routing and step-up, the offline demo, storing,
   "How these results were made", the Claude Code plugin's helper list, the size estimate and local-only.
@@ -16,7 +16,7 @@ from enlens_claims import access, home, llm, prompts, routing, runs, taskkinds, 
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.store import Workspace
 
-# the tables as 0.14 wrote them out (KINDS of routing and tasks: as sets, their order never mattered)
+# the tables as 0.13.5 wrote them out (KINDS of routing and tasks: as sets, their order never mattered)
 SNAPSHOT_014 = {
     'routing.KINDS': ('label', 'link', 'expand', 'decompose', 'theme', 'resolve', 'check', 'reread', 'second', 'split', 'extract', 'verify', 'verify_set', 'audit'),
     'routing.ROWS': (('label', ('label',), 'Codebook labels (profile)'), ('link', ('link',), 'How concepts relate'), ('expand', ('expand', 'decompose'), 'Search words and splitting a hypothesis'), ('theme', ('theme',), 'Theme names'), ('resolve', ('resolve',), 'References in a document'), ('check', ('check', 'reread'), 'Judging excerpts (checks, reading again)'), ('second', ('second', 'audit'), 'Second opinion (and audits of the SDG pack)'), ('extract', ('extract',), 'SDG pack: impact claims from passages'), ('split', ('split',), "SDG pack: splitting the VCA's justifications"), ('verify', ('verify', 'verify_set'), 'SDG pack: checking claims against their sources')),
@@ -69,7 +69,7 @@ def test_the_other_tables_too():
                                     "link": tasks._store_link, "theme": tasks._store_theme,
                                     "resolve": tasks._store_resolve}
     assert dict(routing.HELPER_MODEL)["enlens-checker"] == "sonnet" and len(routing.HELPER_MODEL) == 7
-    # the certainty of an answer, as 0.14 read it
+    # the certainty of an answer, as 0.13.5 read it
     assert routing.certainty("verify", {"confidence": 0.4}) == 0.4
     assert routing.certainty("label", {"labels": [{"confidence": 0.9}, {"confidence": 0.3}]}) == 0.3
     assert routing.certainty("audit", {"evidence": [{"confidence": 0.7}]}) == 0.7

@@ -225,7 +225,7 @@ def ids_in(payload: Any) -> tuple[set[str], set[str]]:
 
 
 # ---------------------------------------------------------------------------------------------
-# 0.14: hooks for add-ons (docs/EXTENDING.md). They only ever restrict more: a floor raises the setting a task must
+# 0.13.6: hooks for add-ons (docs/EXTENDING.md). They only ever restrict more: a floor raises the setting a task must
 # keep, and hidden hypotheses are left out of the connector. local_only() and the documents' own settings still
 # decide; an add-on cannot loosen them.
 # ---------------------------------------------------------------------------------------------
@@ -285,7 +285,7 @@ def hidden_hypotheses(ws: Workspace) -> set[str]:
 def label_payload(cx, payload: Any, dflt: str | None = None) -> str:
     """The most restricted setting of the documents a task's payload names (`cloud` for a task without document
     text, such as the search words of a hypothesis). A passage no longer in the project counts as its document.
-    0.14: and of the add-ons' floors for it."""
+    0.13.6: and of the add-ons' floors for it."""
     fl = floor(cx, payload, dflt)
     out = _label_docs(cx, payload, dflt)
     return most([fl, out]) if fl != "cloud" else out

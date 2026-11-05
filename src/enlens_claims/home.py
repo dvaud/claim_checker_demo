@@ -312,7 +312,7 @@ def task_tokens(kind: str, k: int = 8, thinks: bool = False, max_chars: int = 11
         user = 300 + 3 * (max_chars + 40) + retry
     elif kind in ("expand", "decompose"):
         user = 4000 + retry
-    else:  # 0.15: an add-on's kind says how long its prompt can be
+    else:  # 0.13.6: an add-on's kind says how long its prompt can be
         k_ = taskkinds.get(kind)
         user = (k_.size(k, max_chars) if k_ is not None and k_.size else 4000) + retry
     room = (2 * budget + 64 if budget else THINK_ALLOWANCE) if thinks else 0

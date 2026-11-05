@@ -1,4 +1,4 @@
-// The stand-in add-on's page module (0.15.1), served as /static/addons/fake/extensions.js. It adds a part of the app
+// The stand-in add-on's page module (0.13.6), served as /static/addons/fake/extensions.js. It adds a part of the app
 // ("Notes"), a page with a sidebar entry and an Overview card, the name of its job, a welcome card and the result
 // page's link back to the note a hypothesis comes from.
 function renderNotes(view) {

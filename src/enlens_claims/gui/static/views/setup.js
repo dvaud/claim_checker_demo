@@ -22,7 +22,7 @@ export async function renderSetup(view) {
   const wrap = h("div", { class: "setup" },
     h("div", { class: "hero" }, h("p", { class: "eyebrow" }, "Welcome"), h("h1", { id: "page-title", tabindex: "-1" }, brand().welcome_title),
       h("p", {}, brand().welcome_text),
-      // 0.15.1: an add-on's cards (registry.js), under the welcome text
+      // 0.13.6: an add-on's cards (registry.js), under the welcome text
       WELCOME_CARDS.length ? h("div", { class: "ov-grid ov-grid-small welcome-cards" }, WELCOME_CARDS.map((c) =>
         h("div", { class: "ov-card" }, h("div", { class: "ov-card-head" }, h("span", { class: "ov-card-icon" }, icon(c.icon || "sparkles", { size: 15 })), h("h3", {}, c.title)),
           c.text ? h("p", {}, c.text) : null))) : null,

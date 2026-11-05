@@ -28,7 +28,7 @@ from .taxonomy import targets
 from .textutil import find_quote, normalise
 from .textutil import tokens_v1 as tokens  # the SDG pack keeps the 0.4 tokenizer, so its selections do not change
 
-KINDS = taskkinds.Names(lambda k: k.task)  # 0.15: a view of the registry (taskkinds.py)
+KINDS = taskkinds.Names(lambda k: k.task)  # 0.13.6: a view of the registry (taskkinds.py)
 # 0.7: the kinds whose passages are the user's own corpus at large (not a check they started): handing them to an
 # outside worker through the file queue sends those passages off this computer, so the command line says so
 CORPUS_KINDS = taskkinds.Names(lambda k: k.corpus)
@@ -482,7 +482,7 @@ def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = Non
 
 
 def _store_answer(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
-    """Store an answer with its kind's store function. 0.15: an add-on's kind is checked first by ENLENS: its schema,
+    """Store an answer with its kind's store function. 0.13.6: an add-on's kind is checked first by ENLENS: its schema,
     then every quote against the text the kind names (`quote_from`); the store function sees only what passed."""
     kind = taskkinds.get(t["kind"])
     if kind is None or kind.store is None:
@@ -916,7 +916,7 @@ for _kind, _store in {"extract": _store_extract, "split": _store_split, "verify"
                      "label": _store_label, "link": _store_link, "theme": _store_theme,
                      "resolve": _store_resolve}.items():
     taskkinds.attach(_kind, store=_store)
-# 0.15: the store function of each kind, ENLENS's and the add-ons', from the registry
+# 0.13.6: the store function of each kind, ENLENS's and the add-ons', from the registry
 HANDLERS = taskkinds.Table("store")
 
 

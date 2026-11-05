@@ -1,95 +1,45 @@
 # Changelog
 
-## Unreleased
+## 0.13.6 (November 2026): updates that announce themselves, and room for add-ons
 
-- **A clearer quote check for an add-on's kind of task.** A quote not found now says *quote not found in the passage*
-  and how to fix it (copy it character for character, or quote a shorter piece), as ENLENS's own kinds say.
-- **A job's link can depend on the job.** In a page module's `jobKinds`, `link` may be a function of the job (for
-  example its scope), for apps with a page per item, such as Margin's drafts.
-- Tests: `test_0150_task_kinds.py` and `test_0151_page_extensions.py` check both.
+The *Update* button now appears only when there is something to install, with a pop-up that says so, and *Settings*
+can look for an update by hand. Underneath, apps built on ENLENS (Margin is one) get room of their own: pages, jobs,
+tables, rules about who may read their text and kinds of AI task, added in their own files instead of edits to
+ENLENS's. Every answer still goes through the quote check, a person can overrule it, and nothing more leaves the
+computer.
 
-## 0.15.1 (November 2026): room for add-ons in the page
+**Version numbers.** 0.14.0, 0.15.0 and 0.15.1 are withdrawn. They changed nothing for people using ENLENS (only what
+an app built on it can add), so they did not call for new minor versions; their changes are part of 0.13.6, under
+*Room for add-ons* below, and their commits keep their old titles. From now on a new feature, the overhaul of a whole
+part of ENLENS or a large fix raises the minor number (0.X.0); other changes worth trying at once raise the last
+number (0.X.y); small edge cases and background work wait for the next release.
+- A computer that installed 0.14.0, 0.15.0 or 0.15.1 with the install line does not see 0.13.6 as newer: paste the
+  install line once more. A git copy updates as usual.
+- A copy of a withdrawn version that is still running counts as older (`update.WITHDRAWN`), so opening ENLENS from
+  its icon quits it and starts 0.13.6, as after any update.
 
-The last part of the room for apps built on ENLENS: the page. Adding a page meant editing the route table, the
-sidebar in `index.html`, the job lists in `app.js`, the Overview and the result page. 0.15.1 gives each its extension
-point, read from one module, `registry.js`. For people who use ENLENS nothing changes: the sidebar, the Overview, the
-job list and the result page look and work as in 0.15.0.
+**Updates that announce themselves.**
+- **The Update button shows only when there is an update.** ENLENS looks for a new version when the page opens,
+  every two minutes after, and when you come back to a tab that was in the background. When it finds one, a pop-up
+  in the corner says which version, with *Update and restart* and *Later*, and *Update to 0.13.7* appears at the
+  bottom of the sidebar until you update. *Later* puts the pop-up away for that version. A look that fails (offline,
+  a git copy edited by hand) stays quiet.
+- **Check for updates** in *Settings → Technical → Updates*: look now, and read why a look failed. The version at the
+  top right of every Settings tab opens it.
+- **Light on GitHub.** For the one-line install, the app's look reads the newest version from GitHub's release page
+  (where `…/releases/latest` redirects to), which GitHub's limit of 60 API requests an hour for each address does not
+  count, so several computers in one office can look every two minutes; the API is asked only when the page does not
+  say, and to install. The server keeps an answer for 100 seconds, so the open tabs share one look;
+  `GET /api/update?fresh=1` looks again now. `enlens update --check` asks the API, as before.
 
-- **Page modules.** A fork fills in `static/extensions.js` (ENLENS ships `export default {};`, and releases never
-  edit it); an add-on package puts `extensions.js` in its `STATIC` folder and `GET /api/state` lists it in
-  `addon_pages`. The page loads them after the state arrives; one that fails is left out.
-- **What a page module adds** (`applyExtensions` in `registry.js`, which never replaces one of ENLENS's entries):
-  pages (after ENLENS's own routes), features (a sidebar entry with its AI mark after its section's entries, and an
-  Overview card with its own state line), sections (a sidebar heading and an Overview section), job kinds (a job's
-  icon, name and link in the sidebar), welcome cards (first run), and origins (the result page's link back to where a
-  hypothesis comes from).
-- **Job kinds in one place.** `linkFor`, `kindIcon`, `kindText` and `withJob` moved from `app.js` into
-  `JOB_KINDS` (`registry.js`). A job of a kind nobody names shows its own title (it showed its kind's code).
-- **The Overview is built from `FEATURES` and `SECTIONS`.** Each section's line and card size moved into
-  `SECTIONS`; *Read one document* is the Documents feature's Overview card, and Bibliography has none, as before.
-- **The result page's back-link** comes from the registry: a check of several still says *part of a set*; a
-  hypothesis an add-on made says where it comes from in the line under it, and links back to it above it.
+**Room for add-ons** (docs/EXTENDING.md). Until now an app built on ENLENS had to edit ENLENS's own files to add a
+page's API, a job, a table, a rule about who may read its text, a kind of AI task or a page: the route table, the job
+lists, the database schema, the access checks, eight modules for a kind of task, the sidebar, `app.js`, the Overview
+and the result page. Every one of those edits clashed with the next ENLENS release. Each now has an extension point,
+so an add-on adds them in files of its own. ENLENS on its own is unchanged: every extension point is empty, and the
+sidebar, the Overview, the job list and the result page look and work as in 0.13.5.
 
-**Tests.** `test_0151_page_extensions.py` (6 tests, two run in Node): ENLENS alone keeps its Overview (its sections,
-cards and order), its job rows (a check, a second opinion on three hypotheses, adding documents, looking before
-checking, an unknown kind) and its *part of a set* link (before and after 0.14's origins); the stand-in add-on's page
-module adds a section, a feature with a sidebar entry and its state line, a page, a job kind, a welcome card and an
-origin, twice without adding anything twice and without replacing ENLENS's *Check a hypothesis*; the server lists
-its module; the page code reads the registry. Checked in headless Chrome with the dev server: with the stand-in
-add-on (the name *Fieldnotes*, the *Notes* sidebar entry with its AI mark, the Overview's *Your notes* section, the
-add-on's page, a result's *Back to the note* and *from a note*), and ENLENS alone (Overview, Results, Settings), with
-no console errors.
-
-**Not yet done.** A hypothesis an add-on creates but never checks (no parts yet) cannot be opened on the result page
-(a script error); ENLENS itself never makes one. An add-on's sidebar entry is added after the page loads, so it
-appears a moment after ENLENS's own.
-
-## 0.15.0 (November 2026): one registry for the kinds of AI task
-
-A new kind of AI task touched eight modules: its schema (`schema.py`), its prompt and prompt version (`prompts.py`),
-its store function (`tasks.py`), its models, step-up and Claude Code helper (`routing.py`), its batch size, place in
-the queue and names (`taskqueue.py`), its name in *How these results were made* (`runs.py`), its answer's token
-limit and offline answer (`llm.py`) and its size estimate (`home.py`). 0.15.0 describes each kind once, in
-`taskkinds.py`, and an add-on can register a kind of its own. For people who use ENLENS nothing changes: every answer
-still goes through the quote check, a person can overrule it, and nothing more leaves the computer.
-
-- **One definition per kind.** A `TaskKind` holds the name, prompt version and prompt builders; the answer's schema,
-  where the quote check reads and the store function; the Claude models (first, steps up to), the local model, the
-  helper, Settings' row; the batch size and place in the queue; the names (singular, plural, the queue's line, the
-  run's name); the answer's token limit, the offline demo's answer and the size estimate.
-- **The tables are built from it.** `routing.KINDS`, `ROWS`, `ROW_OF`, `CLAUDE_DEFAULTS`, `LOCAL_DEFAULTS`,
-  `HELPERS`, `HELPER_MODEL`, `TO_AUDITOR`, `prompts.VERSIONS`, `tasks.KINDS`, `CORPUS_KINDS`, `HANDLERS`,
-  `taskqueue.BATCH`, `ORDER`, `NOUN`, `SHORT`, `KIND_TITLE`, `llm.JUDGING`, `OUTPUT_CAP` and the run names are live
-  views of the registry, so a kind registered later appears in all of them. Each equals its 0.14 value (a test
-  writes the 0.14 values out). `routing.KINDS` and `tasks.KINDS` list the same kinds in another order (where order
-  never mattered); `routing.certainty` reads which list of an answer carries confidences from the registry.
-- **The quote check is required.** `taskkinds.register` refuses a kind without `quote_from` (or without a prompt,
-  prompt version or store function), and a name ENLENS uses. ENLENS checks an add-on kind's answers against its
-  schema and every quote against the text `quote_from` gives before the add-on's store function sees them.
-- **The guard and local-only hold.** An add-on's tasks are made, labelled, queued and refused like ENLENS's own.
-- **Its own helper.** A kind may bring a Claude Code helper agent (`helper_file`, `helper_model`): the plugin ENLENS
-  writes carries it, and the plugin check holds it to the queue's tools.
-
-**Tests.** `test_0150_task_kinds.py` (29 tests): every table against its 0.14 value; a test can still change a table
-(`monkeypatch.setitem`); registering a kind (refused without a quote check, a store function or with ENLENS's name;
-its defaults; taken away again); the quote check itself; and the stand-in add-on's kind (`fake_tag`, tags for a note,
-each quoting it) in every table, routed on Claude Code, the Claude API and a local server, with its own Settings row
-and certainty, through the queue (a made-up quote and a broken answer refused before anything is stored, a good one
-stored with its route), stepping up when unsure, answered by the offline demo, named in *How these results were
-made*, its helper in the Claude Code plugin, its size estimate, and kept on this computer when its note is
-*Only a local AI* or the installation is local-only.
-
-**Not yet done.** The page does not yet know an add-on's kinds by name in its own lists (0.15.x).
-
-## 0.14.0 (November 2026): room for add-ons
-
-An app built on ENLENS (Margin is one) had to edit ENLENS's own files to add a page's API, a job, a table, or a rule
-about who may read its text: the route table, the job lists, the database schema, the access checks. Every one of
-those edits clashed with the next ENLENS release. 0.14.0 gives each of them an extension point, so an add-on adds
-them in files of its own (docs/EXTENDING.md). ENLENS on its own is unchanged: every extension point is empty, every
-answer still goes through the quote check, a person can overrule it, and nothing more leaves the computer.
-
-**The server.**
+*The server.*
 - **Routes.** An add-on module's `ROUTES` (method, pattern, handler) are tried after ENLENS's own, with the same
   token. A handler is a function `handler(h, *groups, q)` or the name of one of ENLENS's handlers. `DOWNLOADS` names
   the handlers a plain link may call with `?token=`.
@@ -101,7 +51,7 @@ answer still goes through the quote check, a person can overrule it, and nothing
   sidebar, can be stopped (its waiting tasks leave the queue), and is *not running* while its tasks wait for Claude
   Code with nothing answering them.
 
-**The database.**
+*The database.*
 - **Tables and columns.** An add-on's `SCHEMA`, `MIGRATIONS` and `INDEXES` run in every project as it is opened,
   after ENLENS's own and in the same idempotent way (a column is added only when missing). Odd table or column names
   are refused.
@@ -110,7 +60,7 @@ answer still goes through the quote check, a person can overrule it, and nothing
   `origin_id=`, as do `check_hypothesis` and `queue_check`. *Check several* records `batch` and its batch id; a
   hypothesis typed by a person has none. Results and the history return both.
 
-**Access.**
+*Access.*
 - `access.register_floor(fn)`: an add-on says how far a task's text may go because of what it knows about it (text
   the add-on manages, with an AI setting of its own). The task keeps the most restricted of that and its documents'
   settings: a floor can only restrict, never loosen, and one that fails counts as *No AI*.
@@ -119,17 +69,87 @@ answer still goes through the quote check, a person can overrule it, and nothing
 - Both feed the checks ENLENS already makes, so `local_only()` and the per-document settings still decide. ENLENS
   loads the add-ons before it labels a task, so a hook an add-on registers when it is imported always counts.
 
-**Tests.** `test_0140_addons.py` (17 tests): ENLENS alone adds nothing; the public names; with the stand-in add-on
-(`tests/fake_extension`) a route, its token, a download by link, a state key and an Overview key that cannot replace
-ENLENS's, a job of its own that is *not running* until a stand-in Claude Code takes its tasks and then finishes, and
-one stopped with its tasks withdrawn; its table and migration in a new project and in an older one; a hypothesis with
-an origin (and *Check several*'s); a floor that keeps a task on the local model (and out of the queue, and refused to
-Claude Code), cannot loosen a document's setting, and keeps a removed note's text here; a failing floor; local-only;
-a hypothesis hidden from the connector's list and refused when asked for; a fork adding routes in
-`gui/extensions.py`; an add-on that cannot take over ENLENS's route; a failing hook.
+*One registry for the kinds of AI task.* A new kind of AI task touched eight modules: its schema (`schema.py`), its
+prompt and prompt version (`prompts.py`), its store function (`tasks.py`), its models, step-up and Claude Code helper
+(`routing.py`), its batch size, place in the queue and names (`taskqueue.py`), its name in *How these results were
+made* (`runs.py`), its answer's token limit and offline answer (`llm.py`) and its size estimate (`home.py`). Each
+kind is now described once, in `taskkinds.py`, and an add-on can register a kind of its own.
+- **One definition per kind.** A `TaskKind` holds the name, prompt version and prompt builders; the answer's schema,
+  where the quote check reads and the store function; the Claude models (first, steps up to), the local model, the
+  helper, Settings' row; the batch size and place in the queue; the names (singular, plural, the queue's line, the
+  run's name); the answer's token limit, the offline demo's answer and the size estimate.
+- **The tables are built from it.** `routing.KINDS`, `ROWS`, `ROW_OF`, `CLAUDE_DEFAULTS`, `LOCAL_DEFAULTS`,
+  `HELPERS`, `HELPER_MODEL`, `TO_AUDITOR`, `prompts.VERSIONS`, `tasks.KINDS`, `CORPUS_KINDS`, `HANDLERS`,
+  `taskqueue.BATCH`, `ORDER`, `NOUN`, `SHORT`, `KIND_TITLE`, `llm.JUDGING`, `OUTPUT_CAP` and the run names are live
+  views of the registry, so a kind registered later appears in all of them. Each equals its 0.13.5 value (a test
+  writes the 0.13.5 values out). `routing.KINDS` and `tasks.KINDS` list the same kinds in another order (where order
+  never mattered); `routing.certainty` reads which list of an answer carries confidences from the registry.
+- **The quote check is required.** `taskkinds.register` refuses a kind without `quote_from` (or without a prompt,
+  prompt version or store function), and a name ENLENS uses. ENLENS checks an add-on kind's answers against its
+  schema and every quote against the text `quote_from` gives before the add-on's store function sees them. A quote
+  not found says *quote not found in the passage* and how to fix it (copy it character for character, or quote a
+  shorter piece), as ENLENS's own kinds say.
+- **The guard and local-only hold.** An add-on's tasks are made, labelled, queued and refused like ENLENS's own.
+- **Its own helper.** A kind may bring a Claude Code helper agent (`helper_file`, `helper_model`): the plugin ENLENS
+  writes carries it, and the plugin check holds it to the queue's tools.
 
-**Not yet done.** An add-on job's name in the sidebar is its kind (*fake-labels*) until the page's extension points
-(0.15) let it name and link its jobs. A new kind of AI task still needs edits in ENLENS's files (0.15).
+*The page.* Adding a page meant editing the route table, the sidebar in `index.html`, the job lists in `app.js`, the
+Overview and the result page. Each has its extension point, read from one module, `registry.js`.
+- **Page modules.** A fork fills in `static/extensions.js` (ENLENS ships `export default {};`, and releases never
+  edit it); an add-on package puts `extensions.js` in its `STATIC` folder and `GET /api/state` lists it in
+  `addon_pages`. The page loads them after the state arrives; one that fails is left out.
+- **What a page module adds** (`applyExtensions` in `registry.js`, which never replaces one of ENLENS's entries):
+  pages (after ENLENS's own routes), features (a sidebar entry with its AI mark after its section's entries, and an
+  Overview card with its own state line), sections (a sidebar heading and an Overview section), job kinds (a job's
+  icon, name and link in the sidebar; the link may be a function of the job, for apps with a page per item, such as
+  Margin's drafts), welcome cards (first run), and origins (the result page's link back to where a hypothesis comes
+  from).
+- **Job kinds in one place.** `linkFor`, `kindIcon`, `kindText` and `withJob` moved from `app.js` into
+  `JOB_KINDS` (`registry.js`). A job of a kind nobody names shows its own title (it showed its kind's code).
+- **The Overview is built from `FEATURES` and `SECTIONS`.** Each section's line and card size moved into
+  `SECTIONS`; *Read one document* is the Documents feature's Overview card, and Bibliography has none, as before.
+- **The result page's back-link** comes from the registry: a check of several still says *part of a set*; a
+  hypothesis an add-on made says where it comes from in the line under it, and links back to it above it.
+
+**Tests.** The test files of the withdrawn versions are renamed after 0.13.6 (`test_0140_addons.py`,
+`test_0150_task_kinds.py` and `test_0151_page_extensions.py` became `test_0136_addons.py`, `test_0136_task_kinds.py`
+and `test_0136_page_extensions.py`), as is the stylesheet (`v0136.css`).
+- `test_0136_update_check.py`: the kept answer, `?fresh=1`, a failed look, the release page, the shared state in Node,
+  the page files; `test_0131_update_button.py` reads the look from `lib.js`, and `test_0101_settings_and_version.py`
+  follows the version tag to *Updates*. Checked in headless Chrome with the dev server (`--update`, `--update none`),
+  light and dark.
+- `test_0136_addons.py` (17 tests): ENLENS alone adds nothing; the public names; with the stand-in add-on
+  (`tests/fake_extension`) a route, its token, a download by link, a state key and an Overview key that cannot replace
+  ENLENS's, a job of its own that is *not running* until a stand-in Claude Code takes its tasks and then finishes, and
+  one stopped with its tasks withdrawn; its table and migration in a new project and in an older one; a hypothesis
+  with an origin (and *Check several*'s); a floor that keeps a task on the local model (and out of the queue, and
+  refused to Claude Code), cannot loosen a document's setting, and keeps a removed note's text here; a failing floor;
+  local-only; a hypothesis hidden from the connector's list and refused when asked for; a fork adding routes in
+  `gui/extensions.py`; an add-on that cannot take over ENLENS's route; a failing hook.
+- `test_0136_task_kinds.py` (30 tests): every table against its 0.13.5 value; a test can still change a table
+  (`monkeypatch.setitem`); registering a kind (refused without a quote check, a store function or with ENLENS's name;
+  its defaults; taken away again); the quote check itself and its message; and the stand-in add-on's kind
+  (`fake_tag`, tags for a note, each quoting it) in every table, routed on Claude Code, the Claude API and a local
+  server, with its own Settings row and certainty, through the queue (a made-up quote and a broken answer refused
+  before anything is stored, a good one stored with its route), stepping up when unsure, answered by the offline demo,
+  named in *How these results were made*, its helper in the Claude Code plugin, its size estimate, and kept on this
+  computer when its note is *Only a local AI* or the installation is local-only.
+- `test_0136_page_extensions.py` (5 tests, two run in Node): ENLENS alone keeps its Overview (its sections, cards and
+  order), its job rows (a check, a second opinion on three hypotheses, adding documents, looking before checking, an
+  unknown kind) and its *part of a set* link (with and without an origin); the stand-in add-on's page module adds a
+  section, a feature with a sidebar entry and its state line, a page, a job kind (with a link that depends on the
+  job), a welcome card and an origin, twice without adding anything twice and without replacing ENLENS's *Check a
+  hypothesis*; the server lists its module; the page code reads the registry. Checked in headless Chrome with the dev
+  server: with the stand-in add-on (the name *Fieldnotes*, the *Notes* sidebar entry with its AI mark, the Overview's
+  *Your notes* section, the add-on's page, a result's *Back to the note* and *from a note*), and ENLENS alone
+  (Overview, Results, Settings), with no console errors.
+- `test_0136_version_numbers.py`: a withdrawn version still running counts as older; the changelog lists none of
+  them, and its versions go down from the top.
+
+**Not yet done.** A hypothesis an add-on creates but never checks (no parts yet) cannot be opened on the result page
+(a script error); ENLENS itself never makes one. An add-on's sidebar entry is added after the page loads, so it
+appears a moment after ENLENS's own. The page does not yet know an add-on's kinds of AI task by name in its own
+lists.
 
 ## 0.13.5 (November 2026): fixes found while building on ENLENS, and room for apps built on it
 
@@ -186,8 +206,8 @@ checks of `test_0133_app_wide_polish.py` and `test_0134_claude_account.py`; the 
 every `docs/*API*.md`.
 
 **Not yet done.** Other pages still say "ENLENS" in their help texts (Settings, Projects, Documents): they describe
-ENLENS's own install and update, and are left for the page extension points (0.15). Add-ons cannot yet add routes,
-jobs, tables or AI tasks: that is 0.14 and 0.15.
+ENLENS's own install and update, and are left for the page extension points (0.13.6). Add-ons cannot yet add routes,
+jobs, tables or AI tasks: that is 0.13.6.
 
 ## 0.13.4 (November 2026): which Claude account answers
 

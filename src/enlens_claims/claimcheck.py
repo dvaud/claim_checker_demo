@@ -310,7 +310,7 @@ def _clean(text: str) -> str:
 def create_hypothesis(ws: Workspace, text: str, framework: str | None = None, code: str | None = None,
                       options: dict | None = None, batch_id: str | None = None, hyp_id: str | None = None,
                       origin: str | None = None, origin_id: str | None = None) -> str:
-    """A hypothesis record (not checked yet); returns its id. 0.14: `origin` says where it comes from ("batch" for
+    """A hypothesis record (not checked yet); returns its id. 0.13.6: `origin` says where it comes from ("batch" for
     Check several, or an add-on's own kind) and `origin_id` the id of what it comes from there, so an add-on that
     makes hypotheses needs no column or argument of its own."""
     text = _clean(text)
@@ -325,7 +325,7 @@ def create_hypothesis(ws: Workspace, text: str, framework: str | None = None, co
     return hid
 
 
-new_hypothesis = create_hypothesis  # the name before 0.14
+new_hypothesis = create_hypothesis  # the name before 0.13.6
 
 
 def new_claim(ws: Workspace, text: str, target: str | None = None, options: dict | None = None,
@@ -1575,7 +1575,7 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
            "created_at": h["created_at"], "options": json.loads(h["options_json"] or "{}"),
            "decomposed": len(parts) > 1, "model": h["model"] or (parts[0]["model"] if parts else None),
            "batch_id": h["batch_id"], "note": h["note"], "threshold": thr, "parts": parts,
-           "origin": h.get("origin"), "origin_id": h.get("origin_id")}  # 0.14: where it comes from
+           "origin": h.get("origin"), "origin_id": h.get("origin_id")}  # 0.13.6: where it comes from
     if h["code"]:
         try:
             _fw, _c, out["code_description"], out["code_label"] = frameworks.resolve(ws, h["framework"] or "sdg", h["code"])

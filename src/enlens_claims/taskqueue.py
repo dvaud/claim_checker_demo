@@ -35,7 +35,7 @@ CLAIM_MINUTES = 30
 PAUSED_AFTER = 180          # seconds without an answer, nothing claimed and work waiting: the run has paused
 TOKEN_BUDGET = 15000        # the most a batch's prompts may hold (well under the connector's 25,000-token output cap)
 CONNECTOR_CAP = 25000       # the connector's output cap: the system prompt and the task prompts of a batch together
-# 0.15: views of the registry (taskkinds.py): the batch a claim takes, the order the queue is answered in (the
+# 0.13.6: views of the registry (taskkinds.py): the batch a claim takes, the order the queue is answered in (the
 # researcher's own requests first, then small jobs, then the bulk; the SDG pack's batch pipeline last), and the
 # names the queue panel uses
 BATCH = taskkinds.Table("batch")

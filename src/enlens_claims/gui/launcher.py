@@ -87,12 +87,13 @@ def clear_info() -> None:
 
 # 0.10.2: after an update, the copy still running is the old version, and double-clicking the icon showed it again
 def is_older(live: dict) -> bool:
-    """Whether the running copy is an older version than this one (a copy that does not say counts as older)."""
+    """Whether the running copy is an older version than this one (a copy that does not say counts as older, and so
+    does a withdrawn version, 0.13.6)."""
     from .. import __version__
-    from ..update import version_tuple
+    from ..update import WITHDRAWN, version_tuple
 
     v = str(live.get("version") or "")
-    return not version_tuple(v) or version_tuple(v) < version_tuple(__version__)
+    return not version_tuple(v) or v in WITHDRAWN or version_tuple(v) < version_tuple(__version__)
 
 
 def stop_older(live: dict, wait: float = 25.0, fetch=None) -> str:

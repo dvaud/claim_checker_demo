@@ -1,9 +1,9 @@
-"""One registry for the kinds of AI task (0.15). See docs/EXTENDING.md.
+"""One registry for the kinds of AI task (0.13.6). See docs/EXTENDING.md.
 
 Each kind of task the AI answers (labels, checks, theme names…) is one `TaskKind`: its prompt, the answer's schema,
 where the quote check reads, how it is stored, the model it starts on and steps up to, its Claude Code helper, its
 batch size and place in the queue, its names, its answer's token limit, the offline demo's answer and the size of
-its prompt. Before 0.15 these lived in eight modules (schema, prompts, tasks, routing, taskqueue, runs, llm, home);
+its prompt. Before 0.13.6 these lived in eight modules (schema, prompts, tasks, routing, taskqueue, runs, llm, home);
 those modules' tables (`routing.KINDS`, `taskqueue.ORDER`, `taskqueue.BATCH`, `routing.HELPERS`, `prompts.VERSIONS`,
 `llm.OUTPUT_CAP`…) are now views of this registry, so a kind an add-on registers appears in every one of them.
 
@@ -272,7 +272,7 @@ def addon_helpers() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------------------------
-# ENLENS's own kinds, as before 0.15 (tests/test_0150_task_kinds.py checks every table against its 0.14 value).
+# ENLENS's own kinds, as before 0.13.6 (tests/test_0136_task_kinds.py checks every table against its 0.13.5 value).
 # Registration order follows Settings' model table.
 # ---------------------------------------------------------------------------------------------
 _core(name="label", prompt_version="label-v1", certainty="labels", claude=("haiku", "sonnet"), local="small",

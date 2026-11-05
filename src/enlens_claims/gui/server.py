@@ -176,6 +176,8 @@ class App:
         self.stop = None           # stops the server ("Quit ENLENS"); set by serve()
         self.restart = None        # 0.13.1: stops the server and starts the version on disk in its place (serve())
         self.updating = threading.Lock()  # 0.13.1: one "Update and restart" at a time
+        self.update_seen: dict | None = None  # 0.13.6: the last look for a newer version (GET /api/update)
+        self.update_looking = threading.Lock()  # one look at a time: the tabs that ask together share it
 
     # -- helpers ---------------------------------------------------------------------------------
     def settings(self) -> dict:
@@ -205,7 +207,7 @@ class App:
         """0.8: Claude Code (the researcher's own plan) answers: the AI buttons prepare tasks and wait for them."""
         return self.settings().get("backend") == "claude_code"
 
-    # -- 0.14: the public interface for add-ons (docs/EXTENDING.md). The old private names keep working. -----------
+    # -- 0.13.6: the public interface for add-ons (docs/EXTENDING.md). The old private names keep working. -----------
     def start_job(self, kind: str, title: str, name: str | None, fn, uses_model: bool = True,
                   withdraw: tuple[str, ...] = (), ws=None) -> Job:
         """A job; by queue (Claude Code) its tasks wait in the queue and it does not hold the model's turn. Stopping
@@ -229,7 +231,7 @@ class App:
         job.queue = q
         return job
 
-    _job = start_job  # the name before 0.14
+    _job = start_job  # the name before 0.13.6
 
     def job_views(self, active_only: bool = False) -> list[dict]:
         """The jobs for the page, each with `on_hold` (0.12): its work waits in the queue for Claude Code and nothing
@@ -286,7 +288,7 @@ class App:
             home.update_settings({"project": current})
         out = {"version": __version__, "installed_version": _installed_version(), "home": str(home.home()), "settings": s,
                "brand": addons.brand(),   # 0.13.5: the app's name and words (static/brand.json and add-ons)
-               "addon_pages": addons.page_modules(),   # 0.15.1: add-on packages' page modules
+               "addon_pages": addons.page_modules(),   # 0.13.6: add-on packages' page modules
                "backend_label": home.backend_label(s), "backend_labels": home.BACKEND_LABELS,
                "projects": projects, "project": current, "local_only": home.local_only(),
                "launcher": self.launcher, "can_quit": self.stop is not None,
@@ -300,7 +302,7 @@ class App:
                              "next": claimcheck.STATUS_NEXT.get(k, "")} for k, v in claimcheck.STATUS_TEXT.items()],
                "jobs": self.job_views(active_only=True),
                "queue": self._queue_summary(current)}
-        out.update(addons.state(self, set(out)))  # 0.14: an add-on's keys, never in place of ENLENS's
+        out.update(addons.state(self, set(out)))  # 0.13.6: an add-on's keys, never in place of ENLENS's
         return out
 
     def _queue_summary(self, name: str | None) -> dict | None:
@@ -486,13 +488,13 @@ class App:
 
     # -- jobs ------------------------------------------------------------------------------------
     def wire(self, job: Job, be, tracker: Tracker | None = None) -> None:
-        """Let the backend `be` see the job's Stop and report its progress (0.14: public; `_wire` before)."""
+        """Let the backend `be` see the job's Stop and report its progress (0.13.6: public; `_wire` before)."""
         if hasattr(be, "should_stop"):
             be.should_stop = job.cancel.is_set
         if tracker is not None and hasattr(be, "progress"):
             be.progress = tracker.model_report
 
-    _wire = wire  # the name before 0.14
+    _wire = wire  # the name before 0.13.6
 
     def start_check(self, name: str, body: dict) -> Job:
         ws = self.ws(name)
@@ -541,7 +543,7 @@ class App:
 
     def follow_queued(self, job: Job, ws, hyp_ids: list[str], tracker: Tracker, poll: float = 2.0) -> None:
         """Follow checks by queue until Claude Code has answered their steps; their steps are taken as the answers
-        arrive (here, or in the connector). Stop withdraws the checks that are still waiting. (0.14: public;
+        arrive (here, or in the connector). Stop withdraws the checks that are still waiting. (0.13.6: public;
         `_follow_queued` before.)"""
         shown: dict[str, str] = {}
         t0 = time.time()
@@ -971,7 +973,7 @@ class App:
         the progress also says what waits for Claude Code, and the job is "not running" while nothing answers.
 
         `fn(job, backend, model, progress)` does the work; `progress(done, total)` updates the bar. Stop takes the
-        tasks of the kinds in `withdraw` that wait in the queue back out (0.14: public; `_model_job` before)."""
+        tasks of the kinds in `withdraw` that wait in the queue back out (0.13.6: public; `_model_job` before)."""
         be, model = self.backend()  # one context length for every kind: Ollama never reloads the model
 
         def run(job: Job):
@@ -986,7 +988,7 @@ class App:
                               withdraw=self.MODEL_JOB_KINDS.get(kind, ()) if withdraw is None else tuple(withdraw),
                               ws=self._ws_or_none(name))
 
-    _model_job = start_queued_job  # the name before 0.14
+    _model_job = start_queued_job  # the name before 0.13.6
 
     def _ws_or_none(self, name: str | None):
         try:
@@ -1037,7 +1039,7 @@ class App:
             "hypotheses": n("SELECT COUNT(*) FROM hypotheses"),
             "waiting": (self._queue_summary(name) or {}).get("waiting", 0),
         }
-        out.update(addons.overview(ws, set(out)))  # 0.14: an add-on's counts, never in place of ENLENS's
+        out.update(addons.overview(ws, set(out)))  # 0.13.6: an add-on's counts, never in place of ENLENS's
         return out
 
     def start_stronger(self, name: str, task_id: str) -> Job:
@@ -1794,7 +1796,7 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin")
             if origin and urlparse(origin).netloc.lower() != (self.headers.get("Host") or "").lower():
                 raise ApiError(403, "Requests from other web sites are not accepted.")
-            routes = ROUTES + addons.routes()  # 0.14: an add-on's routes come after ENLENS's own
+            routes = ROUTES + addons.routes()  # 0.13.6: an add-on's routes come after ENLENS's own
             downloads = DOWNLOADS | addons.downloads()
             for m, rx, name in routes:
                 mt = rx.match(path)
@@ -1918,20 +1920,31 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_update(self, q):
         """0.13.1: whether a newer ENLENS waits: the latest GitHub release (the one-line install), or new commits on
-        the branch a git copy follows. A newer version already on disk (updated while this copy ran) counts."""
+        the branch a git copy follows. A newer version already on disk (updated while this copy ran) counts.
+        0.13.6: the page asks every two minutes; the answer (or the reason there is none) is kept for
+        UPDATE_LOOK_EVERY seconds, so the open tabs share one look. `?fresh=1` (Settings → Check for updates) looks
+        again now."""
         from .. import update as upd
 
         installed = _installed_version()
         if upd.version_tuple(installed) > upd.version_tuple(__version__):
             return {"available": True, "on_disk": True, "version": __version__, "latest": installed}
-        try:
-            r = upd.update(check_only=True)
-        except upd.UpdateError as e:
-            raise ApiError(409, str(e)) from e
-        waiting = r.get("waiting")
-        return {"available": bool(waiting), "on_disk": False, "version": __version__,
-                "latest": waiting if isinstance(waiting, str) else None,
-                "changes": waiting if isinstance(waiting, int) else None}
+        with self.app.update_looking:
+            seen = self.app.update_seen
+            if _bool(q, "fresh") or not seen or time.time() - seen["at"] >= UPDATE_LOOK_EVERY:
+                try:
+                    r = upd.update(check_only=True, quick=True)
+                    waiting = r.get("waiting")
+                    seen = {"at": time.time(), "answer": {
+                        "available": bool(waiting), "on_disk": False, "version": __version__,
+                        "latest": waiting if isinstance(waiting, str) else None,
+                        "changes": waiting if isinstance(waiting, int) else None}}
+                except upd.UpdateError as e:
+                    seen = {"at": time.time(), "error": str(e)}
+                self.app.update_seen = seen
+        if "error" in seen:
+            raise ApiError(409, seen["error"])
+        return dict(seen["answer"])
 
     def post_update(self, q):
         """0.13.1, "Update and restart": install the newest ENLENS the way this one was installed (update.py), then
@@ -1944,6 +1957,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "terminal, then start ENLENS again.")
         if not self.app.updating.acquire(blocking=False):
             raise ApiError(409, "ENLENS is already being updated.")
+        self.app.update_seen = None  # 0.13.6: whatever happens, the next GET /api/update looks again
         restarting = False
         try:
             installed = _installed_version()
@@ -2919,6 +2933,10 @@ class Handler(BaseHTTPRequestHandler):
             self._stream(out, "application/zip", {"Content-Disposition": _disposition(fname)})
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+# 0.13.6: how long a look for a newer version is kept (the page asks every 120 s; a little less, so each ask looks)
+UPDATE_LOOK_EVERY = 100
 
 
 def _installed_version() -> str:

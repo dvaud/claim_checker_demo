@@ -6,7 +6,7 @@ import json
 from . import taskkinds
 from .taxonomy import targets_reference_text
 
-# 0.15: a view of the registry (taskkinds.py): check, reread and second share the check prompt (check-v4)
+# 0.13.6: a view of the registry (taskkinds.py): check, reread and second share the check prompt (check-v4)
 VERSIONS = taskkinds.Table("prompt_version")
 
 _JSON_RULE = ("Answer with one JSON object and nothing else: no prose, no code fences. "
@@ -35,7 +35,7 @@ def _targets_block() -> str:
 
 def system_prompt(kind: str) -> str:
     k = taskkinds.get(kind)
-    if k is not None and k.system is not None:  # 0.15: an add-on's kind builds its own
+    if k is not None and k.system is not None:  # 0.13.6: an add-on's kind builds its own
         return k.system()
     if kind == "extract":
         return f"""You extract evidence-backed impact claims from scientific and policy texts about the green hydrogen value chain,
@@ -261,7 +261,7 @@ Answer with one JSON object and nothing else: no prose, no code fences."""
 
 def user_prompt(kind: str, payload: dict) -> str:
     k = taskkinds.get(kind)
-    if k is not None and k.user is not None:  # 0.15: an add-on's kind builds its own
+    if k is not None and k.user is not None:  # 0.13.6: an add-on's kind builds its own
         return k.user(payload)
     if kind == "extract":
         parts = [f"DOCUMENT: {payload.get('title') or 'untitled'}"]

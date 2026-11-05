@@ -83,6 +83,16 @@ ENLENS*, and the dialog says so. If the update fails, the reason is shown and no
 install on Windows it says to quit ENLENS and run the install line again (a running program cannot replace itself
 there).
 
+**Only when there is an update (0.13.6).** The button is not in the sidebar all the time any more. ENLENS looks for a
+new version when the page opens, every two minutes after, and when you come back to a tab that was in the
+background. When it finds one, a pop-up in the corner says which version (*ENLENS 0.13.7 is available*), with *Update
+and restart* and *Later*, and the button appears at the bottom of the sidebar as *Update to 0.13.7*. *Later* puts the
+pop-up away for that version; the button stays until you update. A look that fails (offline, files of a git copy
+edited by hand) stays quiet. To look yourself, or to read why a look failed, use **Check for updates** in *Settings
+→ Technical → Updates* (the version at the top right of every Settings tab opens it). For the one-line install,
+ENLENS reads the newest version from GitHub's release page, which GitHub's limit of 60 questions an hour does not
+count, so several computers in one office can look every two minutes.
+
 **An icon instead of the terminal.** The one-line install makes it. From a git copy, run once, as the person who will
 use the app:
 
@@ -200,10 +210,10 @@ is for.
 
 **The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, *Bibliography* (0.13), then **Explore the documents**
 (Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results). At the
-bottom, under the line that says where text goes, *Settings*, *Theme*, *Update ENLENS* (0.13.1) and *Quit ENLENS*
-sit together (0.10.1); every
-*Settings* tab shows the version of ENLENS at the top right, and clicking it opens *Technical → Where your data is*
-(how this copy was installed and how to update it). The *Overview* shows every feature with one line on what it does, whether it uses the AI and what is
+bottom, under the line that says where text goes, *Settings*, *Theme*, *Update to …* (0.13.1; since 0.13.6 only when
+there is an update) and *Quit ENLENS* sit together (0.10.1); every
+*Settings* tab shows the version of ENLENS at the top right, and clicking it opens *Technical → Updates* (0.13.6:
+*Check for updates*, then how this copy was installed under *Where your data is*). The *Overview* shows every feature with one line on what it does, whether it uses the AI and what is
 already made in the project (a profile, a glossary, a set of themes, results), and the AI in use with what is left
 to set up. *Quick look at one document* is there too.
 
@@ -1348,7 +1358,8 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | Empty document, or "Scanned: no text" | No text layer (scanned). Install Tesseract and the `ocr` extra (section 1) and add the file again, or run OCR yourself (`ocrmypdf in.pdf out.pdf`). |
 | The ENLENS icon is a blank square (macOS) or a plain shortcut (Windows) | It was made before 0.10.2 without Pillow. Open ENLENS once with 0.10.2 or later: it gives the icon its picture (macOS: if Finder still shows the blank one, `killall Finder`). Or make the icon again: `enlens-gui --make-launcher`. |
 | Settings shows an older version after updating | That copy was still running. Choose *Restart now* on the notice at the top of the page (0.13.1), or *Quit ENLENS* and open ENLENS from its icon (0.10.2 does this by itself when nothing runs). |
-| *Update ENLENS* says it cannot update | It says why. Offline: try again later. Files of a git copy edited by hand: keep them with `git stash` (or undo them), then update. One-line install on Windows: choose *Quit ENLENS* and run the install line again in PowerShell. |
+| There is no *Update* button in the sidebar | It shows only when there is an update (0.13.6). To look now, or to see why a look failed: *Settings → Technical → Check for updates*. |
+| *Update* says it cannot update | It says why. Offline: try again later. Files of a git copy edited by hand: keep them with `git stash` (or undo them), then update. One-line install on Windows: choose *Quit ENLENS* and run the install line again in PowerShell. |
 | The page keeps saying *Starting ENLENS …* | After 90 seconds it says ENLENS did not come back: open it again from its icon (or with `enlens-gui`), and look at `logs/enlens.log` in the data folder for the reason. |
 | Double-clicking the ENLENS icon does nothing | Look at `logs/enlens.log` in the data folder. Run the install line again (one-line install), or `enlens-gui --make-launcher` again after moving or reinstalling Python (git copy). On macOS, if the icon was copied from another computer, right-click it and choose *Open* once. |
 | The install line stops with "does not match the release's checksum" | The download was cut off or changed on the way; nothing was installed. Run the line again later. |

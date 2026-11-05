@@ -14,13 +14,13 @@ add-on) behaves exactly as before. The names (each one optional):
 - `BRAND`: a dict over `static/brand.json` (name, tagline, welcome_title, welcome_text, description, logo).
 - `STATIC`: a folder of the add-on's page files, served at `/static/addons/<add-on>/`. Its `site.css`, when there
   is one, is added to `/static/site.css` after the installation's own.
-- 0.14: `ROUTES`: (method, pattern, handler) tried after ENLENS's own routes. The pattern is a regular expression for
+- 0.13.6: `ROUTES`: (method, pattern, handler) tried after ENLENS's own routes. The pattern is a regular expression for
   the whole path (`/api/...`); the handler is a function `handler(h, *groups, q)` (`h` is the request handler: `h.app`
   the app, `h._body()` the JSON body) or the name of a Handler method. It returns a dict (sent as JSON) or None.
-- 0.14: `DOWNLOADS`: the names of handlers that a plain link may call with `?token=`.
-- 0.14: `state(app)` and `overview(ws)`: extra keys for `GET /api/state` and a project's Overview. They never replace
+- 0.13.6: `DOWNLOADS`: the names of handlers that a plain link may call with `?token=`.
+- 0.13.6: `state(app)` and `overview(ws)`: extra keys for `GET /api/state` and a project's Overview. They never replace
   one of ENLENS's keys.
-- 0.14: `SCHEMA` (SQL run after ENLENS's own, `CREATE TABLE IF NOT EXISTS ...`), `MIGRATIONS` ((table, column,
+- 0.13.6: `SCHEMA` (SQL run after ENLENS's own, `CREATE TABLE IF NOT EXISTS ...`), `MIGRATIONS` ((table, column,
   type), added when missing) and `INDEXES` (SQL run after them), in every project as it is opened.
 
 ENLENS's standing rules apply to anything an add-on adds: `home.local_only()`, the per-document AI settings and the
@@ -150,7 +150,7 @@ def site_css() -> bytes:
     return b"".join(parts)
 
 
-# -------------------------------------------------------------------------------------------------- 0.14: the server
+# -------------------------------------------------------------------------------------------------- 0.13.6: the server
 def routes() -> list[tuple[str, re.Pattern, object]]:
     """Every add-on's routes, compiled: (method, pattern for the whole path, handler)."""
     out = []
@@ -204,7 +204,7 @@ def overview(ws, taken) -> dict:
     return _extra("overview", ws, taken)
 
 
-# -------------------------------------------------------------------------------------------------- 0.14: the database
+# -------------------------------------------------------------------------------------------------- 0.13.6: the database
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -225,7 +225,7 @@ def database() -> list[dict]:
     return out
 
 
-# -------------------------------------------------------------------------------------------------- 0.15.1: the page
+# -------------------------------------------------------------------------------------------------- 0.13.6: the page
 def page_modules() -> list[str]:
     """The page modules of add-on packages that have one (STATIC/extensions.js), as the page imports them."""
     return [f"/static/addons/{n}/extensions.js" for n, d in static_dirs().items() if (d / "extensions.js").is_file()]

@@ -27,7 +27,7 @@ export async function renderOverview(view) {
         h("a", { class: "btn btn-primary btn-sm", href: "#/sources", style: { marginTop: "6px" } }, icon("upload", { size: 14 }), "Add documents"))));
   }
 
-  // 0.15.1: the sections and their cards come from FEATURES and SECTIONS (registry.js), so an add-on's section or
+  // 0.13.6: the sections and their cards come from FEATURES and SECTIONS (registry.js), so an add-on's section or
   // feature shows here without an edit. Explore comes first (the main part), checking hypotheses second.
   const pf = o.profile || {}, cs = o.concepts || {}, th = o.themes || {};
   const STATE = {

@@ -32,7 +32,7 @@ from . import taskkinds
 
 STEP_UP_BELOW = 0.6
 
-# 0.15: the kinds the router knows, their models and helpers, and Settings' rows are views of the registry
+# 0.13.6: the kinds the router knows, their models and helpers, and Settings' rows are views of the registry
 # (taskkinds.py), so a kind an add-on registers is routed like ENLENS's own. "audit" is a role (a second-model audit
 # of the SDG pack's answers, see `task_kind`), not a kind of task.
 SDG_KINDS = ("split", "extract", "verify", "verify_set")
@@ -89,7 +89,7 @@ def certainty(kind: str, obj) -> float | None:
     if not isinstance(obj, dict):
         return None
     k = taskkinds.get(kind)
-    items = k.certainty if k else None  # 0.15: the answer's list whose items carry a confidence, from the registry
+    items = k.certainty if k else None  # 0.13.6: the answer's list whose items carry a confidence, from the registry
     if items == ".":  # one verdict with its confidence (verify)
         c = obj.get("confidence")
         return float(c) if isinstance(c, (int, float)) and not isinstance(c, bool) else None

@@ -246,7 +246,7 @@ export async function renderResult(view, [hypId], query) {
     const readers = new Set(allPassages.filter((p) => p.read_by && !p.waiting_for_you).map((p) => p.read_by));
     oneReader = readers.size === 1 && !allPassages.some((p) => p.waiting_for_you) ? [...readers][0] : null;
 
-    // 0.12: one quiet line under the hypothesis: when it was checked and what was read. 0.15.1: where it comes from
+    // 0.12: one quiet line under the hypothesis: when it was checked and what was read. 0.13.6: where it comes from
     // (a set, or an add-on's own kind) links back to it, from the registry (registry.js ORIGINS)
     const from = originLink(r);
     box.appendChild(h("header", { class: "page-head result-head" },

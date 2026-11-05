@@ -126,7 +126,7 @@ def provenance_table(ws: Workspace, task_ids: list[str] | None = None, kinds: tu
         args += list(kinds)
     sql += (" GROUP BY r.kind, r.model, r.digest, r.prompt_version, r.seed, r.settings_json, COALESCE(r.route, ''), "
             "COALESCE(r.helper, '') ORDER BY r.kind, first")
-    names = taskkinds.Table("run_name")  # 0.15: from the registry (taskkinds.py)
+    names = taskkinds.Table("run_name")  # 0.13.6: from the registry (taskkinds.py)
     out = []
     claude_code = False
     for r in ws.query(sql, args):

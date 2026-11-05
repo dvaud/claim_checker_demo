@@ -548,6 +548,27 @@ export function claudeStatus(maxAge = 60000) {
 export function claudeSeenNow() { return claudeSeen.status; }
 export function rememberClaude(st) { claudeSeen.status = st || {}; claudeSeen.at = Date.now(); return claudeSeen.status; }
 
+// 0.13.6: whether a newer version waits (GET /api/update), shared by the sidebar's Update button, its pop-up and
+// Settings → Check for updates. The page asks when it opens and every UPDATE_EVERY; the server keeps its answer a
+// little less than that, so several tabs share one look. `fresh` looks again now. `install` is set by app.js (the
+// confirmation, the update and the restart).
+export const UPDATE_EVERY = 120000;
+export const Updates = { info: null, error: null, at: 0, pending: null, listeners: new Set(), install: () => {} };
+export function checkUpdate(fresh = false) {
+  if (Updates.pending && !fresh) return Updates.pending;
+  const ask = api("GET", fresh ? "/api/update?fresh=1" : "/api/update")
+    .then((info) => { Updates.info = info; Updates.error = null; return info; },
+      (e) => { Updates.error = e; throw e; })
+    .finally(() => {
+      Updates.at = Date.now();
+      if (Updates.pending === ask) Updates.pending = null;
+      for (const fn of Updates.listeners) { try { fn(Updates.info, Updates.error); } catch (e) { console.error(e); } }
+    });
+  Updates.pending = ask;
+  return ask;
+}
+export function onUpdateSeen(fn) { Updates.listeners.add(fn); return () => Updates.listeners.delete(fn); }
+
 // Which account Claude Code is signed in to, in words: { email, plan: "Team plan", org } or null when it is not
 // signed in (or does not say). The organisation only on a Team or Enterprise plan: on Pro and Max it is usually Claude's
 // own "…'s Organization".

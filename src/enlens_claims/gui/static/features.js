@@ -3,7 +3,7 @@
 // the AI.
 import { h, icon } from "./lib.js";
 
-// 0.15.1: `sub` and `compact`: the section's line and card size on the Overview (registry.js builds it from these)
+// 0.13.6: `sub` and `compact`: the section's line and card size on the Overview (registry.js builds it from these)
 export const SECTIONS = {
   explore: { title: "Explore the documents", short: "Explore", sub: "Start here: no hypothesis needed." },
   check: { title: "Check hypotheses", short: "Check", sub: "When you have a statement to test against the documents.", compact: true },
@@ -11,7 +11,7 @@ export const SECTIONS = {
 };
 
 // ai: "none" (never uses the AI), "optional" (works without it; the AI can add to it), "uses" (the AI does the work).
-// 0.15.1: `overview` (where its Overview card goes, or false), and an add-on's `state(o)` and `nav` (registry.js).
+// 0.13.6: `overview` (where its Overview card goes, or false), and an add-on's `state(o)` and `nav` (registry.js).
 export const FEATURES = {
   sources: {
     section: "project", title: "Documents", icon: "book-open", href: "#/sources", ai: "optional",

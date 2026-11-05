@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName, helpMark, rememberClaude, claudeAccount } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate } from "../lib.js";
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -8,7 +8,7 @@ import { restrictedModelCard, termsPanel } from "./ai-access.js";
 // #/settings/calibration…) open its tab and scroll to it.
 const TABS = [["model", "AI", "cpu"], ["basics", "Checking", "flask"], ["explore", "Exploring", "network"], ["documents", "Documents", "book-open"], ["advanced", "Technical", "sliders"]];
 const TAB_OF = { model: "model", ai: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
-  advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", data: "advanced" };
+  advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", updates: "advanced", data: "advanced" };
 
 export async function renderSettings(view, [section]) {
   const s = { ...App.settings() };
@@ -41,7 +41,7 @@ export async function renderSettings(view, [section]) {
   else {
     // a local model's own settings (second model, context length) only when a local model answers
     const local = ["auto", "ollama", "openai"].includes(s.backend || "auto");
-    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s, watchers), ledgerSection(), dataSection()].filter(Boolean));
+    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s, watchers), ledgerSection(), updatesSection(), dataSection()].filter(Boolean));
     if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (the model for second opinions, the context length) show here when a local model is chosen under AI."));
   }
   if (section && section !== tab) setTimeout(() => { const t = document.getElementById(`s-${section}`); if (t) t.scrollIntoView({ block: "start" }); }, 80);
@@ -752,8 +752,8 @@ function versionTag() {
   if (!v) return null;
   // 0.10.2: updated while it ran: the newer version waits for a restart (the banner above the page says how)
   const now = st.installed_version && st.installed_version !== v ? st.installed_version : null;
-  return h("a", { class: `version-tag${now ? " version-tag-stale" : ""}`, href: "#/settings/data",
-    title: now ? `ENLENS ${now} is installed: quit ENLENS and open it again to use it` : "How ENLENS was installed and how to update it (Technical)" },
+  return h("a", { class: `version-tag${now ? " version-tag-stale" : ""}`, href: "#/settings/updates",
+    title: now ? `ENLENS ${now} is installed: restart ENLENS to use it` : "Check for updates, and how ENLENS was installed (Technical)" },
     icon(now ? "alert-circle" : "info", { size: 14 }), h("span", {}, "Version ", h("strong", {}, v)), now ? h("span", {}, ` · ${now} installed`) : null);
 }
 
@@ -763,6 +763,48 @@ function installedWith(inst) {
   const how = { git: ["from a git copy", "Update: enlens update"], script: ["with the one-line install", "Update: run the install line again (or enlens update)"],
     package: ["from the download for this system", "Update: download the newest version"], pip: ["with pip", "Update: pip install --upgrade, or switch to the one-line install"] }[inst.kind];
   return h("div", { class: "muted small", style: { fontWeight: 400 } }, `Installed ${how[0]}. ${how[1]}.`);
+}
+
+// 0.13.6: Check for updates. The sidebar's Update button shows only when there is one (the page looks every two
+// minutes); here the person can look now, and read why a look failed (offline, a git copy edited by hand).
+function updatesSection() {
+  const st = App.state || {};
+  const name = appName();
+  const out = h("div", { "aria-live": "polite" });
+  const btn = h("button", { class: "btn", type: "button" }, icon("refresh", { size: 14 }), "Check for updates");
+  const at = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const show = (info, err, when) => {
+    if (err) {
+      replace(out, h("div", { class: "notice notice-warn" }, icon("alert-triangle"),
+        h("div", {}, h("p", {}, h("strong", {}, "Could not look for updates.")), h("p", { class: "small" }, err.message || String(err)))));
+      return;
+    }
+    if (!info) { clear(out); return; }
+    if (!info.available) {
+      replace(out, h("p", { class: "small" }, icon("circle-check", { size: 14 }), ` ${name} ${info.version} is the newest version.`,
+        when ? h("span", { class: "muted" }, ` Looked at ${at(when)}.`) : null));
+      return;
+    }
+    const what = info.on_disk ? `${name} ${info.latest} is installed, but ${info.version} is still running.`
+      : info.latest ? `${name} ${info.latest} is available (you have ${info.version}).`
+      : `${info.changes} new change${info.changes === 1 ? " is" : "s are"} waiting for this copy of ${name} (version ${info.version}).`;
+    replace(out, h("div", { class: "notice notice-info" }, icon("arrow-up"),
+      h("div", {}, h("p", {}, h("strong", {}, what)),
+        st.can_restart
+          ? h("p", {}, h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => Updates.install() }, icon("arrow-up", { size: 13 }), info.on_disk ? "Restart now" : "Update and restart"))
+          : h("p", { class: "small" }, "This copy cannot restart itself (it was not started from its icon or with enlens-gui): run ", h("code", {}, "enlens update"), ` in a terminal, then start ${name} again.`))));
+  };
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    replace(out, h("p", { class: "muted small" }, "Looking for a newer version…"));
+    try { show(await checkUpdate(true), null, Date.now()); } catch (e) { show(null, e); }
+    btn.disabled = false;
+  });
+  if (Updates.info || Updates.error) show(Updates.info, Updates.error, Updates.at);  // what the last look found
+  return sectionCard("updates", "Updates", st.can_restart
+    ? `${name} looks for a new version when it opens and every two minutes after. When there is one, it says so in a pop-up, and an Update button appears at the bottom of the sidebar until you install it. Your projects and results are kept.`
+    : `Look for a new version of ${name}. Your projects and results are kept when you update.`,
+    h("div", { class: "save-row" }, btn), out);
 }
 
 // 0.11: every passage sent to Claude, as a table for records such as a data management plan

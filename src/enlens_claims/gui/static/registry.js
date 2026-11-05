@@ -1,4 +1,4 @@
-// 0.15.1: the page's extension points (docs/EXTENDING.md). An add-on's page module (static/extensions.js in a fork,
+// 0.13.6: the page's extension points (docs/EXTENDING.md). An add-on's page module (static/extensions.js in a fork,
 // static/addons/<add-on>/extensions.js in a package) adds to these lists with applyExtensions(); ENLENS's own entries
 // are here too, so the sidebar's jobs, the Overview and the result page read one list each.
 // No imports: the tests load this file in Node.
@@ -54,7 +54,7 @@ export const ORIGINS = {
   batch: { meta: "part of a set", href: (id) => `#/history?batch=${encodeURIComponent(id)}` },
 };
 
-// The back-link of a result: {eyebrow, meta, href} or null. A batch from before 0.14 has a batch id and no origin.
+// The back-link of a result: {eyebrow, meta, href} or null. A batch from before 0.13.6 has a batch id and no origin.
 export function originLink(r) {
   const key = r.origin && ORIGINS[r.origin] ? r.origin : (r.batch_id ? "batch" : null);
   if (!key) return null;

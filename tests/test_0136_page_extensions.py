@@ -1,4 +1,4 @@
-"""0.15.1: the page's extension points (registry.js, static/extensions.js, docs/EXTENDING.md).
+"""0.13.6: the page's extension points (registry.js, static/extensions.js, docs/EXTENDING.md).
 
 The stand-in add-on's page module (tests/fake_extension/enlens_fake_addon/static/extensions.js) adds a page, a sidebar
 entry with its AI mark, an Overview section and card, a job kind, a welcome card and a result's link back to its
@@ -59,7 +59,7 @@ out.batch = [reg.originLink({ batch_id: "b1" }), reg.originLink({ origin: "batch
              reg.originLink({}), reg.originLink({ origin: "unknown", origin_id: "x" })];
 """, tmp_path)
     assert out["local"] == {"sections": [], "features": [], "routes": 0, "jobKinds": [], "welcome": 0, "origins": []}
-    # the Overview as 0.15.0 drew it: explore (four cards and "Read one document"), then check (compact)
+    # the Overview as 0.13.5 drew it: explore (four cards and "Read one document"), then check (compact)
     assert [(s["key"], s["features"], s["compact"]) for s in out["sections"]] == [
         ("explore", ["search", "profile", "concepts", "themes", "sources"], False),
         ("check", ["check", "batch", "history"], True)]
