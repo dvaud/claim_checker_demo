@@ -286,6 +286,7 @@ class App:
             home.update_settings({"project": current})
         out = {"version": __version__, "installed_version": _installed_version(), "home": str(home.home()), "settings": s,
                "brand": addons.brand(),   # 0.13.5: the app's name and words (static/brand.json and add-ons)
+               "addon_pages": addons.page_modules(),   # 0.15.1: add-on packages' page modules
                "backend_label": home.backend_label(s), "backend_labels": home.BACKEND_LABELS,
                "projects": projects, "project": current, "local_only": home.local_only(),
                "launcher": self.launcher, "can_quit": self.stop is not None,

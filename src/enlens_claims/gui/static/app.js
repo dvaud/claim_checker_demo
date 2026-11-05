@@ -1,6 +1,8 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
 import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName } from "./lib.js";
-import { FEATURES } from "./features.js";
+import { FEATURES, SECTIONS } from "./features.js";
+import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
+import localExtensions from "./extensions.js";
 import { renderCheck } from "./views/check.js";
 import { renderResult } from "./views/result.js";
 import { renderHistory } from "./views/history.js";
@@ -62,7 +64,7 @@ async function route() {
     try { await api("PUT", "/api/settings", { project: App.state.projects[0].name }); await App.refresh(); } catch (e) { showError(e); }
   }
   let match = null, nav = "", render = null;
-  for (const [rx, n, r] of ROUTES) {
+  for (const [rx, n, r] of [...ROUTES, ...PAGE_ROUTES]) {  // 0.15.1: an add-on's pages come after the core ones
     const m = rx.exec(pathPart);
     if (m) { match = m; nav = n; render = r; break; }
   }
@@ -71,7 +73,7 @@ async function route() {
   closeDrawer();
   for (const d of document.querySelectorAll("#project-switch details[open], #jobs-indicator details[open], #queue-indicator details[open]")) d.open = false;
   const pageName = { overview: "Overview", check: "Check a hypothesis", history: "Results", batch: "Check several", sources: "Documents", settings: "Settings", search: "Search", profile: "Profile", concepts: "Concepts", themes: "Themes" }[nav]
-    || { "/setup": "Set up", "/projects": "Projects" }[pathPart] || "";
+    || { "/setup": "Set up", "/projects": "Projects" }[pathPart] || (FEATURES[nav] && FEATURES[nav].title) || "";
   document.title = pageName ? `${pageName} · ${appName()}` : appName();
   quickLookBanner(document.getElementById("quicklook-banner"));
   // Each page renders into its own container: a render still in flight when the hash changes again writes into a
@@ -240,18 +242,13 @@ async function drawJobs() {
     going.length ? h("span", { class: "running-dot", "aria-hidden": "true" }) : hold.length ? icon("pause", { size: 14 }) : icon("clock", { size: 14 }),
     head, icon("chevron-up", { size: 14 }));
   const menu = h("div", { class: "ps-menu" });
-  const linkFor = (j) => ({ check: "#/check", prepare: "#/check", batch: "#/batch", more: "#/history", reread: "#/history", "read-new": "#/history", "second-opinion": "#/history", ingest: "#/sources", index: "#/sources", benchmark: "#/settings/test",
-    keywords: "#/profile", label: "#/profile", "label-compare": "#/profile", terms: "#/concepts", link: "#/concepts", wordings: "#/concepts", themes: "#/themes", "theme-names": "#/themes", resolve: "#/sources", quicklook: "#/sources", "claude-install": "#/settings/model", bibliography: "#/bibliography" }[j.kind] || "#/check");
-  const kindIcon = { check: "flask", prepare: "eye", batch: "list-checks", more: "search", reread: "refresh", "read-new": "book-open", "second-opinion": "cpu", ingest: "upload", index: "sparkles", benchmark: "cpu",
-    keywords: "tag", label: "tag", "label-compare": "scale", terms: "network", link: "network", wordings: "network", themes: "shapes", "theme-names": "shapes", resolve: "link", quicklook: "eye", "claude-install": "download", bibliography: "library" };
-  const kindText = { check: "Check", prepare: "Look before checking", batch: "Several hypotheses", more: "More evidence", reread: "Reading an excerpt again", "read-new": "Reading the new documents", "second-opinion": "Second opinion", ingest: "Adding documents", index: "Search by meaning set-up", benchmark: "Model test",
-    keywords: "Codes by keywords", label: "The AI labels passages", "label-compare": "Comparing labels", terms: "Building the glossary", link: "The AI relates concepts", wordings: "Other wordings", themes: "Finding themes", "theme-names": "Naming themes", resolve: "Following references", quicklook: "Quick look", "claude-install": "Installing Claude Code", bibliography: "Bringing in the bibliography" };
-  const withJob = new Set(["check", "batch", "more", "read-new", "second-opinion"]);
-  const row = (j) => h("a", { class: "job-row", href: linkFor(j) + (withJob.has(j.kind) ? `?job=${encodeURIComponent(j.id)}` : ""), title: ["check", "prepare", "batch"].includes(j.kind) ? (j.title || "") : null },
-    icon(kindIcon[j.kind] || "circle", { size: 14 }),
-    h("span", { class: "job-title" }, j.kind === "check" ? (j.title || "Check") : j.kind === "prepare" ? `${kindText.prepare}${j.title ? ` (${j.title})` : ""}` : j.kind === "read-new" ? (j.title || kindText["read-new"]) : j.kind === "second-opinion" ? `${kindText["second-opinion"]}${/ on (\d+ hypothes\w+)$/.test(j.title || "") ? ` (${/ on (\d+ hypothes\w+)$/.exec(j.title)[1]})` : ""}` : `${kindText[j.kind] || j.kind}${j.kind === "batch" && j.title ? ` (${j.title})` : ""}`),
+  // 0.15.1: each kind's link, icon and name are in registry.js (JOB_KINDS), where an add-on adds its own
+  const row = (j) => {
+    const v = jobRow(j);
+    return h("a", { class: "job-row", href: v.href, title: v.tooltip }, icon(v.icon, { size: 14 }), h("span", { class: "job-title" }, v.text),
     j.on_hold ? h("span", { class: "job-state job-hold" }, "not running")
       : h("span", { class: "job-state" }, j.state === "running" ? `running · ${fmt.secs(j.seconds)}` : j.state === "queued" ? "waiting its turn" : j.state === "done" ? "done" : j.state === "error" ? "did not work" : "stopped"));
+  };
   if (!active.length && !recent.length) menu.appendChild(h("div", { class: "muted small", style: { padding: "6px 8px" } }, "Work that takes a while (checks, adding documents) shows up here, so you can move around the app and come back to it."));
   if (hold.some((j) => j.project === App.project)) {
     menu.appendChild(h("div", { class: "jobs-hold-start" },
@@ -535,11 +532,31 @@ const AI_BADGE = {
   optional: ["AI", "Works without the AI; the AI can add to it"],
   none: ["", "No AI needed"],
 };
+// 0.15.1: an add-on's feature with `nav` gets a sidebar entry, after the last entry of its section (or under a new
+// group heading for a section of its own). Each entry is decorated once.
+function addonNav() {
+  const nav = document.getElementById("nav");
+  if (!nav) return;
+  for (const [key, f] of Object.entries(FEATURES)) {
+    if (!f.nav || nav.querySelector(`a[data-route="${CSS.escape(key)}"]`)) continue;
+    const a = h("a", { href: f.href, "data-route": key }, h("span", { class: "nav-icon", "data-icon": f.icon || "circle" }), h("span", {}, f.title));
+    const same = [...nav.querySelectorAll("a[data-route]")].filter((x) => (FEATURES[x.dataset.route] || {}).section === f.section);
+    if (same.length) same[same.length - 1].after(a);
+    else {
+      const legend = nav.querySelector(".nav-legend");
+      nav.insertBefore(h("span", { class: "nav-group", role: "presentation" }, (SECTIONS[f.section] || {}).title || ""), legend);
+      nav.insertBefore(a, legend);
+    }
+  }
+  navIcons();
+}
+
 function navIcons() {
-  for (const span of document.querySelectorAll(".nav-icon[data-icon]")) replace(span, icon(span.dataset.icon, { size: 18 }));
+  for (const span of document.querySelectorAll(".nav-icon[data-icon]")) { replace(span, icon(span.dataset.icon, { size: 18 })); span.removeAttribute("data-icon"); }
   for (const a of document.querySelectorAll("#nav a[data-route]")) {
     const f = FEATURES[a.dataset.route];
-    if (!f) continue;
+    if (!f || a.dataset.marked) continue;
+    a.dataset.marked = "1";
     const [text, plain] = AI_BADGE[f.ai] || AI_BADGE.none;
     a.title = `${f.what} ${plain}.`;
     if (text) a.appendChild(h("span", { class: `nav-ai nav-ai-${f.ai}`, title: plain }, h("span", { "aria-hidden": "true" }, "AI"), h("span", { class: "visually-hidden" }, ` (${plain})`)));
@@ -552,6 +569,17 @@ function navIcons() {
       h("span", {}, h("span", { class: "nav-ai nav-ai-optional" }, "AI"), " optional"),
       h("span", {}, "no mark: no AI")), null);
   }
+}
+
+// 0.15.1: the page modules of add-ons: the fork's static/extensions.js (empty in ENLENS), then each add-on package's
+// (GET /api/state "addon_pages"). One that fails is left out; the page still works.
+async function loadExtensions() {
+  const into = { FEATURES, SECTIONS };
+  try { applyExtensions(localExtensions, into); } catch (e) { console.error(e); }
+  for (const url of App.state.addon_pages || []) {
+    try { applyExtensions((await import(url)).default, into); } catch (e) { console.error(`The add-on page ${url} could not be loaded`, e); }
+  }
+  addonNav();
 }
 
 // 0.13.5: the app's name, words and logo come from brand.json (and add-ons): index.html keeps ENLENS's as a
@@ -585,6 +613,7 @@ async function boot() {
     return;
   }
   applyBrand();
+  await loadExtensions();
   renderJobs();
   updateInit();
   quitInit();

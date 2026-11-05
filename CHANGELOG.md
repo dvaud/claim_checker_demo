@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.15.1 (November 2026): room for add-ons in the page
+
+The last part of the room for apps built on ENLENS: the page. Adding a page meant editing the route table, the
+sidebar in `index.html`, the job lists in `app.js`, the Overview and the result page. 0.15.1 gives each its extension
+point, read from one module, `registry.js`. For people who use ENLENS nothing changes: the sidebar, the Overview, the
+job list and the result page look and work as in 0.15.0.
+
+- **Page modules.** A fork fills in `static/extensions.js` (ENLENS ships `export default {};`, and releases never
+  edit it); an add-on package puts `extensions.js` in its `STATIC` folder and `GET /api/state` lists it in
+  `addon_pages`. The page loads them after the state arrives; one that fails is left out.
+- **What a page module adds** (`applyExtensions` in `registry.js`, which never replaces one of ENLENS's entries):
+  pages (after ENLENS's own routes), features (a sidebar entry with its AI mark after its section's entries, and an
+  Overview card with its own state line), sections (a sidebar heading and an Overview section), job kinds (a job's
+  icon, name and link in the sidebar), welcome cards (first run), and origins (the result page's link back to where a
+  hypothesis comes from).
+- **Job kinds in one place.** `linkFor`, `kindIcon`, `kindText` and `withJob` moved from `app.js` into
+  `JOB_KINDS` (`registry.js`). A job of a kind nobody names shows its own title (it showed its kind's code).
+- **The Overview is built from `FEATURES` and `SECTIONS`.** Each section's line and card size moved into
+  `SECTIONS`; *Read one document* is the Documents feature's Overview card, and Bibliography has none, as before.
+- **The result page's back-link** comes from the registry: a check of several still says *part of a set*; a
+  hypothesis an add-on made says where it comes from in the line under it, and links back to it above it.
+
+**Tests.** `test_0151_page_extensions.py` (6 tests, two run in Node): ENLENS alone keeps its Overview (its sections,
+cards and order), its job rows (a check, a second opinion on three hypotheses, adding documents, looking before
+checking, an unknown kind) and its *part of a set* link (before and after 0.14's origins); the stand-in add-on's page
+module adds a section, a feature with a sidebar entry and its state line, a page, a job kind, a welcome card and an
+origin, twice without adding anything twice and without replacing ENLENS's *Check a hypothesis*; the server lists
+its module; the page code reads the registry. Checked in headless Chrome with the dev server: with the stand-in
+add-on (the name *Fieldnotes*, the *Notes* sidebar entry with its AI mark, the Overview's *Your notes* section, the
+add-on's page, a result's *Back to the note* and *from a note*), and ENLENS alone (Overview, Results, Settings), with
+no console errors.
+
+**Not yet done.** A hypothesis an add-on creates but never checks (no parts yet) cannot be opened on the result page
+(a script error); ENLENS itself never makes one. An add-on's sidebar entry is added after the page loads, so it
+appears a moment after ENLENS's own.
+
 ## 0.15.0 (November 2026): one registry for the kinds of AI task
 
 A new kind of AI task touched eight modules: its schema (`schema.py`), its prompt and prompt version (`prompts.py`),

@@ -440,7 +440,8 @@ def test_the_page_shell_and_documents():
     assert index.index('data-route="sources"') < index.index('data-route="bibliography"') < index.index('data-route="search"')
     app = (STATIC / "app.js").read_text()
     assert 'renderBibliography } from "./views/bibliography.js"' in app and '"bibliography", renderBibliography]' in app
-    assert 'bibliography: "#/bibliography"' in app and 'bibliography: "Bringing in the bibliography"' in app
+    reg = (STATIC / "registry.js").read_text()  # 0.15.1: the sidebar's job kinds moved to registry.js
+    assert 'bibliography: { icon: "library", text: "Bringing in the bibliography", link: "#/bibliography" }' in reg
     assert "library:" in (STATIC / "icons.js").read_text()
     page = (STATIC / "views" / "bibliography.js").read_text()
     assert "innerHTML" not in page and ".append(null" not in page

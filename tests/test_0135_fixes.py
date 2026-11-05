@@ -114,7 +114,7 @@ def test_second_opinion_everywhere():
                     "Choose a second model", "The second model must be", "The second model is the same",
                     "(a second model, the context length)", '"the second model"', "add a second model"):
             assert old not in text, old
-    assert '"second-opinion": "Second opinion"' in page["app.js"]
+    assert '"second-opinion": { icon: "cpu", text: "Second opinion"' in (STATIC / "registry.js").read_text()  # 0.15.1
     assert "The second opinion read" in page["views/result.js"]
     from enlens_claims import taskkinds  # 0.15: the run's name lives in the registry
 

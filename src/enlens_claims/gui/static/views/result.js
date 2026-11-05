@@ -4,6 +4,7 @@
 // replaces the AI's; it is protected (no silent overwrite) and every save can be undone.
 import { App, api, h, icon, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark } from "../lib.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
+import { originLink } from "../registry.js";
 
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
 const about = (p) => p.verdict !== null && p.verdict !== undefined;   // the judgement that counts says it is about the hypothesis
@@ -245,15 +246,18 @@ export async function renderResult(view, [hypId], query) {
     const readers = new Set(allPassages.filter((p) => p.read_by && !p.waiting_for_you).map((p) => p.read_by));
     oneReader = readers.size === 1 && !allPassages.some((p) => p.waiting_for_you) ? [...readers][0] : null;
 
-    // 0.12: one quiet line under the hypothesis: when it was checked and what was read
+    // 0.12: one quiet line under the hypothesis: when it was checked and what was read. 0.15.1: where it comes from
+    // (a set, or an add-on's own kind) links back to it, from the registry (registry.js ORIGINS)
+    const from = originLink(r);
     box.appendChild(h("header", { class: "page-head result-head" },
       h("div", { class: "page-head-main" },
-        h("p", { class: "eyebrow" }, h("a", { href: "#/history", class: "it" }, icon("arrow-left", { size: 12 }), "All results")),
+        h("p", { class: "eyebrow" }, from && from.eyebrow ? h("a", { href: from.href, class: "it" }, icon("arrow-left", { size: 12 }), from.eyebrow)
+          : h("a", { href: "#/history", class: "it" }, icon("arrow-left", { size: 12 }), "All results")),
         h("h1", { id: "page-title", tabindex: "-1", class: "result-hyp" }, r.text),
         r.code ? h("div", { style: { margin: "0 0 8px" } }, codeChip(r.framework, r.code, r.code_description, r.code_label)) : null,
         h("p", { class: "result-meta" },
           h("span", {}, `${r.status === "waiting" ? "Started" : "Checked"} ${fmt.date(r.created_at)}`),
-          r.batch_id ? [h("span", { class: "sep" }, "·"), h("a", { href: `#/history?batch=${encodeURIComponent(r.batch_id)}` }, "part of a set")] : null))));
+          from && from.meta ? [h("span", { class: "sep" }, "·"), h("a", { href: from.href }, from.meta)] : null))));
 
     const onlyLocal = r.waiting_local && !parts.some((p) => (p.rounds_info || []).some((x) => x.waiting) || ["terms", "rank", "judge"].includes(p.stage));
     if (r.status === "waiting" && onlyLocal) {

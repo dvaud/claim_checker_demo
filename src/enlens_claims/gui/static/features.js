@@ -3,21 +3,25 @@
 // the AI.
 import { h, icon } from "./lib.js";
 
+// 0.15.1: `sub` and `compact`: the section's line and card size on the Overview (registry.js builds it from these)
 export const SECTIONS = {
-  explore: { title: "Explore the documents", short: "Explore" },
-  check: { title: "Check hypotheses", short: "Check" },
+  explore: { title: "Explore the documents", short: "Explore", sub: "Start here: no hypothesis needed." },
+  check: { title: "Check hypotheses", short: "Check", sub: "When you have a statement to test against the documents.", compact: true },
   project: { title: "Your project", short: "Project" },
 };
 
-// ai: "none" (never uses the AI), "optional" (works without it; the AI can add to it), "uses" (the AI does the work)
+// ai: "none" (never uses the AI), "optional" (works without it; the AI can add to it), "uses" (the AI does the work).
+// 0.15.1: `overview` (where its Overview card goes, or false), and an add-on's `state(o)` and `nav` (registry.js).
 export const FEATURES = {
   sources: {
     section: "project", title: "Documents", icon: "book-open", href: "#/sources", ai: "optional",
     what: "Add your reports, papers and web pages, say who may read each with AI, and open one to read it with its codes, key terms and references.",
+    overview: { section: "explore", order: 99, title: "Read one document", what: "Open a document from the list to see its codes, key terms, what “it” and “they” refer to, and a highlighted copy." },
   },
   bibliography: {
     section: "project", title: "Bibliography", icon: "library", href: "#/bibliography", ai: "none",
     what: "Your Zotero library or a collection of it, matched with the documents: which works you have, which you still need to find, and which documents Zotero does not have.",
+    overview: false,
   },
   search: {
     section: "explore", title: "Search", icon: "text-search", href: "#/search", ai: "none",

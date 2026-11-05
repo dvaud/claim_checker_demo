@@ -223,3 +223,9 @@ def database() -> list[dict]:
             cols.append((table, col, typ))
         out.append({"addon": n, "schema": schema or "", "migrations": cols, "indexes": indexes or ""})
     return out
+
+
+# -------------------------------------------------------------------------------------------------- 0.15.1: the page
+def page_modules() -> list[str]:
+    """The page modules of add-on packages that have one (STATIC/extensions.js), as the page imports them."""
+    return [f"/static/addons/{n}/extensions.js" for n, d in static_dirs().items() if (d / "extensions.js").is_file()]

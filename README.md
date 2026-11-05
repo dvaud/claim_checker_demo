@@ -80,6 +80,9 @@ instead? *Update ENLENS* and `enlens update` pull the new version (see *For deve
   for who may read its text, in files of its own ([docs/EXTENDING.md](docs/EXTENDING.md)). Nothing changes in the app.
 - **One registry for AI tasks (0.15).** For developers: each kind of AI task is described once
   (`taskkinds.py`), and an add-on can register a kind of its own, quote check included. Nothing changes in the app.
+- **Room in the page (0.15.1).** For developers: an add-on adds pages, sidebar entries, Overview cards, job names,
+  welcome cards and a result's link back to where it came from, from a page module of its own. Nothing changes in
+  the app.
 
 ## Earlier releases
 

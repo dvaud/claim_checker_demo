@@ -2,7 +2,8 @@
 // Themes, one document), checking hypotheses second. Each feature says in one line what it does, whether it uses the
 // AI, and what is already made in this project.
 import { App, api, h, icon, P, pageHead, plural, claudeStatus } from "../lib.js";
-import { FEATURES, aiTag } from "../features.js";
+import { FEATURES, SECTIONS, aiTag } from "../features.js";
+import { overviewSections } from "../registry.js";
 import { quickLookButton } from "./quicklook.js";
 
 export async function renderOverview(view) {
@@ -26,31 +27,29 @@ export async function renderOverview(view) {
         h("a", { class: "btn btn-primary btn-sm", href: "#/sources", style: { marginTop: "6px" } }, icon("upload", { size: 14 }), "Add documents"))));
   }
 
-  // Explore: the main part
+  // 0.15.1: the sections and their cards come from FEATURES and SECTIONS (registry.js), so an add-on's section or
+  // feature shows here without an edit. Explore comes first (the main part), checking hypotheses second.
   const pf = o.profile || {}, cs = o.concepts || {}, th = o.themes || {};
-  const state = {
+  const STATE = {
     search: [false, "Ready: type a word"],
     profile: pf.labels ? [true, `${plural(pf.documents || 0, "document", "documents")} profiled`] : [false, "Not made yet · takes seconds"],
     concepts: cs.terms ? [true, `${plural(cs.terms, "term", "terms")}${cs.concepts ? `, ${plural(cs.concepts, "concept", "concepts")}` : ""}`] : [false, "Not made yet · takes seconds"],
     themes: th.themes ? [true, `${plural(th.themes, "theme", "themes")} found`] : [false, "Not made yet · takes seconds"],
+    sources: [!!o.references, o.references ? `References followed in ${plural(o.references, "document", "documents")}` : `${plural(nDocs, "document", "documents")}`],
+    history: o.hypotheses ? [true, `${plural(o.hypotheses, "result", "results")}`] : [false, "None yet"],
   };
-  view.appendChild(h("div", { class: "ov-section-head" }, h("h2", {}, "Explore the documents"), h("p", {}, "Start here: no hypothesis needed.")));
-  const grid = h("div", { class: "ov-grid" });
-  for (const key of ["search", "profile", "concepts", "themes"]) {
-    const href = key === "themes" && th.latest ? `#/themes/${encodeURIComponent(th.latest)}` : FEATURES[key].href;
-    grid.appendChild(card(key, state[key], href));
+  const HREF = { themes: th.latest ? `#/themes/${encodeURIComponent(th.latest)}` : null };
+  for (const sec of overviewSections(FEATURES, SECTIONS)) {
+    view.appendChild(h("div", { class: "ov-section-head" }, h("h2", {}, sec.title), sec.sub ? h("p", {}, sec.sub) : null));
+    const grid = h("div", { class: sec.compact ? "ov-grid ov-grid-small" : "ov-grid" });
+    for (const key of sec.features) {
+      const f = FEATURES[key];
+      let st = STATE[key] || [false, ""];
+      if (typeof f.state === "function") { try { st = f.state(o) || st; } catch (e) { console.error(e); } }
+      grid.appendChild(card(key, st, HREF[key] || f.href, { compact: sec.compact, ...(f.overview || {}) }));
+    }
+    view.appendChild(grid);
   }
-  grid.appendChild(card("sources", [!!o.references, o.references ? `References followed in ${plural(o.references, "document", "documents")}` : `${plural(nDocs, "document", "documents")}`], "#/sources",
-    { title: "Read one document", what: "Open a document from the list to see its codes, key terms, what “it” and “they” refer to, and a highlighted copy." }));
-  view.appendChild(grid);
-
-  // Check: second
-  view.appendChild(h("div", { class: "ov-section-head" }, h("h2", {}, "Check hypotheses"), h("p", {}, "When you have a statement to test against the documents.")));
-  const small = h("div", { class: "ov-grid ov-grid-small" });
-  small.appendChild(card("check", [false, ""], FEATURES.check.href, { compact: true }));
-  small.appendChild(card("batch", [false, ""], FEATURES.batch.href, { compact: true }));
-  small.appendChild(card("history", o.hypotheses ? [true, `${plural(o.hypotheses, "result", "results")}`] : [false, "None yet"], FEATURES.history.href, { compact: true }));
-  view.appendChild(small);
 }
 
 function card(key, [made, text], href, opts = {}) {

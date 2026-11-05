@@ -33,6 +33,7 @@ ENLENS releases **never edit** these files. ENLENS ships each one empty, or hold
 | `src/enlens_claims/gui/static/site.css` | The installation's own look. Linked last, so it wins. |
 | `src/enlens_claims/gui/static/brand.json` | The app's name and words. |
 | `src/enlens_claims/gui/extensions.py` | The fork's add-on module. |
+| `src/enlens_claims/gui/static/extensions.js` | The fork's page module (0.15.1). |
 | `docs/ADDON_API.md` | The routes the app adds, documented like `docs/API.md`. |
 | `docs/ADDON_MANUAL.md` | The manual for what the app adds. |
 
@@ -240,6 +241,50 @@ and `helper_model` give the kind a Claude Code helper of its own; the plugin ENL
 
 **Defaults.** What a kind does not say: its own Settings row, Sonnet stepping up to Opus (a large local model), a
 batch of 5 at the end of the queue, an answer of up to 2,000 tokens.
+
+## The page (0.15.1)
+
+A page module adds pages, sidebar entries, Overview cards, job names, welcome cards and the result page's link back
+to where a hypothesis comes from. A fork fills in `static/extensions.js` (ENLENS ships `export default {};`); a
+package puts `extensions.js` in its `STATIC` folder, and `GET /api/state` lists it in `addon_pages` for the page to
+import. The default export is an object, or a function returning one; every part is optional:
+
+```js
+import { h, api, App, P, pageHead } from "/static/lib.js";   // ENLENS's page helpers
+
+async function renderDrafts(view, groups, query) {
+  view.appendChild(pageHead("Drafts", { eyebrow: "Your writing" }));
+  const r = await api("GET", `/api/projects/${P(App.project)}/drafts`);
+  …
+}
+
+export default {
+  sections: { writing: { title: "Your writing", short: "Writing", sub: "Check your own text against the documents." } },
+  features: {
+    drafts: { section: "writing", title: "Drafts", icon: "file-pen", href: "#/drafts", ai: "uses", nav: true,
+              what: "Check the claims of a draft against your documents.",
+              state: (o) => o.drafts ? [true, `${o.drafts} drafts`] : [false, "None yet"] },   // o: the Overview's counts
+  },
+  routes: [[/^\/drafts$/, "drafts", renderDrafts]],
+  jobKinds: { "draft-check": { icon: "file-pen", text: "Checking a draft's claims", link: "#/drafts", withJob: true } },
+  welcome: [{ icon: "file-pen", title: "Check a draft", text: "Paste your text: every claim is checked." }],
+  origins: { draft: { eyebrow: "Back to the draft", meta: "from a draft", href: (id) => `#/drafts/${id}` } },
+};
+```
+
+- **features** describe a part of the app once (`features.js`): `nav: true` gives it a sidebar entry with its AI
+  mark, after the entries of its section (or under a new heading); the Overview shows a card in its section, with
+  `state(o)` as its line (`overview: false` keeps it off; `overview: {section, order, title, what}` moves or words
+  it). **sections** add a part of the app: a sidebar heading and an Overview section, after ENLENS's.
+- **routes** (`PAGE_ROUTES`): `[pattern, the feature it lights up in the sidebar, render(view, groups, query)]`, tried
+  after ENLENS's own pages.
+- **jobKinds**: a job's row in the sidebar: its icon, name, link and whether the link follows the job (`?job=<id>`).
+  A kind nobody names shows the job's own title.
+- **welcome**: cards on the first-run welcome screen, under the welcome text (`brand.json`).
+- **origins**: for a hypothesis made with `origin=` (0.14), the result page's eyebrow and meta line link back to it.
+
+All of it lives in `registry.js` (`applyExtensions`), which never replaces one of ENLENS's entries. A page module
+that fails to load is left out and the page still works.
 
 ## Rules that no add-on gets round
 
