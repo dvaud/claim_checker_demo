@@ -19,6 +19,7 @@ import { renderThemes, renderThemeRun, renderTheme } from "./views/themes.js";
 import { quickLookBanner } from "./views/quicklook.js";
 import { renderOverview } from "./views/overview.js";
 import { renderBibliography } from "./views/bibliography.js";
+import { renderCitations } from "./views/citations.js";
 
 const ROUTES = [
   [/^\/?$/, "overview", renderOverview],
@@ -28,6 +29,7 @@ const ROUTES = [
   [/^\/history$/, "history", renderHistory],
   [/^\/map$/, "history", renderMap],
   [/^\/batch$/, "batch", renderBatch],
+  [/^\/citations(?:\/([^/]+))?$/, "citations", renderCitations],   // 0.13.7
   [/^\/sources$/, "sources", renderSources],
   [/^\/doc\/([^/]+)$/, "sources", renderDocument],
   [/^\/bibliography$/, "bibliography", renderBibliography],   // 0.13

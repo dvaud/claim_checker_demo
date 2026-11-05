@@ -488,7 +488,7 @@ class OllamaBackend:
             return False
 
     def pull(self, model: str, on_progress=None, should_stop=None) -> str:
-        """Download a model from Ollama's library into this Ollama (0.13.6: a local model needs no terminal).
+        """Download a model from Ollama's library into this Ollama (0.13.7: a local model needs no terminal).
 
         Ollama fetches it from ollama.com itself; nothing of the person's is sent. `on_progress(info)` gets
         {"status", "done", "total"} (bytes, over every part seen so far) as Ollama reports them; `should_stop()`
@@ -864,7 +864,7 @@ class LocalBackend:
 # finding local servers
 # ---------------------------------------------------------------------------------------------
 # Default addresses of local model servers: LM Studio, llama.cpp, Jan, vLLM, KoboldCpp.
-# 0.13.6: the models the app offers to download into Ollama with one button, so a model on this computer needs no
+# 0.13.7: the models the app offers to download into Ollama with one button, so a model on this computer needs no
 # terminal. The first reads and judges; the second is for search by meaning (optional).
 SUGGESTED_MODELS = (
     {"name": "qwen3:8b", "use": "chat", "size": "about 5 GB"},

@@ -84,15 +84,24 @@ instead? The *Update* button and `enlens update` pull the new version (see *For 
 - **Updates that announce themselves (0.13.6).** The *Update* button shows only when there is an update: ENLENS
   looks every two minutes, and a pop-up says which version is ready. *Check for updates* is in *Settings →
   Technical*.
-- **A model on this computer, without a terminal (0.13.6).** Choose *A model on this computer* (first screen or
-  *Settings → AI*): ENLENS says how to get Ollama (free) and notices when it starts, then *Download qwen3:8b* gets a
-  model with one button, with a progress bar and *Stop*. None of your documents are sent. The card for documents
-  marked *Only a local AI* offers the same download.
 - **Room for add-ons (0.13.6).** For developers: an app built on ENLENS adds routes, jobs, tables, its own rules for
   who may read its text, kinds of AI task (quote check included) and pages, in files of its own
   ([docs/EXTENDING.md](docs/EXTENDING.md)). Nothing changes in the app.
 - **Version numbers (0.13.6).** 0.14.0, 0.15.0 and 0.15.1 were withdrawn: they changed nothing in the app, and their
   changes are part of 0.13.6. Installed one of them with the install line? Paste the install line once more.
+- **A model on this computer, without a terminal (0.13.7).** Choose *A model on this computer* (first screen or
+  *Settings → AI*): ENLENS says how to get Ollama (free) and notices when it starts, then *Download qwen3:8b* gets a
+  model with one button, with a progress bar and *Stop*. None of your documents are sent. The card for documents
+  marked *Only a local AI* offers the same download.
+- **Check your citations (0.13.7).** The new *Check citations* page reads your draft for its citations, such as
+  *(Smith & Jones, 2020)*, *Lindqvist et al. (2025) found that …* or *[3]* with a numbered reference list, and checks
+  each claim against the cited work's own document in your project, and no other. A citation whose source says it is
+  marked *Source accurate*; when the source says only part of it, does not say it or says otherwise, you get a notice
+  with the excerpt that shows why, and the result page where you can overrule the AI. A citation that cannot be
+  checked yet says what it needs (the work is not in your Zotero library, or its PDF is not in the project yet).
+  Paste your text, choose its file (it is not added to your documents) or pick a document of the project; you choose
+  who may read your draft with AI, as for documents. Finding the citations uses no AI; an Excel file lists every
+  citation with its answer.
 
 ## Earlier releases
 
@@ -126,7 +135,8 @@ format. Most of that needs no AI at all; what the AI adds is quoted, checked aga
 When you have a statement to test, ENLENS also checks it: supported, partly supported, contradicted or mixed
 evidence, with the exact words of each source, where they are (page or paragraph), and a quote checked character by
 character against the source text. You review the AI's judgements like a co-coder's; your judgements count and are
-kept next to the AI's in the Excel download.
+kept next to the AI's in the Excel download. Writing yourself? *Check citations* checks each citation in your draft
+against the work it cites, in your Zotero library and your documents.
 
 The AI is Claude, through Claude Code signed in with your own Claude plan (Pro, Max, Team or Enterprise). ENLENS sets
 Claude Code up by itself and starts it when you press *Start Claude Code*; each kind of task goes to the right model

@@ -1,4 +1,4 @@
-// 0.13.6: a model on this computer, without a terminal. Ollama is a free program that runs AI models on the
+// 0.13.7: a model on this computer, without a terminal. Ollama is a free program that runs AI models on the
 // computer. When nothing runs: how to get it, and the page notices by itself when it starts. When Ollama runs
 // without a model: one button downloads the suggested one (Ollama fetches it from ollama.com; none of the person's
 // documents are sent), with its progress and a Stop button. Used by the first screen, Settings → AI (and Documents,

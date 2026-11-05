@@ -150,6 +150,13 @@ function windowNode(text, start, end, cls, breaks, [a, b]) {
   return el;
 }
 
+// 0.13.7: the check of a citation: the sentence of the person's text it stands for, and the work it cites
+function citedIn(c) {
+  return h("div", { class: "result-cited small" },
+    h("p", {}, h("span", { class: "muted" }, "In your text: "), h("span", { class: "serif" }, c.sentence || "")),
+    c.work ? h("p", { class: "muted" }, icon("library", { size: 12 }), ` Checked against the cited work only: ${c.work}`) : null);
+}
+
 export async function renderResult(view, [hypId], query) {
   const project = App.project;
   const setting = App.settings().threshold ?? 0.6;
@@ -249,12 +256,18 @@ export async function renderResult(view, [hypId], query) {
     // 0.12: one quiet line under the hypothesis: when it was checked and what was read. 0.13.6: where it comes from
     // (a set, or an add-on's own kind) links back to it, from the registry (registry.js ORIGINS)
     const from = originLink(r);
+    if (r.origin === "citation") {  // 0.13.7: a citation's check belongs to Check citations, not to Results
+      for (const a of document.querySelectorAll("#nav a[data-route]")) {
+        if (a.dataset.route === "citations") a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+      }
+    }
     box.appendChild(h("header", { class: "page-head result-head" },
       h("div", { class: "page-head-main" },
         h("p", { class: "eyebrow" }, from && from.eyebrow ? h("a", { href: from.href, class: "it" }, icon("arrow-left", { size: 12 }), from.eyebrow)
           : h("a", { href: "#/history", class: "it" }, icon("arrow-left", { size: 12 }), "All results")),
         h("h1", { id: "page-title", tabindex: "-1", class: "result-hyp" }, r.text),
         r.code ? h("div", { style: { margin: "0 0 8px" } }, codeChip(r.framework, r.code, r.code_description, r.code_label)) : null,
+        r.origin === "citation" && r.options && r.options.citation ? citedIn(r.options.citation) : null,
         h("p", { class: "result-meta" },
           h("span", {}, `${r.status === "waiting" ? "Started" : "Checked"} ${fmt.date(r.created_at)}`),
           from && from.meta ? [h("span", { class: "sep" }, "·"), h("a", { href: from.href }, from.meta)] : null))));
@@ -391,7 +404,7 @@ export async function renderResult(view, [hypId], query) {
     // who judged what the answer rests on: the AI (named), you for some, or you for all of it
     const basis = !reviewed.length ? (allPassages.some((p) => p.ai_verdict) ? "judged by the AI" : null) : relevantLeft === 0 ? "reviewed by you" : "partly reviewed by you";
     // at most one caution: what makes this answer fragile
-    const singleDoc = bal.docs_counted === 1;
+    const singleDoc = bal.docs_counted === 1 && r.origin !== "citation";  // 0.13.7: a citation's check reads its one source on purpose
     const aiJ = (n) => (n === 1 ? "one excerpt" : n === 2 ? "two excerpts" : `${n} excerpts`);
     const forYou = allPassages.filter((p) => p.waiting_for_you && !p.reviewed).length;
     const caution = r.incomplete ? "One part of the check did not finish, so this answer is incomplete."

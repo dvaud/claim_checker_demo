@@ -165,10 +165,12 @@ def _second_view(out: dict) -> dict:
 
 
 _BEFORE = re.compile(r"BEFORE P(\d+) \(for refers_to only[^\n]*\n.*?(?=P\1 \| )", re.S)
+_CITING = re.compile(r"\n\nTHE CLAIM IN ITS TEXT:.*?(?=\n\nP\d+ \| |\Z)", re.S)  # 0.13.7: context, never graded
 
 
 def _answer(system: str, user: str, varied: bool = False, model: str = "") -> dict:
     user = _BEFORE.sub("", user)  # check-v4 shows the text before an excerpt (for refers_to only): never graded
+    user = _CITING.sub("", user)
     out = _answer1(system, user, varied)
     return _second_view(out) if model == SECOND and system.startswith("You check whether") else out
 
@@ -371,7 +373,7 @@ class _Ollama(BaseHTTPRequestHandler):
         return self._send(404, {"error": "not found"})
 
     def _pull(self, name: str):
-        """0.13.6: a download from Ollama's library, as Ollama streams it: the manifest, each part's bytes, the
+        """0.13.7: a download from Ollama's library, as Ollama streams it: the manifest, each part's bytes, the
         check, then "success" (or {"error"}). `pull_fail` makes it fail, `pull_seconds` makes it take that long."""
         import time
 
@@ -507,7 +509,7 @@ def start(kind: str = "ollama", port: int = 0, trained_context: int = 32768):
     srv.unloads = []         # models unloaded (keep_alive 0)
     srv.modified = {}        # {model name: ISO time it was pulled}
     srv.contexts = []        # num_ctx of every chat request
-    srv.installed = None     # 0.13.6: None lists every model; a list lists only these (a new Ollama: [])
+    srv.installed = None     # 0.13.7: None lists every model; a list lists only these (a new Ollama: [])
     srv.pullable = set()     # names /api/pull knows besides the fake models and the aliases
     srv.pulled = []          # names downloaded with /api/pull
     srv.pull_seconds = 0.0   # how long a download takes

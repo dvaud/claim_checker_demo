@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .. import __version__, access, addons, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
+from .. import __version__, access, addons, bibliography, citations, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import tasks as tasks_mod
 from .. import llm
 from ..llm import BackendError, detect_local
@@ -324,16 +324,16 @@ class App:
         for srv in found:
             srv["chat_models"] = [m for m in srv["models"] if not re.search(r"embed|bge-|e5-|minilm|rerank", m, re.I)]
             srv["embedding_models"] = [m for m in srv["models"] if re.search(r"embed|bge-|e5-|minilm", m, re.I)]
-        # 0.13.6: the models the page offers to download into Ollama with one button
+        # 0.13.7: the models the page offers to download into Ollama with one button
         return {"servers": found, "suggested": [dict(m) for m in llm.SUGGESTED_MODELS]}
 
-    # 0.13.6: what a downloaded model is for, and the settings that choose it (applied when the download is done)
+    # 0.13.7: what a downloaded model is for, and the settings that choose it (applied when the download is done)
     PULL_USES = {"ai": ("backend", "ollama_url", "ollama_model", "embed_backend", "embed_model", "embed_url"),
                  "restricted": ("restricted_server", "restricted_model"),
                  "embed": ("embed_backend", "embed_model", "embed_url")}
 
     def pull_models(self, models: list[str], url: str, use: str = "") -> Job:
-        """0.13.6: download models into the Ollama on this computer, one after the other (a job that can be stopped).
+        """0.13.7: download models into the Ollama on this computer, one after the other (a job that can be stopped).
         Ollama fetches them from ollama.com itself; nothing of the person's is sent. With `use` ("ai": the AI that
         reads the documents; "restricted": the local model for documents marked Only a local AI; "embed": search by
         meaning) the downloaded models are chosen when the download is done, even if the page was closed meanwhile,
@@ -922,6 +922,53 @@ class App:
         return self.jobs.start("ingest", title, name, run, uses_model=False)
 
     # -- 0.13: the bibliography (Zotero, or an exported file) -----------------------------------------------------
+    # -- 0.13.7: checking citations ----------------------------------------------------------------------
+    def start_citations(self, name: str, text_id: str, body: dict) -> Job:
+        """Check the citations of a text that are ready (a work with its document), or `ref_ids` among them
+        (`again`: check those again), each against its work's documents only. By queue every check is prepared at
+        once and Claude Code reads them in turn."""
+        ws = self.ws(name)
+        s = self.settings()
+        ids = body.get("ref_ids")
+        if ids is not None and not (isinstance(ids, list) and all(isinstance(i, str) for i in ids)):
+            raise ApiError(400, "ref_ids must be a list of citation ids.")
+        try:
+            items = citations.plan(ws, text_id, ids, again=bool(body.get("again")))
+        except KeyError:
+            raise ApiError(404, "No such text.") from None
+        if not items:
+            raise ApiError(400, "No citation is ready to be checked: each needs a work of your bibliography whose "
+                                "document is in the project.")
+        opts = _check_options({}, s)
+        expand, semantic = opts.pop("expand"), opts.pop("semantic", True)
+        opts.pop("decompose", None)
+        opts.pop("doc_ids", None)
+        be, model = self.backend(k=opts["k"])
+        emb = home.make_embedder(s) if semantic else None
+        title = f"{len(items)} {'citation' if len(items) == 1 else 'citations'}"
+        if self.queue_mode():
+            def qrun(job: Job):
+                tracker = Tracker(expand=expand)
+                job.tracker = tracker
+                done, errors = citations.queue(ws, items, getattr(be, "router", None), expand=expand,
+                                               embed_model=getattr(_usable_embedder(ws, emb), "model", None), **opts)
+                self.follow_queued(job, ws, done, tracker)
+                return {"text_id": text_id, "checked": done, "errors": errors, "stopped": None, "total": len(items)}
+
+            job = self.start_job("citations", title, name, qrun)
+        else:
+            def run(job: Job):
+                tracker = Tracker(expand=expand)
+                job.tracker = tracker
+                self.wire(job, be, tracker)
+                return {"text_id": text_id, **citations.check(ws, items, be, model, progress=tracker.step,
+                                                              should_stop=job.cancel.is_set, expand=expand,
+                                                              embedder=_usable_embedder(ws, emb), **opts)}
+
+            job = self.jobs.start("citations", title, name, run, uses_model=True)
+        job.scope = text_id  # the sidebar's row links to the text
+        return job
+
     def start_bibliography(self, name: str, body: dict) -> Job:
         ws = self.ws(name)
         z, f = body.get("zotero"), body.get("file")
@@ -1092,7 +1139,8 @@ class App:
                        "themes": n("SELECT COUNT(*) FROM themes WHERE run_id=?", (run[0]["run_id"],)) if run else 0,
                        "latest": run[0]["run_id"] if run else None},
             "references": n("SELECT COUNT(DISTINCT doc_id) FROM mentions"),
-            "hypotheses": n("SELECT COUNT(*) FROM hypotheses"),
+            "hypotheses": n("SELECT COUNT(*) FROM hypotheses WHERE COALESCE(origin, '') != 'citation'"),
+            "citations": citations.counts(ws),
             "waiting": (self._queue_summary(name) or {}).get("waiting", 0),
         }
         out.update(addons.overview(ws, set(out)))  # 0.13.6: an add-on's counts, never in place of ENLENS's
@@ -1713,10 +1761,19 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/bibliography/confirm-all", "post_bibliography_confirm_all"),
     ("POST", rf"/api/projects/{P}/bibliography/files", "post_bibliography_files"),
     ("GET", rf"/api/projects/{P}/bibliography/to-find\.(csv|xlsx)", "get_bibliography_export"),
+    # 0.13.7: checking citations
+    ("GET", rf"/api/projects/{P}/citations", "get_citations"),
+    ("POST", rf"/api/projects/{P}/citations", "post_citations"),
+    ("GET", rf"/api/projects/{P}/citations/{P}", "get_citation_text"),
+    ("PUT", rf"/api/projects/{P}/citations/{P}", "put_citation_text"),
+    ("DELETE", rf"/api/projects/{P}/citations/{P}", "delete_citation_text"),
+    ("POST", rf"/api/projects/{P}/citations/{P}/check", "post_citation_check"),
+    ("PUT", rf"/api/projects/{P}/citations/{P}/refs/{P}", "put_citation_ref"),
+    ("GET", rf"/api/projects/{P}/citations/{P}/export\.xlsx", "get_citation_export"),
 ]]
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
-             "get_ai_sent_csv", "get_bibliography_export"}
+             "get_ai_sent_csv", "get_bibliography_export", "get_citation_export"}
 # (these may take the token as ?token=, for plain links)
 
 
@@ -2042,7 +2099,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.app.test_backend()
 
     def post_pull(self, q):
-        """0.13.6: download models into the Ollama running on this computer (a job). Body: {"models": [names]}
+        """0.13.7: download models into the Ollama running on this computer (a job). Body: {"models": [names]}
         (or {"model": name}), optionally {"url": the Ollama's address, as GET /api/servers lists it} and {"use":
         "ai" | "restricted" | "embed"}: what to choose them for when the download is done."""
         body = self._body()
@@ -2288,6 +2345,106 @@ class Handler(BaseHTTPRequestHandler):
             claimcheck.write_xlsx(rows, buf, "Works to find")
             return self._send(200, buf.getvalue(), XLSX, {"Content-Disposition": _disposition(stem)})
         return self._send(200, _csv(rows), "text/csv; charset=utf-8", {"Content-Disposition": _disposition(stem)})
+
+    # -- 0.13.7: checking citations ----------------------------------------------------------------------
+    def _threshold(self, q) -> float:
+        return _float(q, "threshold", self.app.settings()["threshold"])
+
+    def _citation_view(self, ws, text_id: str, q) -> dict:
+        try:
+            return citations.view(ws, text_id, self._threshold(q))
+        except KeyError:
+            raise ApiError(404, "No such text.") from None
+
+    def get_citations(self, name, q):
+        ws = self.app.ws(name)
+        return {"texts": citations.texts(ws, self._threshold(q)), "has_bibliography": bibliography.has(ws),
+                "ai_access": access.project_info(ws)}
+
+    def post_citations(self, name, q):
+        """A text to check: {text, title, ai_access} (pasted), {upload: {batch, name}, ai_access} (a file sent to
+        /uploads first; read, then deleted: it never becomes a document) or {doc_id} (a document of the project)."""
+        ws = self.app.ws(name)
+        body = self._body()
+        title = str(body.get("title") or "").strip() or None
+        try:
+            if body.get("doc_id"):
+                tid = citations.add_text(ws, doc_id=str(body["doc_id"]), title=title)
+            elif isinstance(body.get("upload"), dict):
+                up = body["upload"]
+                batch = re.sub(r"[^A-Za-z0-9_-]", "", str(up.get("batch") or ""))
+                folder = ws.root / "uploads" / batch
+                path = folder / re.split(r"[/\\]", str(up.get("name") or ""))[-1]
+                if not batch or not path.is_file() or not path.resolve().is_relative_to(folder.resolve()):
+                    raise ApiError(400, "The file was not received. Choose it again.")
+                try:
+                    text, pages, file_title = citations.read_draft(path)
+                finally:
+                    import shutil
+
+                    shutil.rmtree(folder, ignore_errors=True)
+                tid = citations.add_text(ws, text, title=title or file_title, ai_access=body.get("ai_access"),
+                                         file_name=path.name, page_starts=pages)
+            else:
+                tid = citations.add_text(ws, str(body.get("text") or ""), title=title,
+                                         ai_access=body.get("ai_access"))
+        except KeyError:
+            raise ApiError(404, "No such document.") from None
+        except ValueError as e:  # CitationError, or an AI setting that is none of the three
+            raise ApiError(400, str(e)) from None
+        return self._citation_view(ws, tid, q)
+
+    def get_citation_text(self, name, text_id, q):
+        return self._citation_view(self.app.ws(name), text_id, q)
+
+    def put_citation_text(self, name, text_id, q):
+        ws = self.app.ws(name)
+        body = self._body()
+        try:
+            citations.set_text(ws, text_id, title=body.get("title"), ai_access=body.get("ai_access"))
+        except KeyError:
+            raise ApiError(404, "No such text.") from None
+        except ValueError as e:
+            raise ApiError(400, str(e)) from None
+        return self._citation_view(ws, text_id, q)
+
+    def delete_citation_text(self, name, text_id, q):
+        self._body()
+        try:
+            citations.remove_text(self.app.ws(name), text_id)
+        except KeyError:
+            raise ApiError(404, "No such text.") from None
+        return {"deleted": text_id}
+
+    def post_citation_check(self, name, text_id, q):
+        return {"job": self.app.start_citations(name, text_id, self._body()).view()}
+
+    def put_citation_ref(self, name, text_id, ref_id, q):
+        """A person's word on one cited work: {item_key} (the work it is; null: back to the matching) or
+        {ignored} (not a citation; false puts it back)."""
+        ws = self.app.ws(name)
+        body = self._body()
+        if not ws.scalar("SELECT 1 FROM cite_refs WHERE ref_id=? AND text_id=?", (ref_id, text_id)):
+            raise ApiError(404, "No such citation.")
+        try:
+            if "item_key" in body:
+                key = body["item_key"]
+                if key is not None and not isinstance(key, str):
+                    raise ApiError(400, "item_key must be a work's key, or null.")
+                citations.choose_work(ws, ref_id, key or None)
+            if "ignored" in body:
+                citations.set_ignored(ws, ref_id, bool(body["ignored"]))
+        except KeyError as e:
+            raise ApiError(404, str(e).strip("'\"")) from None
+        return self._citation_view(ws, text_id, q)
+
+    def get_citation_export(self, name, text_id, q):
+        ws = self.app.ws(name)
+        v = self._citation_view(ws, text_id, q)
+        buf = io.BytesIO()
+        claimcheck.write_xlsx(citations.export_rows(ws, text_id, self._threshold(q)), buf, "Citations")
+        stem = _filename(f"ENLENS citations - {v['text']['title'][:60]} - {time.strftime('%Y-%m-%d')}", "xlsx")
+        return self._send(200, buf.getvalue(), XLSX, {"Content-Disposition": _disposition(stem)})
 
     def post_index(self, name, q):
         return {"job": self.app.start_index(name).view()}

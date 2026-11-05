@@ -1,37 +1,68 @@
 # Changelog
 
-## 0.13.6 (November 2026): updates that announce themselves, a local model without a terminal, and room for add-ons
+## 0.13.7 (November 2026): check your citations against their sources, and a local model without a terminal
 
-The *Update* button now appears only when there is something to install, with a pop-up that says so, and *Settings*
-can look for an update by hand. A model on this computer, the most private choice, no longer needs a terminal: ENLENS
-notices Ollama when it starts and downloads a model with one button. Underneath, apps built on ENLENS (Margin is one) get room of their own: pages, jobs,
-tables, rules about who may read their text and kinds of AI task, added in their own files instead of edits to
-ENLENS's. Every answer still goes through the quote check, a person can overrule it, and nothing more leaves the
-computer.
+With the bibliography in place (0.13), ENLENS knows which work each of your documents is. 0.13.7 uses that to check the
+citations in a text: a new page, **Check citations**, reads your draft (or a document of the project) for its
+citations, takes the claim each one stands for with the sentences around it, and checks it against the cited work's
+own document, and no other. A citation whose source says it is marked *Source accurate*; one whose source says only
+part of it, says otherwise or does not say it gets a notice, with the excerpt that shows why. Every answer goes
+through the quote check, opens on the result page where you can overrule it, and records how it was made. Finding
+the citations uses no AI; the checks send what a check of a hypothesis sends, within the AI setting of your text and
+of the source's document. And a model on this computer, the most private choice, no longer needs a terminal: ENLENS
+notices Ollama when it starts and downloads a model with one button.
 
-**Version numbers.** 0.14.0, 0.15.0 and 0.15.1 are withdrawn. They changed nothing for people using ENLENS (only what
-an app built on it can add), so they did not call for new minor versions; their changes are part of 0.13.6, under
-*Room for add-ons* below, and their commits keep their old titles. From now on a new feature, the overhaul of a whole
-part of ENLENS or a large fix raises the minor number (0.X.0); other changes worth trying at once raise the last
-number (0.X.y); small edge cases and background work wait for the next release.
-- A computer that installed 0.14.0, 0.15.0 or 0.15.1 with the install line does not see 0.13.6 as newer: paste the
-  install line once more. A git copy updates as usual.
-- A copy of a withdrawn version that is still running counts as older (`update.WITHDRAWN`), so opening ENLENS from
-  its icon quits it and starts 0.13.6, as after any update.
+**Checking citations.**
+- **A text to check**, three ways: paste your draft; choose its file (Word, PDF, text, Markdown, a saved web page),
+  read on this computer and then deleted, so it never becomes one of the project's documents and never turns up as
+  evidence in another check; or pick a document of the project. For a draft you say who may read it with AI, as for
+  documents (*Claude may read it*, *Only a local AI*, *No AI*; the project's choice preselected, changeable later); a
+  document keeps its own setting. The page asks for the bibliography first when the project has none.
+- **What it finds**: author-year citations in brackets and in the sentence (*(Smith, 2020)*, *(Smith & Jones 2019;
+  Lee et al., 2021a, p. 4)*, *(e.g., WHO, 2021)*, *Smith (2020) found that …*, *According to Lindqvist et al. (2025),
+  …*, *Smith's (2020) survey shows that …*, *The World Health Organization [WHO] (2019) …*), and numbered ones (*[3]*,
+  *[2, 4–5]*, *rose.[3]*) when the text ends with its numbered reference list (without it, the page says how many it
+  could not read). The reference list is never read as citations, nor is *(Figure 3, 2020)*.
+- **The claim and its context.** The claim of a citation in brackets is the words before it (from the sentence's
+  start, or from the citation before it: *X rose (A), while Y fell (B)* gives *X rose* to A and *Y fell* to B); of a
+  citation in the sentence, what follows it (*Smith (2020) found that X*: X; *WHO (2019) warned about X*: the whole
+  statement). The claim is highlighted in its sentence. The sentences before it (up to 600 characters of the same
+  paragraph) go to the AI as context, so it understands *it* and *this effect*; the prompt says the context is never
+  to be graded or quoted, and the quote check would refuse a quote from it.
+- **Which work.** By the first author's surname and the year: a second author decides between two works of one
+  author in one year; *2020a* and *2020b* follow the order of their titles (as APA lists them); particles (*van der
+  Berg* and *Berg*), accents (*Müller*, *Muller*), initials (*J. Smith*), organisations and their abbreviations (*WHO*)
+  are matched; a word before the name (*In Sweden, Lindqvist (2025)*) is passed over. A work cited with another year is
+  not taken but offered, since a wrong year is worth a look. A numbered entry is matched by its DOI, else its title
+  with its first author. Citations not yet checked are matched again on every visit, so works and documents added to
+  the bibliography later are used without adding the text again.
+- **The answers.** *Check 12 citations* checks every citation that is ready, one check per cited work (three works
+  in one citation: three checks), each against that work's document only, as *Check several* does (by Claude Code
+  through the queue, or by the model of *Settings*; the job is in the sidebar and can be stopped). The page groups
+  them: **To look at** (*Only partly supported by the source*, *Not found in the source*, *The source says
+  otherwise*, *The source says both*, *Unsure*, *The check did not work* with *Check again*), each with the sentence,
+  the cited work and the excerpt that shows the answer best, with its page; **Cannot be checked yet** (*Not in your
+  bibliography*, with the works of your bibliography to choose from and *Not a citation*; *Which work is it?*; *Its
+  source is not in the project*; *Its document waits for your confirmation*); **Source accurate**; and **Left out**
+  (citations introduced by *but see* or *contra*, which are cited for another view, and those you marked; *Put it
+  back*).
+- **On the result page**, a citation's check says *In your text:* with its sentence, and that it was checked against
+  the cited work only; *Back to the citations* leads to the citation. It does not warn that the answer rests on a
+  single document, which it does on purpose. Your judgement of an excerpt changes the answer on the Citations page.
+  The sidebar keeps *Check citations* lit.
+- **Kept apart from your hypotheses**: checks of citations are not in *Results*, the evidence map, the Results
+  downloads or the Overview's count of results. The Overview has a *Check citations* card (*4 citations checked*); its
+  *Check hypotheses* row keeps its four cards on one line (the rule moved from `v09.css` to `app.css`).
+- **Excel**: one row per cited work (#, page of your text, sentence, claim checked, citation, work, title, answer,
+  quote from the source, its page, document).
 
-**Updates that announce themselves.**
-- **The Update button shows only when there is an update.** ENLENS looks for a new version when the page opens,
-  every two minutes after, and when you come back to a tab that was in the background. When it finds one, a pop-up
-  in the corner says which version, with *Update and restart* and *Later*, and *Update to 0.13.7* appears at the
-  bottom of the sidebar until you update. *Later* puts the pop-up away for that version. A look that fails (offline,
-  a git copy edited by hand) stays quiet.
-- **Check for updates** in *Settings → Technical → Updates*: look now, and read why a look failed. The version at the
-  top right of every Settings tab opens it.
-- **Light on GitHub.** For the one-line install, the app's look reads the newest version from GitHub's release page
-  (where `…/releases/latest` redirects to), which GitHub's limit of 60 API requests an hour for each address does not
-  count, so several computers in one office can look every two minutes; the API is asked only when the page does not
-  say, and to install. The server keeps an answer for 100 seconds, so the open tabs share one look;
-  `GET /api/update?fresh=1` looks again now. `enlens update --check` asks the API, as before.
+**What leaves the computer.** A check of a citation sends the claim, its sentences and excerpts of the cited source.
+A draft marked *Only a local AI* is read by the model on this computer only, also when Claude Code is your AI; one
+marked *No AI* is judged by you (every excerpt waits for your judgement); a document keeps its own setting;
+*local-only* turns *Claude may read it* into *Only a local AI*. Each excerpt goes to the reader allowed to read both
+it and the claim. The AI is asked for search words only when the text may go to it. Every task about a claim is
+labelled with the text's setting (and takes a new setting at once), and checks of a text Claude may not read are never
+shown to a Claude chat through the connector.
 
 **A model on this computer, without a terminal.** Switching to a privacy option has to be easy for anyone. A model on
 this computer was not: the first screen said "This is the technical part… If that is not you, ask them" and listed
@@ -61,6 +92,106 @@ this computer was not: the first screen said "This is the technical part… If t
   `llm.pull_error`. Only an Ollama that answers on this computer (or at the address in Settings) is asked.
 - `tools/dev_server.py --ollama [empty|later|none]`: an Ollama with no model (its download takes 12 s), one that
   starts 15 s after the app, or none.
+
+**Defects fixed on the way.**
+- For developers: an add-on's floor (`access.register_floor`, 0.13.6) on a check's payload labelled the whole round
+  as restricted, yet its excerpts were still routed to the main model by their documents' settings alone (refused, or
+  never handed out by the queue). A round now gives each excerpt the most restricted of its document's setting and
+  the text's (`access.text_floor`), so it goes to the local model or to the person.
+
+**For developers.** `citations.py` (finding citations, their claims and context, matching with the bibliography,
+the view, checking), tables `cite_texts`, `citations` and `cite_refs`, eight endpoints (`docs/API.md`, *Checking
+citations*), the page `views/citations.js` and its rules in `app.css`. `check_hypothesis` and `queue_check` take
+`extra` (kept with the check's options); a check's payload carries `claim_context`, `cited` and `citing` for a claim
+from a citation (the prompt shows the context after the claim, as data, like a reader's note: the prompt version
+stays `check-v4`). `claimcheck.history(citations=False)` leaves checks of citations out; `access.citing_level` and
+`access.text_floor`. A removed document takes the texts read from it along. `tools/dev_server.py --citations`: the
+remote-work demo with its Zotero library brought in and a draft to check; the stand-in models of the tests leave the
+claim's context out of their reading, as a model is told to.
+
+**How releases are made.** From 0.13.7 a release adds no stylesheet of its own: new rules go into the shared
+stylesheets (`app.css`, or the stylesheet of the view it changes), and rules it changes in an older per-release sheet
+move there, the sheet going once it is empty. The Update button's rules moved from `v0136.css` into `app.css` (the
+sheet is gone), and the Overview's compact grid from `v09.css`. Test files are named `test_<X>_<Y>_<Z>_<topic>.py`;
+the 0.13.6 files are renamed so (`test_0136_addons.py` became `test_0_13_6_addons.py`, and likewise its task kinds,
+page extensions, update check and version numbers); older ones keep their names.
+
+**Tests:** `tests/test_0_13_7_citations.py` (19 tests): finding citations in a draft (two in one sentence, *According
+to*, *found that*, *but see*, a heading, *(Figure 3, 2020)*) and harder ones (several years, initials, *e.g.* with a
+page, two works in one bracket, *However, Kim (2017)*, an organisation with its abbreviation, a possessive,
+particles); numbered citations with and without their list; an author's reference list not read; matching works
+(2020a/b, a second author, *et al.*, particles, accents, initials, organisations, abbreviations, a word before the
+name, another year offered, DOI and title of a numbered entry); the state of each citation and a person's word on it;
+a bibliography changed later; checking each work against its own document (the excerpts, the context in the prompt,
+the answers, the best quote, kept out of the Results, nothing checked twice, a work chosen again); a person's
+judgement changing the answer; removing a text; a draft for *Only a local AI* (nothing of it reaches the stand-in
+Claude, the local model reads it, hidden from the connector, every task labelled), for *No AI* (no model reads it),
+a project document keeping its own setting (and removed with it), local-only; by queue (the context in the queued
+tasks; a local draft kept out of the queue, without search words from Claude); through the app (every endpoint, bad
+requests, a choice of work, *Not a citation*, the setting and the name, checking by queue with the stand-in Claude
+Code, the result page's sentence, the Overview, Excel, a file uploaded and deleted, a document without citations,
+removing); in the app with a model that answers at once (and one citation again; a citation's own Excel and the
+Results' Excel); the page files (the sidebar entry between *Check several* and *Results*, the route, the registry,
+colour tokens only, every route in `docs/API.md`); and the result page's link back and the job's row, in Node.
+Checked in headless Chrome with `tools/dev_server.py --citations`: the list and the form, a draft before, during and
+after checking, a citation's result page and the Overview, in light and dark and at 390 px, with no console errors.
+
+`tests/test_0_13_7_local_model.py` (14 tests): a download reports its progress and the model then answers; what went
+  wrong, in plain words (no such model, no disk space, offline, Ollama not running); stopping; model names (a name
+  that is not one is refused); the download from the app (the job, its progress for two models, the names Ollama
+  lists, the model test afterwards); the choice made when the download is done (the AI, the restricted model with
+  Claude Code, search by meaning), even with the page closed, and a choice made meanwhile that stands; one download at
+  a time and *Stop*; a failed download; only an Ollama on this computer is asked; allowed with `--local-only`; the
+  messages point to the app; the page files (no terminal on a working screen, the first screen's fix). The stand-in
+  Ollama (`tests/fake_servers.py`) lists no model when asked to and downloads with progress. Checked in headless
+  Chrome with the dev server (`--ollama empty|later|none`, with and without `--empty` and `--claude-code`): the
+  steps, Ollama noticed after it starts, the download, its progress after leaving the page and coming back, the
+  choice after closing the tab, the test and *Next*; light, dark and 390 px wide, no console errors. Against the
+  real Ollama 0.40.14 on this Mac: the message for a model that does not exist, and the start of a download, stopped
+  at once.
+
+**Not yet done.** A whole model downloaded by a real Ollama from the app (the tests use the stand-in; the real one was
+asked only for a model that does not exist and for the start of a download), and the download on Windows and Linux.
+ENLENS cannot install Ollama itself: getting it is still one download from ollama.com. LM Studio and the other
+servers get no download button (their own apps download models). Citations: not tried with a real Claude Code or a real Zotero 7 (only the stand-ins); how well real models
+judge a claim with its context is untested beyond the stand-ins. Footnote citations (Chicago notes), superscript
+numbers and citations in a Word file's footnotes are not read; a numbered citation needs its reference list in the
+same text. The claim is cut from its sentence by rules: a claim that opens with *it* relies on the context, and there
+is no way yet to edit a claim before checking it. A citation of several works checks each work on its own, not the
+claim against them together. A text that changed is added again (remove the old one). The connector (a Claude chat)
+has no tool for citations yet.
+
+## 0.13.6 (November 2026): updates that announce themselves, and room for add-ons
+
+The *Update* button now appears only when there is something to install, with a pop-up that says so, and *Settings*
+can look for an update by hand. Underneath, apps built on ENLENS (Margin is one) get room of their own: pages, jobs,
+tables, rules about who may read their text and kinds of AI task, added in their own files instead of edits to
+ENLENS's. Every answer still goes through the quote check, a person can overrule it, and nothing more leaves the
+computer.
+
+**Version numbers.** 0.14.0, 0.15.0 and 0.15.1 are withdrawn. They changed nothing for people using ENLENS (only what
+an app built on it can add), so they did not call for new minor versions; their changes are part of 0.13.6, under
+*Room for add-ons* below, and their commits keep their old titles. From now on a new feature, the overhaul of a whole
+part of ENLENS or a large fix raises the minor number (0.X.0); other changes worth trying at once raise the last
+number (0.X.y); small edge cases and background work wait for the next release.
+- A computer that installed 0.14.0, 0.15.0 or 0.15.1 with the install line does not see 0.13.6 as newer: paste the
+  install line once more. A git copy updates as usual.
+- A copy of a withdrawn version that is still running counts as older (`update.WITHDRAWN`), so opening ENLENS from
+  its icon quits it and starts 0.13.6, as after any update.
+
+**Updates that announce themselves.**
+- **The Update button shows only when there is an update.** ENLENS looks for a new version when the page opens,
+  every two minutes after, and when you come back to a tab that was in the background. When it finds one, a pop-up
+  in the corner says which version, with *Update and restart* and *Later*, and *Update to 0.13.7* appears at the
+  bottom of the sidebar until you update. *Later* puts the pop-up away for that version. A look that fails (offline,
+  a git copy edited by hand) stays quiet.
+- **Check for updates** in *Settings → Technical → Updates*: look now, and read why a look failed. The version at the
+  top right of every Settings tab opens it.
+- **Light on GitHub.** For the one-line install, the app's look reads the newest version from GitHub's release page
+  (where `…/releases/latest` redirects to), which GitHub's limit of 60 API requests an hour for each address does not
+  count, so several computers in one office can look every two minutes; the API is asked only when the page does not
+  say, and to install. The server keeps an answer for 100 seconds, so the open tabs share one look;
+  `GET /api/update?fresh=1` looks again now. `enlens update --check` asks the API, as before.
 
 **Room for add-ons** (docs/EXTENDING.md). Until now an app built on ENLENS had to edit ENLENS's own files to add a
 page's API, a job, a table, a rule about who may read its text, a kind of AI task or a page: the route table, the job
@@ -141,32 +272,14 @@ Overview and the result page. Each has its extension point, read from one module
 - **The result page's back-link** comes from the registry: a check of several still says *part of a set*; a
   hypothesis an add-on made says where it comes from in the line under it, and links back to it above it.
 
-**How releases are made.** From 0.13.6 a release adds no stylesheet of its own: new rules go into the shared
-stylesheets (`app.css`, or the stylesheet of the view it changes), and rules it changes in an older per-release sheet
-move there, the sheet going once it is empty. The Update button's rules are in `app.css` (there is no `v0136.css`).
-Test files are named `test_<X>_<Y>_<Z>_<topic>.py`; older ones keep their names.
-
 **Tests.** The test files of the withdrawn versions are renamed after 0.13.6 (`test_0140_addons.py`,
-`test_0150_task_kinds.py` and `test_0151_page_extensions.py` became `test_0_13_6_addons.py`,
-`test_0_13_6_task_kinds.py` and `test_0_13_6_page_extensions.py`).
-- `test_0_13_6_local_model.py` (14 tests): a download reports its progress and the model then answers; what went
-  wrong, in plain words (no such model, no disk space, offline, Ollama not running); stopping; model names (a name
-  that is not one is refused); the download from the app (the job, its progress for two models, the names Ollama
-  lists, the model test afterwards); the choice made when the download is done (the AI, the restricted model with
-  Claude Code, search by meaning), even with the page closed, and a choice made meanwhile that stands; one download at
-  a time and *Stop*; a failed download; only an Ollama on this computer is asked; allowed with `--local-only`; the
-  messages point to the app; the page files (no terminal on a working screen, the first screen's fix). The stand-in
-  Ollama (`tests/fake_servers.py`) lists no model when asked to and downloads with progress. Checked in headless
-  Chrome with the dev server (`--ollama empty|later|none`, with and without `--empty` and `--claude-code`): the
-  steps, Ollama noticed after it starts, the download, its progress after leaving the page and coming back, the
-  choice after closing the tab, the test and *Next*; light, dark and 390 px wide, no console errors. Against the
-  real Ollama 0.40.14 on this Mac: the message for a model that does not exist, and the start of a download, stopped
-  at once.
-- `test_0_13_6_update_check.py`: the kept answer, `?fresh=1`, a failed look, the release page, the shared state in Node,
+`test_0150_task_kinds.py` and `test_0151_page_extensions.py` became `test_0136_addons.py`, `test_0136_task_kinds.py`
+and `test_0136_page_extensions.py`), as is the stylesheet (`v0136.css`).
+- `test_0136_update_check.py`: the kept answer, `?fresh=1`, a failed look, the release page, the shared state in Node,
   the page files; `test_0131_update_button.py` reads the look from `lib.js`, and `test_0101_settings_and_version.py`
   follows the version tag to *Updates*. Checked in headless Chrome with the dev server (`--update`, `--update none`),
   light and dark.
-- `test_0_13_6_addons.py` (17 tests): ENLENS alone adds nothing; the public names; with the stand-in add-on
+- `test_0136_addons.py` (17 tests): ENLENS alone adds nothing; the public names; with the stand-in add-on
   (`tests/fake_extension`) a route, its token, a download by link, a state key and an Overview key that cannot replace
   ENLENS's, a job of its own that is *not running* until a stand-in Claude Code takes its tasks and then finishes, and
   one stopped with its tasks withdrawn; its table and migration in a new project and in an older one; a hypothesis
@@ -174,7 +287,7 @@ Test files are named `test_<X>_<Y>_<Z>_<topic>.py`; older ones keep their names.
   refused to Claude Code), cannot loosen a document's setting, and keeps a removed note's text here; a failing floor;
   local-only; a hypothesis hidden from the connector's list and refused when asked for; a fork adding routes in
   `gui/extensions.py`; an add-on that cannot take over ENLENS's route; a failing hook.
-- `test_0_13_6_task_kinds.py` (30 tests): every table against its 0.13.5 value; a test can still change a table
+- `test_0136_task_kinds.py` (30 tests): every table against its 0.13.5 value; a test can still change a table
   (`monkeypatch.setitem`); registering a kind (refused without a quote check, a store function or with ENLENS's name;
   its defaults; taken away again); the quote check itself and its message; and the stand-in add-on's kind
   (`fake_tag`, tags for a note, each quoting it) in every table, routed on Claude Code, the Claude API and a local
@@ -182,7 +295,7 @@ Test files are named `test_<X>_<Y>_<Z>_<topic>.py`; older ones keep their names.
   before anything is stored, a good one stored with its route), stepping up when unsure, answered by the offline demo,
   named in *How these results were made*, its helper in the Claude Code plugin, its size estimate, and kept on this
   computer when its note is *Only a local AI* or the installation is local-only.
-- `test_0_13_6_page_extensions.py` (5 tests, two run in Node): ENLENS alone keeps its Overview (its sections, cards and
+- `test_0136_page_extensions.py` (5 tests, two run in Node): ENLENS alone keeps its Overview (its sections, cards and
   order), its job rows (a check, a second opinion on three hypotheses, adding documents, looking before checking, an
   unknown kind) and its *part of a set* link (with and without an origin); the stand-in add-on's page module adds a
   section, a feature with a sidebar entry and its state line, a page, a job kind (with a link that depends on the
@@ -191,13 +304,10 @@ Test files are named `test_<X>_<Y>_<Z>_<topic>.py`; older ones keep their names.
   server: with the stand-in add-on (the name *Fieldnotes*, the *Notes* sidebar entry with its AI mark, the Overview's
   *Your notes* section, the add-on's page, a result's *Back to the note* and *from a note*), and ENLENS alone
   (Overview, Results, Settings), with no console errors.
-- `test_0_13_6_version_numbers.py`: a withdrawn version still running counts as older; the changelog lists none of
+- `test_0136_version_numbers.py`: a withdrawn version still running counts as older; the changelog lists none of
   them, and its versions go down from the top.
 
-**Not yet done.** A whole model downloaded by a real Ollama from the app (the tests use the stand-in; the real one was
-asked only for a model that does not exist and for the start of a download), and the download on Windows and Linux.
-ENLENS cannot install Ollama itself: getting it is still one download from ollama.com. LM Studio and the other
-servers get no download button (their own apps download models). A hypothesis an add-on creates but never checks (no parts yet) cannot be opened on the result page
+**Not yet done.** A hypothesis an add-on creates but never checks (no parts yet) cannot be opened on the result page
 (a script error); ENLENS itself never makes one. An add-on's sidebar entry is added after the page loads, so it
 appears a moment after ENLENS's own. The page does not yet know an add-on's kinds of AI task by name in its own
 lists.

@@ -514,7 +514,7 @@ details.fold > summary:hover { color: var(--accent-text); }
 .guide-step { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
 .guide-step .n { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; }
 .guide-step code { display: inline-block; margin-top: 2px; }
-/* a model on this computer without a terminal (0.13.6): get Ollama, then download a model with one button */
+/* a model on this computer without a terminal (0.13.7): get Ollama, then download a model with one button */
 .local-help { display: grid; gap: 8px; margin: 12px 0 4px; }
 .local-help .guide { margin: 0; padding: 0; list-style: none; }
 .local-help p { margin: 0; }
@@ -959,3 +959,58 @@ span.passage-broken > span.passage-heading { font-weight: 650; }
 .routing-table td, .routing-table th { vertical-align: top; }
 .routing-table select { min-width: 9em; }
 .stronger-btn { margin-left: 6px; }
+
+/* the Overview's compact section (from v09.css): 0.13.7 four cards (with Check citations) fit one row */
+.ov-grid.ov-grid-small { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+
+/* 0.13.7: Check citations (views/citations.js) */
+.cite-texts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cite-text-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); text-decoration: none; }
+.cite-text-card:hover { border-color: var(--border-strong); background: var(--surface-2); color: var(--text); }
+.cite-text-card .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cite-text-icon { color: var(--muted); display: inline-flex; }
+.cite-text-title { font-weight: 600; overflow-wrap: anywhere; }
+.cite-text-counts { color: var(--text-2); }
+.cite-add { margin-top: 18px; }
+.cite-add .stack { gap: 14px; margin-top: 12px; }
+.cite-seg { gap: 6px; }
+.cite-add .access-choice { margin: 0; }
+.cite-summary { margin-bottom: 8px; }
+.cite-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cite-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); text-decoration: none; }
+.cite-tile:hover { border-color: var(--border-strong); background: var(--surface-3); color: var(--text); }
+.cite-tile-n { font-size: 1.45rem; font-weight: 650; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cite-tile-label { display: inline-flex; align-items: center; gap: 5px; font-size: .875rem; color: var(--text-2); }
+.cite-tile-notices .cite-tile-n { color: var(--partly); }
+.cite-tile-accurate .cite-tile-n { color: var(--ok); }
+.cite-run { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.cite-run p { margin: 0; min-width: 220px; }
+.cite-foot { display: flex; align-items: center; gap: 6px 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text-2); }
+.select.select-sm { padding: 3px 8px; font-size: .875rem; min-height: 0; width: auto; max-width: 100%; }
+.link-btn.link-danger { color: var(--bad); }
+.link-btn.link-danger:hover { color: var(--bad); text-decoration: underline; }
+.cite-group .section-title h2 .count { color: var(--muted); font-weight: 400; }
+.cite-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.cite-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px 14px; }
+.cite-card-small { padding: 10px 14px; }
+.cite-card-target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.cite-head { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; }
+.cite-meta { overflow-wrap: anywhere; }
+.cite-meta .mono { font-size: .8rem; }
+.cite-sentence { margin: 8px 0 4px; line-height: 1.55; overflow-wrap: anywhere; }
+.cite-before { color: var(--muted); }
+mark.cite-claim { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; box-shadow: inset 0 -1px 0 var(--mark-line); }
+.cite-work { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin: 4px 0 0; }
+.cite-work .icon { color: var(--muted); align-self: center; }
+.cite-quote { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; overflow-wrap: anywhere; }
+.cite-actions { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; margin-top: 8px; }
+.cite-actions .select { max-width: min(100%, 420px); }
+.cite-left { margin-top: 18px; }
+.cite-left .cite-list { margin-top: 10px; }
+.result-cited { margin: 0 0 8px; padding: 6px 10px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.result-cited p { margin: 0; overflow-wrap: anywhere; }
+.result-cited p + p { margin-top: 2px; }
+@media (max-width: 700px) {
+  .cite-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cite-seg .seg-btn { flex: 1 1 auto; }
+}

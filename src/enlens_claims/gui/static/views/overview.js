@@ -37,6 +37,7 @@ export async function renderOverview(view) {
     themes: th.themes ? [true, `${plural(th.themes, "theme", "themes")} found`] : [false, "Not made yet · takes seconds"],
     sources: [!!o.references, o.references ? `References followed in ${plural(o.references, "document", "documents")}` : `${plural(nDocs, "document", "documents")}`],
     history: o.hypotheses ? [true, `${plural(o.hypotheses, "result", "results")}`] : [false, "None yet"],
+    citations: (o.citations || {}).checked ? [true, `${plural(o.citations.checked, "citation", "citations")} checked`] : (o.citations || {}).texts ? [false, `${plural(o.citations.texts, "text", "texts")}, not checked yet`] : [false, "None yet"],
   };
   const HREF = { themes: th.latest ? `#/themes/${encodeURIComponent(th.latest)}` : null };
   for (const sec of overviewSections(FEATURES, SECTIONS)) {

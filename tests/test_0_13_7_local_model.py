@@ -1,4 +1,4 @@
-"""0.13.6: a model on this computer without a terminal.
+"""0.13.7: a model on this computer without a terminal.
 
 Switching to a privacy option must be easy for anyone. A local model used to need a terminal (`ollama pull qwen3:8b`)
 and the first screen said "This is the technical part… ask whoever installs the app". Now the app downloads the model
@@ -248,4 +248,4 @@ def test_the_docs_say_so():
     manual = (ROOT / "docs" / "MANUAL.md").read_text(encoding="utf-8")
     assert "Download qwen3:8b" in manual
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "A model on this computer, without a terminal (0.13.6)" in readme
+    assert "A model on this computer, without a terminal (0.13.7)" in readme

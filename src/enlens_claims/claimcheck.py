@@ -418,9 +418,10 @@ def _add_round(ws: Workspace, cid: str, base: str, payload: dict, model: str, ma
         with ws.connect() as c:
             return _add_round(ws, cid, base, payload, model, main_levels, local_reader, c)
     lv = access.levels(cx, [p["doc_id"] for p in payload["passages"]])
+    beside = access.text_floor(cx, payload)  # 0.13.7: the claim's own text (a citation's draft) and the add-ons' floors
     main, local, person = [], [], []
     for p in payload["passages"]:
-        level = lv.get(p["doc_id"], "none")
+        level = access.most([lv.get(p["doc_id"], "none"), beside])
         if level in main_levels:
             main.append(p)
         elif level == "local" and local_reader:
@@ -597,7 +598,8 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
                      decompose: bool = False, doc_ids: list[str] | None = None, progress: Progress | None = None,
                      embedder=None, batch_id: str | None = None, should_stop: Callable[[], bool] | None = None,
                      parts: list | None = None, terms: list | None = None, edited: dict | None = None,
-                     second_pass: bool = False, origin: str | None = None, origin_id: str | None = None) -> str:
+                     second_pass: bool = False, origin: str | None = None, origin_id: str | None = None,
+                     extra: dict | None = None) -> str:
     """Run a full check and return the hypothesis id; read the outcome with `hypothesis_result`.
 
     `parts` (sentences, or {"text", "role"}) are the parts to check, as a person saw and edited them with
@@ -605,6 +607,7 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
     flat list for a hypothesis checked as one claim) replace the model's extra search words; an empty list
     searches with the hypothesis's own words only. `edited` ({"parts": bool, "terms": bool}) records whether the
     person changed what the AI proposed. `second_pass` sorts the best candidates again (see search.rerank).
+    `extra` is kept with the check's options (0.13.7: `citation`, the citation a claim comes from, see citations.py).
 
     Backend errors propagate, and a check stopped by one (or by `should_stop`, checked before every model call)
     leaves nothing behind.
@@ -623,7 +626,7 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
     options = {"k": k, "per_doc": per_doc, "expand": expand, "decompose": decompose, "doc_ids": doc_ids or [],
                "backend": getattr(backend, "name", ""), "model": used,
                "search": "keywords+meaning" if embedder is not None else "keywords",
-               "embed_model": getattr(embedder, "model", None), "second_pass": bool(second_pass)}
+               "embed_model": getattr(embedder, "model", None), "second_pass": bool(second_pass), **(extra or {})}
     if given is not None or given_terms is not None:  # "Look before checking": what the person saw and chose
         options["prepared"] = {"parts": given is not None, "terms": given_terms is not None,
                                "edited_parts": bool((edited or {}).get("parts")),
@@ -682,8 +685,16 @@ def _decompose(ws: Workspace, hid: str, text: str, backend, model: str, used: st
     return got if len(got) > 1 else []
 
 
+def _citing(ws: Workspace, cid: str) -> dict:
+    """0.13.7: {"citing": …} for a task about a claim from a citation (its text's AI setting then applies to it)."""
+    from .citations import context_of
+
+    cit = context_of(ws, cid)
+    return {"citing": {"text_id": cit.get("text_id"), "ref_id": cit.get("ref_id")}} if cit else {}
+
+
 def _expand(ws: Workspace, cid: str, claim: str, backend, model: str, used: str, context: str | None) -> list[str]:
-    payload = {"claim_id": cid, "claim": claim}
+    payload = {"claim_id": cid, "claim": claim, **_citing(ws, cid)}
     if context:
         payload["context"] = context
     _add_task(ws, f"expand:{cid}", "expand", used, payload)
@@ -749,7 +760,7 @@ def queue_check(ws: Workspace, text: str, router, framework: str | None = None, 
                 per_doc: int = 2, expand: bool = True, decompose: bool = False, doc_ids: list[str] | None = None,
                 embed_model: str | None = None, batch_id: str | None = None, parts: list | None = None,
                 terms: list | None = None, edited: dict | None = None, second_pass: bool = False,
-                origin: str | None = None, origin_id: str | None = None) -> str:
+                origin: str | None = None, origin_id: str | None = None, extra: dict | None = None) -> str:
     """Prepare a check whose model steps Claude Code answers through the queue; returns the hypothesis id. Its
     status is "waiting" until the excerpts are judged; read it with `hypothesis_result` as any other check."""
     if not ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'"):
@@ -764,7 +775,7 @@ def queue_check(ws: Workspace, text: str, router, framework: str | None = None, 
     options = {"k": k, "per_doc": per_doc, "expand": expand, "decompose": decompose, "doc_ids": doc_ids or [],
                "backend": "claude_code", "model": model, "queue": True,
                "search": "keywords+meaning" if embed_model else "keywords", "embed_model": embed_model,
-               "second_pass": bool(second_pass)}
+               "second_pass": bool(second_pass), **(extra or {})}
     if given is not None or given_terms is not None:
         options["prepared"] = {"parts": given is not None, "terms": given_terms is not None,
                                "edited_parts": bool((edited or {}).get("parts")),
@@ -879,7 +890,7 @@ def _advance_one(ws: Workspace, h: dict, r=None) -> bool:
             tid = f"expand:{cid}"
             st = ws.scalar("SELECT status FROM tasks WHERE task_id=?", (tid,))
             if st is None:
-                payload = {"claim_id": cid, "claim": c["text"]}
+                payload = {"claim_id": cid, "claim": c["text"], **_citing(ws, cid)}
                 if c["part"]:
                     payload["context"] = text
                 _add_task(ws, tid, "expand", (r.model("expand") if r else None) or "sonnet", payload)
@@ -1022,6 +1033,13 @@ def _payload(ws: Workspace, cid: str, claim: str, code: str | None, framework: s
         passages.append(item)
     out = {"subject_kind": "user_claim", "subject_id": cid, "claim": claim, "target": code or None,
            "target_description": desc, "passages": passages}
+    from .citations import context_of
+
+    cit = context_of(ws, cid)
+    if cit:  # 0.13.7: a claim from a citation: its sentences (to understand it, never evidence) and the text it is in
+        out["claim_context"] = " ".join(x for x in (cit.get("before"), cit.get("sentence")) if x)
+        out["cited"] = cit.get("work") or None
+        out["citing"] = {"text_id": cit.get("text_id"), "ref_id": cit.get("ref_id")}
     if label and label != "SDG target":
         out["framework_label"] = label
     if terms is not None:
@@ -1775,7 +1793,7 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     """
     thr = _threshold(ws, threshold)
     if cache is not None and batch_id is None and cache.thr == thr:
-        hs = cache.history()
+        hs = [h for h in cache.history() if h.get("origin") != "citation"]
     else:
         hs = history(ws, thr, batch_id=batch_id)
     if hyp_ids is not None:
@@ -1919,8 +1937,9 @@ def calibration(ws: Workspace) -> dict:
 
 
 def history(ws: Workspace, threshold: float | None = None, limit: int | None = None, query: str | None = None,
-            status: str | None = None, batch_id: str | None = None) -> list[dict]:
+            status: str | None = None, batch_id: str | None = None, citations: bool = False) -> list[dict]:
     """Every hypothesis checked in the project, newest first, with its status (computed in a few queries).
+    0.13.7: the checks of citations are left out (they are on the Citations page), unless `citations`.
 
     `supports`, `partly`, `refutes` count the excerpts whose judgement counts at this threshold; `uncounted` the
     judged excerpts below it; `docs_*` count documents as on the result page.
@@ -1966,6 +1985,8 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
     out = []
     for h in hyps:
         if h["hyp_id"].startswith("prep"):  # a "Look before checking" in progress, not a check
+            continue
+        if h["origin"] == "citation" and not citations:
             continue
         if q and q not in (h["text"] or "").lower():
             continue
@@ -2115,8 +2136,9 @@ class ResultCache:
         self._results: dict[str, dict] = {}
 
     def history(self) -> list[dict]:
+        """Every check, the checks of citations too (0.13.7): the Results downloads leave those out themselves."""
         if self._history is None:
-            self._history = history(self.ws, self.thr)
+            self._history = history(self.ws, self.thr, citations=True)
         return self._history
 
     def result(self, hyp_id: str) -> dict:
@@ -2133,7 +2155,7 @@ def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[st
     judged ones); a hypothesis without any excerpt still gets one row.
     """
     cache = cache or ResultCache(ws, threshold)
-    ids = hyp_ids if hyp_ids is not None else [h["hyp_id"] for h in cache.history()]
+    ids = hyp_ids if hyp_ids is not None else [h["hyp_id"] for h in cache.history() if h.get("origin") != "citation"]
     rows = []
     results = [cache.result(hid) for hid in ids]
     seconds = any(r["second_read"] for r in results)  # columns for a second model only when one was asked
@@ -2204,8 +2226,8 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
     rows = []
     wanted = set(hyp_ids) if hyp_ids is not None else None
     for h in cache.history():
-        if wanted is not None and h["hyp_id"] not in wanted:
-            continue
+        if (h["hyp_id"] not in wanted) if wanted is not None else h.get("origin") == "citation":
+            continue  # the Results download leaves the checks of citations out; a citation's own download keeps it
         res = cache.result(h["hyp_id"])
         parts = res["parts"]
         rows.append({

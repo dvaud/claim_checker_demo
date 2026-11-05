@@ -59,10 +59,11 @@ out.batch = [reg.originLink({ batch_id: "b1" }), reg.originLink({ origin: "batch
              reg.originLink({}), reg.originLink({ origin: "unknown", origin_id: "x" })];
 """, tmp_path)
     assert out["local"] == {"sections": [], "features": [], "routes": 0, "jobKinds": [], "welcome": 0, "origins": []}
-    # the Overview as 0.13.5 drew it: explore (four cards and "Read one document"), then check (compact)
+    # the Overview as 0.13.5 drew it: explore (four cards and "Read one document"), then check (compact); 0.13.7 adds
+    # Check citations before Results
     assert [(s["key"], s["features"], s["compact"]) for s in out["sections"]] == [
         ("explore", ["search", "profile", "concepts", "themes", "sources"], False),
-        ("check", ["check", "batch", "history"], True)]
+        ("check", ["check", "batch", "citations", "history"], True)]
     assert out["sections"][0]["sub"] == "Start here: no hypothesis needed."
     check, second, ingest, prepare, unknown = out["rows"]
     assert check == {"href": "#/check?job=j1", "icon": "flask", "text": "Water use rises", "tooltip": "Water use rises"}

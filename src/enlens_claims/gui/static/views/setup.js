@@ -14,7 +14,7 @@ export async function renderSetup(view) {
   const cc = s.backend === "claude_code";
   // 0.9: subscription first: a new installation answers with Claude Code; the first step sets it up (or skips it)
   let modelOk = cc ? store("setup-ai") === "done" : App.modelConfigured();
-  // 0.13.6: "a model on this computer" (the automatic choice) counts as set up only when a model answers; it was taken
+  // 0.13.7: "a model on this computer" (the automatic choice) counts as set up only when a model answers; it was taken
   // as ready, so "Use a local model" went straight on to the project and never showed how to get a model
   if (!cc && modelOk && (s.backend || "auto") === "auto") modelOk = hasChatModel((await lookForServers()).servers);
   const stepsAll = modelOk ? [["Project", "project"], ["Documents", "docs"]] : [["AI", "model"], ["Project", "project"], ["Documents", "docs"]];
@@ -101,7 +101,7 @@ async function modelStep(body, opts = {}) {
     App.state.local_only ? null : h("p", { class: "small" }, "Have a Claude plan? ", h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { backend: "claude_code", allow_claude_code: true }); await App.refresh(); rerender(); } catch (e) { showError(e); } } }, "Use Claude Code instead")));
   body.appendChild(card);
 
-  // 0.13.6: no model yet: how to get Ollama (noticed by itself when it starts), then one button downloads a model
+  // 0.13.7: no model yet: how to get Ollama (noticed by itself when it starts), then one button downloads a model
   const help = localModelHelp(info, {
     use: "ai",   // the downloaded model becomes the AI (chosen by the app when the download is done)
     onFound: () => modelStep(body),

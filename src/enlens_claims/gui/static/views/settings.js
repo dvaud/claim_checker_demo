@@ -312,7 +312,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
   };
 
   function serverList() {
-    // 0.13.6: no model yet: how to get Ollama (noticed when it starts), or one button that downloads a model into it
+    // 0.13.7: no model yet: how to get Ollama (noticed when it starts), or one button that downloads a model into it
     const help = localModelHelp(info, {
       use: "ai",   // chosen by the app when the download is done
       onFound: rerender,
@@ -571,7 +571,7 @@ function embedSection(s, servers, info = { servers }) {
   const datalist = h("datalist", { id: "embed-models" }, all.map((m) => h("option", { value: m })));
   const url = h("input", { class: "input input-mono", type: "url", value: s.embed_url || "", placeholder: "optional" });
   const row = h("div", { class: "fields-3" }, field("Server kind", kind), field("Embedding model", model, { help: all.length ? `Installed: ${all.join(", ")}` : "None installed yet." }), field("Address (optional)", url, { help: "Leave empty to use the chat server's address." }));
-  // 0.13.6: Ollama without an embedding model: one button downloads one, and it is chosen here
+  // 0.13.7: Ollama without an embedding model: one button downloads one, and it is chosen here
   const pull = localModelHelp(info, { only: "embed", use: "embed", onReady: async (r) => {
     try { await App.refresh(); } catch (_) { /* shown on the page */ }
     toast(r.chosen ? `${r.embed} is chosen for search by meaning. Set it up per project under Documents.` : `${r.embed} is downloaded.`, "ok");

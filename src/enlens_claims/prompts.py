@@ -295,6 +295,11 @@ def user_prompt(kind: str, payload: dict) -> str:
             label = payload.get("framework_label") or "SDG target"
             head += f" (about {label} {payload['target']}: {payload.get('target_description', '')})"
         parts = [f"{head}:\n{payload['claim']}"]
+        if payload.get("claim_context"):  # 0.13.7: a claim from a citation, in its own sentences (data, as a reader's note)
+            cited = f" ({payload['cited']})" if payload.get("cited") else ""
+            parts.append(f"THE CLAIM IN ITS TEXT: a text cites the source{cited} that the passages below come from, "
+                         "for this claim. Read it only to understand what the claim says; it is not evidence: never "
+                         f"grade or quote it.\n…{payload['claim_context']}")
         for i, p in enumerate(payload["passages"], 1):
             src = (p.get("title") or "untitled") + (f", page {p['page']}" if p.get("page") else "")
             if p.get("context"):  # check-v4: the text just before, for refers_to only

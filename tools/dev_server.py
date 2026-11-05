@@ -25,7 +25,7 @@
   reload can be watched. `--update commits` is a git copy with 3 new commits, `--update on-disk` a newer version
   installed while this one ran (the banner with *Restart now*), `--update none` an ENLENS that is up to date, and
   `--update fails` an install that fails.
-- with `--ollama` (0.13.6): a model on this computer chosen, but no model yet. `--ollama empty` is an Ollama with no
+- with `--ollama` (0.13.7): a model on this computer chosen, but no model yet. `--ollama empty` is an Ollama with no
   model (its *Download* takes 12 s, then the model answers), `--ollama later` an Ollama that starts 15 s after the
   app (the page notices it by itself), `--ollama none` no Ollama at all. Other servers on this computer (LM Studio…)
   are not looked for. Combine with `--empty` for a new user's first screen.
@@ -42,6 +42,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
+
+
+# 0.13.7: a researcher's draft citing the remote-work demo's works (some say it, some only partly, some not; one work
+# has no document in the project yet, one is not in the bibliography), for --citations
+CITING_DRAFT = """Chapter 2. Remote work and wellbeing
+
+Since the pandemic, many employers let staff work from home part of the week. Employees who work from home at least two days a week report higher life satisfaction than those at the office every day (Verhoeven & Okafor, 2025). The difference is largest for parents of young children (Verhoeven & Okafor, 2025).
+
+The environmental gains are often overstated. Remote work cuts commuting emissions by more than half (Rivermouth Mobility Institute, 2024), and a four-day week cuts them by about a fifth (Haugen, 2024).
+
+Productivity is a more contested question. Lindqvist (2025) found that hybrid work lowers productivity overall. Young employees who work remotely feel lonely and miss learning from colleagues (Adeyemi & Brandt, 2024; Okafor, 2023). Employers respond by bringing staff back to the office (Moreau, 2023).
+
+Older employees, by contrast, report no change in their wellbeing (Smith, 2019).
+"""
 
 
 def social_documents(folder: Path, make_pdf) -> Path:
@@ -82,13 +96,18 @@ def main() -> int:
     ap.add_argument("--mixed", action="store_true",
                     help="0.11: the Demo project's documents have each AI setting (one Claude may read, one only a local "
                          "AI, one no AI), Claude Code is the AI and the fake local model reads the restricted one")
+    ap.add_argument("--citations", action="store_true",
+                    help="0.13.7: the remote-work demo with its Zotero library brought in and a draft whose citations "
+                         "wait to be checked (implies --corpus social --zotero)")
     ap.add_argument("--zotero", nargs="?", const="ready", choices=["ready", "api_off", "old", "closed"],
                     help="0.13: a stand-in Zotero (its local API) with a library for the remote-work demo corpus")
     ap.add_argument("--update", nargs="?", const="release", choices=["release", "commits", "on-disk", "none", "fails"],
                     help="0.13.1: Update ENLENS finds a stand-in newer version and restarts the app in this process")
     ap.add_argument("--ollama", nargs="?", const="empty", choices=["empty", "later", "none"],
-                    help="0.13.6: a model on this computer chosen, but no model yet (empty), Ollama later, or none")
+                    help="0.13.7: a model on this computer chosen, but no model yet (empty), Ollama later, or none")
     a = ap.parse_args()
+    if a.citations:
+        a.corpus, a.zotero = "social", a.zotero or "ready"
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
 
@@ -154,7 +173,7 @@ def main() -> int:
         except ValueError as e:
             print(e)
     fake.delay = a.delay
-    if a.ollama:  # 0.13.6: a model on this computer, with no model yet (only these stand-ins are looked for)
+    if a.ollama:  # 0.13.7: a model on this computer, with no model yet (only these stand-ins are looked for)
         from enlens_claims import llm
 
         llm.OPENAI_PORTS = ()
@@ -230,6 +249,16 @@ def main() -> int:
                 url = f"http://127.0.0.1:{sock.getsockname()[1]}"
         os.environ["ENLENS_ZOTERO_URL"] = url
         print(f"stand-in Zotero: {url} ({a.zotero})")
+        if a.citations and "Demo" in home.list_projects():
+            from enlens_claims import bibliography, citations
+
+            ws = home.open_project("Demo")
+            works, src = bibliography.pull_zotero("user", "RWCOLL01", True)
+            src["library_name"] = "My Library"
+            bibliography.save(ws, works, src)
+            bibliography.confirm_all(ws)
+            citations.add_text(ws, CITING_DRAFT, title="Chapter 2: remote work and wellbeing (draft)")
+            print("citations: the Zotero library is in the Demo project, with a draft to check")
     if a.update:
         stand_in_update(a.update)
     port = a.port

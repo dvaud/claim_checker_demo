@@ -133,6 +133,18 @@ CREATE TABLE IF NOT EXISTS bib_items(item_key TEXT PRIMARY KEY, item_type TEXT, 
 CREATE TABLE IF NOT EXISTS bib_links(item_key TEXT, doc_id TEXT, status TEXT, method TEXT, score REAL,
   evidence_json TEXT, decided_at TEXT, PRIMARY KEY(item_key, doc_id));
 CREATE INDEX IF NOT EXISTS ix_bib_links_doc ON bib_links(doc_id);
+
+-- 0.13.7: checking citations (citations.py): a text (the person's draft, pasted or read from a file, or one of the
+-- documents), the citations found in it and the works each one cites (one row per work: `item_key` the work of the
+-- bibliography, `how` auto, ambiguous, none or person). A reference's check is a hypothesis with origin 'citation'.
+CREATE TABLE IF NOT EXISTS cite_texts(text_id TEXT PRIMARY KEY, title TEXT, source TEXT, doc_id TEXT, file_name TEXT,
+  body TEXT, pages_json TEXT, ai_access TEXT, numeric_unread INT DEFAULT 0, cut INT DEFAULT 0, created_at TEXT);
+CREATE TABLE IF NOT EXISTS citations(cite_id TEXT PRIMARY KEY, text_id TEXT, n INT, start INT, end INT, kind TEXT,
+  marker TEXT, sentence TEXT, claim TEXT, claim_start INT, claim_end INT, before TEXT, page INT);
+CREATE TABLE IF NOT EXISTS cite_refs(ref_id TEXT PRIMARY KEY, cite_id TEXT, text_id TEXT, n INT, raw TEXT, author TEXT,
+  year TEXT, number INT, item_key TEXT, how TEXT, candidates_json TEXT, ignored INT DEFAULT 0, signal TEXT);
+CREATE INDEX IF NOT EXISTS ix_citations_text ON citations(text_id, n);
+CREATE INDEX IF NOT EXISTS ix_cite_refs_text ON cite_refs(text_id);
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
@@ -439,6 +451,10 @@ class Workspace:
         text and title it showed), so a past verdict does not change when a source is removed later.
         """
         out: dict[str, int] = {}
+        if self.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+            from .citations import remove_document as remove_texts
+
+            remove_texts(self, doc_id)  # 0.13.7: its citations, read as a text whose citations are checked
         with self.connect() as cx:
             if not cx.execute("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)).fetchone():
                 raise KeyError(doc_id)

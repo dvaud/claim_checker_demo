@@ -169,7 +169,7 @@ export function restrictedModelCard(s, servers, save, info = { servers }) {
   });
   card.append(h("p", { class: "lead" }, "Claude never reads documents marked Only a local AI. Choose a model on this computer to read their excerpts in a check, the Profile and the other features; without one, they wait for your own judgement."),
     h("div", { class: "save-row" }, field2("Local model", sel, servers && servers.length ? "Chat models of the model servers running on this computer." : "No model server is running on this computer just now (Ollama, LM Studio…)."), state));
-  // 0.13.6: no model on this computer yet: get Ollama, or download a model into it with one button
+  // 0.13.7: no model on this computer yet: get Ollama, or download a model into it with one button
   const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
   const help = localModelHelp(info, { embed: false, use: "restricted", onFound: rerender, onReady: async (r) => {
     try { await App.refresh(); } catch (_) { /* shown on the page */ }
