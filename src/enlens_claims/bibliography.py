@@ -40,6 +40,7 @@ MAX_HASH = 300 * 1024 ** 2  # files larger than this are not compared by checksu
 SKIP_TYPES = {"note", "annotation"}
 LIBRARY_RE = re.compile(r"^(user|group-\d{1,12})$")
 KEY_RE = re.compile(r"^[A-Za-z0-9]{1,32}$")
+MAX_CHOSEN = 500           # 0.13.9: works chosen one by one (more than this: a collection is the better way)
 FORMATS = {"bibtex": "BibTeX", "ris": "RIS", "csl": "CSL JSON", "csv": "Zotero CSV"}
 
 
@@ -152,6 +153,31 @@ def zotero_collections(library: str) -> list[dict]:
     return out
 
 
+def zotero_works(library: str, collection: str | None = None, q: str = "", limit: int = 100) -> dict:
+    """0.13.9: the works of a library or of one collection (not its subcollections), by title, to choose from one by
+    one. `q` is Zotero's own quick search (title, creators, year). `more`: there are more than `limit`."""
+    prefix = _prefix(library)
+    if collection is not None and not KEY_RE.match(collection):
+        raise ValueError("Unknown Zotero collection.")
+    limit = max(1, min(int(limit), 200))
+    params = {"limit": limit + 1, "start": 0, "sort": "title", "direction": "asc"}
+    if q.strip():
+        params["q"] = q.strip()[:200]
+    got = _get(prefix + (f"/collections/{collection}/items/top" if collection else "/items/top"), params)
+    if not isinstance(got, list):
+        raise ZoteroError("failed", "Zotero's list of works could not be read.")
+    out = []
+    for it in got[:limit]:
+        d = it.get("data") or {}
+        if d.get("parentItem") or d.get("itemType") in SKIP_TYPES:
+            continue
+        w = from_zotero(it, library, [])
+        if w["title"] and KEY_RE.match(w["key"].rsplit(":", 1)[-1]):
+            out.append({"key": w["key"].rsplit(":", 1)[-1], "title": w["title"], "cite": cite(w["creators"], w["year"]),
+                        "type": type_text(w["type"])})
+    return {"works": out, "more": len(got) > limit}
+
+
 def _file_path(prefix: str, key: str) -> str | None:
     """Where Zotero keeps an attachment's file (stored or linked), or None."""
     try:
@@ -166,16 +192,33 @@ def _file_path(prefix: str, key: str) -> str | None:
 
 
 def pull_zotero(library: str, collection: str | None = None, subcollections: bool = True, progress=None,
-                should_stop=None) -> tuple[list[dict], dict]:
-    """The works of a library, or of a collection (with its subcollections), with the files Zotero keeps for them."""
+                should_stop=None, items: list[str] | None = None) -> tuple[list[dict], dict]:
+    """The works of a library, or of a collection (with its subcollections), or (0.13.9) the works chosen one by one
+    (`items`, their Zotero keys), with the files Zotero keeps for them."""
     prefix = _prefix(library)
     if collection is not None and not KEY_RE.match(collection):
         raise ValueError("Unknown Zotero collection.")
+    chosen = list(dict.fromkeys(str(k) for k in items or []))
+    if items is not None and (not chosen or len(chosen) > MAX_CHOSEN or not all(KEY_RE.match(k) for k in chosen)):
+        raise ValueError(f"Choose between 1 and {MAX_CHOSEN} works of your Zotero.")
     say = progress or (lambda **kw: None)
     say(phase="works", done=0, total=0)
     source = {"kind": "zotero", "library": library, "collection": collection, "subcollections": bool(subcollections)}
-    items: dict[str, dict] = {}
-    if collection:
+    items = {}  # the works, by their Zotero key
+    if chosen:
+        source.update(collection=None, subcollections=False)
+        for i in range(0, len(chosen), 50):  # Zotero answers up to 50 keys at a time
+            batch = chosen[i:i + 50]
+            # Zotero 10's local API also returns the children of the works asked for: only the works themselves count
+            for it in _all(f"{prefix}/items", {"itemKey": ",".join(batch)}):
+                if it.get("key") in batch and not (it.get("data") or {}).get("parentItem"):
+                    items.setdefault(it["key"], it)
+            say(phase="works", done=len(items), total=len(chosen))
+        if not items:
+            raise ZoteroError("failed", "The works you chose are not in Zotero any more.")
+        items = {k: items[k] for k in chosen if k in items}  # in the order they were chosen
+        source["items"] = list(items)  # a work deleted from Zotero is left out of the next update too
+    elif collection:
         cols = zotero_collections(library)
         names = {c["key"]: c["name"] for c in cols}
         if collection not in names:
@@ -203,7 +246,7 @@ def pull_zotero(library: str, collection: str | None = None, subcollections: boo
     items = {k: v for k, v in items.items() if k and ((v.get("data") or {}).get("itemType") not in SKIP_TYPES)}
     # the files: a work's attachments, or the work itself when it is a file kept on its own
     atts: dict[str, list[dict]] = defaultdict(list)
-    if collection:
+    if collection or chosen:
         with_kids = [k for k, v in items.items() if int((v.get("meta") or {}).get("numChildren") or 0) > 0]
         for i, k in enumerate(with_kids):
             if should_stop and should_stop():
@@ -1033,12 +1076,17 @@ def _full_names(creators: list[dict]) -> str:
                      else c.get("name", "") for c in creators)
 
 
+def type_text(item_type: str | None) -> str | None:
+    """'Journal article' for journalArticle, article-journal, JOUR…; else the type's own name in words."""
+    return TYPE_TEXT.get(item_type or "") or (re.sub(r"(?<=[a-z])(?=[A-Z])|[_-]", " ", item_type or "").strip().lower()
+                                               .capitalize() or None)
+
+
 def _work_view(r) -> dict:
     creators = json.loads(r["creators_json"] or "[]")
     files = json.loads(r["files_json"] or "[]")
     return {"key": r["item_key"], "title": r["title"], "cite": cite(creators, r["year"]), "authors": _full_names(creators),
-            "year": r["year"], "type": TYPE_TEXT.get(r["item_type"] or "") or (re.sub(
-                r"(?<=[a-z])(?=[A-Z])|[_-]", " ", r["item_type"] or "").strip().lower().capitalize() or None),
+            "year": r["year"], "type": type_text(r["item_type"]),
             "container": r["container"], "doi": r["doi"], "url": r["url"], "link": r["link"],
             "file": next((f["name"] for f in files if f.get("exists") and Path(f["path"]).suffix.lower() in READABLE),
                          None)}

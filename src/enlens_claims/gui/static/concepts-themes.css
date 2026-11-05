@@ -113,7 +113,7 @@
   .ct-gloss td.num, .ct-docs td.num { display: inline-block; width: auto; margin-right: 14px; }
 }
 
-/* ------------------------------------------------------------------ themes: remove one, and find a new one in its place (0.14.0) */
+/* ------------------------------------------------------------------ themes: remove one, and find a new one in its place (0.13.9) */
 /* a new theme, on the list */
 .chip.th-new { color: var(--accent-text); background: var(--accent-soft); font-size: .76rem; display: inline-flex; align-items: center; gap: 3px; }
 .th-item.th-flash { animation: th-flash 2.4s ease-out 1; }

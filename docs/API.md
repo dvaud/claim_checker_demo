@@ -846,16 +846,24 @@ from a reference manager (BibTeX, RIS, CSL JSON, Zotero's CSV). Nothing goes ove
   [{"id": "user" | "group-<id>", "name"}], "detail"}` (`libraries` when ready).
 - `GET /api/zotero/collections?library=user` → `{"collections": [{"key", "name", "parent", "items", "depth"}]}` in
   tree order (`items`: the works directly in it). 409 with `kind` `zotero_<state>` when Zotero cannot be read.
+- `GET /api/zotero/works?library=user&collection=<key>&q=<words>&limit=100` (0.13.9) → `{"works": [{"key", "title",
+  "cite", "type"}], "more"}`: the top-level works of a library, or of one collection (not its subcollections), by title,
+  without notes; `q` is Zotero's quick search (title, creators, year); `more` when there are more than `limit` (at most
+  200). 409 as above.
 - `POST /api/projects/<p>/bibliography` → job (kind `bibliography`), one of:
   `{"zotero": {"library": "user", "collection": "<key>" | null, "subcollections": true}}` (null: the whole library),
-  `{"file": {"name": "refs.bib", "text": "…"}}`, or `{"update": true}` (the same Zotero library and collection again).
+  `{"zotero": {"library": "user", "items": ["<key>", …]}}` (0.13.9: only these works, 1 to 500 of them),
+  `{"file": {"name": "refs.bib", "text": "…"}}`, or `{"update": true}` (the same Zotero library and collection, or the
+  same chosen works, again).
   It replaces the bibliography; a person's decisions are kept for every work that is in the new one too (by its key,
   else its DOI, else its title and year). `progress`: `{"phase": "works" | "attachments" | "files" | "checksums" |
   "matching", "done", "total"}`. `result`: the counts below. 400 for a file that is not a bibliography, a file without
-  works, or `update` of a bibliography read from a file.
+  works, `update` of a bibliography read from a file, or `items` that are not 1 to 500 Zotero keys. Chosen works
+  that Zotero no longer has are left out (and out of the next update); none left is an error of the job.
 - `GET /api/projects/<p>/bibliography` → `{"bibliography": null}` before one is brought in; else
   `{"bibliography": {"kind": "zotero" | "file", "library", "library_name", "collection", "collection_name",
-  "subcollections", "name", "format", "format_text", "pulled_at", "works"}, "counts": {"works", "linked", "confirm",
+  "subcollections", "items" (0.13.9: the chosen works' Zotero keys), "name", "format", "format_text", "pulled_at",
+  "works"}, "counts": {"works", "linked", "confirm",
   "to_find", "not_in", "files"}, "linked": [Pair], "confirm": [Pair], "to_find": [Work], "not_in": [Document],
   "ai_access": project info}`. A Work: `{"key", "title", "cite": "Verhoeven and Okafor (2025)", "authors", "year",
   "type", "container", "doi", "url", "link": "zotero://select/…" | null, "file": name of a file Zotero keeps | null}`.

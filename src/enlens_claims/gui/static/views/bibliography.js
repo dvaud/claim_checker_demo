@@ -50,7 +50,7 @@ export async function renderBibliography(view) {
   // ----------------------------------------------------------------- where the bibliography comes from
   function sourceLine(bib) {
     if (bib.kind === "zotero") {
-      const where = [bib.library_name || "My Library", bib.collection_name].filter(Boolean).join(" › ");
+      const where = [bib.library_name || "My Library", bib.items ? `${plural(bib.items.length, "work", "works")} you chose` : bib.collection_name].filter(Boolean).join(" › ");
       return [h("strong", {}, "From Zotero: "), where, bib.collection && bib.subcollections ? h("span", { class: "muted" }, " (with its subcollections)") : null];
     }
     return [h("strong", {}, "From the file "), bib.name, bib.format_text ? h("span", { class: "muted" }, ` (${bib.format_text})`) : null];
@@ -61,7 +61,7 @@ export async function renderBibliography(view) {
       ? h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: () => start({ update: true }, "Updating from Zotero") }, icon("refresh", { size: 13 }), "Update from Zotero")
       : null;
     const change = h("button", { class: "btn btn-sm", type: "button", "aria-expanded": picking ? "true" : "false", onClick: () => { picking = !picking; draw(); if (picking) top.lastChild.scrollIntoView({ block: "nearest" }); } },
-      icon(picking ? "x" : "folder-open", { size: 13 }), picking ? "Close" : bib.kind === "zotero" ? "Use another collection or file" : "Use a newer file or Zotero");
+      icon(picking ? "x" : "folder-open", { size: 13 }), picking ? "Close" : changeText(bib));
     return h("section", { class: "card bib-summary", "aria-label": "Your bibliography" },
       h("div", { class: "bib-source" }, h("span", { class: "bib-source-icon" }, icon("library", { size: 20 })),
         h("div", { class: "grow" }, h("p", { class: "bib-source-line" }, sourceLine(bib)),
@@ -76,6 +76,8 @@ export async function renderBibliography(view) {
       })));
   }
 
+  const changeText = (bib) => bib.kind !== "zotero" ? "Use a newer file or Zotero" : bib.items ? "Choose other works or a file" : "Use another collection or file";
+
   function currentTab() {
     const c = (data && data.counts) || {};
     if (tab && TABS.some(([k]) => k === tab)) return tab;
@@ -84,10 +86,10 @@ export async function renderBibliography(view) {
 
   function sourceCard(replacing) {
     const card = h("section", { class: "card bib-pick", "aria-label": "Bring in a bibliography" },
-      h("div", { class: "card-head" }, h("h2", {}, replacing ? "Use another collection or file" : "Bring in your bibliography")),
+      h("div", { class: "card-head" }, h("h2", {}, replacing ? changeText(data.bibliography) : "Bring in your bibliography")),
       h("p", { class: "muted", style: { margin: "0 0 12px" } }, replacing
         ? "It replaces the bibliography above. Your confirmations are kept for every work that is in the new one too."
-        : "Pick a Zotero collection, or your whole library. ENLENS links each work to the document you already have, lists the works you still need to find, and the documents Zotero does not have."));
+        : "Pick a Zotero collection, your whole library, or just the works you choose. ENLENS links each work to the document you already have, lists the works you still need to find, and the documents Zotero does not have."));
     const zbox = h("div", { class: "bib-zotero", "aria-live": "polite" }, h("p", { class: "it muted" }, spinner("Looking for Zotero"), "Looking for Zotero on this computer…"));
     const fileFold = h("details", { class: "fold bib-file" }, h("summary", {}, "Use an exported file instead"), fileForm());
     card.append(zbox, fileFold, h("p", { class: "muted small bib-privacy" }, icon("shield", { size: 12 }), " Read on this computer: nothing goes over the internet, and your Zotero is not changed."));
@@ -113,44 +115,109 @@ export async function renderBibliography(view) {
       return;
     }
     const libs = st.libraries || [{ id: "user", name: "My Library" }];
-    const curLib = data && data.bibliography && data.bibliography.kind === "zotero" ? data.bibliography.library : null;
+    const curBib = data && data.bibliography && data.bibliography.kind === "zotero" ? data.bibliography : null;
+    const curLib = curBib ? curBib.library : null;
     const libSel = h("select", { class: "select", id: "bib-library" }, libs.map((l) => h("option", { value: l.id, selected: l.id === curLib }, l.name)));
     const colSel = h("select", { class: "select", id: "bib-collection" }, h("option", { value: "" }, "Loading the collections…"));
     const subs = h("input", { type: "checkbox", id: "bib-subs", checked: true });
     const subsRow = h("label", { class: "bib-subs", for: "bib-subs", hidden: true }, subs, h("span", {}, "Include its subcollections"));
-    const go = h("button", { class: "btn btn-primary", type: "button", disabled: true }, icon("download", { size: 14 }), "Bring in the bibliography");
+    // 0.13.9: or only the works ticked in a list of the library (or of the collection above), found by Zotero's search
+    const one = h("input", { type: "checkbox", id: "bib-one", checked: !!(curBib && curBib.items) });
+    const oneRow = h("label", { class: "bib-subs", for: "bib-one" }, one, h("span", {}, "Choose the works one by one"));
+    const chosen = new Map();   // Zotero key -> { title, sub }
+    if (curBib && curBib.items) {   // replacing works chosen before: they start ticked, so one more is one tick away
+      const mine = new Map([...(data.linked || []), ...(data.confirm || [])].map((r) => r.work).concat(data.to_find || []).map((w) => [w.key, w]));
+      for (const k of curBib.items) {
+        const w = mine.get(`zotero:${curBib.library}:${k}`);
+        if (w) chosen.set(k, { title: w.title, sub: [w.cite, w.type].filter(Boolean).join(" · ") });
+      }
+    }
+    const find = h("input", { class: "input input-sm bib-filter", type: "search", placeholder: "Search title, author or year", "aria-label": "Search the works in Zotero" });
+    const chips = h("div", { class: "bib-chosen", "aria-live": "polite" });
+    const listBox = h("div", { class: "bib-pick-list", role: "group", "aria-label": "Works in Zotero" });
+    const more = h("p", { class: "muted small bib-pick-more", hidden: true }, "Only the first 100 are shown: search to find the others.");
+    const pickBox = h("div", { class: "bib-one", hidden: true }, h("div", { class: "bib-list-head" }, find), chips, listBox, more);
+    const go = h("button", { class: "btn btn-primary", type: "button", disabled: true }, icon("download", { size: 14 }), h("span", {}, "Bring in the bibliography"));
     let cols = [];
+    let ask = 0;   // the newest list asked for (answers to older searches are dropped)
     const drawSubs = () => {
       const k = colSel.value;
-      subsRow.hidden = !k || !cols.some((c) => c.parent === k);
+      subsRow.hidden = one.checked || !k || !cols.some((c) => c.parent === k);
     };
+    const drawGo = () => {
+      go.lastChild.textContent = one.checked ? `Bring in ${plural(chosen.size, "work", "works")}` : "Bring in the bibliography";
+      go.disabled = colSel.disabled || (one.checked && !chosen.size);
+    };
+    const drawChips = () => {
+      replace(chips, [...chosen].map(([k, w]) => h("button", { class: "chip chip-btn bib-chosen-chip", type: "button", title: `${w.title}: click to leave it out`, "aria-label": `Leave out “${w.title}”`,
+        onClick: () => { chosen.delete(k); const box = listBox.querySelector(`input[value="${k}"]`); if (box) box.checked = false; drawChips(); drawGo(); } },
+        h("span", { class: "bib-chosen-title" }, w.title), icon("x", { size: 11 }))));
+      drawGo();
+    };
+    async function loadWorks() {
+      const n = ++ask;
+      more.hidden = true;
+      replace(listBox, h("p", { class: "it muted bib-pick-empty" }, spinner("Loading the works"), "Loading the works…"));
+      let r;
+      try {
+        r = await api("GET", `/api/zotero/works?library=${encodeURIComponent(libSel.value)}${colSel.value ? `&collection=${encodeURIComponent(colSel.value)}` : ""}${find.value.trim() ? `&q=${encodeURIComponent(find.value.trim())}` : ""}`);
+      } catch (e) { if (n === ask) replace(listBox, h("p", { class: "muted bib-pick-empty" }, e.message)); return; }
+      if (n !== ask) return;
+      const works = r.works || [];
+      more.hidden = !r.more;
+      if (!works.length) { replace(listBox, h("p", { class: "muted bib-pick-empty" }, find.value.trim() ? `No work matches “${find.value.trim()}”.` : "There are no works here.")); return; }
+      replace(listBox, works.map((w) => {
+        const sub = [w.cite, w.type].filter(Boolean).join(" · ");
+        const box = h("input", { type: "checkbox", value: w.key, checked: chosen.has(w.key) });
+        box.addEventListener("change", () => { if (box.checked) chosen.set(w.key, { title: w.title, sub }); else chosen.delete(w.key); drawChips(); });
+        return h("label", { class: "bib-pick-opt" }, box, h("span", {}, h("span", { class: "bib-pick-title" }, w.title), sub ? h("span", { class: "muted small" }, sub) : null));
+      }));
+    }
+    let typing = null;
+    find.addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(loadWorks, 250); });
+    const drawOne = () => {
+      pickBox.hidden = !one.checked;
+      drawSubs();
+      drawGo();
+      if (one.checked) loadWorks();
+    };
+    one.addEventListener("change", () => { drawOne(); if (one.checked) find.focus(); });
     async function loadCols() {
-      go.disabled = true;
+      colSel.disabled = true;
+      drawGo();
       replace(colSel, h("option", { value: "" }, "Loading the collections…"));
       try { cols = (await api("GET", `/api/zotero/collections?library=${encodeURIComponent(libSel.value)}`)).collections || []; }
       catch (e) { showError(e); cols = []; }
-      replace(colSel, h("option", { value: "" }, "The whole library"), cols.map((c) => h("option", { value: c.key }, `${" ".repeat(c.depth)}${c.name}${c.items ? ` (${c.items})` : ""}`)));
+      replace(colSel, h("option", { value: "" }, "The whole library"), cols.map((c) => h("option", { value: c.key }, `${" ".repeat(c.depth)}${c.name}${c.items ? ` (${c.items})` : ""}`)));
       // the collection in use when it is replaced; else the one chosen last time on this page
-      const cur = data && data.bibliography && data.bibliography.kind === "zotero" && data.bibliography.library === libSel.value ? data.bibliography.collection : null;
+      const cur = curBib && curBib.library === libSel.value ? curBib.collection : null;
       const keep = cur || session(`bib-col:${project}`);
       if (keep && cols.some((c) => c.key === keep)) colSel.value = keep;
-      go.disabled = false;
-      drawSubs();
+      colSel.disabled = false;
+      drawOne();
     }
-    libSel.addEventListener("change", loadCols);
-    colSel.addEventListener("change", () => { session(`bib-col:${project}`, colSel.value); drawSubs(); });
+    libSel.addEventListener("change", () => { chosen.clear(); drawChips(); loadCols(); });   // a work belongs to one library
+    colSel.addEventListener("change", () => { session(`bib-col:${project}`, colSel.value); drawSubs(); if (one.checked) loadWorks(); });
     go.addEventListener("click", () => {
       go.disabled = true;
+      if (one.checked) {
+        const first = chosen.values().next().value;
+        start({ zotero: { library: libSel.value, items: [...chosen.keys()] } },
+          chosen.size === 1 ? `Reading “${first.title}” from Zotero` : `Reading ${plural(chosen.size, "work", "works")} from Zotero`);
+        return;
+      }
       const opt = colSel.selectedOptions[0];
       start({ zotero: { library: libSel.value, collection: colSel.value || null, subcollections: subs.checked } },
         colSel.value ? `Reading “${(opt && opt.textContent || "").trim().replace(/\s*\(\d+\)$/, "")}” from Zotero` : "Reading your Zotero library");
     });
+    drawChips();
     replace(box, h("div", { class: "bib-form" },
       h("p", { class: "it bib-found" }, icon("circle-check", { size: 14 }), "Zotero is open on this computer."),
       h("div", { class: "bib-fields" },
         libs.length > 1 ? h("div", { class: "field" }, h("label", { class: "field-label", for: "bib-library" }, "Library"), libSel) : null,
         h("div", { class: "field grow" }, h("label", { class: "field-label", for: "bib-collection" }, "Collection"), colSel)),
-      subsRow,
+      h("div", { class: "bib-checks" }, subsRow, oneRow),
+      pickBox,
       h("div", { class: "btn-row", style: { marginTop: "12px" } }, go)));
     loadCols();
   }

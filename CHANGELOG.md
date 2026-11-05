@@ -1,6 +1,62 @@
 # Changelog
 
-## Unreleased (for 0.14.0): remove a theme, and find a new one in its place
+## 0.13.9 (November 2026): only the Zotero works you choose, and a new theme in place of one you remove
+
+Two additions: the *Bibliography* page brings in just the Zotero works you choose (even a single one), and on
+*Themes* you can remove a theme you do not need and let ENLENS find a new one in its place. (The theme work was
+first written down for a 0.14.0; 0.14.0 stays withdrawn, so it comes out in 0.13.9.)
+
+### Only the Zotero works you choose
+
+Until now the *Bibliography* page brought in a whole Zotero collection or the whole library. A group library without
+collections offered only *The whole library*, and there was no way to bring in one paper. 0.13.9 lets you choose the
+works one by one.
+
+**What is new.**
+- **Choose the works one by one.** Under *Library* and *Collection*, tick *Choose the works one by one*: a list of the
+  library's works appears (or of the collection chosen above, without its subcollections), by title, each with its
+  authors, year and type. Search it by title, author or year: it is Zotero's own quick search, so it finds what the
+  search box in Zotero finds. Ticked works stay ticked while you search or switch collections, and stand above the
+  list (click one to leave it out). The button says what it will do: *Bring in 1 work*, *Bring in 3 works*. The first
+  100 works are listed; past that, the page says to search. Changing the library starts the choice afresh, as a work
+  belongs to one library. A choice is 1 to 500 works.
+- **Keeping it up to date.** The summary says *From Zotero: My Library › 3 works you chose*. *Update from Zotero*
+  reads those same works again (titles, authors, DOIs and files edited in Zotero follow). A chosen work you delete
+  from Zotero goes, and a work added to Zotero does not come along. *Choose other works or a file* (in place of *Use
+  another collection or file*) opens the choice with the works chosen last time already ticked, so adding one more is
+  one tick away. As always, your confirmations are kept for every work that stays.
+- The files Zotero keeps for chosen works (a PDF attached to a work, or a PDF stored on its own in the library) come
+  along as for a collection: linked by checksum to a document you have, or offered under *Add these files to the
+  project*.
+
+**For developers.** `GET /api/zotero/works?library=&collection=&q=&limit=` lists the top-level works (no notes) by title,
+with `more` past the limit (`bibliography.zotero_works`). `POST …/bibliography` takes `{"zotero": {"library",
+"items": [keys]}}`; the bibliography's source keeps `items` (the keys Zotero still had), and `{"update": true}` reads
+them again (`bibliography.pull_zotero(items=)`, 50 keys per request with `itemKey`). Zotero 10's local API also
+returns the children of the works asked for with `itemKey`, and leaks child items into `/items/top` when filtered
+with `itemType=-note`: only the works asked for count, and the list filters notes itself.
+`bibliography.type_text()` names a work's type for both lists. `docs/API.md` and the manual's *The bibliography:
+Zotero* describe it. The stand-in Zotero (`tests/fake_zotero.py`) answers `q`, `sort=title` and `itemKey` (with the
+children, as Zotero 10 does).
+
+**Tests:** `tests/test_0_13_9_chosen_works.py` (4 tests): the list of works (sorted by title, without notes or
+attachments of works; searched by title, author or year; one collection without its subcollections; `more`; bad keys
+refused); pulling
+chosen works (in the order chosen, their PDF but not a publisher's page, children not taken for works, a deleted
+work left out, none left an error, 0 or 501 works or a bad key refused); through the app (two works linked by file
+and DOI, *Update from Zotero* reads the same works, one more work, a collection again, bad requests, Zotero closed);
+the page's words and styles.
+
+Checked in headless Chromium with `tools/dev_server.py --corpus social --zotero`: choosing by search, ticking across
+searches, *Bring in 2 works*, the summary, and *Choose other works or a file* with the works ticked, in light and
+dark and at 390 px, with no console errors. Then clicked through against a real Zotero 10.0.7, read-only: a group
+library without collections (where only *The whole library* was on offer before), searched by author, two works
+brought in and updated from Zotero; and pulled from it directly, a work with its PDF and a PDF stored on its own.
+
+**Not yet done.** Not tried with a library of thousands of works (the list shows the first 100 and asks for a
+search), nor with Zotero 7, whose local API answers `itemKey` without the children.
+
+### Remove a theme, and find a new one in its place
 
 **Remove a theme you do not need, and find a new one in its place.** A set of themes often has one or two that say
 nothing about your question (running headers, reference lists, a topic outside your research). Now you can take them
@@ -27,7 +83,7 @@ out, and let ENLENS look for a theme it missed.
   (job `theme-new`); three new columns, added to a project when it opens: `themes.removed_at`, `themes.replaces`,
   `theme_members.found_in` (the theme a passage was in before a new theme took it).
 
-**Tests.** `tests/test_0_14_0_remove_themes.py` (7 tests), on six generated topics in twelve documents: removing
+**Tests.** `tests/test_0_13_9_remove_themes.py` (7 tests), on six generated topics in twelve documents: removing
 and bringing back (left out of the list, the grids, the counts and the Excel themes; its page opens; a passage moved
 out of it; merges and moves into it refused); the last theme and a merged one; a new theme by words (one topic, never
 the removed one's, nothing of the removed theme, where its passages came from, representatives kept right, the same

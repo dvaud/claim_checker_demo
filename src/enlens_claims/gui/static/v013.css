@@ -30,6 +30,19 @@
 .bib-found { color: var(--ok); font-weight: 550; margin: 0 0 10px; }
 .bib-subs { display: inline-flex; gap: 8px; align-items: center; margin-top: 10px; font-size: .92rem; cursor: pointer; }
 .bib-subs[hidden] { display: none; }
+.bib-checks { display: flex; flex-wrap: wrap; gap: 0 22px; }
+/* 0.13.9: the works chosen one by one */
+.bib-one { margin-top: 12px; }
+.bib-one .bib-list-head { margin: 0 0 8px; }
+.bib-one .bib-filter { width: 26em; }
+.bib-chosen { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.bib-chosen:empty { display: none; }
+.bib-chosen-chip { max-width: min(26em, 100%); background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.bib-chosen-chip:hover { background: var(--surface); }
+.bib-chosen-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bib-one .bib-pick-list { max-height: min(42vh, 340px); }
+.bib-pick-empty { margin: 0; padding: 12px; }
+.bib-pick-more { margin: 6px 0 0; }
 .bib-file { margin-top: 12px; }
 .bib-privacy { margin: 12px 0 0; display: flex; align-items: center; gap: 4px; }
 

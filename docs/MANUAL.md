@@ -474,14 +474,17 @@ embedding model, embeddings), for tools that read that format.
 
 ### The bibliography: Zotero (0.13)
 
-*Bibliography* (in the sidebar, under *Documents*) puts your Zotero library, or one collection of it, next to the
-project's documents. It answers three questions: which works of the bibliography do I have, which do I still need
+*Bibliography* (in the sidebar, under *Documents*) puts your Zotero library, one collection of it, or just the works
+you choose, next to the project's documents. It answers three questions: which works of the bibliography do I have, which do I still need
 to find, and which documents are not in my bibliography. It uses no AI.
 
 **Bringing it in.** ENLENS reads Zotero from the Zotero app on this computer: Zotero 7 or later, open, with *Settings
 → Advanced → Allow other applications on this computer to communicate with Zotero* ticked once. Choose the library
 (My Library, or a group library), a collection (or *The whole library*) and whether its subcollections come along,
-and press *Bring in the bibliography*. Nothing goes over the internet, no Zotero account or key is needed, and Zotero
+and press *Bring in the bibliography*. To bring in only some works, even a single one, tick *Choose the works one by
+one* (0.13.9): a list of the library's works appears (or of the collection chosen above), searched by title, author
+or year as in Zotero's own search box. Tick the works you want; they stay ticked while you search or switch
+collections, and stand above the list (click one to leave it out). Press *Bring in 1 work* (or *2 works*, and so on). Nothing goes over the internet, no Zotero account or key is needed, and Zotero
 is only read, never changed. The page says plainly when Zotero is not open, does not allow it yet (with the box to
 tick), or is too old. Without the app, *Use an exported file instead* takes a file exported from Zotero (right-click a
 collection → *Export Collection…*: BibTeX, RIS, CSL JSON or CSV) or from Mendeley, EndNote and other reference
@@ -507,8 +510,10 @@ managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zo
 - *Not in the bibliography*: the documents no work is linked to. Add them to Zotero and press *Update from Zotero*, or
   *Link to a work* by hand.
 
-**Keeping it up to date.** *Update from Zotero* reads the same collection again; *Use another collection or file*
-replaces the bibliography. Your decisions are kept for every work that is still there, even when it comes from
+**Keeping it up to date.** *Update from Zotero* reads the same collection again, or the same chosen works (a work
+deleted from Zotero goes; a work added to Zotero does not come along). *Use another collection or file* replaces the
+bibliography; for chosen works it is called *Choose other works or a file*, and the works you chose last time start
+ticked, so adding one more is one tick away. Your decisions are kept for every work that is still there, even when it comes from
 another source (by its Zotero key, else its DOI, else its title and year). Documents you add later are matched as
 they come in: the message after adding says how many were linked and how many wait for you. A document linked to a
 work takes the work's title (0.13.3): in the Documents list, on the document page, in Search, in a check's excerpts

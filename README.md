@@ -96,6 +96,14 @@ instead? The *Update* button and `enlens update` pull the new version (see *For 
 - **Check citations taken out again (0.13.8).** The *Check citations* page of 0.13.7 is not part of ENLENS any
   more; it continues as a project of its own. Nothing in your projects is deleted: checks it made show under
   *Results* like any other.
+- **Only the works you choose (0.13.9).** On the *Bibliography* page, tick *Choose the works one by one* to bring in
+  a few works from Zotero, or a single one, instead of a whole collection: search the library by title, author or
+  year and tick what you want. *Update from Zotero* reads those same works again, and the works you chose start
+  ticked when you change them, so adding one more is one tick away.
+- **Remove a theme, and find a new one in its place (0.13.9).** On *Themes*, *Remove…* takes out a theme that says
+  nothing about your question (running headers, reference lists). *Remove and find a new theme* lets ENLENS look,
+  on this computer and without AI, for a theme it missed. A removed theme waits under *Removed themes* with *Bring it
+  back*.
 
 ## Earlier releases
 

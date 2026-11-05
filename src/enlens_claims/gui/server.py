@@ -931,7 +931,7 @@ class App:
                 raise ApiError(400, "Only a bibliography read from Zotero can be updated: for a file, add the newer "
                                     "file instead.")
             z = {"library": src.get("library"), "collection": src.get("collection"),
-                 "subcollections": src.get("subcollections", True)}
+                 "subcollections": src.get("subcollections", True), "items": src.get("items")}
 
         def progress(job: Job):
             return lambda **kw: setattr(job, "progress", kw)
@@ -950,10 +950,15 @@ class App:
             collection = str(z["collection"]) if z.get("collection") else None
             if not bibliography.LIBRARY_RE.match(library) or (collection and not bibliography.KEY_RE.match(collection)):
                 raise ApiError(400, "Choose a library and a collection of your Zotero.")
+            items = z.get("items")  # 0.13.9: the works chosen one by one (their Zotero keys)
+            if items is not None and (not isinstance(items, list) or not 0 < len(items) <= bibliography.MAX_CHOSEN
+                                      or not all(isinstance(k, str) and bibliography.KEY_RE.match(k) for k in items)):
+                raise ApiError(400, f"Choose between 1 and {bibliography.MAX_CHOSEN} works of your Zotero.")
 
             def run(job: Job):
                 works, src = bibliography.pull_zotero(library, collection, bool(z.get("subcollections", True)),
-                                                      progress=progress(job), should_stop=job.cancel.is_set)
+                                                      progress=progress(job), should_stop=job.cancel.is_set,
+                                                      items=items)
                 if job.cancel.is_set():
                     return None
                 libs = {x["id"]: x["name"] for x in bibliography.zotero_status().get("libraries") or []}
@@ -1742,6 +1747,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     # 0.13: the bibliography (Zotero, read on this computer, or an exported file)
     ("GET", r"/api/zotero", "get_zotero"),
     ("GET", r"/api/zotero/collections", "get_zotero_collections"),
+    ("GET", r"/api/zotero/works", "get_zotero_works"),
     ("GET", rf"/api/projects/{P}/bibliography", "get_bibliography"),
     ("POST", rf"/api/projects/{P}/bibliography", "post_bibliography"),
     ("DELETE", rf"/api/projects/{P}/bibliography", "delete_bibliography"),
@@ -2277,6 +2283,14 @@ class Handler(BaseHTTPRequestHandler):
     def get_zotero_collections(self, q):
         try:
             return {"collections": bibliography.zotero_collections(_str(q, "library") or "user")}
+        except bibliography.ZoteroError as e:
+            raise ApiError(409, str(e), f"zotero_{e.kind}") from None
+
+    def get_zotero_works(self, q):
+        """0.13.9: the works of a library or collection, to choose from one by one."""
+        try:
+            return bibliography.zotero_works(_str(q, "library") or "user", _str(q, "collection"), _str(q, "q") or "",
+                                             _int(q, "limit", 100, 1, 200))
         except bibliography.ZoteroError as e:
             raise ApiError(409, str(e), f"zotero_{e.kind}") from None
 

@@ -2,7 +2,8 @@
 and `tools/dev_server.py --zotero`. It serves a small library from memory, the way Zotero's documentation describes
 the local API: `/api/users/0/...` and `/api/groups/<id>/...`, collections, top-level items (`/items/top`), children,
 attachments (`?itemType=attachment`), `limit`/`start`, and `/items/<key>/file/view/url` (the file's file:// URL as plain
-text). `mode`: "ready", "api_off" (403 on /api/, the box in Zotero's settings not ticked), "old" (404 on /api/, as a
+text). 0.13.9: the quick search (`q`: title, creators, year), `sort=title`, and `?itemKey=K1,K2` on `/items`, which, as
+Zotero 10 does, also returns the children of the works asked for. `mode`: "ready", "api_off" (403 on /api/, the box in Zotero's settings not ticked), "old" (404 on /api/, as a
 Zotero 6 would answer).
 """
 from __future__ import annotations
@@ -92,16 +93,19 @@ class FakeZotero:
                 cols.append({**c, "meta": {**c["meta"], "numItems": n}})
             return 200, self._page(cols, q), ""
         if rest == "/items/top":
-            return 200, self._page([self._view(lib, i) for i in top], q), ""
+            return 200, self._page([self._view(lib, i) for i in self._search(top, q)], q), ""
         if rest == "/items":
             items = lib.items
+            if q.get("itemKey"):
+                keys = set(q["itemKey"][0].split(","))
+                items = [i for i in items if i["key"] in keys or i["data"].get("parentItem") in keys]
             if (q.get("itemType") or [""])[0] == "attachment":
                 items = [i for i in items if i["data"]["itemType"] == "attachment"]
             return 200, self._page([self._view(lib, i) for i in items], q), ""
         mm = re.match(r"^/collections/([A-Z0-9]+)/items/top$", rest)
         if mm:
-            return 200, self._page([self._view(lib, i) for i in top if mm.group(1) in i["data"].get("collections", [])],
-                                   q), ""
+            return 200, self._page([self._view(lib, i) for i in self._search(top, q)
+                                    if mm.group(1) in i["data"].get("collections", [])], q), ""
         mm = re.match(r"^/items/([A-Z0-9]+)/children$", rest)
         if mm:
             return 200, self._page([self._view(lib, i) for i in lib.items if i["data"].get("parentItem") == mm.group(1)],
@@ -113,6 +117,22 @@ class FakeZotero:
                 return 404, "Not found", "text/plain"
             return 200, Path(it["_path"]).as_uri(), "text/plain"
         return 404, "No endpoint found", "text/plain"
+
+    @staticmethod
+    def _search(rows: list, q: dict) -> list:
+        words = (q.get("q") or [""])[0].lower().split()
+        if words:
+            def text(i):
+                d = i["data"]
+                names = " ".join(c.get("name") or f'{c.get("lastName", "")} {c.get("firstName", "")}'
+                                 for c in d.get("creators", []))
+                return f'{d.get("title", "")} {names} {d.get("date", "")}'.lower()
+
+            rows = [i for i in rows if all(w in text(i) for w in words)]
+        if (q.get("sort") or [""])[0] == "title":
+            rows = sorted(rows, key=lambda i: (i["data"].get("title") or "").lower(),
+                          reverse=(q.get("direction") or [""])[0] == "desc")
+        return rows
 
     @staticmethod
     def _view(lib: Library, it: dict) -> dict:
