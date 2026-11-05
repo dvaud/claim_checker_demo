@@ -80,7 +80,7 @@ def test_every_ai_button_waits_for_claude_code_and_gets_its_answers(api, corpus)
     assert job["state"] == "running" and job["progress"]["queue"]["text"].startswith("Waiting for Claude Code: 3 passages")
     q = api("GET", "/api/projects/P/queue")[1]
     assert q["waiting"] == 3 and q["groups"][0] == {"kind": "label", "model": "haiku", "helper": "enlens-labeller",
-                                                     "waiting": 3}
+                                                     "waiting": 3, "start": 1}   # 0.13.10: one batch, one helper
     assert api("GET", "/api/state")[1]["queue"]["waiting"] == 3
 
     s = Session("P")

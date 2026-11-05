@@ -283,7 +283,13 @@ export function strictness(t) {
 export function auditorName(s = App.settings(), opts = {}) {
   const claude = opts.claude !== undefined ? opts.claude : (["claude_code", "anthropic"].includes(s.backend) && s.routing !== false);
   if (!claude) return null;
+  if (s.backend === "claude_code" && planTier(s) === "free") return "sonnet";  // 0.13.10: no Opus or Fable on Free
   return (opts.fable !== undefined ? opts.fable : s.use_fable) ? "fable" : "opus";
+}
+// 0.13.10: the Claude plan the recommended models follow (free | pro | max; "" not known): set by hand, else the one
+// Claude Code names (found in the background)
+export function planTier(s = App.settings()) {
+  return s.claude_plan && s.claude_plan !== "auto" ? s.claude_plan : (s.claude_plan_detected || "");
 }
 // One sentence counting documents, from the backend's balance (a document can be on more than one side).
 export function docsCountSentence(bal) {
@@ -785,7 +791,7 @@ export function queueNotice(q, opts = {}) {
 // the project's queue, and shows while it works. The command to type in Claude Code yourself stays one line below.
 // The element keeps itself current while it is on the page.
 export function startClaude(project, opts = {}) {
-  const box = h("div", { class: "start-claude" });
+  const box = h("div", { class: "start-claude", dataset: { project } });
   let timer = null;
   let busy = false;
   const ago = (s) => (s < 60 ? "just now" : `${Math.round(s / 60)} min ago`);
@@ -840,7 +846,7 @@ export function startClaude(project, opts = {}) {
     if (q.route !== "claude_code") { replace(box, typeIt); return; }
     if (r.running) {
       parts.push(h("div", { class: "sc-running" }, h("span", { class: "running-dot", "aria-hidden": "true" }),
-        h("span", {}, h("strong", {}, "Claude Code is working on it"), h("span", { class: "muted small" }, ` · started ${ago(r.seconds || 0)} from ${appName()}`)),
+        h("span", {}, h("strong", {}, "Claude Code is working on it"), h("span", { class: "muted small" }, ` · started ${ago(r.seconds || 0)} from ${appName()}${planText(r) ? ` · ${planText(r)}` : ""}`)),
         h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => {
           try { await api("POST", `/api/projects/${P(project)}/queue/claude-code/stop`, {}); toast("Claude Code stopped. What it had not answered waits again.", "ok"); QUEUE_CACHE.delete(project); draw(false); } catch (e) { showError(e); }
         } }, icon("stop", { size: 12 }), "Stop Claude Code")));  // 0.11.3: not just "Stop": the job beside it has its own
@@ -848,13 +854,41 @@ export function startClaude(project, opts = {}) {
       const b = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
         if (busy) return;
         busy = true; b.disabled = true; b.classList.remove("sc-nudge");
-        try { await api("POST", `/api/projects/${P(project)}/queue/claude-code`, {}); toast("Claude Code started. You can keep working; the results appear as they come in.", "ok"); }
-        catch (e) { showError(e); }
-        busy = false; QUEUE_CACHE.delete(project); draw(false);
+        const body = runBody(project, q);
+        const listed = (q.speed && q.speed.helpers) || [];
+        if (body.helpers && listed.length && !listed.some((r) => body.helpers[r.helper] > 0)) {
+          busy = false; b.disabled = false;
+          showError(new Error("Every helper is set to 0 under “Choose the helpers for this run”: give at least one helper 1 or more."));
+          return;
+        }
+        try {
+          await api("POST", `/api/projects/${P(project)}/queue/claude-code`, body);
+          RUN_CHOICE.delete(project);  // the helpers chosen were for this run only
+          toast("Claude Code started. You can keep working; the results appear as they come in.", "ok");
+        } catch (e) { showError(e); }
+        busy = false; QUEUE_CACHE.delete(project); await draw(false);
+        choiceChanged(project, box);
       } }, icon("play", { size: 13 }), "Start Claude Code");
       const hint = h("span", { class: "muted small" }, opts.foldType ? "Nothing runs until you press it." : "Runs on your Claude plan, in the background. It stops by itself when nothing waits.");
       parts.push(h("div", { class: "sc-start" }, b, hint));
       if (idle) watchIdle(b, hint);
+      // 0.13.10: the speed (kept), and the helpers for this run (folded away)
+      if (q.speed) {
+        const custom = customRun(RUN_CHOICE.get(project));
+        const speed = speedPicker(q.speed.chosen, q.speed.options, async (v) => {
+          await saveSpeed(v);
+          RUN_CHOICE.delete(project);  // a speed picked (even the one shown) replaces the helpers chosen for this run
+          await draw(false);
+          const again = box.querySelector(`.sc-speed [data-speed="${v}"]`);
+          if (again) again.focus();
+          choiceChanged(project, box);
+        }, { custom: () => customRun(RUN_CHOICE.get(project)) });
+        if (custom) speed.classList.add("sc-speed-off");
+        parts.push(speed, helpersFold(project, q, () => {
+          speed.classList.toggle("sc-speed-off", customRun(RUN_CHOICE.get(project)));
+          choiceChanged(project, box);
+        }));
+      }
       if (r.exit_code !== undefined && r.exit_code !== null && r.exit_code !== 0 && !r.stopped) {
         parts.push(h("details", { class: "fold small" }, h("summary", {}, icon("alert-triangle", { size: 12 }), " The last run stopped with a problem"), h("pre", { class: "mono small sc-report" }, r.report || "(no report)")));
       }
@@ -868,10 +902,133 @@ export function startClaude(project, opts = {}) {
     else if (r.seconds !== undefined && opts.onDone && box.dataset.wasRunning === "1") opts.onDone();
     box.dataset.wasRunning = r.running ? "1" : "0";
   }
+  // 0.13.10: two of these for one project can be on the page at once (the sidebar's job and queue panels): a choice
+  // made in one shows in the other
+  for (const e of [...SC_LIVE]) if (e.box.dataset.drawn && !e.box.isConnected) SC_LIVE.delete(e);
+  SC_LIVE.add({ project, box, redraw: () => draw(true) });
   draw(true);
   return box;
 }
 const QUEUE_CACHE = new Map();
+const SC_LIVE = new Set();  // the Start Claude Code elements made, until they have left the page
+function choiceChanged(project, from) {
+  for (const e of [...SC_LIVE]) {
+    if (e.box === from || e.project !== project) continue;
+    if (e.box.isConnected) e.redraw(); else if (e.box.dataset.drawn) SC_LIVE.delete(e);
+  }
+}
+
+// 0.13.10: how fast Claude Code works: how many helpers it starts at once (one, two or four). Faster is done sooner
+// and uses the plan's limits faster. The choice is kept (Settings' claude_speed) and shows beside every Start Claude
+// Code and under Settings → AI. "Choose the helpers for this run", folded away, names the helpers one by one.
+const SPEED_CHOICES = [["slower", "Slower"], ["normal", "Normal"], ["faster", "Faster"]];
+const SPEED_NOTE = { slower: ": slowest, and easiest on your plan's limits", faster: ": done sooner, but uses your plan's limits faster" };
+const helpersText = (n) => `${n} helper${n === 1 ? "" : "s"}`;
+
+export async function saveSpeed(speed) {
+  const r = await api("PUT", "/api/settings", { claude_speed: speed });
+  App.state.settings = r.settings;
+  QUEUE_CACHE.clear();  // the estimates follow the speed
+  return r;
+}
+
+// The three speeds as one row of buttons, with a line saying what the chosen one does. `options`: {speed: helpers at
+// once}; `onPick(speed)` saves it (a failure puts the choice back). `opts.custom()`: whether helpers were chosen for
+// the run, so that the speed shown can be picked again; `opts.label`: null for none.
+export function speedPicker(chosen, options = { slower: 1, normal: 2, faster: 4 }, onPick = saveSpeed, opts = {}) {
+  let current = chosen || "normal";
+  const line = h("span", { class: "muted small sc-speed-line" });
+  const group = h("div", { class: "sc-speed-btns", role: "group", "aria-label": "Speed of Claude Code" });
+  const show = (v) => {
+    for (const b of group.children) { const on = b.dataset.speed === v; b.classList.toggle("seg-on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); }
+    line.textContent = `${helpersText(options[v] || 2)} at a time${SPEED_NOTE[v] || ""}.`;
+  };
+  for (const [v, label] of SPEED_CHOICES) {
+    group.appendChild(h("button", { class: "btn btn-sm seg-btn", type: "button", dataset: { speed: v }, onClick: async () => {
+      if (v === current && !(opts.custom && opts.custom())) return;  // the speed shown, picked again, undoes a choice of helpers
+      const before = current;
+      current = v; show(v);
+      try { await onPick(v); } catch (e) { current = before; show(before); showError(e); }
+    } }, label));
+  }
+  show(current);
+  const label = opts.label === undefined ? "Speed" : opts.label;
+  return h("div", { class: "sc-speed" }, label ? h("span", { class: "sc-speed-label small" }, label) : null, group, line);
+}
+
+// "For this run": the choices made in the fold, per project, until the run starts (kept in memory only, so a panel
+// that draws itself again keeps them).
+const RUN_CHOICE = new Map();
+function runChoice(project) {
+  if (!RUN_CHOICE.has(project)) RUN_CHOICE.set(project, { open: false, total: null, counts: {} });
+  return RUN_CHOICE.get(project);
+}
+const customRun = (c) => !!c && (c.total !== null || Object.keys(c.counts).length > 0);
+// what Start Claude Code sends: nothing (the speed of Settings), or {parallel, helpers}
+function runBody(project, q) {
+  const c = RUN_CHOICE.get(project);
+  if (!customRun(c)) return {};
+  const sp = q.speed || {};
+  const total = c.total ?? ((sp.options || {})[sp.chosen] || 2);
+  const body = { parallel: total };
+  if (Object.keys(c.counts).length) {
+    // the helpers listed as chosen; one each for the others, whose work may come in during the run (a check's
+    // search words lead to excerpts to judge, an unsure answer goes to the auditor)
+    const dflt = (r) => Math.min(total, sp.max_per_helper || 4, Math.max(1, r.batches || 1));
+    body.helpers = Object.fromEntries((sp.all_helpers || []).map((hp) => [hp, 1]));
+    for (const r of sp.helpers || []) body.helpers[r.helper] = c.counts[r.helper] ?? dflt(r);
+  }
+  return body;
+}
+const planText = (r) => (r.parallel ? `${helpersText(r.parallel)} at once${r.helpers ? ", chosen for this run" : ""}` : "");
+
+let FOLD_SEQ = 0;  // each fold's own ids (two folds for one project can be on the page)
+function helpersFold(project, q, onChange) {
+  const sp = q.speed || {};
+  const rows = sp.helpers || [];
+  const uid = `sc${++FOLD_SEQ}`;
+  const C = () => runChoice(project);  // looked up each time: a start or a speed picked elsewhere starts it afresh
+  const speedN = (sp.options || {})[sp.chosen] || 2;
+  const maxAll = sp.max_parallel || 8, maxOne = sp.max_per_helper || 4;
+  const total = () => C().total ?? speedN;
+  const dflt = (r) => Math.min(total(), maxOne, Math.max(1, r.batches || 1));
+  const value = (r) => C().counts[r.helper] ?? dflt(r);
+  const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  const fold = h("details", { class: "fold small sc-helpers", open: C().open });
+  const refocus = (id) => { const el = fold.querySelector(`[id="${id}"]`); if (el) el.focus(); };  // the list drawn again
+  const summary = h("summary", {});
+  const body = h("div", { class: "sc-helpers-body" });
+  fold.append(summary, body);
+  fold.addEventListener("toggle", () => { C().open = fold.open; });
+  function draw() {
+    replace(summary, "Choose the helpers for this run", customRun(C()) ? h("span", { class: "chip" }, "changed") : null);
+    const totalSel = h("select", { class: "select select-sm", id: `${uid}-total` },
+      range(1, maxAll).map((n) => h("option", { value: n, selected: n === total() }, n)));
+    totalSel.addEventListener("change", () => { const n = Number(totalSel.value); C().total = n === speedN ? null : n; draw(); onChange(); refocus(totalSel.id); });
+    const list = rows.map((r, i) => {
+      const id = `${uid}-h${i}`;
+      const sel = h("select", { class: "select select-sm", id, "aria-describedby": `${id}-what` },
+        range(0, maxOne).map((n) => h("option", { value: n, selected: n === value(r) }, n)));
+      sel.addEventListener("change", () => { C().counts[r.helper] = Number(sel.value); draw(); onChange(); refocus(id); });
+      return h("div", { class: "sc-helper" + (value(r) === 0 ? " sc-helper-off" : "") },
+        h("label", { class: "sc-helper-name", for: id }, cap(r.name), h("span", { class: "muted mono" }, ` ${r.models.join(", ")}`)),
+        h("span", { class: "sc-helper-what muted", id: `${id}-what` }, `${r.kinds.join(", ")} · ${r.waiting.toLocaleString()} waiting`), sel);
+    });
+    const named = rows.reduce((s, r) => s + value(r), 0);
+    const n = Object.keys(C().counts).length ? Math.min(total(), named) : total();
+    const back = customRun(C()) ? h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { const c = C(); c.total = null; c.counts = {}; draw(); onChange(); } },
+      icon("refresh", { size: 12 }), "Use the speed again") : null;
+    replace(body,
+      h("div", { class: "sc-total" }, h("label", { for: totalSel.id }, "Helpers at once, in all"), totalSel),
+      rows.length ? h("div", { class: "sc-helper-list", role: "group", "aria-label": "How many of each helper at once" }, list) : h("p", { class: "muted" }, "No work waits for a helper just now."),
+      h("p", { class: "muted" }, named === 0 ? h("strong", {}, "Nothing would run: give at least one helper 1 or more. ")
+        : `Up to ${helpersText(n)} at once, `, "for this run only. 0 leaves that work waiting. Work that comes in during the run for a helper not listed here (an unsure answer for the auditor, for example) gets one. ",
+        "Which model each helper uses is set under ", h("a", { href: "#/settings/routing" }, "AI model per task"), "."),
+      back);
+  }
+  draw();
+  return fold;
+}
 // 0.11.3, the Start Claude Code nudge: when a project's work first waited with nothing answering it (kept per project, as
 // the sidebar draws its button again every 5 s and the progress panel whenever the queue's line changes).
 const NUDGE_AFTER = 5000;

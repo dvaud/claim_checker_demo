@@ -60,6 +60,14 @@ DEFAULTS = {
     # 0.8
     "allow_claude_code": True,         # Claude Code (the researcher's own plan) may answer (0.9: on by default)
     "use_fable": False,                # the auditor (second opinions, hard checks) runs on Fable instead of Opus
+    # 0.13.10: how fast Claude Code started from the app works: slower (one helper at once), normal (two) or faster
+    # (four; it uses the plan's limit sooner). Chosen beside every Start Claude Code, and under Settings → AI.
+    "claude_speed": "normal",
+    # 0.13.10: the recommended model of each task follows the Claude plan (routing.tier_defaults): the plan Claude Code
+    # names, found in the background whenever ENLENS asks Claude Code how it is (free | pro | max; "" not known), unless
+    # set by hand under Settings → Technical (auto | free | pro | max)
+    "claude_plan": "auto",
+    "claude_plan_detected": "",
     "task_models": {},                 # per-task models chosen in Settings: {"claude": {row: alias}, "local": {row: model}}
     "local_small_model": "",           # local: the small model for labels and links ("" = the main model does all)
     "routing": True,                   # the Claude API and local servers use the model of each task (G3)
@@ -166,6 +174,12 @@ def clean_settings(changes: dict) -> dict:
         raise ValueError("think must be default, on, off or judging.")
     if "think_budget" in out and not (out["think_budget"] == 0 or 256 <= out["think_budget"] <= 16384):
         raise ValueError("think_budget must be 0 (no limit) or between 256 and 16,384 tokens.")
+    if "claude_speed" in out and out["claude_speed"] not in ("slower", "normal", "faster"):
+        raise ValueError("claude_speed must be slower, normal or faster.")
+    if "claude_plan" in out and out["claude_plan"] not in ("auto", "free", "pro", "max"):
+        raise ValueError("claude_plan must be auto, free, pro or max.")
+    if "claude_plan_detected" in out and out["claude_plan_detected"] not in ("", "free", "pro", "max"):
+        raise ValueError("claude_plan_detected must be free, pro, max or empty.")
     if "ocr" in out and out["ocr"] not in ("auto", "off"):
         raise ValueError("ocr must be auto or off.")
     if "ocr_lang" in out and not re.fullmatch(r"[A-Za-z_]{2,}(\+[A-Za-z_]{2,})*", out["ocr_lang"] or ""):

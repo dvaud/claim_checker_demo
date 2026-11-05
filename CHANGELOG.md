@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.13.10 (November 2026): how fast Claude Code works, and models that suit your Claude plan
+
+Two additions for Claude Code: a speed beside every *Start Claude Code* (with the helpers of one run to choose, folded
+away), and recommended models that follow your Claude plan by themselves.
+
+### Faster or slower, and which helpers
+
+**Faster or slower, beside every Start Claude Code.** Claude Code hands ENLENS's work to helpers, one per kind of
+task, each on its own model. Until now it always ran two at once, unless you typed `/enlens-run … --parallel N`
+yourself.
+- **Speed: Slower · Normal · Faster** sits under every *Start Claude Code* (a check's progress, a result that waits,
+  the sidebar's queue panel) and under *Settings → AI → Speed of Claude Code*: one, two or four helpers at once. The
+  line beside it says what it does: Faster is done sooner but uses your plan's limits faster; Slower is easiest on
+  them. The choice is kept, and the estimates follow it. *Claude Code is working on it* says how many helpers the run
+  has.
+- **Choose the helpers for this run**, folded away under the speed, lists each helper with work waiting: its model,
+  what it would answer and how much waits. Set how many of each work at once (0: that work waits for a later run) and
+  how many in all (1 to 8); *Use the speed again*, or picking a speed, undoes it. It holds for one run, and work that
+  comes in during the run for a helper not listed (an unsure answer for the auditor, for example) gets one helper.
+  When the sidebar shows it twice (the job that waits and the queue panel), a choice made in one shows in the other,
+  and the queue panel waits (half a minute at most) while one of its lists is open.
+- A typed `/enlens-run` without `--parallel` now goes at the speed chosen in the app, and takes `--helpers
+  checker=2,labeller=1` too.
+
+**How it works.** ENLENS now does the sums: `/enlens-run` passes its `kind`, `--parallel` and `--helpers` to the
+connector's `queue_status`, and each group says how many helpers to start for it (`start`): one per group in the
+queue's order, then more for the groups with more work, never more than a group has batches. The skill starts what
+`start` says and asks again only when all its helpers have reported back, so a run never has more helpers at once
+than chosen. Before, the model running `/enlens-run` shared the helpers out itself ("a large group can have two
+helpers at once"), so four at once on one kind of task did not happen.
+
+**For developers.** Settings' `claude_speed` (`slower` | `normal` | `faster`). `GET …/queue` adds `speed` (the
+choice, the helpers at once per speed, the helpers with work waiting) and `start` on each group. `POST
+…/queue/claude-code` takes `{"parallel", "helpers"}`; the run's object adds `parallel` and `helpers`. The connector's
+`queue_status` takes `kind`, `parallel` and `helpers`. In `taskqueue`: `SPEEDS`, `run_plan`, `run_status`,
+`plan_helpers`, `helper_rows`, `clean_helpers`, `clean_parallel`. `claude_setup.run_args(project, claude, plan)` and
+`start_run(project, parallel, helpers)`. The stand-in Claude Code (`tests/fake_claude_code.py`,
+`tests/fake_claude_cli.py`) follows `start`, `--parallel` and `--helpers`. `docs/API.md` and the manual's *Start
+Claude Code* describe it.
+
+### Models that suit your Claude plan
+
+**The recommended model of each task now follows your plan, by itself.** ENLENS finds the plan Claude Code is signed
+in with in the background (from `claude auth status`, when the app starts, when it looks at the queue and before a
+run) and routes every task by it, also the work that already waits:
+- **Free:** no Opus or Fable. Haiku for most tasks (search words, splitting a hypothesis, theme names, references, as
+  well as labels and links), stepping up to Sonnet when unsure; judging excerpts, second opinions and the SDG pack's
+  reference claims on Sonnet, with nothing above.
+- **Pro** (and a plan not known yet): as before, Sonnet for most tasks and Opus sparingly (second opinions, the hard
+  cases, the SDG pack's reference claims and checks).
+- **Max, Team, Enterprise:** Opus for most tasks, checks included. Haiku and Sonnet only where many tasks come at once
+  and speed matters: labels and links (Haiku), references and the SDG pack's extraction (Sonnet, stepping up to Opus).
+  A check that starts on Opus has no stronger model unless *Let the auditor use Fable* is on.
+
+Models you chose per task in *Settings → Technical → AI model per task* come first on every plan. That section now
+says which plan the recommendations follow (*Your plan, as Claude Code says: Pro*), with a choice by hand for when
+Claude Code names it wrongly or not at all. On a Free plan the auditor's name (*Get a second opinion*) and the Fable
+switch say Sonnet. The Claude API and local models do not follow the plan.
+
+**For developers.** Settings' `claude_plan` (`auto` | `free` | `pro` | `max`) and `claude_plan_detected` (written by
+`claude_setup.note_plan`, not carried to another computer). `routing.plan_tier`, `tier_defaults`, `settings_tier`,
+`Router.tier`; a task kind's `bulk` (label, link, resolve, extract; an add-on's kind can set it). `GET /api/routing`
+adds `plan`, and each row's `recommended` names the model (the auditor resolved), with `recommended_role`.
+`docs/MODEL_CHOICE.md` has the rules per plan.
+
+### Defects, tests, and what is not done
+
+**Defects fixed on the way.** A plan of helpers that asked for more at once than the helpers named add up to (`--parallel
+8 --helpers checker=1`) said *8 helpers at once*: it now says what the run can really have. A decimal number of
+helpers (2.5) was cut down without a word: it is refused.
+
+**Tests:** `tests/test_0_13_10_helpers_per_run.py` (15 tests): the helpers shared out in the queue's order for each
+speed, never more than a group has batches; named helpers start as many as named and the others wait (`not_this_run`);
+the plan checked (unknown helpers, 0 to 4, at least one, whole numbers); a plan without numbers follows the speed of
+Settings; the connector's `queue_status` with `kind`, `parallel` and `helpers`, also through MCP; the command the app
+starts carries `--parallel` and `--helpers`; Start Claude Code at the chosen speed and with helpers chosen for the run
+(the stand-in Claude Code answers only their work); the skill follows `start`; the page offers the speed and the fold.
+`tests/test_08_queue.py` expects `start` on each group. `tests/test_0_13_10_plan_models.py` (10 tests): plan names
+to tiers; Pro and a plan not known keep the table of 0.8; Free has no Opus or Fable anywhere and more Haiku; Max
+favours Opus and keeps the fast models for the bulk, a check on Opus steps up only to Fable; models chosen by hand come
+first; the Claude API and local models ignore the plan; the plan found in the background (and on start), kept while
+signed out, beaten by a plan set by hand, not moved to another computer; waiting work follows a new plan;
+`/api/routing`; the page.
+
+**Not yet done.** Tried with the stand-in Claude Code only. Whether a real, signed-in Claude Code starts exactly
+`start` helpers at once (and waits for all of them before asking again), and how much faster four helpers make a large
+run on a Pro or Max plan, still needs a real run. The helpers' models are chosen per kind of task in Settings as
+before; there is no model choice for one run. The plan is read from what a real Claude Code reports as
+`subscriptionType` in `claude auth status` (as since 0.11, for the account line); only the stand-in's values were
+tried (free, pro, max, team), so a real value spelt otherwise leaves the recommendations as for Pro until it is set
+by hand. Claude Code may not run on a Free plan at all; the Free recommendations are there for when it does.
+
 ## 0.13.9 (November 2026): only the Zotero works you choose, and a new theme in place of one you remove
 
 Two additions: the *Bibliography* page brings in just the Zotero works you choose (even a single one), and on

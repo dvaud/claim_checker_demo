@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, auditorName, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier } from "../lib.js";
 import { forgetFrameworks, loadFramework } from "./options.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -10,7 +10,7 @@ const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 // 0.9: Settings as five flat tabs (no section folded inside another). Old links to a section (#/settings/second,
 // #/settings/calibration…) open its tab and scroll to it.
 const TABS = [["model", "AI", "cpu"], ["basics", "Checking", "flask"], ["explore", "Exploring", "network"], ["documents", "Documents", "book-open"], ["advanced", "Technical", "sliders"]];
-const TAB_OF = { model: "model", ai: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
+const TAB_OF = { model: "model", ai: "model", speed: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
   advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", updates: "advanced", data: "advanced" };
 
 export async function renderSettings(view, [section]) {
@@ -364,14 +364,24 @@ function modelSection(s, servers, watchers, info = { servers }) {
   }
 
   function fableSwitch() {
-    fields.use_fable = switchControl("Let the auditor use Fable", !!s.use_fable, { help: ["It runs on Opus unless this is on; Fable can be billed from usage credits.",   // 0.13.3: one line, the rest in its help mark
+    const free = s.backend === "claude_code" && planTier(s) === "free";  // 0.13.10: no Opus or Fable on a Free plan
+    fields.use_fable = switchControl("Let the auditor use Fable", !!s.use_fable, { help: [free ? "On your Free plan the auditor runs on Sonnet, so this changes nothing there." : "It runs on Opus unless this is on; Fable can be billed from usage credits.",   // 0.13.3: one line, the rest in its help mark
       helpMark("About the auditor", "The auditor gives second opinions (shown for comparison only) and is the stronger model that reads the hard cases again (unsure judgements, rejected quotes, “Ask a stronger model”; its reading replaces the first). It runs on Opus unless this is on. In Claude Code, Fable can be billed from usage credits instead of your plan's limits; the model picker then says “Requires usage credits”.")] });
     return fields.use_fable;
   }
 
   // Claude Code (0.9): a checklist of what is ready, one button that sets up what is not, and how a run starts.
+  // 0.13.10: how fast it works (helpers at once), saved when picked, as beside every Start Claude Code.
   function claudeCodeBox() {
-    return h("div", { class: "stack", style: { gap: "10px" } }, claudeSetupCard({ watchers }));
+    const st = h("span", { class: "save-state", "aria-live": "polite" });
+    const speed = speedPicker(s.claude_speed, undefined, async (v) => {
+      st.textContent = "Saving…";
+      try { await saveSpeed(v); s.claude_speed = v; st.textContent = "Saved."; } catch (e) { st.textContent = ""; throw e; }
+    }, { label: null });
+    return h("div", { class: "stack", style: { gap: "10px" } }, claudeSetupCard({ watchers }),
+      h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Speed of Claude Code"), h("div", { class: "row" }, speed, st),
+        h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code (it is beside that button too). Faster is done sooner and uses your plan's limits faster. ",
+          helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model (labels on Haiku, checks on Sonnet, second opinions on Opus). Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))));
   }
 
   function keyBox() {
@@ -462,7 +472,7 @@ function routingSection(s, servers) {
       let ctl;
       if (row.row === "second" && !claude) ctl = h("span", { class: "muted small" }, "Set under “Model for second opinions” below.");
       else if (claude) {
-        ctl = h("select", { class: "select select-sm", "aria-label": `Model for ${row.title}` }, h("option", { value: "" }, `${row.recommended === "auditor" ? auditorName(App.settings(), { claude: true, fable: r.fable }) : row.recommended} (recommended)`),
+        ctl = h("select", { class: "select select-sm", "aria-label": `Model for ${row.title}` }, h("option", { value: "" }, `${row.recommended} (recommended)`),
           r.aliases.map((a) => h("option", { value: a, selected: chosen[row.row] === a }, a)));
         selects[row.row] = ctl;
       } else {
@@ -490,7 +500,8 @@ function routingSection(s, servers) {
       try { await save({ task_models: all, routing: true }, state); draw(); toast("The recommended models are used again.", "ok"); } catch (_) { /* shown */ }
     } }, icon("refresh", { size: 13 }), "Use the recommended models");
     replace(body,
-      h("p", { class: "small" }, `Route now: ${r.route_name}. ${claude ? "Each kind of task starts on the cheapest model that is good enough and goes up one step on its own when it is hard." : "With a small model chosen, labels and links start on it and go up to the main model when they are hard; without one the main model does everything, as in 0.7."}`),
+      h("p", { class: "small" }, `Route now: ${r.route_name}. ${claude ? (r.route === "claude_code" ? "Each kind of task starts on the model recommended for your Claude plan and goes up one step on its own when it is hard." : "Each kind of task starts on the cheapest model that is good enough and goes up one step on its own when it is hard.") : "With a small model chosen, labels and links start on it and go up to the main model when they are hard; without one the main model does everything, as in 0.7."}`),
+      r.route === "claude_code" ? planField(r.plan || {}) : null,
       h("div", { class: "table-wrap" }, h("table", { class: "table routing-table" },
         h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Task"), h("th", { scope: "col" }, "Model"), h("th", { scope: "col" }, "Steps up to"), r.route === "claude_code" ? h("th", { scope: "col" }, "Helper") : null, h("th", { scope: "col" }, "Your choice"))),
         h("tbody", {}, rows))),
@@ -498,8 +509,24 @@ function routingSection(s, servers) {
       claude ? null : field("Small model (labels and links)", small, { help: "A smaller local model for the many label and link tasks. Leave it empty to use the main model for everything." }),
       h("p", { class: "muted small" }, icon("info", { size: 13 }), ` A task goes up to the stronger model once: when its answer's certainty is under ${Math.round(r.step_up_below * 100)}%, when two answers in a row were rejected (a quote not found), or when you press “Ask a stronger model” on a result. Both answers are kept; the stronger model's counts, and the answer shows a small mark with what it was at first. A second opinion is different: it is only shown beside the first reading and never changes the answer.`),
       r.route === "claude_code" ? null : one,
-      h("p", { class: "muted small" }, "The recommended models are the starting points of ENLENS 0.8; the team's runs on the pilot set them (", h("code", {}, "enlens acceptance score --apply"), ")."),
+      h("p", { class: "muted small" }, r.route === "claude_code" ? "On a Pro plan the recommended models are the starting points of ENLENS 0.8, which the team's runs on the pilot set (" : "The recommended models are the starting points of ENLENS 0.8; the team's runs on the pilot set them (", h("code", {}, "enlens acceptance score --apply"), ")."),
       h("div", { class: "save-row" }, saveBtn, resetBtn, state));
+  }
+  // 0.13.10: the Claude plan the recommendations follow: found in the background, or set here by hand
+  function planField(plan) {
+    const titles = plan.titles || { free: "Free", pro: "Pro", max: "Max, Team or Enterprise" };
+    const found = plan.detected ? titles[plan.detected] : "";
+    const sel = h("select", { class: "select select-sm", id: "routing-plan" },
+      h("option", { value: "auto", selected: (plan.chosen || "auto") === "auto" }, found ? `Your plan, as Claude Code says: ${found}` : "Your plan, as Claude Code says (not known yet)"),
+      ["free", "pro", "max"].map((t) => h("option", { value: t, selected: plan.chosen === t }, titles[t])));
+    sel.addEventListener("change", async () => { try { await save({ claude_plan: sel.value }, state); draw(); } catch (_) { /* shown */ } });
+    const what = {
+      free: "No Opus or Fable: Haiku for most tasks, Sonnet for judging excerpts.",
+      pro: "Sonnet for most tasks, Haiku for the many labels and links, Opus for second opinions and the hard cases.",
+      max: "Opus for most tasks; Haiku and Sonnet only for the many labels, links and references, where speed matters.",
+    }[plan.tier] || "Until Claude Code says which plan you have, the recommendations for Pro are used.";
+    return h("div", { class: "field" }, h("label", { class: "field-label", for: "routing-plan" }, "The recommendations follow"), sel,
+      h("div", { class: "field-help" }, `${what} ENLENS finds your plan by itself; the models you choose below come first.`));
   }
   draw();
   return sectionCard("routing", "AI model per task", "Which model answers each kind of task. Most people never change this.", body);

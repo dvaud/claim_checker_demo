@@ -82,6 +82,12 @@ def main(argv: list[str]) -> int:
             print("Unknown command", file=sys.stderr)
             return 1
         project = words[1]
+        # 0.13.10: the run's plan, as /enlens-run reads it: --parallel N, --helpers checker=2,labeller=1
+        opts = {"parallel": None, "helpers": None}
+        rest = words[2:]
+        for flag in opts:
+            if f"--{flag}" in rest:
+                opts[flag] = rest[rest.index(f"--{flag}") + 1]
         import fake_claude_code
 
         delay = float(os.environ.get("FAKE_CLAUDE_DELAY", "0"))
@@ -89,13 +95,17 @@ def main(argv: list[str]) -> int:
         for _ in range(20):
             if delay:
                 time.sleep(delay)
-            r = fake_claude_code.run(project, tools=fake_claude_code.DirectTools(), wrong_first=False)
+            r = fake_claude_code.run(project, tools=fake_claude_code.DirectTools(), wrong_first=False,
+                                     parallel=int(opts["parallel"]) if opts["parallel"] else None,
+                                     helpers=opts["helpers"])
             b = r.get("batches") or 0
             n = b if isinstance(b, int) else len(b)
             total += n
             if not n:
                 break
-        print(f"Done: {total} batches answered for {project}. The results are in the ENLENS app.")
+        plan = (f" with {opts['parallel']} helpers at once" if opts["parallel"] else "") + (
+            f" ({opts['helpers']})" if opts["helpers"] else "")
+        print(f"Done: {total} batches answered for {project}{plan}. The results are in the ENLENS app.")
         return 0
     print(f"unsupported: {argv}", file=sys.stderr)
     return 2

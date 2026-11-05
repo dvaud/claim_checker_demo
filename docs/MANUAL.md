@@ -554,7 +554,8 @@ Settings has five tabs, each one page with nothing folded inside another (0.9):
   meaning**.
 - **Technical**: **AI model per task** (which model answers each kind of task, what it steps up to, the helper on
   Claude Code, a choice per kind, *Use the recommended models*, and for local servers the small model for labels and
-  links); with a local model, the **model for second opinions** and the **context length** (automatic by default, see section
+  links; on Claude Code, since 0.13.10, *The recommendations follow* your Claude plan, see *Models that suit your
+  Claude plan* below); with a local model, the **model for second opinions** and the **context length** (automatic by default, see section
   5) with *Sort the best excerpts again by wording* (off; see the changelog of 0.6.0); **Repeatable results** (the
   seed sent with every request, 42 by default, and a test of whether the server gives the same answer twice); *Test a
   model before trusting it* (section 5); and where your data is.
@@ -774,6 +775,22 @@ it stops by itself when nothing waits. *Stop Claude Code* returns the batches it
 run ends with a problem (a usage limit, for example), the page shows the end of its report. The first start also
 adds the plugin if that was not done yet.
 
+**How fast it works (0.13.10).** Under **Start Claude Code** is **Speed: Slower · Normal · Faster**. Claude Code
+hands the work to helpers (one per kind of task, each on its own model); the speed is how many work at once: Slower
+one, Normal two (as before), Faster four. Faster is done sooner but uses your plan's limits faster; Slower takes longer
+and is easiest on them. The choice is kept, is the same beside every *Start Claude Code*, and is also under *Settings
+→ AI → Speed of Claude Code*. A run already working keeps the speed it started with; the line *Claude Code is working
+on it* says how many helpers it has (*· 4 helpers at once*).
+
+For one run you can also choose the helpers yourself: **Choose the helpers for this run**, folded away under the
+speed, lists each helper that has work waiting, with its model, what it would answer and how much waits (*Labeller
+haiku · Codebook labels · 7,868 waiting*). Set how many of each work at once (0 leaves that work waiting for a later
+run) and **Helpers at once, in all** (1 to 8). The fold then says *changed* and the speed above it greys out; *Use the
+speed again*, or picking a speed (even the one shown), undoes it. Work that comes in during the run for a helper not listed (an unsure answer for the auditor,
+a check's excerpts after its search words) gets one helper. The choice is for that run only: after *Start Claude
+Code* the fold is back to the speed. Which model each helper uses stays under *Settings → Technical → AI model per
+task*.
+
 Until it is pressed, nothing is answered: the step that waits keeps its spinner, so from 0.11.3 a **Start Claude
 Code** left unpressed for about five seconds while work waits (and nothing answers it) pulses, and the line beside it
 says *Nothing runs until you press it.* (with reduced motion in the computer's settings, it has a still ring
@@ -787,8 +804,15 @@ model), which used to say only which command to type.
 ```
 /enlens-run Pilot              # every kind of task waiting in the project Pilot
 /enlens-run Pilot label        # only the labels
-/enlens-run Pilot --parallel 4 # four helpers at once: faster, but it uses your plan's limit faster (default 2)
+/enlens-run Pilot --parallel 4 # four helpers at once: faster, but it uses your plan's limit faster
+/enlens-run Pilot --helpers checker=2,labeller=1   # only these helpers, as many of each at once (0.13.10)
 ```
+
+Without `--parallel`, a typed run goes at the speed chosen in ENLENS (two helpers at once unless you changed it;
+0.13.10). With `--helpers`, the helpers not named do nothing in that run, and `--parallel` (if given) caps the total.
+The helpers' names are labeller, linker, namer, reader, extractor, checker and auditor. ENLENS works out how many
+helpers each kind of task gets, in the queue's order, and never more than it has batches for. The speed counts the
+helpers of one run: Claude Code started both from ENLENS and in a terminal at the same time runs both runs' helpers.
 
 `/enlens-run` hands each kind of task to a helper agent on the model ENLENS names for it (labels and links on
 Haiku, theme names, references, search words and checks on Sonnet; for the SDG pack, extraction on Sonnet,
@@ -812,7 +836,23 @@ answers stop arriving, ENLENS says *Paused at 340 of 7,868 labels. To go on, typ
 *Stop* on a waiting page takes its tasks that no session has taken yet out of the queue (a waiting check is removed
 whole).
 
-**Fable.** The auditor (second opinions, and checks read again by a stronger model) runs on Opus. *Let the auditor
+**Models that suit your Claude plan (0.13.10).** On Claude Code the recommended model of each task follows the plan
+Claude Code is signed in with. ENLENS finds it by itself, in the background (from `claude auth status`, when the app
+starts, when it looks at the queue and before a run), and work that waits follows a new plan at once:
+
+| Plan | Recommended models |
+| --- | --- |
+| Free | No Opus or Fable. Haiku for most tasks (search words, splitting a hypothesis, theme names, references, labels, links), stepping up to Sonnet when unsure; judging excerpts, second opinions and the SDG pack's reference claims on Sonnet. |
+| Pro (and a plan not known yet) | As before: Sonnet for most tasks, Haiku for the many labels and links, Opus for second opinions and the hard cases (and the SDG pack's reference claims and checks). |
+| Max, Team, Enterprise | Opus for most tasks, checks included. Haiku and Sonnet only where there are many tasks at a time and speed matters: labels and links (Haiku), references and the SDG pack's extraction (Sonnet, stepping up to Opus). A check on Opus has no stronger model unless *Let the auditor use Fable* is on. |
+
+A model you chose for a kind of task (*AI model per task*) comes first on every plan. Should Claude Code name the
+plan wrongly, or not at all (signed in with an API key), set it under *Settings → Technical → AI model per task →
+The recommendations follow*. The Claude API and local models do not follow the plan. Note that Claude Code itself
+may need a paid plan.
+
+**Fable.** The auditor (second opinions, and checks read again by a stronger model) runs on Opus (on a Free plan:
+Sonnet). *Let the auditor
 use Fable* switches it to Fable. In Claude Code, Fable can be billed from usage credits instead of your plan; its
 model picker then says *Requires usage credits*.
 

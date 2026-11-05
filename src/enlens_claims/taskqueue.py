@@ -35,6 +35,10 @@ CLAIM_MINUTES = 30
 PAUSED_AFTER = 180          # seconds without an answer, nothing claimed and work waiting: the run has paused
 TOKEN_BUDGET = 15000        # the most a batch's prompts may hold (well under the connector's 25,000-token output cap)
 CONNECTOR_CAP = 25000       # the connector's output cap: the system prompt and the task prompts of a batch together
+PARALLEL = 2                # helpers at once when nothing else is said (0.13.10: the speed "normal")
+MAX_PARALLEL = 8            # the most helpers one run starts at once
+MAX_PER_HELPER = 4          # the most helpers of one kind at once, when the helpers are named one by one
+SPEEDS = {"slower": 1, "normal": 2, "faster": 4}   # 0.13.10: Settings' claude_speed, as helpers at once
 # 0.13.6: views of the registry (taskkinds.py): the batch a claim takes, the order the queue is answered in (the
 # researcher's own requests first, then small jobs, then the bulk; the SDG pack's batch pipeline last), and the
 # names the queue panel uses
@@ -178,9 +182,12 @@ def answering(ws: Workspace) -> bool:
     return bool(last and time.time() - last < ANSWERING_GAP)
 
 
-def status(ws: Workspace, project: str | None = None, parallel: int = 2) -> dict:
+def status(ws: Workspace, project: str | None = None, parallel: int = PARALLEL, helpers: dict | None = None,
+           kind: str | None = None) -> dict:
     """The queue of one project: per kind what waits, is being answered, is done or failed; the groups a run hands
-    to the helpers (kind, model, helper); estimates; and whether the work has paused."""
+    to the helpers (kind, model, helper, and how many helpers to start for each: `start`); estimates; and whether
+    the work has paused. `parallel`, `helpers` (clean_helpers) and `kind` are a run's plan (0.13.10): the groups of
+    other kinds, or of helpers the plan leaves out, are not in `groups` (the latter are in `not_this_run`)."""
     r = router(ws)
     o, held = order(ws)
     cutoff = _cutoff()
@@ -234,13 +241,18 @@ def status(ws: Workspace, project: str | None = None, parallel: int = 2) -> dict
         if d["waiting"] or d["being_answered"] or d["failed"] or d["done"]:
             kinds.append(d)
     rank = {k: i for i, k in enumerate(o)}
-    gl = sorted((g for g in groups.values() if g["kind"] not in held),
+    gl = sorted((g for g in groups.values() if g["kind"] not in held and (kind is None or g["kind"] == kind)),
                 key=lambda g: (rank.get(g["kind"], 99), g["model"], g["helper"]))
+    left_out = plan_helpers(gl, parallel, helpers)
+    gl = [g for g in gl if all(g is not x for x in left_out)]
     name = project or ws.root.name
     out = {"project": name, "kinds": kinds, "groups": gl, "order": o, "held": held, "waiting": waiting_total,
            "being_answered": active, "paused": paused, "last_answer_at": last, "privacy": PRIVACY_LINE,
            "local_only": local_only(), "command": f"/enlens-run {_quote_name(name)}", "claim_minutes": CLAIM_MINUTES,
            "parallel": parallel}
+    if helpers is not None:
+        out["helpers"] = {short_helper(h): n for h, n in helpers.items()}
+        out["not_this_run"] = left_out
     if paused:
         k = next((x for x in kinds if x["waiting"]), None)
         if k:
@@ -262,6 +274,159 @@ def _estimate_text(kind: str, n: int, seconds: float | None) -> str:
 
 def _quote_name(name: str) -> str:
     return f'"{name}"' if any(c.isspace() for c in name) else name
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.13.10: how many helpers a run starts at once, and which. The researcher picks a speed beside Start Claude Code
+# (one, two or four helpers at once); "For this run" can name the helpers one by one instead. `/enlens-run` passes
+# its --parallel and --helpers to queue_status, and each group then says how many helpers to start for it (`start`):
+# the sums are done here, not by the orchestrating model. (PARALLEL, MAX_PARALLEL, MAX_PER_HELPER: at the top.)
+# ---------------------------------------------------------------------------------------------
+def short_helper(helper: str) -> str:
+    """The name a person types for a helper: "checker" for enlens-checker (an add-on's helper keeps its name)."""
+    return helper[len("enlens-"):] if helper.startswith("enlens-") else helper
+
+
+def helper_name(name: str) -> str:
+    """A helper's full name from what a person may type: "checker", "Checker" or "enlens-checker"."""
+    n = str(name or "").strip().lower()
+    known = list(routing.HELPER_MODEL)
+    for h in (n, f"enlens-{n}"):
+        if h in known:
+            return h
+    raise ValueError(f"Unknown helper {name!r}. Helpers: {', '.join(short_helper(h) for h in known)}.")
+
+
+def _whole(value) -> int | None:
+    """A whole number from an int, a float without a fraction or its text; None for anything else (true, 2.5, "x")."""
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def clean_parallel(value) -> int:
+    """How many helpers at once: a whole number from 1 to MAX_PARALLEL."""
+    n = _whole(value)
+    if n is None or not 1 <= n <= MAX_PARALLEL:
+        raise ValueError(f"parallel must be a whole number from 1 to {MAX_PARALLEL}.")
+    return n
+
+
+def clean_helpers(value) -> dict[str, int] | None:
+    """The helpers named for one run, {full helper name: how many at once, 0 to MAX_PER_HELPER}, from
+    {"checker": 2, "labeller": 1} or the command's form "checker=2,labeller=1". None when none is named. A helper
+    left out, or given 0, does nothing in that run."""
+    if value is None or value == "" or value == {}:
+        return None
+    if isinstance(value, str):
+        pairs = []
+        for part in value.replace(";", ",").split(","):
+            part = part.strip()
+            if part:
+                name, sep, n = part.replace(":", "=").partition("=")
+                pairs.append((name, n.strip() if sep else "1"))
+    elif isinstance(value, dict):
+        pairs = list(value.items())
+    else:
+        raise ValueError('helpers must name helpers with how many of each, for example "checker=2,labeller=1".')
+    out: dict[str, int] = {}
+    for name, n in pairs:
+        h = helper_name(name)
+        k = _whole(n)
+        if k is None or not 0 <= k <= MAX_PER_HELPER:
+            raise ValueError(f"{short_helper(h)}: say how many at once, a whole number from 0 to {MAX_PER_HELPER}.")
+        out[h] = k
+    if not any(out.values()):
+        raise ValueError("Name at least one helper with 1 or more.")
+    return out
+
+
+def helpers_arg(helpers: dict[str, int]) -> str:
+    """The command's form of a run's helpers: "checker=2,labeller=1" (the ones given 0 left out)."""
+    return ",".join(f"{short_helper(h)}={n}" for h, n in helpers.items() if n)
+
+
+def speed_parallel(speed: str | None = None) -> int:
+    """Helpers at once for a speed: slower 1, normal 2, faster 4 (the speed chosen in Settings when none is given)."""
+    from .home import load_settings
+
+    return SPEEDS.get(speed or load_settings().get("claude_speed") or "normal", PARALLEL)
+
+
+def run_plan(parallel=None, helpers=None) -> dict:
+    """A run's plan, checked: {"parallel": helpers at once, "helpers": {helper: how many} or None}. With the helpers
+    named one by one, `parallel` is their sum (at most MAX_PARALLEL) unless given; with neither, the speed chosen in
+    Settings (so a typed /enlens-run goes at the speed chosen in the app). `parallel` is never more than the helpers
+    named add up to, so the run says how many it can really have at once."""
+    chosen = clean_helpers(helpers)
+    if parallel is not None:
+        n = clean_parallel(parallel)
+    elif chosen:
+        n = MAX_PARALLEL
+    else:
+        n = speed_parallel()
+    if chosen:
+        n = min(n, sum(chosen.values()))
+    return {"parallel": n, "helpers": chosen}
+
+
+def run_status(ws: Workspace, project: str, kind: str | None = None, parallel=None, helpers=None) -> dict:
+    """The queue as one run of /enlens-run sees it (the connector's queue_status): `kind`, `parallel` and `helpers`
+    as the command was given them; each group says how many helpers to start for it (`start`)."""
+    if kind and kind not in KINDS:
+        raise ValueError(f"Unknown kind of task {kind!r}. Kinds: {', '.join(KINDS)}.")
+    plan = run_plan(parallel, helpers)
+    advance(ws)
+    return status(ws, project, parallel=plan["parallel"], helpers=plan["helpers"], kind=kind or None)
+
+
+def helper_rows(groups: list[dict], kinds: list[dict]) -> list[dict]:
+    """The helpers that have work waiting, for "For this run" in the app: per helper its models, the kinds of task it
+    would answer (titles), how many tasks wait and in how many batches (more helpers than batches do nothing)."""
+    titles = {k["kind"]: k["title"] for k in kinds}
+    rows: dict[str, dict] = {}
+    for g in groups:
+        r = rows.setdefault(g["helper"], {"helper": g["helper"], "name": short_helper(g["helper"]), "models": [],
+                                          "kinds": [], "waiting": 0, "batches": 0})
+        if g["model"] not in r["models"]:
+            r["models"].append(g["model"])
+        title = titles.get(g["kind"], g["kind"])
+        if title not in r["kinds"]:
+            r["kinds"].append(title)
+        r["waiting"] += g["waiting"]
+        r["batches"] += -(-g["waiting"] // max(1, BATCH.get(g["kind"], 5)))
+    return list(rows.values())
+
+
+def plan_helpers(groups: list[dict], parallel: int, helpers: dict[str, int] | None = None) -> list[dict]:
+    """Set each group's `start`: how many helpers to start for it now, `parallel` in all. One per group in the
+    queue's order first, then more for the groups with work for more (a helper takes a batch at a time, so a group
+    never gets more helpers than it has batches). With `helpers`, only the helpers named start, each at most as many
+    times as named (over its groups together). Returns the groups with nothing to start because of `helpers`."""
+    left = parallel if helpers is None else min(parallel, sum(helpers.values()))
+    used: dict[str, int] = {}
+    for g in groups:
+        g["start"] = 0
+    mine = [g for g in groups if helpers is None or helpers.get(g["helper"], 0) > 0]
+    while left > 0:
+        added = False
+        for g in mine:
+            if left <= 0:
+                break
+            batches = -(-g["waiting"] // max(1, BATCH.get(g["kind"], 5)))
+            if g["start"] >= batches or (helpers is not None and used.get(g["helper"], 0) >= helpers[g["helper"]]):
+                continue
+            g["start"] += 1
+            used[g["helper"]] = used.get(g["helper"], 0) + 1
+            left -= 1
+            added = True
+        if not added:
+            break
+    chosen = {id(g) for g in mine}
+    return [g for g in groups if id(g) not in chosen]
 
 
 # ---------------------------------------------------------------------------------------------

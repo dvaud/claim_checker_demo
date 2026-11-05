@@ -212,7 +212,7 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
 # ---------------------------------------------------------------------------------------------
 MOVE_MANIFEST = "enlens-move.json"
 # settings that belong to this computer rather than to the person: not carried over
-MACHINE_SETTINGS = {"project", "benchmark_reference"}
+MACHINE_SETTINGS = {"project", "benchmark_reference", "claude_plan_detected"}  # 0.13.10: found per computer
 
 
 def is_move_zip(zip_path: str | Path) -> bool:

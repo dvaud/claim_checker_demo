@@ -959,3 +959,28 @@ span.passage-broken > span.passage-heading { font-weight: 650; }
 .routing-table td, .routing-table th { vertical-align: top; }
 .routing-table select { min-width: 9em; }
 .stronger-btn { margin-left: 6px; }
+
+/* 0.13.10: the speed beside Start Claude Code, and the helpers chosen for one run */
+.sc-speed { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.sc-speed-label { color: var(--text-2); }
+.sc-speed-btns { display: inline-flex; }
+.sc-speed-btns .seg-btn { padding: 2px 10px; font-size: .8rem; border-radius: 0; }
+.sc-speed-btns .seg-btn + .seg-btn { margin-left: -1px; }
+.sc-speed-btns .seg-btn:first-child { border-radius: 7px 0 0 7px; }
+.sc-speed-btns .seg-btn:last-child { border-radius: 0 7px 7px 0; }
+.sc-speed-btns .seg-btn.seg-on { position: relative; }
+.sc-speed.sc-speed-off .sc-speed-btns, .sc-speed.sc-speed-off .sc-speed-line { opacity: .55; }
+.sc-helpers > summary { padding: 2px 0; font-weight: 400; }
+.sc-helpers > summary .chip { margin-left: 4px; font-size: .74rem; }
+.jobs .sc-helpers > summary { border: 0; background: none; color: var(--text-2); padding: 2px 0; font-size: inherit; border-radius: 0; }
+.sc-helpers-body { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px 18px; }
+.sc-helpers-body p { margin: 0; }
+.sc-helpers-body > .btn { align-self: flex-start; }
+.sc-total { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sc-helpers select { width: auto; min-width: 4.5em; }
+.sc-helper-list { display: flex; flex-direction: column; }
+.sc-helper { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; align-items: center; padding: 4px 0; border-top: 1px solid var(--border); }
+.sc-helper .select { grid-column: 2; grid-row: 1 / span 2; }
+.sc-helper-name { font-weight: 550; }
+.sc-helper-what { grid-column: 1; }
+.sc-helper.sc-helper-off .sc-helper-name, .sc-helper.sc-helper-off .sc-helper-what { opacity: .6; }

@@ -427,10 +427,15 @@ def build_server():
 
     # ---- 0.8: the task queue (Claude Code's /enlens-run) ------------------------------------------
     @s.tool(description="What waits in a project's task queue for Claude Code: per kind of task, how many wait, are "
-                        "being answered, are done; the groups to hand to helpers (kind, model, helper); estimates. "
-                        "Without a project: the projects that have work waiting.")
+                        "being answered, are done; the groups to hand to helpers (kind, model, helper, and `start`: "
+                        "how many helpers to start for the group now); estimates. Pass the run's plan as /enlens-run "
+                        "was given it: kind (one kind only), parallel (helpers at once, 1 to 8; default: the speed chosen "
+                        "in ENLENS, normally 2) and helpers "
+                        "(which helpers and how many of each, e.g. \"checker=2,labeller=1\"; the others do nothing "
+                        "this run). Without a project: the projects that have work waiting.")
     @_friendly
-    def queue_status(project: Optional[str] = None) -> dict:
+    def queue_status(project: Optional[str] = None, kind: Optional[str] = None, parallel: Optional[int] = None,
+                     helpers: Optional[str] = None) -> dict:
         from . import taskqueue
 
         if not project:
@@ -443,11 +448,11 @@ def build_server():
                     out.append({"project": name, "waiting": n})
             return {"projects_with_work": out, "local_only": core.local_only()}
         name, ws = _project(project)
-        taskqueue.advance(ws)
-        q = taskqueue.status(ws, name)
+        q = taskqueue.run_status(ws, name, kind, parallel, helpers)
         return {k: q[k] for k in ("project", "groups", "kinds", "waiting", "being_answered", "paused", "held",
-                                  "privacy", "local_only", "command", "claim_minutes")} | (
-            {"paused_text": q["paused_text"]} if q.get("paused_text") else {})
+                                  "privacy", "local_only", "command", "claim_minutes", "parallel")} | (
+            {"paused_text": q["paused_text"]} if q.get("paused_text") else {}) | (
+            {k: q[k] for k in ("helpers", "not_this_run") if k in q})
 
     @s.tool(description="Take a batch of waiting tasks (a claim): tasks of one kind for one model (and helper, when "
                         "given), each with its prompt, and one system instruction for all of them. Answer every task "

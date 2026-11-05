@@ -39,6 +39,8 @@ class TaskKind:
     local: str | None = None
     to_auditor: bool = False                # a stepped-up task goes to the auditor (judging excerpts)
     judging: bool = False                   # reasoning helps ("think: judging")
+    bulk: bool = False                      # 0.13.10: many tasks at a time, where speed matters (on a Max plan they
+                                            # keep the cheaper model; see routing.tier_defaults)
     helper: str | None = None               # the Claude Code plugin's helper agent
     helper_file: str | None = None          # an add-on's own helper: its agent file (.md), copied into the plugin
     helper_model: str | None = None         # that helper's own model (haiku, sonnet, opus)
@@ -275,11 +277,11 @@ def addon_helpers() -> dict[str, str]:
 # ENLENS's own kinds, as before 0.13.6 (tests/test_0_13_6_task_kinds.py checks every table against its 0.13.5 value).
 # Registration order follows Settings' model table.
 # ---------------------------------------------------------------------------------------------
-_core(name="label", prompt_version="label-v1", certainty="labels", claude=("haiku", "sonnet"), local="small",
+_core(name="label", prompt_version="label-v1", certainty="labels", claude=("haiku", "sonnet"), local="small", bulk=True,
       helper="enlens-labeller", row="label", row_title="Codebook labels (profile)", batch=20, order=8,
       noun=("passage to label", "passages to label"), short="labels", title="Codebook labels",
       run_name="Codebook labels", output_cap=1500, corpus=True)
-_core(name="link", prompt_version="link-v1", certainty="relations", claude=("haiku", "sonnet"), local="small",
+_core(name="link", prompt_version="link-v1", certainty="relations", claude=("haiku", "sonnet"), local="small", bulk=True,
       helper="enlens-linker", row="link", row_title="How concepts relate", batch=10, order=7,
       noun=("pair of terms", "pairs of terms"), short="pairs of terms", title="How concepts relate",
       run_name="How concepts relate", output_cap=700, corpus=True)
@@ -295,7 +297,7 @@ _core(name="theme", prompt_version="theme-v1", claude=("sonnet", "opus"), local=
       row="theme", row_title="Theme names", batch=5, order=6, noun=("theme to name", "themes to name"),
       short="theme names", title="Theme names", run_name="Theme names", output_cap=500, corpus=True)
 _core(name="resolve", prompt_version="resolve-v1", claude=("sonnet", "opus"), local="large", helper="enlens-reader",
-      row="resolve", row_title="References in a document", batch=4, order=9,
+      bulk=True, row="resolve", row_title="References in a document", batch=4, order=9,
       noun=("window of references", "windows of references"), short="windows of references",
       title="References in documents", run_name="References in a document", output_cap=2500, corpus=True)
 # checks start on Sonnet (its helper runs at high effort, see agents/enlens-checker.md); an unsure or twice rejected
@@ -318,7 +320,7 @@ _core(name="audit", certainty="evidence", claude=("auditor", None), local="secon
 # the SDG pack. extract is bulk work: Sonnet, stepping up to Opus. split sets the reference claims: Opus (the pilot
 # used Fable). verify and verify_set judge excerpts, as a check does: Opus, stepping up to the auditor.
 _core(name="extract", prompt_version="extract-v1", certainty="claims", claude=("sonnet", "opus"), local="large",
-      helper="enlens-extractor", row="extract", row_title="SDG pack: impact claims from passages", batch=8, order=13,
+      bulk=True, helper="enlens-extractor", row="extract", row_title="SDG pack: impact claims from passages", batch=8, order=13,
       noun=("passage to extract claims from", "passages to extract claims from"), short="passages to extract",
       title="SDG pack: extracting claims", run_name="Extracting claims (SDG pack)", output_cap=3000)
 _core(name="split", prompt_version="split-v2", claude=("opus", "auditor"), local="large", to_auditor=True,

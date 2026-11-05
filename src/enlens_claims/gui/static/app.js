@@ -272,6 +272,7 @@ async function drawJobs() {
 // ---------------------------------------------------------------------------------------------
 let queueTimer = null;
 let queueBusy = false;
+let queueDefers = 0;  // 0.13.10: redraws put off while a list of the helpers' fold is open
 let queueSoon = null;
 // A job's end reaches this twice (App.refresh and jobsChanged): the calls of one moment are drawn once.
 function renderQueue() {
@@ -286,6 +287,12 @@ async function drawQueueOnce() {
 async function drawQueue() {
   const box = document.getElementById("queue-indicator");
   clearTimeout(queueTimer);
+  // 0.13.10: not while the person has a list of "Choose the helpers for this run" open in the panel (it would close),
+  // for this project, and for half a minute at most
+  const el = document.activeElement;
+  const sc = box.contains(el) && el.matches(".sc-helpers select") ? el.closest(".start-claude") : null;
+  if (sc && sc.dataset.project === App.project && queueDefers < 6) { queueDefers += 1; queueTimer = setTimeout(renderQueue, 5000); return; }
+  queueDefers = 0;
   const s = App.settings();
   const summary = (App.state && App.state.queue) || {};
   if (!App.project || (s.backend !== "claude_code" && !summary.waiting)) { box.hidden = true; replace(box); return; }

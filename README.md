@@ -104,6 +104,14 @@ instead? The *Update* button and `enlens update` pull the new version (see *For 
   nothing about your question (running headers, reference lists). *Remove and find a new theme* lets ENLENS look,
   on this computer and without AI, for a theme it missed. A removed theme waits under *Removed themes* with *Bring it
   back*.
+- **Faster or slower (0.13.10).** Under every *Start Claude Code* is *Speed: Slower · Normal · Faster*: how many
+  helpers Claude Code runs at once (one, two or four). Faster is done sooner but uses your plan's limits faster.
+  For one run you can also choose the helpers yourself (*Choose the helpers for this run*): how many of each, and
+  0 to leave a kind of work waiting.
+- **Models that suit your Claude plan (0.13.10).** ENLENS finds your Claude plan by itself and picks the models to
+  match: on Free no Opus and Haiku for most tasks, on Pro Sonnet with Opus used sparingly (as before), on Max, Team
+  or Enterprise Opus for most tasks, with the faster models only where there are thousands of tasks. Models you
+  chose yourself in *Settings → Technical* still come first.
 
 ## Earlier releases
 

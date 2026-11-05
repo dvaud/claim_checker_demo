@@ -52,10 +52,8 @@ class DirectTools:
     def _ws(self, project):
         return self.home.open_project(project)
 
-    def queue_status(self, project):
-        ws = self._ws(project)
-        self.q.advance(ws)
-        return self.q.status(ws, project)
+    def queue_status(self, project, kind=None, parallel=None, helpers=None):
+        return self.q.run_status(self._ws(project), project, kind, parallel, helpers)
 
     def next_tasks(self, project, kind=None, n=None, model=None, taken_by=None, helper=None):
         return self.q.next_tasks(self._ws(project), kind, n, model, taken_by, helper)
@@ -90,8 +88,8 @@ class McpTools:
             raise RuntimeError(r.content[0].text)
         return json.loads(r.content[0].text)
 
-    def queue_status(self, project):
-        return self._call("queue_status", {"project": project})
+    def queue_status(self, project, kind=None, parallel=None, helpers=None):
+        return self._call("queue_status", {"project": project, "kind": kind, "parallel": parallel, "helpers": helpers})
 
     def next_tasks(self, project, kind=None, n=None, model=None, taken_by=None, helper=None):
         return self._call("next_tasks", {"project": project, "kind": kind, "n": n, "model": model, "taken_by": taken_by,
@@ -117,6 +115,7 @@ class FakeClaudeCode:
         self.stop_after = stop_after
         self.batches = 0
         self.log: list[dict] = []   # one entry per batch: kind, model, helper, tasks, stored, problems
+        self.plans: list[dict] = []  # 0.13.10: per queue_status, how many helpers it said to start per group
 
     def batch(self, project, kind=None, model=None, helper=None) -> dict | None:
         """Take one batch and answer it (fixing problems); None when nothing waits."""
@@ -158,11 +157,14 @@ class FakeClaudeCode:
             entry["stored"] += r["stored"]
         return entry
 
-    def run(self, project, kind=None, max_batches=500) -> dict:
-        """/enlens-run <project> [kind]: work through the groups until nothing waits."""
+    def run(self, project, kind=None, max_batches=500, parallel=None, helpers=None) -> dict:
+        """/enlens-run <project> [kind] [--parallel N] [--helpers …]: work through the groups queue_status says to start
+        helpers for (`start`), one batch at a time, until none is left. `self.plans` keeps each queue_status's
+        {(kind, helper): start}."""
         while self.batches < max_batches:
-            st = self.tools.queue_status(project)
-            groups = [g for g in st["groups"] if kind is None or g["kind"] == kind]
+            st = self.tools.queue_status(project, kind, parallel, helpers)
+            groups = [g for g in st["groups"] if g.get("start", 1) > 0]
+            self.plans.append({(g["kind"], g["helper"]): g.get("start") for g in st["groups"]})
             if not groups:
                 break
             g = groups[0]
@@ -172,10 +174,10 @@ class FakeClaudeCode:
         return {"batches": self.batches, "log": self.log}
 
 
-def run(project, kind=None, tools=None, **kw) -> dict:
+def run(project, kind=None, tools=None, parallel=None, helpers=None, **kw) -> dict:
     """Play /enlens-run once, through an in-process connector unless `tools` is given."""
     if tools is not None:
-        return FakeClaudeCode(tools, **kw).run(project, kind)
+        return FakeClaudeCode(tools, **kw).run(project, kind, parallel=parallel, helpers=helpers)
     import threading
 
     from mcp import Client
@@ -199,7 +201,7 @@ def run(project, kind=None, tools=None, **kw) -> dict:
     if not ready.wait(30):
         raise RuntimeError("the connector did not start")
     try:
-        return FakeClaudeCode(McpTools(box["client"], loop), **kw).run(project, kind)
+        return FakeClaudeCode(McpTools(box["client"], loop), **kw).run(project, kind, parallel=parallel, helpers=helpers)
     finally:
         loop.call_soon_threadsafe(done.set)
         th.join(30)

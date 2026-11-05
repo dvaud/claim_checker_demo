@@ -250,6 +250,21 @@ def account_words(st: dict) -> str:
     return ", ".join(w for w in words if w)
 
 
+def note_plan(plan: str) -> str:
+    """0.13.10: keep the tier of the plan Claude Code is signed in with (Settings' claude_plan_detected), so the
+    recommended model of each task follows it everywhere, also in the connector Claude Code starts. Written only when
+    it changed; a signed-out Claude Code says nothing and changes nothing. Returns the tier."""
+    from . import routing
+
+    tier = routing.plan_tier(plan)
+    try:
+        if core.load_settings().get("claude_plan_detected", "") != tier:
+            core.update_settings({"claude_plan_detected": tier})
+    except (ValueError, OSError):  # e.g. a settings file that cannot be written: the recommendations stay as they were
+        pass
+    return tier
+
+
 def status(refresh: bool = False) -> dict:
     """What is ready for Claude Code, for the app's set-up checklist (cached for half a minute):
     `found` (and `path`, `version`), `signed_in` (True, False, or None when Claude Code does not say), the plugin
@@ -277,6 +292,8 @@ def status(refresh: bool = False) -> dict:
                               "commercial" if plan in ("team", "enterprise") else
                               "commercial" if str(auth.get("authMethod") or "").lower() in ("api_key", "console") else "")
             out["plan"] = plan
+            if out["signed_in"]:
+                note_plan(plan)
             # 0.13.4: which account Claude Code is signed in to, for the sidebar and Settings → AI. Only what Claude
             # Code itself reports (the address and the organisation); the login stays with Claude Code.
             if out["signed_in"]:
@@ -350,12 +367,20 @@ def work_folder() -> Path:
     return d
 
 
-def run_args(project: str, claude: str = "") -> list[str]:
+def run_args(project: str, claude: str = "", plan: dict | None = None) -> list[str]:
     """The command that answers one project's queue headless, allowed only the ENLENS queue tools and the helpers, and
-    denied every built-in tool that reads files, runs commands or fetches pages."""
+    denied every built-in tool that reads files, runs commands or fetches pages. `plan` (taskqueue.run_plan): how
+    many helpers at once, and which (0.13.10)."""
+    from . import taskqueue
+
     tools = ["Agent"] + [TOOL_PREFIX + t for t in QUEUE_TOOLS]
     quoted = '"' + project.replace('"', "") + '"'
-    return _cmd(claude or find_claude() or "claude") + ["-p", f"{SLASH} {quoted}", "--output-format", "text",
+    prompt = f"{SLASH} {quoted}"
+    if plan:
+        prompt += f" --parallel {int(plan['parallel'])}"
+        if plan.get("helpers"):
+            prompt += f" --helpers {taskqueue.helpers_arg(plan['helpers'])}"
+    return _cmd(claude or find_claude() or "claude") + ["-p", prompt, "--output-format", "text",
                                                        "--disallowedTools", ",".join(DENIED_TOOLS),
                                                        "--allowedTools", *tools]
 
@@ -378,17 +403,27 @@ def run_state(project: str) -> dict:
         tail = r["log"].read_text(encoding="utf-8", errors="replace")[-1200:].strip()
     except OSError:
         pass
+    from . import taskqueue
+
+    plan = r.get("plan") or {}
     return {"running": code is None, "started_at": r["started_at"], "seconds": int(time.time() - r["t0"]),
-            "exit_code": code, "report": tail if code is not None else "", "stopped": r.get("stopped", False)}
+            "exit_code": code, "report": tail if code is not None else "", "stopped": r.get("stopped", False),
+            "parallel": plan.get("parallel"),
+            "helpers": {taskqueue.short_helper(h): n for h, n in (plan.get("helpers") or {}).items() if n} or None}
 
 
-def start_run(project: str) -> dict:
-    """Start Claude Code (headless, signed in with its own login) on the project's queue. One run per project."""
+def start_run(project: str, parallel=None, helpers=None) -> dict:
+    """Start Claude Code (headless, signed in with its own login) on the project's queue. One run per project.
+    `parallel`, `helpers`: how many helpers at once, and which, for this run (taskqueue.run_plan; 0.13.10): with
+    neither, the speed chosen in Settings."""
+    from . import taskqueue
+
     if core.local_only():
         raise ValueError("Cloud models are switched off on this computer: Claude Code is not available.")
     st = run_state(project)
     if st.get("running"):
         return st
+    plan = taskqueue.run_plan(parallel, helpers)
     path = find_claude()
     if not path:
         raise ValueError("Claude Code was not found on this computer. Install it (claude.com/claude-code), or type "
@@ -399,12 +434,12 @@ def start_run(project: str) -> dict:
     fh = open(log, "w", encoding="utf-8")
     kwargs = {"start_new_session": True} if os.name != "nt" else {
         "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
-    proc = subprocess.Popen(run_args(project, path), cwd=str(work_folder()), stdout=fh, stderr=subprocess.STDOUT,
-                            stdin=subprocess.DEVNULL, **kwargs)
+    proc = subprocess.Popen(run_args(project, path, plan), cwd=str(work_folder()), stdout=fh,
+                            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kwargs)
     fh.close()
     with _RUNS_LOCK:
         _RUNS[project] = {"proc": proc, "log": log, "t0": time.time(),
-                          "started_at": now()}
+                          "started_at": now(), "plan": plan}
     return run_state(project)
 
 

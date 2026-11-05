@@ -23,6 +23,13 @@ the role "audit" (`tasks.role`): it is routed as "audit", like a second opinion,
 
 A backend carries its `Router` (`backend.router`); `tasks.run_one` asks it for the model of each task. A backend
 without one (the command line with --model, the tests of 0.7) answers with the model it is given, as before.
+
+0.13.10: on Claude Code the recommended models follow the researcher's Claude plan, found in the background from
+`claude auth status` (Settings' claude_plan_detected; claude_plan "auto" unless set by hand). Free: no Opus or
+Fable, Haiku for most tasks and Sonnet where excerpts are judged or reference claims set. Pro (and a plan not known):
+the table below, Sonnet for most tasks and Opus sparingly. Max, Team and Enterprise: Opus for most tasks, Haiku and
+Sonnet only for the kinds with many tasks at a time (`bulk`), where speed matters. Models chosen per task in
+Settings come first on every plan.
 """
 from __future__ import annotations
 
@@ -42,6 +49,7 @@ ROWS = taskkinds.Rows()
 ROW_OF = taskkinds.Table("row")
 
 ALIASES = ("haiku", "sonnet", "opus", "fable")
+RANK = {a: i for i, a in enumerate(ALIASES)}   # 0.13.10: where the plan moved a model, a step up goes higher
 # the Claude API's ids for the aliases (Models overview, October 2026); "opus" follows Settings' anthropic_model
 API_IDS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5",
            "fable": "claude-fable-5-1"}
@@ -64,6 +72,45 @@ ROUTE_NAMES = {"claude_code": "Claude Code", "anthropic": "Claude API", "local":
                "ollama": "local model server", "baseline": "offline demo", "file": "file queue",
                "chat": "Claude app (connector)"}
 OFF_COMPUTER = frozenset({"anthropic", "claude_code"})   # the backends whose passages leave this computer
+
+
+# 0.13.10: the Claude plans, as three tiers of recommended models ("" = not known: as Pro)
+TIERS = ("free", "pro", "max")
+TIER_TITLES = {"free": "Free", "pro": "Pro", "max": "Max, Team or Enterprise"}
+
+
+def plan_tier(plan: str | None) -> str:
+    """The tier of the plan Claude Code names (`subscriptionType`): free, pro, or max for Max, Team and Enterprise;
+    "" when it names none or one not known."""
+    p = str(plan or "").strip().lower()
+    if not p:
+        return ""
+    if "team" in p or "enterprise" in p or "max" in p:
+        return "max"
+    if "pro" in p:
+        return "pro"
+    if "free" in p:
+        return "free"
+    return ""
+
+
+def tier_defaults(kind: str, tier: str) -> tuple[str, str | None]:
+    """(the model a kind starts on, the model it steps up to) recommended on a plan tier, from the table of the kind
+    (CLAUDE_DEFAULTS, the recommendation for Pro). "auditor" stays a role: Opus, Fable when switched on, Sonnet on
+    Free (Router._auditor)."""
+    first, up = CLAUDE_DEFAULTS[kind]
+    if first == "auditor" or tier not in ("free", "max"):
+        return first, up
+    k = taskkinds.get(kind)
+    if tier == "free":
+        # no Opus or Fable: Haiku first, stepping up to Sonnet; judging excerpts and setting reference claims on Sonnet
+        careful = bool(k and (k.judging or k.to_auditor))
+        return ("sonnet", None) if careful else ("haiku", "sonnet")
+    # max: Opus for most tasks (stepping up to the auditor where it reads the hard cases, which matters with Fable);
+    # the kinds with many tasks keep their cheaper models, as speed matters there
+    if k and k.bulk:
+        return first, up
+    return "opus", ("auditor" if kind in TO_AUDITOR else None)
 
 
 def route_of(backend_name: str) -> str:
@@ -113,10 +160,19 @@ class Router:
     small: str = ""                  # local: the small model ("" = the large one)
     second: str = ""                 # local: the second model of Settings
     opus_id: str = API_IDS["opus"]   # the Claude API's id for "opus" (Settings' anthropic_model)
+    tier: str = ""                   # 0.13.10, Claude Code: the plan's tier (free | pro | max; "" = not known: as pro)
 
     # -- the table ------------------------------------------------------------------------------
     def _auditor(self) -> str:
+        if self.route == "claude_code" and self.tier == "free":
+            return "sonnet"   # no Opus or Fable on a Free plan
         return "fable" if self.fable else "opus"
+
+    def _defaults(self, kind: str) -> tuple[str, str | None]:
+        return tier_defaults(kind, self.tier if self.route == "claude_code" else "")
+
+    def _ladder(self) -> tuple[str, ...]:
+        return LADDER[:2] if self.route == "claude_code" and self.tier == "free" else LADDER
 
     def first(self, kind: str) -> str | None:
         """The model a task of this kind starts on (an alias on Claude routes, a model name locally)."""
@@ -124,7 +180,7 @@ class Router:
             return None
         chosen = self.overrides.get(kind) or self.overrides.get(ROW_OF.get(kind, ""))
         if self.route in ("claude_code", "anthropic"):
-            m = chosen or CLAUDE_DEFAULTS[kind][0]
+            m = chosen or self._defaults(kind)[0]
             return self._auditor() if m == "auditor" else m
         if self.route == "local":
             if chosen:
@@ -139,14 +195,22 @@ class Router:
             return None
         start = self.first(kind)
         if self.route in ("claude_code", "anthropic"):
-            nxt = CLAUDE_DEFAULTS[kind][1]
+            nxt = self._defaults(kind)[1]
+            ladder = self._ladder()
             if (self.overrides.get(kind) or self.overrides.get(ROW_OF.get(kind, ""))) and start in LADDER:
                 # a model chosen in Settings steps up to the next one on the ladder (or the auditor at the top)
                 i = LADDER.index(start)
-                nxt = LADDER[i + 1] if i + 1 < len(LADDER) else ("auditor" if kind in TO_AUDITOR else None)
+                nxt = ladder[i + 1] if i + 1 < len(ladder) else ("auditor" if kind in TO_AUDITOR else None)
             if nxt is None:
                 return None
-            return self._auditor() if nxt == "auditor" else nxt
+            nxt = self._auditor() if nxt == "auditor" else nxt
+            # 0.13.10: where the plan moved a kind's model (Free; Max for the kinds it raised to Opus), only ever up
+            # to a stronger model: a check that starts on Opus has no stronger one unless Fable is on. The SDG pack's
+            # Opus tasks still have their hard cases read again by the auditor, as since 0.8.1.
+            moved = self.tier == "free" or (self.tier == "max" and self._defaults(kind)[0] != CLAUDE_DEFAULTS[kind][0])
+            if self.route == "claude_code" and moved and nxt in RANK and start in RANK and RANK[nxt] <= RANK[start]:
+                return None
+            return nxt
         if self.route == "local":
             if LOCAL_DEFAULTS[kind] == "small" and self.small and self.large and self.small != self.large \
                     and start != self.large:
@@ -184,10 +248,12 @@ class Router:
         out = []
         for row, kinds, title in ROWS:
             k = kinds[0]
+            rec = self._defaults(k)[0] if self.route in ("claude_code", "anthropic") else LOCAL_DEFAULTS[k]
             out.append({"row": row, "kinds": list(kinds), "title": title, "model": self.first(k),
                         "step_up": self.step_up(k), "helper": self.helper(k), "chosen": self.overrides.get(row),
-                        "recommended": (CLAUDE_DEFAULTS[k][0] if self.route in ("claude_code", "anthropic")
-                                        else LOCAL_DEFAULTS[k])})
+                        # 0.13.10: for the plan, the auditor named (Opus, Fable, or Sonnet on Free)
+                        "recommended": self._auditor() if rec == "auditor" else rec,
+                        "recommended_role": "auditor" if rec == "auditor" else ""})
         return out
 
 
@@ -202,7 +268,18 @@ def from_settings(settings: dict, route: str | None = None, large: str = "") -> 
     return Router(route=route, fable=bool(settings.get("use_fable")), overrides=overrides, large=large,
                   small=(settings.get("local_small_model") or "").strip() if route == "local" else "",
                   second=(settings.get("second_model") or "").strip(),
-                  opus_id=settings.get("anthropic_model") or API_IDS["opus"])
+                  opus_id=settings.get("anthropic_model") or API_IDS["opus"],
+                  tier=settings_tier(settings) if route == "claude_code" else "")
+
+
+def settings_tier(settings: dict) -> str:
+    """The tier the recommendations follow (0.13.10): the plan set by hand in Settings, else the one Claude Code
+    said (found in the background), else "" (not known: as Pro)."""
+    chosen = str(settings.get("claude_plan") or "auto")
+    if chosen in TIERS:
+        return chosen
+    detected = str(settings.get("claude_plan_detected") or "")
+    return detected if detected in TIERS else ""
 
 
 def clean_task_models(value) -> dict:

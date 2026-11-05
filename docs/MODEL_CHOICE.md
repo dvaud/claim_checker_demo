@@ -54,6 +54,22 @@ repeatability, seconds per task, pass mark, passes) with the chosen default and 
 | SDG pack: verify, verify_set | Opus | the auditor | the main model |
 | SDG pack: audits (audit-vca, verify-claims) | the auditor, or the model given | none | the second model |
 
+### Per Claude plan (0.13.10)
+
+The table above is the recommendation for a **Pro** plan (and for a plan Claude Code does not name). On Claude Code the
+recommendations follow the plan Claude Code is signed in with (`routing.tier_defaults`; Settings' `claude_plan`,
+found in the background as `claude_plan_detected`), worked out from each kind's own entry so that an add-on's kinds
+follow too:
+
+- **Free**: no Opus or Fable (the auditor is Sonnet). Kinds that judge excerpts or set reference claims (`judging` or
+  `to_auditor`: check, reread, second, audits, split, verify, verify_set) run on Sonnet with nothing above; every other
+  kind starts on Haiku and steps up to Sonnet.
+- **Max, Team, Enterprise**: kinds with many tasks at a time (`bulk`: label, link, resolve, extract) keep the Pro
+  models, as speed matters there; every other kind starts on Opus, stepping up to the auditor only where it reads the
+  hard cases (`to_auditor`) and only to a stronger model (Fable, when switched on).
+
+Models chosen per task in Settings come first on every plan. The Claude API and local models do not follow the plan.
+
 ### Why these defaults for the SDG pack (0.8.1)
 
 The SDG pack's tasks reach Claude Code only when they are prepared for the queue (`enlens prepare split|extract|
