@@ -365,5 +365,6 @@ def check_quotes(kind: TaskKind, payload: dict, obj: Any) -> list[str]:
         if not q.strip():
             problems.append("a quote is empty")
         elif not any(find_quote(t, q) is not None for t in texts):
-            problems.append(f"quote not found in the text: {q[:80]!r}")
+            problems.append(f"quote not found in the passage: {q[:80]!r}. Copy it character for character, or quote a "
+                            "shorter contiguous piece of it.")
     return problems

@@ -279,6 +279,7 @@ export default {
 - **routes** (`PAGE_ROUTES`): `[pattern, the feature it lights up in the sidebar, render(view, groups, query)]`, tried
   after ENLENS's own pages.
 - **jobKinds**: a job's row in the sidebar: its icon, name, link and whether the link follows the job (`?job=<id>`).
+  The link may be a function of the job, for a page per item: `link: (j) => \`#/drafts/${j.scope}\``.
   A kind nobody names shows the job's own title.
 - **welcome**: cards on the first-run welcome screen, under the welcome text (`brand.json`).
 - **origins**: for a hypothesis made with `origin=` (0.14), the result page's eyebrow and meta line link back to it.

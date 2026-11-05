@@ -121,7 +121,8 @@ def test_the_quote_check_of_an_addon_kind():
                                   {"tags": [{"quote": "water  stress rises"}]}) == []
     bad = taskkinds.check_quotes(k, {"text": "Water stress rises in summer."},
                                  {"tags": [{"quote": "invented"}, {"quote": " "}]})
-    assert any("not found" in b for b in bad) and any("empty" in b for b in bad)
+    assert any("not found in the passage" in b and "character for character" in b for b in bad)
+    assert any("empty" in b for b in bad)
 
 
 # ---------------------------------------------------------------------------------------------

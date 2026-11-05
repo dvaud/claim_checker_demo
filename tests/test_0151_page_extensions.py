@@ -87,6 +87,8 @@ out.route = reg.PAGE_ROUTES.map(([rx, nav]) => [rx.source, nav, rx.test("/fake/n
 out.job = reg.jobRow({ id: "j9", kind: "fake-labels", title: "Stand-in labels" });
 out.welcome = reg.WELCOME_CARDS;
 out.origin = reg.originLink({ origin: "fake-note", origin_id: "n 1" });
+reg.JOB_KINDS["per-note"] = { icon: "tag", text: "A note's job", link: (j) => `#/fake/notes/${j.scope}`, withJob: true };
+out.scoped = reg.jobRow({ id: "j8", kind: "per-note", scope: "n2" });
 """, tmp_path)
     assert out["added"]["sections"] == ["notes"] and out["added"]["features"] == ["notes"]
     assert out["added"]["routes"] == 1 and out["added"]["jobKinds"] == ["fake-labels"]
@@ -100,6 +102,7 @@ out.origin = reg.originLink({ origin: "fake-note", origin_id: "n 1" });
     assert out["route"][0][1:] == ["notes", True]
     assert out["job"] == {"href": "#/fake/notes?job=j9", "icon": "tag", "text": "Stand-in labels", "tooltip": None}
     assert out["welcome"][0]["title"] == "Bring your field notes"
+    assert out["scoped"]["href"] == "#/fake/notes/n2?job=j8"  # a link made from the job
     assert out["origin"] == {"eyebrow": "Back to the note", "meta": "from a note", "href": "#/fake/notes?note=n%201"}
 
 

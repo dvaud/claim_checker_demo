@@ -37,7 +37,8 @@ export function jobRow(j) {
   const k = JOB_KINDS[j.kind];
   if (!k) return { href: "#/overview", icon: "circle", text: j.title || j.kind, tooltip: null };
   const text = k.label ? k.label(j, k.text) : k.text;
-  return { href: k.link + (k.withJob ? `?job=${encodeURIComponent(j.id)}` : ""), icon: k.icon, text,
+  const link = typeof k.link === "function" ? k.link(j) : k.link;  // a link may depend on the job (its scope)
+  return { href: link + (k.withJob ? `?job=${encodeURIComponent(j.id)}` : ""), icon: k.icon, text,
     tooltip: k.tooltip ? (j.title || "") : null };
 }
 
@@ -80,7 +81,7 @@ export function overviewSections(FEATURES, SECTIONS) {
 //   sections: {key: {title, short, sub, compact}}            new parts of the app (sidebar group, Overview section)
 //   features: {key: {section, title, icon, href, ai, what, use, nav, overview, state(o)}}
 //   routes:   [[RegExp, featureKey, render(view, groups, query)]]
-//   jobKinds: {kind: {icon, text, link, withJob, tooltip, label(j, text)}}
+//   jobKinds: {kind: {icon, text, link (a hash, or link(j) from the job), withJob, tooltip, label(j, text)}}
 //   welcome:  [{icon, title, text}]
 //   origins:  {origin: {eyebrow, meta, href(id)}}
 // It never replaces one of ENLENS's entries; returns the keys it added, by list.

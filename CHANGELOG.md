@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **A clearer quote check for an add-on's kind of task.** A quote not found now says *quote not found in the passage*
+  and how to fix it (copy it character for character, or quote a shorter piece), as ENLENS's own kinds say.
+- **A job's link can depend on the job.** In a page module's `jobKinds`, `link` may be a function of the job (for
+  example its scope), for apps with a page per item, such as Margin's drafts.
+- Tests: `test_0150_task_kinds.py` and `test_0151_page_extensions.py` check both.
+
 ## 0.15.1 (November 2026): room for add-ons in the page
 
 The last part of the room for apps built on ENLENS: the page. Adding a page meant editing the route table, the
