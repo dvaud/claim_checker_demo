@@ -89,7 +89,8 @@ themes and at 390 px wide.
 | `addons.py` | The local layer for apps built on ENLENS (0.13.5): see [EXTENDING.md](EXTENDING.md) |
 | `vca.py`, `sources.py`, `analysis.py`, `review.py`, `report.py`, `benchmark.py` | The SDG / value chain assessment pack |
 
-Outside `src/enlens_claims/`: `install/install.sh` and `install/install.ps1` are the one-line install;
+Outside `src/enlens_claims/`: `install/install.sh` and `install/install.ps1` are the one-line install (keep
+`install.sh` plain ASCII: macOS's `sh`, bash 3.2, misreads a non-ASCII letter right after a `$NAME`, a test checks it);
 `.github/workflows/release.yml` turns a tag `vX.Y.Z` into a draft GitHub Release with `tools/release.py` (below);
 `tools/pdf_to_text.py` turns a folder of PDFs into page-preserving text files; `tools/eval_second_pass.py` measures the
 second sorting pass on the pilot; `tools/make_icons.py` draws the icon files. The green hydrogen pilot (workspace,

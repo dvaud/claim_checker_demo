@@ -16,6 +16,10 @@
 #   ENLENS_VERSION=0.10.0 install that release instead of the one this script came with
 #   ENLENS_WHEEL=<file>   install this package file instead of downloading one (for testing a build)
 #   ENLENS_NO_OPEN=1      do not open ENLENS at the end
+#
+# Keep this file plain ASCII (0.14.1). macOS's sh is bash 3.2, which in a UTF-8 locale (en_US.UTF-8, hu_HU.UTF-8)
+# took a typographic ellipsis right after $VERSION for part of the variable's name: set -u then stopped the
+# install at step 2 ("unbound variable") unless LC_ALL=C came before sh. Linux's sh never did this.
 set -eu
 
 REPO="${ENLENS_REPO:-dvaud/claim_checker_demo}"
@@ -31,7 +35,19 @@ esac
 command -v curl >/dev/null 2>&1 || fail "the program curl is missing."
 
 tmp="$(mktemp -d 2>/dev/null || mktemp -d -t enlens)"
-trap 'rm -rf "$tmp"' EXIT INT TERM
+# Removes the temporary folder whatever happens, and keeps a failure a failure (0.14.1): after an error such as an
+# unbound variable, macOS's sh (bash 3.2) ran this trap with $? already 0 and so ended "successfully". Only the last
+# line of this script sets `finished`.
+finished=""
+cleanup() {
+  st=$?
+  rm -rf "$tmp"
+  if [ -z "$finished" ] && [ "$st" -eq 0 ]; then st=1; fi
+  exit "$st"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # 1. uv ---------------------------------------------------------------------------------------
 find_uv() {
@@ -42,7 +58,7 @@ find_uv() {
 }
 UV="$(find_uv || true)"
 if [ -z "$UV" ]; then
-  say "1/4  Getting uv, which installs ENLENS and its own Python…"
+  say "1/4  Getting uv, which installs ENLENS and its own Python..."
   # downloaded to a file first (0.11.1): in a pipe a failed download went unnoticed, and the line went on to say
   # that uv "cannot be found" instead of that the computer is offline
   curl -LsSf -o "$tmp/uv-install.sh" https://astral.sh/uv/install.sh || fail "uv's installer could not be downloaded. Are you online?"
@@ -62,7 +78,7 @@ if [ -n "${ENLENS_WHEEL:-}" ]; then
 else
   WHEEL="enlens_claims-$VERSION-py3-none-any.whl"
   BASE="https://github.com/$REPO/releases/download/v$VERSION"
-  say "2/4  Downloading ENLENS $VERSION…"
+  say "2/4  Downloading ENLENS ${VERSION}..."
   curl -fsSL -o "$tmp/$WHEEL" "$BASE/$WHEEL" || fail "the download of $BASE/$WHEEL did not work. Are you online?"
   curl -fsSL -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" || fail "the checksums of the release could not be downloaded."
   want="$(awk -v f="$WHEEL" '$2 == f || $2 == "*" f { print $1 }' "$tmp/SHA256SUMS")"
@@ -72,14 +88,14 @@ else
 fi
 
 # 3. install ------------------------------------------------------------------------------------
-say "3/4  Installing ENLENS (the first time this also fetches Python 3.12; a minute or two)…"
+say "3/4  Installing ENLENS (the first time this also fetches Python 3.12; a minute or two)..."
 UV_PYTHON_PREFERENCE=only-managed "$UV" tool install --force --quiet --python 3.12 \
   "enlens-claims[$EXTRAS] @ file://$tmp/$WHEEL" || fail "uv could not install ENLENS (see the lines above)."
 BIN="$("$UV" tool dir --bin 2>/dev/null || printf '%s' "$HOME/.local/bin")"
 [ -x "$BIN/enlens" ] || fail "ENLENS was installed, but $BIN/enlens is missing."
 
 # 4. the icon, the Claude Code plugin, and open ---------------------------------------------------
-say "4/4  Making the ENLENS icon…"
+say "4/4  Making the ENLENS icon..."
 set -- post-install --by script
 if [ -n "${ENLENS_HOME:-}" ]; then set -- "$@" --home "$ENLENS_HOME"; fi
 if [ -z "${ENLENS_NO_OPEN:-}" ]; then set -- "$@" --open; fi
@@ -91,3 +107,4 @@ case ":$PATH:" in
   *":$BIN:"*) ;;
   *) say "(In a terminal, ENLENS's commands are in $BIN, for example: $BIN/enlens update)" ;;
 esac
+finished=1

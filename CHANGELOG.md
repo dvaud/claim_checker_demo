@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.14.1 (November 2026): the one-line install works on a Mac again
+
+**The one-line install stopped after its first step on most Macs** (since 0.10.0). In a Terminal that uses a UTF-8
+language setting (the usual one, such as en_US.UTF-8 or hu_HU.UTF-8), it ended with "line 65: VERSION…: unbound
+variable" before downloading anything; only `curl ... | LC_ALL=C sh` got through. macOS's `sh` took the "…" printed
+after the version number for part of a name. The install script now uses plain ASCII only. Linux and Windows were not
+affected. Nothing changes for an ENLENS that is already installed (`enlens update` does not use this script), and
+nothing here can change results.
+
+**A failed install now says it failed.** After that error, macOS's `sh` still ended with exit status 0 (success): it
+runs the script's clean-up step with the status already reset. The script now ends as a failure whenever it stops before
+its last line, removes its temporary folder either way, and stops at once on Ctrl-C. Found while testing the fix.
+
+**Why no test saw it.** Linux's `sh` reads the script as intended, the release's tests run on Linux, and the release's
+macOS install job installs the package it has just built, which skips the download step where the script stopped.
+
+**Tests:** `tests/test_0_14_1_mac_install.py` (6 tests): `install.sh` is plain ASCII; the install line, piped into `sh`
+as people run it, downloads, checks and installs in an en_US.UTF-8 and a hu_HU.UTF-8 language setting and leaves no
+temporary folder; an unbound variable, a failed command or `fail` part-way ends with a failure status, installs nothing
+and leaves no temporary folder (stand-ins for uv and curl). All six fail on 0.14.0's script on a Mac. On Linux only the
+ASCII test can catch the first defect. `tests/test_0_14_0_shared_projects.py`: the withdrawn-number test checks the
+running version instead of requiring 0.14.0.
+
+**Not yet done:** the fixed script was tried for real on a Mac in an en_US.UTF-8 setting, in scratch home folders with
+the real uv: with the 0.14.1 package built here, and through the download step with the published 0.14.0 package (where
+0.14.0's own script stops at line 65). The 0.14.1 package can only be downloaded once this release is published: then
+run the install line once on a Mac in a normal Terminal window.
+
 ## 0.14.0 (November 2026): work on a project together
 
 Researchers asked to work on one project with a colleague, each on their own computer and their own Claude plan.

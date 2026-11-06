@@ -375,7 +375,8 @@ def test_the_app_brings_a_colleagues_work_in(anna_and_ben):
 def test_a_withdrawn_number_is_not_this_release():
     from enlens_claims import __version__, update
 
-    assert __version__ == "0.14.0" and "0.14.0" not in update.WITHDRAWN
+    # 0.14.1: this release is not a withdrawn number either (the test no longer pins 0.14.0 as the version)
+    assert __version__ not in update.WITHDRAWN and "0.14.0" not in update.WITHDRAWN
 
 
 def test_agreement_between_two_people_and_cohens_kappa(ws):
