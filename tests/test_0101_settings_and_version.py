@@ -69,6 +69,6 @@ def test_page_files_of_the_release():
     defined = defined_tokens()  # 0.13.5: the tokens are in tokens.css
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
     assert used and used <= defined, used - defined
-    # the hidden Quit button stays hidden although the foot's buttons are flex items
-    assert ".sidebar-app .btn[hidden] { display: none; }" in css
+    # the hidden Quit button stays hidden although the foot's buttons are flex items (0.14.2: the rule is in app.css)
+    assert ".sidebar-app .btn[hidden] { display: none; }" in (STATIC / "app.css").read_text(encoding="utf-8")
     assert "a.version-tag:hover" in css  # a link styled as a pill keeps its own hover colours

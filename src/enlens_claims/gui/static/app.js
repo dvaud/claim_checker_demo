@@ -347,15 +347,17 @@ async function drawQueue() {
   if (q.waiting || q.being_answered || s.backend === "claude_code") queueTimer = setTimeout(renderQueue, q.waiting || q.being_answered ? 5000 : 15000);
 }
 
+// 0.14.2: the theme is a small icon beside Settings (it was a row of its own). The icon shows the theme in use;
+// a click goes on to the next one, and the tooltip says which.
 function themeInit() {
   const btn = document.getElementById("theme-btn");
   const apply = (mode) => {
     if (mode === "light" || mode === "dark") document.documentElement.setAttribute("data-theme", mode);
     else document.documentElement.removeAttribute("data-theme");
-    const names = { system: ["monitor", "Theme: system"], light: ["sun", "Theme: light"], dark: ["moon", "Theme: dark"] };
-    const [ic, label] = names[mode] || names.system;
-    replace(btn, icon(ic, { size: 15 }), h("span", {}, label));
-    btn.setAttribute("aria-label", label + ". Change theme");
+    const names = { system: ["monitor", "Theme: follows this computer", "Click for light."], light: ["sun", "Theme: light", "Click for dark."], dark: ["moon", "Theme: dark", "Click to follow this computer."] };
+    const [ic, label, next] = names[mode] || names.system;
+    replace(btn, icon(ic, { size: 17 }), h("span", { class: "visually-hidden" }, label));
+    btn.title = `${label}. ${next}`;
   };
   let mode = store("theme") || "system";
   apply(mode);

@@ -67,6 +67,21 @@ mark.quote {
 .nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
 .nav-icon { display: inline-flex; width: 18px; height: 18px; }
 .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+/* ---------------------------------------------------------------- sidebar foot: Settings (with the theme icon), Update, Quit */
+/* 0.10.1, moved here in 0.14.2. One short list, aligned like the features above it: the same padding, icon width and gap. */
+.sidebar-app { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--border); }
+.sidebar-app .btn {
+  width: 100%; justify-content: flex-start; gap: 10px; padding: 7px 10px; border-radius: 8px;
+  font-size: inherit; font-weight: 500; color: var(--text-2);
+}
+.sidebar-app .btn[hidden] { display: none; }
+.sidebar-app .btn svg { width: 18px; height: 18px; flex: none; }
+.sidebar-app .btn:hover { background: var(--surface-3); color: var(--text); }
+/* 0.14.2: the theme is a small icon at the end of the Settings row, not a row of its own */
+.sidebar-app-row { display: flex; align-items: center; gap: 4px; }
+.sidebar-app-row .nav-foot { flex: 1; min-width: 0; }
+.sidebar-app .theme-btn { flex: none; width: 34px; height: 34px; }
+.sidebar-app .theme-btn svg { flex: none; }
 /* the Update button shows only when there is an update (0.13.6), so it stands out */
 .sidebar-app .btn.update-ready { color: var(--accent); font-weight: 600; }
 .sidebar-app .btn.update-ready:hover { background: var(--accent-soft); color: var(--accent-strong); }

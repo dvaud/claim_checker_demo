@@ -225,8 +225,10 @@ is for.
 
 **The sidebar (0.9).** *Overview* (the start page of a project), *Documents*, *Bibliography* (0.13), then **Explore the documents**
 (Search, Profile, Concepts, Themes) and **Check hypotheses** (Check a hypothesis, Check several, Results). At the
-bottom, under the line that says where text goes, *Settings*, *Theme*, *Update to …* (0.13.1; since 0.13.6 only when
-there is an update) and *Quit ENLENS* sit together (0.10.1); every
+bottom, under the line that says where text goes, *Settings*, *Update to …* (0.13.1; since 0.13.6 only when
+there is an update) and *Quit ENLENS* sit together (0.10.1). The small icon at the end of the *Settings* row is the
+theme (since 0.14.2; before, a row of its own): a screen means it follows your computer, a sun light, a moon dark;
+click it for the next one, and hover it to see which is in use. Every
 *Settings* tab shows the version of ENLENS at the top right, and clicking it opens *Technical → Updates* (0.13.6:
 *Check for updates*, then how this copy was installed under *Where your data is*). The *Overview* shows every feature with one line on what it does, whether it uses the AI and what is
 already made in the project (a profile, a glossary, a set of themes, results), and the AI in use with what is left

@@ -67,10 +67,12 @@
         <div id="queue-indicator"></div>
         <div id="privacy-indicator"></div>
         <div class="sidebar-app">
-          <nav class="nav nav-foot" id="nav-foot" aria-label="App">
-            <a href="#/settings" data-route="settings" title="The AI (Claude Code, a local model), checking, exploring, documents, and the version"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></a>
-          </nav>
-          <button class="btn btn-ghost btn-sm" id="theme-btn" type="button" aria-live="polite"></button>
+          <div class="sidebar-app-row">
+            <nav class="nav nav-foot" id="nav-foot" aria-label="App">
+              <a href="#/settings" data-route="settings" title="The AI (Claude Code, a local model), checking, exploring, documents, and the version"><span class="nav-icon" data-icon="sliders"></span><span>Settings</span></a>
+            </nav>
+            <button class="icon-btn theme-btn" id="theme-btn" type="button" aria-live="polite"></button>
+          </div>
           <button class="btn btn-ghost btn-sm" id="update-btn" type="button" hidden></button>
           <button class="btn btn-ghost btn-sm" id="quit-btn" type="button" hidden></button>
         </div>

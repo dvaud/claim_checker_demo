@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.2 (November 2026): the theme is a small icon beside Settings
+
+**The theme is a small icon beside Settings.** The *Theme: system* button at the foot of the sidebar took a row of its
+own; it is now an icon at the end of the *Settings* row: a screen (follows your computer), a sun (light) or a moon
+(dark). A click goes on to the next one, as before, and the tooltip says which is in use and what a click does. The
+choice is kept as before. On a short window the sidebar's foot needs one row less. Nothing here can change results.
+
+The sidebar foot's style rules moved from the 0.10.1 stylesheet into the shared `app.css`.
+
+**Tests:** `tests/test_0_14_2_theme_icon.py` (3 tests): Settings and the theme icon share one row, with *Update* and
+*Quit* below it; the icon has no visible label but a name for screen readers and a tooltip, and keeps the stored
+choice; the row's CSS uses only the colour tokens.
+
 ## 0.14.1 (November 2026): the one-line install works on a Mac again
 
 **The one-line install stopped after its first step on most Macs** (since 0.10.0). In a Terminal that uses a UTF-8
