@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.13.11 (November 2026): the local model shows itself, and waits for room
+
+Found in a user test. With Claude Code as the AI, a check whose most important document was marked *Only a local AI*
+loaded a 7.6 GB local model on a 16 GB Mac that had 2.7 GB free. The computer all but froze for several minutes (and
+was still 7.7 GB into swap afterwards), while the page said only *Waiting for Claude Code*.
+
+**You see the local model at work.** While Claude Code reads its excerpts, the progress now says *Your local model
+(qwen3.5:9b) is reading 3 excerpts from documents marked Only a local AI, on this computer*, with what the model is
+doing (starting, thinking, writing) and its time, and Stop stops it. Until now it read unseen: the page went on
+showing Claude Code's queue, and the job could even look *on hold*. The same line shows on the Claude API, and *Read
+them now on this computer* gives way to it with Stop (the button only greyed out for minutes before). The note at the
+end says what happened; when no local model could be used, it no longer says the excerpts *were read on this
+computer*. A check whose only waiting excerpts are the local model's now says *Waiting for your local model* (on the
+result, each part, the Results list and the map), no longer *Waiting for Claude Code* when Claude Code is done.
+
+**Not started without room for it.** Before the local model for documents marked *Only a local AI* is loaded (on
+Ollama), ENLENS compares what it needs (its size plus its working memory at the context length used) with the memory
+this computer has free, counting the memory of other models Ollama would let go of. When it clearly cannot fit, it is
+not started: *qwen3.5:9b was not started: it needs about 8.1 GB of memory, and this computer has about 2.7 GB free
+now…*, with what to do (close programs, or choose a smaller local model). In a check, Claude's part finishes and those
+excerpts wait, so the check ends instead of waiting for nothing; *Read them now* tries again, and when it is still
+short, *Start it anyway* lets you decide. Taking the waiting checks out of the queue no longer removes such a check:
+Claude's answers are kept. The check is a lower bound, so it only stops a model that clearly cannot fit. A local
+model you chose as the main AI is not checked (you start it yourself, and see it load), nor is a model on LM Studio
+or another OpenAI-compatible server, which has its own guard.
+
+**Memory given back.** A local model that takes more than a third of this computer's memory is let go as soon as it
+has read the restricted excerpts of a check (of a whole set, for *Check several*), instead of staying loaded for 15
+minutes.
+
+**For developers.** `llm.MemoryShort` (a `BackendError`), `llm.free_memory()`, `llm.total_memory()`,
+`OllamaBackend.memory_guard` (on for the restricted-documents model, set in `home.make_restricted_backend`),
+`memory_need`, `is_loaded`, `check_memory`. `access.Readers` takes `progress`, `should_stop` and `check_memory`, and
+has `memory_short`, `read`, `used`, `stopped()` and `free_memory()`. `server.wire` also sets `local_progress` and
+`local_should_stop` on the backend. `claimcheck.local_waiting`, `only_local_waits`, `run_local_parts(…, on_start)`,
+and `check_hypothesis(…, readers)` (`check_batch` shares one). `Tracker.say`; a note with `{"keep": True}` stays
+through a batch; a model report with `"who": "local"`. Jobs end with `error_kind: "memory"`. `POST
+…/hypotheses/<id>/read-local` takes `{"force": true}`, and its job has a progress and the result as its `scope`.
+Withdrawing checks (`POST …/queue/withdraw`, `enlens queue withdraw`) skips those where `only_local_waits`. A
+result, each of its parts, a Results row and a map row carry `status_text` *Waiting for your local model*
+(`claimcheck.WAITING_LOCAL`) when only the local model's excerpts wait (a Results row has `status_text` null
+otherwise). `tools/dev_server.py --low-memory`.
+
+### Defects, tests, and what is not done
+
+**Defects fixed on the way.** Taking the waiting checks out of the queue (*Remove* in the queue panel, or `enlens
+queue withdraw check`) removed a check whose local excerpts still waited, Claude's answers included. When the local
+model could not be used, the progress said its excerpts *were read on this computer*; it now says why they wait for
+your judgement. The steps of a check by queue were shown one poll late, so *Waiting for Claude Code to propose other
+words* still showed while the local model read the excerpts; they are now brought up to date first. A test that did not set its own ENLENS folder read the researcher's real settings (on a Max plan,
+two tests of 0.13.6 expected Haiku and got Opus); every test now has a folder of its own.
+
+**Tests:** `tests/test_0_13_11_local_memory.py` (17 tests): the progress names the local model while it reads, on
+Claude Code and on the Claude API; a check by queue with no room ends once Claude Code is done, its local excerpts
+waiting (not handed to you), and *Read them now* refuses again until *Start it anyway*; Stop leaves them waiting; a
+large model is let go after reading and a small one kept; a set of checks loads the local model once; withdrawing
+waiting checks keeps a finished one; Ollama's memory check (refused before anything loads, the memory of other loaded
+models counted as free, `:latest` names, nothing known: no refusal); the guard on for the restricted-documents model
+only; memory figures on this computer; a job refused for memory says so in plain words; notes kept through a set;
+*Waiting for your local model* on the result, its part, the Results list and the map. Checked in the app with the
+dev server (`tools/dev_server.py --mixed --claude-code`, and `--low-memory`, new: 2.7 GB free and 8.1 GB needed) in
+light and dark and at 390 px: the progress while the local model reads, the waiting excerpts, *Read them now* →
+*Start it anyway* → the local model reading with Stop.
+
+**Not yet done.** Tried with stand-in models only, and the memory figures on macOS. Loading a real model with too
+little memory free was not repeated on purpose. A local model on LM Studio or another OpenAI-compatible server is
+not checked for memory (LM Studio has its own guard).
+
 ## 0.13.10 (November 2026): how fast Claude Code works, and models that suit your Claude plan
 
 Two additions for Claude Code: a speed beside every *Start Claude Code* (with the helpers of one run to choose, folded

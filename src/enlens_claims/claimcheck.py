@@ -45,6 +45,7 @@ STATUS_TEXT = {
     "failed": "The check did not work",
     "waiting": "Waiting for Claude Code",
 }
+WAITING_LOCAL = "Waiting for your local model"  # 0.13.11: only the excerpts of documents marked Only a local AI wait
 STATUS_HELP = {
     "supported": "At least one excerpt says what the hypothesis says, and none says the opposite.",
     "partially_supported": "No excerpt says it all, but at least one says an important part of it. Read the excerpts to "
@@ -491,60 +492,121 @@ def _run_round(ws: Workspace, parts: dict[str, str], backend, model: str, reader
     """Answer the parts of a round: the main one with the main model, the local one with the local model (or, when
     it cannot be reached, it waits for a person). Returns whether the main part's answer was accepted (True when
     there is none). Backend errors of the main model propagate."""
-    from .llm import BackendError
+    from .llm import BackendError, MemoryShort
 
     ok = True
     if "main" in parts:
         ok, _errs = tasks.run_one(ws, parts["main"], backend, model)
     if "local" in parts:
         got = readers.local() if readers is not None else None
-        if got is None:
+        if got is not None and readers.memory_short:
+            pass  # 0.13.11: no room for the local model earlier in this check: these excerpts wait as well
+        elif got is None:
             _to_person(ws, parts["local"])
             if readers is not None and readers.local_problem:
                 say("note", f"The local model could not be used ({readers.local_problem}); those excerpts wait for "
                             "your judgement", {})
         else:
+            n = _part_counts(ws, {"local": parts["local"]})["local"]
             try:
                 lok, _errs = tasks.run_one(ws, parts["local"], got[0], got[1])
+                readers.read += 1
                 if not lok:  # 0.11.1: said on the progress and the result, instead of passing in silence
                     say("note", "The local model's answers for the excerpts of documents marked Only a local AI could "
                                 "not be used; they are shown without a judgement", {})
+            except MemoryShort as e:
+                # 0.13.11: not loaded on a computer without room for it; the excerpts wait ("Read them now")
+                readers.memory_short = e
+                say("note", f"{e} {_waiting_words(n)}", {"keep": True})
             except BackendError as e:
+                if readers.stopped():
+                    raise
                 _to_person(ws, parts["local"])
                 say("note", f"The local model could not be reached ({e}); those excerpts wait for your judgement", {})
     return ok
 
 
-def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=None, retry_failed: bool = False) -> int:
+def _waiting_words(n: int) -> str:
+    return (f"The {n} {'excerpt' if n == 1 else 'excerpts'} from documents marked Only a local AI "
+            f"{'waits' if n == 1 else 'wait'}: the result has Read them now, or judge {'it' if n == 1 else 'them'} "
+            "yourself.")
+
+
+def local_waiting(ws: Workspace, hyp_ids: list[str] | None = None, retry_failed: bool = False) -> list[dict]:
+    """The local parts of rounds that wait for the local model ({"task_id", "status", "passages"}): made by a check
+    by queue or in a Claude chat, or left waiting when the computer had no room for the model (0.13.11). With
+    `retry_failed`, also those whose answers could not be used."""
+    rows = ws.query("SELECT task_id, payload_json, status FROM tasks WHERE kind='check' AND status IN "
+                    f"('pending', 'retry'{', ' + repr('failed') if retry_failed else ''}) AND substr(task_id, -6) = ':local'")
+    out = []
+    for r in rows:
+        payload = json.loads(r["payload_json"])
+        if hyp_ids is not None:
+            hid = ws.scalar("SELECT hyp_id FROM user_claims WHERE claim_id=?", (payload.get("subject_id"),))
+            if hid not in hyp_ids:
+                continue
+        out.append({"task_id": r["task_id"], "status": r["status"], "passages": len(payload.get("passages") or [])})
+    return out
+
+
+def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=None, retry_failed: bool = False,
+                    on_start: Callable[[str, int], None] | None = None) -> int:
     """Answer the local parts of rounds that wait (made by a check by queue or in a Claude chat), with the local model
     for restricted documents; without one they wait for a person. With `retry_failed` ("Read them now" on the
-    result, 0.11.1) a local part whose answers could not be used is tried again. Returns the number of parts handled."""
-    from .llm import BackendError
+    result, 0.11.1) a local part whose answers could not be used is tried again. Returns the number of parts handled.
+
+    0.13.11: the model is not loaded when this computer has clearly too little memory free for it: the parts keep
+    waiting, and `readers.memory_short` says why. `on_start(model, excerpts)` is called before the model starts."""
+    from .llm import BackendError, MemoryShort
 
     if readers is None:
         readers = access.Readers(None, "")
-    rows = ws.query("SELECT task_id, payload_json, status FROM tasks WHERE kind='check' AND status IN "
-                    f"('pending', 'retry'{', ' + repr('failed') if retry_failed else ''}) AND substr(task_id, -6) = ':local'")
+    rows = local_waiting(ws, hyp_ids, retry_failed)
+    if not rows:
+        return 0
+    got = readers.local()
+    if got is not None:
+        try:
+            if hasattr(got[0], "check_memory"):
+                got[0].check_memory(got[1])
+        except MemoryShort as e:
+            readers.memory_short = e
+            return 0
+        except BackendError:
+            pass  # said by the task itself, below
+        if on_start is not None:
+            on_start(got[1], sum(r["passages"] for r in rows))
     n = 0
     for r in rows:
         if r["status"] == "failed":
             with ws.connect() as cx:
                 cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=?", (r["task_id"],))
-        cid = json.loads(r["payload_json"]).get("subject_id")
-        if hyp_ids is not None:
-            hid = ws.scalar("SELECT hyp_id FROM user_claims WHERE claim_id=?", (cid,))
-            if hid not in hyp_ids:
-                continue
-        got = readers.local()
         if got is None:
             _to_person(ws, r["task_id"])
         else:
             try:
                 tasks.run_one(ws, r["task_id"], got[0], got[1])
-            except BackendError:
+                readers.read += 1
+            except MemoryShort as e:
+                readers.memory_short = e
+                return n
+            except BackendError as e:
+                if readers.stopped():
+                    raise  # 0.13.11: stopped, the part keeps waiting for the local model
+                readers.local_problem = str(e)  # said on the progress
                 _to_person(ws, r["task_id"])
         n += 1
     return n
+
+
+def only_local_waits(ws: Workspace, hyp_id: str) -> bool:
+    """0.13.11: whether all a check still waits for is the local model (the excerpts of documents marked Only a local
+    AI): Claude (Code) has done its part. A check by queue counts once its parts are past choosing excerpts."""
+    claims = ws.query("SELECT claim_id, stage FROM user_claims WHERE hyp_id=?", (hyp_id,))
+    if not claims or any(c["stage"] not in ("judge", "done", None) for c in claims):
+        return False
+    open_ = [t for c in claims for t in _check_tasks(ws, c["claim_id"]) if t["status"] in ("pending", "retry")]
+    return bool(open_) and all(t["task_id"].endswith(":local") for t in open_)
 
 
 def _readers(backend, model: str, readers=None):
@@ -600,7 +662,8 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
                      decompose: bool = False, doc_ids: list[str] | None = None, progress: Progress | None = None,
                      embedder=None, batch_id: str | None = None, should_stop: Callable[[], bool] | None = None,
                      parts: list | None = None, terms: list | None = None, edited: dict | None = None,
-                     second_pass: bool = False, origin: str | None = None, origin_id: str | None = None) -> str:
+                     second_pass: bool = False, origin: str | None = None, origin_id: str | None = None,
+                     readers=None) -> str:
     """Run a full check and return the hypothesis id; read the outcome with `hypothesis_result`.
 
     `parts` (sentences, or {"text", "role"}) are the parts to check, as a person saw and edited them with
@@ -635,7 +698,8 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
             options["decompose"] = len(given) > 1
     hid = _new_id("h")
     create_hypothesis(ws, text, fw, code, options, batch_id, hyp_id=hid, origin=origin, origin_id=origin_id)
-    readers = access.Readers(backend, model)
+    own = readers is None  # 0.13.11: a batch shares one, so the local model is loaded once for all its checks
+    readers = access.Readers(backend, model) if own else readers
     try:
         plan = [{"text": text, "role": None, "part": 0}]
         if given is not None:
@@ -671,7 +735,18 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
     except BaseException:
         delete_hypothesis(ws, hid)  # a check stopped by a connection or key problem should not linger in the history
         raise
+    finally:
+        if own:
+            _let_go(readers)
     return hid
+
+
+def _let_go(readers) -> None:
+    """0.13.11: free the memory of the local model for restricted documents once it has read (see Readers)."""
+    try:
+        readers.free_memory()
+    except Exception:  # noqa: BLE001 - freeing memory early is a kindness, never a reason to fail
+        pass
 
 
 def _decompose(ws: Workspace, hid: str, text: str, backend, model: str, used: str) -> list[dict] | None:
@@ -1541,6 +1616,10 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     vs_first, out["stronger"] = _before_stronger(raw_vs)
     out["status_first"] = _status_of_rounds(statuses, vs_first, thr, stage, waiting) if vs_first else out["status"]
     out["waiting"] = out["status"] == "waiting"
+    open_ = [t for g in groups for t in g if t["status"] in ("pending", "retry")]
+    if out["waiting"] and stage in ("judge", "done", None) and open_ and all(t["task_id"].endswith(":local")
+                                                                               for t in open_):
+        out["status_text"] = WAITING_LOCAL  # 0.13.11: Claude (Code) is done with this part
     out["rounds_task_ids"] = [r["task_id"] for r in rounds]
     out["stepped_up"] = {r["task_id"]: {"step": int(r["step"] or 0), "again": bool(r["again"])} for r in rounds}
     out["round_status"] = statuses[-1]
@@ -1601,6 +1680,8 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     out["incomplete"] = any(p["status"] in ("failed", "not_checked", "waiting") for p in parts)
     out["queue"] = h.get("queue")
     out["status_text"] = STATUS_TEXT.get(out["status"], out["status"])
+    if out["status"] == "waiting" and only_local_waits(ws, hyp_id):
+        out["status_text"] = WAITING_LOCAL  # 0.13.11: not "Waiting for Claude Code" once Claude Code is done
     # 0.11.2: the answer the first model gave, when a stronger model read excerpts again and changed it
     firsts = [p.get("status_first", p["status"]) for p in parts]
     out["status_first"] = (firsts[0] if len(firsts) == 1 else aggregate(firsts)) if parts else out["status"]
@@ -1832,7 +1913,8 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
                 decides[doc] = decides.get(doc, 0) + 1
         cells[hid] = row
         hyps.append({"hyp_id": hid, "text": h["text"], "status": h["status"],
-                     "status_text": STATUS_TEXT.get(h["status"], h["status"]), "docs_counted": len(row),
+                     "status_text": (WAITING_LOCAL if h["status"] == "waiting" and only_local_waits(ws, hid)
+                                     else STATUS_TEXT.get(h["status"], h["status"])), "docs_counted": len(row),
                      "single_document": len(row) == 1, "batch_id": h["batch_id"]})
     docs = []
     for doc in sorted(answers, key=lambda d: (-answers[d], -decides.get(d, 0), titles.get(d, "").lower())):
@@ -2030,6 +2112,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         out.append({"hyp_id": h["hyp_id"], "claim_id": first["claim_id"], "created_at": h["created_at"],
                     "claim": h["text"], "text": h["text"], "framework": h["framework"] or "", "target": h["code"] or "",
                     "code": h["code"] or "", "code_label": label(h["framework"]) if h["code"] else "", "status": s,
+                    "status_text": WAITING_LOCAL if s == "waiting" and only_local_waits(ws, h["hyp_id"]) else None,
                     "status_any": st_any[0] if len(st_any) == 1 else aggregate(st_any),
                     "supports": counts["supports"], "partly": counts["partially_supports"], "refutes": counts["refutes"],
                     "uncounted": uncounted, "corrected": corrected, "reviewed": reviewed, "to_review": to_review,
@@ -2495,9 +2578,16 @@ def check_batch(ws: Workspace, items: list[dict], backend, model: str, progress:
                 should_stop: Callable[[], bool] | None = None, **options: Any) -> dict:
     """Check several hypotheses one after the other. A problem with one is recorded and the next is checked; a
     problem with the model service stops the batch (what was done is kept)."""
+    readers = access.Readers(backend, model)  # 0.13.11: one local model for the whole batch, let go at its end
+    try:
+        return _check_each(ws, items, backend, model, _adapt(progress), should_stop, readers, options)
+    finally:
+        _let_go(readers)
+
+
+def _check_each(ws, items, backend, model, say, should_stop, readers, options) -> dict:
     from .llm import BackendError
 
-    say = _adapt(progress)
     batch_id = _new_id("b")
     done: list[str] = []
     errors: list[dict] = []
@@ -2511,7 +2601,7 @@ def check_batch(ws: Workspace, items: list[dict], backend, model: str, progress:
             hid = check_hypothesis(ws, it["text"], backend, model, framework=it.get("framework"), code=it.get("code"),
                                    batch_id=batch_id, progress=lambda s, m, info=None, _i=i: say(s, m, {**(info or {}),
                                                                                                     "index": _i}),
-                                   should_stop=should_stop, **options)
+                                   should_stop=should_stop, readers=readers, **options)
             done.append(hid)
         except BackendError as e:
             stopped = str(e)

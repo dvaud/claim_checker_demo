@@ -51,3 +51,11 @@ def _no_real_claude_code(tmp_path, monkeypatch):
     from enlens_claims import claude_setup
 
     claude_setup._STATUS.update(at=0.0, value=None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_enlens_home(tmp_path, monkeypatch):
+    """0.13.11: tests never read the researcher's own ENLENS folder (~/enlens). Without this, a test that did not set
+    ENLENS_HOME read the real settings, so the models recommended for the plan Claude Code found there (Max: Opus)
+    replaced the ones the test expects (Pro). A test that sets ENLENS_HOME itself still gets its own."""
+    monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "enlens-home"))

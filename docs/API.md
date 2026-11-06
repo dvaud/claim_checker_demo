@@ -335,7 +335,10 @@ project's default. The setting is enforced where tasks are made and run (see `ac
   Feature, Document, Document id, Passage id, Page, Task).
 - `POST /api/projects/<p>/hypotheses/<hyp_id>/read-local` → job (kind `read-local`): the excerpts of the check that
   wait for the local model (made in a Claude chat, or while the app was closed) are read by it; without one they wait
-  for a person. `result`: `{"hyp_id", "parts", "status"}`.
+  for a person. `result`: `{"hyp_id", "parts", "status"}`. 0.13.11: the job has a check's `progress` (the local
+  model's line carries `"who": "local"` and `name`); when this computer has too little memory free for the model it
+  ends in `error_kind: "memory"` and the excerpts keep waiting. Body `{"force": true}` starts the model anyway (the
+  page's *Start it anyway*).
 - `/api/state` adds `restricted` (as `restricted_model` above). Settings: `restricted_server` (`""`, `ollama`,
   `openai`), `restricted_model`, `account_type` (`""`, `personal`, `commercial`).
 - The result of a check: each excerpt has `read_by` (`claude`, `local`, `ai`, `you`, `waiting`), `access` (its
@@ -940,7 +943,7 @@ from a reference manager (BibTeX, RIS, CSL JSON, Zotero's CSV). Nothing goes ove
  "title": "…", "queue": false,
  "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
  "created_at": 1793136448.87, "started_at": … | null, "finished_at": … | null, "seconds": 19.9,
- "error": null | "message", "error_kind": null | "backend" | "request" | "internal",
+ "error": null | "message", "error_kind": null | "backend" | "memory" | "request" | "internal",
  "progress": {…kind-specific…}, "result": {…} | null}
 ```
 Summaries (in lists) omit `progress` and `result`. Jobs live until the app is closed.

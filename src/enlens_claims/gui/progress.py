@@ -15,6 +15,12 @@ PHASE = {"waiting": "loading the model and reading the prompt", "thinking": "rea
          "writing": "writing its answer", "done": "finished"}
 PLAIN_PHASE = {"waiting": "The AI is getting ready and reading", "thinking": "The AI is thinking it over",
                "writing": "The AI is writing down its judgement", "done": "The AI has finished"}
+# 0.13.11: the local model for documents marked Only a local AI, reading beside Claude (it used to read unseen)
+LOCAL_PHASE = {"waiting": "Your local model is starting and reading the excerpts from documents marked Only a local AI",
+               "thinking": "Your local model is thinking over the excerpts from documents marked Only a local AI",
+               "writing": "Your local model is writing down its judgement of the excerpts from documents marked "
+                          "Only a local AI",
+               "done": "Your local model has finished"}
 
 
 def _secs(s: float) -> str:
@@ -41,7 +47,8 @@ def model_line(info: dict) -> str:
                 parts.append(f"wrote {st['output_tokens']:,} tokens")
         return "Model finished: " + ", ".join(parts) if parts else "Model finished."
     phase = info.get("phase", "waiting")
-    text = f"Model is {PHASE.get(phase, phase)} · {_secs(info.get('seconds', 0))}"
+    who = f"Local model {info.get('model')}" if info.get("who") == "local" and info.get("model") else "Model"
+    text = f"{who} is {PHASE.get(phase, phase)} · {_secs(info.get('seconds', 0))}"
     if phase == "waiting":
         text += f" · prompt of about {info.get('prompt_tokens', 0):,} tokens"
         if info.get("seconds", 0) > 120:
@@ -81,6 +88,7 @@ class Tracker:
         self.message = "Starting"
         self.batch: dict | None = None
         self.notes: list[str] = []  # 0.11: what happened to the excerpts of restricted documents
+        self.kept: list[str] = []   # 0.13.11: notes that stay through a batch (the local model was not started)
         self._part_key = None
         self.ended: float | None = None
 
@@ -111,8 +119,9 @@ class Tracker:
                 self.message = msg
                 return
             if kind == "note":  # a remark about the round (0.11.1: it used to open a phantom part and say nothing)
-                if msg not in self.notes:
-                    self.notes.append(msg)
+                where = self.kept if info.get("keep") else self.notes
+                if msg not in where:
+                    where.append(msg)
                 self.message = msg
                 return
             key = kind.removesuffix("_done")
@@ -146,6 +155,11 @@ class Tracker:
         with self.lock:
             self.model = dict(info)
 
+    def say(self, msg: str) -> None:
+        """0.13.11: what is happening now, in the heading, without a step or a lasting note."""
+        with self.lock:
+            self.message = msg
+
     def state(self) -> dict:
         with self.lock:
             now = self.ended or self.clock()
@@ -175,16 +189,21 @@ class Tracker:
                                                           "paused_text", "command", "privacy")}}
             elif self.model:
                 m = self.model
-                model = {k: m.get(k) for k in ("phase", "prompt_tokens", "thinking_tokens", "answer_tokens", "cap", "thinks")}
+                model = {k: m.get(k) for k in ("phase", "prompt_tokens", "thinking_tokens", "answer_tokens", "cap",
+                                               "thinks", "who")}
                 model["seconds"] = round(float(m.get("seconds") or 0), 1)
                 model["rate"] = round(m["rate"], 1) if m.get("rate") else None
                 model["tail"] = " ".join((m.get("tail") or "").split())[-240:]
                 model["line"] = model_line(m)
-                model["plain"] = PLAIN_PHASE.get(m.get("phase") or "waiting", "The AI is working")
+                local = m.get("who") == "local"
+                model["plain"] = (LOCAL_PHASE if local else PLAIN_PHASE).get(m.get("phase") or "waiting",
+                                                                             "The AI is working")
+                if local:
+                    model["name"] = m.get("model")
                 if model["phase"] == "waiting" and model["seconds"] > 60:
                     model["plain"] += " (a model on your own computer can take a few minutes to start)"
             return {"message": self.message, "elapsed": round(now - self.t0, 1), "decompose": dec, "parts": parts,
-                    "model": model, "batch": dict(self.batch) if self.batch else None, "notes": list(self.notes)}
+                    "model": model, "batch": dict(self.batch) if self.batch else None, "notes": self.kept + self.notes}
 
     def summary(self) -> str:
         """One line with the time each step took, for the command line."""

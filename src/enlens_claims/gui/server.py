@@ -134,6 +134,8 @@ class Jobs:
                         lock.release()
             except Cancelled:
                 job.state = "cancelled"
+            except llm.MemoryShort as e:  # 0.13.11: in plain words, not as "the AI model is not answering"
+                job.state, job.error, job.error_kind = "error", str(e), "memory"
             except BackendError as e:
                 stopped = job.cancel.is_set() and str(e).startswith("Stopped")
                 job.state, job.error, job.error_kind = ("cancelled", None, None) if stopped else ("error", str(e), "backend")
@@ -549,6 +551,14 @@ class App:
             be.should_stop = job.cancel.is_set
         if tracker is not None and hasattr(be, "progress"):
             be.progress = tracker.model_report
+        # 0.13.11: for the local model that reads the documents marked Only a local AI beside this one (access.Readers),
+        # also when this one reports nothing itself (the Claude API)
+        try:
+            be.local_should_stop = job.cancel.is_set
+            if tracker is not None:
+                be.local_progress = tracker.model_report
+        except AttributeError:
+            pass
 
     _wire = wire  # the name before 0.13.6
 
@@ -603,45 +613,95 @@ class App:
         `_follow_queued` before.)"""
         shown: dict[str, str] = {}
         t0 = time.time()
-        readers = access.Readers(None, "")  # 0.11: the local model for restricted documents (Claude reads the rest)
+        # 0.11: the local model for restricted documents (Claude reads the rest). 0.13.11: it shows what it does and
+        # sees Stop; it is not started when the computer has no room for it; and its memory is freed at the end.
+        readers = access.Readers(None, "", progress=tracker.model_report, should_stop=job.cancel.is_set)
+        try:
+            self._follow_loop(job, ws, hyp_ids, tracker, readers, shown, t0, poll)
+        finally:
+            claimcheck._let_go(readers)
+
+    def _read_local_now(self, ws, hyp_ids: list[str], tracker: Tracker, readers) -> bool:
+        """0.13.11: read the excerpts that wait for the local model, saying so (they were read in silence, under
+        "Waiting for Claude Code")."""
+        if readers.memory_short:
+            return False  # said once; they wait for "Read them now"
+        waiting = claimcheck.local_waiting(ws, hyp_ids)
+        if not waiting:
+            return False
+
+        def started(model: str, n: int) -> None:
+            tracker.say(f"Your local model ({model}) is reading {n} {'excerpt' if n == 1 else 'excerpts'} from "
+                        "documents marked Only a local AI, on this computer")
+
+        n = sum(w["passages"] for w in waiting)
+        before = readers.read
+        try:
+            done = claimcheck.run_local_parts(ws, hyp_ids, readers, on_start=started)
+        except BackendError:
+            if readers.stopped():
+                return False  # Stop: the follower withdraws the checks
+            raise
+        if readers.memory_short:
+            tracker.step("note", f"{readers.memory_short} {claimcheck._waiting_words(n)}", {"keep": True})
+        elif done and readers.read > before:
+            tracker.step("note", f"Your local model read {n} {'excerpt' if n == 1 else 'excerpts'} from documents "
+                                 "marked Only a local AI, on this computer", {})
+        elif done:
+            tracker.step("note", (f"The local model could not be used ({readers.local_problem}); " if
+                                  readers.local_problem else "No local model read them; ") +
+                         f"the {n} {'excerpt' if n == 1 else 'excerpts'} from documents marked Only a local AI "
+                         f"{'waits' if n == 1 else 'wait'} for your judgement", {})
+        return True
+
+    def _follow_loop(self, job: Job, ws, hyp_ids: list[str], tracker: Tracker, readers, shown: dict, t0: float,
+                     poll: float) -> None:
         while True:
-            if claimcheck.run_local_parts(ws, hyp_ids, readers):
-                tracker.step("note", "Excerpts from documents marked Only a local AI were read on this computer", {})
             left = taskqueue.advance(ws, hyp_ids)
-            for i, hid in enumerate(hyp_ids, 1):
-                st = claimcheck.queue_stage(ws, hid)
-                info = {"index": i, "total": len(hyp_ids)} if len(hyp_ids) > 1 else {}
-                key = f"{st.get('state')}:{st.get('step')}:{st.get('stages')}"
-                if shown.get(hid) == key:
-                    continue
-                shown[hid] = key
-                if len(hyp_ids) > 1 and st.get("state") == "waiting":
-                    tracker.step("item", f"Hypothesis {i} of {len(hyp_ids)}",
-                                 {**info, "text": ws.scalar("SELECT text FROM hypotheses WHERE hyp_id=?", (hid,))})
-                if st.get("step") == "decompose":
-                    tracker.step("decompose", "Waiting for Claude Code to split the hypothesis into parts", info)
-                for n, (stage, text) in enumerate(zip(st.get("stages") or [], st.get("texts") or [])):
-                    pinfo = {**info, **({"part": n + 1, "parts": len(st["stages"]), "claim": text}
-                                        if len(st["stages"]) > 1 else {})}
-                    if stage == "terms":
-                        tracker.step("terms", "Waiting for Claude Code to propose other words", pinfo)
-                    elif stage in ("judge", "done"):
-                        tracker.step("terms_done", "Search words ready", pinfo)
-                        tracker.step("rank_done", "Excerpts chosen in your documents", pinfo)
-                        if stage == "judge":
-                            tracker.step("grade", "Waiting for Claude Code to read the excerpts", pinfo)
-                        else:
-                            tracker.step("grade_done", "Read; every quote was checked against the document", pinfo)
+            self._show_stages(ws, hyp_ids, tracker, shown)
+            # 0.13.11: the steps are shown first, so the page says which excerpts the local model reads
+            if self._read_local_now(ws, hyp_ids, tracker, readers):
+                left = taskqueue.advance(ws, hyp_ids)
+                self._show_stages(ws, hyp_ids, tracker, shown)
             if not left:
                 return
             if job.cancel.is_set():
                 for hid in left:
                     claimcheck.delete_hypothesis(ws, hid)  # a stopped check leaves nothing behind, as in 0.7
                 raise Cancelled()
+            if readers.memory_short and all(claimcheck.only_local_waits(ws, hid) for hid in left):
+                return  # 0.13.11: Claude Code is done; the local excerpts wait for "Read them now" on the result
             kind = {"decompose": "decompose", "terms": "expand"}.get(claimcheck.queue_stage(ws, left[0]).get("step"),
                                                                       "check")
             tracker.model_report({"phase": "queue", "seconds": time.time() - t0, **taskqueue.queue_info(ws, kind)})
             time.sleep(poll)
+
+    def _show_stages(self, ws, hyp_ids: list[str], tracker: Tracker, shown: dict) -> None:
+        """The steps of checks by queue, as far as they have come (said once per change)."""
+        for i, hid in enumerate(hyp_ids, 1):
+            st = claimcheck.queue_stage(ws, hid)
+            info = {"index": i, "total": len(hyp_ids)} if len(hyp_ids) > 1 else {}
+            key = f"{st.get('state')}:{st.get('step')}:{st.get('stages')}"
+            if shown.get(hid) == key:
+                continue
+            shown[hid] = key
+            if len(hyp_ids) > 1 and st.get("state") == "waiting":
+                tracker.step("item", f"Hypothesis {i} of {len(hyp_ids)}",
+                             {**info, "text": ws.scalar("SELECT text FROM hypotheses WHERE hyp_id=?", (hid,))})
+            if st.get("step") == "decompose":
+                tracker.step("decompose", "Waiting for Claude Code to split the hypothesis into parts", info)
+            for n, (stage, text) in enumerate(zip(st.get("stages") or [], st.get("texts") or [])):
+                pinfo = {**info, **({"part": n + 1, "parts": len(st["stages"]), "claim": text}
+                                    if len(st["stages"]) > 1 else {})}
+                if stage == "terms":
+                    tracker.step("terms", "Waiting for Claude Code to propose other words", pinfo)
+                elif stage in ("judge", "done"):
+                    tracker.step("terms_done", "Search words ready", pinfo)
+                    tracker.step("rank_done", "Excerpts chosen in your documents", pinfo)
+                    if stage == "judge":
+                        tracker.step("grade", "Waiting for Claude Code to read the excerpts", pinfo)
+                    else:
+                        tracker.step("grade_done", "Read; every quote was checked against the document", pinfo)
 
     _follow_queued = follow_queued
 
@@ -696,21 +756,39 @@ class App:
 
         return self._job("reread", "Reading one excerpt again", name, run, withdraw=("reread",), ws=ws)
 
-    def start_read_local(self, name: str, hyp_id: str) -> Job:
+    def start_read_local(self, name: str, hyp_id: str, force: bool = False) -> Job:
         """0.11: read the excerpts of a check that wait for the local model (made in a Claude chat, or while the app
-        was closed), with the local model for restricted documents; without one they wait for a person."""
+        was closed), with the local model for restricted documents; without one they wait for a person. 0.13.11:
+        `force` starts the model even when this computer seems to have too little memory free for it (the person
+        chose "Start it anyway")."""
         ws = self.ws(name)
         if not ws.scalar("SELECT 1 FROM hypotheses WHERE hyp_id=?", (hyp_id,)):
             raise ApiError(404, "No such hypothesis.")
         be, model = self.backend()
 
         def run(job: Job):
-            n = claimcheck.run_local_parts(ws, [hyp_id], access.Readers(be, model), retry_failed=True)
+            # 0.13.11: with progress and Stop, and not started when the computer has no room for the model
+            tracker = Tracker(expand=False, steps=("grade",))
+            job.tracker = tracker
+            self._wire(job, be, tracker)  # a local main model reads them itself
+            readers = access.Readers(be, model, progress=tracker.model_report, should_stop=job.cancel.is_set,
+                                     check_memory=not force)
+            try:
+                n = claimcheck.run_local_parts(
+                    ws, [hyp_id], readers, retry_failed=True,
+                    on_start=lambda m, k: tracker.say(f"Your local model ({m}) is reading {k} "
+                                                      f"{'excerpt' if k == 1 else 'excerpts'} on this computer"))
+            finally:
+                claimcheck._let_go(readers)
+            if readers.memory_short:
+                raise readers.memory_short
             taskqueue.advance(ws, [hyp_id])
             return {"hyp_id": hyp_id, "parts": n,
                     "status": claimcheck.hypothesis_result(ws, hyp_id, self.settings()["threshold"])["status"]}
 
-        return self.jobs.start("read-local", "Reading excerpts with the local model", name, run, uses_model=True)
+        job = self.jobs.start("read-local", "Reading excerpts with the local model", name, run, uses_model=True)
+        job.scope = hyp_id  # 0.13.11: the result page that started it follows it again after a reload
+        return job
 
     def start_batch(self, name: str, body: dict) -> Job:
         ws = self.ws(name)
@@ -2189,7 +2267,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, _csv(rows), "text/csv; charset=utf-8", {"Content-Disposition": _disposition(stem)})
 
     def post_read_local(self, name, hyp_id, q):
-        return {"job": self.app.start_read_local(name, hyp_id).view()}
+        body = self._body()
+        return {"job": self.app.start_read_local(name, hyp_id, force=bool(body.get("force"))).view()}
 
     def delete_documents(self, name, q):
         body = self._body()
@@ -2942,8 +3021,11 @@ class Handler(BaseHTTPRequestHandler):
         ws = self.app.ws(name)
         removed = 0
         if kind in ("decompose", "expand", "check"):
-            # a check waiting for Claude Code is taken back whole, as a stopped check (it leaves nothing behind)
+            # a check waiting for Claude Code is taken back whole, as a stopped check (it leaves nothing behind);
+            # 0.13.11: not one Claude Code has finished, whose local excerpts wait for "Read them now"
             for (hid,) in ws.query("SELECT hyp_id FROM hypotheses WHERE queue='waiting'"):
+                if claimcheck.only_local_waits(ws, hid):
+                    continue
                 claimcheck.delete_hypothesis(ws, hid)
                 removed += 1
         n = taskqueue.withdraw(ws, [kind])

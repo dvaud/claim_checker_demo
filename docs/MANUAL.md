@@ -948,6 +948,17 @@ instance after choosing another local model), or you judge them yourself. The ch
 main model's, never the local model's note. Search by meaning: an embedding server on another computer does not
 receive the restricted passages (they are found by their words).
 
+**The local model and your computer's memory (0.13.11).** While Claude (or Claude Code) reads its excerpts, the
+progress says when your local model reads the ones marked *Only a local AI*: *Your local model (…) is reading 3
+excerpts…*, with what it is doing and Stop. A local model needs about as much memory as its size (a 9-billion-
+parameter model about 8 GB). ENLENS does not start it (on Ollama) when this computer has clearly too little free:
+starting it anyway pushes every other program into swap and can all but freeze the computer. The check then finishes
+with the rest, the progress says why, and those excerpts wait on the result (*Waiting for your local model*). Close programs you do not need and press
+*Read them now on this computer*, or choose a smaller local model in *Settings → AI*. If it still says too little is
+free, *Start it anyway* starts it regardless. A model that takes more than a third of this computer's memory is let go
+as soon as it has read, instead of being kept for 15 minutes. A local model you chose as the main AI is not checked
+this way: you start it yourself and see it load.
+
 **How it is enforced.** In code, where every AI task is made and run, never by an instruction in a prompt: each task
 is labelled with the most restricted setting of the documents it names, a task is refused before any model is asked
 when its setting does not allow that model, and the queue for Claude Code only ever hands out tasks Claude may read.

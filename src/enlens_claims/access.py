@@ -459,12 +459,23 @@ class Readers:
     """The model that reads each setting: the main one where it may, the local model for restricted documents for
     `local` when the main one is Claude, nobody for `none`."""
 
-    def __init__(self, backend, model: str, settings: dict | None = None):
+    def __init__(self, backend, model: str, settings: dict | None = None, progress=None, should_stop=None,
+                 check_memory: bool = True):
         self.backend, self.model = backend, model
         self._settings = settings
         self._local: tuple | None = None
         self._local_tried = False
         self.local_problem: str | None = None
+        # 0.13.11: the local model's reports while it reads (info dicts, marked "who": "local") and the job's Stop;
+        # without them, those of the main backend are used
+        self.progress, self.should_stop = progress, should_stop
+        self.check_memory = check_memory       # False: the person chose "Start it anyway"
+        self.memory_short = None               # the MemoryShort that kept the local model from starting
+        self.read = 0                          # the parts the local model for restricted documents has read
+
+    @property
+    def used(self) -> bool:
+        return self.read > 0
 
     @property
     def main_levels(self) -> set[str]:
@@ -492,7 +503,48 @@ class Readers:
                 self._local, self.local_problem = None, str(e)
             if self._local is not None and "local" not in backend_levels(self._local[0]):
                 self._local, self.local_problem = None, "The local model for restricted documents is not on this computer."
+            if self._local is not None:
+                self._wire(self._local[0])
+                if not self.check_memory and hasattr(self._local[0], "memory_guard"):
+                    self._local[0].memory_guard = False
         return self._local
+
+    def _wire(self, be) -> None:
+        """0.13.11: let the local model show what it does and see Stop (it read in silence while the page said only
+        "Waiting for Claude Code")."""
+        report = (self.progress or getattr(self.backend, "local_progress", None)
+                  or getattr(self.backend, "progress", None))
+        stop = (self.should_stop or getattr(self.backend, "local_should_stop", None)
+                or getattr(self.backend, "should_stop", None))
+        if report is not None and hasattr(be, "progress"):
+            be.progress = lambda info, _r=report: _r({**info, "who": "local"})
+        if stop is not None and hasattr(be, "should_stop"):
+            be.should_stop = stop
+
+    def stopped(self) -> bool:
+        """Whether the job was stopped (a local model's "Stopped." is not a model that cannot be reached)."""
+        stop = (self.should_stop or getattr(self.backend, "local_should_stop", None)
+                or getattr(self.backend, "should_stop", None))
+        try:
+            return bool(stop and stop())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def free_memory(self) -> bool:
+        """0.13.11: let go of the local model for restricted documents once it has read, when it takes much of this
+        computer's memory (more than a third), instead of holding it for Ollama's next 15 minutes. Returns whether it
+        was let go."""
+        if not self.used or self._local is None or self._local[0] is self.backend:
+            return False
+        be, model = self._local
+        if not hasattr(be, "unload") or not hasattr(be, "memory_need"):
+            return False
+        from .llm import total_memory
+
+        need, total = be.memory_need(model), total_memory()
+        if not need or not total or need * 3 < total:
+            return False
+        return bool(be.unload(model))
 
     def local_configured(self) -> bool:
         """Whether a local model is chosen for restricted documents (without starting it)."""

@@ -854,7 +854,8 @@ def _cmd_08(a, ws) -> int:
     if action == "withdraw":
         if a.kind in ("decompose", "expand", "check", None):  # no kind: everything, the waiting checks included
             for (hid,) in ws.query("SELECT hyp_id FROM hypotheses WHERE queue='waiting'"):
-                claimcheck.delete_hypothesis(ws, hid)
+                if not claimcheck.only_local_waits(ws, hid):  # 0.13.11: Claude Code's answers are kept
+                    claimcheck.delete_hypothesis(ws, hid)
         _print({"withdrawn": taskqueue.withdraw(ws, [a.kind] if a.kind else None)})
         return 0
     if action == "run":

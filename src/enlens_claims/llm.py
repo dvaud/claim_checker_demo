@@ -29,6 +29,84 @@ class BackendError(RuntimeError):
     """A problem the user can fix (server not running, model missing, key wrong, context too small)."""
 
 
+class MemoryShort(BackendError):
+    """0.13.11: a local model was not started, as this computer has clearly too little memory free for it now.
+    Loading it anyway pushes every other program into swap, which can all but freeze the computer."""
+
+    def __init__(self, model: str, need: int, free: int):
+        self.model, self.need, self.free = model, int(need), int(free)
+        super().__init__(f"{model} was not started: it needs about {_gb(need)} of memory, and this computer has "
+                         f"about {_gb(free)} free now, so starting it would make the computer very slow. Close "
+                         "programs you do not need (a web browser with many tabs takes a lot) and try again, or choose "
+                         "a smaller local model in Settings → AI.")
+
+
+def _gb(n: int) -> str:
+    return f"{n / (1 << 30):.1f} GB"
+
+
+# 0.13.11: the working memory a model needs per token of context (its KV cache), roughly: 64 KiB, so 1 GB at 16,384
+# tokens. Some models need more (qwen3:8b about 2.4 GB at 16,384), so a model's need is a lower bound: the check
+# stops only a model that clearly cannot fit, such as a 7.6 GB model with 2.7 GB free.
+KV_BYTES_PER_TOKEN = 64 * 1024
+
+
+def _windows_memory():
+    """Windows' memory status (GlobalMemoryStatusEx), or None."""
+    import ctypes
+
+    class _Status(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+    st = _Status()
+    st.dwLength = ctypes.sizeof(_Status)
+    return st if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)) else None  # type: ignore[attr-defined]
+
+
+def free_memory() -> int | None:
+    """Bytes of memory this computer can give a new program now without pushing others into swap, or None when it
+    cannot tell. macOS: free, speculative and inactive pages (vm_stat); Linux: MemAvailable; Windows: the available
+    physical memory."""
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+            m = re.search(r"page size of (\d+) bytes", out)
+            pages = {k.strip().lower(): int(v) for k, v in re.findall(r"^Pages ([^:]+):\s+(\d+)\.", out, re.M)}
+            if not m or "free" not in pages:
+                return None
+            return int(m.group(1)) * sum(pages.get(k, 0) for k in ("free", "speculative", "inactive"))
+        if sys.platform.startswith("linux"):
+            with open("/proc/meminfo", encoding="ascii") as f:
+                for line in f:
+                    if line.startswith("MemAvailable:"):
+                        return int(line.split()[1]) * 1024
+            return None
+        if os.name == "nt":
+            st = _windows_memory()
+            return int(st.ullAvailPhys) if st else None
+    except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
+        return None
+    return None
+
+
+def total_memory() -> int | None:
+    """Bytes of memory this computer has (None when it cannot tell)."""
+    try:
+        if os.name == "nt":
+            st = _windows_memory()
+            return int(st.ullTotalPhys) if st else None
+        return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"))
+    except (AttributeError, ValueError, OSError):
+        return None
+
+
 class _BudgetReached(Exception):
     """A model reached its reasoning budget before starting its answer (handled inside OllamaBackend)."""
 
@@ -181,6 +259,10 @@ class OllamaBackend:
         self.stall_timeout = stall_timeout   # longest silence: loading the model and reading a long prompt included
         self.progress = None                 # optional callable(info) while an answer streams in
         self.should_stop = None              # optional callable() -> bool, checked every second: True stops the call
+        # 0.13.11: refuse to load a model this computer has clearly no room for now (MemoryShort). The app turns it on
+        # for the local model that reads documents marked Only a local AI (home.make_restricted_backend), which
+        # starts beside Claude without being asked; the memory measured is this computer's.
+        self.memory_guard = False
         self._caps: dict[str, list[str] | None] = {}
         self.seed = seed
         self._digests: dict[str, str] = {}
@@ -283,6 +365,8 @@ class OllamaBackend:
                 "answer_tokens": 0, "seconds": 0.0, "first_token_after": None, "rate": None, "tail": "", "cap": cap,
                 "thinks": thinks, "budget": budget or None, "budget_reached": False}
         t0 = time.time()
+        self._report(info, t0, force=True)  # 0.13.11: said before loading starts, not after the first second
+        self.check_memory(model)
         try:
             content, final = self._stream(body, model, info, t0, budget)
         except _BudgetReached as b:
@@ -478,6 +562,50 @@ class OllamaBackend:
             loaded = []
         return {"models": names, "loaded": [m for m in loaded if m in names],
                 "modified": {(m.get("name") or m.get("model", "")): str(m.get("modified_at") or "") for m in tags}}
+
+    @staticmethod
+    def _same(a: str, b: str) -> bool:
+        def full(n: str) -> str:
+            return n if ":" in n else f"{n}:latest"
+
+        return bool(a) and bool(b) and full(a) == full(b)
+
+    def is_loaded(self, model: str) -> bool | None:
+        """Whether Ollama holds the model in memory now (None when it does not say)."""
+        try:
+            return any(self._same(m, model) for m in self.loaded(timeout=5))
+        except BackendError:
+            return None
+
+    def memory_need(self, model: str) -> int | None:
+        """About how many bytes the model takes in memory at this context length: its weights (the size Ollama lists)
+        and its working memory (KV_BYTES_PER_TOKEN a token). None when Ollama does not say its size."""
+        try:
+            rows = self._call("/api/tags", timeout=10).get("models", []) or []
+        except BackendError:
+            return None
+        size = next((int(m.get("size") or 0) for m in rows
+                     if self._same(m.get("name") or m.get("model") or "", model)), 0)
+        return size + self.num_ctx * KV_BYTES_PER_TOKEN if size > 0 else None
+
+    def check_memory(self, model: str) -> None:
+        """0.13.11: raise MemoryShort when the model is not in memory yet and this computer has clearly too little
+        free for it. The memory of the other models Ollama holds counts as free (Ollama lets go of them to make
+        room). Nothing is checked without `memory_guard`, or when Ollama or the computer do not say enough."""
+        if not self.memory_guard:
+            return
+        try:
+            held = self._call("/api/ps", timeout=5).get("models", []) or []
+        except BackendError:
+            return
+        if any(self._same(m.get("name") or m.get("model") or "", model) for m in held):
+            return
+        need = self.memory_need(model)
+        free = free_memory() if need else None
+        if need and free is not None:
+            free += sum(int(m.get("size") or 0) for m in held)
+            if free < need:
+                raise MemoryShort(model, need, free)
 
     def unload(self, model: str) -> bool:
         """Free the memory a model holds (Ollama unloads it at once with keep_alive 0). False if Ollama refused."""

@@ -112,6 +112,11 @@ instead? The *Update* button and `enlens update` pull the new version (see *For 
   match: on Free no Opus and Haiku for most tasks, on Pro Sonnet with Opus used sparingly (as before), on Max, Team
   or Enterprise Opus for most tasks, with the faster models only where there are thousands of tasks. Models you
   chose yourself in *Settings → Technical* still come first.
+- **Your local model, seen and kept within your computer's memory (0.13.11).** When documents are marked *Only a
+  local AI*, the progress now says when your local model reads them, with what it is doing and *Stop* (it read
+  unseen before, under *Waiting for Claude Code*). ENLENS no longer starts a local model your computer has clearly
+  no room for, which could all but freeze it: those excerpts wait, and *Read them now* can try again or *Start it
+  anyway*. A large local model is let go as soon as it has read.
 
 ## Earlier releases
 

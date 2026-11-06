@@ -129,7 +129,8 @@ export class ProgressPanel {
     const m = p.model;
     if (m && (running || m.phase === "done")) {
       this.modelBox.hidden = false;
-      const phaseIcon = { waiting: "clock", thinking: "sparkles", writing: "type", done: "circle-check", queue: "inbox" }[m.phase] || "cpu";
+      // 0.13.11: the local model for documents marked Only a local AI shows itself (it read unseen before)
+      const phaseIcon = m.who === "local" && m.phase !== "done" ? "house" : { waiting: "clock", thinking: "sparkles", writing: "type", done: "circle-check", queue: "inbox" }[m.phase] || "cpu";
       const plain = m.plain || plainPhase(m.phase);
       const tech = h("details", { class: "fold tech", open: this.techOpen }, h("summary", {}, "Technical details"),
         h("div", { class: "tech-body" }, h("div", { class: "mono small" }, m.line || ""),
@@ -252,7 +253,7 @@ export class MiniJob {
     if (job.state === "queued") text = `${this.title}: waiting for the AI (another task is using it)`;
     else if (running && m && m.phase === "queue") text = `${this.title}: ${m.queue && m.queue.paused ? "paused" : "waiting for Claude Code"}${typeIt(m.queue && m.queue.command)}`;
     else if (running && p.queue) text = `${this.title}: waiting for Claude Code${typeIt(p.queue.command)}`;
-    else if (running && m && m.phase && m.phase !== "done") text = `${this.title}: ${(m.plain || plainPhase(m.phase)).replace(/^The AI/, "the AI")}`;
+    else if (running && m && m.phase && m.phase !== "done") text = `${this.title}: ${(m.plain || plainPhase(m.phase)).replace(/^The AI/, "the AI").replace(/^Your /, "your ")}`;
     else if (running && p.message) text = `${this.title}: ${p.message}`;
     if (job.state === "done") text = "Done.";
     else if (job.state === "error") text = "Stopped because something went wrong.";

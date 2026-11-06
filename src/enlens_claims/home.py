@@ -529,6 +529,8 @@ def make_restricted_backend(settings: dict):
         raise BackendError(f"The local model for restricted documents, {choice['model']}, is not installed on the model "
                            "server. Install it, or choose another one in Settings → AI.")
     be.model_note = None
+    if hasattr(be, "memory_guard"):
+        be.memory_guard = True  # 0.13.11: it starts beside Claude unasked: never on a computer without room for it
     return be, model
 
 

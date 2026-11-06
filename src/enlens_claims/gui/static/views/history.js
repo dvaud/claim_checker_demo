@@ -156,7 +156,7 @@ export async function renderHistory(view, params, query) {
               x.docs_added_since ? h("span", { class: "it tag-new-docs", title: `${x.docs_added_since} ${x.docs_added_since === 1 ? "document was" : "documents were"} added to the project after this check; open the result to have the AI read them` }, icon("upload", { size: 11 }), `${x.docs_added_since} ${x.docs_added_since === 1 ? "document" : "documents"} added since`) : null,
               x.disagreements ? h("span", { class: "it tag-disagree", title: "A second opinion (another AI model, for comparison only) judged these excerpts differently from the first AI. The answer is unchanged: open the result and read them yourself." }, icon("arrows-opposed", { size: 11 }), `second opinion differs on ${x.disagreements}`) : null,
               x.note ? h("span", { class: "it", title: x.note }, icon("note", { size: 11 }), "has notes") : null)),
-          h("td", { "data-label": "Answer", class: "verdict-cell" }, statusBadge(x.status, { short: true }), " ", strongerMark(x.status_before_stronger, {}, { compact: true, plain: true }),
+          h("td", { "data-label": "Answer", class: "verdict-cell" }, statusBadge(x.status, { short: true, text: x.status_text || undefined }), " ", strongerMark(x.status_before_stronger, {}, { compact: true, plain: true }),
             x.status_any && x.status_any !== x.status ? h("div", { class: "muted small", style: { marginTop: "3px" } }, "If the uncertain judgements counted too: ", STATUS_SHORT[x.status_any] || x.status_any) : null),
           h("td", { "data-label": "Excerpts that count" }, evidenceCell(x)),
           h("td", { "data-label": "Checked", class: "small muted nowrap", title: fmt.date(x.created_at) }, fmt.dateShort(x.created_at)));

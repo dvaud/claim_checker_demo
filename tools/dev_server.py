@@ -29,6 +29,9 @@
   model (its *Download* takes 12 s, then the model answers), `--ollama later` an Ollama that starts 15 s after the
   app (the page notices it by itself), `--ollama none` no Ollama at all. Other servers on this computer (LM Studio…)
   are not looked for. Combine with `--empty` for a new user's first screen.
+- with `--low-memory` (0.13.11): the computer has 2.7 GB free and every local model needs 8.1 GB, so the local model
+  for documents marked Only a local AI is not started (use it with `--mixed --claude-code`): see the note on the
+  progress, the excerpts that wait, and *Read them now* → *Start it anyway*.
 """
 from __future__ import annotations
 
@@ -88,6 +91,8 @@ def main() -> int:
                     help="0.13.1: Update ENLENS finds a stand-in newer version and restarts the app in this process")
     ap.add_argument("--ollama", nargs="?", const="empty", choices=["empty", "later", "none"],
                     help="0.13.7: a model on this computer chosen, but no model yet (empty), Ollama later, or none")
+    ap.add_argument("--low-memory", action="store_true",
+                    help="0.13.11: too little memory free for the local model (2.7 GB free, 8.1 GB needed)")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -99,6 +104,11 @@ def main() -> int:
     from enlens_claims.gui.server import make_server
     from enlens_claims.llm import OllamaBackend
 
+    if a.low_memory:  # 0.13.11: the memory figures of the user test that all but froze a 16 GB Mac
+        from enlens_claims import llm
+
+        llm.free_memory = lambda: int(2.7 * (1 << 30))
+        OllamaBackend.memory_need = lambda self, model: int(8.1 * (1 << 30))
     fake, fake_url = fake_servers.start("ollama")
     fake.delay = 0.0  # seeding runs at full speed; the delay applies to checks made in the app
     fake.varied = True

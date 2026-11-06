@@ -8,6 +8,7 @@ import { originLink } from "../registry.js";
 
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
 const about = (p) => p.verdict !== null && p.verdict !== undefined;   // the judgement that counts says it is about the hypothesis
+const READ_LOCAL_TITLE = "Reading with your local model";   // 0.13.11: "Read them now", while it reads
 // 0.11: who read an excerpt (its document's AI setting decides)
 const READ_BY = { claude: ["cloud", "Read by Claude", "read-claude"], local: ["house", "Read by the local model", "read-local"], ai: ["cpu", "Read by the AI", "read-ai"],
   you: ["shield", "No AI read it", "read-you"], waiting: ["inbox", "Not read yet", "read-waiting"] };
@@ -172,6 +173,7 @@ export async function renderResult(view, [hypId], query) {
   const termsResult = new Map();   // claim_id -> inline result of the last search with other words
   const running = new Map();       // job id -> {kind, mini} of a follow-up job of this result (read again, new documents, second model)
   let followNote = null;           // text shown in the follow-ups card after one of its jobs ended
+  let localJobShown = false;       // 0.13.11: see readLocalButton
   const secondShown = new Set();   // 0.11.2: "claim|passage" whose passage highlights the second opinion's quote
   const pendingQuote = new Map();  // "claim|passage" -> {text, start, end}: a sentence marked before a judgement was chosen (not saved yet)
   const visitedNext = new Set();   // cards "Next to review" went to in this session, so it moves on and wraps around
@@ -238,7 +240,8 @@ export async function renderResult(view, [hypId], query) {
 
   function draw(r) {
     const y = window.scrollY;
-    document.title = `${STATUS_SHORT[r.status] || r.status} · ${(r.text || "").slice(0, 60)} · ENLENS`;
+    localJobShown = false;   // 0.13.11: the running "Read them now" is shown once, at the first part that waits
+    document.title = `${(r.status === "waiting" && r.status_text) || STATUS_SHORT[r.status] || r.status} · ${(r.text || "").slice(0, 60)} · ENLENS`;
     clear(box);
     const parts = r.parts || [];
     const single = parts.length === 1 && !r.decomposed;
@@ -409,7 +412,7 @@ export async function renderResult(view, [hypId], query) {
     if (r.decomposed) {
       card.appendChild(h("ol", { class: "answer-part-list part-grid" }, parts.map((p) => h("li", {},
         h("a", { href: `#part-${p.part}`, class: "part-claim-link", onClick: jumpTo(`part-${p.part}`) }, `${p.part}. ${p.claim}`),
-        h("span", { class: "part-answer" }, statusBadge(p.status, { short: true }), strongerMark(p.status_before_stronger, p.stronger, { compact: true, plain: true })),
+        h("span", { class: "part-answer" }, statusBadge(p.status, { short: true, text: (p.status === "waiting" && p.status_text) || undefined }), strongerMark(p.status_before_stronger, p.stronger, { compact: true, plain: true })),
         h("span", { class: "part-docs" }, p.balance && p.balance.docs_counted ? sidesText(p.balance) : "")))));
 
     } else {
@@ -604,7 +607,7 @@ export async function renderResult(view, [hypId], query) {
     if (facts.length) card.appendChild(h("div", { class: "ask-facts" }, facts));
     if (buttons.length) card.appendChild(h("div", { class: "btn-row ask-buttons" }, buttons));
     if (!auditor && !(secondUsable && !changingSecond)) card.appendChild(secondModelPicker(mainModel, secondUsable ? secondSet : "", busy.some((x) => x.kind === "second-opinion")));
-    const jobs = busy.filter((x) => !x.passage_id && x.kind !== "read-new").map((x) => x.mini.el);
+    const jobs = busy.filter((x) => !x.passage_id && x.kind !== "read-new" && x.kind !== "read-local").map((x) => x.mini.el);
     if (jobs.length) card.appendChild(h("div", { class: "stack ask-jobs" }, jobs));
     return card;
   }
@@ -659,7 +662,7 @@ export async function renderResult(view, [hypId], query) {
       try { fresh = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`); }
       catch (e) { if (e.status === 404) { await load(); return; } showError(e); }   // deleted meanwhile: load() says so
       if (job.state === "done") { try { await onDone(job, fresh || current); } catch (e) { showError(e); } }
-      else if (job.state === "error") showError({ message: job.error, kind: job.error_kind });
+      else if (job.state === "error") (extra.onError ? extra.onError(job) : showError({ message: job.error, kind: job.error_kind }));
       else if (job.state === "cancelled") toast("Stopped.", "info", { small: true, ttl: 2500 });
       if (fresh) { current = fresh; draw(fresh); }   // draw() keeps the scroll position, and the card the person acted on in place
     }).catch((e) => { running.delete(jobId); showError(e); });
@@ -726,11 +729,11 @@ export async function renderResult(view, [hypId], query) {
   async function adoptRunningJobs() {
     let jobs = [];
     try { jobs = (await api("GET", "/api/jobs")).jobs || []; } catch (_) { return; }
-    const titles = { reread: "Reading one excerpt again", "read-new": "Reading the new documents", "second-opinion": "A second opinion: another model reads the excerpts", stronger: "A stronger model reads the excerpts again" };
+    const titles = { reread: "Reading one excerpt again", "read-new": "Reading the new documents", "second-opinion": "A second opinion: another model reads the excerpts", stronger: "A stronger model reads the excerpts again", "read-local": READ_LOCAL_TITLE };
     for (const j of jobs) {
       if (j.project !== project || !titles[j.kind] || TERMINAL.has(j.state) || running.has(j.id)) continue;
-      if (j.kind === "stronger" && j.scope !== hypId) continue;   // a stronger model for another result
-      followJob(j.id, j.kind, titles[j.kind], async () => { followNote = { reread: "The AI has read an excerpt again.", "read-new": "The new documents were read.", "second-opinion": "The second opinion is in.", stronger: "A stronger model has read the excerpts again; its reading counts." }[j.kind]; });
+      if ((j.kind === "stronger" || j.kind === "read-local") && j.scope !== hypId) continue;   // work for another result
+      followJob(j.id, j.kind, titles[j.kind], async () => { followNote = { reread: "The AI has read an excerpt again.", "read-new": "The new documents were read.", "second-opinion": "The second opinion is in.", stronger: "A stronger model has read the excerpts again; its reading counts.", "read-local": "Your local model has read the excerpts from documents marked Only a local AI." }[j.kind]; }, j.kind === "read-local" ? { onError: memoryShort } : {});
     }
   }
 
@@ -965,20 +968,32 @@ export async function renderResult(view, [hypId], query) {
   }
 
   // 0.11: excerpts that wait for the local model (a check made in a Claude chat, or while the app was closed)
+  // 0.13.11: while it reads, the button gives way to what the local model is doing, with Stop (it only greyed out)
   function readLocalButton(label) {
+    const job = [...running.values()].find((x) => x.kind === "read-local");
+    if (job && !localJobShown) { localJobShown = true; return job.mini.el; }
+    if (job) return h("span", { class: "muted small" }, "Your local model reads these too (see above).");
     const btn = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("house", { size: 13 }), label);
     btn.addEventListener("click", async () => {
       btn.disabled = true;
-      try {
-        const r = await api("POST", `/api/projects/${P(project)}/hypotheses/${P(current.hyp_id)}/read-local`, {});
-        const w = watchJob(r.job.id, () => {});
-        watchers.push(w);
-        const job = await w.promise;
-        if (job.state === "error") showError({ message: job.error, kind: job.error_kind });
-        load();
-      } catch (e) { showError(e); btn.disabled = false; }
+      try { await startReadLocal(false); } catch (e) { showError(e); btn.disabled = false; }
     });
     return btn;
+  }
+
+  async function startReadLocal(force) {
+    const r = await api("POST", `/api/projects/${P(project)}/hypotheses/${P(current.hyp_id)}/read-local`, force ? { force: true } : {});
+    followJob(r.job.id, "read-local", READ_LOCAL_TITLE, async () => { followNote = "Your local model has read the excerpts from documents marked Only a local AI."; }, { onError: memoryShort });
+  }
+
+  // 0.13.11: the local model was not started, as the computer has too little memory free: the person decides
+  async function memoryShort(job) {
+    if (job.error_kind !== "memory") { showError({ message: job.error, kind: job.error_kind }); return; }
+    const go = await confirmDialog({ title: "Too little memory free for your local model", message: h("div", {},
+      h("p", {}, job.error),
+      h("p", {}, "You can start it anyway: the computer may then become very slow, or stop answering for a while, until the model has finished.")),
+      confirmText: "Start it anyway" });
+    if (go) { try { await startReadLocal(true); } catch (e) { showError(e); } }
   }
 
   function readLocalNotice(part) {
