@@ -133,7 +133,9 @@ def test_the_result_page_reads_in_one_order():
     # one count: the excerpts about the hypothesis (those the AI found not about it do not make it less reviewed),
     # and a caution whenever AI judgements that count are unchecked, however many
     assert "const relevantLeft = allPassages.filter((p) => !p.reviewed && (p.ai_verdict || p.waiting_for_you)).length;" in card
-    assert 'relevantLeft === 0 ? "reviewed by you"' in card and "`It rests on ${aiJ(unchecked)} you have not reviewed.`" in card
+    # 0.14: "reviewed by you" (alone), or "by you and Anna" in a shared project
+    assert 'relevantLeft === 0 ? `reviewed by ${byPeople}`' in card and 'people[0] || "you"' in card
+    assert "`It rests on ${aiJ(unchecked)} you have not reviewed.`" in card
     # Delete is at the page's foot, not under the downloads' technical details
     downloads = js[js.index("  function downloadsCard("):js.index("  async function deleteHyp(")]
     assert "deleteHyp" not in downloads

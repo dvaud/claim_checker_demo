@@ -1013,6 +1013,8 @@ def _store_document(ws: Workspace, doc: "Document", raw: RawDoc, f: Path, dec: d
                     len(doc.text), doc.text, now(), json.dumps(dec["references"], ensure_ascii=False) if dec else None,
                     raw.ocr_pages if raw.kind == "pdf" else None, raw.scanned_pages if raw.kind == "pdf" else None,
                     ai_access, (ai_note or "")[:300] or None))
+        # 0.14: the file added again on purpose: a colleague's copy of it may come in again
+        cx.execute("DELETE FROM sync_removed WHERE kind='document' AND key=?", (doc.doc_id,))
         if raw.paginated:
             cx.executemany("INSERT INTO pages VALUES (?,?,?,?)",
                            [(doc.doc_id, n + 1, s, e) for n, (s, e) in enumerate(doc.page_spans)])

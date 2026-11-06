@@ -421,6 +421,8 @@ def delete_run(ws: Workspace, run_id: str) -> None:
     with ws.connect() as cx:
         if not cx.execute("SELECT 1 FROM theme_runs WHERE run_id=?", (run_id,)).fetchone():
             raise KeyError(run_id)
+        ws.removed(cx, "themes", run_id, None)  # 0.14: not brought back by a colleague's work (sync.py)
+        cx.execute("DELETE FROM sync_copies WHERE kind='themes' AND key=?", (run_id,))
         for t in ("theme_members", "themes", "theme_runs"):
             cx.execute(f"DELETE FROM {t} WHERE run_id=?", (run_id,))
         for tbl in ("results", "tasks"):
@@ -432,9 +434,12 @@ def delete_run(ws: Workspace, run_id: str) -> None:
 # a person's edits (reviews under the run's key) and the view of a run with them applied
 # ---------------------------------------------------------------------------------------------
 def _edits(ws: Workspace, rkey: str) -> dict:
+    from .people import review_order
+
     names, merges, moves = {}, {}, {}
+    order, oargs = review_order()
     for r in ws.query("SELECT item_kind, item_id, field, corrected FROM reviews WHERE item_kind IN ('theme', "
-                      "'theme_member') AND substr(item_id, 1, ?) = ? ORDER BY review_id", (len(rkey) + 1, rkey + ":")):
+                      f"'theme_member') AND substr(item_id, 1, ?) = ? {order}", (len(rkey) + 1, rkey + ":", *oargs)):
         tail = r["item_id"][len(rkey) + 1:]
         if r["item_kind"] == "theme" and r["field"] == "name":
             names[int(tail)] = r["corrected"] or None
@@ -460,21 +465,24 @@ def edit(ws: Workspace, run_id: str, what: str, theme_id: int | None = None, val
                                       (run_id,))}
     merges = _edits(ws, rkey)["merges"] if what == "remove" else {}
     gone = "That theme was removed: bring it back first."
+    from .people import me as _me
+
+    me = _me()  # 0.14: a person's edits are theirs; yours count over a colleague's (see _edits)
     with ws.connect() as cx:
         if what == "rename":
             if theme_id not in ids:
                 raise KeyError(theme_id)
             name = " ".join(str(value or "").split())[:80]
-            cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at) "
-                       "VALUES ('theme', ?, 'name', 'change', ?, ?, ?)", (f"{rkey}:{theme_id}", name, reviewer, now()))
+            cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at, person_id) "
+                       "VALUES ('theme', ?, 'name', 'change', ?, ?, ?, ?)", (f"{rkey}:{theme_id}", name, reviewer, now(), me))
         elif what == "merge":
             if theme_id not in ids or (value is not None and int(value) not in ids) or value == theme_id:
                 raise ValueError("Choose two different themes of this run.")
             if value is not None and (theme_id in removed or int(value) in removed):
                 raise ValueError(gone)
-            cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at) "
-                       "VALUES ('theme', ?, 'merge', 'change', ?, ?, ?)",
-                       (f"{rkey}:{theme_id}", str(int(value)) if value is not None else "", reviewer, now()))
+            cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at, person_id) "
+                       "VALUES ('theme', ?, 'merge', 'change', ?, ?, ?, ?)",
+                       (f"{rkey}:{theme_id}", str(int(value)) if value is not None else "", reviewer, now(), me))
         elif what == "move":
             if not cx.execute("SELECT 1 FROM theme_members WHERE run_id=? AND passage_id=?", (run_id, passage_id)).fetchone():
                 raise KeyError(passage_id)
@@ -482,9 +490,9 @@ def edit(ws: Workspace, run_id: str, what: str, theme_id: int | None = None, val
                 raise KeyError(value)
             if value is not None and int(value) in removed:
                 raise ValueError(gone)
-            cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at) "
-                       "VALUES ('theme_member', ?, 'theme', 'change', ?, ?, ?)",
-                       (f"{rkey}:{passage_id}", str(int(value)) if value is not None else "", reviewer, now()))
+            cx.execute("INSERT INTO reviews(item_kind, item_id, field, decision, corrected, reviewer, decided_at, person_id) "
+                       "VALUES ('theme_member', ?, 'theme', 'change', ?, ?, ?, ?)",
+                       (f"{rkey}:{passage_id}", str(int(value)) if value is not None else "", reviewer, now(), me))
         elif what == "remove":
             if theme_id not in ids:
                 raise KeyError(theme_id)

@@ -20,7 +20,7 @@ def test_a_withdrawn_version_still_running_counts_as_older():
     from enlens_claims import update
     from enlens_claims.gui import launcher
 
-    assert update.WITHDRAWN == {"0.14.0", "0.15.0", "0.15.1"}
+    assert update.WITHDRAWN == {"0.15.0", "0.15.1"}  # 0.14.0 is a release again (shared projects)
     for v in update.WITHDRAWN:
         assert launcher.is_older({"version": v}), v
     assert __version__ not in update.WITHDRAWN

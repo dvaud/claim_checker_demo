@@ -281,6 +281,7 @@ export async function renderSources(view) {
           d.note ? h("button", { class: "link-btn small access-why", type: "button", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, d.note) : null),
         h("td", { "data-label": "Sent to Claude", class: "num" }, sentCell(d)),
         h("td", { "data-label": "Note", class: "check-cell" },
+          d.clash ? h("span", { class: "it tag-clash", title: `The same file as another document here, read into other text on ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} computer (another ENLENS version, or text recognition on one computer and not the other). Quotes are places in the text, so this reading came in as a document of its own, with the results made from it.` }, icon("copy", { size: 12 }), `sync clash · ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} reading`) : null,
           d.check ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 12 }), d.check) : null,
           d.scanned ? h("span", { class: "it scanned-note" + (/no text/i.test(d.scanned) ? " warn-chip" : " muted small") }, icon(/no text/i.test(d.scanned) ? "alert-triangle" : "eye", { size: 12 }), d.scanned) : null,
           !d.check && !d.scanned ? h("span", { class: "it muted small" }, icon("check", { size: 12 }), "readable") : null),

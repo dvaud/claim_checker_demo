@@ -28,6 +28,7 @@ from collections import Counter, defaultdict
 from typing import Callable
 
 from . import frameworks
+from .people import me, mine_sql
 from .store import Workspace, now
 from .textutil import surface_words, tokens
 
@@ -404,9 +405,12 @@ def run_labels(ws: Workspace, framework: str, backend, model: str, doc_ids: list
 # what counts, and the views built on it
 # ---------------------------------------------------------------------------------------------
 def _decisions(ws: Workspace, ids: list[str] | None = None) -> dict[str, dict]:
+    from .people import review_order
+
     sql = "SELECT item_id, decision, corrected, note, reviewer, decided_at FROM reviews WHERE item_kind='label'"
     out = {}
-    for r in ws.query(sql + " ORDER BY review_id"):
+    order, oargs = review_order()  # 0.14: the last counts, and yours come after a colleague's
+    for r in ws.query(f"{sql} {order}", oargs):
         out[r["item_id"]] = {"decision": r["decision"], "corrected": json.loads(r["corrected"]) if r["corrected"] else None,
                              "note": r["note"], "at": r["decided_at"]}
     return out
@@ -601,16 +605,20 @@ def set_label(ws: Workspace, label_id_: str, decision: str, relevance: str | Non
         row = cx.execute("SELECT * FROM labels WHERE label_id=?", (label_id_,)).fetchone()
         if row is None:
             raise KeyError(label_id_)
-        if decision == "clear":
-            cx.execute("DELETE FROM reviews WHERE item_kind='label' AND item_id=?", (label_id_,))
+        if decision == "clear":  # 0.14: your own verdicts; a colleague's stay theirs (and yours stay taken back)
+            from .people import forget_reviews
+
+            mine, margs = mine_sql()
+            forget_reviews(cx, review_ids=[r[0] for r in cx.execute(
+                f"SELECT review_id FROM reviews WHERE item_kind='label' AND item_id=? AND {mine}", (label_id_, *margs))])
             return
         corrected = json.dumps({k: v for k, v in (("relevance", relevance), ("direction", direction)) if v}) \
             if decision == "change" else None
         proposed = json.dumps({"code": row["code"], "relevance": row["relevance"], "direction": row["direction"],
                                "confidence": row["confidence"], "source": row["source"]})
         cx.execute("INSERT INTO reviews(item_kind, item_id, field, proposed, decision, corrected, reviewer, note, "
-                   "decided_at) VALUES ('label', ?, 'label', ?, ?, ?, ?, ?, ?)",
-                   (label_id_, proposed, decision, corrected, reviewer, (note or "").strip()[:2000] or None, now()))
+                   "decided_at, person_id) VALUES ('label', ?, 'label', ?, ?, ?, ?, ?, ?, ?)",
+                   (label_id_, proposed, decision, corrected, reviewer, (note or "").strip()[:2000] or None, now(), me()))
 
 
 def add_label(ws: Workspace, framework: str, passage_id: str, code: str, quote: str | None = None,

@@ -122,6 +122,9 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("zip")
     p = sub.add_parser("import-project", help="unpack a project zip into the folder given by --ws (new or empty)")
     p.add_argument("zip")
+    p = sub.add_parser("bring-in", help="0.14: merge a colleague's project zip into this copy of the project")
+    p.add_argument("zip")
+    p.add_argument("--anyway", action="store_true", help="also when the zip is not known to be this project")
     p = sub.add_parser("load-vca", help="load the VCA supplementary workbook as gold labels")
     p.add_argument("xlsx")
     p = sub.add_parser("ingest", help="add PDFs, HTML or text files (folders and zips are searched)")
@@ -455,6 +458,17 @@ def _main(argv: list[str] | None = None) -> int:
         from . import bundle
 
         _print(bundle.export_project(ws, a.zip))
+        return 0
+    if a.cmd == "bring-in":
+        from . import sync
+
+        try:
+            merged = sync.bring_in(ws, a.zip, anyway=a.anyway)
+        except ValueError as e:  # NotThisProject too: the message says what --anyway does
+            print(f"Problem: {e}" + (" Add --anyway to bring it in all the same." if isinstance(e, sync.NotThisProject)
+                                     else ""), file=sys.stderr)
+            return 1
+        print("\n".join(merged["lines"]))
         return 0
     if a.cmd == "load-vca":
         _print(vca.load_into(ws, a.xlsx))

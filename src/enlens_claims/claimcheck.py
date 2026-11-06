@@ -1539,6 +1539,11 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                        for v in raw_vs if v.get("start") is not None or v.get("user_start") is not None})
     breaks = _breaks(ws, [(pid, lc["doc_id"], lc["start"], lc["end"]) for pid, lc in locs.items()])
     seconds = _second_opinions(ws, [claim_id]).get(claim_id, {})
+    # 0.14: who judged each excerpt (yours, or a colleague's where you made none), and everyone else's judgement
+    from . import people
+
+    who, me = people.names(ws), people.me()
+    others = people.others(ws, [claim_id])
     # 0.13.3: the title a document has now (the work's title from the bibliography), not the one the check stored;
     # a document removed since keeps the stored one
     titles_now = {r["doc_id"]: r["title"] for r in ws.query("SELECT doc_id, title FROM documents")}
@@ -1562,7 +1567,7 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                 # 0.11: who read it (claude, local, ai, you) and whether it still waits for the local model or a person
                 "read_by": readers_of[part["task_id"]], "access": access_of.get(p["doc_id"], "none"),
                 "waiting_local": part["status"] in ("pending", "retry") and part["task_id"].endswith(":local"),
-                "waiting_for_you": False}
+                "waiting_for_you": False, "judged_by": None, "others": others.get((claim_id, p["passage_id"]), [])}
         if v:
             ai = v["verdict"] if v["verdict"] != "not_enough_info" else None
             eff = effective(v)
@@ -1570,6 +1575,9 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                         verdict=eff["verdict"] if eff["verdict"] != "not_enough_info" else None,
                         reviewed=bool(v.get("user_verdict")), changed=changed_by_person(v),
                         scope_note=v.get("scope_note") if ai else None)
+            if v.get("user_verdict") or v.get("user_note"):
+                by = v.get("user_by")
+                item["judged_by"] = "you" if not by or by == me else who.get(by, "a colleague")
             if v.get("reread_json"):
                 item["reread_info"] = json.loads(v["reread_json"])
             hist = json.loads(v.get("ai_history_json") or "[]")
@@ -1963,9 +1971,13 @@ def calibration(ws: Workspace) -> dict:
     "reason"} | null, "note"}. The suggestion is the lowest strictness (a bin with at least 3 judgements) from which
     on you agreed with at least 80% of the AI's judgements, once at least 20 were judged.
     """
+    from .people import me
+
     rows = []
+    # 0.14: your own judgements only (a colleague's in force where you made none says nothing about you)
     for r in ws.query("SELECT verdict, confidence, user_verdict, ai_history_json FROM verifications "
-                      "WHERE subject_kind='user_claim' AND user_verdict IS NOT NULL"):
+                      "WHERE subject_kind='user_claim' AND user_verdict IS NOT NULL AND COALESCE(user_by, ?) = ?",
+                      (me(), me())):
         first = json.loads(r["ai_history_json"] or "[]")
         if first:  # read again (perhaps with the person's hint): the AI's own first judgement is the one to compare
             r = {"verdict": first[0].get("verdict"), "confidence": first[0].get("confidence"),
@@ -2228,7 +2240,7 @@ def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[st
         for part in res["parts"]:
             chosen = [p for p in part["passages"] if every_excerpt or p["verdict"] or p["user_verdict"]] or [None]
             for p in chosen:
-                judged_by = ("you" if p["user_verdict"] else "the AI") if p else ""
+                judged_by = ((p.get("judged_by") or "you") if p["user_verdict"] else "the AI") if p else ""
                 cert = certainty_word(p["confidence"]) if p and p["ai_verdict"] else ""
                 rows.append({
                     "Checked on": _local_dt(res["created_at"]),
@@ -2375,13 +2387,20 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
     """
     if verdict is not None and verdict not in USER_VERDICTS:
         raise ValueError(f"The judgement must be one of {', '.join(USER_VERDICTS)} (or empty to remove yours).")
+    from . import people
+
+    me = people.me()
     with ws.connect() as cx:
-        row = cx.execute("SELECT v.user_quote, v.user_start, v.user_end, p.text, p.start FROM verifications v "
-                         "LEFT JOIN passages p ON p.passage_id=v.passage_id WHERE v.subject_kind='user_claim' "
-                         "AND v.subject_id=? AND v.passage_id=?", (claim_id, passage_id)).fetchone()
+        row = cx.execute("SELECT p.text, p.start FROM verifications v LEFT JOIN passages p ON "
+                         "p.passage_id=v.passage_id WHERE v.subject_kind='user_claim' AND v.subject_id=? AND "
+                         "v.passage_id=?", (claim_id, passage_id)).fetchone()
         if row is None:
             raise KeyError(f"{claim_id}/{passage_id}")
-        uq, us, ue = row[0], row[1], row[2]
+        people.adopt(cx, me)  # a judgement from before 0.14 is yours
+        # 0.14: your own earlier sentence, not a colleague's (theirs may be the one in force here)
+        mine = cx.execute("SELECT quote, start, end FROM judgements WHERE claim_id=? AND passage_id=? AND person_id=?",
+                          (claim_id, passage_id, me)).fetchone()
+        uq, us, ue = tuple(mine) if mine else (None, None, None)
         if not verdict:
             uq = us = ue = None
         elif quote is not _KEEP:
@@ -2389,7 +2408,7 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
             if not q:
                 uq = us = ue = None
             else:
-                text, base = row[3], row[4]
+                text, base = row[0], row[1]
                 if text is None:  # the document was removed later: the excerpt's copy is in the check's record
                     for t in _check_tasks(ws, claim_id):
                         for p in json.loads(t["payload_json"])["passages"]:
@@ -2401,9 +2420,8 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
                 uq = (text or "")[hit[0]:hit[1]]
                 us, ue = (base + hit[0], base + hit[1]) if base is not None else (None, None)
         comment = (note or "").strip()[:2000] or None
-        cx.execute("UPDATE verifications SET user_verdict=?, user_note=?, user_at=?, user_quote=?, user_start=?, "
-                   "user_end=? WHERE subject_kind='user_claim' AND subject_id=? AND passage_id=?",
-                   (verdict, comment, now() if verdict or comment else None, uq, us, ue, claim_id, passage_id))
+        people.record(cx, claim_id, passage_id, me, verdict, comment, None, uq, us, ue)
+        people.refresh(cx, [claim_id], me)  # yours is in force; removed, a colleague's counts again (if any)
 
 
 def reread_excerpt(ws: Workspace, claim_id: str, passage_id: str, backend, model: str, note: str | None = None,
@@ -2508,6 +2526,7 @@ def delete_claim(ws: Workspace, claim_id: str) -> None:
         cx.execute("DELETE FROM user_claims WHERE claim_id=?", (claim_id,))
         hid = hyp[0] if hyp and hyp[0] else claim_id
         if not cx.execute("SELECT 1 FROM user_claims WHERE hyp_id=?", (hid,)).fetchone():
+            _note_removed(ws, cx, hid)
             cx.execute("DELETE FROM results WHERE task_id=?", (f"decompose:{hid}",))
             cx.execute("DELETE FROM tasks WHERE task_id=?", (f"decompose:{hid}",))
             cx.execute("DELETE FROM hypotheses WHERE hyp_id=?", (hid,))
@@ -2517,9 +2536,18 @@ def delete_hypothesis(ws: Workspace, hyp_id: str) -> None:
     with ws.connect() as cx:
         for (cid,) in cx.execute("SELECT claim_id FROM user_claims WHERE hyp_id=?", (hyp_id,)).fetchall():
             delete_claim(ws, cid)  # nested: one transaction
+        _note_removed(ws, cx, hyp_id)
         cx.execute("DELETE FROM results WHERE task_id=?", (f"decompose:{hyp_id}",))
         cx.execute("DELETE FROM tasks WHERE task_id=?", (f"decompose:{hyp_id}",))
         cx.execute("DELETE FROM hypotheses WHERE hyp_id=?", (hyp_id,))
+
+
+def _note_removed(ws: Workspace, cx, hyp_id: str) -> None:
+    """0.14: a removed check does not come back with a colleague's work (sync.py); its own sync-clash mark goes."""
+    row = cx.execute("SELECT text FROM hypotheses WHERE hyp_id=?", (hyp_id,)).fetchone()
+    if row:
+        ws.removed(cx, "check", hyp_id, row[0])
+    cx.execute("DELETE FROM sync_copies WHERE kind='check' AND key=?", (hyp_id,))
 
 
 def set_note(ws: Workspace, hyp_id: str, note: str) -> None:

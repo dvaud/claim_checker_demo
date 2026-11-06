@@ -18,6 +18,11 @@ export const FEATURES = {
     what: "Add your reports, papers and web pages, say who may read each with AI, and open one to read it with its codes, key terms and references.",
     overview: { section: "explore", order: 99, title: "Read one document", what: "Open a document from the list to see its codes, key terms, what “it” and “they” refer to, and a highlighted copy." },
   },
+  together: {
+    section: "project", title: "Work together", icon: "users", href: "#/projects", ai: "none",
+    what: "Each of you keeps a copy of the project on your own computer and Claude plan. Send your work as one file and bring in a colleague’s: what is new comes in, each person’s judgements are kept under their name, and nothing you decided is replaced.",
+    overview: false,
+  },
   bibliography: {
     section: "project", title: "Bibliography", icon: "library", href: "#/bibliography", ai: "none",
     what: "Your Zotero library or a collection of it, matched with the documents: which works you have, which you still need to find, and which documents Zotero does not have.",

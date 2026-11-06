@@ -133,6 +133,24 @@ CREATE TABLE IF NOT EXISTS bib_items(item_key TEXT PRIMARY KEY, item_type TEXT, 
 CREATE TABLE IF NOT EXISTS bib_links(item_key TEXT, doc_id TEXT, status TEXT, method TEXT, score REAL,
   evidence_json TEXT, decided_at TEXT, PRIMARY KEY(item_key, doc_id));
 CREATE INDEX IF NOT EXISTS ix_bib_links_doc ON bib_links(doc_id);
+
+-- 0.14: shared projects (people.py, sync.py). The people whose work is in the project; each person's own judgement of
+-- an excerpt (the one in force is copied to verifications.user_*, see people.refresh)
+CREATE TABLE IF NOT EXISTS people(person_id TEXT PRIMARY KEY, name TEXT, seen_at TEXT);
+CREATE TABLE IF NOT EXISTS judgements(claim_id TEXT, passage_id TEXT, person_id TEXT, verdict TEXT, note TEXT, at TEXT,
+  quote TEXT, start INT, end INT, PRIMARY KEY(claim_id, passage_id, person_id));
+-- every state of a check, a theme run or a codebook that was sent or brought in (its fingerprint): what tells a newer
+-- version from one changed on both sides
+CREATE TABLE IF NOT EXISTS sync_seen(kind TEXT, key TEXT, fp TEXT, PRIMARY KEY(kind, key, fp));
+-- a colleague's version of something both of you changed (a "sync clash"), kept beside yours: of_key is yours
+CREATE TABLE IF NOT EXISTS sync_copies(kind TEXT, key TEXT, of_key TEXT, person_id TEXT, at TEXT,
+  PRIMARY KEY(kind, key));
+-- what was removed from this copy (a document, a check, a theme run), so a colleague's work does not bring it back
+CREATE TABLE IF NOT EXISTS sync_removed(kind TEXT, key TEXT, title TEXT, at TEXT, person_id TEXT, fp TEXT,
+  PRIMARY KEY(kind, key));
+-- each colleague's work brought in: who, when, and what it changed
+CREATE TABLE IF NOT EXISTS sync_log(log_id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, person_id TEXT,
+  report_json TEXT);
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
@@ -238,7 +256,12 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               # a theme a person removed as not relevant, and when (NULL: shown); a theme found in place of
               # a removed one (that theme's id; NULL: found by the run); a passage such a theme took from another
               # theme (the theme it was in before; NULL: where the run put it)
-              ("themes", "removed_at", "TEXT"), ("themes", "replaces", "INT"), ("theme_members", "found_in", "INT")]
+              ("themes", "removed_at", "TEXT"), ("themes", "replaces", "INT"), ("theme_members", "found_in", "INT"),
+              # 0.14: whose judgement of an excerpt is in force (people.py), and who made a review (NULL: made before
+              # 0.14, in this copy)
+              ("verifications", "user_by", "TEXT"), ("reviews", "person_id", "TEXT"),
+              # 0.14: a fingerprint of a document's text (sync.py: the same file read into other text is another copy)
+              ("documents", "text_fp", "TEXT")]
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:
@@ -408,6 +431,31 @@ class Workspace:
             with self.connect() as c:
                 c.execute(sql, args)
 
+    def project_uid(self, cx: sqlite3.Connection | None = None) -> str:
+        """0.14: what makes two copies of a project the same project (made once; it travels with the project zip)."""
+        uid = self.meta("project_uid")
+        if not uid:
+            import uuid
+
+            uid = uuid.uuid4().hex
+            self.set_meta("project_uid", uid, cx)
+        return uid
+
+    def removed(self, cx: sqlite3.Connection, kind: str, key: str, title: str | None) -> None:
+        """0.14: note that a document, a check or a theme run was removed here, so a colleague's work does not bring it
+        back (adding the same file again takes the note away). A document's note keeps the fingerprint of its text,
+        so the checks that read it are still compared by content (sync.py)."""
+        from .people import me
+
+        fp = None
+        if kind == "document":
+            from .sync import text_fp
+
+            row = cx.execute("SELECT text FROM documents WHERE doc_id=?", (key,)).fetchone()
+            fp = text_fp(row[0]) if row else None
+        cx.execute("INSERT OR REPLACE INTO sync_removed(kind, key, title, at, person_id, fp) VALUES (?,?,?,?,?,?)",
+                   (kind, key, title, now(), me(), fp))
+
     def corpus_version(self) -> int:
         """Changes whenever documents are added or removed; search indexes are rebuilt when it does."""
         return int(self.meta("corpus_version", 0) or 0)
@@ -420,6 +468,10 @@ class Workspace:
         """Remove documents and everything derived from them. The VCA and the split justifications stay."""
         out = {}
         with self.connect() as cx:
+            for kind, sql in (("document", "SELECT doc_id, title FROM documents"), ("check", "SELECT hyp_id, text FROM hypotheses"),
+                              ("themes", "SELECT run_id, NULL FROM theme_runs")):
+                for key, title in cx.execute(sql).fetchall():
+                    self.removed(cx, kind, key, title)
             for t in ("documents", "pages", "paragraphs", "headings", "passages", "embeddings", "doc_refs", "claims",
                       "claim_targets", "evidence", "interactions", "verifications", "labels", "terms", "term_mentions",
                       "concepts", "concept_terms", "theme_runs", "themes", "theme_members", "mentions", "bib_links"):
@@ -444,8 +496,11 @@ class Workspace:
         """
         out: dict[str, int] = {}
         with self.connect() as cx:
-            if not cx.execute("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)).fetchone():
+            row = cx.execute("SELECT title FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
+            if not row:
                 raise KeyError(doc_id)
+            self.removed(cx, "document", doc_id, row[0])
+            cx.execute("DELETE FROM sync_copies WHERE kind='document' AND key=?", (doc_id,))
             pids = [r[0] for r in cx.execute("SELECT passage_id FROM passages WHERE doc_id=?", (doc_id,))]
             claim_ids = [r[0] for r in cx.execute("SELECT claim_id FROM claims WHERE doc_id=?", (doc_id,))]
             for cid in claim_ids:

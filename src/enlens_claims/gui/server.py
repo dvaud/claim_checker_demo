@@ -34,6 +34,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import __version__, access, addons, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
+from .. import sync
 from .. import tasks as tasks_mod
 from .. import llm
 from ..llm import BackendError, detect_local
@@ -48,9 +49,9 @@ MAX_JSON = 20 * 1024 ** 2    # bytes per JSON body (a batch of hypotheses, a cod
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, message: str, kind: str = "request"):
+    def __init__(self, status: int, message: str, kind: str = "request", extra: dict | None = None):
         super().__init__(message)
-        self.status, self.message, self.kind = status, message, kind
+        self.status, self.message, self.kind, self.extra = status, message, kind, extra or {}
 
 
 class Cancelled(Exception):
@@ -444,9 +445,11 @@ class App:
         docs = document_overview(ws)
         acc = access.documents_view(ws)  # 0.11: who may read each one with AI, and how much Claude has read
         cites = bibliography.doc_citations(ws)  # 0.13: the work of the bibliography each document is
+        clash = sync.copies_of(ws, "document")  # 0.14: a colleague's reading of a file you have too
         for d in docs:
             d.update(acc.get(d["doc_id"], {}))
             d["bib"] = cites.get(d["doc_id"])
+            d["clash"] = clash.get(d["doc_id"])
         return {"documents": docs, "ai_access": access.project_info(ws),
                 "restricted_model": home.restricted_choice(s),
                 "search": embed.status(ws, s.get("embed_model"),
@@ -542,7 +545,11 @@ class App:
             if batch:
                 rows.reverse()  # a set reads in the order it was typed
         limit = int(_float(q, "limit", 0))
-        return {"hypotheses": rows[:limit] if limit else rows, "counts": counts, "threshold": thr}
+        rows = rows[:limit] if limit else rows
+        clash = sync.copies_of(ws, "check")  # 0.14: a colleague's version of a check you both changed
+        for r in rows:
+            r["clash"] = clash.get(r["hyp_id"])
+        return {"hypotheses": rows, "counts": counts, "threshold": thr}
 
     # -- jobs ------------------------------------------------------------------------------------
     def wire(self, job: Job, be, tracker: Tracker | None = None) -> None:
@@ -1766,6 +1773,8 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/claims/{P}/reread/{P}", "post_reread"),
     ("GET", rf"/api/projects/{P}/export\.(csv|xlsx)", "get_export"),
     ("GET", rf"/api/projects/{P}/export\.zip", "get_project_zip"),
+    ("POST", rf"/api/projects/{P}/bring-in", "post_bring_in"),
+    ("GET", rf"/api/projects/{P}/together", "get_together"),
     ("GET", rf"/api/projects/{P}/map", "get_map"),
     ("GET", rf"/api/projects/{P}/calibration", "get_calibration"),
     ("POST", rf"/api/projects/{P}/hypotheses/{P}/read-new", "post_read_new_one"),
@@ -2001,7 +2010,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(405, "Method not allowed.")
             raise ApiError(404, "No such API endpoint.")
         except ApiError as e:
-            self._json(e.status, {"error": e.message, "kind": e.kind})
+            self._json(e.status, {"error": e.message, "kind": e.kind, **e.extra})
         except BackendError as e:
             self._json(502, {"error": str(e), "kind": "backend"})
         except KeyError as e:
@@ -2498,6 +2507,12 @@ class Handler(BaseHTTPRequestHandler):
         res["stronger_model"] = (routing.from_settings(s, large=s.get("ollama_model") or s.get("openai_model") or "")
                                  .step_up("check") if s.get("routing", True) and s.get("backend") != "baseline" else None)
         res["queue_command"] = f"/enlens-run {taskqueue._quote_name(name)}"
+        # 0.14: a sync-clash copy says whose version it is; the original lists the colleagues' versions of it
+        copies = sync.copies_of(ws, "check")
+        res["clash"] = copies.get(hyp_id)
+        if res["clash"]:
+            res["clash"]["of_text"] = ws.scalar("SELECT text FROM hypotheses WHERE hyp_id=?", (res["clash"]["of"],))
+        res["clash_copies"] = [{"hyp_id": k, **v} for k, v in copies.items() if v["of"] == hyp_id]
         return res
 
     def delete_hypothesis(self, name, hyp_id, q):
@@ -2576,6 +2591,34 @@ class Handler(BaseHTTPRequestHandler):
             import shutil
 
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def post_bring_in(self, name, q):
+        """0.14: a colleague's project zip (raw body) merged into this copy of the project (sync.py). 409 with
+        `not_this_project` when the file is not known to be this project; `?anyway=1` brings it in all the same."""
+        import tempfile
+
+        from .. import sync
+
+        ws = self.app.ws(name)
+        n = self._body_size()
+        with tempfile.TemporaryDirectory(prefix="enlens-bring-in-") as tmp:
+            path = Path(tmp) / "in.zip"
+            self._save_body(path, n)
+            try:
+                report = sync.bring_in(ws, path, anyway=_str(q, "anyway") in ("1", "true", "yes"))
+            except sync.NotThisProject as e:
+                raise ApiError(409, str(e), extra={"not_this_project": e.info}) from e
+            except ValueError as e:
+                raise ApiError(400, str(e)) from e
+        return {"report": report, "project": self.app.project_summary(name)}
+
+    def get_together(self, name, q):
+        """0.14: who works on this project, the work brought in, the open sync clashes and how often you agreed."""
+        from .. import people, sync
+
+        out = sync.overview(self.app.ws(name))
+        out["me"] = {"id": people.me(), "name": people.my_name()}
+        return out
 
     def post_import(self, q):
         """A project zip (raw body) becomes a new project: `?name=` or the name it had."""
@@ -2860,7 +2903,11 @@ class Handler(BaseHTTPRequestHandler):
             mode, why = themes.choose_mode(ws, "auto", getattr(emb, "model", None))
         except ValueError as e:
             mode, why = "words", str(e)
-        return {"runs": themes.runs(ws), "auto_mode": mode, "auto_why": why, "k": s.get("themes_k") or 20}
+        runs = themes.runs(ws)
+        clash = sync.copies_of(ws, "themes")  # 0.14: a colleague's version of a run you both changed
+        for r in runs:
+            r["clash"] = clash.get(r["run_id"])
+        return {"runs": runs, "auto_mode": mode, "auto_why": why, "k": s.get("themes_k") or 20}
 
     def post_themes(self, name, q):
         return {"job": self.app.start_themes(name, self._body()).view()}

@@ -151,6 +151,7 @@ export async function renderHistory(view, params, query) {
             h("div", { class: "hyp-meta" }, x.code ? h("span", { class: "it" }, icon("star", { size: 11 }), `${x.code_label || "code"} ${x.code}`) : null,
               x.parts > 1 ? h("span", { class: "it" }, icon("split", { size: 11 }), `checked in ${x.parts} parts`) : null,
               x.batch_id ? h("span", { class: "it" }, icon("list-checks", { size: 11 }), "part of a set") : null,
+              x.clash ? h("span", { class: "it tag-clash", title: "You both changed this check: this version came in beside the other one, so nothing was lost. Open it to compare." }, icon("copy", { size: 11 }), `sync clash · ${x.clash.name === "you" ? "your" : `${x.clash.name}’s`} version`) : null,
               x.to_review ? h("span", { class: "it to-review" }, icon("eye", { size: 11 }), `${x.to_review} to review`) : null,
               x.corrected ? h("span", { class: "it corrected" }, icon("note", { size: 11 }), `${x.corrected} changed by you`) : null,
               x.docs_added_since ? h("span", { class: "it tag-new-docs", title: `${x.docs_added_since} ${x.docs_added_since === 1 ? "document was" : "documents were"} added to the project after this check; open the result to have the AI read them` }, icon("upload", { size: 11 }), `${x.docs_added_since} ${x.docs_added_since === 1 ? "document" : "documents"} added since`) : null,

@@ -77,6 +77,10 @@ DEFAULTS = {
     "restricted_server": "",           # "" | ollama | openai
     "restricted_model": "",
     "account_type": "",                # "" | personal | commercial
+    # 0.14: shared projects. The name colleagues see beside your judgements, and the random id that stands for you
+    # in every project you share (made once, see people.py)
+    "your_name": "",
+    "person_id": "",
 }
 
 BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Local model (automatic)",
@@ -202,6 +206,12 @@ def clean_settings(changes: dict) -> dict:
         raise ValueError("seed must be a whole number from 0 to 2,147,483,647.")
     if "themes_k" in out and not 2 <= out["themes_k"] <= 60:
         raise ValueError("themes_k must be between 2 and 60.")
+    if "your_name" in out:
+        out["your_name"] = " ".join(out["your_name"].split())
+        if len(out["your_name"]) > 60:
+            raise ValueError("Your name can be at most 60 characters.")
+    if "person_id" in out and not re.fullmatch(r"p[0-9a-f]{12}", out["person_id"] or ""):
+        raise ValueError("person_id is made by ENLENS itself.")
     if "profile_framework" in out and not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", out["profile_framework"] or ""):
         raise ValueError("profile_framework must be the short name of a codebook, for example sdg or sdg_goals.")
     return out

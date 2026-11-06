@@ -1,7 +1,8 @@
 // Projects: create, link an existing workspace folder, switch, remove.
 import { quickLookButton } from "./quicklook.js";
-import { App, api, h, icon, replace, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download } from "../lib.js";
+import { App, api, h, icon, replace, append, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download } from "../lib.js";
 import { projectZipLink } from "./result.js";
+import { FEATURES } from "../features.js";
 
 // Import a project from a zip made with "Download as a zip" (on this or another computer). 0.10: the same dialog takes
 // the zip of "Move ENLENS to another computer" (every project and the settings); its projects keep their names.
@@ -70,6 +71,110 @@ export function importProjectDialog(opts = {}) {
       file.focus();
     },
   });
+}
+
+// 0.14: shared projects (sync.py). Each person keeps their own copy of a project; "Download as a zip" carries their
+// work, and "Bring in a colleague's work" merges a colleague's zip into this copy.
+const whose = (name) => (name === "you" ? "your" : `${name}’s`);
+
+export function bringInDialog(project) {
+  const file = h("input", { type: "file", accept: ".zip,application/zip", class: "input", id: "bring-in-zip" });
+  const err = h("div", { class: "field-error", role: "alert" });
+  const status = h("div", { class: "muted small", "aria-live": "polite" });
+  let anyway = false, report = null;
+  file.addEventListener("change", () => {
+    const f = file.files && file.files[0];
+    anyway = false; err.textContent = "";
+    status.textContent = f ? `${f.name} · ${fmt.bytes(f.size)}` : "";
+  });
+  return dialog({
+    title: "Bring in a colleague’s work",
+    body: h("div", {},
+      h("p", { class: "muted" }, `Choose the zip your colleague made with “Download as a zip” in their copy of “${project}”. What is new comes in. Where you both changed the same thing, their version comes in beside yours, marked “sync clash”. Nothing you decided is replaced.`),
+      field("Zip file", file), status, err),
+    actions: [{ text: "Cancel", value: null }, {
+      text: "Bring in", value: true, primary: true, id: "dlg-confirm",
+      async onClick(dlg) {
+        err.textContent = "";
+        const f = file.files && file.files[0];
+        if (!f) { err.textContent = "Choose a zip file first."; file.focus(); return false; }
+        const btn = dlg.querySelector("#dlg-confirm");
+        btn.disabled = true; status.textContent = `Bringing in ${f.name}… this can take a moment for a large project.`;
+        try {
+          const r = await api("POST", `/api/projects/${P(project)}/bring-in${anyway ? "?anyway=1" : ""}`, f);
+          report = r.report;
+        } catch (e) {
+          btn.disabled = false; status.textContent = "";
+          err.textContent = e.message;
+          if (e.status === 409 && e.data && e.data.not_this_project) { anyway = true; btn.textContent = "Bring it in anyway"; }
+          return false;
+        }
+        await App.refresh();
+        return true;
+      },
+    }],
+    onOpen() { file.focus(); },
+  }).then((ok) => (ok && report ? reportDialog(report) : null));
+}
+
+// What a colleague's work changed, in a few sentences, with a link to each sync-clash copy.
+function reportDialog(r) {
+  const c = r.checks, d = r.documents, t = r.themes;
+  const links = [
+    ...c.clash.map((x) => h("li", {}, h("a", { href: `#/h/${encodeURIComponent(x.hyp_id)}` }, x.text), " (a result)")),
+    ...d.clash.map((x) => h("li", {}, h("a", { href: `#/doc/${encodeURIComponent(x.doc_id)}` }, x.title), " (another reading of a document)")),
+    ...t.clash.map((x) => h("li", {}, h("a", { href: `#/themes/${encodeURIComponent(x.run_id)}` }, "A set of themes"))),
+    ...r.codebooks.clash.map((x) => h("li", {}, `The codebook “${x.of}” (kept as “${x.name}”)`)),
+  ];
+  return dialog({
+    title: `${r.from.name || "Your colleague"}’s work is in`,
+    body: h("div", { class: "bring-report" },
+      h("ul", {}, (r.lines || []).map((line) => h("li", {}, line))),
+      links.length ? h("div", { class: "br-clash" }, h("strong", {}, `${r.from.name ? `${r.from.name}’s` : "Their"} versions beside yours:`), h("ul", {}, links)) : null),
+    actions: [{ text: "Close", value: null, primary: true }],
+  });
+}
+
+function togetherCard() {
+  const s = App.state.settings || {};
+  const name = h("input", { class: "input", type: "text", value: s.your_name || "", placeholder: "e.g. Anna de Vries", maxlength: 60, autocomplete: "name", "aria-label": "Your name" });
+  const save = h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+    try { await api("PUT", "/api/settings", { your_name: name.value }); await App.refresh(); toast(name.value.trim() ? `Colleagues see your work as ${name.value.trim()}’s.` : "Your name is taken away.", "ok", { small: true, ttl: 3500 }); } catch (e) { showError(e); }
+  } }, "Save");
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save.click(); } });
+  const now = h("div", { class: "tg-now", hidden: true });
+  const card = h("div", { class: "card card-plain together-card" },
+    h("h2", { style: { fontSize: "1.05rem" } }, icon("users", { size: 16 }), ` ${FEATURES.together.title}`),
+    h("p", { class: "muted small" }, FEATURES.together.what),
+    h("div", { class: "tg-name" }, h("label", { class: "small", for: "tg-your-name" }, "Your name"), Object.assign(name, { id: "tg-your-name" }), save,
+      h("span", { class: "muted small" }, "Colleagues see your judgements under this name.")),
+    h("ol", { class: "small move-steps" },
+      h("li", {}, "Choose “Download as a zip” on the project and send the file to your colleague (e-mail, a shared folder)."),
+      h("li", {}, "The first time, they choose “Import a project (.zip)”. After that, “Bring in a colleague’s work” on the same project."),
+      h("li", {}, "Do the same the other way round, as often as you like. A file brought in twice changes nothing.")),
+    now);
+  const project = App.project;
+  // what this project has from colleagues; loaded again after a colleague's work is brought in
+  card.reload = () => !project ? null : api("GET", `/api/projects/${P(project)}/together`).then((t) => {
+      replace(now);
+      now.hidden = true;
+      const last = (t.history || [])[0];
+      const open = (t.clashes || []).filter((x) => x.kind !== "codebook");
+      const agree = t.agreement || [];
+      if (!last && !open.length && !agree.length) return;
+      const href = (x) => ({ check: `#/h/${encodeURIComponent(x.key)}`, document: `#/doc/${encodeURIComponent(x.key)}`, themes: `#/themes/${encodeURIComponent(x.key)}` })[x.kind];
+      const what = { check: "a result", document: "a document", themes: "a set of themes" };
+      append(now, [
+        h("h3", {}, `In “${project}”`),
+        last ? h("p", { class: "small" }, `Last brought in: ${last.from && last.from.name ? `${last.from.name}’s work` : "a colleague’s work"}, ${fmt.date(last.at)}. `, h("span", { class: "muted" }, (last.lines || [])[0] || "")) : null,
+        open.length ? h("div", { class: "small" }, `Sync clashes (${open.length}): versions you both changed, kept side by side.`,
+          h("ul", {}, open.slice(0, 5).map((x) => h("li", {}, h("a", { href: href(x) }, `${whose(x.name)[0].toUpperCase()}${whose(x.name).slice(1)} version of ${what[x.kind]}`), ` · ${fmt.dateShort(x.at)}`)))) : null,
+        agree.length ? h("div", { class: "small" }, "How often you judged excerpts alike:",
+          h("ul", {}, agree.map((a) => h("li", { title: "Cohen’s kappa corrects the agreement for what chance alone would give: 1 is perfect, 0 is chance." }, `You and ${a.name}: ${a.agreed} of ${a.both} ${a.both === 1 ? "excerpt" : "excerpts"} you both judged (${Math.round(a.rate * 100)}%)`, a.kappa !== null && a.kappa !== undefined ? `, Cohen’s kappa ${a.kappa.toFixed(2)}` : "")))) : null]);
+      now.hidden = false;
+    }).catch((e) => console.warn("Work together:", e.message));
+  card.reload();
+  return card;
 }
 
 // 0.10: every project and the settings in one zip, for another computer.
@@ -151,9 +256,11 @@ export async function renderProjects(view) {
     h("button", { class: "btn", type: "button", onClick: () => importProjectDialog() }, icon("upload", { size: 14 }), "Import a project (.zip)"),
     h("button", { class: "btn", type: "button", onClick: () => linkProjectDialog() }, icon("link", { size: 14 }), "Open an existing ENLENS project folder"),
     quickLookButton()] }));
-  view.appendChild(h("p", { class: "muted small", style: { margin: "-10px 0 14px" } }, "“Download as a zip” gives a project to a colleague or moves it to another computer: one file with the documents, the results, your judgements and notes. “Import a project” brings such a zip in as a new project."));
+  view.appendChild(h("p", { class: "muted small", style: { margin: "-10px 0 14px" } }, "“Download as a zip” gives a project to a colleague or moves it to another computer: one file with the documents, the results, your judgements and notes. “Import a project” brings such a zip in as a new project; “Bring in a colleague’s work” merges it into the copy you have."));
   const list = h("div", { class: "stack" });
   view.appendChild(list);
+  const together = (App.state.projects || []).some((p) => !p.temporary) ? togetherCard() : null;
+  if (together) view.appendChild(together);
   if ((App.state.projects || []).some((p) => !p.temporary)) view.appendChild(moveCard());
   const draw = () => {
     replace(list);
@@ -170,6 +277,7 @@ export async function renderProjects(view) {
           h("div", { class: "btn-row" },
             !current ? h("button", { class: "btn btn-sm", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { project: p.name }); await App.refresh(); toast(`Project: ${p.name}`, "ok", { ttl: 2000 }); draw(); } catch (e) { showError(e); } } }, "Switch to") : null,
             p.ok ? projectZipLink(p.name, { text: "Download as a zip" }) : null,
+            p.ok && !p.temporary ? h("button", { class: "btn btn-sm", type: "button", title: "Merge the zip of a colleague’s copy of this project into yours", onClick: () => bringInDialog(p.name).then(() => { draw(); if (together) together.reload(); }) }, icon("users", { size: 13 }), "Bring in a colleague’s work") : null,
             p.ok && p.documents ? h("button", { class: "btn btn-sm", type: "button", title: "One SQLite file in the FlexiConc layout of the Cross-Doc SDG Explorer: the documents, their sentences with codes, reference chains, themes and (if set up) embeddings",
               onClick: (e) => { const b = e.currentTarget; b.disabled = true; toast("Preparing the FlexiConc file…", "info", { small: true, ttl: 3000 }); download(`/api/projects/${P(p.name)}/flexiconc.sqlite`).catch(showError).finally(() => { b.disabled = false; }); } },
               icon("download", { size: 13 }), "For FlexiConc / Cross-Doc") : null,

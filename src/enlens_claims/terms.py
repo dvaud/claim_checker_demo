@@ -25,6 +25,7 @@ import re
 from collections import Counter, defaultdict
 from typing import Callable
 
+from .people import me, mine_sql
 from .store import Workspace, now
 from .textutil import fast_normalise, is_stop, stem, token_spans
 
@@ -533,9 +534,11 @@ def _nested(a: list[str], b: list[str]) -> bool:
 # ---------------------------------------------------------------------------------------------
 def _decisions(ws: Workspace) -> dict[tuple[str, str], dict]:
     """A person's latest decision on each link: {(a, b): {"decision": accept|reject|change, "relation"}}."""
+    from .people import review_order
+
     out = {}
-    for r in ws.query("SELECT item_id, decision, corrected FROM reviews WHERE item_kind='concept_link' "
-                      "ORDER BY review_id"):
+    order, oargs = review_order()  # 0.14: yours count over a colleague's
+    for r in ws.query(f"SELECT item_id, decision, corrected FROM reviews WHERE item_kind='concept_link' {order}", oargs):
         a, _, b = (r["item_id"] or "").partition("|")
         out[(a, b)] = {"decision": r["decision"], "relation": r["corrected"] or None}
     return out
@@ -868,11 +871,14 @@ def set_link(ws: Workspace, a: str, b: str, decision: str, relation: str | None 
         relation = _INVERSE.get(relation, relation) if relation else relation
     with ws.connect() as cx:
         if decision == "undo":
-            last = cx.execute("SELECT review_id FROM reviews WHERE item_kind='concept_link' AND item_id=? ORDER BY "
-                              "review_id DESC LIMIT 1", (f"{a}|{b}",)).fetchone()
+            mine, margs = mine_sql()  # 0.14: undo takes back your own decision, never a colleague's
+            last = cx.execute(f"SELECT review_id FROM reviews WHERE item_kind='concept_link' AND item_id=? AND {mine} "
+                              "ORDER BY review_id DESC LIMIT 1", (f"{a}|{b}", *margs)).fetchone()
             if last is None:
                 raise ValueError("There is no decision on these two terms to undo.")
-            cx.execute("DELETE FROM reviews WHERE review_id=?", (last[0],))
+            from .people import forget_reviews
+
+            forget_reviews(cx, review_ids=[last[0]])  # 0.14: taken back for good, in colleagues' copies too
         elif decision == "add":
             cx.execute("INSERT OR REPLACE INTO concept_links VALUES (?,?,?,?,?,?,?,?,?)",
                        (a, b, relation or "same", "person", 1.0, None, None, None, now()))
@@ -880,8 +886,8 @@ def set_link(ws: Workspace, a: str, b: str, decision: str, relation: str | None 
             if not cx.execute("SELECT 1 FROM concept_links WHERE a=? AND b=?", (a, b)).fetchone():
                 raise KeyError(f"{a}|{b}")
             cx.execute("INSERT INTO reviews(item_kind, item_id, field, proposed, decision, corrected, reviewer, note, "
-                       "decided_at) VALUES ('concept_link', ?, 'relation', NULL, ?, ?, ?, ?, ?)",
-                       (f"{a}|{b}", decision, relation, reviewer, note, now()))
+                       "decided_at, person_id) VALUES ('concept_link', ?, 'relation', NULL, ?, ?, ?, ?, ?, ?)",
+                       (f"{a}|{b}", decision, relation, reviewer, note, now(), me()))
     rebuild_concepts(ws)
 
 

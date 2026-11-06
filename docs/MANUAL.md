@@ -64,6 +64,11 @@ installation within a minute. Choose the languages in Settings (`eng+nld` for En
 scanned PDF is listed as "Scanned: no text", and the app says how to get Tesseract on this system (after adding the
 document, and in *Settings → Documents*). The one-line install brings the `ocr` extra; only Tesseract is separate.
 
+**Installing it for someone else.** Run the install line on their account, so that the icon and the data folder are
+theirs (*Quit ENLENS* in the app stops it). `ENLENS_LOCAL_ONLY=1` before the line removes every option that sends text
+off the computer. Scanned PDFs also need Tesseract (above); the app says how to get it on that system when it meets a
+scanned page. Section 3, *For whoever installs the app*, has the rest.
+
 **Updating.** `enlens update` updates ENLENS the way it was installed (0.10). Installed with the one-line install,
 it asks GitHub for the latest release, downloads its package, checks it against the release's checksums, installs it
 over this one with uv and brings the Claude Code plugin up to date; on Windows, where a running program cannot
@@ -134,6 +139,15 @@ default `./workspace`) and `enlens-mcp` (the connector).
 ---
 
 ## 2. Concepts
+
+**What ENLENS is for.** ENLENS reads your sources (reports, papers, policy documents, interview notes) and helps you
+find your way through them before you claim anything; when you have a statement to test, it checks it against them.
+Most of the exploring needs no AI at all. What the AI adds is quoted, checked against the text, and yours to
+overrule: you review its judgements as you would a co-coder's, and your judgements count and are kept next to the
+AI's in the Excel download. The AI is Claude, through Claude Code on your own Claude plan, and each kind of task goes
+to the model that suits it (section 12). ENLENS grew out of the Cross-Doc SDG Explorer (section 3, *Exploring the
+documents*, says where its parts went) and the ENLENS green hydrogen pilot, a Value Chain Assessment checked against
+its cited literature, whose pipeline is still included as the SDG pack (sections 9 to 14).
 
 The app speaks plain language; the command line, the API and the code use the technical names. Both are listed.
 
@@ -264,6 +278,18 @@ Write one sentence that could be true or false and press *Check* (Ctrl+Enter). W
 semicolon, the app offers to **check each part separately**. *What happens when you check* explains the four
 steps (search, read, verify, answer). *More options*: let the AI think of other words your documents might use,
 tag the hypothesis with a code, and limit the check to some documents.
+
+**What a check does.**
+
+1. *(optional)* The AI splits the hypothesis into the claims that must all hold (*Check each part separately*).
+2. *(optional)* It writes other words for each claim: synonyms, technical words, the opposite phrasing.
+3. The best excerpts are picked by their words (BM25), combined with search by meaning when the project has it, at
+   most a few per document so that one long report cannot fill every place.
+4. The AI judges each excerpt that bears on the claim (supports, partly supports, contradicts), with a quote and a
+   certainty. Every quote is checked character by character against the excerpt; an answer that fails is sent back
+   with its problems listed.
+5. The answer counts the judgements the AI is sure enough about (the *strictness*, 60% by default) and yours (section
+   2, *Answers*). A split hypothesis combines its parts, and the app says which part decides.
 
 **Look before checking** shows first how the hypothesis will be checked: the parts the AI would split it into (with
 *Check each part separately*) and the extra words it would search for. Change a part, remove one or add one; remove
@@ -405,6 +431,14 @@ where. They replace the Cross-Doc SDG Explorer. Search, key terms, the keyword p
 words need no AI model; the AI only adds readings on top, and every one of them quotes the text and is checked
 against it.
 
+| Page | What it gives | AI? |
+| --- | --- | --- |
+| Search | Every place words occur, with the words around them; phrases, near, other forms, words nearby; Excel/CSV | no |
+| Profile | The codes each document addresses, how much and where, with the words or quote and reason behind each | keywords first; the AI confirms |
+| Concepts | A glossary of terms grouped into concepts (abbreviations, wordings, your links); where each appears | optional |
+| Themes | Themes across the documents, by document and by code; rename, merge, move, remove | optional (names) |
+| A document | Codes, key terms, references ("it", "they"), search, a highlighted copy | references only |
+
 **Search.** Every place words occur, one line per place with the words before and after (a concordance), with the
 count per document first. *Find* any of the words, all of them in one passage, a phrase, or words near each other
 (within N words). Without *exact words only*, a word also finds its other endings ("price" finds "prices"); forms the
@@ -472,6 +506,19 @@ temporary project and opens it at its key terms: search it, see its codes and re
 the Cross-Doc SDG Explorer (documents, sentences with their code, reference chains, theme clusters and, with an
 embedding model, embeddings), for tools that read that format.
 
+**Where the parts of the Cross-Doc SDG Explorer went.**
+
+| Cross-Doc | ENLENS |
+| --- | --- |
+| Single-document concordance (AND / OR), token strip | Search (any / all / phrase / near), across all documents or one |
+| SDG classifier, dual consensus | Profile: keywords and meaning first, the AI confirms with a quote and a reason |
+| Explainability (integrated gradients, span masking, keyphrases) | Key terms per document and passage; the words and reason behind every label |
+| Coreference (fastcoref, LingMess) | References in a document (the AI follows "it" and "they"); checks say what a quote's "it" is |
+| Global coreference (trie) across documents | Concepts: one concept followed across every document, with its wordings |
+| SciCo clusters, communities and summaries | Themes, named by the AI with checked quotes |
+| `pdf_highlight_post.py` | Highlighted copies of a document, an answer, a column of the evidence map |
+| FlexiConc SQLite | *For FlexiConc / Cross-Doc* on the Projects page, `enlens export-flexiconc` |
+
 ### The bibliography: Zotero (0.13)
 
 *Bibliography* (in the sidebar, under *Documents*) puts your Zotero library, one collection of it, or just the works
@@ -528,6 +575,73 @@ stay as they are.
 title; when both are close, both pairs are shown for you to choose. A book and one of its chapters, or a translation,
 are at best proposed. A document that only cites a work is not taken for it: the title must stand on its first pages
 as a title, not as words spread over them.
+
+### Working on a project together (0.14)
+
+Two or more researchers can work on one project, each on their own computer and their own Claude plan. Each keeps a
+copy of the project, and you exchange your work as a file: there is no server and no account, and nothing goes
+anywhere you do not send it yourself.
+
+1. **Your name.** On the *Projects* page, under *Work together*, type the name colleagues should see beside your
+   judgements and press *Save*. (Judgements made before 0.14 are yours: they get your name the first time you send
+   the project.)
+2. **Send your work.** *Download as a zip* on the project, as before, and send the file (e-mail, a shared folder, a
+   USB stick). Since 0.14 the file says which project it is and who sent it.
+3. **Bring in a colleague's work.** The first time, your colleague chooses *Import a project (.zip)*, which makes
+   their copy. From then on, each of you chooses *Bring in a colleague's work* on the same project and picks the
+   other's newest file. A short report says what came in. A file from another project (or from an ENLENS before
+   0.14, which cannot say) is brought in only after you confirm, for when you mean to combine two projects.
+
+How the two copies come together:
+
+- **What is new comes in:** documents with their original files, results, sets of themes, codebooks (also those kept
+  for all your projects, in the ENLENS folder), the AI's labels and reference chains, links between terms, and the
+  bibliography (when you have none, or it comes from the same Zotero collection or file). New documents get the
+  setting for new documents of your copy when it is stricter than theirs.
+- **Newer versions replace older ones.** A result your colleague changed (a note, excerpts read again, more
+  excerpts) and you did not is brought up to date, and the other way round. ENLENS remembers each state of a result
+  that was sent or brought in, so it can tell a newer version from one you both changed.
+- **A sync clash keeps both.** When you both changed the same result, set of themes or codebook, your colleague's
+  version comes in as a copy beside yours, marked *sync clash · Anna's version* in the *Results* list, with a notice
+  and a link to the other version on the result. Compare them, keep the one you want and delete the other.
+  Each of you keeps your own version, with the other's beside it; bringing in the same file again makes no second
+  copy. When your colleague changes their version again, your copy of it is brought up to date. To settle the clash,
+  delete the version you do not want: the *sync clash* mark goes. A copy you deleted does not come back unless they
+  change it again; when you kept theirs and deleted yours, it goes on following their changes.
+- **The same file, read into other text.** Every quote is a place in a document's text. When you both added the same
+  file but the two computers read it differently (another ENLENS version, or text recognition on one computer and
+  not the other), your colleague's reading comes in as a document of its own, marked *sync clash · Anna's reading*
+  on the *Documents* page, and their results point at it.
+- **Each person's judgements.** A judgement of an excerpt is kept under the name of who made it. In your copy, yours
+  count. Where you have not judged an excerpt, the latest colleague's judgement counts, and the card says *Anna's
+  judgement*. When others judged an excerpt too, the card lists them (*Also judged: Anna contradicts*), marked where
+  you differ. *Take back* removes only your own judgement: a colleague's then counts again. *How often you agreed
+  with the AI* (Settings → Checking) counts only your own judgements. The *Projects* page says how often you and each
+  colleague judged the same excerpts alike, with Cohen's kappa once you share 10 or more.
+- **Each person's reviews.** Your verdicts on labels, links between terms and themes count over a colleague's on the
+  same thing. *Clear* and *Undo* take back only your own.
+- **AI work both of you did** on the same document (labels of a codebook, reference chains) is not doubled: yours is
+  kept.
+- **Who may read a document with AI.** The stricter of the two settings wins (*No AI* over *Only a local AI* over
+  *Claude may read it*), and the report says so. When your colleague's copy let Claude read a document you keep from
+  Claude, what Claude made of it there comes in with the rest, and the report tells you how many excerpts Claude
+  read. Nothing is sent anywhere by bringing work in.
+- **What you removed stays removed.** A document, result or set of themes you removed does not come back. When your
+  colleague removed something you still have, the report names it and leaves it in your copy.
+- **Not brought in yet:** a check still running in your colleague's copy (bring in a later file when it is done),
+  and the vectors of search by meaning (your computer makes them for the new documents, as for any it adds).
+
+Before bringing work in, ENLENS keeps a copy of the project's database as it was (`backups/before-bringing-in.sqlite`
+in the project folder, replaced each time). To go back, quit ENLENS and put that file in place of `enlens.sqlite`.
+From a terminal, `enlens --ws <project folder> bring-in <zip>` does the same as the button (`--anyway` for a file
+not known to be this project).
+
+To move to a new computer yourself, use *Move ENLENS to another computer* (it keeps who you are), not a single project
+zip: a new installation is a new person, and your own judgements would come back under your old name.
+
+Bring in files only from the colleagues you work with. Nothing in a file can reach files outside the project, loosen
+who may read a document with AI, or replace what you decided; but a file is trusted with what people decided, so a
+crafted one could take back judgements or reviews made under your name.
 
 ### Settings
 
@@ -591,7 +705,7 @@ depending on the model and the computer. With the Claude API one part is two cal
 
 ```bash
 enlens --ws myproject init
-enlens --ws myproject ingest ~/Reports/ more.zip
+enlens --ws myproject ingest ~/Reports/ more.zip                    # PDF, Word (.docx), HTML, text, Markdown, zips
 enlens --ws myproject embed --embed-model nomic-embed-text          # optional semantic index
 enlens --ws myproject check "Green hydrogen production increases water stress in arid regions." --code 6.4
 enlens --ws myproject check "..." --decompose --embed-model nomic-embed-text
@@ -647,6 +761,19 @@ made per project run and are usually answered in the app.
 ---
 
 ## 5. Local models
+
+**Getting one.** No Claude plan, or documents that must stay on your computer? Choose *A model on this computer* (the
+first screen or *Settings → AI*), get [Ollama](https://ollama.com/download) (free) and open it: ENLENS notices it and
+downloads a model with one button (section 3, *First use*). LM Studio, llama.cpp, Jan and vLLM work too, as
+OpenAI-compatible servers. In a terminal instead:
+
+```bash
+ollama pull qwen3:8b             # any local chat model
+ollama pull nomic-embed-text     # optional: search by meaning as well as by words (bge-m3 for mixed languages)
+```
+
+To use a local model only for some documents, mark them *Only a local AI* (section 8). To make sure nothing is ever
+sent to a cloud model, see *For whoever installs the app* in section 3 (`--local-only`).
 
 What ENLENS asks of a model is harder than chat: quotes copied word for word, fine judgement between "partly
 supports" and "same topic", and answers in a fixed JSON format. Ollama and the OpenAI-compatible servers are given
@@ -886,6 +1013,8 @@ claimed for 30 minutes), `submit_answers` (each answer quote-checked: stored, or
 | task_claims | 0.8: the batches of queued tasks handed out to Claude Code: who took them, when, model, helper; `tasks.queued`, `claimed_by`, `step`, `again` and `results.route`, `helper`, `step` belong with it |
 | meta | Thresholds used by the pack, and the corpus version (search indexes are rebuilt when it changes) |
 | bib_items, bib_links | 0.13: the bibliography's works (title, creators, year, DOI, web address, Zotero link, the files Zotero keeps with their checksums) and which document each is (`status`: `auto` for the same file or DOI, `probable`, `confirmed` or `rejected` by a person; `method`: `file`, `doi`, `title`, `person`); where it came from is in `meta` (`bibliography`); 0.13.3: `documents.file_title` keeps the file's own title while a linked work's title replaces it (`meta` `titles_version` rebuilds the keyword index) |
+| people, judgements | 0.14: the people whose work is in the project (id and name), and each person's own judgement of an excerpt; the one in force is copied to `verifications.user_*`, with `user_by`; `reviews.person_id` says who made a review |
+| sync_seen, sync_copies, sync_removed, sync_log | 0.14: every state of a result, set of themes or codebook that was sent or brought in (its fingerprint); a colleague's version kept beside yours (a sync clash); what was removed here; each colleague's work brought in, with its report. `documents.text_fp` is a fingerprint of a document's text; `meta` `project_uid` says which project a copy belongs to |
 | vca_targets, vca_refs, doc_refs, claims, claim_targets, evidence, interactions, vca_claims, reviews | The SDG pack (section 13) |
 
 Open it with any SQLite tool. Offsets in `evidence` and `verifications` index into `documents.text`. Removing one
@@ -903,6 +1032,17 @@ first screen (or *Projects → Import a project (.zip)*, which takes both kinds 
 ---
 
 ## 8. Privacy and copyright
+
+**What stays on your computer.** Projects are plain folders with one SQLite database each; they and the settings live
+in `~/enlens` (or `ENLENS_HOME`). With Claude Code (the default from 0.9), only the passages inside the tasks it takes,
+from documents Claude may read, are sent to Anthropic, on your own Claude plan; ENLENS never sees its login. The
+Claude API is used only after *Allow cloud models* is switched on (or `--backend anthropic` on the command line), and
+a model on this computer keeps every word on it. `--local-only` hides both cloud options for good (section 3, *For
+whoever installs the app*). The app is a small standard-library server on 127.0.0.1 with a token per run; the page
+loads nothing from the internet (no CDN, fonts or analytics), and there is no telemetry. Apart from the AI you chose,
+ENLENS itself goes online only to look for a new version on GitHub (section 1), and, when you ask for them, to get
+Claude Code or a local model. Bringing in a colleague's work (section 3) reads the file on this computer and sends
+nothing.
 
 **Zotero (0.13).** The Bibliography page reads Zotero through the Zotero app's own connection on this computer
 (`127.0.0.1`, port 23119), never through Zotero's servers, and only reads. The works' details stay in the project;
@@ -1348,6 +1488,30 @@ audits.
 ---
 
 ## 12. Models and configuration
+
+### The model of each kind of task (0.8)
+
+Every feature of the app, not only the SDG pack, sends each kind of task to its own model:
+
+| Task | Claude Code and the Claude API | Steps up to | Local |
+| --- | --- | --- | --- |
+| Codebook labels, concept links | Haiku | Sonnet | the small model (if chosen) |
+| Search words, splitting, theme names, references | Sonnet | Opus | the main model |
+| Judging excerpts, reading one again | Sonnet (high effort) | the auditor | the main model |
+| Second opinion | the auditor (Opus, or Fable if switched on) | | the second model |
+
+On Claude Code these are the models for a Pro plan; on other plans they follow the plan (section 6, *Models that suit
+your Claude plan*). A model chosen in *Settings → Technical → AI model per task* comes first. A task steps up once:
+when its answer's certainty is under 0.6, after two rejected answers, or when you press *Ask a stronger model*. The
+defaults are starting points until the runs on the pilot (`enlens acceptance queue|score`, see
+[MODEL_CHOICE.md](MODEL_CHOICE.md)) set them.
+
+**What every answer records.** The model, its exact version (digest), the prompt version and the seed (42 by default,
+temperature 0); since 0.8 also the route (Claude Code, the Claude API, a local server), the helper, and whether the
+answer came from the stronger model. Claude Code gives no seed and no digest (section 6, *What is recorded*). Every
+Excel download ends with *How these results were made*.
+
+### The SDG pack's models
 
 `config.json` in the workspace:
 

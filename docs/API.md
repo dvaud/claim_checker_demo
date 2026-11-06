@@ -230,6 +230,32 @@ current project). Without `name` the project keeps the name it had, with " (2)" 
 that is taken → 409. 400 for a file that is not a zip, or a zip without a project (`enlens.sqlite`). Paths in the zip
 cannot leave the new project folder, and its size is capped.
 
+**Shared projects (0.14).** The zip's `bundle.json` also says which project it is and who sent it: `"project_uid"`,
+`"from": {"id": "p…", "name": "Anna"}`, `"sent_at"`; codebooks the project uses from the home folder come along in
+`frameworks/`. A copy made with *Import* keeps the project's `project_uid`.
+`POST /api/projects/<p>/bring-in` with a colleague's project zip as the raw body merges it into this copy
+(`sync.bring_in`) → `{"report": …, "project": summary}`. The report: `{"from": {"id", "name"}, "project", "version",
+"at", "lines": ["From Anna: 1 new result.", …], "documents": {"new": [titles], "clash": [{"title", "doc_id"}],
+"removed_here", "removed_there"}, "checks": {"new", "updated", "same", "yours_newer", "clash": [{"hyp_id", "of",
+"text"}], "running": [texts], "removed_here", "removed_there"}, "themes": {"new", "updated", "clash": [{"run_id",
+"of"}], "removed_here"}, "codebooks": {"new", "updated", "clash": [{"name", "of"}]}, "judgements", "reviews", "labels",
+"labels_kept_yours", "links", "other_rows", "bibliography": null | "new" | "merged" | "kept_yours", "ai_access":
+[{"title", "doc_id", "yours", "theirs", "now", "why": "theirs" | "yours" | "default", "claude_read_here" |
+"claude_read_there"}]}`; it is kept in `sync_log`. A file not known to be a copy of this project (another project's,
+or one made before 0.14) → 409 with `"not_this_project": {"project_uid", "from", "name", "version"}`;
+`?anyway=1` brings it in all the same (and remembers that project's id). 400 for a file that is not a project zip, or
+the zip of *Move ENLENS to another computer*. Before the merge the database is copied to
+`backups/before-bringing-in.sqlite`.
+`GET /api/projects/<p>/together` → `{"uid", "me": {"id", "name"}, "people": [{"id", "name"}], "history": [{"at",
+"from", "lines"}] (newest first, 5), "clashes": [{"kind": "check" | "document" | "themes" | "codebook", "key",
+"of_key", "name", "at"}] (only those whose two versions are both still here: deleting one settles it), "agreement": [{"person_id", "name", "both", "agreed", "rate", "kappa"}]}`
+(`kappa` null below 10 excerpts in common).
+Settings: `your_name` (at most 60 characters) is the name colleagues see; `person_id` is made by ENLENS. A sync-clash
+copy is marked where it is listed: `clash: {"of", "name", "at"}` on each row of `GET …/hypotheses`, each document of
+`GET …/documents` and each run of `GET …/themes`; `GET …/hypotheses/<id>` has `clash` (with `of_text`) and
+`clash_copies: [{"hyp_id", "of", "name", "at"}]`. Each excerpt of a result has `judged_by` ("you", a colleague's
+name, or null) and `others: [{"mine", "name", "verdict", "note", "at"}]` (the other people's judgements of it).
+
 `GET /api/projects/<p>` →
 ```json
 {"name": "Demo", "linked": false, "documents": 3, "hypotheses": 3, "ok": true, "path": "…", "passages": 4,

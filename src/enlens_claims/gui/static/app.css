@@ -813,6 +813,22 @@ span.passage-broken > span.passage-heading { font-weight: 650; }
 .hist-action .muted { flex: 1 1 260px; }
 .tag-new-docs { color: var(--accent-text); font-weight: 600; }
 .tag-disagree { color: var(--mixed); font-weight: 600; }
+/* 0.14: shared projects. A colleague's version beside yours (sync clash), the other people's judgements of an excerpt,
+   and the Work together card on the Projects page */
+.tag-clash { color: var(--partly); font-weight: 600; }
+.clash-notice { margin: 0 0 14px; }
+.clash-notice p { margin: 0; }
+.clash-notice p + p { margin-top: 4px; }
+.ev-others { display: flex; gap: 6px; align-items: flex-start; color: var(--text-2); margin: 2px 0 8px; }
+.ev-others svg { flex: none; margin-top: 2px; }
+.ev-other-differs { color: var(--mixed); }
+.together-card .tg-name { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0 10px; }
+.together-card .tg-name .input { max-width: 240px; }
+.together-card .tg-now { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px; }
+.together-card .tg-now h3 { font-size: .95rem; margin: 0 0 6px; }
+.together-card ul, .bring-report ul { margin: 4px 0 0; padding-left: 20px; }
+.together-card li, .bring-report li { margin: 2px 0; }
+.bring-report .br-clash { margin-top: 10px; }
 
 /* ------------------------------------------------------------------ 0.6: evidence map */
 .map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 0 0 12px; font-size: .88rem; }

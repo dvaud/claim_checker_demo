@@ -56,8 +56,10 @@ export async function api(method, path, body, opts = {}) {
   try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text || "Unreadable answer from the app." }; }
   if (!res.ok) {
     const msg = (data && data.error) || `Request failed (${res.status}).`;
-    throw new ApiError(res.status, res.status === 401 ? (TOKEN ? "The page's token is no longer valid. Reload the page." : "Open the link that enlens-gui printed in its terminal: it carries the access token.") : msg,
+    const err = new ApiError(res.status, res.status === 401 ? (TOKEN ? "The page's token is no longer valid. Reload the page." : "Open the link that enlens-gui printed in its terminal: it carries the access token.") : msg,
       (data && data.kind) || (res.status === 502 ? "backend" : "request"));
+    err.data = data;   // 0.14: what else the app said (a file of another project: who sent it)
+    throw err;
   }
   return data;
 }

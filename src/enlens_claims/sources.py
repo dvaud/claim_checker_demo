@@ -192,6 +192,7 @@ def original_file(ws: Workspace, doc_id: str, verify: bool = True) -> dict:
     if not row:
         raise KeyError(doc_id)
     recorded, sha1, kind, title = row[0]["path"] or "", row[0]["sha1"], row[0]["kind"], row[0]["title"]
+    sha1 = (sha1 or "").split("~")[0] or None  # 0.14: another reading of a file is marked "<sha1>~<text>" (sync.py)
     out = {"doc_id": doc_id, "kind": kind, "title": title, "recorded": recorded,
            "name": re.sub(r".*[/\\]", "", recorded), "path": None, "available": False, "inside": False, "reason": ""}
     if not recorded:

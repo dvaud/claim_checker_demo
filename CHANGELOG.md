@@ -1,5 +1,112 @@
 # Changelog
 
+## 0.14.0 (November 2026): work on a project together
+
+Researchers asked to work on one project with a colleague, each on their own computer and their own Claude plan.
+Until now a project zip could only become a new project, so two people's work drifted apart as soon as both went on.
+
+**Each of you keeps a copy, and you exchange your work as a file.** *Download as a zip* (as before) is the file you
+send. Your colleague makes their copy once with *Import a project (.zip)*; from then on each of you chooses *Bring in
+a colleague's work* on the same project and picks the other's newest file. There is no server and no account: the
+file goes where you send it, and bringing it in sends nothing anywhere. A short report says what came in. A file of
+another project (or from an ENLENS before 0.14, which cannot say) is brought in only after you confirm. A file
+brought in twice changes nothing, and two people sending files back and forth end up with the same project.
+
+**How the copies come together.**
+- What is new comes in: documents with their original files, results, sets of themes, codebooks (also those kept for
+  all projects), the AI's labels and reference chains, links between terms, the bibliography, and the SDG pack's and
+  add-ons' rows.
+- A result, set of themes or codebook that only one of you changed since you last exchanged it is brought up to
+  date. ENLENS remembers each state that was sent or brought in, so it can tell a newer version from one you both
+  changed.
+- **Sync clash.** When you both changed it, your colleague's version comes in beside yours, marked *sync clash ·
+  Anna's version* in the *Results* list and on the result (with a link to the other version), and on the *Projects*
+  page. Nothing is replaced: each of you keeps your own version, with the other's beside it. When your colleague
+  changes their version again, the copy you have of it is brought up to date (no third copy). To settle a clash,
+  delete the version you do not want: the mark goes, a deleted copy does not come back unless they change it again,
+  and when you kept their version, it goes on following theirs.
+- **The same file, read into other text** (another ENLENS version, or text recognition on one computer and not the
+  other): quotes are places in the text, so your colleague's reading comes in as a document of its own, marked *sync
+  clash · Anna's reading*, and their results point at it.
+- **Each person's judgements.** A judgement of an excerpt is kept under the name of who made it (*Your name*, on the
+  *Projects* page). Yours count in your copy; where you have not judged an excerpt, the latest colleague's judgement
+  counts and the card says *Anna's judgement*. Where others judged it too, the card says *Also judged: Anna
+  contradicts*, marked where you differ. *Take back* removes only yours. The answer says *reviewed by you and Anna*.
+  The *Projects* page says how often you and each colleague judged the same excerpts alike, with Cohen's kappa from
+  10 excerpts on. *How often you agreed with the AI* counts only your own judgements, and the Excel download says
+  who judged each excerpt.
+- **Each person's reviews** of labels, links between terms and themes: yours count over a colleague's; *Clear* and
+  *Undo* take back only your own.
+- AI work you both did on the same document (labels of a codebook, reference chains) is not doubled: yours is kept.
+- **Who may read a document with AI: the stricter setting wins**, with a line in the report. When your colleague's
+  copy let Claude read a document you keep from Claude, the report says how much it read there.
+- **What you removed stays removed**: a document, result or set of themes you removed does not come back. When your
+  colleague removed one you still have, the report names it and leaves yours alone.
+- A check still running in your colleague's copy comes with a later file.
+- Before bringing work in, the project's database is copied to `backups/before-bringing-in.sqlite`.
+
+**For developers.** New modules `sync.py` (`bring_in`, `before_sending`, `peek`, `summary`, `overview`, `copies_of`,
+`NotThisProject`) and `people.py` (`me`, `my_name`, `record`, `refresh`, `adopt`, `others`, `agreement`,
+`review_order`, `mine_sql`). New tables `people`, `judgements`, `sync_seen`, `sync_copies`, `sync_removed`,
+`sync_log`; new columns `verifications.user_by`, `reviews.person_id`, `documents.text_fp`; `meta` `project_uid`
+(`Workspace.project_uid()`), `Workspace.removed()`. `claimcheck.set_judgement` writes the person's judgement and
+works out the one in force; removing a document, a check or a theme run notes it in `sync_removed`, and adding the
+file again takes the note away. `bundle.export_project` stamps `bundle.json` with `project_uid`, `from` and
+`sent_at`, and adds the home-folder codebooks the project uses. Settings `your_name` and `person_id`. Command line:
+`enlens --ws <folder> bring-in <zip> [--anyway]`. API: `POST
+/api/projects/<p>/bring-in` (409 with `not_this_project`, `?anyway=1`), `GET /api/projects/<p>/together`; `clash` on
+rows of hypotheses, documents and theme runs, `clash` and `clash_copies` on a result, `judged_by` and `others` on each
+excerpt; an `ApiError` can carry more fields (`extra`), and the page keeps them on its error (`e.data`). A feature
+`together` in `features.js`, an icon `users`. `update.WITHDRAWN` no longer lists 0.14.0, now a release.
+
+**A shorter README.** README rewritten as a short front door (install, update, what's new, how to cite, privacy); its
+detail moved to docs/MANUAL.md and the new docs/DEVELOPING.md.
+
+### Defects, tests, and what is not done
+
+**Found in review and fixed before the release.** An independent review of the merge found eight defects in the first
+version; each now has a test. A crafted file could make ENLENS copy any file of the computer into the project (and
+so into the next file you send), or write outside the project: a document id is now never a path, and an original
+file is copied only from the colleague's zip and only when it is the file the document was read from. Another reading
+of a file you keep from AI came in as *Claude may read it*; it now gets your setting of that file. A judgement or
+review you took back came back with a colleague's file; taking one back is now kept, and goes from their copies too.
+After a sync clash, exchanging files back again replaced your own version with your colleague's and left yours as an
+unmarked copy; now each keeps their own and the marks travel. A codebook both of you changed doubled your
+colleague's labels when the same file was brought in twice. Excerpts of a copied check had ids the app could not
+find again (a stronger model's reading would have added a second row). Another reading of a file showed its
+original as *changed since it was added*. Starting over left theme runs that a colleague's file could bring back.
+A second review of these fixes found four more, also fixed with a test each: a crafted file could still place a file
+in the project folder through the fingerprint of a document's text (fingerprints are now always worked out here, and
+a file can only go into the project's `originals`); keeping a colleague's version to settle a clash left it behind
+their later changes and brought your deleted version back; a review taken back stayed where its label had another id
+in your copy; a check that read a document one of you removed was *brought up to date* at every exchange.
+
+**Tests:** `tests/test_0_14_0_shared_projects.py` (31 tests): the file says which project and who sent it; a
+colleague's check and judgements come in under their name, yours win, taking yours back lets theirs count again, and
+the agreement and the AI-agreement chart count the right judgements; a file brought in twice changes nothing; a check
+changed on one side is brought up to date, both ways; a check both changed comes in as a sync-clash copy, once, and
+two people exchanging files end up with the same two versions; the same file read into other text comes in as a
+document of its own with the check pointing at it; the stricter AI setting wins with both warnings; removed
+documents and checks do not come back, and a colleague's removal is reported; new documents come with their files
+and step the corpus on; a file of another project only on purpose; judgements from before 0.14 are the sender's;
+label reviews per person (*Clear* takes back only yours); the copy before the merge; the app's two routes, with the
+409; the command line; Cohen's kappa; and one test for each defect found in review (a crafted file, another
+reading of a file kept from AI, judgements and reviews taken back, each keeping their own version after a clash and a
+copy brought up to date, a codebook both changed, excerpt ids made the app's way, the original of another reading,
+starting over, a crafted text fingerprint, settling a clash by keeping theirs, a review taken back under another
+label id, a check that read a removed document). `tests/test_0_13_6_version_numbers.py`: 0.14.0 is no longer a withdrawn number.
+`tests/test_0120_results_page.py`: the answer says who reviewed it (*reviewed by you*, or *by you and Anna*).
+`tests/test_0_13_7_local_model.py`: the 0.13.7 line it looks for is now in the changelog, not the README.
+
+**Not yet done:** tested with two simulated people on one computer (two ENLENS folders) and in the browser with the
+dev server; not yet between two real computers with real Claude Code. There is no button yet to keep one version of a
+sync clash and remove the other in one go (open each and delete the one you do not want). The vectors of search by
+meaning are not brought in: your computer makes them for the new documents. A project zip moved to a new computer as
+a single project (not with *Move ENLENS to another computer*) makes you a new person there. A colleague's file is
+trusted with what people decided: a crafted file could take back judgements or reviews made under your name in your
+copy (nothing it holds can reach files outside the project, change who may read a document to a less strict setting,
+or replace what you decided with its own). Bring in files only from the colleagues you work with.
+
 ## 0.13.11 (November 2026): the local model shows itself, and waits for room
 
 Found in a user test. With Claude Code as the AI, a check whose most important document was marked *Only a local AI*

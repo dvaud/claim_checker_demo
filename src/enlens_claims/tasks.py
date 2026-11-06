@@ -740,9 +740,9 @@ def _keep_person_and_history(cx, vid: str, before, why: str) -> None:
                  "scope_note": b.get("scope_note"), "model": b.get("model"), "prompt_version": b.get("prompt_version"),
                  "at": None, "replaced_at": now(), "why": why})
     cx.execute("UPDATE verifications SET user_verdict=?, user_note=?, user_at=?, user_quote=?, user_start=?, user_end=?, "
-               "ai_history_json=?, reread_json=? WHERE ver_id=?",
+               "user_by=?, ai_history_json=?, reread_json=? WHERE ver_id=?",
                (b.get("user_verdict"), b.get("user_note"), b.get("user_at"), b.get("user_quote"), b.get("user_start"),
-                b.get("user_end"), json.dumps(hist, ensure_ascii=False), b.get("reread_json"), vid))
+                b.get("user_end"), b.get("user_by"), json.dumps(hist, ensure_ascii=False), b.get("reread_json"), vid))
 
 
 def _store_reread(cx, t, payload, obj, model) -> tuple[bool, list[str]]:

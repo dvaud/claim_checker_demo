@@ -822,7 +822,7 @@ def match(ws: Workspace) -> dict:
     linked_items = {k for (k, _d), s in decided.items() if s == "confirmed"}
     linked_docs = {d for (_k, d), s in decided.items() if s == "confirmed"}
     auto: dict[tuple[str, str], str] = {}
-    by_sha = {d["sha1"]: d["doc_id"] for d in docs if d["sha1"]}
+    by_sha = {d["sha1"]: d["doc_id"] for d in docs if d["sha1"] and "~" not in d["sha1"]}  # 0.14: not another reading
     by_doi: dict[str, list[str]] = defaultdict(list)
     for d in docs:
         if d["doi"]:

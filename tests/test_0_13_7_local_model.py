@@ -247,5 +247,5 @@ def test_the_docs_say_so():
     assert "POST /api/servers/pull" in api_md
     manual = (ROOT / "docs" / "MANUAL.md").read_text(encoding="utf-8")
     assert "Download qwen3:8b" in manual
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "A model on this computer, without a terminal (0.13.7)" in readme
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")  # 0.14.0: the README keeps only the newest series
+    assert "**A model on this computer, without a terminal.**" in changelog

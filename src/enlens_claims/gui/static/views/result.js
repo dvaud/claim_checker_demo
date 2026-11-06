@@ -262,6 +262,9 @@ export async function renderResult(view, [hypId], query) {
           h("span", {}, `${r.status === "waiting" ? "Started" : "Checked"} ${fmt.date(r.created_at)}`),
           from && from.meta ? [h("span", { class: "sep" }, "·"), h("a", { href: from.href }, from.meta)] : null))));
 
+    // 0.14: a sync clash: this is a colleague's version of a check you both changed, or one came in beside this one
+    if (r.clash || (r.clash_copies || []).length) box.appendChild(clashNotice(r));
+
     const onlyLocal = r.waiting_local && !parts.some((p) => (p.rounds_info || []).some((x) => x.waiting) || ["terms", "rank", "judge"].includes(p.stage));
     if (r.status === "waiting" && onlyLocal) {
       // 0.11: only the excerpts of documents marked Only a local AI wait (their notice is on each part)
@@ -392,7 +395,10 @@ export async function renderResult(view, [hypId], query) {
       "Next to review", icon("arrow-right", { size: 14 })) : null;
     const restBtn = !relevantLeft && restLeft ? h("button", { class: "link-btn", type: "button", onClick: () => nextToReview({ quiet: true }) }, `Review the ${restLeft} ${restLeft === 1 ? "excerpt" : "excerpts"} judged not about it`) : null;
     // who judged what the answer rests on: the AI (named), you for some, or you for all of it
-    const basis = !reviewed.length ? (allPassages.some((p) => p.ai_verdict) ? "judged by the AI" : null) : relevantLeft === 0 ? "reviewed by you" : "partly reviewed by you";
+    // 0.14: in a shared project, by you and (or) the colleagues whose judgements count where you made none
+    const people = [...new Set(reviewed.map((p) => p.judged_by || "you"))].sort((a, b) => (a === "you" ? -1 : b === "you" ? 1 : a.localeCompare(b)));
+    const byPeople = people.length > 1 ? `${people.slice(0, -1).join(", ")} and ${people[people.length - 1]}` : people[0] || "you";
+    const basis = !reviewed.length ? (allPassages.some((p) => p.ai_verdict) ? "judged by the AI" : null) : relevantLeft === 0 ? `reviewed by ${byPeople}` : `partly reviewed by ${byPeople}`;
     // at most one caution: what makes this answer fragile
     const singleDoc = bal.docs_counted === 1;
     const aiJ = (n) => (n === 1 ? "one excerpt" : n === 2 ? "two excerpts" : `${n} excerpts`);
@@ -402,7 +408,8 @@ export async function renderResult(view, [hypId], query) {
       : singleDoc ? "It rests on a single document."
       : unchecked ? `It rests on ${aiJ(unchecked)} you have not reviewed.`
       : forYou ? `${forYou} ${forYou === 1 ? "excerpt waits" : "excerpts wait"} for your own judgement: no AI may read ${forYou === 1 ? "it" : "them"}.` : null;
-    const done = !relevantLeft && reviewed.length ? "You have reviewed the evidence: the answer rests on your judgements. Download it for Excel, or add notes." : null;
+    const done = !relevantLeft && reviewed.length ? (byPeople === "you" ? "You have reviewed the evidence: the answer rests on your judgements. Download it for Excel, or add notes."
+      : `The evidence is reviewed: the answer rests on the judgements of ${byPeople}. Download it for Excel, or add notes.`) : null;
 
     card.appendChild(h("div", { class: "answer-status" },
       statusBadge(st, { size: "lg", text: r.status_text || App.statusText(st), title: App.statusHelp(st) || null }),
@@ -919,7 +926,7 @@ export async function renderResult(view, [hypId], query) {
     }
     const split = parts.length > 1;
     const open = (part, p) => { evidenceView = "cards"; store("evidenceView", "cards"); returnTo = { claim_id: part.claim_id, passage_id: p.passage_id }; draw(current); };
-    const yours = (p) => p.user_verdict ? h("span", { class: `it ${p.changed ? "corrected" : ""}` }, icon(p.changed ? "note" : "check", { size: 12 }), p.user_verdict === "not_relevant" ? "Not about this" : GRADE_TEXT[p.user_verdict]) : p.user_note ? h("span", { class: "muted" }, "your comment") : h("span", { class: "faint" }, "—");
+    const yours = (p) => p.user_verdict ? h("span", { class: `it ${p.changed ? "corrected" : ""}` }, icon(p.changed ? "note" : "check", { size: 12 }), `${p.judged_by && p.judged_by !== "you" ? `${p.judged_by}: ` : ""}${p.user_verdict === "not_relevant" ? "Not about this" : GRADE_TEXT[p.user_verdict]}`) : p.user_note ? h("span", { class: "muted" }, "your comment") : h("span", { class: "faint" }, "—");
     const second = (p) => {
       if (!p.second) return h("span", { class: "faint" }, "—");
       const you = p.user_verdict ? (p.user_verdict === "not_relevant" ? null : p.user_verdict) : undefined;
@@ -1054,10 +1061,11 @@ export async function renderResult(view, [hypId], query) {
     const aiSaid = p.ai_verdict ? GRADE_TEXT[p.ai_verdict].toLowerCase() : "not about this";
     const pctN = p.confidence !== null && p.confidence !== undefined ? Math.round(p.confidence * 100) : null;
     const word = p.certainty || (pctN !== null ? `${pctN}%` : "");
+    const who = p.judged_by && p.judged_by !== "you" ? p.judged_by : null;   // 0.14: a colleague's judgement counts here
     if (yours && p.changed) {
-      append(top, [gradeBadge(p.verdict, false), h("span", { class: "ev-fact ev-yours-fact" }, icon("check", { size: 12 }), p.read_by === "you" ? "Your judgement" : `Your judgement (the AI said ${aiSaid})`)]);
+      append(top, [gradeBadge(p.verdict, false), h("span", { class: "ev-fact ev-yours-fact", title: who ? `You have not judged this excerpt: ${who}’s judgement counts in your copy until you do.` : null }, icon(who ? "users" : "check", { size: 12 }), `${who ? `${who}’s` : "Your"} judgement${p.read_by === "you" ? "" : ` (the AI said ${aiSaid})`}`)]);
     } else if (yours) {
-      append(top, [gradeBadge(p.verdict, false), h("span", { class: "ev-fact ev-yours-fact" }, icon("check", { size: 12 }), "You agreed with the AI")]);
+      append(top, [gradeBadge(p.verdict, false), h("span", { class: "ev-fact ev-yours-fact", title: who ? `You have not judged this excerpt: ${who}’s judgement counts in your copy until you do.` : null }, icon(who ? "users" : "check", { size: 12 }), `${who || "You"} agreed with the AI`)]);
     } else if (p.waiting_for_you) {
       append(top, [fact("Waiting for your judgement", { class: "ev-fact ev-yours-fact" }),
         fact(p.access === "none" ? "its document is marked No AI" : "its document is marked Only a local AI, and no local model is chosen")]);
@@ -1072,6 +1080,7 @@ export async function renderResult(view, [hypId], query) {
     if (isNew) append(top, [h("span", { class: "badge new-badge" }, "new")]);
     if (p.read_by && !p.waiting_for_you && !oneReader) append(top, [h("span", { class: "spacer" }), readByChip(p)]);
     card.appendChild(top);
+    if ((p.others || []).length) card.appendChild(othersLine(p));
     const hist = p.ai_history || [];
     if (p.reread && hist.length) {
       const first = hist[0];
@@ -1569,6 +1578,29 @@ export async function renderResult(view, [hypId], query) {
 }
 
 // "Download the whole project (.zip)": a plain link (the browser saves it), with a note that the download started.
+function clashNotice(r) {
+  const whose = (n) => n === "you" ? "your" : `${n}’s`;
+  if (r.clash) {
+    return h("div", { class: "notice notice-warn clash-notice", role: "note" }, icon("copy"),
+      h("div", {}, h("p", {}, h("strong", {}, "Sync clash. "), `This is ${whose(r.clash.name)} version of a check you both changed. It came in beside the other version on ${fmt.dateShort(r.clash.at)}, so nothing was lost.`),
+        h("p", { class: "small" }, h("a", { href: `#/h/${encodeURIComponent(r.clash.of)}` }, "Open the other version"), " · Keep the one you want and delete the other when you have compared them.")));
+  }
+  return h("div", { class: "notice notice-info clash-notice", role: "note" }, icon("copy"),
+    h("div", {}, h("p", {}, h("strong", {}, "Sync clash. "), r.clash_copies.length === 1 ? `${whose(r.clash_copies[0].name)[0].toUpperCase()}${whose(r.clash_copies[0].name).slice(1)} version of this check came in beside it: you both changed it.` : `${r.clash_copies.length} other versions of this check came in beside it: you both changed it.`),
+      h("p", { class: "small" }, ...r.clash_copies.flatMap((c, i) => [i ? " · " : "", h("a", { href: `#/h/${encodeURIComponent(c.hyp_id)}` }, `Open ${whose(c.name)} version`)]))));
+}
+
+// 0.14: how the other people of a shared project judged this excerpt (the judgement in force is on the card itself).
+// A different answer is marked: it is where you and a colleague disagree.
+function othersLine(p) {
+  const word = (v) => !v ? "a comment only" : v === "not_relevant" ? "not about this" : GRADE_TEXT[v].toLowerCase();
+  const differs = (o) => o.verdict && p.user_verdict && o.verdict !== p.user_verdict;
+  return h("div", { class: "ev-others small" }, icon("users", { size: 13 }),
+    h("span", {}, "Also judged: ", ...(p.others || []).flatMap((o, i) => [i ? "; " : "",
+      h("span", { class: differs(o) ? "ev-other-differs" : "", title: [o.note ? `Comment: ${o.note}` : "", o.at ? `On ${fmt.dateShort(o.at)}` : ""].filter(Boolean).join(" · ") || null },
+        h("strong", {}, o.mine ? "you" : o.name), ` ${word(o.verdict)}`)])));
+}
+
 export function projectZipLink(project, opts = {}) {
   const a = h("a", { class: opts.cls || "btn btn-sm", href: `/api/projects/${P(project)}/export.zip?token=${encodeURIComponent(TOKEN)}`, download: "", title: "One zip with the database, the settings, the codebooks and the original files of this project" },
     opts.noIcon ? null : icon("download", { size: 13 }), opts.text || "Download the whole project (.zip)");

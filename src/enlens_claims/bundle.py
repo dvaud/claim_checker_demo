@@ -10,7 +10,9 @@ The zip holds:
 - `uploads/`: the files added through the app;
 - the original file of every other document: kept at its place when it is inside the project folder, and as
   `originals/<doc_id>/<name>` when it was read from somewhere else on the computer;
-- `bundle.json`: what is where (the version that made it and, per document, its file in the zip).
+- `bundle.json`: what is where (the version that made it and, per document, its file in the zip); since 0.14 also
+  which project it is (`project_uid`) and who sent it (`from`), so a colleague can bring the work into their copy of
+  the project (sync.py). Codebooks the project uses from the home folder come along in `frameworks/`.
 
 Everything is written to a temporary file on disk and copied in chunks, never held in memory. Importing unpacks
 with the same guards as adding a zip of sources (no path can leave the project folder, a size budget against zip
@@ -44,8 +46,12 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
     """Write the project to the zip file `out`; returns what it holds."""
     from .sources import original_file
 
+    from . import sync
+
     out = Path(out)
     root = ws.root.resolve()
+    stamp = sync.before_sending(ws)  # 0.14: which project, who sends it, and the state of its checks and themes
+    extra_codebooks = sync.home_codebooks(ws)
     tmp_dir = Path(tempfile.mkdtemp(prefix="enlens-export-"))
     try:
         db = tmp_dir / "enlens.sqlite"
@@ -71,6 +77,8 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
                         if f.is_file() and not f.is_symlink():
                             _add(zf, f, f.relative_to(root).as_posix())
                             stats["uploads"] += folder == "uploads"
+            for f in extra_codebooks:  # used here, kept in the home folder: a colleague needs them to read the labels
+                _add(zf, f, f"frameworks/{f.name}")
             written = {n for n in zf.namelist()}
             for r in ws.query("SELECT doc_id FROM documents ORDER BY doc_id"):
                 stats["documents"] += 1
@@ -89,7 +97,7 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
                     written.add(arc)
                 files[r["doc_id"]] = arc
             zf.writestr("bundle.json", json.dumps({"format": "enlens-project", "version": __version__,
-                                                   "name": ws.root.name, "files": files}, indent=1))
+                                                   "name": ws.root.name, **stamp, "files": files}, indent=1))
         part.replace(out)
         stats["size"] = out.stat().st_size
         return stats

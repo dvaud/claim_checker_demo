@@ -156,8 +156,8 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
         from .installation import install_line
 
         raise UpdateError("This ENLENS was installed with pip, so it cannot update itself. Install it once with the "
-                          f"one-line install ({install_line()}), or from a git copy (see the README, 'For "
-                          "developers'); after that `enlens update` is all a new version needs.")
+                          f"one-line install ({install_line()}), or from a git copy (see docs/DEVELOPING.md); after "
+                          "that `enlens update` is all a new version needs.")
     if shutil.which("git") is None and run is _run:
         raise UpdateError("git is not installed on this computer (macOS: run `xcode-select --install`).")
     changed = _git(run, root, "status", "--porcelain", "--untracked-files=no")
@@ -257,8 +257,9 @@ def version_tuple(v: str) -> tuple[int, ...]:
 
 # 0.13.6: 0.14.0, 0.15.0 and 0.15.1 were numbered higher than their changes called for (they changed nothing for
 # people using ENLENS), so they were withdrawn and their changes are part of 0.13.6. A copy of one of them that is
-# still running is older than any later ENLENS, whatever its number says.
-WITHDRAWN = frozenset({"0.14.0", "0.15.0", "0.15.1"})
+# still running is older than any later ENLENS, whatever its number says. 0.14.0 is a release again (shared
+# projects), so it left the list; a number that is released for real must leave it before its release.
+WITHDRAWN = frozenset({"0.15.0", "0.15.1"})
 
 
 def latest_release(fetch: Fetch = _fetch, repo: str | None = None) -> dict:
