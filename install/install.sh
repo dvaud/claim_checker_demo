@@ -3,6 +3,9 @@
 #
 #   curl -fsSL https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.sh | sh
 #
+# Each release also has this file to double-click on a Mac (0.14.5): "Install ENLENS.command" in
+# Install-ENLENS-macOS.zip, made by tools/release.py.
+#
 # It needs no git, no Python and no venv of your own:
 #   1. gets uv (a small tool from Astral that installs Python programs), unless it is already here;
 #   2. downloads the ENLENS package of this release and checks it against the release's checksums;
@@ -102,7 +105,7 @@ if [ -z "${ENLENS_NO_OPEN:-}" ]; then set -- "$@" --open; fi
 "$BIN/enlens" "$@" || fail "the last step did not work (see above)."
 
 say ""
-say "Done. Next time, open ENLENS from its icon. To update it later, run the same line again."
+say "Done. Next time, open ENLENS from its icon. It tells you when there is a new version."
 case ":$PATH:" in
   *":$BIN:"*) ;;
   *) say "(In a terminal, ENLENS's commands are in $BIN, for example: $BIN/enlens update)" ;;

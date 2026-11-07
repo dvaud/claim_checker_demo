@@ -91,6 +91,8 @@ themes and at 390 px wide.
 
 Outside `src/enlens_claims/`: `install/install.sh` and `install/install.ps1` are the one-line install (keep
 `install.sh` plain ASCII: macOS's `sh`, bash 3.2, misreads a non-ASCII letter right after a `$NAME`, a test checks it);
+`install/Install-ENLENS-Windows.cmd` is the head of the Windows file to double-click (0.14.5: `tools/release.py` puts
+`install.ps1` below it, so keep both plain ASCII, and no `#>` in the head, which PowerShell reads as one comment);
 `.github/workflows/release.yml` turns a tag `vX.Y.Z` into a draft GitHub Release with `tools/release.py` (below);
 `tools/pdf_to_text.py` turns a folder of PDFs into page-preserving text files; `tools/eval_second_pass.py` measures the
 second sorting pass on the pilot; `tools/make_icons.py` draws the icon files. The green hydrogen pilot (workspace,
@@ -102,7 +104,9 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
 - The version stands in `pyproject.toml`, `src/enlens_claims/__init__.py` and the top `## X.Y.Z` entry of
   `CHANGELOG.md`. `python tools/release.py check vX.Y.Z` stops the release unless they and the tag agree.
 - `.github/workflows/release.yml` runs on the tag: the tests, the package, the two install scripts with the version
-  filled in, `SHA256SUMS`, a try of the install line on Linux, macOS and Windows, and a draft GitHub Release. Publish
+  filled in, the same as files to double-click (`Install-ENLENS-Windows.cmd`, `Install-ENLENS-macOS.zip`; 0.14.5),
+  `SHA256SUMS`, a try of the install line on Linux, macOS and Windows and of the files on Windows and macOS, and a
+  draft GitHub Release. Publish
   the draft by hand; never make a release by hand, which would lack the files the install line needs.
 - The `CHANGELOG.md` entry (what changed and why, the defects fixed, the tests added, and *Not yet done*) becomes the
   release notes. Update `docs/MANUAL.md` where behaviour changed and `docs/API.md` for new routes.

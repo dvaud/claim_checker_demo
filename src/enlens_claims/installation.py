@@ -74,6 +74,12 @@ def install_line(sys_name: str | None = None) -> str:
     return f"curl -fsSL {base}/install.sh | sh"
 
 
+def double_click_file(sys_name: str | None = None) -> str:
+    """0.14.5: where the latest release's install file to double-click is, for this kind of computer ("" on Linux)."""
+    name = {"windows": "Install-ENLENS-Windows.cmd", "mac": "Install-ENLENS-macOS.zip"}.get(sys_name or system(), "")
+    return f"https://github.com/{REPO}/releases/latest/download/{name}" if name else ""
+
+
 def info() -> dict:
     """For the app's Settings → Technical and `enlens update`: how this copy was installed and how it updates."""
     k = kind()

@@ -4,6 +4,8 @@
 # without a release: they are attached to the run.
 # 0.13.5: the macOS install test is its own job and does not hold up the draft, since GitHub's Mac runners can
 # stay unavailable for hours. Check that it is green (or re-run it) before pressing Publish.
+# 0.14.5: the Windows and macOS jobs also try the files to double-click (Install-ENLENS-Windows.cmd,
+# Install-ENLENS-macOS.zip), from a removed install, the way a double-click runs them.
 name: Release
 
 on:
@@ -83,6 +85,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
           & $py -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
           if ($LASTEXITCODE -ne 0) { throw "the connector did not start" }
+      - name: Install with Install-ENLENS-Windows.cmd, as a double-click runs it
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $env:ENLENS_WHEEL = (Get-ChildItem dist\enlens_claims-*.whl).FullName
+          $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
+          $bin = (uv tool dir --bin).Trim()
+          uv tool uninstall enlens-claims
+          if (Test-Path "$bin\enlens.exe") { throw "enlens.exe is still there" }
+          # a double-click runs `cmd /c <file>`; no input, so its closing "press any key" does not wait
+          $out = cmd /d /c "dist\Install-ENLENS-Windows.cmd < NUL" 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "the file ended with $LASTEXITCODE" }
+          if ($out -notmatch '4/4' -or $out -notmatch 'Done\. Next time' -or $out -match 'could not be installed') {
+            throw "the file did not install ENLENS"
+          }
+          & "$bin\enlens.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "enlens did not start" }
+          $py = Join-Path (uv tool dir).Trim() 'enlens-claims\Scripts\python.exe'
+          & $py -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
+          if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
 
   try-install-mac:
     name: One-line install on macos-latest (does not hold up the draft)
@@ -105,6 +129,22 @@ jobs:
           PY="$(uv tool dir 2>/dev/null || echo "$HOME/.local/share/uv/tools")/enlens-claims/bin/python"
           "$PY" -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
           "$PY" -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
+      - name: Install with Install-ENLENS-macOS.zip, as a double-click runs it
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          BIN="$(uv tool dir --bin)"
+          uv tool uninstall enlens-claims
+          test ! -e "$BIN/enlens"
+          # Archive Utility (a double-click, or Safari) unpacks as ditto does; the file must still be allowed to run
+          ditto -x -k dist/Install-ENLENS-macOS.zip "$RUNNER_TEMP/double-click"
+          CMD="$RUNNER_TEMP/double-click/Install ENLENS.command"
+          test -x "$CMD"
+          ENLENS_WHEEL="$(ls "$PWD"/dist/enlens_claims-*.whl)" "$CMD" | tee "$RUNNER_TEMP/double-click.log"
+          grep -q "Done. Next time" "$RUNNER_TEMP/double-click.log"
+          "$BIN/enlens" --help > /dev/null
+          PY="$(uv tool dir)/enlens-claims/bin/python"
+          "$PY" -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
 
   release:
     name: Draft the GitHub Release

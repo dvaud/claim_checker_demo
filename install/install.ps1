@@ -2,6 +2,9 @@
 #
 #   powershell -ExecutionPolicy Bypass -c "irm https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.ps1 | iex"
 #
+# Each release also has it as a file to double-click (0.14.5): Install-ENLENS-Windows.cmd, which is
+# install/Install-ENLENS-Windows.cmd with this file below it (tools/release.py). Keep this file plain ASCII.
+#
 # It needs no git, no Python and no administrator rights:
 #   1. gets uv (a small tool from Astral that installs Python programs), unless it is already here;
 #   2. downloads the ENLENS package of this release and checks it against the release's checksums;
@@ -97,7 +100,7 @@ function Install-Enlens {
         & $enlens @postArgs
         if ($LASTEXITCODE -ne 0) { throw 'the last step did not work (see above).' }
         Write-Host ''
-        Write-Host 'Done. Next time, open ENLENS from its icon (Start menu or Desktop). To update it later, run the same line again.'
+        Write-Host 'Done. Next time, open ENLENS from its icon (Start menu or Desktop). It tells you when there is a new version.'
     } finally {
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     }
@@ -108,5 +111,5 @@ try {
 } catch {
     Write-Host ''
     Write-Host "ENLENS could not be installed: $($_.Exception.Message)" -ForegroundColor Red
-    # `irm … | iex` runs this in the person's own window: never `exit`, which would close it
+    # `irm ... | iex` runs this in the person's own window: never `exit`, which would close it
 }

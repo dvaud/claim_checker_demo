@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.14.5 (November 2026): install by double-clicking a file
+
+**Install without Terminal or PowerShell.** Every release now also has the install as a file to download and
+double-click, beside the install line, which stays as it was. Each file does what the line does (gets uv, downloads
+the ENLENS package and checks it, installs it, makes the icon and opens ENLENS) in a window of its own:
+
+- **Windows: `Install-ENLENS-Windows.cmd`.** Double-click it. The window waits for a key at the end, so you can read
+  what happened. The file is not signed, so the browser may warn about it (keep it), and Windows may say it protected
+  your PC (*More info*, then *Run anyway*). It is also the easy way to update on Windows, where ENLENS cannot replace
+  itself while it runs: quit ENLENS, then double-click the newest copy. The app's update message on Windows now says
+  so and gives the file's address.
+- **macOS: `Install-ENLENS-macOS.zip`.** Open it and double-click *Install ENLENS.command*, which Terminal runs. It is
+  in a zip because a browser drops the mark that lets a downloaded file run. macOS runs a downloaded program at once
+  only if a registered Apple developer signed it, and this file is not signed. The first time, macOS says it could not
+  verify it: click *Done*, open *System Settings → Privacy & Security*, click *Open Anyway* next to *Install
+  ENLENS.command* and confirm with your password. The install line needs none of this, so on a Mac it stays the
+  quicker way.
+- Linux keeps the install line.
+
+The release notes, the README and section 1 of the manual link both files, and `SHA256SUMS` lists them. The
+installers' last line no longer says "run the same line again" (there may have been no line); it says ENLENS tells
+you when there is a new version. Nothing here can change results.
+
+### For developers
+
+- `tools/release.py assets` builds both files: the Windows file is `install/Install-ENLENS-Windows.cmd` (new) with
+  `install.ps1` below it, and the Mac file is `install.sh` in a zip that marks it as a file that may run. cmd runs the
+  head up to its `exit /b`. The head has PowerShell read the whole file, in which the head is one `<# … #>` comment.
+  So the file downloads no other script, and the release's Windows machine can try it before the release exists. The
+  build stops if the head could end that comment early or if the file is not plain ASCII (cmd reads it in the
+  console's code page). `install/install.ps1` is plain ASCII now; it had one `…` in a comment.
+- `.github/workflows/release.yml` removes the install on its Windows and macOS machines and installs again with each
+  file, the way a double-click runs it: `cmd /c` with no input on Windows; on macOS, unzipped with `ditto` (as
+  Archive Utility does) and started directly.
+- `installation.double_click_file()` gives the address of the latest release's file for a system.
+
+**Tests:**
+- `tests/test_0_14_5_double_click_install.py` (11 tests): the release has both files with their checksums; the Windows
+  file is cmd, then `install.ps1` unchanged, with Windows line endings, and the cmd part never reaches PowerShell's
+  code; a broken head stops the release; the zip holds `install.sh` marked as runnable; unzipped as a Mac does, it runs
+  and installs (stand-ins for uv and curl); the release notes link both files of that release; the workflow tries
+  both; on Windows, the update message names the file. A test that parses the Windows file with PowerShell runs only
+  where PowerShell is installed.
+
+Changed tests: `tests/test_0100_setup_and_moving.py::test_release_check_notes_and_assets` (the release has the two
+new files).
+
+**Not yet done:**
+- The Windows file has not been double-clicked on a real Windows computer. The release's Windows machine runs it as a
+  double-click does, from a removed install, but not with SmartScreen or a browser in the way. Whether Microsoft
+  Defender or a browser blocks the file outright will show only once someone downloads it.
+- Gatekeeper's *Open Anyway* was not clicked through. On the Mac it was built on, the unzipped file was refused as
+  expected ("no usable signature"), and started directly it installed ENLENS into a scratch home folder.
+- A signed and notarised macOS installer (a `.pkg`) would open without the System Settings step. It needs an Apple
+  Developer account.
+
 ## 0.14.4 (November 2026): fixes from a review of the whole app
 
 **0.14.3 was tagged but not released:** its tests failed on the release's Linux machine. 0.14.4 is the same release

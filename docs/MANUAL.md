@@ -42,6 +42,20 @@ release over this one (on Windows quit ENLENS first); your projects in `~/enlens
 the line as environment variables: `ENLENS_LOCAL_ONLY=1` (nothing may leave the computer, built into the icon),
 `ENLENS_HOME=<folder>` (another data folder, built into the icon), `ENLENS_VERSION=0.10.0` (that release).
 
+**Or download a file and double-click it (0.14.5).** Every release also has the install as a file, for whoever would
+rather not open Terminal or PowerShell. It does what the line does (the four steps above) in a window of its own; the
+options above need the line.
+
+| System | Download | The first time |
+| --- | --- | --- |
+| Windows | [Install-ENLENS-Windows.cmd](https://github.com/dvaud/claim_checker_demo/releases/latest/download/Install-ENLENS-Windows.cmd) | Double-click it. The browser may warn about the file: keep it. Windows may say it protected your PC: click *More info*, then *Run anyway*. The window waits for a key at the end, so you can read what happened. |
+| macOS | [Install-ENLENS-macOS.zip](https://github.com/dvaud/claim_checker_demo/releases/latest/download/Install-ENLENS-macOS.zip) | Open the zip (Safari opens it for you) and double-click *Install ENLENS.command*. macOS says it could not verify the file: click *Done*, open *System Settings → Privacy & Security*, scroll to *Security*, click *Open Anyway* next to *Install ENLENS.command* and confirm with your password or Touch ID. Terminal opens and installs ENLENS. |
+
+Windows and macOS trust a downloaded program at once only when a registered developer has signed it, and these files
+are not signed; hence the questions. They are the install scripts of the line: the Windows file is a few lines for the
+command prompt followed by `install.ps1`, the Mac file is `install.sh`, and the release's `SHA256SUMS` lists their
+checksums. On a Mac the line is quicker, since nothing asks about it. On Linux, use the line.
+
 **From a git copy (developers).** Python 3.10 or newer:
 
 ```bash
@@ -73,7 +87,8 @@ scanned page. Section 3, *For whoever installs the app*, has the rest.
 it asks GitHub for the latest release, downloads its package, checks it against the release's checksums, installs it
 over this one with uv and brings the Claude Code plugin up to date (0.14.3: also in Claude Code itself, whose own copy of the
 plugin is updated too, so the new instructions are used from the next run); on Windows, where a running program cannot
-replace itself, it says to quit ENLENS and run the install line again (which does the same). The version you have
+replace itself, it says to quit ENLENS and run the install line again, or double-click a newly downloaded
+`Install-ENLENS-Windows.cmd` (0.14.5); either does the same. The version you have
 is at the top of every *Settings* tab; *Settings → Technical* says how this copy was installed. Installed from the git copy of ENLENS (`git clone …`, then `pip install -e .` in a
 venv) every new version is also `enlens update` (0.8.2): it fetches the version from GitHub into the same folder, reinstalls into the
 same Python only when the requirements changed (with the extras already installed), refreshes the Claude Code
@@ -88,8 +103,8 @@ ready, and with *Update and restart* installs it and restarts ENLENS on the same
 *Starting ENLENS …* and opens the new version by itself; started from the icon, ENLENS is restarted the same way,
 without a new browser tab. Anything still running (a check, documents being added) stops first, as with *Quit
 ENLENS*, and the dialog says so. If the update fails, the reason is shown and nothing restarts. With the one-line
-install on Windows it says to quit ENLENS and run the install line again (a running program cannot replace itself
-there).
+install on Windows it says to quit ENLENS and run the install line or the Windows file again (a running program cannot
+replace itself there).
 
 **Only when there is an update (0.13.6).** The button is not in the sidebar all the time any more. ENLENS looks for a
 new version when the page opens, every two minutes after, and when you come back to a tab that was in the
@@ -1659,6 +1674,8 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | Double-clicking the ENLENS icon does nothing | Look at `logs/enlens.log` in the data folder. Run the install line again (one-line install), or `enlens-gui --make-launcher` again after moving or reinstalling Python (git copy). On macOS, if the icon was copied from another computer, right-click it and choose *Open* once. |
 | The install line stops with "does not match the release's checksum" | The download was cut off or changed on the way; nothing was installed. Run the line again later. |
 | The install line on Windows says uv could not install ENLENS | ENLENS is probably running: choose *Quit ENLENS* in it and run the line again. |
+| macOS says *Install ENLENS.command* was "Not Opened" | The file is not signed by an Apple developer. Click *Done*, then allow it once in *System Settings → Privacy & Security → Open Anyway* (section 1), or paste the install line in Terminal instead. |
+| Windows says it protected your PC, or the browser calls *Install-ENLENS-Windows.cmd* uncommon | The file is not signed. Keep it, then *More info → Run anyway* (section 1), or paste the install line in PowerShell instead. |
 | *Set up Claude* cannot install Claude Code | No network, or the installer was blocked. Install it with Anthropic's set-up page (linked under *Technical details*), then press *Set up Claude* again. |
 | Claude Code answers with the wrong Claude account | The sidebar card (hover *Claude, on your plan*) and *Settings → AI* name the account it uses. To switch, type `claude auth logout` in Terminal or PowerShell, then press *Check again* and *Set up Claude* in *Settings → AI*: it opens the sign-in window, where you sign in with the other account. |
 | *Set up Claude* keeps waiting for the sign-in | Finish signing in in the window it opened (and in the browser page that window opened), then press *I have signed in*. No window? Open Terminal or PowerShell, type `claude`, and sign in. |

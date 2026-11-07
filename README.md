@@ -16,7 +16,11 @@ statement, with every quote checked against the source, on their own computer an
    | Windows | PowerShell | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/dvaud/claim_checker_demo/releases/latest/download/install.ps1 \| iex"` |
 
    It needs no git, no Python and no administrator rights. When it is done, ENLENS opens in your browser, and its
-   icon is with your other programs.
+   icon is with your other programs. **Or download a file and double-click it:**
+   [Install-ENLENS-Windows.cmd](https://github.com/dvaud/claim_checker_demo/releases/latest/download/Install-ENLENS-Windows.cmd)
+   on Windows,
+   [Install-ENLENS-macOS.zip](https://github.com/dvaud/claim_checker_demo/releases/latest/download/Install-ENLENS-macOS.zip)
+   on a Mac. Windows and macOS ask you to allow it the first time: [how](docs/MANUAL.md#1-install).
 2. **Press *Set up Claude*** on the first screen. It installs Claude Code if it is missing (it shows you the command
    first), opens a window where you sign in once with your Claude plan, and connects ENLENS to it.
 3. **Name a project and add your documents** (PDF, Word, web pages, text, or a zip of them). ENLENS asks who may read
@@ -29,7 +33,8 @@ No Claude plan? Choose *A model on this computer* on the first screen. Used ENLE
 
 ## Update
 
-1. Type `enlens update` in Terminal or PowerShell, or paste the install line again (on Windows, quit ENLENS first).
+1. Type `enlens update` in Terminal or PowerShell, or run the install line or file again (on Windows, quit ENLENS
+   first).
 2. Quit ENLENS (*Quit ENLENS* at the bottom of the sidebar) and open it again from its icon.
 
 ENLENS also tells you when a new version is ready; on a Mac or Linux, *Update and restart* in its pop-up does both

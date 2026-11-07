@@ -312,7 +312,8 @@ def test_release_check_notes_and_assets(tmp_path):
     dist.mkdir()
     (dist / f"enlens_claims-{v}-py3-none-any.whl").write_bytes(b"PK")
     files = release.assets(dist)
-    assert {p.name for p in files} == {f"enlens_claims-{v}-py3-none-any.whl", "install.sh", "install.ps1", "SHA256SUMS"}
+    assert {p.name for p in files} == {f"enlens_claims-{v}-py3-none-any.whl", "install.sh", "install.ps1", "SHA256SUMS",
+                                       "Install-ENLENS-Windows.cmd", "Install-ENLENS-macOS.zip"}  # 0.14.5
     assert f'VERSION="${{ENLENS_VERSION:-{v}}}"' in (dist / "install.sh").read_text()
     assert f"'{v}'" in (dist / "install.ps1").read_text()
     for line in (dist / "SHA256SUMS").read_text().splitlines():
