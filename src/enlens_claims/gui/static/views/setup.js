@@ -76,7 +76,7 @@ function projectStep(body) {
   } },
     h("div", { class: "field" }, h("label", { class: "field-label", for: "proj-name" }, "Project name"), input, h("div", { class: "field-help" }, "A project is one set of documents you explore together (and the hypotheses you check against them), for example one literature review. You can make more later.")),
     err,
-    h("div", { class: "btn-row" }, btn, h("button", { class: "btn btn-ghost", type: "button", onClick: () => linkProjectDialog() }, `Open an existing ${appName()} project folder (advanced)`)));
+    h("div", { class: "btn-row" }, btn, h("button", { class: "btn btn-ghost btn-wrap", type: "button", onClick: () => linkProjectDialog() }, `Open an existing ${appName()} project folder (advanced)`)));
   // 0.10: a new computer can take everything from the old one instead
   const moving = h("div", { class: "card card-plain move-in" }, h("div", { class: "it" }, icon("monitor", { size: 16 }), h("strong", {}, `Used ${appName()} on another computer?`)),
     h("p", { class: "muted small" }, `Bring all your projects and settings here in one go, from the file made with “Move ${appName()} to another computer” on the old one.`),

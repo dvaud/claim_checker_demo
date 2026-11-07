@@ -4,8 +4,9 @@ Each installation of ENLENS is one person: a random id made once (`settings.pers
 (`settings.your_name`, asked for when work is first sent). What a person decides is stored under their id:
 
 - a judgement of an excerpt (`judgements`, one row per excerpt and person). The judgement in force is copied to the
-  excerpt's own row (`verifications.user_*`, with `user_by`), where every view reads it: yours when you made one,
-  otherwise the latest a colleague made. A colleague's judgement never replaces yours (`refresh`);
+  excerpt's own row (`verifications.user_*`, with `user_by`), where every view reads it: your verdict when you made
+  one, otherwise the latest verdict a colleague made (a comment alone does not hide it). A colleague's judgement
+  never replaces yours (`refresh`);
 - a review of a label, of a link between terms or of a theme (`reviews.person_id`). The views read reviews oldest first
   and the last one counts, so yours are read after a colleague's (`review_order`).
 
@@ -132,9 +133,13 @@ def record(cx: sqlite3.Connection, claim_id: str, passage_id: str, person_id: st
 
 
 def refresh(cx: sqlite3.Connection, claim_ids: Iterable[str] | None = None, me_id: str | None = None) -> None:
-    """Copy the judgement in force to each excerpt of these checks (all, when None): yours when you made one (a
-    verdict or a comment), otherwise the latest verdict of a colleague, otherwise the latest comment. Excerpts nobody
-    judged since 0.14 keep what they have (a judgement from before 0.14, not yet written down as yours)."""
+    """Copy the judgement in force to each excerpt of these checks (all, when None): your verdict when you made one,
+    otherwise the latest verdict of a colleague; only where nobody gave a verdict, your comment, otherwise the latest
+    comment. 0.14.3: a comment alone is not a judgement, so your comment no longer hides a colleague's verdict (the
+    excerpt then fell back to the AI's judgement). The comment copied with it (`user_note`) is your own when you
+    wrote anything on the excerpt, so it stays yours to edit; otherwise it is the one of the judgement in force.
+    Excerpts nobody judged since 0.14 keep what they have (a judgement from before 0.14, not yet written down as
+    yours)."""
     m = me_id or me()
     where, args = "subject_kind='user_claim'", []
     if claim_ids is not None:
@@ -145,10 +150,13 @@ def refresh(cx: sqlite3.Connection, claim_ids: Iterable[str] | None = None, me_i
         args = ids
     pick = ("(SELECT {col} FROM judgements j WHERE j.claim_id=verifications.subject_id AND "
             "j.passage_id=verifications.passage_id AND (j.verdict IS NOT NULL OR j.note IS NOT NULL) "
-            "ORDER BY (j.person_id = ?) DESC, (j.verdict IS NOT NULL) DESC, j.at DESC LIMIT 1)")
-    cols = (("user_verdict", "verdict"), ("user_note", "note"), ("user_at", "at"), ("user_quote", "quote"),
-            ("user_start", "start"), ("user_end", "end"), ("user_by", "person_id"))
-    sets = ", ".join(f"{dst}={pick.format(col=src)}" for dst, src in cols)
+            "ORDER BY {order}, j.at DESC LIMIT 1)")
+    in_force = "(j.verdict IS NOT NULL) DESC, (j.person_id = ?) DESC"  # a verdict first; of verdicts, yours
+    own_note = "(j.person_id = ?) DESC, (j.verdict IS NOT NULL) DESC"   # your row first (as before 0.14.3)
+    cols = (("user_verdict", "verdict", in_force), ("user_note", "note", own_note), ("user_at", "at", in_force),
+            ("user_quote", "quote", in_force), ("user_start", "start", in_force), ("user_end", "end", in_force),
+            ("user_by", "person_id", in_force))
+    sets = ", ".join(f"{dst}={pick.format(col=src, order=order)}" for dst, src, order in cols)
     cx.execute(f"UPDATE verifications SET {sets} WHERE {where} AND (user_by IS NOT NULL OR EXISTS (SELECT 1 FROM "
                "judgements j WHERE j.claim_id=verifications.subject_id AND j.passage_id=verifications.passage_id))",
                (m,) * len(cols) + tuple(args))

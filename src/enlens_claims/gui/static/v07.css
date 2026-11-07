@@ -2,7 +2,7 @@
    Shared pieces here; the pages' own rules are in concepts-themes.css and profile-viewer.css. */
 
 .nav-group { display: block; margin: 12px 10px 2px; font-size: .72rem; font-weight: 600; letter-spacing: .04em;
-  text-transform: uppercase; color: var(--faint); }
+  text-transform: uppercase; color: var(--muted); }   /* 0.14.3: --muted (4.5:1 or more); --faint was 3.2:1 on the light page */
 
 /* quick look banner (a temporary project) */
 .ql-banner { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 auto 14px; max-width: var(--content-w);

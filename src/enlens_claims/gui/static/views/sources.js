@@ -1,7 +1,7 @@
 // Documents: a big add area first, the document table, smart search in plain words, a document viewer, and the
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow } from "../features.js";
-import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
+import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
   dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
@@ -22,6 +22,8 @@ export async function renderSources(view) {
 
   // ----------------------------------------------------------------- add documents
   const files = [];
+  let sent = [];            // 0.14.3: the files of the run that is going; files picked meanwhile wait in `files` for the next
+  let adding = false;       // 0.14.3: copying or reading is going: "Add" stays off, and picks are kept, not sent
   const fileInput = h("input", { type: "file", multiple: true, accept: ACCEPT, class: "visually-hidden", id: "src-files" });
   const fileList = h("ul", { class: "file-list", hidden: true });
   const addBtn = h("button", { class: "btn btn-primary btn-lg", type: "button", disabled: true }, icon("upload", { size: 15 }), "Add to the project");
@@ -30,7 +32,7 @@ export async function renderSources(view) {
     fileList.hidden = !files.length;
     replace(fileList, files.map((f, i) => h("li", {}, icon("file-text", { size: 13 }), h("span", { class: "grow", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, f.name), h("span", { class: "fs" }, fmt.bytes(f.size)),
       h("button", { class: "icon-btn", type: "button", "aria-label": `Remove ${f.name} from the list`, style: { width: "24px", height: "24px" }, onClick: () => { files.splice(i, 1); drawFiles(); } }, icon("x", { size: 12 })))));
-    addBtn.disabled = !files.length || needLevel();
+    addBtn.disabled = !files.length || needLevel() || adding;
     replace(addBtn, icon("upload", { size: 15 }), files.length ? `Add ${files.length === 1 ? "this document" : `these ${files.length} documents`} to the project` : "Add to the project");
   };
   const takeFiles = (list) => {
@@ -88,7 +90,7 @@ export async function renderSources(view) {
     try {
       const r = await api("POST", `/api/projects/${P(project)}/ingest`, body);
       followIngest(r.job.id, label);
-    } catch (e) { showError(e); addBtn.disabled = !files.length; pathBtn.disabled = false; }
+    } catch (e) { showError(e); adding = false; sent = []; drawFiles(); pathBtn.disabled = false; }
   }
 
   function followIngest(jobId, label) {
@@ -107,7 +109,11 @@ export async function renderSources(view) {
       else if (job.state === "error") replace(holder.querySelector(".pb"), h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, "The documents could not be added."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)));
       else replace(holder.querySelector(".pb"), h("p", { class: "muted" }, "Stopped. The files read so far were kept."));
       ingesting = false;
-      files.length = 0; drawFiles(); pathBtn.disabled = false;
+      // only the files that were sent leave the list; what was picked during the run stays for the next one
+      for (const f of sent) { const i = files.indexOf(f); if (i >= 0) files.splice(i, 1); }
+      const waiting = files.length;
+      sent = []; adding = false; drawFiles(); pathBtn.disabled = false;
+      if (waiting) toast(`${waiting === 1 ? "1 file you picked" : `${waiting} files you picked`} while the documents were being added ${waiting === 1 ? "is" : "are"} still in the list: press Add to add ${waiting === 1 ? "it" : "them"}.`, "info", { ttl: 7000 });
       forgetOriginals();
       await reloadDocs();
       await App.refresh();
@@ -153,7 +159,8 @@ export async function renderSources(view) {
   }
 
   addBtn.addEventListener("click", async () => {
-    if (!files.length) return;
+    if (!files.length || adding) return;
+    adding = true; sent = files.slice();
     addBtn.disabled = true;
     const batch = batchId();
     progressBox.hidden = false;
@@ -161,15 +168,15 @@ export async function renderSources(view) {
     replace(progressBox, holder);
     let n = 0;
     try {
-      for (const f of files) {
-        replace(holder.querySelector(".pb"), simpleProgress({ state: "running", seconds: 0, progress: { done: n, total: files.length, file: f.name } }, () => `Copying ${f.name} (${n + 1} of ${files.length})`));
+      for (const f of sent) {
+        replace(holder.querySelector(".pb"), simpleProgress({ state: "running", seconds: 0, progress: { done: n, total: sent.length, file: f.name } }, () => `Copying ${f.name} (${n + 1} of ${sent.length})`));
         await api("POST", `/api/projects/${P(project)}/uploads?batch=${batch}&name=${encodeURIComponent(f.name)}`, f);
         n++;
       }
-    } catch (e) { showError(e); addBtn.disabled = false; progressBox.hidden = true; return; }
+    } catch (e) { showError(e); adding = false; sent = []; drawFiles(); progressBox.hidden = true; return; }
     const body = { batch, ai_access: chosenLevel };
     if (excludeInput.value.trim()) body.exclude = excludeInput.value.trim();
-    await runIngest(body, `Reading ${files.length === 1 ? "the document" : `the ${files.length} documents`}`);
+    await runIngest(body, `Reading ${sent.length === 1 ? "the document" : `the ${sent.length} documents`}`);
   });
   pathBtn.addEventListener("click", async () => {
     const p = pathInput.value.trim();
@@ -228,7 +235,7 @@ export async function renderSources(view) {
   const rows = new Map();     // doc_id -> its row
   async function reloadDocs() {
     let r;
-    try { r = await api("GET", `/api/projects/${P(project)}/documents`); } catch (e) { showError(e); return; }
+    try { r = await api("GET", `/api/projects/${P(project)}/documents`); } catch (e) { failedLoad(docsBox, e); return; }
     drawDocs(r);
   }
   const countsNode = () => {
@@ -273,7 +280,12 @@ export async function renderSources(view) {
         h("td", { class: "pick-col" }, c),
         h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
           h("div", { class: "doc-file" }, d.file),
-          d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null),
+          d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null,
+          // 0.14.3: Open and Remove sit under the title, where they are always in view (the table was wider than the page
+          // and its last column, with them, was out of sight)
+          h("div", { class: "doc-actions" },
+            h("a", { class: "link-btn small", href: `#/doc/${encodeURIComponent(d.doc_id)}`, "aria-label": `Open ${d.title || d.file}` }, icon("eye", { size: 12 }), "Open"),
+            h("button", { class: "link-btn small doc-remove", type: "button", "aria-label": `Remove ${d.title || d.file}`, onClick: () => removeDoc(d) }, icon("trash", { size: 12 }), "Remove"))),
         h("td", { "data-label": "Type" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
         h("td", { "data-label": "Added", class: "small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
@@ -285,9 +297,7 @@ export async function renderSources(view) {
           d.check ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 12 }), d.check) : null,
           d.scanned ? h("span", { class: "it scanned-note" + (/no text/i.test(d.scanned) ? " warn-chip" : " muted small") }, icon(/no text/i.test(d.scanned) ? "alert-triangle" : "eye", { size: 12 }), d.scanned) : null,
           !d.check && !d.scanned ? h("span", { class: "it muted small" }, icon("check", { size: 12 }), "readable") : null),
-        h("td", { class: "actions" },
-          h("a", { class: "btn btn-sm btn-ghost", href: `#/doc/${encodeURIComponent(d.doc_id)}`, "aria-label": `Open ${d.title || d.file}` }, icon("eye", { size: 13 }), "Open"),
-          h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Remove ${d.title || d.file}`, onClick: () => removeDoc(d) }, icon("trash", { size: 13 }), "Remove")));
+        );
       rows.set(d.doc_id, row);
       return row;
     };
@@ -295,11 +305,29 @@ export async function renderSources(view) {
     // redrawn (the ticks and the scroll position stay), with the counts above the table
     function patchDocs(res, ids) {
       pa = res.ai_access || pa;
+      for (const d of res.documents || []) { const at = docs.findIndex((x) => x.doc_id === d.doc_id); if (at >= 0) docs[at] = d; }   // 0.14.3: the list the loosening check reads
       for (const d of res.documents || []) { const old = rows.get(d.doc_id); if (old && ids.includes(d.doc_id)) old.replaceWith(rowFor(d)); }
       const c = countsNode(); countsEl.replaceWith(c); countsEl = c;
       const sh = shieldNode(); shieldNote.replaceWith(sh); shieldNote = sh;
     }
+    // 0.14.3: loosening a setting (No AI or Only a local AI -> Claude may read it) is asked about first, naming the
+    // document's own note: what Claude then reads cannot be taken back. Tightening stays instant.
+    const OPENNESS = { none: 0, local: 1, cloud: 2 };
+    async function confirmLoosen(ids, level) {
+      const wider = docs.filter((d) => ids.includes(d.doc_id) && (OPENNESS[d.ai_access] ?? 2) < (OPENNESS[level] ?? 2));
+      if (!wider.length) return true;
+      const toClaude = level === "cloud";
+      return confirmDialog({
+        title: toClaude ? "Let Claude read this?" : "Let a local AI read this?",
+        message: h("div", {},
+          h("p", {}, toClaude ? `${wider.length === 1 ? "This document is" : `These ${wider.length} documents are`} marked ${wider.map((d) => LEVEL[d.ai_access].short).filter((x, i, a) => a.indexOf(x) === i).join(" or ")}. If you change that, the next check sends excerpts of ${wider.length === 1 ? "it" : "them"} to Claude, and that cannot be taken back.`
+            : `${wider.length === 1 ? "This document is" : `These ${wider.length} documents are`} marked No AI. A local model on this computer may then read ${wider.length === 1 ? "it" : "them"}; nothing is sent to Claude.`),
+          ...wider.slice(0, 4).map((d) => h("p", {}, h("strong", {}, d.title || d.file), d.note ? ` (your note: “${d.note}”)` : "")),
+          wider.length > 4 ? h("p", { class: "muted small" }, `and ${wider.length - 4} more`) : null),
+        confirmText: toClaude ? "Let Claude read it" : "Let a local AI read it", danger: true });
+    }
     async function setAccess(ids, level, note) {
+      if (!(await confirmLoosen(ids, level))) { await reloadDocs(); return; }
       const body = { doc_ids: ids, ai_access: level === pa.default ? null : level };
       if (note !== undefined) body.note = note;
       try {
@@ -312,7 +340,7 @@ export async function renderSources(view) {
     drawBulk();
     tbody = h("tbody", {}, docs.map(rowFor));
     docsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
-      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Actions")))),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"))),
       tbody)));
   }
 

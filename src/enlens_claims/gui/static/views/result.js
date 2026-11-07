@@ -193,15 +193,45 @@ export async function renderResult(view, [hypId], query) {
   const draftNotes = new Map();    // 0.12: "claim|passage" -> a comment typed but not saved yet (kept across re-draws)
   let serversOnce = null;          // 0.12: the model servers, asked once per page (the picker is drawn again on every save)
 
+  // 0.14.3: the look every few seconds never redraws the page under a hand: not while the notes box has focus or a
+  // note is not saved yet (the redraw would swallow what is typed); and not once the page is no longer on screen
+  function armWait() {
+    clearTimeout(waitTimer);
+    if (!box.isConnected) return;
+    waitTimer = setTimeout(() => {
+      if (!box.isConnected) return;
+      const typing = (document.activeElement && document.activeElement.id === "note") || noteDirty;
+      if (typing) { armWait(); return; }
+      load().catch(() => {});
+    }, 5000);
+  }
+  let noteDirty = false;           // 0.14.3: a note typed and not saved yet
+  let noteBox = null;              // 0.14.3: the notes box now on the page
+  const saveNoteOnLeave = () => {
+    if (!noteDirty || !noteBox) return;
+    try { fetch(`/api/projects/${P(project)}/hypotheses/${P(hypId)}/note`, { method: "PUT", keepalive: true, headers: { "X-Enlens-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify({ note: noteBox.value }) }); } catch (_) { /* leaving anyway */ }
+  };
+  window.addEventListener("pagehide", saveNoteOnLeave);
+
   async function load() {
     let r;
     try { r = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`); }
     catch (e) {
-      if (e.status === 404) { replace(box, h("div", { class: "empty" }, icon("search-x", { size: 28 }), h("h3", {}, "This result no longer exists"), h("p", {}, "It was deleted, or it belongs to another project."), h("a", { class: "btn", href: "#/history" }, "Back to results"))); return; }
+      if (e.status === 404) { notFound(e.data && e.data.in_project); return; }
       throw e;
     }
     current = r;
     draw(r);
+  }
+
+  // 0.14.3: "no longer exists" also happens when another tab switched the project: the app then says which project
+  // holds the result, and the page offers to go there
+  function notFound(inProject) {
+    replace(box, h("div", { class: "empty" }, icon("search-x", { size: 28 }),
+      inProject ? [h("h3", {}, `This result is in the project “${inProject}”`), h("p", {}, `Another window switched the project. Switch to “${inProject}” to see it.`),
+        h("button", { class: "btn btn-primary", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { project: inProject }); location.reload(); } catch (e) { showError(e); } } }, `Switch to “${inProject}”`)]
+      : [h("h3", {}, "This result no longer exists"), h("p", {}, "It was deleted, or it belongs to another project.")],
+      h("a", { class: "btn", href: "#/history" }, "Back to results")));
   }
 
   function setThreshold(t) {
@@ -241,6 +271,9 @@ export async function renderResult(view, [hypId], query) {
   function draw(r) {
     const y = window.scrollY;
     localJobShown = false;   // 0.13.11: the running "Read them now" is shown once, at the first part that waits
+    // 0.14.3: a button (or the speed picker) with keyboard focus keeps it across the redraw
+    const fa = document.activeElement;
+    const refocus = fa && fa !== document.body && box.contains(fa) && fa.matches("button, a, select") ? { tag: fa.tagName, id: fa.id, text: fa.textContent.trim() } : null;
     document.title = `${(r.status === "waiting" && r.status_text) || STATUS_SHORT[r.status] || r.status} · ${(r.text || "").slice(0, 60)} · ENLENS`;
     clear(box);
     const parts = r.parts || [];
@@ -276,7 +309,7 @@ export async function renderResult(view, [hypId], query) {
       box.appendChild(h("section", { class: "card answer answer-waiting", "aria-label": "Waiting for Claude Code" },
         queueNotice({ text: "Waiting for Claude Code to read the excerpts", command: r.queue_command }, { foldType: true })));
       clearTimeout(waitTimer);
-      waitTimer = setTimeout(() => load().catch(() => {}), 5000);
+      armWait();
       if (allPassages.length) {
         box.appendChild(evidenceHead(r, allPassages, single));
         for (const part of parts) box.appendChild(partView(part, r, single));
@@ -300,6 +333,10 @@ export async function renderResult(view, [hypId], query) {
     // even when it moved in the list (the list is sorted by judgement), gets a short highlight and says where it
     // went; a slim placeholder is left at its old place, so the next card slides into it
     window.scrollTo(0, y);
+    if (refocus && !focusAfter) {
+      const again = (refocus.id && box.querySelector(`#${CSS.escape(refocus.id)}`)) || [...box.querySelectorAll(refocus.tag.toLowerCase())].find((e) => e.textContent.trim() === refocus.text);
+      if (again) again.focus({ preventScroll: true });
+    }
     if (focusAfter) {
       const f = focusAfter; focusAfter = null;
       const el = box.querySelector(`${f.claim_id ? `[data-claim="${CSS.escape(f.claim_id)}"] ` : ""}[data-passage="${CSS.escape(f.passage_id)}"]`);
@@ -403,11 +440,13 @@ export async function renderResult(view, [hypId], query) {
     const singleDoc = bal.docs_counted === 1;
     const aiJ = (n) => (n === 1 ? "one excerpt" : n === 2 ? "two excerpts" : `${n} excerpts`);
     const forYou = allPassages.filter((p) => p.waiting_for_you && !p.reviewed).length;
-    const caution = r.incomplete ? "One part of the check did not finish, so this answer is incomplete."
+    // 0.14.3: excerpts that wait for your own judgement are said in addition to the other caution: the answer may change
+    const baseCaution = r.incomplete ? "One part of the check did not finish, so this answer is incomplete."
       : singleDoc && unchecked ? `It rests on a single document and on ${aiJ(unchecked)} you have not reviewed.`
       : singleDoc ? "It rests on a single document."
-      : unchecked ? `It rests on ${aiJ(unchecked)} you have not reviewed.`
-      : forYou ? `${forYou} ${forYou === 1 ? "excerpt waits" : "excerpts wait"} for your own judgement: no AI may read ${forYou === 1 ? "it" : "them"}.` : null;
+      : unchecked ? `It rests on ${aiJ(unchecked)} you have not reviewed.` : null;
+    const forYouLine = forYou ? `${forYou} ${forYou === 1 ? "excerpt" : "excerpts"} from documents no AI may read ${forYou === 1 ? "waits" : "wait"} for your judgement: the answer may change.` : null;
+    const caution = [baseCaution, forYouLine].filter(Boolean).join(" ") || null;
     const done = !relevantLeft && reviewed.length ? (byPeople === "you" ? "You have reviewed the evidence: the answer rests on your judgements. Download it for Excel, or add notes."
       : `The evidence is reviewed: the answer rests on the judgements of ${byPeople}. Download it for Excel, or add notes.`) : null;
 
@@ -426,6 +465,9 @@ export async function renderResult(view, [hypId], query) {
       const who = whoSaysWhat(parts[0]);
       if (who) card.appendChild(who);
     }
+    // 0.14.3: where a colleague judged differently from you, said in words (the colour on the card is not enough)
+    const differing = allPassages.filter((p) => (p.others || []).some((o) => o.verdict && p.user_verdict && o.verdict !== p.user_verdict)).length;
+    if (differing) card.appendChild(h("p", { class: "answer-differ small" }, icon("users", { size: 13 }), ` ${differing} ${differing === 1 ? "excerpt where a colleague" : "excerpts where colleagues"} judged differently from you.`));
     const added = addedSince(r);
     if (added) card.appendChild(added);
     for (const note of [whatsNew ? whatsNewText(whatsNew, single) : null, followNote].filter(Boolean)) {
@@ -586,7 +628,13 @@ export async function renderResult(view, [hypId], query) {
     if (stepping) strongState = `Reading ${stepping === 1 ? "a search" : `${stepping} searches`} again; until then the first reading counts.`;
     if (!current.stronger_model && !stepped && !stepping) {
       // none for this AI: said beside a button that cannot be pressed, so the choice is not hidden
-      noStronger = h("p", { class: "ask-fact" }, "No stronger model is set. ", h("a", { href: "#/settings/routing" }, "Set one in Settings"), ".");
+      // 0.14.3: worded for the reason the app gives (checks already on the top model are not "unset")
+      const why = current.stronger_reason;
+      noStronger = h("p", { class: "ask-fact" },
+        why === "top_model" ? ["Checks already run on the strongest model your plan uses. ", h("a", { href: "#/settings/routing" }, "Turn on “Let the auditor use Fable”"), " for a stronger one."]
+        : why === "model_per_task_off" ? ["The model for each task is switched off. ", h("a", { href: "#/settings/routing" }, "Turn it on in Settings"), "."]
+        : why === "one_local_model" ? ["Only one local model is set. ", h("a", { href: "#/settings/routing" }, "Add a second local model in Settings"), "."]
+        : ["No stronger model is set. ", h("a", { href: "#/settings/routing" }, "Set one in Settings"), "."]);
     } else if ((current.stronger_model && canStep) || stepped || stepping) {
       let strongBtn = null;
       if (current.stronger_model && canStep) {
@@ -1235,7 +1283,7 @@ export async function renderResult(view, [hypId], query) {
     try {
       // the hint saved as the comment first (with the judgement the person has, or none), so it stays on the card
       if (hint && keep.checked && hint !== (p.user_note || "")) {
-        await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, { verdict: p.user_verdict || null, note: hint });
+        await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, { verdict: p.my_verdict || null, note: hint });   // 0.14.3: your own verdict, never a colleague's
       }
       const res = await api("POST", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/reread/${P(p.passage_id)}`, body);
       followJob(res.job.id, "reread", "The AI is reading this excerpt again", async (job) => {
@@ -1284,7 +1332,7 @@ export async function renderResult(view, [hypId], query) {
   function judgeControl(p, part, passageEl, extras = {}) {
     const wrap = h("div", { class: "judge" });
     const state = h("span", { class: "muted small", "aria-live": "polite" });
-    const prev = { verdict: p.user_verdict || null, note: p.user_note || "", quote: p.quote_by === "you" ? p.quote : undefined };
+    const prev = { verdict: p.my_verdict || null, note: p.user_note || "", quote: p.quote_by === "you" ? p.quote : undefined };   // Undo restores your own verdict (0.14.3)
     let noteField = null;
     let saving = false;
     const put = async (verdict, note, msg, opts = {}) => {
@@ -1370,7 +1418,8 @@ export async function renderResult(view, [hypId], query) {
     noteField = note;
     // a comment alone is not a judgement: it is sent with verdict null and the AI's judgement keeps counting
     // 0.12: a comment is saved with Enter or when the field is left (a judgement picked meanwhile takes it along)
-    const saveNote = () => { if (!saving && note.value.trim() !== (p.user_note || "").trim()) put(current || null, note.value.trim(), current ? "Comment saved." : "Comment saved. It is not a judgement: the AI's judgement still counts."); };
+    // 0.14.3: sent with your own verdict (p.my_verdict), not the one in force, which may be a colleague's
+    const saveNote = () => { if (!saving && note.value.trim() !== (p.user_note || "").trim()) put(p.my_verdict || null, note.value.trim(), current ? "Comment saved." : "Comment saved. It is not a judgement: the AI's judgement still counts."); };
     note.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveNote(); } });
     note.addEventListener("blur", saveNote);
     note.addEventListener("input", () => draftNotes.set(pendingKey(p, part), note.value));
@@ -1500,11 +1549,16 @@ export async function renderResult(view, [hypId], query) {
     const ta = h("textarea", { class: "textarea", id: "note", placeholder: "What to check by hand, which document to trust…" });
     ta.value = r.note || "";
     const state = h("span", { class: "note-saved", "aria-live": "polite" }, r.note ? "Saved" : "");
-    const save = debounce(async () => {
-      try { await api("PUT", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/note`, { note: ta.value }); state.textContent = "Saved"; if (current) current.note = ta.value; }
+    // 0.14.3: a note is saved at once when the box loses focus and when the page is closed, not only after the pause
+    const saveNow = async () => {
+      const text = ta.value;
+      try { await api("PUT", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/note`, { note: text }); if (ta.value === text) { noteDirty = false; state.textContent = "Saved"; } if (current) current.note = text; }
       catch (e) { state.textContent = "Not saved"; showError(e); }
-    }, 600);
-    ta.addEventListener("input", () => { state.textContent = "Saving…"; save(); });
+    };
+    const save = debounce(saveNow, 600);
+    ta.addEventListener("input", () => { noteDirty = true; state.textContent = "Saving…"; save(); });
+    ta.addEventListener("blur", () => { if (noteDirty) { if (save.cancel) save.cancel(); saveNow(); } });
+    noteBox = ta;
     return h("section", { class: "card note-card", "aria-label": "Your notes" },
       h("div", { class: "note-head" }, h("label", { for: "note" }, h("strong", {}, "Your notes")), state), ta);
   }
@@ -1574,7 +1628,7 @@ export async function renderResult(view, [hypId], query) {
 
   await load();
   adoptRunningJobs();
-  return () => { clearTimeout(waitTimer); watchers.forEach((w) => w.stop()); };
+  return () => { clearTimeout(waitTimer); saveNoteOnLeave(); window.removeEventListener("pagehide", saveNoteOnLeave); watchers.forEach((w) => w.stop()); };
 }
 
 // "Download the whole project (.zip)": a plain link (the browser saves it), with a note that the download started.
@@ -1598,13 +1652,15 @@ function othersLine(p) {
   return h("div", { class: "ev-others small" }, icon("users", { size: 13 }),
     h("span", {}, "Also judged: ", ...(p.others || []).flatMap((o, i) => [i ? "; " : "",
       h("span", { class: differs(o) ? "ev-other-differs" : "", title: [o.note ? `Comment: ${o.note}` : "", o.at ? `On ${fmt.dateShort(o.at)}` : ""].filter(Boolean).join(" · ") || null },
-        h("strong", {}, o.mine ? "you" : o.name), ` ${word(o.verdict)}`)])));
+        h("strong", {}, o.mine ? "you" : o.name), ` ${word(o.verdict)}`, differs(o) ? " (differs from yours)" : "")])));
 }
 
 export function projectZipLink(project, opts = {}) {
-  const a = h("a", { class: opts.cls || "btn btn-sm", href: `/api/projects/${P(project)}/export.zip?token=${encodeURIComponent(TOKEN)}`, download: "", title: "One zip with the database, the settings, the codebooks and the original files of this project" },
+  // 0.14.3: a button that downloads with the token in a header, like the other downloads: no token in the address
+  // (history, the download list, the file's "where from")
+  const a = h("button", { class: opts.cls || "btn btn-sm", type: "button", title: "One zip with the database, the settings, the codebooks and the original files of this project" },
     opts.noIcon ? null : icon("download", { size: 13 }), opts.text || "Download the whole project (.zip)");
-  a.addEventListener("click", () => toast(`Your download starts: “ENLENS project - ${project} - ${new Date().toISOString().slice(0, 10)}.zip”. It holds the documents, results, judgements and notes of this project; a large project takes a moment.`, "ok", { ttl: 7000 }));
+  a.addEventListener("click", () => { download(`/api/projects/${P(project)}/export.zip`).catch(showError); toast(`Your download starts: “ENLENS project - ${project} - ${new Date().toISOString().slice(0, 10)}.zip”. It holds the documents, results, judgements and notes of this project; a large project takes a moment.`, "ok", { ttl: 7000 }); });
   return a;
 }
 

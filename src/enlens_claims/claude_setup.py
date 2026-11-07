@@ -358,9 +358,18 @@ DENIED_TOOLS = ("Bash", "BashOutput", "KillShell", "Read", "Write", "Edit", "Mul
                 "Glob", "Grep", "LS", "WebFetch", "WebSearch")
 
 
-def work_folder() -> Path:
-    """The empty folder a headless run starts in (anything found in it is removed first)."""
-    d = core.home() / "claude-runs" / "work"
+def _run_key(project: str) -> str:
+    """A file-name-safe name of one project, different for every project name ("a b" and "a_b" stay apart)."""
+    import hashlib
+
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", project).strip("_") or "project"
+    return f"{slug[:40]}-{hashlib.sha1(project.encode('utf-8')).hexdigest()[:6]}"
+
+
+def work_folder(project: str = "") -> Path:
+    """The empty folder a headless run starts in (anything found in it is removed first). 0.14.3: one for each project,
+    so starting Claude Code on a second project never empties the folder the first one's run works in."""
+    d = core.home() / "claude-runs" / "work" / (_run_key(project) if project else "shared")
     if d.exists():
         shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True, exist_ok=True)
@@ -391,20 +400,136 @@ def _log_path(project: str) -> Path:
     return d / ((re.sub(r"[^A-Za-z0-9_-]+", "_", project).strip("_") or "project") + ".log")
 
 
+# 0.14.3: every run's process id is written under the data folder (claude-runs/<project>.run.json), because _RUNS
+# lives only in this app's memory: a run goes on (in its own session) when the app quits or restarts, and the app
+# that starts next must know it still works on the project's queue: show it as running, be able to stop it, and not
+# start a second one beside it.
+def _record_path(project: str) -> Path:
+    return core.home() / "claude-runs" / f"{_run_key(project)}.run.json"
+
+
+def _write_record(project: str, pid: int, started_at: str, t0: float, plan: dict | None) -> None:
+    try:
+        _record_path(project).parent.mkdir(parents=True, exist_ok=True)
+        _record_path(project).write_text(json.dumps({"project": project, "pid": pid, "started_at": started_at,
+                                                     "t0": t0, "plan": plan or {}}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _read_record(project: str) -> dict:
+    try:
+        rec = json.loads(_record_path(project).read_text(encoding="utf-8"))
+        return rec if isinstance(rec, dict) and isinstance(rec.get("pid"), int) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _forget_record(project: str, pid: int | None = None) -> None:
+    rec = _read_record(project)
+    if pid is None or rec.get("pid") == pid:
+        try:
+            _record_path(project).unlink()
+        except OSError:
+            pass
+
+
+def _pid_runs_enlens(pid: int) -> bool:
+    """Whether process `pid` is alive and is a Claude Code run of ENLENS (not another program that was given the number
+    since)."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, timeout=15,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return str(pid) in (r.stdout or "")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return False  # someone else's process: not ours
+    except OSError:
+        return False
+    try:
+        r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return True  # no ps: the number is all there is
+    cmd = r.stdout or ""
+    if r.returncode != 0 or not cmd.strip():
+        return False  # gone (or a zombie that ps no longer lists)
+    return SLASH in cmd
+
+
+def _end_process(pid: int, proc=None, wait: float = 10.0) -> None:
+    """End a run: its whole process group (the helpers it started too) on Mac and Linux, the process tree on Windows."""
+    def gone() -> bool:
+        if proc is not None:
+            return proc.poll() is not None
+        return not _pid_runs_enlens(pid)
+
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return
+    import signal
+
+    def send(sig) -> None:
+        try:
+            try:
+                if os.getpgid(pid) == pid:  # started in its own session (start_run): the group is the run
+                    os.killpg(pid, sig)
+                    return
+            except OSError:
+                pass
+            os.kill(pid, sig)
+        except OSError:
+            pass
+
+    send(signal.SIGTERM)
+    t0 = time.time()
+    while time.time() - t0 < wait:
+        if gone():
+            return
+        time.sleep(0.1)
+    send(signal.SIGKILL)
+    t0 = time.time()
+    while time.time() - t0 < 3 and not gone():
+        time.sleep(0.1)
+
+
 def run_state(project: str) -> dict:
     """Whether Claude Code, started from the app, is working on this project's queue; the end of its report."""
+    from . import taskqueue
+
     with _RUNS_LOCK:
         r = _RUNS.get(project)
     if not r:
-        return {"running": False}
+        rec = _read_record(project)  # 0.14.3: a run an earlier app started and that still works
+        if not rec:
+            return {"running": False}
+        if not _pid_runs_enlens(rec["pid"]):
+            _forget_record(project, rec["pid"])
+            return {"running": False}
+        plan = rec.get("plan") or {}
+        return {"running": True, "started_at": rec.get("started_at", ""),
+                "seconds": int(time.time() - float(rec.get("t0") or time.time())), "exit_code": None, "report": "",
+                "stopped": False, "parallel": plan.get("parallel"),
+                "helpers": {taskqueue.short_helper(h): n for h, n in (plan.get("helpers") or {}).items() if n} or None}
     code = r["proc"].poll()
+    if code is not None:
+        _forget_record(project, getattr(r["proc"], "pid", None))
     tail = ""
     try:
         tail = r["log"].read_text(encoding="utf-8", errors="replace")[-1200:].strip()
     except OSError:
         pass
-    from . import taskqueue
-
     plan = r.get("plan") or {}
     return {"running": code is None, "started_at": r["started_at"], "seconds": int(time.time() - r["t0"]),
             "exit_code": code, "report": tail if code is not None else "", "stopped": r.get("stopped", False),
@@ -412,52 +537,94 @@ def run_state(project: str) -> dict:
             "helpers": {taskqueue.short_helper(h): n for h, n in (plan.get("helpers") or {}).items() if n} or None}
 
 
+_START_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _start_lock(project: str) -> threading.Lock:
+    with _RUNS_LOCK:
+        return _START_LOCKS.setdefault(project, threading.Lock())
+
+
 def start_run(project: str, parallel=None, helpers=None) -> dict:
     """Start Claude Code (headless, signed in with its own login) on the project's queue. One run per project.
     `parallel`, `helpers`: how many helpers at once, and which, for this run (taskqueue.run_plan; 0.13.10): with
-    neither, the speed chosen in Settings."""
+    neither, the speed chosen in Settings. 0.14.3: the check "is one running?" and the start are one step under the
+    project's lock (a second press, from this tab or another, gets the running state back), and the run starts in a
+    folder of its own."""
     from . import taskqueue
 
     if core.local_only():
         raise ValueError("Cloud models are switched off on this computer: Claude Code is not available.")
-    st = run_state(project)
-    if st.get("running"):
-        return st
-    plan = taskqueue.run_plan(parallel, helpers)
-    path = find_claude()
-    if not path:
-        raise ValueError("Claude Code was not found on this computer. Install it (claude.com/claude-code), or type "
-                         f"{SLASH.split(':')[0]} {project} in Claude Code yourself.")
-    if not setup_info()["ready"] or status().get("installed") is False:
-        install()  # the plugin is prepared and added on the first start: no separate set-up needed
-    log = _log_path(project)
-    fh = open(log, "w", encoding="utf-8")
-    kwargs = {"start_new_session": True} if os.name != "nt" else {
-        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
-    proc = subprocess.Popen(run_args(project, path, plan), cwd=str(work_folder()), stdout=fh,
-                            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kwargs)
-    fh.close()
-    with _RUNS_LOCK:
-        _RUNS[project] = {"proc": proc, "log": log, "t0": time.time(),
-                          "started_at": now(), "plan": plan}
-    return run_state(project)
+    with _start_lock(project):
+        st = run_state(project)
+        if st.get("running"):
+            return st
+        plan = taskqueue.run_plan(parallel, helpers)
+        path = find_claude()
+        if not path:
+            raise ValueError("Claude Code was not found on this computer. Install it (claude.com/claude-code), or type "
+                             f"{SLASH.split(':')[0]} {project} in Claude Code yourself.")
+        if not setup_info()["ready"] or status().get("installed") is False:
+            install()  # the plugin is prepared and added on the first start: no separate set-up needed
+        log = _log_path(project)
+        fh = open(log, "w", encoding="utf-8")
+        kwargs = {"start_new_session": True} if os.name != "nt" else {
+            "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+        try:
+            proc = subprocess.Popen(run_args(project, path, plan), cwd=str(work_folder(project)), stdout=fh,
+                                    stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kwargs)
+        finally:
+            fh.close()
+        t0, started = time.time(), now()
+        with _RUNS_LOCK:
+            _RUNS[project] = {"proc": proc, "log": log, "t0": t0, "started_at": started, "plan": plan}
+        if isinstance(getattr(proc, "pid", None), int):
+            _write_record(project, proc.pid, started, t0, plan)
+        return run_state(project)
 
 
 def stop_run(project: str) -> dict:
-    """Stop Claude Code started from the app. Batches it had taken return to the queue (claims lapse)."""
+    """Stop Claude Code started from the app (also one an earlier copy of the app started: 0.14.3). Batches it had
+    taken return to the queue (claims lapse)."""
     with _RUNS_LOCK:
         r = _RUNS.get(project)
-    if r and r["proc"].poll() is None:
-        r["stopped"] = True
-        try:
-            r["proc"].terminate()
-            r["proc"].wait(timeout=10)
-        except (OSError, subprocess.SubprocessError):
-            try:
-                r["proc"].kill()
-            except OSError:
-                pass
+    if r:
+        if r["proc"].poll() is None:
+            r["stopped"] = True
+            if isinstance(getattr(r["proc"], "pid", None), int):
+                _end_process(r["proc"].pid, r["proc"])
+            else:
+                r["proc"].terminate()
+    else:
+        rec = _read_record(project)
+        if rec and _pid_runs_enlens(rec["pid"]):
+            _end_process(rec["pid"])
+        if rec:
+            _forget_record(project, rec["pid"])
     return run_state(project)
+
+
+def stop_all_runs() -> list[dict]:
+    """0.14.3: stop every run, the ones this app started and the ones an earlier copy started and that still work
+    (Quit ENLENS and "Update and restart" call it: a run left behind keeps using the researcher's Claude plan, and the
+    next app could not stop it). Returns [{"project", "started_at"}] of the runs that were working."""
+    with _RUNS_LOCK:
+        names = set(_RUNS)
+    try:
+        for f in (core.home() / "claude-runs").glob("*.run.json"):
+            try:
+                names.add(str(json.loads(f.read_text(encoding="utf-8")).get("project") or ""))
+            except (OSError, ValueError, AttributeError):
+                pass
+    except OSError:
+        pass
+    stopped = []
+    for name in sorted(n for n in names if n):
+        before = run_state(name)
+        if before.get("running"):
+            stop_run(name)
+            stopped.append({"project": name, "started_at": before.get("started_at", "")})
+    return stopped
 
 
 # ---------------------------------------------------------------------------------------------
@@ -479,7 +646,29 @@ def stale() -> str:
         return "it uses another data folder"
     if not (plug / "SKILL.md").exists():
         return "files of the plugin are missing"
+    # 0.14.3: the plugin's own texts (the skill, the helpers) change with a version: a plugin written by an older
+    # ENLENS is written again, so a one-line-install update (which runs repair(), never write_plugin() alone) and
+    # the install line run again both bring them along
+    try:
+        written = json.loads((plug / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")).get("version")
+    except (OSError, ValueError, AttributeError):
+        return "the plugin's version cannot be read"
+    if written != __version__:
+        return f"it was written by ENLENS {written}, and this is ENLENS {__version__}"
     return ""
+
+
+def refresh_in_claude_code(path: str) -> list[dict]:
+    """0.14.3: make Claude Code take the plugin files just written. `marketplace add` and `install` keep a copy of the
+    plugin, so a rewritten plugin reaches Claude Code only when its marketplace and the plugin are updated (both are
+    idempotent: nothing changes when the copy is current). Never raises; a failure is in the steps and is not fatal
+    (the plugin stays as it was)."""
+    steps = []
+    for args in ([path, "plugin", "marketplace", "update", MARKETPLACE],
+                 [path, "plugin", "update", f"{PLUGIN}@{MARKETPLACE}"]):
+        code, text = _run(args, timeout=120)
+        steps.append({"args": args[1:], "ok": code == 0, "text": re.sub(r"\x1b\[[0-9;]*m", "", text)[-300:]})
+    return steps
 
 
 def repair(run_claude: bool = True) -> dict:
@@ -503,6 +692,8 @@ def repair(run_claude: bool = True) -> dict:
             out["steps"].append({"args": args[1:], "ok": code == 0, "text": text[-300:]})
             if code != 0:
                 break
+        else:
+            out["refreshed"] = refresh_in_claude_code(path)
     _STATUS["value"] = None
     try:
         from . import mcp_server
@@ -562,7 +753,8 @@ def _sign_in_script(claude: str) -> Path:
         p = d / "sign-in.ps1"
         p.write_text("Write-Host 'ENLENS: sign in to Claude Code with your Claude plan.'\r\n"
                      "Write-Host 'Follow the steps below; when Claude Code shows its prompt, close this window.'\r\n"
-                     f"& '{claude.replace(chr(39), chr(39) * 2)}'\r\n", encoding="utf-8")
+                     f"& '{claude.replace(chr(39), chr(39) * 2)}'\r\n",
+                     encoding="utf-8-sig")  # 0.14.3: Windows PowerShell 5.1 reads a file without a BOM as ANSI
         return p
     import shlex
 

@@ -8,8 +8,8 @@ import { quickLookButton } from "./quicklook.js";
 
 export async function renderOverview(view) {
   const project = App.project;
-  let o = {};
-  try { o = await api("GET", `/api/projects/${P(project)}/overview`); } catch (_) { o = {}; }
+  // 0.14.3: a failed request is an error on the page (the router draws it), never "this project has no documents"
+  const o = await api("GET", `/api/projects/${P(project)}/overview`);
   const nDocs = o.documents || 0;
 
   view.appendChild(pageHead(project, {

@@ -146,7 +146,9 @@ def levels(cx_or_ws, doc_ids: Iterable[str] | None = None, budget: bool = True,
            dflt: str | None = None) -> dict[str, str]:
     """The setting that applies to each document now: its own, else the project's default; a `cloud` document whose
     cap is reached counts as `local` (with `budget`). `dflt` is the project's default when the caller has it already
-    (a loop over many tasks: finding it means reading the project's config)."""
+    (a loop over many tasks: finding it means reading the project's config). 0.14.3: a colleague's reading of a file
+    you have too (a sync-clash copy of a document) is at least as restricted as your document of that file, so making
+    yours stricter makes the copy stricter too."""
     if isinstance(cx_or_ws, sqlite3.Connection):
         cx = cx_or_ws
         ws = None
@@ -160,8 +162,17 @@ def levels(cx_or_ws, doc_ids: Iterable[str] | None = None, budget: bool = True,
     ids = list(dict.fromkeys(doc_ids)) if doc_ids is not None else None
     if ids is not None and not ids:
         return {}
+    copies: dict[str, str] = {}
+    if ids is None or any("-" in d for d in ids):  # a copy's id is "<id of the file>-<mark>" (sync.py)
+        try:
+            copies = {k: o for k, o in q("SELECT key, of_key FROM sync_copies WHERE kind='document'").fetchall()
+                      if ids is None or k in ids}
+        except sqlite3.OperationalError:  # a database without the table (not opened by 0.14 yet)
+            copies = {}
+    wanted = ids if ids is None else ids + [o for o in copies.values() if o not in ids]
     sql = "SELECT doc_id, ai_access, ai_budget FROM documents"
-    rows = q(sql + (f" WHERE doc_id IN ({','.join('?' * len(ids))})" if ids is not None else ""), ids or []).fetchall()
+    rows = q(sql + (f" WHERE doc_id IN ({','.join('?' * len(wanted))})" if wanted is not None else ""),
+             wanted or []).fetchall()
     out: dict[str, str] = {}
     capped = []
     only_local = _local_only()
@@ -177,7 +188,11 @@ def levels(cx_or_ws, doc_ids: Iterable[str] | None = None, budget: bool = True,
         for d, b in capped:
             if sh[d]["share"] * 100 >= b:
                 out[d] = "local"
+    for k, o in copies.items():
+        if k in out and o in out:
+            out[k] = most([out[k], out[o]])
     if ids is not None:
+        out = {d: out[d] for d in ids if d in out}  # not the originals looked up for their copies
         for d in ids:  # a document removed since: what was read from it stays as it was; nothing new is sent
             out.setdefault(d, "none")
     return out

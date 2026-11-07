@@ -29,7 +29,7 @@ from typing import Any, Callable
 from . import access, frameworks, routing, schema, tasks
 from .search import neighbours, passage_index, rank_passages  # noqa: F401  (re-exported for callers)
 from .store import Workspace, now
-from .textutil import find_quote
+from .textutil import find_selection
 
 Progress = Callable[..., None]  # progress(step, message) or progress(step, message, info)
 
@@ -46,6 +46,9 @@ STATUS_TEXT = {
     "waiting": "Waiting for Claude Code",
 }
 WAITING_LOCAL = "Waiting for your local model"  # 0.13.11: only the excerpts of documents marked Only a local AI wait
+# 0.14.3: no excerpt is judged yet, and the ones read wait for the person (documents no AI may read): the status is
+# "not_checked", shown in these words where the app shows a status text
+WAITING_YOU = "Waiting for your judgement"
 STATUS_HELP = {
     "supported": "At least one excerpt says what the hypothesis says, and none says the opposite.",
     "partially_supported": "No excerpt says it all, but at least one says an important part of it. Read the excerpts to "
@@ -57,7 +60,8 @@ STATUS_HELP = {
                    "it: they may use other words, or the evidence may be in parts not read yet.",
     "uncertain": "The AI found excerpts that may be about this hypothesis, but it was not sure enough about any of "
                  "them for your strictness setting, so none is counted.",
-    "not_checked": "The excerpts have not been read yet.",
+    "not_checked": "No excerpt has been judged yet: they wait for the AI, or for your own judgement where their "
+                   "documents may not be read by any AI.",
     "no_passages": "No part of your documents uses words close to this hypothesis. Try other wording, or add documents.",
     "failed": "The AI's answers could not be used, even after three tries. Try again, or choose another AI model in "
               "Settings.",
@@ -173,12 +177,25 @@ def _graded(vs, thr: float) -> tuple[list, list, list]:
             [v for v in strong if v["verdict"] == "refutes"])
 
 
+def _waits_for_person(v) -> bool:
+    """An excerpt no model read (its document may not be read by any AI) that the person has not judged yet."""
+    try:
+        return v["model"] == PERSON and not v["user_verdict"]
+    except (KeyError, IndexError):
+        return False
+
+
 def claim_status(vs, thr: float) -> str:
     """A claim's status from its grades at or above the threshold. Support and contradiction together: contested.
 
     Grades that exist but all fall below the threshold give "uncertain" (not "nothing found": something was found).
     Rows carrying a person's judgement must be passed through `effective` first.
+
+    0.14.3: excerpts that wait for the person's own judgement (no AI may read them) are left out until the person
+    judges them: nobody has read them, so they are not "not about the hypothesis". When nothing else is judged, the
+    status is "not_checked" (shown as WAITING_YOU).
     """
+    vs = [v for v in vs if not _waits_for_person(v)]
     if not vs:
         return "not_checked"
     sup, part, ref = _graded(vs, thr)
@@ -254,7 +271,10 @@ def aggregate(statuses: list[str]) -> str:
     - some parts (partly) supported: partially_supported
     - only uncertain grades: uncertain
     - nothing found for any part: unsupported (or no_passages when no part matched any passage)
-    Parts not graded yet, or whose grading failed, are left out; when no part is left, so is the hypothesis.
+    Parts not graded yet (or waiting for the person's own judgement), or whose grading failed, give no evidence
+    either way, but the hypothesis is then at most partially_supported: it holds only if every part does, and one
+    is not known (0.14.3: the manual said such parts were simply left out). When no part is left, the hypothesis
+    takes their status.
     """
     if "waiting" in statuses:
         return "waiting"  # a check by queue not finished yet (0.8)
@@ -389,13 +409,41 @@ def _round_waiting(parts: list) -> bool:
 
 
 def _round_status(parts: list) -> str:
-    sts = [t["status"] for t in parts]
+    """A round's status from the parts a model answers. 0.14.3: a part no model answers (`:person`, born done) is
+    neutral; it made a round whose main part failed count as done, which hid the failure ("No evidence found"). A
+    model part still waiting makes the round wait; otherwise the main part decides (a `:local` part that failed
+    beside an answered main part is shown on its own, see `local_failed`); a round without a main part is done when
+    one of its model parts is. A round of person parts only is done: nothing is left for a model."""
+    sts = [t["status"] for t in parts if not _is_person(t)]
+    if not sts:
+        return "done" if parts else "pending"
     for s in ("retry", "pending"):
         if s in sts:
             return s
+    main = _main_part(parts)
+    if main is not None and not _is_person(main):
+        return main["status"]
     if "done" in sts:
         return "done"
-    return "failed" if "failed" in sts else (sts[-1] if sts else "pending")
+    return "failed" if "failed" in sts else sts[-1]
+
+
+def _counting(groups: list[list], statuses: list[str] | None = None) -> tuple[Callable, set[str]]:
+    """0.14.3: which judgements of a check may count as evidence, as (counts(verification row) -> bool, the excerpts
+    of rounds that failed). In a round whose check failed none of the AI's judgements count, a local model's for the
+    same round neither: the answer says the check did not work, and the evidence must not say otherwise. A person's
+    own judgement there counts when another round of the check was answered (when every round failed, nothing counts:
+    the check did not work). Rows need `passage_id` and `user_verdict`; task rows need `payload_json`."""
+    sts = statuses if statuses is not None else [_round_status(g) for g in groups]
+    failed: set[str] = set()
+    for g, st in zip(groups, sts):
+        if st == "failed":
+            for t in g:
+                failed.update(p["passage_id"] for p in json.loads(t["payload_json"])["passages"])
+    if not failed:
+        return (lambda v: True), failed
+    people_count = "done" in sts
+    return (lambda v: v["passage_id"] not in failed or (people_count and bool(v["user_verdict"]))), failed
 
 
 def _is_person(t) -> bool:
@@ -1508,7 +1556,8 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     raw_vs = [dict(v) for v in ws.query("SELECT * FROM verifications WHERE subject_kind='user_claim' AND subject_id=?",
                                         (claim_id,))]
     access_of = access.levels(ws, list({p["doc_id"] for t in rounds for p in json.loads(t["payload_json"])["passages"]}))
-    vs = [effective(v) for v in raw_vs]
+    counts, failed = _counting(groups)  # 0.14.3: the AI's judgements in a round that failed count nowhere
+    vs = [effective(v) for v in raw_vs if counts(v)]
     out["balance"] = balance(vs, thr)
     stage = uc.get("stage")
     if not rounds:
@@ -1544,6 +1593,10 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
 
     who, me = people.names(ws), people.me()
     others = people.others(ws, [claim_id])
+    # 0.14.3: your own verdict on each excerpt (the one in force may be a colleague's, with your comment beside it):
+    # what the page sends back with a comment of yours, so a colleague's verdict is never saved as yours
+    my_rows = {r["passage_id"]: r["verdict"] for r in ws.query(
+        "SELECT passage_id, verdict FROM judgements WHERE claim_id=? AND person_id=?", (claim_id, me))}
     # 0.13.3: the title a document has now (the work's title from the bibliography), not the one the check stored;
     # a document removed since keeps the stored one
     titles_now = {r["doc_id"]: r["title"] for r in ws.query("SELECT doc_id, title FROM documents")}
@@ -1567,14 +1620,21 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                 # 0.11: who read it (claude, local, ai, you) and whether it still waits for the local model or a person
                 "read_by": readers_of[part["task_id"]], "access": access_of.get(p["doc_id"], "none"),
                 "waiting_local": part["status"] in ("pending", "retry") and part["task_id"].endswith(":local"),
-                "waiting_for_you": False, "judged_by": None, "others": others.get((claim_id, p["passage_id"]), [])}
+                "waiting_for_you": False, "judged_by": None, "others": others.get((claim_id, p["passage_id"]), []),
+                # 0.14.3: whether a model's judgement of it is stored (not for an excerpt no AI may read, nor for one
+                # whose part is not answered yet or failed)
+                "ai_read": False, "round_failed": p["passage_id"] in failed, "my_verdict": None}
         if v:
             ai = v["verdict"] if v["verdict"] != "not_enough_info" else None
+            item["ai_read"] = v.get("model") != PERSON
             eff = effective(v)
             item.update(ai_verdict=ai, user_verdict=v.get("user_verdict"), user_note=v.get("user_note"),
                         verdict=eff["verdict"] if eff["verdict"] != "not_enough_info" else None,
                         reviewed=bool(v.get("user_verdict")), changed=changed_by_person(v),
                         scope_note=v.get("scope_note") if ai else None)
+            by = v.get("user_by")
+            item["my_verdict"] = (my_rows[p["passage_id"]] if p["passage_id"] in my_rows else
+                                  v.get("user_verdict") if not by or by == me else None)
             if v.get("user_verdict") or v.get("user_note"):
                 by = v.get("user_by")
                 item["judged_by"] = "you" if not by or by == me else who.get(by, "a colleague")
@@ -1609,7 +1669,7 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                 elif v["user_quote"] in p["text"]:
                     s0 = p["text"].index(v["user_quote"])
                     item.update(quote_start=s0, quote_end=s0 + len(v["user_quote"]))
-            item["counted"] = bool(item["verdict"]) and (eff["confidence"] or 0) >= thr
+            item["counted"] = bool(item["verdict"]) and (eff["confidence"] or 0) >= thr and counts(v)
         so = seconds.get(p["passage_id"])
         item["second"] = ({**so, "agrees": so["verdict"] == item["ai_verdict"]} if so else None)
         item["waiting_for_you"] = item["read_by"] == "you" and not item["user_verdict"]
@@ -1621,18 +1681,23 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     out["status"] = _status_of_rounds(statuses, vs, thr, stage, waiting)
     out["status_any"] = _status_of_rounds(statuses, vs, 0.0, stage, waiting)
     # 0.11.2: the answer before a stronger model read the excerpts again (its reading counts; the first is kept)
-    vs_first, out["stronger"] = _before_stronger(raw_vs)
+    vs_first, out["stronger"] = _before_stronger([v for v in raw_vs if counts(v)])
     out["status_first"] = _status_of_rounds(statuses, vs_first, thr, stage, waiting) if vs_first else out["status"]
     out["waiting"] = out["status"] == "waiting"
     open_ = [t for g in groups for t in g if t["status"] in ("pending", "retry")]
     if out["waiting"] and stage in ("judge", "done", None) and open_ and all(t["task_id"].endswith(":local")
                                                                                for t in open_):
         out["status_text"] = WAITING_LOCAL  # 0.13.11: Claude (Code) is done with this part
+    elif out["status"] == "not_checked" and out["waiting_for_you"] and "done" in statuses:
+        out["status_text"] = WAITING_YOU  # 0.14.3: read by no AI, and not judged by you yet
     out["rounds_task_ids"] = [r["task_id"] for r in rounds]
     out["stepped_up"] = {r["task_id"]: {"step": int(r["step"] or 0), "again": bool(r["again"])} for r in rounds}
     out["round_status"] = statuses[-1]
     if "done" not in statuses or statuses[-1] in ("failed", "retry"):
-        bad = next((t for t in groups[-1] if t["status"] in ("failed", "retry")), groups[-1][-1])
+        last = groups[-1]
+        main = _main_part(last)
+        bad = (main if main is not None and main["status"] in ("failed", "retry") else
+               next((t for t in last if not _is_person(t) and t["status"] in ("failed", "retry")), last[-1]))
         err = ws.query("SELECT errors_json FROM results WHERE task_id=? ORDER BY attempt DESC LIMIT 1", (bad["task_id"],))
         out["errors"] = json.loads(err[0][0]) if err else []
     # a `:local` part that failed while the main part succeeded (0.11.1: it was invisible): its excerpts are shown
@@ -1678,18 +1743,28 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     else:
         out["status"] = aggregate([p["status"] for p in parts])
         out["status_any"] = aggregate([p["status_any"] for p in parts])
-    vs = [effective(v) for v in ws.query(
-        "SELECT verdict, confidence, doc_id, user_verdict FROM verifications WHERE subject_kind='user_claim' AND subject_id IN "
-        f"({','.join('?' * len(part_ids))})", part_ids)] if part_ids else []
+    vs = []
+    for cid in part_ids:  # 0.14.3: as each part counts them (not the AI's judgements of a round that failed)
+        counts, _failed = _counting(_rounds(ws, cid))
+        vs += [effective(v) for v in ws.query("SELECT passage_id, verdict, confidence, doc_id, user_verdict FROM "
+                                              "verifications WHERE subject_kind='user_claim' AND subject_id=?", (cid,))
+               if counts(v)]
     out["balance"] = balance(vs, thr)
     out["documents_in_project"] = int(ws.scalar("SELECT COUNT(*) FROM documents") or 0)
     out["passages_in_project"] = int(ws.scalar("SELECT COUNT(*) FROM passages") or 0)
     out["excerpts_read"] = sum(len(p["passages"]) for p in parts)
-    out["incomplete"] = any(p["status"] in ("failed", "not_checked", "waiting") for p in parts)
+    # 0.14.3: a part whose excerpts all wait for your own judgement is not unfinished work of the AI (the result says
+    # how many excerpts wait for you instead)
+    out["incomplete"] = any(p["status"] in ("failed", "not_checked", "waiting") and p.get("status_text") != WAITING_YOU
+                            for p in parts)
     out["queue"] = h.get("queue")
     out["status_text"] = STATUS_TEXT.get(out["status"], out["status"])
     if out["status"] == "waiting" and only_local_waits(ws, hyp_id):
         out["status_text"] = WAITING_LOCAL  # 0.13.11: not "Waiting for Claude Code" once Claude Code is done
+    elif out["status"] == "not_checked" and any(p.get("status_text") == WAITING_YOU for p in parts) and all(
+            p.get("status_text") == WAITING_YOU for p in parts if p["status"] == "not_checked"):
+        out["status_text"] = WAITING_YOU
+    out["models_used"] = models_used(ws, hyp_id, parts)  # 0.14.3: every model whose answer the check used
     # 0.11.2: the answer the first model gave, when a stronger model read excerpts again and changed it
     firsts = [p.get("status_first", p["status"]) for p in parts]
     out["status_first"] = (firsts[0] if len(firsts) == 1 else aggregate(firsts)) if parts else out["status"]
@@ -1704,19 +1779,74 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     items = [x for p in parts for x in p["passages"]]
     out["waiting_for_you"] = sum(p["waiting_for_you"] for p in parts)  # 0.11: excerpts no model may read
     out["waiting_local"] = sum(p["waiting_local"] for p in parts)      # 0.11: excerpts waiting for the local model
-    out["corrected"] = sum(1 for x in items if x["changed"])       # judgements a person changed
-    out["reviewed"] = sum(1 for x in items if x["reviewed"])       # judgements a person looked at (agreed or changed)
-    out["to_review"] = sum(1 for x in items if not x["reviewed"])  # excerpts read that no person has judged yet
-    out["to_review_relevant"] = sum(1 for x in items if x["ai_verdict"] and not x["reviewed"])  # of them, the AI's
+    # 0.14.3: your own judgements (in a shared project a colleague's counts where you made none, but it is not yours:
+    # the Excel columns say "you")
+    yours = lambda x: x["reviewed"] and x["judged_by"] == "you"  # noqa: E731
+    mine = [x for x in items if yours(x)]
+    out["corrected"] = sum(1 for x in mine if x["changed"])  # judgements you changed
+    out["reviewed"] = len(mine)                               # judgements you looked at (agreed or changed)
+    out["to_review"] = len(items) - len(mine)                 # excerpts read that you have not judged yet
+    out["to_review_relevant"] = sum(1 for x in items if x["ai_verdict"] and not yours(x))  # of them, the AI's
     out["who"] = who_says_what(items)                                                           # grades for or against
     with_second = [x for x in items if x["second"]]
     out["second_models"] = sorted({x["second"]["model"] for x in with_second})
     out["second_read"] = len(with_second)
     out["disagreements"] = sum(1 for x in with_second if not x["second"]["agrees"])
-    out["disagreements_to_review"] = sum(1 for x in with_second if not x["second"]["agrees"] and not x["reviewed"])
+    out["disagreements_to_review"] = sum(1 for x in with_second if not x["second"]["agrees"] and not yours(x))
     out["docs_added_since"] = new_documents(ws, hyp_id)
     out["docs_added_since_matching"] = sum(1 for d in out["docs_added_since"] if d["matching"])
     return out
+
+
+MODEL_ROLES = {"decompose": "splitting the hypothesis into parts", "expand": "search words",
+               "check": "judging the excerpts", "stepped": "judging again as the stronger model",
+               "local": "judging the excerpts of documents marked Only a local AI",
+               "reread": "reading an excerpt again"}
+
+
+def models_used(ws: Workspace, hyp_id: str, parts: list[dict]) -> list[dict]:
+    """0.14.3: the models whose accepted answers a check used, in the order they first answered, each with what it did:
+    [{"model", "roles": [...]}], for a methods section. Read from the answers themselves, so a stronger model, the
+    local model for restricted documents, an excerpt read again and a model changed in Settings before Claude Code
+    answered are all named (the check's own record names the model chosen when it started). Second opinions are not
+    in it: they never change an answer."""
+    ids = [f"decompose:{hyp_id}"]
+    for p in parts:
+        ids.append(f"expand:{p['claim_id']}")
+        ids += p.get("rounds_task_ids") or []
+        ids += [r[0] for r in ws.query("SELECT task_id FROM tasks WHERE kind='reread' AND task_id LIKE ?",
+                                       (f"reread:{p['claim_id']}:%",))]
+    rows: list = []
+    for i in range(0, len(ids), 900):  # SQLite's limit on bound parameters
+        chunk = ids[i:i + 900]
+        rows += ws.query("SELECT task_id, kind, model, step, received_at FROM results WHERE valid=1 AND task_id IN "
+                         f"({','.join('?' * len(chunk))})", chunk)
+    rows.sort(key=lambda r: (r["received_at"] or "", r["task_id"]))
+    out: dict[str, list[str]] = {}
+    answered: set[str] = set()  # tasks with an accepted answer before the stronger model's
+    for r in rows:
+        if not r["model"] or r["model"] == PERSON:
+            continue
+        role = r["kind"]
+        if role == "check":
+            # the stronger model reads again only an answered task; one that took the last of three tries after two
+            # rejected answers is the task's first answer
+            again = int(r["step"] or 0) and r["task_id"] in answered
+            role = "local" if r["task_id"].endswith(":local") else "stepped" if again else "check"
+        answered.add(r["task_id"])
+        roles = out.setdefault(r["model"], [])
+        if MODEL_ROLES.get(role) and MODEL_ROLES[role] not in roles:
+            roles.append(MODEL_ROLES[role])
+    return [{"model": m, "roles": rs} for m, rs in out.items()]
+
+
+def models_text(res: dict) -> str:
+    """The models a check used, in words (`models_used`): "sonnet (search words, judging the excerpts); opus (…)".
+    A check no model has answered yet names the model chosen for it."""
+    used = res.get("models_used") or []
+    if not used:
+        return res.get("model") or ""
+    return "; ".join(f"{m['model']} ({', '.join(m['roles'])})" if m["roles"] else m["model"] for m in used)
 
 
 def _second_opinions(ws: Workspace, claim_ids: list[str]) -> dict[str, dict[str, dict]]:
@@ -1874,29 +2004,41 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
         keep = set(hyp_ids)
         hs = [h for h in hs if h["hyp_id"] in keep]
     want = {h["hyp_id"] for h in hs}
-    claims: dict[str, list[str]] = {}
-    for r in ws.query("SELECT claim_id, hyp_id FROM user_claims ORDER BY part, rowid"):
+    claims: dict[str, list[tuple[str, str | None]]] = {}
+    for r in ws.query("SELECT claim_id, hyp_id, stage FROM user_claims ORDER BY part, rowid"):
         if (r["hyp_id"] or r["claim_id"]) in want:
-            claims.setdefault(r["hyp_id"] or r["claim_id"], []).append(r["claim_id"])
-    rounds: dict[str, list[str]] = {}
+            claims.setdefault(r["hyp_id"] or r["claim_id"], []).append((r["claim_id"], r["stage"]))
+    tasks_of: dict[str, list] = {}
     titles: dict[str, str] = {}
-    for r in ws.query("SELECT task_id, status, payload_json FROM tasks WHERE kind='check' ORDER BY created_at, rowid"):
+    for r in ws.query("SELECT task_id, status, payload_json, queued, model FROM tasks WHERE kind='check' "
+                      "ORDER BY created_at, rowid"):
         cid = r["task_id"].split(":")[1]
-        rounds.setdefault(cid, []).append(r["status"])
+        tasks_of.setdefault(cid, []).append(r)
         for p in json.loads(r["payload_json"])["passages"]:
             titles.setdefault(p["doc_id"], p.get("title") or "")
+    # 0.14.3: rounds as the result page and the Results list see them (grouped, a part no model answers neutral,
+    # waiting when a part still waits): the map worked them out on its own and disagreed with both
+    rounds: dict[str, tuple[list[str], bool]] = {}
+    counting: dict[str, Callable] = {}
+    for cid, rows in tasks_of.items():
+        groups = _group_rounds(rows)
+        sts = [_round_status(g) for g in groups]
+        rounds[cid] = (sts, bool(groups) and _round_waiting(groups[-1]))
+        counting[cid] = _counting(groups, sts)[0]  # not the AI's judgements of a round that failed
     in_project = {r["doc_id"]: r["title"] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
     titles.update(in_project)
     ver: dict[str, list[dict]] = {}
-    for v in ws.query("SELECT subject_id, verdict, confidence, doc_id, user_verdict FROM verifications "
-                      "WHERE subject_kind='user_claim'"):
-        ver.setdefault(v["subject_id"], []).append(effective(v))
+    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model FROM "
+                      "verifications WHERE subject_kind='user_claim'"):
+        if counting.get(v["subject_id"], lambda _v: True)(v):
+            ver.setdefault(v["subject_id"], []).append(effective(v))
 
     def status_of(hid: str, leave_out: str | None = None) -> str:
         sts = []
-        for cid in claims.get(hid, []):
+        for cid, stage in claims.get(hid, []):
             vs = [v for v in ver.get(cid, []) if v["doc_id"] != leave_out]
-            sts.append(_status_of_rounds(rounds.get(cid, []), vs, thr))
+            rs, wt = rounds.get(cid, ([], False))
+            sts.append(_status_of_rounds(rs, vs, thr, stage, wt))
         return sts[0] if len(sts) == 1 else aggregate(sts)
 
     cells: dict[str, dict[str, dict]] = {}
@@ -1906,7 +2048,9 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     for h in hs:
         hid = h["hyp_id"]
         per_doc: dict[str, dict[str, int]] = {}
-        for cid in claims.get(hid, []):
+        # an answer not given yet (waiting, failed, not judged) is not decided by any document
+        decided = h["status"] not in ("waiting", "failed", "not_checked", "no_passages")
+        for cid, _stage in claims.get(hid, []):
             for v in ver.get(cid, []):
                 if v["verdict"] in GRADES and v["confidence"] is not None and v["confidence"] >= thr:
                     c = per_doc.setdefault(v["doc_id"], {"supports": 0, "partially_supports": 0, "refutes": 0})
@@ -1917,12 +2061,12 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
             side = "both" if positive and c["refutes"] else positive or "refutes"
             row[doc] = {"side": side, "excerpts": sum(c.values())}
             answers[doc] = answers.get(doc, 0) + 1
-            if status_of(hid, doc) != h["status"]:
+            if decided and status_of(hid, doc) != h["status"]:
                 decides[doc] = decides.get(doc, 0) + 1
         cells[hid] = row
         hyps.append({"hyp_id": hid, "text": h["text"], "status": h["status"],
-                     "status_text": (WAITING_LOCAL if h["status"] == "waiting" and only_local_waits(ws, hid)
-                                     else STATUS_TEXT.get(h["status"], h["status"])), "docs_counted": len(row),
+                     "status_text": h.get("status_text") or STATUS_TEXT.get(h["status"], h["status"]),
+                     "docs_counted": len(row),
                      "single_document": len(row) == 1, "batch_id": h["batch_id"]})
     docs = []
     for doc in sorted(answers, key=lambda d: (-answers[d], -decides.get(d, 0), titles.get(d, "").lower())):
@@ -2028,19 +2172,25 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
     for r in ws.query("SELECT claim_id, hyp_id, part, model, options_json, stage FROM user_claims ORDER BY part, rowid"):
         claims.setdefault(r["hyp_id"] or r["claim_id"], []).append(r)
     rounds: dict[str, list] = {}
-    for r in ws.query("SELECT task_id, status, payload_json, queued FROM tasks WHERE kind='check' ORDER BY created_at, rowid"):
+    for r in ws.query("SELECT task_id, status, payload_json, queued, model FROM tasks WHERE kind='check' "
+                      "ORDER BY created_at, rowid"):
         cid = r["task_id"].split(":")[1]
         rounds.setdefault(cid, []).append(r)
     ver: dict[str, list] = {}
     ai_of: dict[tuple[str, str], str | None] = {}
     first_of: dict[str, list] = {}  # 0.11.2: the excerpts as the first model judged them, where a stronger one read again
-    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model, ai_history_json "
-                      "FROM verifications WHERE subject_kind='user_claim'"):
+    from .people import me as _me
+
+    me = _me()
+    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model, ai_history_json, "
+                      "user_by FROM verifications WHERE subject_kind='user_claim'"):
         f = first_reading(v)
         if f is not None:
             first_of.setdefault(v["subject_id"], []).append(effective(f))
         e = effective(v)
-        e["_changed"] = changed_by_person(v)
+        # 0.14.3: "changed by you" counts your own changes only (a colleague's judgement counts where you made none)
+        e["_mine"] = bool(v["user_verdict"]) and (v["user_by"] or me) == me
+        e["_changed"] = changed_by_person(v) and e["_mine"]
         e["_ai_judged"] = v["verdict"] in ("supports", "partially_supports", "refutes")
         ver.setdefault(v["subject_id"], []).append(e)
         ai_of[(v["subject_id"], v["passage_id"])] = v["verdict"] if v["verdict"] in GRADES else None
@@ -2074,18 +2224,21 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         uncounted = corrected = reviewed = to_review = disagree = 0
         shown_docs: set[str] = set()
         limited = False
+        for_you: list[bool] = []  # 0.14.3: per part, whether all it waits for is your own judgement
         for c in parts:
             rs = rounds.get(c["claim_id"], [])
-            vs = ver.get(c["claim_id"], [])
-            all_vs += vs
             groups = _group_rounds(rs)  # by round, as the result page does (0.11.1: the two disagreed on "waiting")
             sts = [_round_status(g) for g in groups]
+            counts_, _failed = _counting(groups, sts)  # 0.14.3: not the AI's judgements of a round that failed
+            vs = [v for v in ver.get(c["claim_id"], []) if counts_(v)]
+            all_vs += vs
             wt = bool(groups) and _round_waiting(groups[-1])
             st.append(_status_of_rounds(sts, vs, thr, c["stage"], wt))
+            for_you.append(st[-1] == "not_checked" and "done" in sts and any(_waits_for_person(v) for v in vs))
             st_any.append(_status_of_rounds(sts, vs, 0.0, c["stage"], wt))
             if c["claim_id"] in first_of:  # the stepped-up excerpts as first judged, the others as they are
                 firsts = {(x["passage_id"]) for x in first_of[c["claim_id"]]}
-                vf = first_of[c["claim_id"]] + [x for x in vs if x["passage_id"] not in firsts]
+                vf = [x for x in first_of[c["claim_id"]] if counts_(x)] + [x for x in vs if x["passage_id"] not in firsts]
                 st_first.append(_status_of_rounds(sts, vf, thr, c["stage"], wt))
             else:
                 st_first.append(st[-1])
@@ -2098,10 +2251,10 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
                     if key in second and second[key] != ai_of.get(key):
                         disagree += 1
             limited = limited or bool(json.loads(c["options_json"] or "{}").get("doc_ids"))
-            for v in vs:
+            for v in ver.get(c["claim_id"], []):
                 corrected += v["_changed"]
-                reviewed += bool(v.get("user_verdict"))
-                if v["verdict"] in counts:
+                reviewed += v["_mine"]  # 0.14.3: your own judgements, as on the result and in Excel
+                if v["verdict"] in counts and counts_(v):
                     if (v["confidence"] or 0) >= thr:
                         counts[v["verdict"]] += 1
                     else:
@@ -2121,10 +2274,15 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         cutoff = max(h["created_at"] or "", h["docs_checked_at"] or "")
         since = 0 if limited else sum(1 for at, d in added[bisect.bisect_right(added, (cutoff, "\uffff")):]
                                       if d not in shown_docs)
+        st_text = None
+        if s == "waiting" and only_local_waits(ws, h["hyp_id"]):
+            st_text = WAITING_LOCAL
+        elif s == "not_checked" and any(for_you) and all(y for y, x in zip(for_you, st) if x == "not_checked"):
+            st_text = WAITING_YOU
         out.append({"hyp_id": h["hyp_id"], "claim_id": first["claim_id"], "created_at": h["created_at"],
                     "claim": h["text"], "text": h["text"], "framework": h["framework"] or "", "target": h["code"] or "",
                     "code": h["code"] or "", "code_label": label(h["framework"]) if h["code"] else "", "status": s,
-                    "status_text": WAITING_LOCAL if s == "waiting" and only_local_waits(ws, h["hyp_id"]) else None,
+                    "status_text": st_text,
                     "status_any": st_any[0] if len(st_any) == 1 else aggregate(st_any),
                     "supports": counts["supports"], "partly": counts["partially_supports"], "refutes": counts["refutes"],
                     "uncounted": uncounted, "corrected": corrected, "reviewed": reviewed, "to_review": to_review,
@@ -2240,18 +2398,30 @@ def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[st
         for part in res["parts"]:
             chosen = [p for p in part["passages"] if every_excerpt or p["verdict"] or p["user_verdict"]] or [None]
             for p in chosen:
-                judged_by = ((p.get("judged_by") or "you") if p["user_verdict"] else "the AI") if p else ""
+                # 0.14.3: an excerpt no AI judged (its document may not be read by any AI, or its part waits or
+                # failed) says so, instead of "Judged by: the AI / Not about the hypothesis"
+                unread = not_read_text(p) if p else None
+                # an excerpt of a round whose check failed: nothing the AI said about it counts
+                failed = bool(p and p.get("round_failed") and not p["user_verdict"])
+                judged_by = ((p.get("judged_by") or "you") if p["user_verdict"] else
+                             "nobody: the check did not work" if failed else
+                             "nobody yet" if unread else "the AI") if p else ""
+                judgement = ("Not counted: the check did not work" if failed else
+                             "Not judged yet" if unread and not p["user_verdict"]
+                             else JUDGEMENT_TEXT.get(p["verdict"], "")) if p else ""
+                if p and p.get("round_failed") and not unread:
+                    unread = f"{JUDGEMENT_TEXT.get(p['ai_verdict'])} (not counted: the check did not work)"
                 cert = certainty_word(p["confidence"]) if p and p["ai_verdict"] else ""
                 rows.append({
                     "Checked on": _local_dt(res["created_at"]),
                     "Hypothesis": res["text"],
-                    "Answer": STATUS_TEXT.get(res["status"], res["status"]),
+                    "Answer": res.get("status_text") or STATUS_TEXT.get(res["status"], res["status"]),
                     "Part": f"{part['part']} of {n_parts}" if n_parts > 1 else "",
                     "Part checked": part["claim"] if n_parts > 1 else "",
-                    "Answer for this part": STATUS_TEXT.get(part["status"], part["status"]) if n_parts > 1 else "",
-                    "Judgement": JUDGEMENT_TEXT.get(p["verdict"] if p else None, "") if p else "",
+                    "Answer for this part": _part_text(part) if n_parts > 1 else "",
+                    "Judgement": judgement,
                     "Judged by": judged_by,
-                    "AI's own judgement": JUDGEMENT_TEXT.get(p["ai_verdict"]) if p else "",
+                    "AI's own judgement": (unread or JUDGEMENT_TEXT.get(p["ai_verdict"])) if p else "",
                     "AI certainty": f"{cert} ({round(p['confidence'] * 100)}%)" if cert else "",
                     "Counted in the answer": ("yes" if p["counted"] else "no") if p else "",
                     "Quote": (p["quote"] or "") if p else "",
@@ -2278,6 +2448,25 @@ def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[st
                         "The two models agree": ("yes" if so["agrees"] else "no") if so else "",
                     })
     return rows
+
+
+def not_read_text(p: dict) -> str | None:
+    """0.14.3: why no AI judged an excerpt of a result (`result` passages), in words for a spreadsheet; None when a
+    model did judge it."""
+    if p.get("ai_read", True):
+        return None
+    if p.get("read_by") == "you":  # marked No AI (or Only a local AI, with no local model)
+        return "Not read by an AI: kept for your own judgement"
+    if p.get("waiting_local"):
+        return "Not read yet: it waits for your local model"
+    if p.get("read_by") == "waiting":
+        return "Not read yet: it waits for the AI"
+    return "Not read: the AI's answer could not be used"
+
+
+def _part_text(part: dict) -> str:
+    """A part's answer in words, as the result page says it."""
+    return part.get("status_text") or STATUS_TEXT.get(part["status"], part["status"])
 
 
 def _earlier(p: dict) -> str:
@@ -2309,11 +2498,11 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
         rows.append({
             "Checked on": _local_dt(res["created_at"]),
             "Hypothesis": res["text"],
-            "Answer": STATUS_TEXT.get(res["status"], res["status"]),
+            "Answer": res.get("status_text") or STATUS_TEXT.get(res["status"], res["status"]),
             # 0.11.2: a stronger model read the excerpts again and its reading changed the answer
             "Answer before a stronger model read it again": STATUS_TEXT.get(res["status_before_stronger"], "")
             if res.get("status_before_stronger") else "",
-            "Answer for each part": "; ".join(f"{i}. {p['claim']}: {STATUS_TEXT.get(p['status'], p['status'])}"
+            "Answer for each part": "; ".join(f"{i}. {p['claim']}: {_part_text(p)}"
                                               for i, p in enumerate(parts, 1)) if len(parts) > 1 else "",
             "Documents that support it": res["balance"]["docs_supporting"],
             "Documents that partly support it": res["balance"]["docs_partly"],
@@ -2329,7 +2518,8 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
             "Your notes on this result": res["note"] or "",
             "Code": f"{res.get('code_label') or ''} {res['code']}".strip() if res["code"] else "",
             "Strictness": strictness_text(thr),
-            "AI model used (for a methods section)": res["model"] or "",
+            # 0.14.3: every model whose answers the check used (a stronger model, the local model), from the answers
+            "AI model used (for a methods section)": models_text(res),
         })
     return rows
 
@@ -2414,7 +2604,7 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
                         for p in json.loads(t["payload_json"])["passages"]:
                             if p["passage_id"] == passage_id:
                                 text, base = p["text"], None
-                hit = find_quote(text or "", q)
+                hit = find_selection(text or "", q)  # 0.14.3: a selection cutting a word is widened to whole words
                 if not hit:
                     raise ValueError("The sentence must be text from this excerpt (select it in the excerpt).")
                 uq = (text or "")[hit[0]:hit[1]]

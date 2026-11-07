@@ -82,12 +82,14 @@ export function bringInDialog(project) {
   const err = h("div", { class: "field-error", role: "alert" });
   const status = h("div", { class: "muted small", "aria-live": "polite" });
   let anyway = false, report = null;
+  const lock = { on: false };   // 0.14.3: the dialog stays open while the merge runs, so its report is always seen
   file.addEventListener("change", () => {
     const f = file.files && file.files[0];
     anyway = false; err.textContent = "";
     status.textContent = f ? `${f.name} · ${fmt.bytes(f.size)}` : "";
   });
   return dialog({
+    lock,
     title: "Bring in a colleague’s work",
     body: h("div", {},
       h("p", { class: "muted" }, `Choose the zip your colleague made with “Download as a zip” in their copy of “${project}”. What is new comes in. Where you both changed the same thing, their version comes in beside yours, marked “sync clash”. Nothing you decided is replaced.`),
@@ -99,16 +101,17 @@ export function bringInDialog(project) {
         const f = file.files && file.files[0];
         if (!f) { err.textContent = "Choose a zip file first."; file.focus(); return false; }
         const btn = dlg.querySelector("#dlg-confirm");
-        btn.disabled = true; status.textContent = `Bringing in ${f.name}… this can take a moment for a large project.`;
+        btn.disabled = true; lock.on = true; status.textContent = `Bringing in ${f.name}… this can take a moment for a large project.`;
         try {
           const r = await api("POST", `/api/projects/${P(project)}/bring-in${anyway ? "?anyway=1" : ""}`, f);
           report = r.report;
         } catch (e) {
-          btn.disabled = false; status.textContent = "";
+          lock.on = false; btn.disabled = false; status.textContent = "";
           err.textContent = e.message;
           if (e.status === 409 && e.data && e.data.not_this_project) { anyway = true; btn.textContent = "Bring it in anyway"; }
           return false;
         }
+        lock.on = false;
         await App.refresh();
         return true;
       },

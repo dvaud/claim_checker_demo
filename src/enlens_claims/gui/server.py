@@ -182,6 +182,15 @@ class App:
         self.updating = threading.Lock()  # 0.13.1: one "Update and restart" at a time
         self.update_seen: dict | None = None  # 0.13.6: the last look for a newer version (GET /api/update)
         self.update_looking = threading.Lock()  # one look at a time: the tabs that ask together share it
+        # 0.14.3: the page's own files (index.html, the scripts, the style sheets), read once when the app starts
+        # (serve()), so a copy that keeps running after an update on disk serves the page code that fits its API, not
+        # the new one. None (tests, tools/dev_server.py): read from disk on every request, so page code can be edited
+        # without a restart.
+        self.frozen_static: dict[str, bytes] | None = None
+
+    def freeze_static(self) -> None:
+        self.frozen_static = {f.relative_to(STATIC).as_posix(): f.read_bytes()
+                              for f in STATIC.rglob("*") if f.is_file()}
 
     # -- helpers ---------------------------------------------------------------------------------
     def settings(self) -> dict:
@@ -1559,10 +1568,15 @@ def _text_with_quote(path: Path, quote: str, name: str) -> bytes | None:
     matter) with the id "quote", so a link to …#quote scrolls to it. None when the quote is not in the file."""
     import html
 
+    from ..ingest import decode_text
     from ..textutil import find_quote
 
-    raw = path.read_bytes().decode("utf-8", errors="replace")
-    hit = find_quote(raw, quote[:2000])
+    # 0.14.3: read as the document was read when it was added (a Windows-1250 file kept its accented letters there,
+    # so its quotes are found here too)
+    raw = decode_text(path.read_bytes(), html=path.suffix.lower() in (".html", ".htm"))
+    # 0.14.3: a quote accepted earlier is placed, not checked again (the whole-word rule is for new answers; a long
+    # quote cut at 2,000 characters may end inside a word)
+    hit = find_quote(raw, quote[:2000], whole_words=False)
     if not hit:
         return None
     a, b = hit[0], hit[1]
@@ -2028,7 +2042,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _static(self, path: str) -> None:
         if path in ("/", "/index.html") or not Path(path).suffix:
-            page = (STATIC / "index.html").read_text(encoding="utf-8")
+            frozen = self.app.frozen_static
+            page = (frozen["index.html"] if frozen is not None else (STATIC / "index.html").read_bytes()).decode("utf-8")
             # on the network the page does not carry the token: it comes in the link printed in the terminal (#token=)
             page = page.replace("{{ENLENS_TOKEN}}", "" if self.app.any_host else self.app.token)
             page = page.replace("{{ENLENS_VERSION}}", __version__)
@@ -2048,13 +2063,20 @@ class Handler(BaseHTTPRequestHandler):
             if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):
                 ctype += "; charset=utf-8"
             return self._send(200, target.read_bytes(), ctype)
+        frozen = self.app.frozen_static
         target = (STATIC / rel).resolve()
-        if not target.is_relative_to(STATIC.resolve()) or not target.is_file():
-            raise ApiError(404, "Not found.")
+        if frozen is not None:  # 0.14.3: the files as they were when this copy started
+            body = frozen.get(rel) if ".." not in rel.split("/") else None
+            if body is None:
+                raise ApiError(404, "Not found.")
+        else:
+            if not target.is_relative_to(STATIC.resolve()) or not target.is_file():
+                raise ApiError(404, "Not found.")
+            body = target.read_bytes()
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):
             ctype += "; charset=utf-8"
-        self._send(200, target.read_bytes(), ctype)
+        self._send(200, body, ctype)
 
     # -- endpoints -------------------------------------------------------------------------------
     def get_state(self, q):
@@ -2096,6 +2118,7 @@ class Handler(BaseHTTPRequestHandler):
         running = [j for j in self.app.jobs.all() if j.state in ("queued", "running")]
         for j in running:
             j.cancel.set()
+        self._stop_claude_runs()
 
         def later():
             t0 = time.time()
@@ -2106,6 +2129,35 @@ class Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=later, daemon=True).start()
         return len(running)
+
+    def _stop_claude_runs(self) -> None:
+        """0.14.3: Claude Code runs started from the app live in their own session, so they outlive it: stop them
+        before the app quits or restarts (a run left behind keeps using the researcher's Claude plan, and the next app
+        could not stop it). The batches they had taken go back to the queue, as Stop does."""
+        from .. import claude_setup
+
+        try:
+            stopped = claude_setup.stop_all_runs()
+        except Exception as e:  # noqa: BLE001 - never in the way of quitting
+            print(f"Could not stop Claude Code: {e}", file=sys.stderr)
+            return
+        for r in stopped:
+            self._release_run_claims(r["project"], r["started_at"])
+
+    def _release_run_claims(self, name: str, started_at: str) -> None:
+        """The batches a stopped run had taken go back to the queue at once instead of after 30 minutes."""
+        if not started_at:
+            return
+        try:
+            ws = self.app.ws(name)
+            for c in ws.query("SELECT claim_id, claimed_at FROM task_claims WHERE finished_at IS NULL"):
+                if str(c["claimed_at"] or "") >= started_at:
+                    try:
+                        taskqueue.release(ws, c["claim_id"])
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception:  # noqa: BLE001 - e.g. the project was removed meanwhile
+            pass
 
     def post_restart(self, q):
         """0.13.1: stop the app and start the version on disk in its place, on the same port (the page reloads)."""
@@ -2125,6 +2177,12 @@ class Handler(BaseHTTPRequestHandler):
         installed = _installed_version()
         if upd.version_tuple(installed) > upd.version_tuple(__version__):
             return {"available": True, "on_disk": True, "version": __version__, "latest": installed}
+        if self.app.updating.locked():  # 0.14.3: no `git fetch` beside the update's own git commands (lock files)
+            seen = self.app.update_seen
+            if seen and "answer" in seen:
+                return {**seen["answer"], "updating": True}
+            return {"available": True, "on_disk": False, "version": __version__, "latest": None, "changes": None,
+                    "updating": True}
         with self.app.update_looking:
             seen = self.app.update_seen
             if _bool(q, "fresh") or not seen or time.time() - seen["at"] >= UPDATE_LOOK_EVERY:
@@ -2445,7 +2503,8 @@ class Handler(BaseHTTPRequestHandler):
         return claimcheck.neighbours(self.app.ws(name), passage_id, around, around)
 
     def get_frameworks(self, name, q):
-        return {"frameworks": [fw.info() for fw in frameworks.available(self.app.ws(name)).values()]}
+        ws = self.app.ws(name)
+        return {"frameworks": [fw.info() for fw in frameworks.available(ws).values()], "problems": frameworks.problems(ws)}
 
     def post_framework(self, name, q):
         body = self._body()
@@ -2489,8 +2548,18 @@ class Handler(BaseHTTPRequestHandler):
     def get_hypotheses(self, name, q):
         return self.app.hypotheses(name, q)
 
+    def _has_hypothesis(self, project, hyp_id):
+        try:
+            return bool(self.app.ws(project).scalar("SELECT 1 FROM hypotheses WHERE hyp_id=?", (hyp_id,)))
+        except Exception:
+            return False
+
     def get_hypothesis(self, name, hyp_id, q):
         ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM hypotheses WHERE hyp_id=?", (hyp_id,)):
+            # 0.14.3: another window may have switched the project: say which project holds the result
+            other = next((n for n in home.list_projects() if n != name and self._has_hypothesis(n, hyp_id)), None)
+            raise ApiError(404, "No such result.", extra={"in_project": other} if other else None)
         s = self.app.settings()
         res = claimcheck.hypothesis_result(ws, hyp_id, _float(q, "threshold", s["threshold"]))
         try:  # with smart search every excerpt not read yet can still be found; without it only keyword matches
@@ -2504,8 +2573,14 @@ class Handler(BaseHTTPRequestHandler):
                 part["more_available"] = True
         from .. import routing  # 0.8: "Ask a stronger model": the model a check steps up to on the route of Settings
 
-        res["stronger_model"] = (routing.from_settings(s, large=s.get("ollama_model") or s.get("openai_model") or "")
-                                 .step_up("check") if s.get("routing", True) and s.get("backend") != "baseline" else None)
+        router = routing.from_settings(s, large=s.get("ollama_model") or s.get("openai_model") or "")
+        off = not s.get("routing", True) or s.get("backend") == "baseline"
+        res["stronger_model"] = None if off else router.step_up("check")
+        # 0.14.3: why there is none, for the page to say it right: "model_per_task_off" (the setting is off, or demo
+        # mode), "top_model" (Claude already runs it on the strongest model), "one_local_model", or "none"
+        res["stronger_reason"] = None if res["stronger_model"] else (
+            "model_per_task_off" if off else "top_model" if router.route in ("claude_code", "anthropic")
+            else "one_local_model" if router.route == "local" else "none")
         res["queue_command"] = f"/enlens-run {taskqueue._quote_name(name)}"
         # 0.14: a sync-clash copy says whose version it is; the original lists the colleagues' versions of it
         copies = sync.copies_of(ws, "check")
@@ -3153,14 +3228,8 @@ class Handler(BaseHTTPRequestHandler):
         before = claude_setup.run_state(name)
         out = claude_setup.stop_run(name)
         if before.get("running") and before.get("started_at"):
-            # the batches it had taken go back to the queue at once instead of after 30 minutes
-            ws = self.app.ws(name)
-            for c in ws.query("SELECT claim_id, claimed_at FROM task_claims WHERE finished_at IS NULL"):
-                if str(c["claimed_at"] or "") >= before["started_at"]:
-                    try:
-                        taskqueue.release(ws, c["claim_id"])
-                    except Exception:  # noqa: BLE001
-                        pass
+            self.app.ws(name)  # 404 for a project that does not exist
+            self._release_run_claims(name, before["started_at"])
         return out
 
     # -- 0.10 ------------------------------------------------------------------------------------
@@ -3268,6 +3337,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
         print(f"Ports {port} to {port + 9} are all in use. Choose another with --port.", file=sys.stderr)
         return 1
     app.launcher = launcher
+    app.freeze_static()
     app.stop = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()
     again = threading.Event()
 

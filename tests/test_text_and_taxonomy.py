@@ -26,8 +26,10 @@ def test_quote_exact_and_typography():
 
 def test_quote_tolerates_pdf_spacing_but_not_paraphrase():
     hay = "In this briefing, we examine w hy Africa is wellplaced for hydrogen."
-    hit = find_quote(hay, "we examine why Africa is well placed")
+    hit = find_quote(hay, "we examine why Africa is wellplaced")  # the text splits "why": still found
     assert hit and hit[2] == "spacing"
+    # 0.14.3: the quote may not separate words the text writes together ("now here" is not "nowhere")
+    assert find_quote(hay, "we examine why Africa is well placed") is None
     assert find_quote(hay, "we examine why Africa is ideally placed") is None
     assert find_quote(hay, "Africa is wellplaced for hydrogen by 30%") is None
 

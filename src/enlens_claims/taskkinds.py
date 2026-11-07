@@ -302,16 +302,16 @@ _core(name="resolve", prompt_version="resolve-v1", claude=("sonnet", "opus"), lo
       title="References in documents", run_name="References in a document", output_cap=2500, corpus=True)
 # checks start on Sonnet (its helper runs at high effort, see agents/enlens-checker.md); an unsure or twice rejected
 # judgement goes to the auditor, so the second opinion and the step-up stay on Opus (or Fable)
-_core(name="check", prompt_version="check-v4", certainty="evidence", claude=("sonnet", "auditor"), local="large",
+_core(name="check", prompt_version="check-v5", certainty="evidence", claude=("sonnet", "auditor"), local="large",
       to_auditor=True, judging=True, helper="enlens-checker", row="check",
       row_title="Judging excerpts (checks, reading again)", batch=1, order=3,
       noun=("set of excerpts to judge", "sets of excerpts to judge"), short="sets of excerpts",
       title="Judging excerpts", run_name="Checking hypotheses", output_cap=1500)
-_core(name="reread", prompt_version="check-v4", certainty="evidence", claude=("sonnet", "auditor"), local="large",
+_core(name="reread", prompt_version="check-v5", certainty="evidence", claude=("sonnet", "auditor"), local="large",
       to_auditor=True, judging=True, helper="enlens-checker", row="check", batch=1, order=4,
       noun=("excerpt to read again", "excerpts to read again"), short="excerpts to read again",
       title="Reading an excerpt again", run_name="Reading an excerpt again", output_cap=600)
-_core(name="second", prompt_version="check-v4", certainty="evidence", claude=("auditor", None), local="second",
+_core(name="second", prompt_version="check-v5", certainty="evidence", claude=("auditor", None), local="second",
       judging=True, helper="enlens-auditor", row="second", row_title="Second opinion (and audits of the SDG pack)",
       batch=1, order=5, noun=("set of excerpts for a second opinion", "sets of excerpts for a second opinion"),
       short="second opinions", title="Second opinions", run_name="Second opinion", output_cap=1500)
@@ -327,11 +327,11 @@ _core(name="split", prompt_version="split-v2", claude=("opus", "auditor"), local
       helper="enlens-extractor", row="split", row_title="SDG pack: splitting the VCA's justifications", batch=5,
       order=10, noun=("justification to split", "justifications to split"), short="justifications to split",
       title="SDG pack: splitting justifications", run_name="Splitting justifications (SDG pack)", output_cap=1500)
-_core(name="verify", prompt_version="verify-v1", certainty=".", claude=("opus", "auditor"), local="large",
+_core(name="verify", prompt_version="verify-v2", certainty=".", claude=("opus", "auditor"), local="large",
       to_auditor=True, helper="enlens-checker", row="verify", row_title="SDG pack: checking claims against their sources",
       batch=10, order=12, noun=("claim and passage to check", "claims and passages to check"), short="claims to check",
       title="SDG pack: checking claims", run_name="Checking claims (SDG pack)", output_cap=600)
-_core(name="verify_set", prompt_version="verify-set-v1", certainty="evidence", claude=("opus", "auditor"),
+_core(name="verify_set", prompt_version="verify-set-v2", certainty="evidence", claude=("opus", "auditor"),
       local="large", to_auditor=True, helper="enlens-checker", row="verify", batch=3, order=11,
       noun=("VCA claim to check", "VCA claims to check"), short="VCA claims to check",
       title="SDG pack: checking VCA claims", run_name="Checking VCA claims (SDG pack)", output_cap=1500)

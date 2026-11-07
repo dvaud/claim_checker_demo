@@ -329,7 +329,10 @@ def _windows_shortcut(folder: Path, python: str, args: list[str]) -> Path:
     except (OSError, subprocess.SubprocessError):
         pass
     cmd = folder / f"{APP_NAME}.cmd"  # no PowerShell: a command file that starts it without waiting
-    cmd.write_text("@echo off\r\nrem Starts ENLENS and opens it in the browser (made by enlens-gui --make-launcher).\r\n"
+    # 0.14.3: cmd.exe reads a command file in the computer's OEM code page, so a path with an accent (C:\Users\Kovács)
+    # was misread; the file is UTF-8, and its second line switches cmd.exe to UTF-8 for the rest
+    cmd.write_text("@echo off\r\nchcp 65001 >nul\r\n"
+                   "rem Starts ENLENS and opens it in the browser (made by enlens-gui --make-launcher).\r\n"
                    f'start "" {subprocess.list2cmdline([str(target)])} {arg_line}\r\n', encoding="utf-8")
     return cmd
 

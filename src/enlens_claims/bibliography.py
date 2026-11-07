@@ -30,6 +30,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import ProxyHandler, Request, build_opener, url2pathname
 
 from .store import Workspace, now
+from .ingest import references_start
 from .textutil import STOPWORDS, clean_doi, fast_normalise, find_dois
 
 ZOTERO = "http://127.0.0.1:23119"
@@ -496,8 +497,9 @@ def tex(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _bib_value(text: str, i: int) -> tuple[str, int]:
-    """One field value from position i: {…}, "…", a number or a @string name, joined with #. Returns (raw, end)."""
+def _bib_value(text: str, i: int, macros: dict[str, str] | None = None) -> tuple[str, int]:
+    """One field value from position i: {…}, "…", a number or a @string name, joined with #. Returns (raw, end).
+    A name defined by an earlier @string is replaced by its text (0.14.3: "ijhe" stayed "ijhe")."""
     parts = []
     n = len(text)
     while i < n:
@@ -525,7 +527,8 @@ def _bib_value(text: str, i: int) -> tuple[str, int]:
             i = j + 1
         else:
             m = re.compile(r"[^\s,#}]+").match(text, i)
-            parts.append(m.group(0) if m else "")
+            word = m.group(0) if m else ""
+            parts.append((macros or {}).get(word.lower(), word))
             i = m.end() if m else i + 1
         while i < n and text[i] in " \t\r\n":
             i += 1
@@ -538,6 +541,7 @@ def _bib_value(text: str, i: int) -> tuple[str, int]:
 
 def parse_bibtex(text: str) -> list[dict]:
     out = []
+    macros: dict[str, str] = {}   # @string definitions, by lower-case name
     i, n = 0, len(text)
     head = re.compile(r"@\s*([A-Za-z]+)\s*([{(])")
     while True:
@@ -565,7 +569,12 @@ def parse_bibtex(text: str) -> list[dict]:
         nxt = re.compile(r"\n\s*@\s*[A-Za-z]+\s*[{(]").search(text, m.end(), j)
         if nxt:
             body, i = text[m.end():nxt.start()], nxt.start()
-        if etype in ("comment", "preamble", "string"):
+        if etype == "string":
+            sm = re.match(r"\s*([A-Za-z][\w:.+-]*)\s*=\s*", body)
+            if sm:
+                macros[sm.group(1).lower()] = _bib_value(body, sm.end(), macros)[0]
+            continue
+        if etype in ("comment", "preamble"):
             continue
         citekey, _, rest = body.partition(",")
         fields: dict[str, str] = {}
@@ -579,7 +588,7 @@ def parse_bibtex(text: str) -> list[dict]:
                     break
                 k = nxt + 1
                 continue
-            raw, k = _bib_value(rest, f.end())
+            raw, k = _bib_value(rest, f.end(), macros)
             fields[f.group(1).lower()] = raw
             while k < len(rest) and rest[k] in " \t\r\n,":
                 k += 1
@@ -627,7 +636,8 @@ def _bib_work(etype: str, citekey: str, f: dict) -> dict:
     container = tex(f.get("journal") or f.get("journaltitle") or f.get("booktitle") or f.get("institution")
                     or f.get("school") or f.get("publisher") or f.get("organization") or "") or None
     return _work(key, etype, title, creators, year, _doi_from(f.get("doi"), f.get("url"), f.get("note")),
-                 tex(f.get("url", "")) or None, container, f.get("isbn"), None, files)
+                 re.sub(r"\s+", "", f.get("url", "").replace("\\_", "_").replace("\\&", "&").replace("\\%", "%")
+                        .replace("\\#", "#")) or None, container, f.get("isbn"), None, files)
 
 
 # -- Zotero's CSV export ---------------------------------------------------------------------
@@ -809,54 +819,61 @@ def _title_variants(title: str) -> list[list[str]]:
     return out
 
 
-def match(ws: Workspace) -> dict:
-    """Link the works of the bibliography with the documents. Links found by checksum or DOI are made at once; a
-    work whose title and an author or the year are on a document's first pages is proposed (probable). A person's
-    decisions are never overruled, and a document or work already linked gets no proposal."""
-    items = [dict(r) for r in ws.query("SELECT item_key, title, creators_json, year, doi, files_json FROM bib_items")]
-    # the title read from the file (a document linked before is called by its work's title; that must not match)
-    docs = [dict(r) for r in ws.query("SELECT doc_id, path, sha1, COALESCE(file_title, title) AS title, doi, "
-                                      f"substr(text, 1, {HEAD_CHARS}) AS head FROM documents")]
-    decided = {(r["item_key"], r["doc_id"]): r["status"] for r in
-               ws.query("SELECT item_key, doc_id, status FROM bib_links WHERE status IN ('confirmed', 'rejected')")}
-    linked_items = {k for (k, _d), s in decided.items() if s == "confirmed"}
-    linked_docs = {d for (_k, d), s in decided.items() if s == "confirmed"}
-    auto: dict[tuple[str, str], str] = {}
-    by_sha = {d["sha1"]: d["doc_id"] for d in docs if d["sha1"] and "~" not in d["sha1"]}  # 0.14: not another reading
-    by_doi: dict[str, list[str]] = defaultdict(list)
-    for d in docs:
-        if d["doi"]:
-            by_doi[clean_doi(d["doi"])].append(d["doc_id"])
-    for it in items:
-        for f in json.loads(it["files_json"] or "[]"):
-            doc = by_sha.get(f.get("sha1") or "")
-            if doc and (it["item_key"], doc) not in decided:
-                auto[(it["item_key"], doc)] = "file"
-        if it["doi"]:
-            for doc in by_doi.get(it["doi"], []):
-                if (it["item_key"], doc) not in decided:
-                    auto.setdefault((it["item_key"], doc), "doi")
-    linked_items |= {k for k, _d in auto}
-    linked_docs |= {d for _k, d in auto}
+_PAIRS: dict = {}   # the last set of candidate pairs of a project, with the fingerprint of what they were made from
 
-    # probable links: the title on the first pages, with an author or the year
-    info = {}
-    index: dict[str, set[str]] = defaultdict(set)
-    for d in docs:
-        if d["doc_id"] in linked_docs:
-            continue
-        name = re.sub(r".*[/\\]", "", d["path"] or "")
+
+def _fingerprint(ws: Workspace) -> str:
+    """What the candidate pairs depend on: the works and the documents (their text is told by its length and its
+    checksum), not the links."""
+    h = hashlib.sha1(str(ws.root).encode())
+    for sql in ("SELECT item_key, title, creators_json, year, doi, files_json FROM bib_items ORDER BY seq",
+                "SELECT doc_id, path, sha1, COALESCE(file_title, title), doi, declared_ref, LENGTH(text) FROM documents "
+                "ORDER BY doc_id"):
+        for r in ws.query(sql):
+            h.update(repr(tuple(r)).encode())
+    return h.hexdigest()
+
+
+def _document_info(ws: Workspace) -> dict[str, dict]:
+    """What the title matching reads of each document. 0.14.3: the text is cut where the reference list begins (in a
+    short document the list falls inside the first pages, and every cited work then 'was found' on the title page),
+    and a document whose list was cut is searched on its title page only."""
+    out = {}
+    long_text = 5 * HEAD_CHARS   # a heading in the last 60% of a longer text is past the head anyway
+    for d in ws.query("SELECT doc_id, path, sha1, COALESCE(file_title, title) AS title, doi, declared_ref, "
+                      "LENGTH(text) AS n, CASE WHEN LENGTH(text) <= ? THEN text ELSE substr(text, 1, ?) END AS head "
+                      "FROM documents", (long_text, HEAD_CHARS)):
+        d = dict(d)
         head = d["head"] or ""
-        toks = _tokens(f"{d['title'] or ''} . {name} . {head}")
-        front = _tokens(f"{d['title'] or ''} . {name} . {head[:FRONT_CHARS]}")
+        cut = references_start(head) if (d["n"] or 0) <= long_text else None
+        short = cut is not None and cut < HEAD_CHARS
+        head = head[:cut] if short else head[:HEAD_CHARS]
+        name = re.sub(r".*[/\\]", "", d["path"] or "")
+        front_text = head[:FRONT_CHARS]
+        # a DOI belongs to the document when its file name or title page says so; the most frequent DOI of the first
+        # pages may be one the document only cites
+        own = {x.lower() for x in find_dois(name.replace("_", "/") + " " + front_text)}
+        d["head"] = head
+        d["doi_own"] = bool(d["doi"]) and (clean_doi(d["doi"]).lower() in own or bool(d["declared_ref"]))
+        wide = front_text if short else head
+        toks = _tokens(f"{d['title'] or ''} . {name} . {wide}")
+        front = _tokens(f"{d['title'] or ''} . {name} . {front_text}")
         top = set(_tokens(f"{d['title'] or ''} {name} {head[:600]}"))
-        info[d["doc_id"]] = (set(toks), " " + " ".join(toks) + " ", front, " " + " ".join(front) + " ", top, d, toks)
-        for t in set(toks):
-            index[t].add(d["doc_id"])
-    pairs: list[tuple[str, str, float, dict]] = []
+        d["info"] = (set(toks), " " + " ".join(toks) + " ", front, " " + " ".join(front) + " ", top, toks)
+        out[d["doc_id"]] = d
+    return out
+
+
+def _candidate_pairs(ws: Workspace, items: list[dict], docs: dict[str, dict]) -> list[tuple]:
+    """(item_key, doc_id, score, evidence) for every work whose title, with an author or the year, is on a document's
+    first pages, whatever is linked or decided (so that a decision needs no new search). The cheap author and year
+    test runs before the costly title search (0.14.3)."""
+    index: dict[str, set[str]] = defaultdict(set)
+    for doc_id, d in docs.items():
+        for t in d["info"][0]:
+            index[t].add(doc_id)
+    pairs: list[tuple] = []
     for it in items:
-        if it["item_key"] in linked_items:
-            continue
         variants = _title_variants(it["title"] or "")
         sig = _sig(variants[0])
         if not sig:
@@ -866,22 +883,78 @@ def match(ws: Workspace) -> dict:
         creators = json.loads(it["creators_json"] or "[]")
         surnames = _surnames(creators)
         for doc_id, n in hits.items():
-            if n < need or (it["item_key"], doc_id) in decided:
+            if n < need:
                 continue
-            words, joined, front, front_joined, top, d, toks = info[doc_id]
-            t, how = _title_found(variants, sig, joined, front, front_joined)
-            if not t:
-                continue
+            d = docs[doc_id]
+            words, joined, front, front_joined, top, toks = d["info"]
             author = next((" ".join(s) for s in surnames if all(x in words for x in s)), None)
             year = it["year"] if it["year"] and it["year"] in words else None
-            ok = (how == "whole" and author and year) if len(sig) < 3 else bool(author or year)
-            if not ok:   # a short title ("Hydrogen") says little on its own: it needs both
+            if len(sig) < 3:   # a short title ("Hydrogen") says little on its own: it needs both
+                if not (author and year):
+                    continue
+            elif not (author or year):
+                continue
+            t, how = _title_found(variants, sig, joined, front, front_joined)
+            if not t or (len(sig) < 3 and how != "whole"):
                 continue
             score = 0.5 * t + (0.25 if author else 0) + (0.2 if year else 0) + (0.05 if year and year in top else 0)
             ev = {"title": how, "author": author, "year": year}
             ev.update(_where(d, it["title"]))
             ev["_dist"] = _year_distance(toks, variants[0], year)
             pairs.append((it["item_key"], doc_id, round(score, 3), ev))
+    return pairs
+
+
+def match(ws: Workspace) -> dict:
+    """Link the works of the bibliography with the documents. Links found by checksum or by a DOI the document prints
+    on its own title page (or in its file name) are made at once; a work whose title and an author or the year are on a
+    document's first pages, or whose DOI is only somewhere in the document's first pages (it may be cited there), is
+    proposed (probable). A person's decisions are never overruled, and a document or work already linked gets no
+    proposal."""
+    items = [dict(r) for r in ws.query("SELECT item_key, title, creators_json, year, doi, files_json FROM bib_items")]
+    fp = _fingerprint(ws)
+    cached = _PAIRS.get(str(ws.root))
+    if cached and cached["fp"] == fp:
+        docs, raw = cached["docs"], cached["pairs"]
+    else:
+        # the title read from the file (a document linked before is called by its work's title; that must not match)
+        docs = _document_info(ws)
+        raw = _candidate_pairs(ws, items, docs)
+        _PAIRS.clear()   # one project at a time is enough
+        _PAIRS[str(ws.root)] = {"fp": fp, "docs": docs, "pairs": raw}
+    decided = {(r["item_key"], r["doc_id"]): r["status"] for r in
+               ws.query("SELECT item_key, doc_id, status FROM bib_links WHERE status IN ('confirmed', 'rejected')")}
+    linked_items = {k for (k, _d), s in decided.items() if s == "confirmed"}
+    linked_docs = {d for (_k, d), s in decided.items() if s == "confirmed"}
+    auto: dict[tuple[str, str], str] = {}
+    by_sha = {d["sha1"]: d["doc_id"] for d in docs.values() if d["sha1"] and "~" not in d["sha1"]}  # 0.14: not another reading
+    by_doi: dict[str, list[str]] = defaultdict(list)
+    by_doi_cited: dict[str, list[str]] = defaultdict(list)
+    for d in docs.values():
+        if d["doi"]:
+            (by_doi if d["doi_own"] else by_doi_cited)[clean_doi(d["doi"])].append(d["doc_id"])
+    doi_pairs: list[tuple] = []
+    for it in items:
+        for f in json.loads(it["files_json"] or "[]"):
+            doc = by_sha.get(f.get("sha1") or "")
+            if doc and (it["item_key"], doc) not in decided:
+                auto[(it["item_key"], doc)] = "file"
+        if it["doi"]:
+            for doc in by_doi.get(it["doi"], []):
+                if (it["item_key"], doc) not in decided:
+                    auto.setdefault((it["item_key"], doc), "doi")
+            for doc in by_doi_cited.get(it["doi"], []):
+                if (it["item_key"], doc) not in decided:
+                    doi_pairs.append((it["item_key"], doc, 0.95, {"title": "doi", "author": None, "year": None,
+                                                                  "doi": it["doi"], "excerpt": "", "start": 0, "end": 0,
+                                                                  "_dist": 10 ** 6}))
+    linked_items |= {k for k, _d in auto}
+    linked_docs |= {d for _k, d in auto}
+
+    pairs = [(k, doc, sc, dict(ev)) for k, doc, sc, ev in raw
+             if k not in linked_items and doc not in linked_docs and (k, doc) not in decided]
+    pairs += [(k, doc, sc, ev) for k, doc, sc, ev in doi_pairs if k not in linked_items and doc not in linked_docs
+              and not any(p[0] == k and p[1] == doc for p in pairs)]
     # editions: works with the same title (a yearly report) proposed for one document keep the one whose year stands
     # closest after the title ("Hydrogen market report 2024" is not the 2023 edition it mentions)
     nearest: dict[tuple[str, str], int] = {}
@@ -906,7 +979,8 @@ def match(ws: Workspace) -> dict:
                        [(k, d, "auto", m) for (k, d), m in auto.items()])
         cx.executemany("INSERT OR IGNORE INTO bib_links(item_key, doc_id, status, method, score, evidence_json) "
                        "VALUES (?,?,?,?,?,?)",
-                       [(k, d, "probable", "title", s, json.dumps(ev, ensure_ascii=False)) for k, d, s, ev in probable])
+                       [(k, d, "probable", "doi" if ev.get("title") == "doi" else "title", s,
+                         json.dumps(ev, ensure_ascii=False)) for k, d, s, ev in probable])
         _sync_titles(cx)
     return counts(ws)
 

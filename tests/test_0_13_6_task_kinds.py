@@ -25,7 +25,7 @@ SNAPSHOT_014 = {
     'routing.LOCAL_DEFAULTS': {'label': 'small', 'link': 'small', 'expand': 'large', 'decompose': 'large', 'theme': 'large', 'resolve': 'large', 'check': 'large', 'reread': 'large', 'second': 'second', 'extract': 'large', 'split': 'large', 'verify': 'large', 'verify_set': 'large', 'audit': 'second'},
     'routing.HELPERS': {'label': 'enlens-labeller', 'link': 'enlens-linker', 'theme': 'enlens-namer', 'expand': 'enlens-namer', 'resolve': 'enlens-reader', 'decompose': 'enlens-reader', 'check': 'enlens-checker', 'reread': 'enlens-checker', 'second': 'enlens-auditor', 'extract': 'enlens-extractor', 'split': 'enlens-extractor', 'verify': 'enlens-checker', 'verify_set': 'enlens-checker', 'audit': 'enlens-auditor'},
     'routing.TO_AUDITOR': ('check', 'reread', 'split', 'verify', 'verify_set'),
-    'prompts.VERSIONS': {'extract': 'extract-v1', 'split': 'split-v2', 'verify': 'verify-v1', 'verify_set': 'verify-set-v1', 'expand': 'expand-v2', 'check': 'check-v4', 'decompose': 'decompose-v1', 'reread': 'check-v4', 'second': 'check-v4', 'label': 'label-v1', 'link': 'link-v1', 'theme': 'theme-v1', 'resolve': 'resolve-v1'},
+    'prompts.VERSIONS': {'extract': 'extract-v1', 'split': 'split-v2', 'verify': 'verify-v2', 'verify_set': 'verify-set-v2', 'expand': 'expand-v2', 'check': 'check-v5', 'decompose': 'decompose-v1', 'reread': 'check-v5', 'second': 'check-v5', 'label': 'label-v1', 'link': 'link-v1', 'theme': 'theme-v1', 'resolve': 'resolve-v1'},
     'tasks.KINDS': ('split', 'extract', 'verify', 'verify_set', 'expand', 'check', 'decompose', 'reread', 'second', 'label', 'link', 'theme', 'resolve'),
     'tasks.CORPUS_KINDS': ('label', 'link', 'theme', 'resolve'),
     'taskqueue.BATCH': {'label': 20, 'link': 10, 'theme': 5, 'expand': 5, 'decompose': 5, 'resolve': 4, 'check': 1, 'reread': 1, 'second': 1, 'split': 5, 'extract': 8, 'verify': 10, 'verify_set': 3},
@@ -79,7 +79,7 @@ def test_the_other_tables_too():
     mp.setitem(prompts.VERSIONS, "check", "check-test")
     assert prompts.VERSIONS["check"] == "check-test" and taskkinds.get("check").prompt_version == "check-test"
     mp.undo()
-    assert prompts.VERSIONS["check"] == "check-v4"
+    assert prompts.VERSIONS["check"] == "check-v5"  # 0.14.3: the judging prompts ask for three whole words
 
 
 # ---------------------------------------------------------------------------------------------

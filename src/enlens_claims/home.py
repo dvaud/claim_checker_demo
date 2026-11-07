@@ -569,7 +569,8 @@ def backend_label(settings: dict) -> str:
 # ---------------------------------------------------------------------------------------------
 def safe_name(name: str) -> str:
     n = re.sub(r"[^\w .-]", "", name or "", flags=re.UNICODE).strip().strip(".")
-    return re.sub(r"\s+", " ", n)[:60].strip().strip(".")
+    n = re.sub(r"\s+", " ", n)[:60].strip().strip(".")
+    return re.sub(r"\.(importing)$", r" \1", n)  # 0.14.3: that ending marks a project zip being imported
 
 
 def _links() -> dict[str, str]:
@@ -586,7 +587,9 @@ def _save_links(links: dict[str, str]) -> None:
 
 
 def list_projects() -> list[str]:
-    own = {p.name for p in (home() / "projects").iterdir() if (p / "enlens.sqlite").exists()}
+    # 0.14.3: a project zip being imported is unpacked and checked in "<name>.importing" first: not a project yet
+    own = {p.name for p in (home() / "projects").iterdir() if (p / "enlens.sqlite").exists()
+           and not p.name.endswith(".importing")}
     linked = {n for n, path in _links().items() if (Path(path) / "enlens.sqlite").exists()}
     return sorted(own | linked, key=str.lower)
 

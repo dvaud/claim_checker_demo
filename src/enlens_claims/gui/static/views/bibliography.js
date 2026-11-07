@@ -3,7 +3,7 @@
 // probable pairs to confirm, works still to find (with Zotero's files to add in one go), documents not in the
 // bibliography.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, confirmDialog, emptyState, TERMINAL,
+import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, confirmDialog, emptyState, TERMINAL,
   dialog, session, download, plural, spinner } from "../lib.js";
 import { simpleProgress, jobError } from "./progress.js";
 import { accessChoice } from "./ai-access.js";
@@ -34,7 +34,7 @@ export async function renderBibliography(view) {
   let picking = false;   // the source card is open over an existing bibliography ("Use another collection or file")
 
   async function load() {
-    try { data = await api("GET", `${base}/bibliography`); } catch (e) { showError(e); return; }
+    try { data = await api("GET", `${base}/bibliography`); } catch (e) { failedLoad(body, e); return; }
     draw();
   }
 
@@ -296,7 +296,8 @@ export async function renderBibliography(view) {
       opts.links === false ? null : findLinks(w)));
   const findLinks = (w) => [
     w.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${w.doi}`, target: "_blank", rel: "noopener noreferrer", class: "it", title: `Open doi.org/${w.doi} in your browser` }, "DOI", icon("external-link", { size: 11 }))] : null,
-    w.url && !w.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: w.url, target: "_blank", rel: "noopener noreferrer", class: "it", title: w.url }, "Web page", icon("external-link", { size: 11 }))] : null,
+    // 0.14.3: only a web address (http or https) becomes a link: a bibliography file can carry any text as its "url"
+    w.url && !w.doi && /^https?:\/\//i.test(String(w.url).trim()) ? [h("span", { class: "sep" }, "·"), h("a", { href: w.url, target: "_blank", rel: "noopener noreferrer", class: "it", title: w.url }, "Web page", icon("external-link", { size: 11 }))] : null,
     w.link ? [h("span", { class: "sep" }, "·"), h("a", { href: w.link, class: "it", title: "Shows this work in Zotero" }, "Open in Zotero")] : null];
   // 0.13.3: a linked document is called by its work's title; the title read from the file is under its file name
   const docCell = (d) => h("div", { class: "bib-doc" }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}`, class: "bib-doc-title" }, d.title || d.file), h("div", { class: "doc-file" }, d.file),
@@ -324,7 +325,7 @@ export async function renderBibliography(view) {
       const ex = ev.excerpt ? h("blockquote", { class: "bib-excerpt" },
         ev.end > ev.start ? [ev.excerpt.slice(0, ev.start), h("mark", {}, ev.excerpt.slice(ev.start, ev.end)), ev.excerpt.slice(ev.end)] : ev.excerpt) : null;
       const found = [
-        ev.title === "whole" ? "the whole title" : ev.title === "main" ? "the title without its subtitle" : "nearly all the words of the title",
+        ev.title === "doi" ? "the work’s DOI, somewhere on the first pages (the document may only cite it)" : ev.title === "whole" ? "the whole title" : ev.title === "main" ? "the title without its subtitle" : "nearly all the words of the title",
         ev.author ? `the author ${titleCase(ev.author)}` : null,
         ev.year ? `the year ${ev.year}` : null].filter(Boolean);
       box.appendChild(h("article", { class: "card bib-pair" },

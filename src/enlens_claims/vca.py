@@ -9,6 +9,7 @@ The influence cells are empty; the sign is the cell colour: red = negative, gree
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -126,7 +127,11 @@ def ref_key(reference: str) -> tuple[str, str | None]:
     doi = clean_doi(dois[0]) if dois else None
     if doi:
         return "doi:" + doi, doi
-    slug = re.sub(r"[^a-z0-9]", "", reference.lower())[:48]
+    # the whole reference decides the key (0.14.3: only its first 48 letters did, so "Hydrogen Insights 2021" and
+    # "... 2022" were one reference before the 'different years' guard of merge_references could see them)
+    slug = re.sub(r"[^a-z0-9]", "", reference.lower())
+    if len(slug) > 48:
+        slug = slug[:48] + "-" + hashlib.sha1(slug.encode()).hexdigest()[:8]
     return "ref:" + slug, None
 
 

@@ -25,7 +25,7 @@ from .schema import (CheckOut, DecomposeOut, ExpandOut, ExtractOut, ImpactClaimO
 from .sources import docs_for_target
 from .store import Workspace, now
 from .taxonomy import targets
-from .textutil import find_quote, normalise
+from .textutil import find_quote, grade_quote_problem, normalise, partial_word_hint
 from .textutil import tokens_v1 as tokens  # the SDG pack keeps the 0.4 tokenizer, so its selections do not change
 
 KINDS = taskkinds.Names(lambda k: k.task)  # 0.13.6: a view of the registry (taskkinds.py)
@@ -429,13 +429,19 @@ def _errs(e: ValidationError) -> list[str]:
 
 def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = None,
                   provenance: dict | None = None, route: str | None = None, helper: str | None = None,
-                  claimed_at: str | None = None) -> tuple[bool, list[str]]:
+                  claimed_at: str | None = None, problem: str | None = None) -> tuple[bool, list[str]]:
     """Validate and store one answer. `provenance` (0.7): the model's digest, the seed and the settings that
     produced it (`llm.provenance`), kept with the raw answer. 0.8: `route` (Claude Code, Claude API, local model
     server, file queue), the plugin's `helper` agent and when its batch was claimed, kept with it too.
 
     A task that was already answered and is read again by the stronger model (`again`, see routing) keeps its first
-    answer when the new one is not accepted: it stays done, and the step-up is given up after the last attempt."""
+    answer when the new one is not accepted: it stays done, and the step-up is given up after the last attempt.
+
+    0.14.3: `problem` stores an answer the model could not finish (`llm.AnswerError`: cut off, stuck, context full)
+    as a rejected attempt with that problem, so it is asked again like any answer that fails the checks. The prompt
+    version recorded (on the task, with the answer and with what it stores) is the one of the instructions the model
+    was given: those of now (a task made before an update is answered under the new instructions), or for a task in
+    the file queue, those written beside it when it was exported."""
     with ws.connect() as cx:
         t = cx.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         if not t:
@@ -444,10 +450,18 @@ def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = Non
         model = model or t["model"]
         again = t["status"] == "done" and bool(t["again"])
         attempt = int(t["attempts"]) + 1
+        # the instructions of now; a task written to the file queue keeps those of when it was written (`export`)
+        version = t["prompt_version"] if t["status"] == "exported" else (prompts.VERSIONS.get(t["kind"])
+                                                                         or t["prompt_version"])
+        version_before = t["prompt_version"]
+        if version != version_before:
+            t = {**dict(t), "prompt_version": version}  # what the store functions write with the answer
         errors: list[str] = []
         ok = False
         cx.execute("SAVEPOINT handler")  # an answer that is not accepted changes nothing that was stored before
         try:
+            if problem:
+                raise ValueError(problem)
             obj = parse_json(raw)
             ok, errors = _store_answer(cx, t, payload, obj, model)
         except (ValueError, ValidationError) as e:
@@ -463,17 +477,19 @@ def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = Non
         if again:  # a second reading by the stronger model: the first answer stays unless this one is accepted
             status = "done"
             keep_again = 0 if ok or attempt >= MAX_ATTEMPTS else 1
-            cx.execute("UPDATE tasks SET status=?, attempts=?, again=? WHERE task_id=?",
-                       (status, attempt, keep_again, task_id))
+            # the task's version stays the one of the answer in force until the stronger model's is accepted
+            cx.execute("UPDATE tasks SET status=?, attempts=?, again=?, prompt_version=? WHERE task_id=?",
+                       (status, attempt, keep_again, version if ok else version_before, task_id))
         else:
             status = "done" if ok else ("failed" if attempt >= MAX_ATTEMPTS else "retry")
-            cx.execute("UPDATE tasks SET status=?, attempts=? WHERE task_id=?", (status, attempt, task_id))
+            cx.execute("UPDATE tasks SET status=?, attempts=?, prompt_version=? WHERE task_id=?",
+                       (status, attempt, version, task_id))
         seq = cx.execute("SELECT COALESCE(MAX(attempt), 0) + 1 FROM results WHERE task_id=?", (task_id,)).fetchone()[0]
         prov = provenance or {}
         cx.execute("INSERT INTO results(task_id, attempt, kind, model, prompt_version, raw_json, valid, errors_json, "
                    "received_at, digest, seed, settings_json, route, helper, step, claimed_at) "
                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                   (task_id, seq, t["kind"], model, t["prompt_version"],
+                   (task_id, seq, t["kind"], model, version,
                     raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False), int(ok), json.dumps(errors), now(),
                     prov.get("digest"), prov.get("seed"),
                     json.dumps(prov["settings"]) if prov.get("settings") else None,
@@ -533,7 +549,8 @@ def _store_extract(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
             if hit:
                 found.append((ev, hit))
             else:
-                errors.append(f"claims[{i}]: quote not found in the passage: {ev.quote[:80]!r}")
+                errors.append(f"claims[{i}]: quote not found in the passage: {ev.quote[:80]!r}"
+                              f"{partial_word_hint(text, ev.quote)}")
         if not any(ev.field == "claim" for ev, _ in found):
             errors.append(f"claims[{i}]: no 'claim' quote was found in the passage; claim dropped")
             continue
@@ -593,7 +610,8 @@ def _store_split(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     rows = []
     for i, c in enumerate(out.claims):
         if not find_quote(just, c.quote):
-            errors.append(f"claims[{i}]: quote not found in the justification: {c.quote[:80]!r}")
+            errors.append(f"claims[{i}]: quote not found in the justification: {c.quote[:80]!r}"
+                          f"{partial_word_hint(just, c.quote)}")
             continue
         rows.append((f"{payload['target']}#{i + 1}", payload["target"], i + 1, c.text, c.quote, c.segment, c.direction,
                      c.place, c.horizon, c.condition, model, t["prompt_version"]))
@@ -630,9 +648,12 @@ def _store_verify(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     if v.verdict != "not_enough_info":
         if not v.quote:
             return False, [f"verdict {v.verdict} needs a quote from the passage"]
+        short = grade_quote_problem(v.quote)
+        if short:
+            return False, [short]
         hit = find_quote(text, v.quote)
         if not hit:
-            return False, [f"quote not found in the passage: {v.quote[:80]!r}"]
+            return False, [f"quote not found in the passage: {v.quote[:80]!r}{partial_word_hint(text, v.quote)}"]
         base = cx.execute("SELECT start FROM passages WHERE passage_id=?", (payload["passage_id"],)).fetchone()
         off = base[0] if base else 0
         s, e = off + hit[0], off + hit[1]
@@ -658,9 +679,14 @@ def _graded_passages(v, passages: list[dict]) -> tuple[dict[int, tuple], list[st
             errors.append(f"evidence[{j}]: there is no passage P{ev.passage} (P1 to P{len(passages)} were shown)")
             continue
         p = passages[ev.passage - 1]
+        short = grade_quote_problem(ev.quote)  # 0.14.3: a judgement's quote must show it (a few words at least)
+        if short:
+            errors.append(f"evidence[{j}]: {short}")
+            continue
         hit = find_quote(p["text"], ev.quote)
         if not hit:
-            errors.append(f"evidence[{j}]: quote not found in passage P{ev.passage}: {ev.quote[:80]!r}")
+            errors.append(f"evidence[{j}]: quote not found in passage P{ev.passage}: {ev.quote[:80]!r}"
+                          f"{partial_word_hint(p['text'], ev.quote)}")
             continue
         if ev.passage in graded:
             errors.append(f"evidence[{j}]: passage P{ev.passage} is listed twice; give one grade per passage")
@@ -1002,7 +1028,9 @@ def _step_up(ws: Workspace, t, backend, ok: bool, raw: Any) -> str | None:
 
 
 def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> tuple[bool, list[str]]:
-    """Answer one task now, retrying with the problems listed, up to three attempts. Backend errors propagate.
+    """Answer one task now, retrying with the problems listed, up to three attempts. Backend errors (connection,
+    settings, Stop) propagate; an answer the model could not finish (0.14.3: `llm.AnswerError`) is a rejected
+    attempt like an answer that fails the checks. Returns (True, …) whenever an accepted answer is in force.
 
     0.8: with a router on the backend, the task's kind picks its model, and a hard task steps up once (see
     routing): on the Claude API at once; with local models the second readings wait for `run_stepups`, so each
@@ -1016,23 +1044,25 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
             access.require(backend, t[0])  # a task the queue would never hand out must not be waited for
         return wait_for(ws, task_id, backend)
     errors: list[str] = []
-    for _ in range(MAX_ATTEMPTS + 1):
+    # 0.14.3: each phase has its own attempts (the first model's, then the stronger model's: `attempts` starts again
+    # at 0 when a task steps up), so the stronger model always gets its three; the database says when a phase ends
+    for _ in range(2 * MAX_ATTEMPTS + 1):
         found = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))
         if not found:
             raise KeyError(f"unknown task {task_id}")
         t = found[0]
         if t["status"] == "done" and not (t["again"] and _answers_again_now(backend)):
-            return True, []
+            return True, errors
         if t["status"] == "failed":
             break
         system, user = render(ws, t)
         call = model_for(t, backend, model)
         _send(ws, t, backend)
-        raw = backend.complete(t["kind"], system, user, call, json.loads(t["payload_json"]))
+        raw, problem = _complete(backend, t, system, user, call)
         used = "baseline" if getattr(backend, "name", "") == "baseline" else call
         was_again = t["status"] == "done"
         ok, errors = ingest_result(ws, task_id, raw, model=used, provenance=_provenance(backend, used),
-                                   route=_route_name(backend))
+                                   route=_route_name(backend), problem=problem)
         if was_again:
             if ok or ws.scalar("SELECT again FROM tasks WHERE task_id=?", (task_id,)) == 0:
                 return True, errors  # the first answer is kept when the stronger model's does not pass
@@ -1042,7 +1072,23 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
             return True, errors
         if ok and step == "again" and not _answers_again_now(backend):
             return True, errors  # read again later, with the other second readings of this run (run_stepups)
+    else:  # never reached by the rules above; should it be, the step-up is given up and the accepted answer counts
+        with ws.connect() as cx:
+            cx.execute("UPDATE tasks SET again=0 WHERE task_id=? AND status='done'", (task_id,))
+    if ws.scalar("SELECT status FROM tasks WHERE task_id=?", (task_id,)) == "done":
+        return True, errors
     return False, errors
+
+
+def _complete(backend, t, system: str, user: str, model: str) -> tuple[Any, str | None]:
+    """Ask the backend for an answer to task `t`: (raw answer, None), or (what it wrote, the problem) when the model
+    answered but could not finish (0.14.3: `llm.AnswerError`, a rejected attempt). Other backend errors propagate."""
+    from .llm import AnswerError
+
+    try:
+        return backend.complete(t["kind"], system, user, model, json.loads(t["payload_json"])), None
+    except AnswerError as e:
+        return e.text, str(e)
 
 
 def _answers_again_now(backend) -> bool:
@@ -1098,9 +1144,9 @@ def answer_again(ws: Workspace, task_id: str, backend) -> bool:
         system, user = render(ws, t)
         call = model_for(t, backend)
         _send(ws, t, backend)
-        raw = backend.complete(t["kind"], system, user, call, json.loads(t["payload_json"]))
+        raw, problem = _complete(backend, t, system, user, call)
         ok, _e = ingest_result(ws, task_id, raw, model=call, provenance=_provenance(backend, call),
-                               route=_route_name(backend))
+                               route=_route_name(backend), problem=problem)
         if ok:
             return True
         t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
@@ -1145,11 +1191,10 @@ def run(ws: Workspace, kind: str, backend, limit: int | None = None, model: str 
             if (t["access"] or "cloud") not in access.backend_levels(backend):
                 continue  # 0.11: a task of a restricted document is left for a model that may read it
             system, user = render(ws, t)
-            payload = json.loads(t["payload_json"])
             _send(ws, t, backend)
-            raw = backend.complete(kind, system, user, model or t["model"], payload)
+            raw, problem = _complete(backend, t, system, user, model or t["model"])
             used = "baseline" if backend.name == "baseline" else (model or t["model"])
-            ingest_result(ws, t["task_id"], raw, model=used, provenance=_provenance(backend, used))
+            ingest_result(ws, t["task_id"], raw, model=used, provenance=_provenance(backend, used), problem=problem)
     for r in ws.query("SELECT status, COUNT(*) FROM tasks WHERE kind=? GROUP BY status", (kind,)):
         stats[r[0]] = r[1]
     return stats
@@ -1194,8 +1239,9 @@ def export(ws: Workspace, kind: str, batch_size: int = 25, limit: int | None = N
                 f.write(json.dumps({"task_id": t["task_id"], "user": user}, ensure_ascii=False) + "\n")
         files.append(path)
     with ws.connect() as cx:
-        for t in todo:
-            cx.execute("UPDATE tasks SET status='exported' WHERE task_id=?", (t["task_id"],))
+        for t in todo:  # 0.14.3: with the version of the instructions written beside it (SYSTEM.md)
+            cx.execute("UPDATE tasks SET status='exported', prompt_version=? WHERE task_id=?",
+                       (prompts.VERSIONS.get(kind) or t["prompt_version"], t["task_id"]))
             access.record_sent(cx, t["task_id"], json.loads(t["payload_json"]), "file queue", t["kind"])
     return files
 

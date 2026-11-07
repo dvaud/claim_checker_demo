@@ -367,7 +367,15 @@ function modelSection(s, servers, watchers, info = { servers }) {
     const free = s.backend === "claude_code" && planTier(s) === "free";  // 0.13.10: no Opus or Fable on a Free plan
     fields.use_fable = switchControl("Let the auditor use Fable", !!s.use_fable, { help: [free ? "On your Free plan the auditor runs on Sonnet, so this changes nothing there." : "It runs on Opus unless this is on; Fable can be billed from usage credits.",   // 0.13.3: one line, the rest in its help mark
       helpMark("About the auditor", "The auditor gives second opinions (shown for comparison only) and is the stronger model that reads the hard cases again (unsure judgements, rejected quotes, “Ask a stronger model”; its reading replaces the first). It runs on Opus unless this is on. In Claude Code, Fable can be billed from usage credits instead of your plan's limits; the model picker then says “Requires usage credits”.")] });
-    return fields.use_fable;
+    // 0.14.3: this switch saves when it is changed, like the speed picker beside it (it looked saved and was not)
+    const sw = fields.use_fable, st = h("span", { class: "save-state", "aria-live": "polite" });
+    sw.appendChild(st);
+    sw.input.addEventListener("change", async () => {
+      const on = sw.input.checked;
+      try { await save({ use_fable: on }, st); s.use_fable = on; }
+      catch (_) { sw.input.checked = !on; sw.input.setAttribute("aria-checked", sw.input.checked ? "true" : "false"); }
+    });
+    return sw;
   }
 
   // Claude Code (0.9): a checklist of what is ready, one button that sets up what is not, and how a run starts.
@@ -426,6 +434,9 @@ function modelSection(s, servers, watchers, info = { servers }) {
   };
   const form = h("form", { onSubmit: async (e) => { e.preventDefault(); try { await save(collect(), state); Object.assign(s, App.settings()); toast(`AI: ${App.state.backend_label}`, "ok"); } catch (_) { /* shown */ } } },
     radiosWrap, lockedLine, detail, h("div", { class: "save-row" }, saveBtn, testBtn, state));
+  // 0.14.3: what is changed here and not saved yet says so (leaving the page dropped it without a word)
+  form.addEventListener("change", (e) => { if (!fields.use_fable || e.target !== fields.use_fable.input) state.textContent = "Not saved yet: press Save."; });
+  form.addEventListener("input", (e) => { if (e.target.matches("input[type=text], input[type=url], input[type=number], input:not([type]), select")) state.textContent = "Not saved yet: press Save."; });
   testBtn.addEventListener("click", async () => {
     testBtn.disabled = true;
     replace(testOut, h("div", { class: "notice" }, h("span", { class: "spinner" }, icon("loader")), h("p", {}, "Testing the model service…")));
@@ -620,8 +631,9 @@ async function frameworksSection() {
   async function reload() {
     clear(list);
     if (!project) { list.appendChild(h("p", { class: "muted" }, "Create a project first: codebooks belong to a project.")); return; }
-    let fws = [];
-    try { fws = (await api("GET", `/api/projects/${P(project)}/frameworks`)).frameworks || []; } catch (e) { showError(e); }
+    let fws = [], bad = [];
+    try { const r = await api("GET", `/api/projects/${P(project)}/frameworks`); fws = r.frameworks || []; bad = r.problems || []; } catch (e) { showError(e); }
+    for (const b of bad) list.appendChild(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, `The codebook file ${b.file} (${b.source === "home" ? "for all projects" : "in this project"}) cannot be used: ${b.error}`)));
     for (const f of fws) {
       list.appendChild(h("div", { class: "fw-row" },
         h("div", { class: "grow" }, h("div", { class: "fw-title" }, f.title || f.name), h("div", { class: "fw-sub" }, `${f.codes} codes · each is called ${/^[aeiouAEIOU]|^SDG/.test(f.label) ? "an" : "a"} “${f.label}” · ${f.source === "bundled" ? "built in" : "added by you"} · short name ${f.name}`),
@@ -659,13 +671,21 @@ async function frameworksSection() {
   return card;
 }
 
+// A CSV file as text: UTF-8, else the Windows code page of a spreadsheet saved in Europe (f.text() read every file as
+// UTF-8 and garbled the others: ő and ű mark the Central European page).
+async function readCsv(f) {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, ""); }
+  catch (_) { return new TextDecoder(bytes.some((b) => b === 0xF5 || b === 0xD5) ? "windows-1250" : "windows-1252").decode(bytes); }
+}
+
 function uploadFramework(done) {
   const name = h("input", { class: "input", type: "text", placeholder: "e.g. remote", pattern: "[A-Za-z0-9_-]+", maxlength: 30 });
   const title = h("input", { class: "input", type: "text", placeholder: "e.g. Hydrogen value-chain hypotheses" });
   const label = h("input", { class: "input", type: "text", placeholder: "e.g. hypothesis code" });
   const csv = h("textarea", { class: "textarea input-mono", rows: 6, placeholder: "code,description,group,group_name\nR1,Working from home reduces commuting,C,Commuting" });
   const file = h("input", { type: "file", accept: ".csv,text/csv", class: "input" });
-  file.addEventListener("change", async () => { const f = file.files && file.files[0]; if (f) { csv.value = await f.text(); if (!name.value) name.value = f.name.replace(/\.csv$/i, "").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 30); } });
+  file.addEventListener("change", async () => { const f = file.files && file.files[0]; if (f) { csv.value = await readCsv(f); if (!name.value) name.value = f.name.replace(/\.csv$/i, "").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 30); } });
   const err = h("div", { class: "field-error", role: "alert" });
   const directional = switchControl("The codes are aims a text can help or hinder", false, { help: "Like the SDG targets. Labels then also say whether a passage helps the aim, hinders it, or does not say." });
   dialog({

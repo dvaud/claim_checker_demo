@@ -6,7 +6,7 @@ import json
 from . import taskkinds
 from .taxonomy import targets_reference_text
 
-# 0.13.6: a view of the registry (taskkinds.py): check, reread and second share the check prompt (check-v4)
+# 0.13.6: a view of the registry (taskkinds.py): check, reread and second share the check prompt (check-v5)
 VERSIONS = taskkinds.Table("prompt_version")
 
 _JSON_RULE = ("Answer with one JSON object and nothing else: no prose, no code fences. "
@@ -96,7 +96,8 @@ Verdicts
 - refutes: the passage states the opposite effect, or that there is no such effect.
 - not_enough_info: the passage is on the topic but does not state the effect, or is about something else.
 Being on the same topic is not support. Do not use outside knowledge.
-For supports and refutes give the shortest quote from the PASSAGE that shows it; for not_enough_info use null.
+For supports and refutes give the shortest quote from the PASSAGE that shows it, at least three whole words;
+for not_enough_info use null.
 confidence: your probability that the verdict is right.
 
 Output format
@@ -116,8 +117,9 @@ Grade each passage that bears on the claim:
   same effect for another value chain segment or for renewable energy in general rather than hydrogen.
 - refutes: the passage states the opposite effect, or that there is no such effect.
 Leave out passages that are only on the same topic. Do not use outside knowledge.
-For every passage you list, give the shortest quote from THAT passage that shows it, and your probability that
-the grade is right. List no passage at all when none bears on the claim.
+For every passage you list, give the shortest quote from THAT passage that shows it, at least three whole words
+(never part of a word), and your probability that the grade is right. List no passage at all when none bears on
+the claim.
 
 Output format
 {{"evidence": [{{"passage": 2, "verdict": "supports|partially_supports|refutes", "confidence": 0.0-1.0,
@@ -139,8 +141,8 @@ Grade each passage that bears on the claim:
   claim is true.
 Leave out passages that are only on the same topic, that merely mention the words of the claim, or that report
 what others expect without evidence. Do not use outside knowledge.
-For every passage you list, give the shortest quote from THAT passage that shows it, and your probability that
-the grade is right.
+For every passage you list, give the shortest quote from THAT passage that shows it, at least three whole words
+(never part of a word), and your probability that the grade is right.
 scope_note: when a passage is about another group, setting, place or period than the claim names (fully remote
 workers for a claim about hybrid workers, all ages for a claim about young employees, another country or decade),
 say so in a few words, for example "about fully remote workers, not hybrid". Such a passage is graded no higher

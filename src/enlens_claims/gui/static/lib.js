@@ -26,6 +26,15 @@ export class ApiError extends Error {
   }
 }
 
+// 0.14.3: whether the app answers. A request that cannot reach it (the browser's fetch fails) sets the flag; the
+// next answer of any kind clears it. The shell (app.js) shows one banner across the app while it is set.
+export const Connection = { down: false };
+function connection(down) {
+  if (Connection.down === down) return;
+  Connection.down = down;
+  window.dispatchEvent(new CustomEvent("enlens-connection", { detail: { down } }));
+}
+
 export async function api(method, path, body, opts = {}) {
   const headers = { "X-Enlens-Token": TOKEN };
   let payload;
@@ -41,8 +50,10 @@ export async function api(method, path, body, opts = {}) {
     res = await fetch(path, { method, headers, body: payload, signal: opts.signal });
   } catch (e) {
     if (e.name === "AbortError") throw e;
+    connection(true);
     throw new ApiError(0, "The app is not answering. Is it still running in the terminal?", "internal");
   }
+  connection(false);
   if (opts.raw) {
     if (!res.ok) {
       let msg = res.statusText;
@@ -184,7 +195,10 @@ export function popNote(trigger, explanation, opts = {}) {
   };
   trigger.addEventListener("click", () => { pinned = !pinned; show(pinned); });
   trigger.addEventListener("mouseenter", () => show(true)); trigger.addEventListener("mouseleave", () => { if (!pinned) show(false); });
-  trigger.addEventListener("focus", () => show(true)); trigger.addEventListener("blur", () => { if (!pinned) show(false); });
+  // 0.14.3: Tab from the mark into a button inside the note keeps the note open (it closed, and focus fell to the page)
+  trigger.addEventListener("focus", () => show(true));
+  trigger.addEventListener("blur", (e) => { if (!pinned && !(e.relatedTarget && pop.contains(e.relatedTarget))) show(false); });
+  pop.addEventListener("focusout", (e) => { if (!pinned && !(e.relatedTarget && (pop.contains(e.relatedTarget) || e.relatedTarget === trigger))) show(false); });
   trigger.addEventListener("keydown", (e) => { if (e.key === "Escape") { pinned = false; show(false); } });
   return h("span", { class: "defined-wrap" }, trigger, pop);
 }
@@ -345,6 +359,11 @@ export function toast(message, kind = "info", opts = {}) {
 }
 
 // Errors in plain words; the technical message is kept behind "Technical details".
+// 0.14.3: a failed load drawn in the page itself (a toast fades, and a heading over nothing looks like "nothing here")
+export function failedLoad(el, e) {
+  replace(el, h("div", { class: "notice notice-error", role: "alert" }, icon("alert-circle"), h("p", {}, (e && e.message) || "This could not be loaded.")));
+}
+
 export function showError(e, extra = {}) {
   const msg = e && e.message ? e.message : String(e);
   if (e && e.kind === "backend") {
@@ -363,10 +382,12 @@ export function showError(e, extra = {}) {
 // ---------------------------------------------------------------------------------------------
 // dialogs (native <dialog>: focus trap and Escape come for free)
 // ---------------------------------------------------------------------------------------------
-export function dialog({ title, body, actions, danger, onOpen, wide }) {
+// `lock` (0.14.3): { on: true } while a request of the dialog runs: Escape, a click outside, the X and Cancel then do
+// nothing, so the dialog cannot be closed on work that goes on without it (its report would never be seen)
+export function dialog({ title, body, actions, danger, onOpen, wide, lock }) {
   return new Promise((resolve) => {
     const dlg = h("dialog", { class: "dialog" + (wide ? " dialog-wide" : ""), "aria-labelledby": "dlg-title" });
-    const close = (value) => { dlg.close(); dlg.remove(); resolve(value); };
+    const close = (value) => { if (lock && lock.on) return; dlg.close(); dlg.remove(); resolve(value); };
     const btns = (actions || [{ text: "Close", value: null }]).map((a) =>
       h("button", {
         type: "button",
@@ -615,7 +636,9 @@ export function parseQuery(qs) {
 
 export function debounce(fn, ms) {
   let t;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  const run = (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  run.cancel = () => clearTimeout(t);   // 0.14.3
+  return run;
 }
 
 // A random id for one upload batch: [A-Za-z0-9_-]
@@ -682,6 +705,18 @@ export function emptyState(iconName, title, text, action) {
   return h("div", { class: "empty" }, icon(iconName, { size: 28 }), h("h3", {}, title), text ? h("p", {}, text) : null, action || null);
 }
 
+// 0.14.3: the pages that work on the documents (Search, Profile, Concepts) say "Add documents first" in a project
+// with none, as Check and Overview do, instead of offering a button that answers "0 documents"
+export function noDocuments() {
+  const p = ((App.state && App.state.projects) || []).find((x) => x.name === App.project);
+  return !!p && p.ok !== false && p.documents === 0;
+}
+export function addDocumentsFirst(what) {
+  return h("div", { class: "notice notice-info" }, icon("info"),
+    h("div", {}, h("p", {}, h("strong", {}, "Add documents first. "), `${what} works on the documents of this project, and there are none yet.`),
+      h("a", { class: "btn btn-primary btn-sm", href: "#/sources", style: { marginTop: "6px" } }, icon("upload", { size: 13 }), "Add documents")));
+}
+
 export function statusBadge(status, opts = {}) {
   const iconName = { supported: "circle-check", partially_supported: "circle-half", contested: "arrows-opposed", contradicted: "circle-x", uncertain: "circle-dot", unsupported: "circle-dashed", no_passages: "search-x", not_checked: "clock", failed: "alert-triangle", waiting: "inbox" }[status] || "circle";
   const text = opts.text || (opts.short ? STATUS_SHORT[status] : null) || App.statusText(status) || status;
@@ -728,8 +763,10 @@ export function kv(label, value, cls) {
 // leave the others pale: classes `<prefix>-cell <prefix>-l0..4` (profile-viewer.css, concepts-themes.css).
 export function heatCell(n, max, label, prefix, onClick) {
   const level = n ? Math.max(1, Math.min(4, Math.ceil((4 * Math.log1p(n)) / Math.log1p(max)))) : 0;
+  // 0.14.3: a cell with passages holds a button (Tab and Enter reach it); the cell's own click still works for the mouse
   return h("td", { class: `map-cell ${prefix}-cell ${prefix}-l${level}`, title: `${label}: ${plural(n, "passage")}`, onClick: n ? onClick : null },
-    h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·"));
+    n && onClick ? h("button", { class: "heat-btn", type: "button", "aria-label": `${label}: ${plural(n, "passage")}` }, String(n))
+      : [h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·")]);
 }
 
 // 0.13.3: the result page's help mark, for every page: a small (?) whose explanation opens on hover, focus or click,

@@ -6,12 +6,14 @@ blank line. Quotes, evidence and highlights are resolved against that string.
 from __future__ import annotations
 
 import bisect
+import codecs
 import hashlib
 import json
 import re
 import shutil
 import sqlite3
 import zipfile
+import zlib
 from collections import Counter
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -118,11 +120,15 @@ def _sha1(path: Path) -> str:
     return h.hexdigest()
 
 
-def read_file(path: Path, ocr: "OcrOptions | None" = None) -> RawDoc:
+class Stopped(Exception):
+    """The person pressed Stop while a file was being read (OCR of a long scanned PDF checks before each page)."""
+
+
+def read_file(path: Path, ocr: "OcrOptions | None" = None, should_stop=None) -> RawDoc:
     ext = path.suffix.lower()
     if ext == ".pdf":
         sha1 = _sha1(path)
-        pages, title, done, scanned, pos = _read_pdf(path, ocr)
+        pages, title, done, scanned, pos = _read_pdf(path, ocr, should_stop)
         return RawDoc(path, "pdf", pages, title, sha1, ocr_pages=done, scanned_pages=scanned, line_pos=pos)
     if ext == ".docx":
         sha1 = _sha1(path)
@@ -132,10 +138,10 @@ def read_file(path: Path, ocr: "OcrOptions | None" = None) -> RawDoc:
     sha1 = hashlib.sha1(data).hexdigest()
     if ext in (".html", ".htm"):
         p = _TextOnly()
-        p.feed(data.decode("utf-8", errors="replace"))
+        p.feed(decode_text(data, html=True))
         return RawDoc(path, "html", ["".join(p.parts)], (p.title or "").strip() or None, sha1, paginated=False,
                       headings=p.headings)
-    text = data.decode("utf-8", errors="replace")
+    text = decode_text(data)
     heads = None
     if ext == ".md":
         heads = markdown_headings(text)
@@ -144,7 +150,100 @@ def read_file(path: Path, ocr: "OcrOptions | None" = None) -> RawDoc:
     return RawDoc(path, "text", pages, None, sha1, paginated="\f" in text, headings=heads)
 
 
-_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+# ------------------------------------------------------------------------------------------
+# 0.14.3: the encoding of a text or web page file. Before, everything was read as UTF-8 and other bytes became "�":
+# a Hungarian text saved by Notepad (Windows-1250) or an old Latin-1 page lost its accented letters, its passages
+# were marked unreadable and its accented words could not be searched.
+# ------------------------------------------------------------------------------------------
+_BOMS = ((b"\xef\xbb\xbf", "utf-8"), (b"\xff\xfe\x00\x00", "utf-32-le"), (b"\x00\x00\xfe\xff", "utf-32-be"),
+         (b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be"))
+_DECLARED = (re.compile(rb"<meta[^>]*?charset\s*=\s*[\"']?\s*([A-Za-z0-9_.:\-]+)", re.I),
+             re.compile(rb"<\?xml[^>]*?encoding\s*=\s*[\"']([A-Za-z0-9_.:\-]+)", re.I))
+# the accented letters of the languages written in Windows-1250 (Central Europe) and Windows-1252 (Western Europe):
+# of the two readings of a file, the one whose accented letters belong together in one language is taken
+_ALPHABETS = ("áéíóöőúüű", "áčďéěíňóřšťúůýž", "áäčďéíĺľňóôŕšťúýž", "ąćęłńóśźż", "čćđšž", "ăâîșşțţ", "äöüß",
+              "àâæçéèêëîïôœùûüÿ", "áéíñóúü", "àáâãçéêíóôõú", "àèéìíîòóùú", "áéèëïóöü", "åäöæøéðþáíóúý",
+              "àçèéíïòóúü")
+
+
+def _fits(text: str) -> float:
+    """The largest share of the accented letters of `text` that one language's alphabet holds (1.0: no accents)."""
+    letters = Counter(c.lower() for c in text if ord(c) > 127 and c.isalpha())
+    total = sum(letters.values())
+    if not total:
+        return 1.0
+    return max(sum(n for c, n in letters.items() if c in a) for a in _ALPHABETS) / total
+
+
+def _letters(text: str) -> float:
+    """The share of the characters beyond ASCII that are letters (ą, ł, ż read as Windows-1252 are ¹, ³, ¿)."""
+    high = [c for c in text if ord(c) > 127]
+    return sum(c.isalpha() for c in high) / len(high) if high else 1.0
+
+
+def _single_byte(data: bytes) -> str:
+    """Text that is not UTF-8 and names no encoding: Windows-1250 or Windows-1252, whichever reads as one language
+    (on a tie, the one whose characters beyond ASCII are letters)."""
+    read = []
+    for enc in ("cp1252", "cp1250"):
+        try:
+            read.append(data.decode(enc))
+        except UnicodeDecodeError:
+            pass
+    if not read:
+        return data.decode("cp1252", errors="replace")
+    if len(read) == 1 or read[0] == read[1]:
+        return read[0]
+    return read[1] if (_fits(read[1]), _letters(read[1])) > (_fits(read[0]), _letters(read[0])) else read[0]
+
+
+def _mostly_utf8(data: bytes) -> str | None:
+    """UTF-8 with a few damaged bytes (a cut-off letter, a stray byte in scraped text): read as UTF-8, the damaged
+    bytes as "�", rather than the whole file as another encoding. None when it does not look like UTF-8: in text
+    saved as Windows-1250 or -1252 nearly every accented letter is an invalid UTF-8 byte."""
+    text = data.decode("utf-8", errors="replace")
+    bad = text.count("�")
+    good = sum(1 for c in text if ord(c) > 127 and c != "�")
+    return text if good and bad <= max(1, good // 10) else None
+
+
+def decode_text(data: bytes, html: bool = False) -> str:
+    """The text of a .txt, .md or web page file: by its byte-order mark (UTF-8, UTF-16, UTF-32); UTF-8 (also with a few
+    damaged bytes); for a web page, the encoding it declares (`<meta charset>`, `<?xml encoding>`); else Windows-1250
+    or -1252 (see _single_byte)."""
+    for bom, enc in _BOMS:
+        if data.startswith(bom):
+            return data[len(bom):].decode(enc, errors="replace")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    text = _mostly_utf8(data)
+    if text is not None:
+        return text
+    if html:
+        head = data[:4096]
+        for rx in _DECLARED:
+            m = rx.search(head)
+            if not m:
+                continue
+            try:
+                enc = codecs.lookup(m.group(1).decode("ascii", "ignore")).name
+            except LookupError:
+                break
+            if enc.startswith("utf"):
+                break  # declared UTF-8, but it is not: read below
+            # as browsers do, a page declared Latin-1 or ASCII is read as Windows-1252
+            for e in (("cp1252", "latin-1") if enc in ("latin-1", "iso8859-1", "ascii") else (enc,)):
+                try:
+                    return data.decode(e)
+                except UnicodeDecodeError:
+                    pass
+            break
+    return _single_byte(data)
+
+
+_W ="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 DOCX_MAX = 200 * 1024 ** 2   # bytes of XML read from one Word file (a zip): a bound against zip bombs
 
 
@@ -175,7 +274,7 @@ def _read_docx(path: Path) -> tuple[list[str], str | None, set[str]]:
             core = ET.fromstring(zf.read("docProps/core.xml"))
             t = core.find("{http://purl.org/dc/elements/1.1/}title")
             title = (t.text or "").strip() or None if t is not None else None
-        except KeyError:
+        except (KeyError, ET.ParseError, *ZIP_ERRORS):  # 0.14.3: damaged properties: the text is read all the same
             title = None
     body = root.find(f"{_W}body")
     pages: list[list[str]] = [[]]
@@ -344,9 +443,10 @@ def _low_priority() -> None:  # runs in the OCR child process before tesseract s
         pass
 
 
-def _ocr_pages(path: Path, numbers: list[int], lang: str) -> dict[int, str]:
+def _ocr_pages(path: Path, numbers: list[int], lang: str, should_stop=None) -> dict[int, str]:
     """The text of the given pages (0-based), recognised one page at a time at low priority on one thread, so a
-    local model working at the same time keeps the computer's resources. Each page image is freed at once."""
+    local model working at the same time keeps the computer's resources. Each page image is freed at once.
+    0.14.3: Stop (`should_stop`) is seen before each page (raises Stopped): a 400-page scan could not be stopped."""
     import io
     import os
     import subprocess
@@ -361,6 +461,8 @@ def _ocr_pages(path: Path, numbers: list[int], lang: str) -> dict[int, str]:
     pdf = pdfium.PdfDocument(str(path))
     try:
         for i in numbers:
+            if should_stop and should_stop():
+                raise Stopped()
             if i >= len(pdf):
                 continue
             page = pdf[i]
@@ -414,22 +516,39 @@ class _LineSpots:
         return [self.spots.get(i) for i in range(text.count("\n") + 1)]
 
 
-def _read_pdf(path: Path, ocr: OcrOptions | None = None) -> tuple[list[str], str | None, int, int, list | None]:
+PROTECTED_PDF = "password-protected: save a copy without the password (or print it to a new PDF) and add that"
+
+
+def _locked(reader) -> bool:
+    """0.14.3: whether a PDF needs a password to be read (one with only an owner's password opens without one)."""
+    try:
+        if not reader.is_encrypted:
+            return False
+        return not reader.decrypt("")
+    except Exception:  # noqa: BLE001 - an encryption pypdf cannot undo here: the text cannot be read either
+        return True
+
+
+def _read_pdf(path: Path, ocr: OcrOptions | None = None,
+              should_stop=None) -> tuple[list[str], str | None, int, int, list | None]:
     """The text of each page, the title from the metadata, (pages recognised by OCR, scanned pages), and where each
-    line starts on its page (for the layout; None for pages read another way)."""
+    line starts on its page (for the layout; None for pages read another way). A PDF that needs a password raises
+    ValueError (0.14.3: it was reported as a file without text)."""
     pages: list[str] = []
     pos: list | None = []
     title = None
+    locked = False
     try:
         from pypdf import PdfReader
 
         reader = PdfReader(str(path))
+        locked = _locked(reader)
         try:
-            meta = reader.metadata
+            meta = reader.metadata if not locked else None
             title = (meta.title if meta else None) or None
         except Exception:
             title = None
-        for pg in reader.pages:
+        for pg in reader.pages if not locked else []:
             spots = _LineSpots()
             try:
                 t = pg.extract_text(visitor_text=spots) or ""
@@ -440,6 +559,8 @@ def _read_pdf(path: Path, ocr: OcrOptions | None = None) -> tuple[list[str], str
                 pos.append(None)
     except Exception:
         pages, pos = [], []
+    if locked:
+        raise ValueError(PROTECTED_PDF)
     n_pdf = len(pages)
     if sum(len(p.strip()) for p in pages) < 200:
         try:  # optional fallback
@@ -447,7 +568,9 @@ def _read_pdf(path: Path, ocr: OcrOptions | None = None) -> tuple[list[str], str
 
             alt = extract_text(str(path)) or ""
             if len(alt.strip()) > sum(len(p.strip()) for p in pages):
-                pages = alt.split("\f")
+                # pdfminer ends every page with a form feed: without taking the last one off there was one page too
+                # many, so the scanned pages were not found and never recognised (0.14.3)
+                pages = (alt[:-1] if alt.endswith("\f") else alt).split("\f")
                 pos = None
         except Exception:
             pass
@@ -456,7 +579,7 @@ def _read_pdf(path: Path, ocr: OcrOptions | None = None) -> tuple[list[str], str
     scanned = [i for i, p in enumerate(pages) if len(p.strip()) < SCANNED_CHARS] if len(pages) == n_pdf else []
     done = 0
     if scanned and ocr is not None and ocr.mode != "off" and ocr_status()["available"]:
-        for i, t in _ocr_pages(path, scanned, ocr.lang).items():
+        for i, t in _ocr_pages(path, scanned, ocr.lang, should_stop).items():
             if len(t.strip()) > len(pages[i].strip()):
                 pages[i] = t
                 if pos is not None:
@@ -686,7 +809,12 @@ _WORD_RE = re.compile(r"[^\W\d_]{2,}")
 _FUNCTION_WORDS = frozenset(
     "the of and to in for is on that by with as are from be this or an at which it can will not has have was "
     "de la le les et des du en el los las y que con por para del una un se al lo es da do dos das em os ao "
-    "der die das und von mit den dem ist im zu het een van voor op te zijn niet".split())
+    "der die das und von mit den dem ist im zu het een van voor op te zijn niet "
+    # 0.14.3: Hungarian, Italian, Polish, Czech and Slovak, the Nordic languages, Finnish, Romanian, Croatian: prose in
+    # them had too few of the words above and was marked unreadable (none of these is a glyph-shifted English word)
+    "az és hogy nem egy van meg ez mint csak vagy már még ahol amely ami azt ezt kell lehet szerint között után "
+    "il di che per non sono della nel gli alla delle anche nie się na jest że od po jak oraz je pro jako ve ale "
+    "och att det är som på för med av ett og er til ikke af ja on että ei și în cu pe care din sunt su za".split())
 
 
 def unreadable(s: str) -> bool:
@@ -812,9 +940,38 @@ def zip_name(info: zipfile.ZipInfo) -> str:
     return name
 
 
-def _safe_extract(zf: zipfile.ZipFile, dest: Path, budget: list[int] | None = None, strip: str = "") -> list[Path]:
+# 0.14.3: what reading a file out of a zip raises when the zip is damaged (a bad checksum, a cut-off file) or
+# password-protected (RuntimeError "… is encrypted, password required"; NotImplementedError for AES encryption)
+ZIP_ERRORS = (zipfile.BadZipFile, zlib.error, EOFError, RuntimeError)
+
+
+def zip_problem(e: BaseException) -> str:
+    """What went wrong with a zip, in words."""
+    msg = str(e).lower()
+    if isinstance(e, NotImplementedError):
+        return "a kind of zip this program cannot unpack (perhaps password-protected): save it again as an ordinary zip"
+    if isinstance(e, RuntimeError) and ("encrypted" in msg or "password" in msg):
+        return "password-protected zip: save a copy without the password and add that"
+    if isinstance(e, (zipfile.BadZipFile, zlib.error, EOFError)):
+        return "damaged zip: copy or download it again"
+    return str(e) or type(e).__name__
+
+
+def _read_problem(e: BaseException) -> str:
+    """Why a file could not be read, in words (a Word file is a zip inside)."""
+    if isinstance(e, (zipfile.BadZipFile, zlib.error, EOFError)):
+        return "damaged file: copy or download it again"
+    if isinstance(e, ZIP_ERRORS) and not isinstance(e, NotImplementedError) and "password" in str(e).lower():
+        return "password-protected: save a copy without the password and add that"
+    return str(e) or type(e).__name__
+
+
+def _safe_extract(zf: zipfile.ZipFile, dest: Path, budget: list[int] | None = None, strip: str = "",
+                  problems: list[tuple[str, str]] | None = None) -> list[Path]:
     """Unpack `zf` into `dest`. With `strip` (a folder in the zip, ending in "/"), only what is in that folder is
-    unpacked, without the folder itself."""
+    unpacked, without the folder itself. 0.14.3: with `problems`, a file of the zip that cannot be unpacked (damaged,
+    password-protected) is left out and noted there as (name, what went wrong); without it, that stops the unpacking
+    (a project zip must come whole)."""
     out = []
     root = dest.resolve()
     budget = budget if budget is not None else [MAX_UNPACKED]
@@ -832,9 +989,22 @@ def _safe_extract(zf: zipfile.ZipFile, dest: Path, budget: list[int] | None = No
         target = (dest / name).resolve()
         if not target.is_relative_to(root) or target == root:
             continue  # zip-slip guard (a string prefix test would let '../x_evil/...' through for a folder 'x')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with zf.open(info) as src, open(target, "wb") as dst:
-            shutil.copyfileobj(src, dst)
+        # never half a file in place of a whole one: unpacked beside it under a short name, then put in place
+        part = target.with_name(f".{hashlib.sha1(name.encode('utf-8')).hexdigest()[:10]}.part")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(part, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            part.replace(target)
+        except (*ZIP_ERRORS, OSError) as e:
+            part.unlink(missing_ok=True)
+            if problems is None:
+                raise
+            problems.append((name, zip_problem(e)))
+            continue
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
         out.append(target)
     return out
 
@@ -876,7 +1046,20 @@ def read_manifests(files: list[Path]) -> dict[str, dict]:
 NOT_SOURCES = {"problems.txt", "readme.txt", "readme.md", "license.txt", "notes.txt", "worker_guide.md", "system.md"}
 
 
-def discover(inputs: list[str | Path], unpack_dir: Path, manifests: list[Path] | None = None) -> list[Path]:
+def _zip_failures(zname: str, problems: list[tuple[str, str]]) -> list[str]:
+    """One line per kind of problem of a zip: "sources.zip: password-protected zip: … (report.pdf, notes.txt)"."""
+    by: dict[str, list[str]] = {}
+    for member, why in problems:
+        by.setdefault(why, []).append(Path(member).name)
+    return [f"{zname}: {why} ({', '.join(names[:3])}{f' and {len(names) - 3} more' if len(names) > 3 else ''})"
+            for why, names in by.items()]
+
+
+def discover(inputs: list[str | Path], unpack_dir: Path, manifests: list[Path] | None = None,
+             failed: list[str] | None = None) -> list[Path]:
+    """The source files among `inputs` (folders are searched, zips unpacked into `unpack_dir`, up to two levels
+    deep). 0.14.3: with `failed`, a zip (or a file in it) that cannot be unpacked is noted there and the rest go on;
+    before, one password-protected or damaged zip stopped the whole add."""
     files: list[Path] = []
     queue = [Path(p) for p in inputs]
     depth: dict[Path, int] = {}
@@ -894,10 +1077,20 @@ def discover(inputs: list[str | Path], unpack_dir: Path, manifests: list[Path] |
             dest = unpack_dir / f"{stem}-{tag}"
             if not dest.resolve().is_relative_to(unpack_dir.resolve()):
                 continue
-            with zipfile.ZipFile(p) as zf:
-                for x in _safe_extract(zf, dest, budget):
-                    depth[x] = depth.get(p, 0) + 1
-                    queue.append(x)
+            problems: list[tuple[str, str]] | None = [] if failed is not None else None
+            try:
+                with zipfile.ZipFile(p) as zf:
+                    got = _safe_extract(zf, dest, budget, problems=problems)
+            except (*ZIP_ERRORS, OSError) as e:
+                if failed is None:
+                    raise
+                failed.append(f"{p.name}: {zip_problem(e)}")
+                continue
+            if problems:
+                failed.extend(_zip_failures(p.name, problems))
+            for x in got:
+                depth[x] = depth.get(p, 0) + 1
+                queue.append(x)
         elif p.suffix.lower() in SUPPORTED and p.is_file() and p.name.lower() not in NOT_SOURCES:
             files.append(p)
         elif p.name.lower() == "manifest.csv" and manifests is not None:
@@ -911,7 +1104,8 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
     """Add documents. `exclude` holds file-name patterns (e.g. 'A_18_*') to leave out, such as a wrong download.
 
     `progress(done, total, file_name)` is called before each file is read (for a progress bar). Each document is
-    stored in its own transaction; a file that cannot be read is listed under `failed` and the rest go on.
+    stored in its own transaction; a file that cannot be read is listed under `failed` and the rest go on (0.14.3:
+    and so is a zip, or a file in a zip, that cannot be unpacked; Stop is also seen between the pages of OCR).
     `ocr` (default: automatic, English) recognises the text of scanned PDF pages when OCR is installed; scanned
     files that stay without text are listed under `scanned_no_text`.
 
@@ -937,12 +1131,15 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
 
     cfg = ws.config["passages"]
     manifest_files: list[Path] = []
-    files = discover(inputs, ws.root / "inputs", manifest_files)
+    unpack_failed: list[str] = []
+    files = discover(inputs, ws.root / "inputs", manifest_files, unpack_failed)
     skipped = [f for f in files if any(fnmatch(f.name, pat) for pat in exclude or [])]
     skip = set(skipped)
     files = [f for f in files if f not in skip]
     declared = read_manifests(manifest_files)
     stats = {"files": len(files), "added": 0, "duplicates": 0, "empty": 0, "passages": 0, "declared": 0}
+    if unpack_failed:
+        stats["failed"] = list(unpack_failed)
     if exclude:
         stats["excluded"] = [f.name for f in skipped]
     known = {r[0] for r in ws.query("SELECT sha1 FROM documents")}
@@ -953,9 +1150,13 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
         if progress:
             progress(i, len(files), f.name)
         try:
-            raw = read_file(f, ocr if ocr is not None else OcrOptions())
-        except (OSError, ValueError) as e:  # one unreadable file should not stop the others
-            stats.setdefault("failed", []).append(f"{f.name}: {e}")
+            raw = read_file(f, ocr if ocr is not None else OcrOptions(), should_stop)
+        except Stopped:  # 0.14.3: Stop during the text recognition of a scanned PDF: that file is not added
+            stats["stopped"] = True
+            break
+        except Exception as e:  # noqa: BLE001 - one unreadable file should not stop the others (0.14.3: whatever
+            # it raises: a damaged Word file gave a zip or XML error that stopped the whole add)
+            stats.setdefault("failed", []).append(f"{f.name}: {_read_problem(e)}")
             continue
         if raw.sha1 in known:
             stats["duplicates"] += 1

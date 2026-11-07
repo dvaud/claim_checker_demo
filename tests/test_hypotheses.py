@@ -316,7 +316,8 @@ def test_resplit_drops_grades_of_the_claim_that_moved(loaded):
     just = loaded.scalar("SELECT justification FROM vca_targets WHERE target=?", (target,))
     with loaded.connect() as cx:
         cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=?", (f"split:{target}",))
-    reordered = {"claims": [{"text": f"Claim number {i} of this justification.", "quote": just[:40], "direction": "mixed"}
+    reordered = {"claims": [{"text": f"Claim number {i} of this justification.",
+                             "quote": just[:40].rsplit(" ", 1)[0], "direction": "mixed"}  # 0.14.3: whole words only
                             for i in range(2)]}
     ok, errs = tasks.ingest_result(loaded, f"split:{target}", reordered)
     assert ok, errs
@@ -749,7 +750,7 @@ def test_an_excerpt_about_another_group_is_flagged_and_supports_at_most_partly(l
     hid = claimcheck.check_hypothesis(loaded, CLAIM, be, "m", k=2)
     item = next(x for x in claimcheck.result(loaded, hid)["passages"] if x["ai_verdict"])
     assert item["scope_note"] == "about fully remote workers, not hybrid" and item["ai_verdict"] == "partially_supports"
-    assert loaded.scalar("SELECT prompt_version FROM tasks WHERE task_id=?", (f"check:{hid}",)) == "check-v4"
+    assert loaded.scalar("SELECT prompt_version FROM tasks WHERE task_id=?", (f"check:{hid}",)) == "check-v5"
     from enlens_claims import prompts
     assert "scope_note" in prompts.system_prompt("check") and "scope_note" not in prompts.system_prompt("verify_set")
 

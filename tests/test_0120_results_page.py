@@ -125,7 +125,8 @@ def test_the_result_page_reads_in_one_order():
     assert "whoSaysWhat(parts[0])" in card and "followUpsCard" not in js
     # one caution at most, in the same paragraph as the next step; no prefix that reads as a history
     assert "The AI's first reading:" not in js and card.count('" answer-caution"') == 1
-    assert "const caution = r.incomplete ?" in card and 'h("p", { class: "answer-next-text" + (caution ? " answer-caution" : "") }' in card
+    # 0.14.3: the one caution paragraph may also name the excerpts that wait for your judgement (baseCaution + forYouLine)
+    assert "const baseCaution = r.incomplete ?" in card and "const caution = [baseCaution, forYouLine]" in card and 'h("p", { class: "answer-next-text" + (caution ? " answer-caution" : "") }' in card
     # strictness is said once, beside what counts, explained behind its help mark (which says where to try another)
     assert "function strictnessLine(" not in js
     head = js[js.index("  function evidenceHead("):js.index("  // One compact row per excerpt read")]

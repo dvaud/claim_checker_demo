@@ -579,7 +579,10 @@ def submit(ws: Workspace, claim_id: str, answers: list[dict]) -> dict:
                                 f"({item['moved_to']}); it is no longer yours.")
                 item["attempts_left"] = 0
                 moved = True
-        if not moved and (ok or after["status"] in ("failed", "done")):
+        # 0.14.3: a stronger model's rejected answer leaves the task done (the first answer counts meanwhile) with
+        # `again` still set: it stays with this claim to be fixed, as any rejected answer does
+        finished = ok or after["status"] == "failed" or (after["status"] == "done" and not after["again"])
+        if not moved and finished:
             with ws.connect() as cx:
                 cx.execute("UPDATE tasks SET claimed_by=NULL, claimed_at=NULL WHERE task_id=? AND claimed_by=?",
                            (tid, claim_id))

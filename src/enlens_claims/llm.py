@@ -29,6 +29,18 @@ class BackendError(RuntimeError):
     """A problem the user can fix (server not running, model missing, key wrong, context too small)."""
 
 
+class AnswerError(BackendError):
+    """0.14.3: the model answered, but this answer cannot be used (cut off at the length limit, stuck writing blank
+    space), and asking again may do better. Unlike a connection or settings problem (a full context, reasoning that
+    uses up the whole allowance: BackendError, said at once) this is a rejected attempt of the task: it is stored
+    with the problem and asked again (`tasks.run_one`), so a check goes on with its other parts. `text` is what the
+    model wrote before it was stopped. A subclass of BackendError, so code that only knows that still stops on it."""
+
+    def __init__(self, message: str, text: str = ""):
+        super().__init__(message)
+        self.text = text or ""
+
+
 class MemoryShort(BackendError):
     """0.13.11: a local model was not started, as this computer has clearly too little memory free for it now.
     Loading it anyway pushes every other program into swap, which can all but freeze the computer."""
@@ -394,6 +406,7 @@ class OllamaBackend:
         info.update(phase="done", stats=stats)
         self._report(info, t0, force=True)
         evaluated = int(final.get("prompt_eval_count") or 0)
+        # a setting to change (the context length, reasoning): said at once, not asked again
         if evaluated and evaluated >= self.num_ctx - 16:
             raise BackendError(f"Ollama filled the whole context ({evaluated:,} tokens), so the prompt was probably cut. "
                                "Raise the context length in Settings.")
@@ -401,8 +414,9 @@ class OllamaBackend:
             if not text.strip():
                 raise BackendError(f"{model} used its whole allowance of {cap:,} tokens on reasoning without answering. "
                                    "Give reasoning a budget, or switch it off, in Settings, or choose another model.")
-            raise BackendError(f"{model}'s answer was cut off at {cap:,} tokens, far longer than this task needs; the "
-                               "model is probably repeating itself. Try again or choose another model.")
+            # 0.14.3: a problem of this one answer (AnswerError): the task records a rejected attempt, asked again
+            raise AnswerError(f"{model}'s answer was cut off at {cap:,} tokens, far longer than this task needs; the "
+                              "model is probably repeating itself. Try again or choose another model.", text)
         return text
 
     def _report(self, info: dict, t0: float, force: bool = False) -> None:
@@ -508,9 +522,9 @@ class OllamaBackend:
                     info["phase"] = "writing"
                     info["tail"] = "".join(content)[-400:]
                 if info["answer_tokens"] > 50 and len("".join(content[-60:]).strip()) == 0:
-                    raise BackendError(f"{model} got stuck writing blank space instead of an answer (a known problem of "
-                                       "some models with fixed-format answers). Try again, switch reasoning off, or "
-                                       "choose another model.")
+                    raise AnswerError(f"{model} got stuck writing blank space instead of an answer (a known problem of "
+                                      "some models with fixed-format answers). Try again, switch reasoning off, or "
+                                      "choose another model.", "".join(content))
                 if time.time() - t0 > self.timeout:
                     raise BackendError(slow)
                 self._report(info, t0)
@@ -903,8 +917,8 @@ class LocalBackend:
                 if ch.get("finish_reason"):
                     finish = ch["finish_reason"]
                 if info["answer_tokens"] > 50 and len("".join(content[-60:]).strip()) == 0:
-                    raise BackendError(f"{model} got stuck writing blank space instead of an answer. Try again or "
-                                       "choose another model.")
+                    raise AnswerError(f"{model} got stuck writing blank space instead of an answer. Try again or "
+                                      "choose another model.", "".join(content))
                 report()
         finally:
             held["stopped"] = True
@@ -927,9 +941,9 @@ class LocalBackend:
         info.update(phase="done", stats={"total_seconds": time.time() - t0, "output_tokens": info["answer_tokens"]})
         report(force=True)
         text = "".join(content)
-        if finish == "length":
-            raise BackendError(f"{model}'s answer was cut off at {cap:,} tokens; the model is probably repeating "
-                               "itself or reasoning at length. Try again or choose another model.")
+        if finish == "length":  # 0.14.3: a rejected attempt of the task (AnswerError), asked again
+            raise AnswerError(f"{model}'s answer was cut off at {cap:,} tokens; the model is probably repeating "
+                              "itself or reasoning at length. Try again or choose another model.", text)
         return text
 
     # -- information ----------------------------------------------------------------------------

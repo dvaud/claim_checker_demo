@@ -129,25 +129,162 @@ def fast_normalise(text: str) -> str:
     return " ".join(t.split()).lower()
 
 
-def find_quote(haystack: str, quote: str) -> tuple[int, int, str] | None:
+_UNSPACED = ((0x0E00, 0x0EFF), (0x1000, 0x109F), (0x1780, 0x17FF), (0x2E80, 0x31FF), (0x3400, 0x4DBF),
+             (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0x20000, 0x3FFFF))  # Thai, Lao, Myanmar, Khmer, Chinese, Japanese
+
+
+def _unspaced(c: str) -> bool:
+    """A character of a script written without spaces between words: any place between two of them can be an edge."""
+    o = ord(c)
+    return any(a <= o <= b for a, b in _UNSPACED)
+
+
+def _year_before(chars: str, j: int) -> bool:
+    """Whether the digits just before index `j` of `chars` are a year (four digits, 1900 to 2099), not part of a
+    longer number."""
+    k = j
+    while k > 0 and chars[k - 1].isdigit():
+        k -= 1
+    if j - k != 4 or chars[k:k + 2] not in ("19", "20"):
+        return False
+    return k == 0 or not (chars[k - 1].isdigit() or (chars[k - 1] in ".," and k >= 2 and chars[k - 2].isdigit()))
+
+
+def _word_edge(orig: str, chars: str, starts: list[int], i: int, start: bool = False) -> bool:
+    """Whether a word ends or begins before normalised character `i` of `chars` (`starts`: each one's offset in
+    `orig`). Besides spaces and punctuation, PDF text glues some words together that are still separate words: a
+    footnote number or a figure ("projects44", "2050expected") and a bullet before a capital ("rRenewables",
+    "°CFading"). Two letters (or two digits) of one word are not an edge, nor the point or comma inside a number: a
+    quote may not begin or end inside one ("5 percent" is not a quote of "2.5 percent", "rose by 2" not of "rose by
+    2,500 tonnes"). One exception: a year followed by a full stop and digits, where the digits are a footnote number
+    in PDF text ("by 2030.106 But": a quote may end with "by 2030")."""
+    if i <= 0 or i >= len(chars):
+        return True
+    a, b = chars[i - 1], chars[i]
+    if a in ".," and b.isdigit() and i >= 2 and chars[i - 2].isdigit():  # between "2." and "5"
+        return not start and a == "." and _year_before(chars, i - 1)
+    if b in ".," and a.isdigit() and i + 1 < len(chars) and chars[i + 1].isdigit():  # between "2" and ".5"
+        return not start and b == "." and _year_before(chars, i)
+    if not (a.isalnum() and b.isalnum()) or _unspaced(a) or _unspaced(b):
+        return True
+    if a.isdigit() != b.isdigit():
+        return True
+    oa, ob = orig[starts[i - 1]], orig[starts[i]]
+    if oa.islower() and ob.isupper():
+        return True
+    return (oa.isupper() and ob.isupper() and i + 1 < len(chars) and starts[i + 1] != starts[i]
+            and orig[starts[i + 1]].islower())
+
+
+def find_quote(haystack: str, quote: str, whole_words: bool = True) -> tuple[int, int, str] | None:
     """Locate `quote` in `haystack`. Returns (start, end, match_type) in haystack offsets, or None.
 
     match_type "exact": equal after typography/whitespace/case normalisation.
-    match_type "spacing": equal once all whitespace is ignored (PDF text often splits or joins words).
+    match_type "spacing": equal once whitespace is ignored where the text has more of it than the quote (PDF text
+    often splits a word: "wi ll", "addition al").
     Nothing looser is accepted: a paraphrase or an added word fails.
+
+    0.14.3: a quote is found only as whole words: it may not start or end inside a word of the text ("not" is not
+    found in "another", "legal" not in "illegal"), and the spacing pass may not join two words the quote keeps apart
+    ("now here" is not "nowhere"). `whole_words=False` keeps the looser search of before (to place a quote stored
+    before 0.14.3); a person's own selection is found with `find_selection`.
     """
     q = (quote or "").strip()
     if len(normalise(q)) < 3:
         return None
-    for drop, kind in ((False, "exact"), (True, "spacing")):
-        nh, hstart, hend = _normalise_spans(haystack, drop_spaces=drop)
-        nq = _normalise_spans(q, drop_spaces=drop)[0]
-        if not nq:
+    nh, hstart, hend = _normalise_spans(haystack)
+    nq = _normalise_spans(q)[0]
+    pos = nh.find(nq) if nq else -1
+    while pos >= 0:
+        end = pos + len(nq)
+        if not whole_words or (_word_edge(haystack, nh, hstart, pos, True) and _word_edge(haystack, nh, hstart, end)):
+            return hstart[pos], hend[end - 1], "exact"
+        pos = nh.find(nq, pos + 1)
+    # the spacing pass: every space is left out, and it is noted where the text had one before each character
+    chars, starts, ends, gap = [], [], [], []
+    prev = False
+    for c, a, b in zip(nh, hstart, hend):
+        if c == " ":
+            prev = True
             continue
-        pos = nh.find(nq)
-        if pos >= 0:
-            return hstart[pos], hend[pos + len(nq) - 1], kind
+        chars.append(c)
+        starts.append(a)
+        ends.append(b)
+        gap.append(prev)
+        prev = False
+    sh = "".join(chars)
+    qc, qgap = [], []
+    prev = False
+    for c in nq:
+        if c == " ":
+            prev = True
+            continue
+        qc.append(c)
+        qgap.append(prev)
+        prev = False
+    sq = "".join(qc)
+    if not sq:
+        return None
+
+    def edge(i: int, start: bool = False) -> bool:
+        return i <= 0 or i >= len(sh) or gap[i] or _word_edge(haystack, sh, starts, i, start)
+
+    pos = sh.find(sq)
+    while pos >= 0:
+        end = pos + len(sq)
+        # a space the quote puts between two words must be in the text too (or the text must have an edge there)
+        if not whole_words or (edge(pos, True) and edge(end)
+                               and all(edge(pos + k) for k in range(1, len(sq)) if qgap[k])):
+            return starts[pos], ends[end - 1], "spacing"
+        pos = sh.find(sq, pos + 1)
     return None
+
+
+def find_selection(haystack: str, quote: str) -> tuple[int, int, str] | None:
+    """A person's own selection in a text (0.14.3), found as a quote is; one that starts or ends inside a word (a
+    selection dragged a little short) is widened to the whole words, so it is kept as whole words like every quote
+    and found again wherever quotes are placed (highlights, the original file)."""
+    hit = find_quote(haystack, quote)
+    if hit:
+        return hit
+    hit = find_quote(haystack, quote, whole_words=False)
+    if not hit:
+        return None
+    a, b, kind = hit
+
+    def inside(c: str) -> bool:  # part of a word: a letter or digit, or a combining mark on one (not Chinese etc.)
+        return (c.isalnum() or bool(unicodedata.combining(c))) and not _unspaced(c)
+
+    while a > 0 and inside(haystack[a - 1]) and inside(haystack[a]):
+        a -= 1
+    while b < len(haystack) and inside(haystack[b - 1]) and inside(haystack[b]):
+        b += 1
+    return a, b, kind
+
+
+MIN_GRADE_WORDS, MIN_GRADE_CHARS = 3, 15
+
+
+def grade_quote_problem(quote: str | None) -> str | None:
+    """0.14.3: what is wrong with the quote of a judgement (supports, partly supports, contradicts), or None. A quote
+    shows a judgement only with a few words of context: "not" or "no effect" alone can be found almost anywhere."""
+    q = " ".join((quote or "").split())
+    words = 0
+    for tok in q.split():  # in Chinese or Thai, written without spaces, a character is about a word
+        u = sum(1 for c in tok if _unspaced(c))
+        words += u + any(c.isalnum() and not _unspaced(c) for c in tok) if u else 1
+    if words >= MIN_GRADE_WORDS or len(q) >= MIN_GRADE_CHARS:
+        return None
+    return (f"the quote {q[:80]!r} is too short to show the judgement: quote at least {MIN_GRADE_WORDS} words (or "
+            f"{MIN_GRADE_CHARS} characters), copied exactly")
+
+
+def partial_word_hint(haystack: str, quote: str) -> str:
+    """When a quote is in the text only as part of a word (see `find_quote`), the words to say so; otherwise ""."""
+    if find_quote(haystack, quote, whole_words=False):
+        return (" (it is there only as part of a word, or with words the text writes together: quote whole words, "
+                "exactly as written)")
+    return ""
 
 
 _ABBREV = re.compile(

@@ -2,7 +2,7 @@
 // (a concordance). No hypothesis and no AI are needed. Clicking a word of a line adds it to the search; Shift-click
 // makes a phrase. A line opens its document at the words, or starts a check about what it says.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, addDocumentsFirst, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks } from "../lib.js";
 
 const MODES = [
   ["any", "any of the words"],
@@ -44,17 +44,19 @@ function wordSpans(text, onWord) {
 
 export async function renderSearch(view, params, query) {
   const project = App.project;
-  let info = {}, docs = [];
-  try {
-    const [p, d] = await Promise.all([api("GET", `/api/projects/${P(project)}`), api("GET", `/api/projects/${P(project)}/documents`)]);
-    info = p; docs = d.documents || [];
-  } catch (e) { showError(e); }
+  // 0.14.3: a failure is the router's error on the page (it was a toast, then a heading "in the 0 documents")
+  const [info, { documents: docs = [] }] = await Promise.all([api("GET", `/api/projects/${P(project)}`), api("GET", `/api/projects/${P(project)}/documents`)]);
   const st = {
     q: query.q || "", mode: query.mode || "any", near: Number(query.near || 5), exact: query.exact === "1",
     all: query.all === "1", docs: query.docs || "", code: query.code || "", sort: query.sort || "doc",
     offset: Number(query.offset || 0), meaning: query.meaning === "1",
   };
   const semantic = !!(info.search && info.search.embedded);
+  if (!docs.length) {
+    view.appendChild(pageHead("Search the documents", { eyebrow: featureEyebrow("search"), sub: "Every place words occur in the documents, one line per place, with the words around it." }));
+    view.appendChild(addDocumentsFirst("Search"));
+    return;
+  }
   view.appendChild(pageHead("Search the documents", { eyebrow: featureEyebrow("search"),
     sub: `Every place words occur in the ${fmt.plural(docs.length, "document")}, one line per place, with the words around it.`,
   }));
@@ -147,7 +149,9 @@ export async function renderSearch(view, params, query) {
     if (r.rarest && r.words.length > 1) out.appendChild(h("p", { class: "muted small", style: { margin: "-4px 0 8px" } }, `One line for each place of “${r.rarest}”, the rarest of the words, in passages that have all of them; the other words may be further away in the same passage (open it to see them).`));
     if (r.other_forms && r.other_forms.length) out.appendChild(otherForms(r.other_forms));
     // counts per document first
-    const perDoc = h("div", { class: "per-doc", role: "group", "aria-label": "Places per document (click to search only that document)" },
+    // 0.14.3: said in words above the buttons (they read as more word forms, right under "Other forms in the documents")
+    out.appendChild(h("p", { class: "per-doc-label muted small", id: "per-doc-label" }, "Places per document (click one to search only that document):"));
+    const perDoc = h("div", { class: "per-doc", role: "group", "aria-labelledby": "per-doc-label" },
       r.per_doc.slice(0, 40).map((d) => h("button", { type: "button", class: "chip chip-btn", "aria-pressed": st.docs === d.doc_id ? "true" : "false", title: d.title,
         onClick: () => { st.docs = st.docs === d.doc_id ? "" : d.doc_id; docSel.value = st.docs; st.offset = 0; go_(); } },
         (d.title || "untitled").slice(0, 48), " ", h("span", { class: "count" }, String(d.hits)))),

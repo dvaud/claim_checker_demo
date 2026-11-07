@@ -16,13 +16,14 @@ import json
 import os
 import platform
 import shutil
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from . import __version__, access, claimcheck, frameworks, ingest
+from . import __version__, access, claimcheck, frameworks, ingest, tasks
 from . import home as core
 from .sources import document_overview
 
@@ -34,7 +35,8 @@ How to check a claim:
 2. Write 5 to 15 search terms: the claim's key words, synonyms, technical terms, the outcome it concerns, and words
    a source would use to state the opposite. Then call start_check.
 3. Read every passage returned. Grade only those that bear on the claim, following the rules returned with them.
-   Quote the shortest span that shows the grade, copied exactly from that passage. Use no outside knowledge.
+   Quote the shortest span that shows the grade, at least three whole words, copied exactly from that passage. Use
+   no outside knowledge.
 4. Call submit_grades. If it reports problems, fix exactly those and call it again.
 5. Tell the user the status and give each quote with its document and page. Do not paste whole passages unless
    asked. If nothing was found, offer to read more passages (more_passages), or to search again with other wording
@@ -72,7 +74,8 @@ class Grade(BaseModel):
     passage: int = Field(ge=1, description="Passage number as shown (1 for P1)")
     verdict: Literal["supports", "partially_supports", "refutes"]
     confidence: float = Field(ge=0, le=1, description="Your probability that the grade is right")
-    quote: str = Field(min_length=3, description="Shortest span of that passage that shows the grade, copied exactly")
+    quote: str = Field(min_length=3, description="Shortest span of that passage that shows the grade, at least three "
+                                                 "whole words, copied exactly")
     scope_note: str | None = Field(None, description="When the passage is about another group, setting, place or "
                                                      "period than the claim names, say so in a few words (then the "
                                                      "grade is at most partially_supports); otherwise null")
@@ -90,31 +93,93 @@ def _project(name: str | None):
         raise ValueError("There are no projects yet. Create one with create_project and a path to the sources.")
     if not name:
         if len(projects) == 1:
-            return projects[0], core.open_project(projects[0])
+            return projects[0], _open(projects[0])
         raise ValueError(f"Several projects exist; say which one: {', '.join(projects)}")
     match = [p for p in projects if p.lower() == name.strip().lower()] or \
             [p for p in projects if name.strip().lower() in p.lower()]
     if len(match) != 1:
         raise ValueError(f"No single project matches {name!r}. Projects: {', '.join(projects)}")
-    return match[0], core.open_project(match[0])
+    return match[0], _open(match[0])
+
+
+def _open(name: str):
+    """A project, opened; a project whose database cannot be read gives a plain message (0.14.3)."""
+    try:
+        return core.open_project(name)
+    except (sqlite3.DatabaseError, OSError) as e:
+        raise ValueError(f"The project {name!r} cannot be opened: its database is damaged, not an ENLENS database, or "
+                         f"held by another program ({e}).") from e
+
+
+def _projects(fn, unreadable: list[str] | None = None):
+    """`fn(name, ws)` over every project, in order, until it returns something (not None), which is returned. 0.14.3:
+    a project that cannot be opened or read is skipped (its name goes into `unreadable`), so one damaged project
+    does not stop the connector for all the others."""
+    for name in core.list_projects():
+        try:
+            got = fn(name, core.open_project(name))
+        except (sqlite3.DatabaseError, OSError):
+            if unreadable is not None:
+                unreadable.append(name)
+            continue
+        if got is not None:
+            return got
+    return None
+
+
+def _unreadable_note(names: list[str]) -> str:
+    return (f" {len(names)} project(s) could not be opened (a damaged database, or one held by another program): "
+            f"{', '.join(names)}." if names else "")
 
 
 def _find_check(check_id: str):
-    for name in core.list_projects():
-        ws = core.open_project(name)
+    bad: list[str] = []
+
+    def look(name, ws):
         hyp = ws.query("SELECT hyp_id FROM user_claims WHERE claim_id=?", (check_id,))
         if hyp:
             if hyp[0][0] in access.hidden_hypotheses(ws):  # 0.13.6: an add-on keeps it on this computer
                 raise ValueError("This check is kept on this computer by the user: it is not shown here.")
             return name, ws
-    raise ValueError(f"No check {check_id!r} in any project.")
+        return None
+
+    found = _projects(look, bad)
+    if found:
+        return found
+    raise ValueError(f"No check {check_id!r} in any project." + _unreadable_note(bad))
+
+
+def _shareable(ws, check_id: str) -> tuple[bool, set[str]]:
+    """0.14.3: what the main model wrote in its own words may go to a Claude chat only when it read nothing but text
+    Claude may read now. A main model on this computer (Ollama, LM Studio, the demo) also reads the documents marked
+    Only a local AI, so its summary, or its note that an excerpt is about another group, can paraphrase them. Returns
+    (whether every round's main part was such, so the check's summary may be shown; the excerpts of the rounds whose
+    main part was), by the same test as for a task: the documents' settings and the add-ons' floors."""
+    cx = ws._conn()  # read only: no write lock
+    every, ok = True, set()
+    for g in claimcheck._rounds(ws, check_id):
+        for t in g:
+            if t["task_id"] != tasks.round_base(t["task_id"]):
+                continue
+            try:
+                payload = json.loads(t["payload_json"] or "{}")
+            except ValueError:
+                every = False
+                continue
+            if access.label_payload(cx, payload) == "cloud":
+                ok |= {p.get("passage_id") for p in payload.get("passages", [])}
+            else:
+                every = False
+    return every, ok
 
 
 def _summary(ws, check_id: str) -> dict:
     r = claimcheck.result(ws, check_id)
     lv = access.levels(ws, {p["doc_id"] for p in r["passages"]})
+    every, ok = _shareable(ws, check_id)
     evidence, restricted = [], {"supports": 0, "partially_supports": 0, "refutes": 0, "waiting_for_the_user": 0,
                                 "waiting_for_the_local_model": 0}
+    held_notes = 0
     for p in r["passages"]:
         if lv.get(p["doc_id"], "none") != "cloud":  # 0.11: no text of a restricted document, only what it says
             if p["verdict"]:
@@ -123,18 +188,30 @@ def _summary(ws, check_id: str) -> dict:
             restricted["waiting_for_the_local_model"] += bool(p.get("waiting_local"))
             continue
         if p["verdict"]:
+            note = p.get("scope_note") if p["passage_id"] in ok else None
+            held_notes += bool(p.get("scope_note")) and note is None
             evidence.append({"grade": p["verdict"], "confidence": p["confidence"], "quote": p["quote"],
                              "document": p["title"], "page": p["page"],
-                             **({"about_another_group": p["scope_note"]} if p.get("scope_note") else {})})
+                             **({"about_another_group": note} if note else {})})
     out = {"check_id": check_id, "claim": r["claim"], "status": r["status"],
-           "status_text": claimcheck.STATUS_TEXT.get(r["status"], r["status"]),
+           "status_text": r.get("status_text") or claimcheck.STATUS_TEXT.get(r["status"], r["status"]),
            "status_at_any_confidence": r["status_any"], "confidence_threshold": r["threshold"],
            "passages_read": len(r["passages"]), "rounds": r["rounds"], "evidence": evidence,
            "summary": r["rationale"], "target": r["target"]}
+    notes = []
     if any(restricted.values()):
         out["restricted_evidence"] = {k: v for k, v in restricted.items() if v}
-        out["restricted_note"] = ("Part of the evidence comes from documents the user keeps on this computer: their "
-                                  "grades count in the status, their text is not shown.")
+        notes.append("Part of the evidence comes from documents the user keeps on this computer: their grades count "
+                     "in the status, their text is not shown.")
+    if (r["rationale"] and not every) or held_notes:
+        if not every:
+            out["summary"] = None
+        notes.append("The model that read this check also read documents the user keeps on this computer, so its own "
+                     "words (" + " and ".join((["the summary"] if r["rationale"] and not every else []) +
+                                              (["its notes on excerpts"] if held_notes else [])) +
+                     ") are not shown either.")
+    if notes:
+        out["restricted_note"] = " ".join(notes)
     if r["status_any"] != r["status"]:
         low = sum(1 for e in evidence if (e["confidence"] or 0) < r["threshold"])
         out["note"] = (f"Counting every grade: {claimcheck.STATUS_TEXT.get(r['status_any'], r['status_any']).lower()}. "
@@ -144,11 +221,12 @@ def _summary(ws, check_id: str) -> dict:
 
 def _find_claim(claim: str):
     """The project that handed out this batch."""
-    for name in core.list_projects():
-        ws = core.open_project(name)
-        if ws.scalar("SELECT 1 FROM task_claims WHERE claim_id=?", (claim,)):
-            return name, ws
-    raise ValueError(f"No batch {claim!r} in any project. Take a new one with next_tasks.")
+    bad: list[str] = []
+    found = _projects(lambda name, ws: (name, ws) if ws.scalar("SELECT 1 FROM task_claims WHERE claim_id=?", (claim,))
+                      else None, bad)
+    if found:
+        return found
+    raise ValueError(f"No batch {claim!r} in any project. Take a new one with next_tasks." + _unreadable_note(bad))
 
 
 def _check_path(path: str) -> Path:
@@ -173,6 +251,8 @@ def _ingest(ws, path: str, exclude: list[str] | None, ai_access: str | None = No
         out["warnings"] = warn
     if stats.get("excluded"):
         out["excluded"] = stats["excluded"]
+    if stats.get("failed"):  # 0.14.3: files and zips that could not be read (the rest were added); for No AI, a count
+        out["could_not_read"] = stats["failed"] if out["ai_access"] != "none" else len(stats["failed"])
     return out
 
 
@@ -206,11 +286,12 @@ def build_server():
     @s.tool(description="List the projects (sets of documents) with their number of documents and checks.")
     @_friendly
     def list_projects() -> dict:
-        out = []
-        for name in core.list_projects():
-            ws = core.open_project(name)
-            out.append({"project": name, "documents": ws.scalar("SELECT COUNT(*) FROM documents"),
-                        "checks": ws.scalar("SELECT COUNT(*) FROM user_claims")})
+        out: list[dict] = []
+        bad: list[str] = []
+        _projects(lambda name, ws: out.append({"project": name, "documents": ws.scalar("SELECT COUNT(*) FROM documents"),
+                                               "checks": ws.scalar("SELECT COUNT(*) FROM user_claims")}), bad)
+        out += [{"project": name, "unreadable": "It cannot be opened: its database is damaged, not an ENLENS "
+                                                "database, or held by another program."} for name in bad]
         return {"projects": out, "folder": str(core.home() / "projects")}
 
     @s.tool(description="Create a project and read its sources from a path on this computer: a zip, a folder, or a "
@@ -320,7 +401,8 @@ def build_server():
         rows = [h for h in claimcheck.history(ws) if h["hyp_id"] not in hidden][: max(1, int(limit))]
         return {"project": name, "checks": [{"check_id": h["claim_id"], "checked_at": h["created_at"], "claim": h["claim"],
                                               "status": h["status"],
-                                              "status_text": claimcheck.STATUS_TEXT.get(h["status"], h["status"]),
+                                              "status_text": h.get("status_text")
+                                              or claimcheck.STATUS_TEXT.get(h["status"], h["status"]),
                                               "passages_read": h["passages_read"], "graded_by": h["model"]} for h in rows]}
 
     @s.tool(description="Search the project's documents for words or a phrase (in quotes) and list every place they "
@@ -439,14 +521,17 @@ def build_server():
         from . import taskqueue
 
         if not project:
-            out = []
-            for name in core.list_projects():
-                ws = core.open_project(name)
+            out: list[dict] = []
+            bad: list[str] = []
+
+            def waiting(name, ws):
                 n = ws.scalar("SELECT COUNT(*) FROM tasks WHERE COALESCE(queued, 0)=1 AND (status IN ('pending', "
                               "'retry') OR (status='done' AND again=1))") or 0
                 if n:
                     out.append({"project": name, "waiting": n})
-            return {"projects_with_work": out, "local_only": core.local_only()}
+
+            _projects(waiting, bad)
+            return {"projects_with_work": out, "local_only": core.local_only(), **({"unreadable": bad} if bad else {})}
         name, ws = _project(project)
         q = taskqueue.run_status(ws, name, kind, parallel, helpers)
         return {k: q[k] for k in ("project", "groups", "kinds", "waiting", "being_answered", "paused", "held",

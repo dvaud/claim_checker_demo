@@ -55,8 +55,13 @@ takes `?threshold=`). Claim and hypothesis statuses (texts and explanations are 
 | `unsupported` | No evidence found (in the excerpts read) |
 | `uncertain` | Only uncertain evidence: excerpts were judged, but none at or above the threshold |
 | `no_passages` | Nothing in your documents matched |
-| `not_checked` | Not finished yet |
+| `not_checked` | Not finished yet; *Waiting for your judgement* (`status_text`) when every excerpt read waits for the person |
 | `failed` | The check did not work |
+
+0.14.3: an excerpt no model may read (`read_by: "you"`) counts towards no status until the person judges it (before,
+it counted as "not about the hypothesis", so a check of *No AI* documents said "No evidence found"). A round whose
+main part failed is failed, even when its other excerpts were read by the local model or wait for the person, and
+none of the AI's judgements in it count anywhere (status, `balance`, `who`, `counted`, the Results list, the map).
 
 Texts are in `GET /api/state` → `statuses` (`text`, `help`, and `next`: what a reader can do next).
 A person can overrule the AI's judgement of any excerpt read (`PUT …/judgements/…`, below); their judgement replaces
@@ -151,6 +156,10 @@ kept in memory for this run only. `DELETE /api/settings/key` forgets both. 403 w
 
 `POST /api/quit` → `{"stopping": true, "jobs_stopped": n}`: stops the app ("Quit ENLENS" in the sidebar) once the
 running jobs have stopped (at most 20 s); 409 when this copy was not started in a way that can be stopped from here.
+0.14.3: every Claude Code run started from the app (`queue/claude-code`) is stopped first, and its batches go back to
+the queue; the same for `POST /api/restart` and `POST /api/update`. Each run's process id is kept in
+`<data folder>/claude-runs/<project>-<hash>.run.json`, so an app started later still sees a run that kept working
+(`runner.running`), can stop it, and does not start a second.
 
 "Update ENLENS" in the sidebar (0.13.1). `GET /api/state` says `can_quit` and `can_restart`: whether this copy can stop
 itself, and restart itself (started with `enlens-gui` or from the ENLENS icon; the button is shown only then, and
@@ -166,6 +175,9 @@ since 0.13.6 only when there is an update).
   (*Check for updates* in Settings) looks again now. A version already on disk is seen at once. The one-line install
   reads the newest version from where `github.com/…/releases/latest` redirects to, which GitHub's API limit does not
   count; the API is asked only when that page does not say. `POST /api/update` forgets the kept answer.
+  0.14.3: while an update runs the answer is the kept one (or `available: true`) with `"updating": true`, and no
+  `git fetch` is made beside the update's own git commands; a git command never asks for a password (stdin closed,
+  `GIT_TERMINAL_PROMPT=0`, ssh in batch mode) and is stopped after 90 s.
 - `POST /api/update` `{}` → `{"updated": true, "restarting": true, "from", "version", "jobs_stopped": n}`: installs it
   as `enlens update` does, then restarts on the same address and port (running jobs are stopped first, as for Quit;
   at most 20 s); `{"updated": false, "restarting": false, "version"}` when nothing newer waits. 409 when the update
@@ -222,13 +234,17 @@ is not one, 409 when no Ollama answers on this computer (or at the address in Se
 (not copied). `DELETE /api/projects/<p>` `{"confirm": "<p>"}` → `{"result": "unlinked" | "moved to …/trash/…"}`.
 
 `GET /api/projects/<p>/export.zip` → the whole project as one zip, to give to a colleague or move to another
-computer: a consistent copy of the database, `config.json`, the project's codebooks, `uploads/`, and the original
-file of every other document (as `originals/<doc_id>/<name>` when it was read from outside the project folder).
+computer: a consistent copy of the database, `config.json`, the project's codebooks, and the original file of every
+document the project has (at its place in `uploads/` or `inputs/`, or as `originals/<doc_id>/<name>` when it was read
+from outside the project folder). 0.14.3: nothing else of `uploads/` (before, the whole folder, so the file of a
+removed document went along).
 Built in a temporary file and sent in chunks; the file name is readable ("ENLENS project - Demo - 2026-10-28.zip").
 `POST /api/projects/import?name=<name>` with the zip as the raw body → `{"project": summary}` (it becomes the
 current project). Without `name` the project keeps the name it had, with " (2)" added when that is taken; a `name`
 that is taken → 409. 400 for a file that is not a zip, or a zip without a project (`enlens.sqlite`). Paths in the zip
-cannot leave the new project folder, and its size is capped.
+cannot leave the new project folder, and its size is capped. 0.14.3: the database is checked and opened before the
+project is put in place: a damaged zip or one whose database cannot be read → 400 with a plain message, and nothing
+is left in `projects/`.
 
 **Shared projects (0.14).** The zip's `bundle.json` also says which project it is and who sent it: `"project_uid"`,
 `"from": {"id": "p…", "name": "Anna"}`, `"sent_at"`; codebooks the project uses from the home folder come along in
@@ -237,13 +253,15 @@ cannot leave the new project folder, and its size is capped.
 (`sync.bring_in`) → `{"report": …, "project": summary}`. The report: `{"from": {"id", "name"}, "project", "version",
 "at", "lines": ["From Anna: 1 new result.", …], "documents": {"new": [titles], "clash": [{"title", "doc_id"}],
 "removed_here", "removed_there"}, "checks": {"new", "updated", "same", "yours_newer", "clash": [{"hyp_id", "of",
-"text"}], "running": [texts], "removed_here", "removed_there"}, "themes": {"new", "updated", "clash": [{"run_id",
-"of"}], "removed_here"}, "codebooks": {"new", "updated", "clash": [{"name", "of"}]}, "judgements", "reviews", "labels",
-"labels_kept_yours", "links", "other_rows", "bibliography": null | "new" | "merged" | "kept_yours", "ai_access":
-[{"title", "doc_id", "yours", "theirs", "now", "why": "theirs" | "yours" | "default", "claude_read_here" |
-"claude_read_there"}]}`; it is kept in `sync_log`. A file not known to be a copy of this project (another project's,
-or one made before 0.14) → 409 with `"not_this_project": {"project_uid", "from", "name", "version"}`;
-`?anyway=1` brings it in all the same (and remembers that project's id). 400 for a file that is not a project zip, or
+"text"}], "running": [texts], "running_here": [texts], "removed_here", "removed_there"}, "themes": {"new", "updated",
+"clash": [{"run_id", "of"}], "removed_here", "running_here": [run ids]}, "codebooks": {"new", "updated", "clash":
+[{"name", "of"}]}, "judgements", "reviews", "labels", "labels_kept_yours", "links", "other_rows", "bibliography":
+null | "new" | "merged" | "kept_yours", "ai_access": [{"title", "doc_id", "yours", "theirs", "now", "why": "theirs" |
+"yours" | "default", "claude_read_here" | "claude_read_there"}]}`; it is kept in `sync_log`. `running_here`
+(0.14.3): results and theme runs the colleague changed whose work in this copy is not done yet (waiting for Claude
+Code, taken by a helper, a part for the local model): this copy's version stays as it is (before, it was replaced and
+that work deleted). A file not known to be a copy of this project (another project's, or one made before 0.14) →
+409 with `"not_this_project": {"project_uid", "from", "name", "version"}`; `?anyway=1` brings it in all the same (and remembers that project's id). 400 for a file that is not a project zip, or
 the zip of *Move ENLENS to another computer*. Before the merge the database is copied to
 `backups/before-bringing-in.sqlite`.
 `GET /api/projects/<p>/together` → `{"uid", "me": {"id", "name"}, "people": [{"id", "name"}], "history": [{"at",
@@ -298,6 +316,11 @@ while the new passages get vectors). `result`:
  "semantic_index": {"added": 2381, "embedded": 2381, "passages": 2381, "complete": true, …} | absent,
  "semantic_index_error": "…" | absent}
 ```
+0.14.3: `failed` also lists a zip, or a file in a zip, that could not be unpacked (`"sources.zip: password-protected
+zip: save a copy without the password and add that (report.pdf)"`, `"…: damaged zip: copy or download it again (…)"`),
+a damaged Word file and a password-protected PDF (`"x.pdf: password-protected: …"`, before reported as a file without
+text); the other files are added. `"stopped": true` when Stop was pressed, also during the text recognition (OCR) of a
+scanned PDF, which is then not added.
 (optional keys are absent when empty). `ocr`: PDFs whose scanned pages were read by OCR (on this computer, at low
 priority). `scanned_no_text`: PDFs with scanned pages that stayed without text (OCR off or not installed): say
 "Scanned: no text. Ask IT to install Tesseract to read it." A wholly scanned PDF without OCR is also in
@@ -383,7 +406,9 @@ result: the `search` state plus `added` and `remaining`; 400 when no embedding m
 
 ### Frameworks (optional codebooks)
 
-`GET /api/projects/<p>/frameworks` → `{"frameworks": [info]}` (always includes `sdg`).
+`GET /api/projects/<p>/frameworks` → `{"frameworks": [info], "problems": [{"file", "source", "error"}]}` (always includes
+`sdg`; `problems` lists codebook files in the folders that could not be used, with the reason). A CSV may be separated by
+commas, semicolons or tabs.
 `GET /api/projects/<p>/frameworks/<name>` → `{"framework": {...info, "items": [{"code", "description", "group", "group_name"}]}}`.
 `POST /api/projects/<p>/frameworks` `{"name": "h2", "csv": "code,description\nH1,…", "title": "…", "label": "hypothesis code"}`
 → `{"framework": info}`; 400 with the row problem. `DELETE /api/projects/<p>/frameworks/<name>`.
@@ -489,10 +514,14 @@ where a second opinion differs from the AI's judgement: tag "second opinion diff
 `status_before_stronger`: the answer the first model gave when a stronger model read excerpts again and changed it
 (else null). `supports`/`partly`/`refutes` count the excerpts whose
 judgement counts at this threshold, `uncounted` those below it; `docs_*` count documents as the result page does;
-`reviewed` counts the excerpts a person judged (agreeing or not), `corrected` those where they changed the AI's
-judgement, `to_review` the excerpts read that nobody judged yet.
+`reviewed` counts the excerpts you judged (agreeing or not), `corrected` those where you changed the AI's judgement,
+`to_review` the excerpts read that you have not judged yet (0.14.3: your own judgements, not a colleague's, as on the
+result and in Excel).
+`status_text` is null, or the words for a status that says more than its code: *Waiting for your local model*, or
+(0.14.3) *Waiting for your judgement*.
 
-`GET /api/projects/<p>/hypotheses/<hyp_id>?threshold=0.6` →
+`GET /api/projects/<p>/hypotheses/<hyp_id>?threshold=0.6` (404 when there is no such result; 0.14.3: the answer then
+carries `"in_project": "<name>"` when another project holds it, as happens when another window switched the project) →
 ```json
 {"hyp_id": "h…", "text": "…", "framework": "sdg" | null, "code": "6.4" | null,
  "code_description": "…", "code_label": "SDG target",           // present with a code
@@ -506,7 +535,9 @@ judgement, `to_review` the excerpts read that nobody judged yet.
           "locations": ["paragraph 6 of 8"], "both_sides": false}],
  "documents_in_project": 6, "passages_in_project": 31, "excerpts_read": 16,
  "reviewed": 3, "corrected": 1, "to_review": 13, "to_review_relevant": 5,
- "incomplete": false,                      // a part failed or is not graded yet
+ "incomplete": false,                      // a part failed or is not graded yet (not: it waits for your judgement)
+ "models_used": [{"model": "sonnet", "roles": ["search words", "judging the excerpts"]},
+                 {"model": "opus", "roles": ["judging again as the stronger model"]}],   // 0.14.3
  "rationale": "…" | null,                  // the model's summary (single-part hypotheses)
  "parts": [{
     "claim_id": "u…", "hyp_id": "h…", "part": 1, "role": "outcome" | null, "claim": "…",
@@ -531,7 +562,17 @@ null) and `ai_quote` (the AI's own quote). Each part also has `who` and `balance
 note on that round's excerpts"}]`, and (this endpoint only) `more_available`: false when "read more" would find
 nothing new. `who` lists the documents behind the answer by side, with the same rule as `balance` (a document with
 counted excerpts both for and against appears twice, `both_sides: true`). `to_review_relevant` counts the AI's
-judgements for or against that nobody reviewed yet.
+judgements for or against that you have not reviewed yet. 0.14.3: the hypothesis's `reviewed`, `corrected`,
+`to_review`, `to_review_relevant` and `disagreements_to_review` count your own judgements (the Excel columns say "you"; in a shared project a colleague's judgement counts in the
+answer where you made none, but it is not yours). `models_used` lists every model whose accepted answers the check
+used, in the order they first answered, with what each did (from the answers themselves: a stronger model, the local
+model for restricted documents, a model changed in Settings before Claude Code answered); `model` stays the one chosen
+when the check started. Each passage has `ai_read`: false when no model's judgement of it is stored (an excerpt no
+AI may read, or one whose part waits or failed); `round_failed`: its round's check failed, so no AI judgement of it
+counts (`counted` false; a person's own counts only when another round of the check was answered); and `my_verdict`:
+your own verdict (null when you gave none). In a shared project the verdict in force (`user_verdict`) may be a
+colleague's while `user_note` is your comment: a client that saves your comment sends `my_verdict` with it, never
+`user_verdict`, or the colleague's verdict would be saved as yours.
 New in 0.6, on each passage:
 - `breaks`: `[{"at": 82, "kind": "paragraph"}, {"at": 120, "kind": "heading", "end": 127}]` (offsets in `text`):
   where a new paragraph or a heading begins inside the excerpt, from the layout found when the document was added.
@@ -638,10 +679,13 @@ judgements), once at least 20 were judged. Show it next to the strictness: a sma
 `PUT /api/projects/<p>/hypotheses/<hyp_id>/note` `{"note": "…"}` → `{"saved": true}`.
 `GET /api/projects/<p>/hypotheses/<hyp_id>/export.xlsx` → an Excel file for people, in the app's own words and local
 times, with two sheets: *Summary* (one row per hypothesis: answer, answer for each part, documents per side, excerpts
-that count / too uncertain / read, judgements reviewed and changed by the person, excerpts not reviewed yet, notes,
-code, strictness, the AI model for a methods section) and *Excerpts* (every excerpt read: judgement, judged by, the
-AI's own judgement, AI certainty, counted in the answer, quote and who chose it, document, where, the person's
-comment, the full excerpt, notes, code). `.csv` and `.json` give the technical forms.
+that count / too uncertain / read, judgements reviewed and changed by you, excerpts you have not reviewed yet, notes,
+code, strictness, every AI model whose answers the check used and what each did, for a methods section) and
+*Excerpts* (every excerpt read: judgement, judged by, the AI's own judgement, AI certainty, counted in the answer,
+quote and who chose it, document, where, the person's comment, the full excerpt, notes, code). 0.14.3: an excerpt no
+AI judged says so: *Judged by* "nobody yet" (until you judge it) and *AI's own judgement* "Not read by an AI: kept for
+your own judgement", "Not read yet: it waits for your local model" or "Not read: the AI's answer could not be used".
+`.csv` and `.json` give the technical forms.
 `GET /api/projects/<p>/export.xlsx?threshold=` → the same for every check of the project, plus a sheet *Map* (the
 evidence map: one row per hypothesis, one column per document, + supports, (+) partly, − contradicts, ± both, with
 the number of excerpts that count); `export.csv` the technical CSV (ids, raw verdicts, UTC times). File names are
@@ -798,7 +842,9 @@ that no session has taken yet out of the queue; a check by queue is removed whol
   "local": {"label": "llama3.2:3b"}}`), `local_small_model`, `routing` (default true).
 - `GET /api/state` adds `queue: {"waiting"}` for the current project.
 - Results: a hypothesis has status `waiting` while a check by queue is not finished; `GET …/hypotheses/<id>` adds
-  `stronger_model`, `queue_command`, `queue`, and per part `rounds_info[]` `task_id`, `stepped_up`,
+  `stronger_model`, `stronger_reason` (0.14.3: why `stronger_model` is null: `"model_per_task_off"` (the setting is off,
+  or demo mode), `"top_model"` (Claude already runs checks on the strongest model of the plan), `"one_local_model"`,
+  or `"none"`; null when there is one), `queue_command`, `queue`, and per part `rounds_info[]` `task_id`, `stepped_up`,
   `stronger_waiting`, `waiting`; an excerpt's `ai_history[].why` is `"stepped up"` for a stronger model's reading.
   0.11.2 adds, on the hypothesis and on each part, `status_first` (the answer from the first model's readings),
   `status_before_stronger` (the same when it differs from `status`, else null) and `stronger` (`{}` or

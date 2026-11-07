@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 from helpers_0110 import mixed_project, write_corpus
@@ -134,8 +135,9 @@ def test_the_headless_run_is_closed(env, monkeypatch):
     monkeypatch.setattr(claude_setup, "setup_info", lambda: {"ready": True})
     monkeypatch.setattr(claude_setup, "status", lambda refresh=False: {"installed": True})
     claude_setup.start_run("P")
+    # 0.14.3: a work folder of the project's own (a second project's run no longer empties it)
     work = home.home() / "claude-runs" / "work"
-    assert seen["cwd"] == str(work) and list(work.iterdir()) == []
+    assert Path(seen["cwd"]).parent == work and list(Path(seen["cwd"]).iterdir()) == []
     assert "--disallowedTools" in seen["args"]
 
 

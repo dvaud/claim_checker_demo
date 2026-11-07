@@ -1,6 +1,6 @@
 // Results: every hypothesis checked in the project. Counts come from the API at the current strictness.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark, helpMark, downloadLinks } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, failedLoad, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark, helpMark, downloadLinks } from "../lib.js";
 import { ProgressPanel } from "./progress.js";
 
 const ORDER = ["supported", "partially_supported", "contested", "contradicted", "uncertain", "unsupported", "no_passages", "not_checked", "failed", "waiting"];
@@ -110,7 +110,7 @@ export async function renderHistory(view, params, query) {
     const qs = new URLSearchParams({ threshold: String(threshold) });
     if (q) qs.set("q", q); if (status) qs.set("status", status); if (batch) qs.set("batch", batch);
     let r;
-    try { r = await api("GET", `/api/projects/${P(project)}/hypotheses?${qs}`); } catch (e) { showError(e); return; }
+    try { r = await api("GET", `/api/projects/${P(project)}/hypotheses?${qs}`); } catch (e) { failedLoad(tableBox, e); tableBox.setAttribute("aria-busy", "false"); return; }
     rowsNow = r.hypotheses || [];
     drawChips(r.counts || {});
     drawBatch(rowsNow);

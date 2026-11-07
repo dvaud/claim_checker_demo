@@ -7,9 +7,9 @@ The zip holds:
 - `enlens.sqlite`: a consistent copy of the project's database, made with SQLite's backup API (the project can be
   in use while it is copied);
 - `config.json`, and the project's own codebooks (`frameworks/`);
-- `uploads/`: the files added through the app;
-- the original file of every other document: kept at its place when it is inside the project folder, and as
-  `originals/<doc_id>/<name>` when it was read from somewhere else on the computer;
+- the original file of every document the project has: kept at its place when it is inside the project folder
+  (`uploads/`, `inputs/`), and as `originals/<doc_id>/<name>` when it was read from somewhere else on the computer.
+  0.14.3: nothing else of `uploads/` (the file of a document removed since stays on this computer);
 - `bundle.json`: what is where (the version that made it and, per document, its file in the zip); since 0.14 also
   which project it is (`project_uid`) and who sent it (`from`), so a colleague can bring the work into their copy of
   the project (sync.py). Codebooks the project uses from the home folder come along in `frameworks/`.
@@ -17,7 +17,8 @@ The zip holds:
 Everything is written to a temporary file on disk and copied in chunks, never held in memory. Importing unpacks
 with the same guards as adding a zip of sources (no path can leave the project folder, a size budget against zip
 bombs), opens the database (which adds the columns of this version) and points each document at its file in the
-new folder.
+new folder. 0.14.3: the database is checked and opened while the project is still in its staging folder, so a zip
+whose database cannot be read leaves nothing in `projects/`.
 """
 from __future__ import annotations
 
@@ -70,16 +71,17 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
             zf.write(db, "enlens.sqlite", compress_type=zipfile.ZIP_DEFLATED)
             if ws.config_path.exists():
                 zf.write(ws.config_path, "config.json")
-            for folder in ("uploads", "frameworks"):
-                base = root / folder
-                if base.is_dir():
-                    for f in sorted(base.rglob("*")):
-                        if f.is_file() and not f.is_symlink():
-                            _add(zf, f, f.relative_to(root).as_posix())
-                            stats["uploads"] += folder == "uploads"
+            base = root / "frameworks"  # the project's own codebooks
+            if base.is_dir():
+                for f in sorted(base.rglob("*")):
+                    if f.is_file() and not f.is_symlink():
+                        _add(zf, f, f.relative_to(root).as_posix())
             for f in extra_codebooks:  # used here, kept in the home folder: a colleague needs them to read the labels
                 _add(zf, f, f"frameworks/{f.name}")
             written = {n for n in zf.namelist()}
+            # 0.14.3: the file of each document the project has now, and nothing else of `uploads/`: the files of
+            # documents removed since (one added by mistake), and uploads that failed or were already in the
+            # project, stay on this computer
             for r in ws.query("SELECT doc_id FROM documents ORDER BY doc_id"):
                 stats["documents"] += 1
                 info = original_file(ws, r["doc_id"], verify=False)
@@ -95,6 +97,7 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
                 if arc not in written:
                     _add(zf, f, arc)
                     written.add(arc)
+                    stats["uploads"] += arc.startswith("uploads/")
                 files[r["doc_id"]] = arc
             zf.writestr("bundle.json", json.dumps({"format": "enlens-project", "version": __version__,
                                                    "name": ws.root.name, **stamp, "files": files}, indent=1))
@@ -148,10 +151,34 @@ def relocate_documents(db: Path, relative, new_root: Path) -> int:
     return n
 
 
+DAMAGED_DB = ("The project's database in this zip cannot be read: the zip is damaged, or it is not an ENLENS project. "
+              "Ask for a new copy of the file.")
+
+
+def _open_staged(folder: Path) -> bool:
+    """0.14.3: check the database unpacked into the staging folder and open it there (which adds the tables and
+    columns of this version), before the project is put in place. Raises ValueError with a plain message when it
+    cannot be read. Returns whether it was made before 0.11 (per-document AI settings)."""
+    try:
+        cx = sqlite3.connect(folder / "enlens.sqlite")
+        try:
+            ok = cx.execute("PRAGMA quick_check").fetchone()
+            before_011 = "ai_access" not in {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
+        finally:
+            cx.close()
+        if not ok or ok[0] != "ok":
+            raise ValueError(DAMAGED_DB)
+        ws = Workspace.open(folder)
+        ws.close()  # no connection stays open on the folder that is about to move
+    except sqlite3.DatabaseError as e:
+        raise ValueError(DAMAGED_DB) from e
+    return before_011
+
+
 def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
     """Unpack a project zip into the folder `dest` (which must not exist yet, or be empty) and open it. The zip is one
     made with export_project, or a project folder zipped by hand (0.13.5)."""
-    from .ingest import _safe_extract, zip_name
+    from .ingest import ZIP_ERRORS, _safe_extract, zip_name, zip_problem
 
     zip_path, dest = Path(zip_path), Path(dest)
     if not zipfile.is_zipfile(zip_path):
@@ -168,25 +195,27 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
         try:
-            _safe_extract(zf, staging, [MAX_IMPORT], strip=prefix)
+            try:
+                _safe_extract(zf, staging, [MAX_IMPORT], strip=prefix)
+            except ZIP_ERRORS as e:  # 0.14.3: a damaged or password-protected zip, in words
+                raise ValueError(f"This project zip could not be unpacked ({zip_problem(e)}). Ask for a new copy of "
+                                 "the file.") from e
             if not (staging / "enlens.sqlite").is_file():
                 raise ValueError("The project's database could not be unpacked.")
             try:
                 meta = json.loads((staging / "bundle.json").read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+            before_011 = _open_staged(staging)
             if dest.exists():
                 dest.rmdir()
             staging.replace(dest)
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             raise
-    cx0 = sqlite3.connect(dest / "enlens.sqlite")
-    try:
-        before_011 = "ai_access" not in {r[1] for r in cx0.execute("PRAGMA table_info(documents)")}
-    finally:
-        cx0.close()
-    ws = Workspace.open(dest)  # adds the tables and columns of this version
+    ws = Workspace.open(dest)  # opened in staging already: the tables and columns of this version are there
     if before_011:
         # 0.11: a project made before per-document AI settings: the app asks once who may read its documents
         cfg = json.loads(ws.config_path.read_text(encoding="utf-8")) if ws.config_path.exists() else {}

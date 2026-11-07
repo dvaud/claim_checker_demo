@@ -1,5 +1,235 @@
 # Changelog
 
+## 0.14.3 (November 2026): fixes from a review of the whole app
+
+A review of ENLENS by five independent reviewers, each taking one part of the app (checking, privacy and sharing, the
+app's server and updates, exploring, and the pages themselves), found the defects below; most were reproduced with a
+script before they were fixed, and each fix has a test. Several **can change results**: each says so.
+
+### Privacy
+
+**A local model's summary no longer reaches a Claude chat.** When your main AI was a model on this computer, it also
+read documents marked *Only a local AI*, and the connector (`get_check`, `submit_grades`) showed its summary of a
+check, and its "about another group" notes on excerpts, to Claude. They are now shown only when every part of the
+check read nothing but text Claude may read now; otherwise they are left out and the connector says why. Claude's own
+summaries are shown as before. **Can change what Claude is sent.**
+
+**Letting Claude read a document asks first.** Changing a document from *No AI* or *Only a local AI* to *Claude may
+read it* (or from *No AI* to *Only a local AI*) saved at once, with only a short message, although the next check
+would send its passages to Anthropic. It now asks first and shows the document's note; *Cancel* puts the setting back.
+Making a setting stricter stays instant.
+
+**The project zip leaves out removed documents.** *Download as a zip* sent the whole uploads folder, so a document you
+had removed (one added by mistake, say) went to your colleague with the zip. Only the files of the project's current
+documents and its codebooks go in now. The zip's download link also no longer carries the app's access key in its
+address (where it stayed in the browser's history and in the file's "Where from" details). **Can change exports.**
+
+**Glossary terms stay home.** With an embedding server on another computer, terms found only in documents kept from
+Claude were sent to it to find wordings of the same concept. Only terms found in documents Claude may read are sent
+now. **Can change the "possibly the same" proposals.**
+
+**A colleague's copy of a document follows your stricter setting.** After a sync clash, making a document *Only a
+local AI* left your colleague's reading of the same file at *Claude may read it*. A copy now gets the stricter of its
+own setting and its original's.
+
+### Checking a hypothesis
+
+**A check whose AI answers failed no longer says "No evidence found".** When the AI's answers for a search could not be
+used (after three tries) and some of its excerpts came from *No AI* documents, the result said *No evidence found*,
+with no error and no "did not finish" warning. It now says *The check did not work* and shows why. Nothing the AI or
+the local model said in a search that failed counts in the answer, the counts, the map or the Excel file. Your own
+judgements of its excerpts are kept: they count once another search of the check is answered (*Check again*); while
+every search of a check has failed, the answer stays *The check did not work*. **Can change results.**
+
+**Excerpts that wait for your judgement are not "not about it".** A check of documents marked *No AI* said *No
+evidence found*, as if the excerpts had been read. It now says *Waiting for your judgement*, on the result, the Results
+list, the map, in Excel and to the Claude connector, and each excerpt counts once you judge it. **Can change results.**
+
+**Excel says who really judged each excerpt.** Rows for excerpts no AI read said "Judged by: the AI — Not about the
+hypothesis". They now say "nobody yet" and why: kept for your judgement, waiting for your local model, or the AI's
+answer could not be used; excerpts of a search that failed are marked *Not counted: the check did not work*. The *AI
+model used* column lists every model whose answers the check used and what each did (the stronger model, the local
+model for restricted documents, the model that actually answered in Claude Code). **Can change exports.**
+
+**A stricter quote check.** A quote must now match whole words ("legal" is no longer found inside "illegal", and "now
+here" no longer matches "nowhere"), may not begin or end inside a number ("rose by 2" is not a quote of "rose by
+2,500"), and a judgement's quote needs at least three words or 15 characters. The AI is told so (prompts `check-v5`,
+`verify-v2`, `verify-set-v2`). Your own selections are widened to whole words. Results already stored do not change:
+on the pilot and three real projects, 7 of 8,653 earlier quotes would now be sent back, none of them a judgement's.
+**Can change the results of new checks.**
+
+**A local model's runaway answer no longer stops everything.** An answer cut off at the length limit, or stuck writing
+blank space, deleted the whole check (finished parts too) and stopped *Check several*. It is now one failed try: the
+task is asked again with the problem listed, and the check goes on. A full context window, or a reasoning allowance
+used up, is still said at once, since asking again cannot help.
+
+**The stronger model gets its own three tries.** It could get only two, after which the result showed "stronger model
+waiting" for good. A Claude Code helper can now fix a rejected stronger-model answer instead of being told its claim
+had lapsed.
+
+**Smaller fixes.**
+- The evidence map agrees with the Results list: a document no longer "decides" an answer that is still waiting or
+  that failed. The map is also faster.
+- *How these results were made* records the prompt version the model was actually given.
+- The manual now says what the code always did: a part that failed or waits for you gives no evidence, so the whole
+  hypothesis is at most partly supported.
+
+### Exploring the documents
+
+**A phrase finds only the phrase.** The words *the*, *of*, *from* and the like in a quoted phrase were optional, and a
+phrase starting with one was counted twice: "the economy" also counted every "economy", and "imports of
+electrolysers" also found "imports from electrolysers". The counts per document, the exports and *Words that often
+appear nearby* were off. A phrase's own small words are now required where you wrote them. Words typed next to a
+quoted phrase must now also be in the passage (they were ignored), and with a document or code chosen, *Words that
+often appear nearby* compares with that part of the project rather than all of it. **Can change results.**
+
+**Highlights land where their words stand.** In a highlighted copy, a highlight went to the first place its words
+occurred on the page, so every mention of a concept on a page sat on the first one, and a mention such as "it" or
+"we" was never highlighted. Each highlight is now placed at its own position, and short mentions are matched as whole
+words. **Can change the highlighted copies.**
+
+**The bibliography no longer renames a document after a work it cites.** A document's DOI was guessed as the most
+frequent DOI on its first pages, possibly one it only cites, and the document was then linked to that work as *Same
+DOI* and renamed after it. A DOI now links on its own only when it is in the file name or on the title page; otherwise
+the pair waits under *Please confirm*. In a short document the reference list is no longer read as part of its title
+page, so the works it cites stay in *To find*. A decision or *Confirm all* now takes a fraction of a second (it took
+about 16 seconds in a library of 1,000 works and 200 documents), and matching is about four times faster. BibTeX web
+addresses keep their `~` and `--`, `@string` names (such as journals) are filled in, and only web addresses become
+links. **Can change results.**
+
+**Theme edits follow their themes.** Renames, merges, moved passages and removed themes were kept by theme number: after
+you added documents and found the themes again, your name "Water" could land on the songbirds theme, and in a small
+project edits vanished once it grew. Edits now follow their themes by the passages they share; an edit whose theme is
+gone is left behind. A double-clicked *Find the themes* no longer fails. **Can change results.**
+
+**A code you agreed with stays.** A keyword label you accepted or changed was dropped once the AI had read the
+passage, although your labels always count. It now stays. **Can change results.**
+
+**Codebooks from European Excel.** A codebook CSV saved with semicolons (Excel in Hungarian and other European
+settings) was refused, and one saved in a Windows code page lost its accented letters. Both are read now, and a file in
+a codebooks folder that cannot be read is listed with the reason instead of being skipped silently.
+
+**SDG pack: references of different years are told apart.** References without a DOI were identified by their first 48
+letters, so *Hydrogen Insights 2021* and *2022* became one reference. **Can change results.**
+
+### Working together
+
+**Sharing fixes.** A colleague's reading of a file that you had removed came back with every file from them; it now
+stays removed. A result still running in your copy (waiting for Claude Code, say) was replaced by your colleague's
+version and its work lost; it is now kept and the report says it is running here. Colleagues on different ENLENS
+versions got a sync clash on every result; they no longer do, and work exchanged with 0.14.0–0.14.2 is still
+recognised. A colleague's file can no longer add or replace a judgement or review in your name: only take one back,
+as the manual says. **Can change what comes in.**
+
+**A comment no longer hides a colleague's judgement.** In a shared project, adding only a comment to an excerpt made
+it fall back to the AI's judgement instead of your colleague's, and editing your comment afterwards (or its *Undo*)
+could save your colleague's verdict as yours. *Judgements you reviewed / changed*, *to review* and the Excel counts now
+count only your own judgements. **Can change results.**
+
+### Adding documents
+
+**One bad file no longer stops the whole add.** A password-protected or damaged zip, PDF or Word file stopped the whole
+add, with nothing added. It is now listed with the reason (for example *password-protected: save a copy without the
+password*) and the other files are added.
+
+**Text in other code pages is read as written.** Text and web pages saved in Windows-1250 or -1252 (a Hungarian
+Notepad file, an old web page) lost every accented letter, were marked unreadable and could not be searched. ENLENS
+now reads the file's byte-order mark, then UTF-8, then the page's declared encoding, then the Windows code page that
+fits. Prose in Hungarian, Italian, Polish, Czech, Slovak, Romanian, Croatian, Finnish and the Nordic languages is no
+longer marked unreadable. **Newly added documents only; can change results.**
+
+**Text recognition.** *Stop* now stops the text recognition of a long scan (it waited for every page), and scanned
+pages of PDFs read with the fallback reader are now recognised (an extra empty page turned recognition off).
+
+**Files picked while documents are being added are kept.** They were dropped without a word when the first run ended
+(or added unannounced). *Add* now stays off during a run, and new picks wait for the next one.
+
+### The app
+
+**Notes typed on a waiting result are kept.** While a check waited for Claude Code, the page rebuilt itself every five
+seconds, notes box included, so what you typed was lost. The page now waits while you type, and the note is saved when
+you click away or leave.
+
+**When ENLENS stops, the page says so.** The Overview said the project had no documents, and other pages went quietly
+empty. A banner now says ENLENS has stopped answering and offers to reload, and the pages show the failure.
+
+**More fixes on the pages.**
+- The documents table fits the window: *Open* and *Remove* were out of sight at most desktop widths.
+- The answer card says when excerpts from documents no AI may read wait for your judgement, and says in words (not
+  only colour) where a colleague judged differently from you.
+- The panel of work waiting for Claude Code scrolls into view.
+- A result opened after another window switched project offers to switch to its project.
+- *Check several* marks and skips lines too short to check, numbers failures correctly and no longer shows a waiting
+  spinner when it is done.
+- The *Let the auditor use Fable* switch saves when you change it, and unsaved settings are marked.
+- Search, Profile and Concepts say *Add documents first* in an empty project.
+- *Quick look* accepts the Word files its file picker offers.
+- "No stronger model is set" now says why: already on the strongest model of your plan, routing off, or one local model.
+- Smaller fixes:
+  - *Skip to content* works;
+  - the Profile grid's cells and help notes with a button work from the keyboard;
+  - the phone menu keeps focus;
+  - faint labels are easier to read;
+  - Search's per-document buttons have a label;
+  - Profile explains its two counts;
+  - the bring-in dialog stays open until the merge is done;
+  - the first-run screen fits a narrow window.
+
+**One Claude Code run per project, stopped on Quit.** Pressing *Start Claude Code* twice, or in two windows, could
+start two runs on your plan, and *Stop* reached only the last. There is now one run per project. *Quit ENLENS* and
+*Update and restart* left a run going on your plan, which the reopened app could neither see nor stop; they now stop
+it first, and an app opened while a run is still going shows it and can stop it.
+
+### Installing and updating
+
+**The Claude Code plugin follows the update.** Updating a one-line install (the app's *Update* button, `enlens update`
+or the install line again) left the plugin, and so Claude Code's instructions for ENLENS's tasks, at the old version.
+ENLENS now notices, writes it again and has Claude Code take the new copy (`claude plugin marketplace update`,
+`claude plugin update`).
+
+**Other fixes.**
+- A git copy whose new requirements failed to install (offline, say) is finished by the next update; before, the next
+  update said "up to date".
+- A copy still running after an update on disk keeps serving the page it started with, instead of the new page
+  against its old code.
+- The look for a new version can no longer hang on a password prompt.
+- On Windows, the Claude Code sign-in and the icon's fallback command work when the user name has an accent (Kovács).
+
+### For developers
+
+- `.github/workflows/tests.yml` runs the tests on every push and pull request to `main` (they ran only on a release
+  tag).
+- `tools/dev_server.py` never finds the real Claude Code any more: `--claude-code` and `--claude-code-paused` used the
+  `claude` on the PATH, read the signed-in account, and *Start Claude Code* would have started a real run.
+
+**Tests:**
+- `tests/test_0_14_3_check_status.py` (34 tests)
+- `tests/test_0_14_3_privacy_and_sync.py` (20)
+- `tests/test_0_14_3_explore.py` (18)
+- `tests/test_0_14_3_pages.py` (17)
+- `tests/test_0_14_3_setup_and_update.py` (21)
+
+Changed tests: `tests/test_0120_results_page.py` (the answer card's caution is built in two parts); `tests/test_0110_upgrade.py::test_the_headless_run_is_closed` (each project's run has its own folder); `tests/test_text_and_taxonomy.py::test_quote_tolerates_pdf_spacing_but_not_paraphrase` (it asserted that "well placed" matches "wellplaced", the word-joining defect); `tests/test_hypotheses.py` (a quote that cut a word; the new prompt version) and `tests/test_0_13_6_task_kinds.py` (the new prompt versions). `tests/fake_claude_cli.py` answers the two plugin update commands.
+
+**Not yet done:**
+- On a computer shared by several users, any of them can still read the app's access key from its first page. A fix
+  needs another way to hand the key to the browser.
+- Not tried on Windows: renaming a project being imported, long paths, stopping a run with `taskkill`, and the PowerShell
+  and `cmd` code pages. The written bytes and the logic were checked.
+- Not run for real:
+  - the Claude Code plugin refresh (checked against the real `claude plugin` help, run with a stand-in);
+  - Tesseract on a long scan;
+  - real AES-encrypted zips;
+  - a real remote embedding server.
+- A copy still running after an update can still load new Python modules it had not used yet.
+- The new test workflow runs on Linux and Python 3.12 only; Windows, macOS and Python 3.10–3.11 are not in it yet.
+- The Profile grid's code names still show only on hover at phone width.
+- *Settings* and *Projects* show only the banner when ENLENS has stopped.
+- A single short line of Hungarian saved in Windows-1250 can still be read as Windows-1252 (õ for ő); a few
+  sentences are read correctly.
+- When you have made no judgement of an excerpt and a colleague's judgement with a comment is in force, the
+  page shows their comment as *Your comment* (older than this release).
+
 ## 0.14.2 (November 2026): the theme is a small icon beside Settings
 
 **The theme is a small icon beside Settings.** The *Theme: system* button at the foot of the sidebar took a row of its

@@ -3,7 +3,7 @@
 import { App, api, h, icon, replace, toast, showError, dialog, confirmDialog, watchJob, P, navigate, fmt } from "../lib.js";
 import { simpleProgress } from "./progress.js";
 
-const OK = /\.(pdf|html?|txt|md)$/i;
+const OK = /\.(pdf|docx|html?|txt|md)$/i;   // 0.14.3: Word too (the app reads it, and the file chooser offers it)
 
 // The banner shown on every page of a temporary project.
 export function quickLookBanner(box) {
@@ -49,7 +49,7 @@ export function quickLookButton(opts = {}) {
 }
 
 export async function startQuickLook(file) {
-  if (!OK.test(file.name)) { toast("A quick look reads one PDF, web page (HTML), text or Markdown file.", "warn"); return; }
+  if (!OK.test(file.name)) { toast("A quick look reads one PDF, Word (.docx), web page (HTML), text or Markdown file.", "warn"); return; }
   const pb = h("div", {}, h("p", { class: "muted" }, `Copying ${file.name} (${fmt.bytes(file.size)})…`));
   let watcher = null, jobId = null;
   const done = dialog({

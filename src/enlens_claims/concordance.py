@@ -101,10 +101,13 @@ def _phrase_at(toks, i: int, ph, query: Query) -> int | None:
     first = True
     for st, w in ph:
         if is_stop(w):
+            # the phrase's own stop word is required where it is written (0.14.3: it used to be optional, and a
+            # phrase starting with one matched twice)
             if j < len(toks) and toks[j][3] == w:
                 j += 1
                 first = False
-            continue
+                continue
+            return None
         gap = 0
         while not first and j < len(toks) and is_stop(toks[j][3]) and toks[j][3] != w and gap < MAX_GAP:
             j += 1
@@ -139,6 +142,9 @@ def _hits_in(text: str, query: Query, rare: tuple[str, str] | None) -> list[tupl
                 hits.append((t[0], t[1], []))
         hits += [(toks[a][0], toks[b][1], []) for a, b in phrase_hits]
     elif query.mode == "phrase":
+        # words typed beside a quoted phrase are required in the passage (0.14.3: they were ignored)
+        if want and not want <= {keyof(t) for t in toks}:
+            return []
         hits += [(toks[a][0], toks[b][1], []) for a, b in phrase_hits]
     elif query.mode == "all":
         present = {keyof(t) for t in toks}
@@ -337,11 +343,16 @@ def collocates(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None 
     surface: dict[str, Counter] = {}
     hits = 0
     window_words = 0
+    # the baseline is the passages searched: with a document or code filter the nearby words are compared with that
+    # part of the corpus, not the whole of it (0.14.3), or the list would just be the filtered document's vocabulary
+    scope: set[int] | None = None
+    if allowed_docs is not None or allowed_passages is not None:
+        scope = {i for i, r in enumerate(idx.rows)
+                 if (allowed_docs is None or r["doc_id"] in allowed_docs)
+                 and (allowed_passages is None or r["passage_id"] in allowed_passages)}
     for i in _candidates(idx, query):
         r = idx.rows[i]
-        if allowed_docs is not None and r["doc_id"] not in allowed_docs:
-            continue
-        if allowed_passages is not None and r["passage_id"] not in allowed_passages:
+        if scope is not None and i not in scope:
             continue
         found = _hits_in(r["text"], query, rare)
         if not found:
@@ -357,14 +368,14 @@ def collocates(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None 
                     continue
                 near_counts[t[2]] += 1
                 surface.setdefault(t[2], Counter())[t[3]] += 1
-    total = sum(idx.bm25.lens) or 1
+    total = (sum(idx.bm25.lens) if scope is None else sum(idx.bm25.lens[i] for i in scope)) or 1
     # the floor grows with the number of hits, so a word seen 3 times near 16,000 hits does not top the list
     floor = max(min_count, hits // 1000)
     out = []
     for st, c in near_counts.items():
         if c < floor:
             continue
-        corpus = sum(f for _i, f in idx.bm25.postings.get(st, ()))
+        corpus = sum(f for i, f in idx.bm25.postings.get(st, ()) if scope is None or i in scope)
         if not corpus:
             continue
         expected = corpus * window_words / total

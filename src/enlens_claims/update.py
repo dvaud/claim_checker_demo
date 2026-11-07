@@ -48,8 +48,42 @@ def source_root() -> Path | None:
     return None
 
 
+GIT_TIMEOUT = 90  # seconds a git command may take (0.14.3)
+
+
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+    """Run a command. 0.14.3: it never reads from the terminal (stdin is closed), and a git command never asks for a
+    password or a passphrase (a remote that wants credentials fails instead of waiting for ever) and gives up after
+    GIT_TIMEOUT seconds: the app looks every two minutes, and one stuck look held up every later one."""
+    env, timeout = None, None
+    if cmd and cmd[0] == "git":
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+        timeout = GIT_TIMEOUT
+    try:
+        return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", f"{' '.join(cmd[:2])} took longer than {timeout} s and was "
+                                                          "stopped (is the network or the remote not answering?)")
+
+
+# 0.14.3: written (inside .git, so the copy stays "unchanged") before the requirements are installed after a merge,
+# removed when the install worked: a failed install is finished by the next `enlens update`, which would otherwise
+# find nothing to merge and say "up to date".
+def _pending_path(root: Path) -> Path:
+    return root / ".git" / "enlens-reinstall-pending"
+
+
+def _pending(root: Path) -> list[str] | None:
+    """The extras to install when an earlier update failed in its install step; None when nothing is pending."""
+    try:
+        data = json.loads(_pending_path(root).read_text("utf-8"))
+        return [str(x) for x in data.get("extras") or []]
+    except OSError:
+        return None
+    except (ValueError, AttributeError):
+        return []
 
 
 def _git(run: Runner, root: Path, *args: str) -> str:
@@ -177,35 +211,54 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
     _git(run, root, "fetch", "--quiet")
     before = version_in(root)
     waiting = int(_git(run, root, "rev-list", "--count", f"HEAD..{upstream}") or 0)
-    if not waiting:
+    pending = _pending(root)
+    if not waiting and pending is None:
         return {"updated": False, "version": before, "message": f"ENLENS {before} is up to date."}
     if check_only:
+        if not waiting:  # merged earlier, but its requirements are not installed yet
+            return {"updated": False, "version": before, "waiting": 1,
+                    "message": "ENLENS was fetched, but its requirements are not installed yet. Run `enlens update`."}
         return {"updated": False, "version": before, "waiting": waiting,
                 "message": f"A newer ENLENS is waiting ({waiting} change{'s' if waiting != 1 else ''}). Run `enlens update`."}
-    ahead = int(_git(run, root, "rev-list", "--count", f"{upstream}..HEAD") or 0)
-    if ahead:
-        raise UpdateError(f"This copy has {ahead} commit(s) of its own that are not on GitHub, so it cannot simply move "
-                          f"forward. Push them first (`git push` in {root}) or ask for help.")
     py = root / "pyproject.toml"
-    deps_before = _digest(py)
-    extras = installed_extras(py)  # before the merge (0.11.1): an extra whose packages grew must stay installed
-    _git(run, root, "merge", "--ff-only", "--quiet", upstream)
+    if waiting:
+        ahead = int(_git(run, root, "rev-list", "--count", f"{upstream}..HEAD") or 0)
+        if ahead:
+            raise UpdateError(f"This copy has {ahead} commit(s) of its own that are not on GitHub, so it cannot simply move "
+                              f"forward. Push them first (`git push` in {root}) or ask for help.")
+        deps_before = _digest(py)
+        extras = installed_extras(py)  # before the merge (0.11.1): an extra whose packages grew must stay installed
+        _git(run, root, "merge", "--ff-only", "--quiet", upstream)
+        if _digest(py) != deps_before:
+            pending = sorted(set(pending or []) | set(extras))
+            try:
+                _pending_path(root).write_text(json.dumps({"extras": pending}), encoding="utf-8")
+            except OSError:
+                pass
     after = version_in(root)
     out: dict = {"updated": True, "from": before, "version": after, "reinstalled": False}
-    if _digest(py) != deps_before:
+    if pending is not None:
+        extras = pending
         target = f"{root}[{','.join(extras)}]" if extras else str(root)
         r = run([python or sys.executable, "-m", "pip", "install", "--quiet", "-e", target], root)
         if r.returncode != 0:
             raise UpdateError(f"ENLENS {after} was fetched, but installing its new requirements failed:\n"
                               f"{(r.stderr or r.stdout or '').strip()[-2000:]}\nRun `enlens update` again when online.")
+        try:
+            _pending_path(root).unlink()
+        except OSError:
+            pass
         out["reinstalled"] = True
         out["extras"] = extras
     out["plugin"] = _refresh_plugin()
     out["running"] = _app_running()
-    notes = [f"ENLENS updated from {before} to {after}."]
+    notes = [f"ENLENS updated from {before} to {after}." if before != after else
+             f"ENLENS {after}: the requirements of the last update are installed now."]
     if out["reinstalled"]:
         notes.append("Its requirements changed and were installed into the same Python (no new venv).")
-    if out["plugin"]:
+    if out["plugin"] == "updated":
+        notes.append("The Claude Code plugin was refreshed.")
+    elif out["plugin"]:
         notes.append("The Claude Code plugin was refreshed; in Claude Code run `/plugin marketplace update enlens`.")
     notes.append("ENLENS is running: choose Quit ENLENS in the app and open it again." if out["running"]
                  else "Open ENLENS as usual.")
@@ -221,6 +274,10 @@ def _refresh_plugin() -> bool:
         if home.local_only() or not claude_setup.folder().exists():
             return False
         claude_setup.write_plugin()
+        path = claude_setup.find_claude()
+        if path:  # 0.14.3: Claude Code keeps its own copy of a plugin: have it take the new files
+            claude_setup.refresh_in_claude_code(path)
+            return "updated"
         return True
     except Exception:  # noqa: BLE001 - the update itself succeeded; the plugin can be set up again by hand
         return False

@@ -24,6 +24,8 @@ Nothing is sent anywhere: the merge reads the file on this computer.
 How a version is told newer: a unit's fingerprint names documents by their content (file and text), not by their id
 in a copy, so both copies compute the same fingerprint. A unit whose fingerprint here is among the states the other
 copy has had (its `sync_seen` and its current one) is older here; the other way round, older there; neither: a clash.
+0.14.3: a fingerprint leaves out empty values, so copies on versions with other columns agree; the form 0.14.0 to
+0.14.2 made is worked out and written down too, so their states are recognised (see `_fingerprints`).
 """
 from __future__ import annotations
 
@@ -159,18 +161,122 @@ def _themes_unit(cx: sqlite3.Connection, run_id: str) -> dict[str, list[dict]]:
                                  "task_id, attempt", tids) if tids else []}
 
 
-def _fp(unit: dict[str, list[dict]], canon: dict[str, str]) -> str:
+def _fp(unit: dict[str, list[dict]], canon: dict[str, str], shape=None) -> str:
     """A unit's fingerprint: what was found and read, with documents named by their content; not how it was produced
-    (tasks, results, the ids made from them) and not what people decided (kept per person)."""
+    (tasks, results, the ids made from them) and not what people decided (kept per person). `shape(table, row)`
+    gives the fields of a row that count (see `_fingerprints`); without it, every column (as 0.14.0 to 0.14.2)."""
     parts = []
     for t in sorted(unit):
         if t in ("tasks", "results"):
             continue
         # each row named by its content, in an order that does not depend on ids
-        rows = sorted(_tokens(json.dumps({k: v for k, v in r.items() if k not in _PERSONAL and k not in ("rowid", "ver_id")},
+        rows = sorted(_tokens(json.dumps({k: v for k, v in (shape(t, r) if shape else r).items()
+                                          if k not in _PERSONAL and k not in ("rowid", "ver_id")},
                                          sort_keys=True, ensure_ascii=False, default=str), canon) for r in unit[t])
         parts.append(t + "\n" + "\n".join(rows))
     return _sha("\n\n".join(parts))[:20]
+
+
+# 0.14.3: versions differ in their columns. A fingerprint over every column (`SELECT *`, as 0.14.0 to 0.14.2 made
+# them) changed whenever a version added one, even an empty one, so colleagues on different versions had a sync
+# clash on every check. Now a fingerprint is made of the columns this copy has and leaves out empty values (NULL, or
+# the column's declared default), so a column added later changes nothing until it holds something. The fingerprints
+# 0.14.0 to 0.14.2 made are inside the files people exchange: they are worked out too (`old`, over the columns those
+# versions had, plus any an add-on gives) and written down beside the new ones, so either is recognised.
+_FP_TABLES = ("hypotheses", "user_claims", "verifications", "second_opinions", "theme_runs", "themes", "theme_members")
+_COLS_0142 = {
+    "hypotheses": "hyp_id text framework code options_json decomposed rationale model created_at batch_id note parts_json "
+                  "docs_checked_at queue origin origin_id",
+    "user_claims": "claim_id text target terms_json rationale options_json model created_at hyp_id part role framework "
+                   "stage",
+    "verifications": "ver_id subject_kind subject_id passage_id doc_id verdict confidence quote start end page model "
+                     "prompt_version user_verdict user_note user_at user_quote user_start user_end scope_note "
+                     "ai_history_json reread_json refers_to refers_start refers_end refers_where user_by",
+    "second_opinions": "subject_id passage_id model verdict confidence quote start end scope_note at",
+    "theme_runs": "run_id mode k seed embed_model chat_model created_at passages run_key settings_json corpus_version",
+    "themes": "run_id theme_id name description terms_json size reps_json name_source quotes_json model removed_at "
+              "replaces",
+    "theme_members": "run_id theme_id passage_id similarity found_in"}
+_COLS_0142_SETS = {t: set(v.split()) for t, v in _COLS_0142.items()}
+_CORE: dict[str, set[str]] = {}
+_NO_DEFAULT = object()
+
+
+def _core_columns() -> dict[str, set[str]]:
+    """The columns this version of ENLENS itself gives the unit tables (not an add-on)."""
+    if not _CORE:
+        from .store import MIGRATIONS, SCHEMA, _add_columns
+
+        mem = sqlite3.connect(":memory:")
+        try:
+            mem.executescript(SCHEMA)
+            _add_columns(mem, MIGRATIONS)
+            for t in _FP_TABLES:
+                _CORE[t] = {r[1] for r in mem.execute(f"PRAGMA table_info({t})")}
+        finally:
+            mem.close()
+    return _CORE
+
+
+def _literal(sql: str | None) -> Any:
+    """A column's declared default as a value (`_NO_DEFAULT` for none, or an expression)."""
+    if sql is None:
+        return _NO_DEFAULT
+    s = sql.strip()
+    if s.upper() == "NULL":
+        return None
+    if len(s) >= 2 and s[0] == s[-1] == "'":
+        return s[1:-1].replace("''", "'")
+    for cast in (int, float):
+        try:
+            return cast(s)
+        except ValueError:
+            pass
+    return _NO_DEFAULT
+
+
+def _fingerprints(cx: sqlite3.Connection):
+    """For this copy's database: `fps(unit, canon) -> (new, old)`, a unit's fingerprints (the unit may come from a
+    colleague's database: only the columns this copy has count, the only ones it can keep)."""
+    cols, dflt = {}, {}
+    for t in _FP_TABLES:
+        info = cx.execute(f"PRAGMA table_info({t})").fetchall()
+        cols[t] = {r[1] for r in info}
+        dflt[t] = {r[1]: v for r in info if (v := _literal(r[4])) is not _NO_DEFAULT}
+    core = _core_columns()
+
+    def new(t: str, r: dict) -> dict:
+        have, d = cols.get(t), dflt.get(t, {})
+        return {k: v for k, v in r.items() if (have is None or k in have) and v is not None
+                and not (k in d and v == d[k])}
+
+    def old(t: str, r: dict) -> dict:
+        have, since = cols.get(t), core.get(t, set()) - _COLS_0142_SETS.get(t, set())
+        return {k: v for k, v in r.items() if (have is None or k in have) and k not in since}
+
+    return lambda unit, canon: (_fp(unit, canon, new), _fp(unit, canon, old))
+
+
+def _known(fps: tuple[str, str], seen: Iterable[str] | None) -> bool:
+    """Whether a unit's state (either form of its fingerprint) is among these states."""
+    return bool(seen) and (fps[0] in seen or fps[1] in seen)
+
+
+def _running(unit: dict[str, list[dict]]) -> bool:
+    """0.14.3: whether a check or theme run of this copy has work under way, as the result page counts it as waiting:
+    a check by queue not done yet, a task in the queue for Claude Code or taken by a helper (also one waiting for the
+    stronger model), or a part for the local model not read yet. A round only adds tasks, so its fingerprint does not
+    show it. (A task left unanswered by a run that crashed does not count: it would keep the older version forever.)"""
+    hyp = (unit.get("hypotheses") or [{}])[0]
+    if hyp.get("queue") == "waiting":
+        return True
+    for t in unit.get("tasks", []):
+        open_ = t["status"] in UNFINISHED or (t["status"] == "done" and t.get("again"))
+        if open_ and (t.get("queued") or t.get("claimed_by")):
+            return True
+        if t["status"] in UNFINISHED and t["task_id"].endswith(":local"):
+            return True
+    return False
 
 
 def _canon(cx: sqlite3.Connection) -> dict[str, str]:
@@ -220,11 +326,12 @@ def _used_codebooks(cx: sqlite3.Connection) -> set[str]:
 def record_seen(ws: Workspace, cx: sqlite3.Connection) -> None:
     """Write down the fingerprint of every check, theme run and codebook as it is now (when sent or brought in)."""
     canon = _canon(cx)
+    fps = _fingerprints(cx)
     rows = []
     for (hid,) in cx.execute("SELECT hyp_id FROM hypotheses").fetchall():
-        rows.append(("check", hid, _fp(_check_unit(cx, hid), canon)))
+        rows += [("check", hid, fp) for fp in fps(_check_unit(cx, hid), canon)]  # both forms (0.14.3)
     for (rid,) in cx.execute("SELECT run_id FROM theme_runs").fetchall():
-        rows.append(("themes", rid, _fp(_themes_unit(cx, rid), canon)))
+        rows += [("themes", rid, fp) for fp in fps(_themes_unit(cx, rid), canon)]
     folder = Path(ws.root) / "frameworks"
     for name in sorted(_used_codebooks(cx)):
         fp = _codebook_fp(folder, name)
@@ -362,8 +469,8 @@ class _Merge:
         self.r = {"from": self.sender, "project": info.get("name"), "version": info.get("version"), "at": self.at,
                   "documents": {"new": [], "clash": [], "removed_here": [], "removed_there": []},
                   "checks": {"new": 0, "updated": 0, "same": 0, "yours_newer": 0, "clash": [], "running": [],
-                             "removed_here": [], "removed_there": []},
-                  "themes": {"new": 0, "updated": 0, "clash": [], "removed_here": 0},
+                             "running_here": [], "removed_here": [], "removed_there": []},
+                  "themes": {"new": 0, "updated": 0, "clash": [], "removed_here": 0, "running_here": []},
                   "codebooks": {"new": [], "updated": [], "clash": []},
                   "judgements": 0, "reviews": 0, "labels": 0, "labels_kept_yours": 0, "links": 0, "other_rows": 0,
                   "bibliography": None, "ai_access": []}
@@ -503,6 +610,11 @@ class _Merge:
                 local = iid
             else:  # the same file, read into other text: the colleague's reading is a document of its own
                 local = f"{base_id(iid)}-{fp[:6]}"
+                if local in removed:  # 0.14.3: that reading was here and you removed it: it does not come back
+                    self.skip_docs.add(iid)
+                    self.ids[iid] = local  # their checks still name it as it was here (a removed document)
+                    self.r["documents"]["removed_here"].append(title)
+                    continue
             if not DOC_ID.fullmatch(local):
                 self.skip_docs.add(iid)
                 continue
@@ -711,8 +823,11 @@ class _Merge:
         - both changed: theirs is kept beside yours as a sync-clash copy `<id>-<mark>`, made once; when they change
           it again, that copy is brought up to date;
         - their own sync-clash copy of something: it comes in, marked, unless it is your version of it;
-        - removed here, or a check still running there: not brought in."""
+        - removed here, or a check still running there: not brought in;
+        - 0.14.3: yours is older but still running here (work waiting for Claude Code, or being answered): yours stays
+          as it is and the report says so (replacing it deleted that work, and the helper's answers then failed)."""
         unit_of = _check_unit if kind == "check" else _themes_unit
+        fps = _fingerprints(cx)
         canon_in, canon_here = _canon(self.icx), _canon(cx)
         seen_here, seen_there = self._seen(cx, kind), self._seen(self.icx, kind)
         copies_here, copies_there = self._copies(cx, kind), self._copies(self.icx, kind)
@@ -728,8 +843,8 @@ class _Merge:
         def own_ids(unit: dict, key: str) -> list[str]:
             return [key] + [c["claim_id"] for c in unit.get("user_claims", [])]
 
-        def fp_as(unit: dict, key: str, of: str, canon: dict) -> str:
-            return _fp(unit, {**canon, **_plain(own_ids(unit, key), key, of)})
+        def fp_as(unit: dict, key: str, of: str, canon: dict) -> tuple[str, str]:
+            return fps(unit, {**canon, **_plain(own_ids(unit, key), key, of)})
 
         def held_copies(key: str) -> list[str]:
             return [ck for ck, c in copies_here.items() if c["of"] == key and ck in here]
@@ -746,7 +861,7 @@ class _Merge:
                 # removed here. When you kept their version of it instead (a sync-clash copy), that copy follows theirs
                 if held_copies(key):
                     self._follow(cx, kind, unit, key, held_copies(key), canon_in, canon_here,
-                                 seen_there.get(key, set()), rep, removed)
+                                 seen_there.get(key, set()), rep, removed, fps)
                 elif kind == "check":
                     rep["removed_here"].append(text)
                 else:
@@ -756,30 +871,33 @@ class _Merge:
                 of = copies_there[key]["of"]
                 fp_plain = fp_as(unit, key, of, canon_in)
                 mine = unit_of(cx, of) if of in here else None
-                if mine is not None and (fp_plain == _fp(mine, canon_here) or fp_plain in seen_here.get(of, set())):
+                if mine is not None and (fp_plain[0] == fps(mine, canon_here)[0] or _known(fp_plain, seen_here.get(of))):
                     self._route(unit, key, of)  # your own version of it: what they decided on it goes to yours
                     continue
-                if of in removed or fp_plain in seen_here.get(of, set()):
+                if of in removed or _known(fp_plain, seen_here.get(of)):
                     continue  # a version you had and removed: it does not come back
                 self._put(cx, kind, unit)
                 self._mark(cx, kind, key, of, copies_there[key]["person_id"], copies_there[key]["at"])
                 rep["clash"].append({"hyp_id" if kind == "check" else "run_id": key, "of": of, "text": text})
                 continue
-            fp_in = _fp(unit, canon_in)
+            fp_in = fps(unit, canon_in)
             if key not in here:
                 self._put(cx, kind, unit)
                 self.history.add((kind, key))
                 rep["new"] += 1
                 continue
             mine = unit_of(cx, key)
-            fp_here = _fp(mine, canon_here)
-            if fp_in == fp_here or fp_in in seen_here.get(key, set()):
+            fp_here = fps(mine, canon_here)
+            if fp_in[0] == fp_here[0] or _known(fp_in, seen_here.get(key)):
                 self.history.add((kind, key))
                 if kind == "check":
-                    rep["same" if fp_in == fp_here else "yours_newer"] += 1
+                    rep["same" if fp_in[0] == fp_here[0] else "yours_newer"] += 1
                     self.claims |= {c["claim_id"] for c in mine["user_claims"]}
                 continue
-            if fp_here in seen_there.get(key, set()):  # yours is an older version of theirs
+            if _known(fp_here, seen_there.get(key)):  # yours is an older version of theirs
+                if _running(mine):  # 0.14.3: but a round of it runs here: it stays, and the report says so
+                    rep["running_here"].append(text if kind == "check" else key)
+                    continue
                 self._drop(cx, kind, mine)
                 self._put(cx, kind, unit)
                 self.history.add((kind, key))
@@ -787,26 +905,33 @@ class _Merge:
                 continue
             # both changed it: their version is kept here as a copy (made once, then brought up to date)
             self._follow(cx, kind, unit, key, held_copies(key), canon_in, canon_here, seen_there.get(key, set()), rep,
-                         removed, text=text, new=True)
+                         removed, fps, text=text, new=True)
 
     def _follow(self, cx: sqlite3.Connection, kind: str, unit: dict, key: str, copies: list[str], canon_in: dict,
-                canon_here: dict, history_there: set[str], rep: dict, removed: set[str], text: str | None = None,
-                new: bool = False) -> None:
+                canon_here: dict, history_there: set[str], rep: dict, removed: set[str], fps,
+                text: str | None = None, new: bool = False) -> None:
         """Their version of `key` goes to the copy of it kept here: as it is (it is that copy already: only what they
         decided on it goes there), brought up to date (the copy is an older version of theirs), or, with `new`, as a
         new copy `<key>-<mark>` (none of the copies is theirs; one you removed does not come back)."""
         unit_of = _check_unit if kind == "check" else _themes_unit
-        fp_in = _fp(unit, canon_in)
-        older = history_there | {fp_in}
-        follow = None
+        fp_in = fps(unit, canon_in)
+        older = set(history_there) | set(fp_in)
+        follow = running = None
         for ck in copies:
             c = unit_of(cx, ck)
-            fp_c = _fp(c, {**canon_here, **_plain([ck] + [x["claim_id"] for x in c.get("user_claims", [])], ck, key)})
-            if fp_c == fp_in:
+            fp_c = fps(c, {**canon_here, **_plain([ck] + [x["claim_id"] for x in c.get("user_claims", [])], ck, key)})
+            if fp_c[0] == fp_in[0]:
                 self._route(unit, key, ck)
                 return
-            if fp_c in older:
-                follow = ck
+            if _known(fp_c, older):
+                if _running(c):  # 0.14.3: a copy with work under way here stays as it is (and no second copy)
+                    running = ck
+                else:
+                    follow = ck
+        if running and not follow:
+            hyp = unit.get("hypotheses") or [{}]
+            rep["running_here"].append((text or hyp[0].get("text") or key) if kind == "check" else running)
+            return
         if follow:
             self._drop(cx, kind, unit_of(cx, follow))
             self._route(unit, key, follow)
@@ -815,7 +940,8 @@ class _Merge:
             return
         if not new:
             return  # you changed your copy of theirs too: yours stays
-        copy_id = f"{key}-{fp_in[:6]}"
+        # the copy's mark is made from the fingerprint 0.14.0 to 0.14.2 made, so every version marks it alike
+        copy_id = f"{key}-{fp_in[1][:6]}"
         if copy_id in removed:
             return  # you removed their version of it: it does not come back (until they change it again)
         self._route(unit, key, copy_id)
@@ -893,8 +1019,10 @@ class _Merge:
     def _judgements(self, cx: sqlite3.Connection) -> None:
         """Each person's judgements of the excerpts of the checks this copy has: a newer one of the same person
         replaces theirs (a judgement taken back is a row without a verdict, so it is not brought back); then the one
-        in force is worked out again (yours first)."""
-        rows = [r for r in _rows(self.icx, "SELECT * FROM judgements") if self._id("claim_id", r["claim_id"]) in self.claims]
+        in force is worked out again (yours first). 0.14.3: a row under your own name comes in only when it takes a
+        judgement back (no verdict, no note): nothing in a colleague's file can decide in your name."""
+        rows = [r for r in _rows(self.icx, "SELECT * FROM judgements") if self._id("claim_id", r["claim_id"]) in self.claims
+                and (r["person_id"] != self.me or (r["verdict"] is None and r["note"] is None))]
         cols = ["claim_id", "passage_id", "person_id", "verdict", "note", "at", "quote", "start", "end"]
         before = cx.total_changes
         cx.executemany(f"INSERT INTO judgements({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
@@ -931,6 +1059,8 @@ class _Merge:
         for r in _rows(self.icx, "SELECT * FROM reviews ORDER BY review_id"):
             r.pop("review_id", None)
             r["person_id"] = r.get("person_id") or self.sender["id"]
+            if r["person_id"] == self.me:
+                continue  # 0.14.3: yours are here already (or you took them back): a file cannot add one in your name
             k = people.review_key({c: self._id(c, v) for c, v in r.items()})
             if k not in have and k not in gone_here:
                 have.add(k)
@@ -1055,6 +1185,13 @@ def summary(r: dict) -> list[str]:
     if c["running"]:
         out.append(f"{_n(len(c['running']), 'check')} still running in {who}'s copy did not come in yet: bring in a later "
                    "file when it is done.")
+    running_here = [x for x in (_n(len(c.get("running_here") or []), "result"),
+                                _n(len(t.get("running_here") or []), "set of themes", "sets of themes"))
+                    if not x.startswith("0 ")]
+    if running_here:
+        out.append(f"Still running in your copy, so kept as it is for now: {' and '.join(running_here)} that {who} "
+                   f"changed too. When the run is done, bring in {who}'s file again: {who}'s version then comes in "
+                   "beside yours.")
     if d["removed_here"] or c["removed_here"]:
         out.append(f"{_n(len(d['removed_here']) + len(c['removed_here']), 'thing')} you removed earlier did not come back.")
     if d["removed_there"] or c["removed_there"]:

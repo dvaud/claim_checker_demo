@@ -4,6 +4,8 @@ import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, wat
 import { checkOptions } from "./options.js";
 import { ProgressPanel } from "./progress.js";
 
+const MIN_CHARS = 10;   // the shortest hypothesis a check accepts (claimcheck._clean)
+
 export async function renderBatch(view, params, query) {
   const project = App.project;
   let info, docsRes;
@@ -56,13 +58,19 @@ export async function renderBatch(view, params, query) {
       clear(previewBox);
       previewBox.hidden = quiet ? previewBox.hidden : false;
       if (!items.length) { previewBox.hidden = false; previewBox.appendChild(emptyState("search-x", "No hypotheses found", "Write one per line, or load a CSV with a column called “hypothesis”.")); runBtn.disabled = true; reason.textContent = "No hypothesis found in the text yet."; previewBtn.disabled = false; return; }
-      reason.textContent = `${items.length} ${items.length === 1 ? "hypothesis" : "hypotheses"} found.`;
-      previewBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `${r.count} ${r.count === 1 ? "hypothesis" : "hypotheses"} ready`), h("span", { class: "muted" }, "have a look before checking them")));
+      // 0.14.3: a line the check would refuse (under 10 characters) is marked here and left out of the count
+      const tooShort = (it) => it.text.length < MIN_CHARS;
+      const ready = items.filter((it) => !tooShort(it)).length;
+      const short = items.length - ready;
+      reason.textContent = `${ready} ${ready === 1 ? "hypothesis" : "hypotheses"} found${short ? `; ${short} ${short === 1 ? "line is" : "lines are"} too short and will be skipped` : ""}.`;
+      previewBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `${ready} ${ready === 1 ? "hypothesis" : "hypotheses"} ready`), h("span", { class: "muted" }, "have a look before checking them")));
       previewBox.appendChild(h("div", { class: "table-wrap batch-preview" }, h("table", { class: "table" },
         h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "#"), h("th", { scope: "col" }, "Hypothesis"), h("th", { scope: "col" }, "Codebook"), h("th", { scope: "col" }, "Code"))),
-        h("tbody", {}, items.map((it, i) => h("tr", {}, h("td", { class: "num muted" }, String(i + 1)), h("td", { class: "serif" }, it.text), h("td", { class: "muted" }, it.framework || ""), h("td", { class: "mono" }, it.code || "")))))));
-      runBtn.disabled = false;
-      replace(runBtn, icon("play", { size: 14 }), `Check ${items.length === 1 ? "this hypothesis" : `all ${items.length}`}`);
+        h("tbody", {}, items.map((it, i) => h("tr", { class: tooShort(it) ? "batch-short" : null }, h("td", { class: "num muted" }, String(i + 1)),
+          h("td", { class: "serif" }, it.text, tooShort(it) ? h("div", { class: "warn-chip small" }, icon("alert-triangle", { size: 12 }), `Too short: write it as a sentence (at least ${MIN_CHARS} characters). It will be skipped.`) : null),
+          h("td", { class: "muted" }, it.framework || ""), h("td", { class: "mono" }, it.code || "")))))));
+      runBtn.disabled = !ready;
+      replace(runBtn, icon("play", { size: 14 }), ready === 1 ? "Check this hypothesis" : `Check all ${ready}`);
     } catch (e) { if (!quiet) showError(e); }
     previewBtn.disabled = false;
   }
@@ -106,15 +114,16 @@ export async function renderBatch(view, params, query) {
       r.stopped ? h("div", { class: "notice notice-warn", style: { marginTop: "10px" } }, icon("alert-triangle"), h("p", {}, r.stopped)) : null,
       job.state === "error" ? h("div", { class: "notice notice-error", style: { marginTop: "10px" } }, icon("alert-circle"), h("div", {}, h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : "The checks could not continue."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)) : null,
       errors.length ? h("details", { class: "fold", open: true, style: { marginTop: "10px" } }, h("summary", {}, `Hypotheses that could not be checked (${errors.length})`),
-        h("ul", { class: "batch-errors" }, errors.map((e) => h("li", {}, h("span", { class: "muted" }, `#${(e.index ?? 0) + 1} `), h("span", { class: "serif" }, e.text), " — ", h("span", { class: "bad", style: { color: "var(--bad)" } }, e.error))))) : null);
+        h("ul", { class: "batch-errors" }, errors.map((e) => h("li", {}, h("span", { class: "muted" }, `#${e.index ?? "?"} `), h("span", { class: "serif" }, e.text), " — ", h("span", { class: "bad", style: { color: "var(--bad)" } }, e.error))))) : null);
     progressBox.appendChild(card);
     if (job.state === "done") toast(`All done: ${checked.length} checked${errors.length ? `, ${errors.length} could not be checked` : ""}.`, errors.length ? "warn" : "ok");
   }
 
   runBtn.addEventListener("click", async () => {
-    if (!items.length) return;
+    const todo = items.filter((it) => it.text.length >= MIN_CHARS);
+    if (!todo.length) return;
     const o = options.values();
-    const body = { items, decompose: o.decompose, expand: o.expand, k: o.k, per_doc: o.per_doc, semantic: o.semantic };
+    const body = { items: todo, decompose: o.decompose, expand: o.expand, k: o.k, per_doc: o.per_doc, semantic: o.semantic };
     if (o.doc_ids) body.doc_ids = o.doc_ids;
     runBtn.disabled = true;
     try {

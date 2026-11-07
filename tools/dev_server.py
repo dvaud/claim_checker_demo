@@ -9,7 +9,9 @@
 - starts the app with its API token printed, so the API can be called with curl as well;
 - with `--claude-code` (0.8): Settings name Claude Code, and a fake Claude Code session answers the queue every few
   seconds (tests/fake_claude_code.py), as if the researcher had typed /enlens-run; `--claude-code-paused` leaves the
-  queue unanswered, to see the waiting and paused states;
+  queue unanswered, to see the waiting and paused states (0.14.3: both find the stand-in `claude` program, and no
+  mode of the dev server ever finds the real one: it would read the developer's Claude account into the settings and
+  *Start Claude Code* would run on their plan);
 - with `--claude-cli` (0.9): Claude Code chosen, and a stand-in `claude` program (tests/fake_claude_cli.py) that the
   app finds, adds the plugin to, and starts with "Start Claude Code" (each run waits 2 s per round, so the progress
   can be watched). Add `--empty` to see the first-run screens as a new user of 0.9 does.
@@ -96,6 +98,10 @@ def main() -> int:
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
+    # 0.14.3: the real Claude Code is never found, in any mode: the app would read the developer's own signed-in account
+    # and plan into the dev settings, and *Start Claude Code* would start a real run on their plan. By default nothing
+    # answers as `claude`; the Claude Code modes below put the stand-in in its place.
+    os.environ["ENLENS_CLAUDE"] = str(home_dir / "no-claude-here")
 
     import fake_servers
     from helpers import PAPER_A_PAGES, REPORT_B_TEXT, UNRELATED_HTML, make_pdf
@@ -183,6 +189,8 @@ def main() -> int:
         ingest.find_tesseract = lambda: ""
         ingest._OCR_STATUS[:] = [0.0, None]
     if a.claude_code or a.claude_code_paused:
+        os.environ["ENLENS_CLAUDE"] = str(ROOT / "tests" / "fake_claude_cli.py")  # the stand-in, never the real one
+        os.environ.setdefault("FAKE_CLAUDE_DELAY", "2")
         home.update_settings({"allow_claude_code": True, "backend": "claude_code"})
         from enlens_claims import claude_setup
 

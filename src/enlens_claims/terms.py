@@ -477,14 +477,22 @@ def abbreviations(text: str) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------------------------
 def meaning_variants(ws: Workspace, embedder, limit: int = MEANING_TERMS, threshold: float = MEANING_MIN) -> int:
     """Propose "possibly the same" for terms whose labels the embedding model places closest to each other (mutual
-    nearest neighbours above `threshold`). Needs numpy; the proposals wait for a person's decision."""
+    nearest neighbours above `threshold`). Needs numpy; the proposals wait for a person's decision. 0.14.3: with an
+    embedding model on another computer, only terms found in documents Claude may read are sent to it (a term is
+    words of the documents; as embed.build does for passages)."""
     try:
         import numpy as np
     except ImportError:
         return 0
-    from .embed import _unit
+    from .embed import _restricted_docs, _unit, remote
 
     rows = ws.query("SELECT term_id, label, stems FROM terms ORDER BY tf DESC, term_id LIMIT ?", (int(limit),))
+    if remote(embedder):
+        restricted = _restricted_docs(ws)
+        if restricted:
+            allowed = [r[0] for r in ws.query("SELECT doc_id FROM documents") if r[0] not in restricted]
+            ok = terms_in_docs(ws, [r["term_id"] for r in rows], allowed)
+            rows = [r for r in rows if r["term_id"] in ok]
     if len(rows) < 2:
         return 0
     with ws.connect() as cx:  # vectors of terms the last build dropped (0.11.1: they stayed for good, a few MB a build)

@@ -77,12 +77,17 @@ export class ProgressPanel {
     if (p.batch && p.batch.total) {
       this.batchBox.hidden = false;
       const finished = !running;
-      const doneCount = finished ? p.batch.index : p.batch.index - 1;
-      const pct = Math.round((doneCount / p.batch.total) * 100);
+      // 0.14.3: once the job has ended the count is the job's own (the same "N of M" as the summary under it), and the
+      // steps of the last hypothesis are not shown any more (a spinner on "Waiting for Claude Code" after "Done")
+      const res = job.result || {};
+      const total = finished && Number.isInteger(res.total) ? res.total : p.batch.total;
+      const doneCount = finished ? (Array.isArray(res.checked) ? res.checked.length : p.batch.index) : p.batch.index - 1;
+      const pct = Math.round((doneCount / total) * 100);
+      this.partsBox.hidden = finished;
       replace(this.batchBox,
-        h("div", { class: "row", style: { justifyContent: "space-between" } }, h("strong", {}, finished ? `${doneCount} of ${p.batch.total} ${this.batchWords.done}` : `${doneCount} of ${p.batch.total} done · ${this.batchWords.doing} ${p.batch.index}`), h("span", { class: "muted small" }, `${pct}%`)),
-        h("div", { class: "progress-bar", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": p.batch.total, "aria-valuenow": doneCount }, h("span", { style: { width: `${Math.max(2, pct)}%` } })),
-        h("p", { class: "batch-current" }, p.batch.text || ""));
+        h("div", { class: "row", style: { justifyContent: "space-between" } }, h("strong", {}, finished ? `${doneCount} of ${total} ${this.batchWords.done}` : `${doneCount} of ${total} done · ${this.batchWords.doing} ${p.batch.index}`), h("span", { class: "muted small" }, `${pct}%`)),
+        h("div", { class: "progress-bar", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": total, "aria-valuenow": doneCount }, h("span", { style: { width: `${Math.max(2, pct)}%` } })),
+        finished ? null : h("p", { class: "batch-current" }, p.batch.text || ""));
     } else this.batchBox.hidden = true;
 
     // decomposition

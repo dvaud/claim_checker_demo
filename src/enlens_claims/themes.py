@@ -16,8 +16,10 @@ theme-v1) gives each theme a name of at most six words and a one-sentence descri
 representative passages that is checked like every other quote.
 
 A person can rename a theme, merge two, or move a passage to another theme. The edits are stored as reviews under
-the run's key (mode, k, seed and embedding model), so they apply again to a re-run with the same seed. Older runs are
-kept until they are deleted, to compare the themes before and after documents are added.
+the run's key (mode, k, seed, embedding model and the grouping itself), so they apply again to a re-run that gives
+the same themes. When documents were added and the run groups the passages differently, the edits of the latest
+earlier run with the same settings follow the themes by the passages they share (`_carry_edits`), never by theme
+number. Older runs are kept until they are deleted, to compare the themes before and after documents are added.
 
 A person can also remove a theme that is not relevant (running headers, reference lists, a topic outside the
 question): its passages are left out of the themes until it is brought back. A new theme can then be found in its
@@ -34,6 +36,7 @@ import json
 import math
 import random
 import time
+import uuid
 from collections import Counter, defaultdict
 from typing import Callable
 
@@ -248,6 +251,7 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
     from . import terms
 
     k = max(K_RANGE[0], min(int(k), K_RANGE[1]))
+    asked_k = k
     mode, why = choose_mode(ws, mode, embed_model)
     say = progress or (lambda *a: None)
     say("terms", 0, 1)
@@ -280,8 +284,11 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
     say("name", 0, 1)
     key_terms = _key_terms(ws, {renum[j]: [rows[i]["passage_id"] for i in groups[j]] for j in order}, counts)
     created = now()
-    rid = "r" + _h(mode, k, seed, embed_model, ws.corpus_version(), created, len(rows))
-    rkey = run_key(mode, k, seed, embed_model if mode == "meaning" else None)
+    # a random part: two runs of the same settings in the same second (a double click) must not share an id
+    rid = "r" + _h(mode, k, seed, embed_model, ws.corpus_version(), created, len(rows), uuid.uuid4().hex)
+    # the key of a person's edits: the settings and the grouping itself (theme numbers mean nothing without it)
+    rkey = run_key(mode, k, seed, embed_model if mode == "meaning" else None) + "-" + _h(
+        *(f"{rows[i]['passage_id']}={renum[j]}" for i, j in sorted(enumerate(assign), key=lambda x: rows[x[0]]["passage_id"])))
     theme_rows, member_rows = [], []
     for j in order:
         tid = renum[j]
@@ -293,15 +300,79 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
         for i in groups[j]:
             member_rows.append((rid, tid, rows[i]["passage_id"], round(float(sim[i]), 5)))
     settings = {"why": why, "dropped_repeats": dropped, "seconds": seconds, "passages_without_vector":
-                without_vector}  # recorded with the run (0.11.1: it was counted and then written as None)
+                without_vector, "asked_k": asked_k}  # recorded with the run (0.11.1: it was counted and then written as None)
     with ws.connect() as cx:
+        previous = _previous_run(cx, mode, seed, embed_model if mode == "meaning" else None, asked_k, k, rkey)
         cx.execute("INSERT INTO theme_runs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                    (rid, mode, k, seed, embed_model if mode == "meaning" else None, None, created, len(rows), rkey,
                     json.dumps(settings), ws.corpus_version()))
         cx.executemany(f"INSERT INTO themes({_THEME_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)", theme_rows)
         cx.executemany("INSERT INTO theme_members(run_id, theme_id, passage_id, similarity) VALUES (?,?,?,?)",
                        member_rows)
+        if previous:
+            carried = _carry_edits(cx, previous, rid, rkey, {p: t for _r, t, p, _s in member_rows})
+            settings.update(carried)
+            cx.execute("UPDATE theme_runs SET settings_json=? WHERE run_id=?", (json.dumps(settings), rid))
     return rid
+
+
+def _previous_run(cx, mode: str, seed: int, embed_model: str | None, asked_k: int, k: int, rkey: str):
+    """The latest earlier run with the same settings (the k asked for; before 0.14.3 only the k used was recorded)
+    whose edits may follow its themes into a new run; None when there is none or its grouping is the same."""
+    for r in cx.execute("SELECT run_id, run_key, k, settings_json FROM theme_runs WHERE mode=? AND seed=? AND "
+                        "COALESCE(embed_model, '')=? ORDER BY created_at DESC, rowid DESC",
+                        (mode, seed, embed_model or "")).fetchall():
+        asked = (json.loads(r[3] or "{}")).get("asked_k")
+        if (asked == asked_k) if asked is not None else (r[2] == k):
+            return None if r[1] == rkey else (r[0], r[1])
+    return None
+
+
+def _carry_edits(cx, previous: tuple[str, str], new_run: str, new_key: str, new_member: dict[str, int]) -> dict:
+    """A person's edits of the earlier run (renames, merges, moved passages, removed themes) follow their themes into
+    the new run: each old theme is matched with the new theme that has most of its passages (at least 40% of them,
+    two at least, and each new theme at most once). Edits of a theme with no counterpart are left behind and counted."""
+    old_run, old_key = previous
+    old_member = {p: t for t, p in cx.execute("SELECT theme_id, passage_id FROM theme_members WHERE run_id=?", (old_run,))}
+    size = Counter(old_member.values())
+    overlap: Counter = Counter((t, new_member[p]) for p, t in old_member.items() if p in new_member)
+    mapping: dict[int, int] = {}
+    taken: set[int] = set()
+    for (old, new), n in sorted(overlap.items(), key=lambda x: (-x[1], x[0])):
+        if old in mapping or new in taken or n < 2 or n < 0.4 * size[old]:
+            continue
+        mapping[old] = new
+        taken.add(new)
+    cols = [r[1] for r in cx.execute("PRAGMA table_info(reviews)") if r[1] != "review_id"]
+    carried = dropped = 0
+    for row in cx.execute(f"SELECT {', '.join(cols)} FROM reviews WHERE item_kind IN ('theme', 'theme_member') AND "
+                          "substr(item_id, 1, ?) = ? ORDER BY review_id", (len(old_key) + 1, old_key + ":")).fetchall():
+        d = dict(zip(cols, row))
+        tail = d["item_id"][len(old_key) + 1:]
+        if d["item_kind"] == "theme":
+            new_tail = mapping.get(int(tail))
+            target = d["corrected"] if d["field"] == "name" else (
+                str(mapping.get(int(d["corrected"]))) if d["corrected"] and mapping.get(int(d["corrected"])) else
+                ("" if not d["corrected"] else None))
+        else:
+            new_tail = tail if tail in new_member else None
+            target = (str(mapping.get(int(d["corrected"]))) if d["corrected"] and mapping.get(int(d["corrected"]))
+                      else ("" if not d["corrected"] else None))
+        if new_tail is None or target is None:
+            dropped += 1
+            continue
+        d["item_id"] = f"{new_key}:{new_tail}"
+        d["corrected"] = target
+        cx.execute(f"INSERT INTO reviews({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [d[c] for c in cols])
+        carried += 1
+    for old, at in cx.execute("SELECT theme_id, removed_at FROM themes WHERE run_id=? AND removed_at IS NOT NULL",
+                              (old_run,)).fetchall():
+        if old in mapping:
+            cx.execute("UPDATE themes SET removed_at=? WHERE run_id=? AND theme_id=?", (at, new_run, mapping[old]))
+            carried += 1
+        else:
+            dropped += 1
+    return {"carried_edits": carried, "left_behind_edits": dropped, "edits_from": old_run}
 
 
 # the columns of a theme as a run finds it (a removed theme and a new one have two more: removed_at, replaces)

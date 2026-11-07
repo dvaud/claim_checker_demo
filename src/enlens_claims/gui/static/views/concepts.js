@@ -2,7 +2,7 @@
 // concept: its wordings, the documents that discuss it, the passages as concordance lines, and related concepts
 // (a person accepts or rejects the links proposed by search by meaning or by the AI).
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob } from "../lib.js";
 import { MiniJob, jobCard as jobCardOf } from "./progress.js";
 
 const PAGE = 50;       // glossary entries per page
@@ -36,6 +36,7 @@ export async function renderConcepts(view, params, query) {
   const watchers = [];
 
   view.appendChild(pageHead("Concepts", { eyebrow: featureEyebrow("concepts"), sub: "The terms the documents use, grouped into concepts you can follow from one document to the next." }));
+  if (noDocuments()) { view.appendChild(addDocumentsFirst("The glossary")); return; }
 
   const jobBox = h("section", { class: "section", hidden: true, "aria-label": "Progress" });
   const statusBox = h("div");
@@ -79,7 +80,7 @@ export async function renderConcepts(view, params, query) {
     const qs = new URLSearchParams({ offset: String(offset), limit: String(PAGE), sort });
     if (q) qs.set("q", q);
     let g;
-    try { g = await api("GET", `/api/projects/${P(project)}/terms?${qs}`); } catch (e) { showError(e); listBox.setAttribute("aria-busy", "false"); return; }
+    try { g = await api("GET", `/api/projects/${P(project)}/terms?${qs}`); } catch (e) { failedLoad(listBox, e); listBox.setAttribute("aria-busy", "false"); return; }
     if (my !== seq) return;
     listBox.setAttribute("aria-busy", "false");
     draw(g);

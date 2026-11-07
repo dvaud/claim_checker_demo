@@ -67,6 +67,13 @@ def main(argv: list[str]) -> int:
         _save(st)
         print("Successfully added marketplace: enlens")
         return 0
+    if argv[:3] == ["plugin", "marketplace", "update"] or argv[:2] == ["plugin", "update"]:
+        # 0.14.3: what ENLENS runs so Claude Code takes a rewritten plugin; the calls are kept for the tests
+        st = _state()
+        st.setdefault("updates", []).append(" ".join(argv))
+        _save(st)
+        print("Successfully updated (stand-in)")
+        return 0
     if argv[:2] == ["plugin", "install"]:
         st = _state()
         if not st.get("marketplace"):

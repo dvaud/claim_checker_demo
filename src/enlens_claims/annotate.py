@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .store import Workspace
-from .textutil import find_quote
+from .textutil import _normalise_spans, normalise
 
 LAYERS = ("judgements", "labels", "concepts", "references")
 COLOURS = {"supports": "2e9e4f", "partially_supports": "f2b01e", "refutes": "d64545", "label": "3b82f6",
@@ -47,6 +47,7 @@ class Mark:
     note: str
     layer: str
     page: int | None = None
+    where: float | None = None  # how far into its page the mark starts (0 to 1), from ENLENS's own page offsets
     placed: bool = False
     method: str = ""
     quads: list = field(default_factory=list)
@@ -145,6 +146,8 @@ def _pages(ws: Workspace, doc_id: str, marks: list[Mark]) -> None:
     for m in marks:
         i = min(len(rows) - 1, bisect.bisect_right(ends, m.start))
         m.page = rows[i]["page"]
+        span = rows[i]["end"] - rows[i]["start"]
+        m.where = max(0.0, min(1.0, (m.start - rows[i]["start"]) / span)) if span > 0 else None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -333,6 +336,40 @@ def _quads(pt: PageText, a: int, b: int) -> list[tuple[float, float, float, floa
     return out
 
 
+def _find_nearest(text: str, quote: str, where: float | None) -> tuple[int, int, str] | None:
+    """The match of `quote` in a page's text nearest to `where` (how far into the page its words stand in ENLENS's
+    text, 0 to 1); the first match when `where` is unknown. 0.14.3: every highlight used to go to the first match
+    of its words on the page, and a mention under three characters ("it", "we") was never placed. A short quote is
+    matched exactly, as a whole word; a longer one as `find_quote` does (typography, whitespace and case ignored;
+    then whitespace ignored altogether)."""
+    q = (quote or "").strip()
+    if not q:
+        return None
+    short = len(normalise(q)) < 3
+    found: list[tuple[int, int, str]] = []
+    for drop, kind in ((False, "exact"), (True, "spacing")):
+        if short and drop:
+            break
+        nh, hstart, hend = _normalise_spans(text, drop_spaces=drop)
+        nq = _normalise_spans(q, drop_spaces=drop)[0]
+        if not nq:
+            continue
+        pos = nh.find(nq)
+        while pos >= 0:
+            end = pos + len(nq)
+            if not short or ((pos == 0 or not nh[pos - 1].isalnum()) and (end >= len(nh) or not nh[end].isalnum())):
+                found.append((hstart[pos], hend[end - 1], kind))
+            pos = nh.find(nq, pos + 1)
+        if found:
+            break
+    if not found:
+        return None
+    if where is None or len(found) == 1:
+        return found[0]
+    target = where * len(text)
+    return min(found, key=lambda h: abs(h[0] - target))
+
+
 def place(path: Path, marks: list[Mark], use_pdfminer: bool = True, ocr_lang: str = "eng") -> dict:
     """Find each mark on its page; returns {"method": exact|lines, ...}."""
     from pypdf import PdfReader
@@ -363,7 +400,7 @@ def place(path: Path, marks: list[Mark], use_pdfminer: bool = True, ocr_lang: st
                     pt = ocr_cache[pno]
                 if not pt or not pt.text.strip():
                     continue
-                hit = find_quote(pt.text, m.quote)
+                hit = _find_nearest(pt.text, m.quote, m.where)
                 if hit:
                     q = _quads(pt, hit[0], hit[1])
                     if q:

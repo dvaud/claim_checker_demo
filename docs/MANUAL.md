@@ -71,12 +71,15 @@ scanned page. Section 3, *For whoever installs the app*, has the rest.
 
 **Updating.** `enlens update` updates ENLENS the way it was installed (0.10). Installed with the one-line install,
 it asks GitHub for the latest release, downloads its package, checks it against the release's checksums, installs it
-over this one with uv and brings the Claude Code plugin up to date; on Windows, where a running program cannot
+over this one with uv and brings the Claude Code plugin up to date (0.14.3: also in Claude Code itself, whose own copy of the
+plugin is updated too, so the new instructions are used from the next run); on Windows, where a running program cannot
 replace itself, it says to quit ENLENS and run the install line again (which does the same). The version you have
 is at the top of every *Settings* tab; *Settings → Technical* says how this copy was installed. Installed from the git copy of ENLENS (`git clone …`, then `pip install -e .` in a
 venv) every new version is also `enlens update` (0.8.2): it fetches the version from GitHub into the same folder, reinstalls into the
 same Python only when the requirements changed (with the extras already installed), refreshes the Claude Code
-plugin if one was set up, and says to restart the app if it is running. It changes nothing if files of the copy
+plugin if one was set up, and says to restart the app if it is running. If installing the requirements fails (offline),
+the next `enlens update` installs them (0.14.3; before, it said *up to date* and left the copy without them). A look
+for a new version never waits for a password and gives up after 90 seconds. It changes nothing if files of the copy
 were edited by hand, and never touches the data folder. `enlens update --check` only looks.
 
 **Update ENLENS in the app (0.13.1).** *Update ENLENS* at the bottom of the sidebar does the same as `enlens update`
@@ -180,13 +183,19 @@ The app speaks plain language; the command line, the API and the code use the te
 | Only uncertain evidence | `uncertain` | Excerpts were judged, but the AI was not sure enough about any of them for your strictness. Judge them yourself, or lower the strictness. |
 | No evidence found | `unsupported` | None of the excerpts read was about the hypothesis. This is not proof that no document says it: look for more evidence, search with other words, or add documents. |
 | Nothing in your documents matched | `no_passages` | No excerpt shares words (or meaning) with the hypothesis. |
+| Not finished yet | `not_checked` | No excerpt has been judged yet. *Waiting for your judgement* when the excerpts read all come from documents no AI may read: judge them yourself (0.14.3; before, this said *No evidence found*). |
 | The check did not work | `failed` | The AI's answers did not pass the checks three times. |
+
+Excerpts that wait for your own judgement (documents marked *No AI*) count towards no answer until you judge them;
+nobody has read them, so they are not "not about the hypothesis" (0.14.3).
 
 A split hypothesis combines its parts, which must all hold: a part contradicted → contradicted (even when other
 parts are supported); otherwise a part with mixed evidence → mixed evidence; every part supported → supported; some
 parts (partly) supported → partly supported; only uncertain evidence → only uncertain evidence; otherwise nothing
 found. The app says which part decides ("Part 2 has mixed evidence, so the whole hypothesis has mixed evidence").
-Parts whose check failed are left out (the result says it is incomplete).
+A part whose check failed, or that waits for your judgement, gives no evidence either way, but the whole hypothesis
+is then at most partly supported: it holds only if every part does, and that part is not known yet (a failed part
+makes the result say it is incomplete).
 
 **Who says what** lists the documents behind an answer by side. A document counts as supporting if one of its
 counted excerpts supports, as partly supporting only if none supports, and as contradicting if one contradicts, so a
@@ -262,8 +271,12 @@ project and the settings in one go (section 7). Then **add documents**: choose
 files (PDF, Word .docx, HTML, text, Markdown, zip) or a folder. A Word file keeps its paragraphs, headings and the pages
 Word marked (0.8); older .doc files are not read: save them as .docx or PDF. The list shows the
 title read from each file and warns about unreadable text and very short files (often a landing page instead of the
-report). *Open an existing ENLENS project folder (advanced)* links a project made with the command line, without
-copying it.
+report). A file that cannot be read is listed with the reason and the others are added (0.14.3: also a
+password-protected PDF or zip, a damaged zip or Word file; before, one of these stopped the whole add, and a
+password-protected PDF was called a file without text). Text and web page files that are not UTF-8, such as a
+Hungarian text saved by Notepad (Windows-1250) or an old Latin-1 page, are read as they were written (0.14.3; before,
+their accented letters were lost). *Stop* also stops the text recognition of a long scanned PDF. *Open an existing
+ENLENS project folder (advanced)* links a project made with the command line, without copying it.
 
 The sidebar always says where text goes: *Claude, on your plan · Only the passages of AI tasks leave this computer*
 (the default from 0.9), *Private · The AI runs on this computer* with a local model, or that excerpts are sent to the
@@ -288,8 +301,10 @@ tag the hypothesis with a code, and limit the check to some documents.
 3. The best excerpts are picked by their words (BM25), combined with search by meaning when the project has it, at
    most a few per document so that one long report cannot fill every place.
 4. The AI judges each excerpt that bears on the claim (supports, partly supports, contradicts), with a quote and a
-   certainty. Every quote is checked character by character against the excerpt; an answer that fails is sent back
-   with its problems listed.
+   certainty. Every quote is checked character by character against the excerpt, as whole words (0.14.3: "legal"
+   is not found in "illegal", "now here" not in "nowhere"), and a judgement's quote has at least three words (or 15
+   characters). An answer that fails is sent back with its problems listed; so is an answer a local model could not
+   finish (cut off, stuck): the check goes on with its other parts (0.14.3).
 5. The answer counts the judgements the AI is sure enough about (the *strictness*, 60% by default) and yours (section
    2, *Answers*). A split hypothesis combines its parts, and the app says which part decides.
 
@@ -392,9 +407,12 @@ matches has been read, the line above the buttons says so.
 
 Add **notes** (saved as you type). **Download**, one link per file: *Excel (.xlsx)*: a *Summary* sheet (one row per
 hypothesis: answer, answer per part, documents per side, excerpts counted and too uncertain, your reviews and
-changes, notes, strictness, the AI model for a methods section) and an *Excerpts* sheet (every excerpt read:
-judgement, judged by you or the AI, the AI's own judgement and certainty, counted or not, quote and who chose it,
-document, where, your comment, the AI's note about another group, its earlier judgement when it read an excerpt
+changes, notes, strictness, and for a methods section every AI model whose answers the check used, with what each
+did: search words, judging, judging again as the stronger model, the excerpts of documents marked *Only a local AI*)
+and an *Excerpts* sheet (every excerpt read: judgement, judged by you, a colleague, the AI or nobody yet, the AI's own
+judgement and certainty, or why no AI judged it (*Not read by an AI: kept for your own judgement*, *Not read: the
+AI's answer could not be used*), counted or not, quote and who chose it, document, where, your comment, the AI's
+note about another group, its earlier judgement when it read an excerpt
 again, the second model's judgement when one was asked, the full excerpt); *Highlighted documents (.zip)*; *Whole
 project (.zip)*; and *CSV · JSON (for programmers)*. *Technical details* has the strictness slider (this page only),
 the models and settings of the check, what each search looked for and the AI's note on what it read.
@@ -418,8 +436,10 @@ answers that rest on one document, and documents that *decide* answers (leaving 
 which are the ones to read most carefully.
 
 **Projects** (the project menu → *Manage projects*): *Download as a zip* puts the whole project in one file (the
-database, the documents and their original files, the codebooks) for a co-author or another computer; *Import a
-project (.zip)* opens such a file as a new project. *Download the whole project (.zip)* is also on the Results page.
+database, the documents and their original files, the codebooks) for a co-author or another computer; the file of a
+document you removed stays on this computer (0.14.3). *Import a project (.zip)* opens such a file as a new project; a
+damaged zip, or one whose database cannot be read, is refused with a plain message and leaves nothing behind.
+*Download the whole project (.zip)* is also on the Results page.
 
 **Check several** checks many hypotheses one after the other: paste them one per line, or load a CSV with a column
 `hypothesis` (or `claim`, `text`, `statement`) and optional `framework` and `code` columns. *Show the list* previews
@@ -443,11 +463,11 @@ against it.
 
 **Search.** Every place words occur, one line per place with the words before and after (a concordance), with the
 count per document first. *Find* any of the words, all of them in one passage, a phrase, or words near each other
-(within N words). Without *exact words only*, a word also finds its other endings ("price" finds "prices"); forms the
+(within N words); in a phrase search, words typed next to a "quoted phrase" must also be in the passage. Without *exact words only*, a word also finds its other endings ("price" finds "prices"); forms the
 search does not include are listed under the count (*Other forms in the documents: commuters*), to add with one
 click. Click a word in a line to add it to the search, Shift-click to make a phrase. Sort by document, by the words
 before or by the words after. *Words that often appear nearby* lists the words within 2 to 10 words of the places
-found, most often or most typical first (point at one for both figures). Every line opens the document at its words,
+found, most often or most typical first (point at one for both figures; in one document or one code, "typical" is measured against that document's or code's own passages). Every line opens the document at its words,
 and its flask button starts a check of what the line says. Download all lines for Excel or as CSV. A *passage* is
 the stretch of text the app reads as one unit, up to about 1,100 characters; the location (page, paragraph) is that
 of the original.
@@ -460,7 +480,8 @@ whether the passage says it helps or hinders the aim), with a quote and a reason
 codes it confirmed, did not confirm, and added. Count by code or by group (the SDG goals). The grid opens the passages
 behind each cell. In a document, the **Codes** panel shows every code with its passages, quotes, reasons or the
 words that found it (highlighted in the text): agree, change how it applies, reject (with Undo), or add a code of
-your own; your labels always count. *Technical details* show the model, its exact version (digest), the prompt and
+your own; your labels always count (a keyword label you agreed with or changed stays even after the AI has read the
+passage). *Technical details* show the model, its exact version (digest), the prompt and
 the seed, and warn when they differ from the last run.
 
 **Concepts.** A glossary of the terms the documents use (one or more words, found by the C-value method; running
@@ -474,7 +495,8 @@ add them, or say *Not the same* and they are not proposed again.
 **Themes.** What the documents are about, grouped into themes (spherical k-means on the passages' embeddings, or on
 their terms without an embedding model; the same documents and settings always give the same themes). Each theme has
 key terms, a size, the documents it comes from and the passages that represent it best; grids show themes by document
-and by code. Rename, merge and move passages (kept and reapplied to a new set with the same settings); *Let the AI
+and by code. Rename, merge and move passages (kept, and carried to a new set with the same settings after documents were added:
+an edit follows its theme by the passages they share, and stays behind when no theme of the new set has them); *Let the AI
 name the themes* gives names and short descriptions with checked quotes. A small project gets fewer themes than
 asked (about three passages a theme).
 
@@ -541,7 +563,9 @@ managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zo
 
 **The four lists.** Four tiles at the top count them and open each one:
 
-- *Please confirm*: a work whose title stands on the first pages of a document, with an author or the year. The work
+- *Please confirm*: a work whose title stands on the first pages of a document, with an author or the year (the
+  reference list of a short document is not read as its first pages), or whose DOI the document only mentions somewhere
+  on its first pages (it may cite the work). The work
   and the document are side by side, with the place on the document where the title stands, highlighted, and what was
   found (*Found on page 1: the whole title, the author Lindqvist, the year 2025*). *Same work* links them; *Not the
   same* means the pair is never proposed again. *Confirm all* takes every pair at once.
@@ -552,7 +576,7 @@ managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zo
   (the project's choice is preselected), and each is linked to its work. *Link a document* says by hand which
   document a work is.
 - *Linked*: each work with its document, and how they were linked: *Same file* (a file Zotero keeps for the work is
-  the very file you added, by its checksum), *Same DOI* (the document prints the work's DOI), *You confirmed it* or
+  the very file you added, by its checksum), *Same DOI* (the document prints the work's DOI on its title page or in its file name), *You confirmed it* or
   *You linked it*. *Unlink* undoes a link for good (*Undo* in the message brings it back). A linked document is
   called by its work's title everywhere in ENLENS (0.13.3); when the file's own title says something else, it stays
   under the file name (*Title in the file: …*).
@@ -602,7 +626,9 @@ How the two copies come together:
   setting for new documents of your copy when it is stricter than theirs.
 - **Newer versions replace older ones.** A result your colleague changed (a note, excerpts read again, more
   excerpts) and you did not is brought up to date, and the other way round. ENLENS remembers each state of a result
-  that was sent or brought in, so it can tell a newer version from one you both changed.
+  that was sent or brought in, so it can tell a newer version from one you both changed. Colleagues on different
+  ENLENS versions work together as well (0.14.3: before, a version that stored one more detail per excerpt made every
+  result a sync clash; states remembered by 0.14.0 to 0.14.2 are still recognised).
 - **A sync clash keeps both.** When you both changed the same result, set of themes or codebook, your colleague's
   version comes in as a copy beside yours, marked *sync clash · Anna's version* in the *Results* list, with a notice
   and a link to the other version on the result. Compare them, keep the one you want and delete the other.
@@ -616,8 +642,9 @@ How the two copies come together:
   on the *Documents* page, and their results point at it.
 - **Each person's judgements.** A judgement of an excerpt is kept under the name of who made it. In your copy, yours
   count. Where you have not judged an excerpt, the latest colleague's judgement counts, and the card says *Anna's
-  judgement*. When others judged an excerpt too, the card lists them (*Also judged: Anna contradicts*), marked where
-  you differ. *Take back* removes only your own judgement: a colleague's then counts again. *How often you agreed
+  judgement*; a comment of yours is not a judgement, so it does not set hers aside (0.14.3). When others judged an
+  excerpt too, the card lists them (*Also judged: Anna contradicts*), marked where you differ. *Take back* removes
+  only your own judgement: a colleague's then counts again. *How often you agreed
   with the AI* (Settings → Checking) counts only your own judgements. The *Projects* page says how often you and each
   colleague judged the same excerpts alike, with Cohen's kappa once you share 10 or more.
 - **Each person's reviews.** Your verdicts on labels, links between terms and themes count over a colleague's on the
@@ -625,13 +652,19 @@ How the two copies come together:
 - **AI work both of you did** on the same document (labels of a codebook, reference chains) is not doubled: yours is
   kept.
 - **Who may read a document with AI.** The stricter of the two settings wins (*No AI* over *Only a local AI* over
-  *Claude may read it*), and the report says so. When your colleague's copy let Claude read a document you keep from
-  Claude, what Claude made of it there comes in with the rest, and the report tells you how many excerpts Claude
-  read. Nothing is sent anywhere by bringing work in.
-- **What you removed stays removed.** A document, result or set of themes you removed does not come back. When your
-  colleague removed something you still have, the report names it and leaves it in your copy.
+  *Claude may read it*), and the report says so. Your colleague's reading of a file you have (*sync clash · Anna's
+  reading*) is never less restricted than your document of that file: make yours stricter and theirs follows
+  (0.14.3). When your colleague's copy let Claude read a document you keep from Claude, what Claude made of it there
+  comes in with the rest, and the report tells you how many excerpts Claude read. Nothing is sent anywhere by
+  bringing work in.
+- **What you removed stays removed.** A document, result or set of themes you removed does not come back, nor does
+  a colleague's reading of a file that you removed (0.14.3). When your colleague removed something you still have,
+  the report names it and leaves it in your copy.
 - **Not brought in yet:** a check still running in your colleague's copy (bring in a later file when it is done),
-  and the vectors of search by meaning (your computer makes them for the new documents, as for any it adds).
+  and the vectors of search by meaning (your computer makes them for the new documents, as for any it adds). A result
+  or set of themes still running in *your* copy (waiting for Claude Code, or being read) keeps your version for now,
+  even when your colleague's is newer, and the report says so; bring in their file again when it is done, and their
+  version comes in beside yours (0.14.3: before, yours was replaced and the work under way was lost).
 
 Before bringing work in, ENLENS keeps a copy of the project's database as it was (`backups/before-bringing-in.sqlite`
 in the project folder, replaced each time). To go back, quit ENLENS and put that file in place of `enlens.sqlite`.
@@ -642,8 +675,9 @@ To move to a new computer yourself, use *Move ENLENS to another computer* (it ke
 zip: a new installation is a new person, and your own judgements would come back under your old name.
 
 Bring in files only from the colleagues you work with. Nothing in a file can reach files outside the project, loosen
-who may read a document with AI, or replace what you decided; but a file is trusted with what people decided, so a
-crafted one could take back judgements or reviews made under your name.
+who may read a document with AI, or replace what you decided: a judgement or review under your name in a colleague's
+file is not brought in (0.14.3; before, a crafted file could replace your judgement). But a file is trusted with
+what people decided, so a crafted one could take back judgements or reviews made under your name.
 
 ### Settings
 
@@ -664,7 +698,7 @@ Settings has five tabs, each one page with nothing folded inside another (0.9):
   strictness ("When the AI was at least 70% sure, you agreed with it in 85% … *Use 70%*"); and how new checks start
   (other words, parts, how many excerpts to read and at most how many from one document).
 - **Exploring**: the codebook of the profiles, how many themes a new set looks for, and the **codebooks**: view the
-  codes, add a CSV codebook, remove one; a CSV codebook can be marked as aims a text can help or hinder, like the SDG
+  codes, add a CSV codebook (commas or semicolons, UTF-8 or a Windows code page: a spreadsheet saved in Hungarian or another European setting works; a file in a codebooks folder that cannot be used is listed with the reason), remove one; a CSV codebook can be marked as aims a text can help or hinder, like the SDG
   targets.
 - **Documents**: **reading scanned PDFs** (on or off, and the languages) and the embedding model for **search by
   meaning**.
@@ -900,7 +934,11 @@ Claude Code: 120 passages to label · about 25 minutes*, with **Start Claude Cod
 in the background for that project (`claude -p "/enlens-run:enlens-run <project>"`, run in the ENLENS folder),
 allowed only the four ENLENS queue tools and its helpers, so a passage that tries to give it instructions can do
 nothing else. The page and the sidebar's queue panel say *Claude Code is working on it*, with *Stop Claude Code*;
-it stops by itself when nothing waits. *Stop Claude Code* returns the batches it had taken to the queue at once. If a
+it stops by itself when nothing waits. *Stop Claude Code* returns the batches it had taken to the queue at once.
+Pressing *Start* twice (or in two tabs) starts one run, and each project's run works in a folder of its own (0.14.3).
+*Quit ENLENS* and *Update and restart* stop the runs first; a run that was still working when ENLENS closed (it was
+closed some other way) is recognised when ENLENS opens again: the page shows it as working, *Stop Claude Code* stops it,
+and *Start* does not start a second one beside it. If a
 run ends with a problem (a usage limit, for example), the page shows the end of its report. The first start also
 adds the plugin if that was not done yet.
 
@@ -973,7 +1011,7 @@ starts, when it looks at the queue and before a run), and work that waits follow
 | --- | --- |
 | Free | No Opus or Fable. Haiku for most tasks (search words, splitting a hypothesis, theme names, references, labels, links), stepping up to Sonnet when unsure; judging excerpts, second opinions and the SDG pack's reference claims on Sonnet. |
 | Pro (and a plan not known yet) | As before: Sonnet for most tasks, Haiku for the many labels and links, Opus for second opinions and the hard cases (and the SDG pack's reference claims and checks). |
-| Max, Team, Enterprise | Opus for most tasks, checks included. Haiku and Sonnet only where there are many tasks at a time and speed matters: labels and links (Haiku), references and the SDG pack's extraction (Sonnet, stepping up to Opus). A check on Opus has no stronger model unless *Let the auditor use Fable* is on. |
+| Max, Team, Enterprise | Opus for most tasks, checks included. Haiku and Sonnet only where there are many tasks at a time and speed matters: labels and links (Haiku), references and the SDG pack's extraction (Sonnet, stepping up to Opus). A check on Opus has no stronger model unless *Let the auditor use Fable* is on (the result page says so in those words). |
 
 A model you chose for a kind of task (*AI model per task*) comes first on every plan. Should Claude Code name the
 plan wrongly, or not at all (signed in with an API key), set it under *Settings → Technical → AI model per task →
@@ -1024,7 +1062,8 @@ document keeps past checks intact (each check stores the passages it showed); re
 every check.
 
 **Moving to another computer (0.10).** *Projects → Move ENLENS to another computer → Download everything (.zip)*
-makes one file with every project (each as its own project zip: database, uploads, original files) and the settings.
+makes one file with every project (each as its own project zip: database, the original file of each document) and
+the settings.
 A saved Claude API key is left out, and so are quick looks not kept; projects used in place from another folder come
 along as copies. On the new computer, install ENLENS and choose the file under *Import from another computer* on the
 first screen (or *Projects → Import a project (.zip)*, which takes both kinds of zip). Each project keeps its name
@@ -1078,8 +1117,14 @@ reading is split. In a check, Claude reads the excerpts it may; those marked *On
 chosen in *Settings → AI → Local model for restricted documents*; those marked *No AI* (and the local ones when no
 local model is chosen, or it cannot be reached) are shown as *Waiting for your judgement*, with your own judgement
 open on the excerpt. The round stays one round, and each excerpt says who read it. The answer counts every
-excerpt; the AI's written note speaks only for the excerpts it read, and is told how many others there are. A second
-opinion, reading an excerpt again, the Profile's AI pass, theme names, concept links and references follow the same
+excerpt that was judged: the AI's, the local model's and yours. An excerpt waiting for your judgement counts once you
+judge it; until then the answer rests on the others, and when every excerpt waits for you it is *Waiting for your
+judgement* (0.14.3; before, those excerpts counted as not about the hypothesis). When the AI's own answers failed,
+the check *did not work*, whatever the local model read, and none of that search's AI judgements count in any
+answer, count, map or download (0.14.3; Excel marks them *Not counted: the check did not work*). The AI's written
+note speaks only for the excerpts
+it read, and is told how many others there are. A second opinion, reading an excerpt again, the Profile's AI pass,
+theme names, concept links and references follow the same
 rule: a task takes the setting of the most restricted document it touches. A theme whose passages are all
 restricted is named by the local model or keeps its key terms; two concepts found only in restricted documents are
 linked by the local model or not at all (a term's words are words of the documents). A check started in a Claude chat
@@ -1087,8 +1132,10 @@ linked by the local model or not at all (a term's words are words of the documen
 computer* for the local ones. When the local model's answers for its excerpts cannot be used (three tries), the
 result says so and shows them without a judgement; *Read them again on this computer* tries once more (0.11.1, for
 instance after choosing another local model), or you judge them yourself. The check's written summary is always the
-main model's, never the local model's note. Search by meaning: an embedding server on another computer does not
-receive the restricted passages (they are found by their words).
+main model's, never the local model's note. When the main model itself runs on this computer, it also reads the
+excerpts marked *Only a local AI*, so its summary and its notes on excerpts (*about another group*) are not shown in
+a Claude chat (the connector says it left them out; 0.14.3, before they were shown). Search by meaning: an embedding server on another computer does not receive the
+restricted passages (they are found by their words), nor the glossary's terms found only in them (0.14.3).
 
 **The local model and your computer's memory (0.13.11).** While Claude (or Claude Code) reads its excerpts, the
 progress says when your local model reads the ones marked *Only a local AI*: *Your local model (…) is reading 3
@@ -1105,9 +1152,11 @@ this way: you start it yourself and see it load.
 is labelled with the most restricted setting of the documents it names, a task is refused before any model is asked
 when its setting does not allow that model, and the queue for Claude Code only ever hands out tasks Claude may read.
 The connector's tools (search, concepts, document profiles, checks) give Claude counts instead of restricted text,
-and show a document marked *No AI* as *Restricted document 3*, because a title can name a person. The Claude Code run
-that ENLENS starts may not use Claude Code's own file, shell and web tools and starts in an empty folder, away from
-the projects' databases.
+leave out what a model wrote in its own words (a check's summary, its notes on excerpts) when it read restricted
+text, and show a document marked *No AI* as *Restricted document 3*, because a title can name a person. A project
+zip (*Download as a zip*) holds the files of the documents the project has now, not those of documents you removed
+(0.14.3). The Claude Code run that ENLENS starts may not use Claude Code's own file, shell and web tools and starts
+in an empty folder, away from the projects' databases.
 
 **What Claude has read.** ENLENS writes down every passage at the moment it leaves for Claude (Claude Code, the Claude
 API, a Claude chat through the connector). The column *Sent to Claude* shows the share of each document's text;
@@ -1225,13 +1274,17 @@ enlens --ws pilot coverage
   whose title words overlap strongly. `load-vca` reports how many were fixed and merged. Add rows to that file when
   you find more.
 - Duplicate files (same bytes) are skipped. Scanned PDFs without a text layer come out empty; run OCR first. A file
-  that cannot be read is listed under `failed` and the others are added.
+  that cannot be read is listed under `failed` with the reason and the others are added (0.14.3: also a zip, or a
+  file in a zip, that is damaged or password-protected, and a password-protected PDF; the connector's
+  `create_project` and `add_sources` return them as `could_not_read`).
 - Notes that travel with a corpus (`problems.txt`, `README.md`, `notes.txt`) are not ingested. When a manifest is
   present, `ingest` lists files it does not mention under `not_in_manifest`, so you can see what was added unlinked.
 - `--exclude PATTERN` leaves out files by name, for example a download that turned out to be the wrong document:
   `enlens --ws pilot ingest enlens_text.zip --exclude 'A_18_*'`. Repeat it for several patterns.
 - Text layers without a character map come out as `(cid:53)` codes or as shifted letters and control characters
   (`5HQHZDEOH DQG` for `Renewable and`). Such passages get section `unreadable` and are never sent to a model.
+  (0.14.3: prose in Hungarian, Italian, Polish, Czech, Slovak, the Nordic languages, Finnish, Romanian or Croatian
+  is no longer taken for it; documents added before keep their passages as they were read.)
   `ingest` lists documents that are mostly unreadable, and they do not count as available sources in `coverage`.
   Get another copy of the file (the publisher's version often has a proper text layer) or run OCR.
 - `coverage` and the report's Sources table flag very short documents: a web landing page or an event agenda saved
@@ -1531,8 +1584,8 @@ for resolving conflicts, and for a second check on a sample (`make-tasks verify-
 claude-fable-5-1`), which measures whether the more expensive model changes outcomes. A cheaper model (Haiku 5.5)
 or a dedicated classifier can replace the screen once it is benchmarked on reviewed passages.
 
-Every stored result records the model and the prompt version (`extract-v1`, `split-v2`, `verify-v1`,
-`verify-set-v1`; for hypotheses `decompose-v1`, `expand-v2`, `check-v2`). When you change
+Every stored result records the model and the prompt version (`extract-v1`, `split-v2`, `verify-v2`,
+`verify-set-v2`; for hypotheses `decompose-v1`, `expand-v2`, `check-v5`). When you change
 a prompt in `prompts.py`, bump its version so old and new results stay distinguishable, then queue the affected tasks
 again with `enlens refresh KIND` (add `--model` to switch model at the same time). Earlier answers stay in the
 `results` table.
@@ -1620,6 +1673,6 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | "… sent nothing for 600 seconds" | The model did not start or stopped answering: usually too little memory. Close other apps or choose a smaller model. |
 | "… used its whole allowance … on reasoning" | The model kept reasoning without answering. Give reasoning a budget (Settings → AI, the default 1,500 tokens), choose *Only when judging excerpts*, or set it off. |
 | A check with reasoning takes half an hour | Set *Reasoning* to *Only when judging excerpts* with a budget (1,500 tokens is the default; lower it for a slow computer). |
-| "… got stuck writing blank space" | A known failure of some models with fixed-format answers. Try again, set *Reasoning* to off, or choose another model. |
+| "… got stuck writing blank space" | A known failure of some models with fixed-format answers. Try again, set *Reasoning* to off, or choose another model. From 0.14.3 this (and an answer cut off at the length limit) is one failed try of that task: it is asked again, and the check goes on with its other parts. |
 | "The Claude API rejected the key" | Copy the key again from console.anthropic.com; check it has credit. |
 | Two workers' answers ended up in one results file | Give each worker its own scratch folder. Move the stray lines to the right file; `import-results` accepts any order. |

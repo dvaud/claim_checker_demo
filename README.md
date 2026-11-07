@@ -60,8 +60,8 @@ steps for you. Your projects and settings (the `enlens` folder in your home fold
   copy (**can change results**); one you both changed comes in beside yours, marked *sync clash*.
 - **The stricter AI setting wins.** A document your colleague keeps from Claude is kept from Claude in your copy too
   (**can change results** of later checks), and what you removed stays removed.
-- **The one-line install works on a Mac again** (0.14.1). Since 0.10.0 it stopped after its first step in most Mac
-  Terminals; the line under *Install* now works as it is. Does not change results.
+- **A review of the whole app, fixed** (0.14.3): a local model's summary no longer reaches Claude, a failed check no
+  longer reads "No evidence found", and phrase searches and PDF highlights are right. **Can change results.**
 
 How it works: [working on a project together](docs/MANUAL.md#working-on-a-project-together-014) in the manual. Every
 release, with what was not tested: [CHANGELOG.md](CHANGELOG.md).

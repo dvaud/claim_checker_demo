@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY } from "./lib.js";
+import { App, api, h, icon, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaude, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY } from "./lib.js";
 import { FEATURES, SECTIONS } from "./features.js";
 import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
 import localExtensions from "./extensions.js";
@@ -213,6 +213,12 @@ function accountPart(st) {
   return h("div", { class: "privacy-account" }, h("span", {}, say));
 }
 
+// 0.14.3: the jobs and queue panels open in place at the foot of the sidebar, below the visible part of a short
+// window: opening one scrolls the sidebar to show the whole panel (the click seemed to do nothing)
+function keepInView(details, summary) {
+  summary.addEventListener("click", () => setTimeout(() => { if (details.open) details.scrollIntoView({ block: "end", behavior: "smooth" }); }, 30));
+}
+
 let jobsTimer = null;
 let jobsBusy = false, jobsAgain = false;
 async function renderJobs() {
@@ -259,6 +265,7 @@ async function drawJobs() {
   if (active.length && recent.length) menu.appendChild(h("div", { class: "ps-sep" }));
   if (recent.length) menu.appendChild(h("div", { class: "muted small", style: { padding: "2px 8px" } }, "Recent"));
   recent.forEach((j) => menu.appendChild(row(j)));
+  keepInView(details, summary);
   details.append(summary, menu);
   const old = box.querySelector("details");
   if (old && old.open) details.open = true;
@@ -310,7 +317,9 @@ async function drawQueue() {
   const head = q.runner && q.runner.running ? `Claude Code is working: ${(q.waiting + q.being_answered).toLocaleString()} to go`
     : q.waiting ? (q.paused ? `Paused: ${q.waiting.toLocaleString()} waiting` : `${(q.waiting + q.being_answered).toLocaleString()} waiting for Claude Code`)
     : q.being_answered ? `Claude Code is answering ${q.being_answered}` : "Queue for Claude Code: empty";
-  details.appendChild(h("summary", {}, icon(q.paused ? "pause" : "inbox", { size: 14 }), h("span", { class: "grow" }, head), icon("chevron-up", { size: 14 })));
+  const qSummary = h("summary", {}, icon(q.paused ? "pause" : "inbox", { size: 14 }), h("span", { class: "grow" }, head), icon("chevron-up", { size: 14 }));
+  keepInView(details, qSummary);
+  details.appendChild(qSummary);
   const menu = h("div", { class: "ps-menu queue-menu" });
   menu.appendChild(h("div", { class: "muted small qp-privacy" }, icon("cloud", { size: 12 }), " ", q.privacy));
   if (q.paused && q.paused_text) menu.appendChild(h("p", { class: "small qp-paused" }, q.paused_text));
@@ -553,6 +562,7 @@ function closeDrawer() {
   const sc = document.getElementById("scrim");
   const mb = document.getElementById("menu-btn");
   sb.classList.remove("open");
+  const main = document.getElementById("main"); if (main) main.inert = false;
   sc.hidden = true;
   mb.setAttribute("aria-expanded", "false");
 }
@@ -566,6 +576,8 @@ function drawerInit() {
     const open = !sb.classList.contains("open");
     sb.classList.toggle("open", open);
     sc.hidden = !open;
+    // 0.14.3: while the phone menu is open the page behind it cannot be reached (Tab stayed on it)
+    const main = document.getElementById("main"); if (main) main.inert = open;
     mb.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) { const first = sb.querySelector("summary, a, button"); if (first) first.focus(); }
   });
@@ -647,7 +659,35 @@ function applyBrand() {
   meta.content = b.description || "";
 }
 
+// 0.14.3: "Skip to content" moves focus to the page; its address (#main) is not a page of the app
+function skipLinkInit() {
+  const link = document.querySelector(".skip-link");
+  if (!link) return;
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    const t = document.getElementById("main");
+    if (t) t.focus();
+  });
+}
+
+// 0.14.3: one banner across the app while it cannot be reached (it was stopped, or the computer slept), so no page
+// has to say it by itself. It clears when the app answers again.
+function connectionInit() {
+  const box = document.getElementById("stopped-banner");
+  const draw = () => {
+    if (!Connection.down) { clear(box); return; }
+    replace(box, h("div", { class: "notice notice-error stopped-banner", role: "alert" }, icon("alert-circle"),
+      h("div", {}, h("p", {}, h("strong", {}, `${appName()} has stopped answering.`), " Start it again the way you started it before, then reload this page. Nothing you see below is up to date."),
+        h("button", { class: "btn btn-sm", type: "button", onClick: () => location.reload() }, icon("refresh", { size: 13 }), "Reload this page"))));
+  };
+  window.addEventListener("enlens-connection", draw);
+  // a quiet look every few seconds while it is down, so the banner goes by itself when the app is back
+  setInterval(() => { if (Connection.down) api("GET", "/api/state").catch(() => {}); }, 5000);
+}
+
 async function boot() {
+  skipLinkInit();
+  connectionInit();
   themeInit();
   drawerInit();
   navIcons();

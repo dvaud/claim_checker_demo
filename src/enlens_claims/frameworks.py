@@ -8,7 +8,9 @@ other codebook is a CSV file:
     H1,"Remote work lowers commuting emissions",transport,Transport
 
 placed in ENLENS_HOME/frameworks/ (all projects) or in a project's frameworks/ folder (that project only), or
-added in the app. An optional `<name>.json` next to it gives {"title": ..., "label": ...}.
+added in the app. An optional `<name>.json` next to it gives {"title": ..., "label": ...}. The columns may be
+separated by commas or by semicolons (a spreadsheet in many European settings saves CSV with semicolons), and the
+file may be UTF-8 or a Windows code page (see `decode`).
 """
 from __future__ import annotations
 
@@ -163,9 +165,26 @@ def _sdg_goals() -> Framework:
         return _CACHE[key]
 
 
+def decode(data: bytes) -> str:
+    """The text of a CSV file: UTF-8 (with or without a byte order mark), else a Windows code page: Central European
+    (Hungarian ő and ű are bytes that Western European pages read as õ and û) when those bytes occur, else Western."""
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1250" if re.search(rb"[\xf5\xd5]", data) else "cp1252", errors="replace")
+
+
+def _delimiter(text: str) -> str:
+    """, or ; or a tab: whichever the header line has most of (a comma wins a tie)."""
+    head = next((ln for ln in text.splitlines() if ln.strip()), "")
+    best = max((",", ";", "\t"), key=lambda d: (head.count(d), d == ","))
+    return best if head.count(best) else ","
+
+
 def parse_csv(text: str) -> dict[str, Code]:
-    """Codes from CSV text. Raises ValueError naming the problem."""
-    rows = list(csv.DictReader(io.StringIO(text.lstrip("﻿"))))
+    """Codes from CSV text (commas or semicolons). Raises ValueError naming the problem."""
+    text = text.lstrip("﻿")
+    rows = list(csv.DictReader(io.StringIO(text), delimiter=_delimiter(text)))
     if not rows:
         raise ValueError("The file has no rows. Columns: code, description (and optionally group, group_name).")
     cols = {c.strip().lower(): c for c in rows[0].keys() if c}
@@ -200,8 +219,8 @@ def _load_file(path: Path, source: str) -> Framework | None:
         if key in _CACHE:
             return _CACHE[key]
     try:
-        codes = parse_csv(path.read_text(encoding="utf-8"))
-    except (ValueError, OSError, UnicodeDecodeError):
+        codes = parse_csv(decode(path.read_bytes()))
+    except (ValueError, OSError):
         return None
     meta = {}
     side = path.with_suffix(".json")
@@ -236,6 +255,23 @@ def available(ws=None) -> dict[str, Framework]:
                 fw = _load_file(p, source)
                 if fw and NAME_RE.match(fw.name):
                     out[fw.name] = fw
+    return out
+
+
+def problems(ws=None) -> list[dict]:
+    """Codebook files in the folders that could not be used, each with the reason: [{file, source, error}]. They are
+    otherwise skipped without a word (0.14.3)."""
+    out = []
+    for folder, source in _folders(ws):
+        if not folder.is_dir():
+            continue
+        for p in sorted(folder.glob("*.csv")):
+            try:
+                if not NAME_RE.match(p.stem.lower()):
+                    raise ValueError("The file name must be a short name of letters, digits, - or _ (up to 40).")
+                parse_csv(decode(p.read_bytes()))
+            except (ValueError, OSError) as e:
+                out.append({"file": p.name, "source": source, "error": str(e)})
     return out
 
 
