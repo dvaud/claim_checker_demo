@@ -41,8 +41,8 @@ you when there is a new version. Nothing here can change results.
   file is cmd, then `install.ps1` unchanged, with Windows line endings, and the cmd part never reaches PowerShell's
   code; a broken head stops the release; the zip holds `install.sh` marked as runnable; unzipped as a Mac does, it runs
   and installs (stand-ins for uv and curl); the release notes link both files of that release; the workflow tries
-  both; on Windows, the update message names the file. A test that parses the Windows file with PowerShell runs only
-  where PowerShell is installed.
+  both; on Windows, the update message names the file. Where PowerShell is installed (GitHub's Linux test machine has
+  it), a test parses the Windows file with it and checks that the whole cmd part is one comment.
 
 Changed tests: `tests/test_0100_setup_and_moving.py::test_release_check_notes_and_assets` (the release has the two
 new files).

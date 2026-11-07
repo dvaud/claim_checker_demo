@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -79,10 +80,15 @@ def test_the_windows_file_parses_in_powershell(dist):
     pwsh = shutil.which("pwsh") or shutil.which("powershell")
     if not pwsh:
         pytest.skip("no PowerShell here (the release's Windows machine runs the file)")
-    script = ("$e = $null; $null = [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$null, "
-              "[ref]$e); if ($e) { $e | ForEach-Object { $_.Message }; exit 1 }")
-    r = subprocess.run([pwsh, "-NoProfile", "-Command", script, str(dist / WIN)], capture_output=True, text=True)
+    # the file's name goes in by the environment: words after -Command become part of the command, not $args
+    script = ("$t = $null; $e = $null; "
+              "$null = [System.Management.Automation.Language.Parser]::ParseFile($env:ENLENS_TEST_FILE, [ref]$t, [ref]$e); "
+              "if ($e) { $e | ForEach-Object { $_.Message }; exit 1 }; "
+              "Write-Output \"$($t[0].Kind) $($t[0].Text.EndsWith('#>'))\"")
+    r = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True, text=True,
+                       env={**os.environ, "ENLENS_TEST_FILE": str(dist / WIN)}, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.split() == ["Comment", "True"]  # the whole cmd part is one comment to PowerShell
 
 
 @pytest.mark.parametrize("bad", ["#> early", "no start"])
