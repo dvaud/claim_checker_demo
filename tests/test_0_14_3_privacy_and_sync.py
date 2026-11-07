@@ -498,6 +498,7 @@ def test_a_password_protected_pdf_is_named_as_such(tmp_path, monkeypatch):
 def test_scanned_pages_are_found_when_pdfminer_reads_the_text(tmp_path, monkeypatch):
     """pdfminer ends every page with a form feed: split as it was, a 2-page PDF had 3 pages, so its scanned page was
     not found and not recognised."""
+    pytest.importorskip("pdfminer")  # the optional extra (the release's tests run without it)
     import pdfminer.high_level
 
     pdf = tmp_path / "two.pdf"

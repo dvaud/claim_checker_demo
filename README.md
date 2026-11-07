@@ -60,7 +60,7 @@ steps for you. Your projects and settings (the `enlens` folder in your home fold
   copy (**can change results**); one you both changed comes in beside yours, marked *sync clash*.
 - **The stricter AI setting wins.** A document your colleague keeps from Claude is kept from Claude in your copy too
   (**can change results** of later checks), and what you removed stays removed.
-- **A review of the whole app, fixed** (0.14.3): a local model's summary no longer reaches Claude, a failed check no
+- **A review of the whole app, fixed** (0.14.4): a local model's summary no longer reaches Claude, a failed check no
   longer reads "No evidence found", and phrase searches and PDF highlights are right. **Can change results.**
 
 How it works: [working on a project together](docs/MANUAL.md#working-on-a-project-together-014) in the manual. Every

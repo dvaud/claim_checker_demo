@@ -455,7 +455,9 @@ def _pid_runs_enlens(pid: int) -> bool:
     except OSError:
         return False
     try:
-        r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=15)
+        # 0.14.4: -ww, the whole command line: on Linux, ps cuts it at 80 characters when it writes to a pipe, which cut
+        # off the slash command after Claude Code's long path, so a run left going was not recognised
+        r = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.SubprocessError):
         return True  # no ps: the number is all there is
     cmd = r.stdout or ""

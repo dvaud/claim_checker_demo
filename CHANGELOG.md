@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.14.3 (November 2026): fixes from a review of the whole app
+## 0.14.4 (November 2026): fixes from a review of the whole app
+
+**0.14.3 was tagged but not released:** its tests failed on the release's Linux machine. 0.14.4 is the same release
+with that fixed, and everything below comes with it. The test had found a real defect: on Linux, ENLENS did not
+recognise a Claude Code run it had started before a restart (`ps` cut the run's command line at 80 characters), so
+the reopened app could not stop the run and would start a second one beside it. It now reads the whole command
+line. A test of the optional pdfminer extra is now skipped where the extra is not installed. Nothing here can
+change results.
 
 A review of ENLENS by five independent reviewers, each taking one part of the app (checking, privacy and sharing, the
 app's server and updates, exploring, and the pages themselves), found the defects below; most were reproduced with a
@@ -208,6 +215,8 @@ ENLENS now notices, writes it again and has Claude Code take the new copy (`clau
 - `tests/test_0_14_3_explore.py` (18)
 - `tests/test_0_14_3_pages.py` (17)
 - `tests/test_0_14_3_setup_and_update.py` (21)
+- `tests/test_0_14_4_runs_on_linux.py` (2): a run with a command line longer than 80 characters is recognised;
+  another program with that process number is not
 
 Changed tests: `tests/test_0120_results_page.py` (the answer card's caution is built in two parts); `tests/test_0110_upgrade.py::test_the_headless_run_is_closed` (each project's run has its own folder); `tests/test_text_and_taxonomy.py::test_quote_tolerates_pdf_spacing_but_not_paraphrase` (it asserted that "well placed" matches "wellplaced", the word-joining defect); `tests/test_hypotheses.py` (a quote that cut a word; the new prompt version) and `tests/test_0_13_6_task_kinds.py` (the new prompt versions). `tests/fake_claude_cli.py` answers the two plugin update commands.
 
