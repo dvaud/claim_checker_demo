@@ -3830,6 +3830,7 @@ def _restart(cmd: list[str]) -> None:
         if os.name == "nt":
             import subprocess
 
+            # console: the same Python: pythonw (the icon's) has none; python in a terminal writes on in it
             subprocess.Popen(cmd, close_fds=True)
             return
         os.execv(cmd[0], cmd)

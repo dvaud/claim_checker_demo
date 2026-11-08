@@ -20,6 +20,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from . import __version__
+from .procs import no_window
 from .store import Workspace, now
 from .textutil import find_dois, split_sentences
 
@@ -435,7 +436,7 @@ def ocr_status(max_age: float = 60.0) -> dict:
         try:
             import subprocess
 
-            r = subprocess.run([exe, "--list-langs"], capture_output=True, text=True, timeout=10)
+            r = subprocess.run([exe, "--list-langs"], capture_output=True, text=True, timeout=10, **no_window())
             langs = [ln.strip() for ln in (r.stdout or "").splitlines()[1:] if ln.strip() and ln.strip() != "osd"]
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
@@ -490,7 +491,8 @@ def _ocr_pages(path: Path, numbers: list[int], lang: str, should_stop=None) -> d
                 page.close()
             try:
                 r = subprocess.run([exe, "stdin", "stdout", "-l", lang], input=png, capture_output=True, env=env,
-                                   timeout=300, preexec_fn=_low_priority if os.name == "posix" else None)
+                                   timeout=300, preexec_fn=_low_priority if os.name == "posix" else None,
+                                   **no_window())  # 0.15.3: a window for each page
             except (OSError, subprocess.SubprocessError):
                 continue
             finally:

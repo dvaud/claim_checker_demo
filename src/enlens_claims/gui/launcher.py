@@ -34,6 +34,8 @@ import sys
 import time
 from pathlib import Path
 
+from ..procs import no_window
+
 APP_NAME = "ENLENS"
 LOG_MAX = 5 * 1024 ** 2
 ICONS = Path(__file__).with_name("icons")  # 0.10.2: the icon files that ship with ENLENS
@@ -184,17 +186,18 @@ def start_ollama(settings: dict) -> str | None:
         if sys.platform == "darwin":
             for app in (Path("/Applications/Ollama.app"), Path.home() / "Applications" / "Ollama.app"):
                 if app.exists():
-                    subprocess.Popen(["open", "-g", "-a", str(app)])
+                    subprocess.Popen(["open", "-g", "-a", str(app)])  # console: macOS
                     return "Ollama app"
         elif os.name == "nt":
             exe = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama app.exe"
             if exe.exists():
-                subprocess.Popen([str(exe)], creationflags=0x00000008 | 0x00000200)  # detached, own group
+                subprocess.Popen([str(exe)], creationflags=0x00000008 | 0x00000200)  # detached, own group (a GUI)
                 return "Ollama app"
         exe = shutil.which("ollama")
         if exe:
+            # 0.15.3: without a window on Windows: from the icon's pythonw it had one of its own for as long as it ran
             subprocess.Popen([exe, "serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=os.name == "posix")
+                             stderr=subprocess.DEVNULL, start_new_session=os.name == "posix", **no_window())
             return "ollama serve"
     except OSError:
         return None
@@ -370,8 +373,9 @@ def _ps_quote(s: str) -> str:
 
 
 # What PowerShell writes back is only looked at for its exit code, and it is in the console's code page: read it so
-# that a byte this Python's code page does not have can never stop the icon being made (0.15.2).
-_PS_TEXT = {"capture_output": True, "text": True, "errors": "replace"}
+# that a byte this Python's code page does not have can never stop the icon being made (0.15.2). 0.15.3: and it runs
+# without a window (procs).
+_PS_TEXT = {"capture_output": True, "text": True, "errors": "replace", **no_window()}
 
 
 def _desktop() -> Path:
@@ -380,7 +384,7 @@ def _desktop() -> Path:
         if found:
             return found
     try:
-        r = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True, timeout=5, **no_window())
         if r.returncode == 0 and r.stdout.strip() and Path(r.stdout.strip()) != Path.home():
             return Path(r.stdout.strip())
     except (OSError, subprocess.SubprocessError):

@@ -190,7 +190,8 @@ def _open(running: dict | None, home: str | None, local_only: bool) -> bool:
     cmd = [str(pyw if os.name == "nt" and pyw.exists() else exe), *_args(home, local_only)]
     kwargs = {"start_new_session": True} if os.name != "nt" else {"creationflags": 0x00000008 | 0x00000200}
     try:
-        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         **kwargs)  # console: Windows starts pythonw, a program without one, detached
     except OSError:
         return False
     return True

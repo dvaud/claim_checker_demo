@@ -34,6 +34,7 @@ from pathlib import Path
 
 from . import __version__
 from . import home as core
+from .procs import no_window
 from .store import now
 from .update import semver as _semver
 
@@ -219,11 +220,12 @@ def _cmd(path: str) -> list[str]:
 def _run(args: list[str], timeout: float = 60) -> tuple[int, str]:
     """Run Claude Code and return its exit code and what it wrote. 0.15.2: what it writes is UTF-8 (on Windows too),
     and is read as such: in this Python's code page a path like C:\\Users\\Ábel came back garbled, or stopped the
-    status with an error (the second byte of "Á" is no letter in Windows-1252)."""
+    status with an error (the second byte of "Á" is no letter in Windows-1252). 0.15.3: without a window on
+    Windows: the app's status ran it three times every half minute, and each run flashed a console window."""
     args = _cmd(args[0]) + list(args[1:])
     try:
         r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                           cwd=str(core.home()), stdin=subprocess.DEVNULL)
+                           cwd=str(core.home()), stdin=subprocess.DEVNULL, **no_window())
     except (OSError, subprocess.SubprocessError) as e:
         return 1, f"{type(e).__name__}: {e}"
     return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
@@ -486,7 +488,7 @@ def _pid_runs_enlens(pid: int) -> bool:
     if os.name == "nt":
         try:
             r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True,
-                               errors="replace", timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                               errors="replace", timeout=15, **no_window())
         except (OSError, subprocess.SubprocessError):
             return False
         return str(pid) in (r.stdout or "")
@@ -501,7 +503,8 @@ def _pid_runs_enlens(pid: int) -> bool:
     try:
         # 0.14.4: -ww, the whole command line: on Linux, ps cuts it at 80 characters when it writes to a pipe, which cut
         # off the slash command after Claude Code's long path, so a run left going was not recognised
-        r = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=15)
+        r = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
+                           timeout=15)  # console: not on Windows
     except (OSError, subprocess.SubprocessError):
         return True  # no ps: the number is all there is
     cmd = r.stdout or ""
@@ -519,8 +522,7 @@ def _end_process(pid: int, proc=None, wait: float = 10.0) -> None:
 
     if os.name == "nt":
         try:
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=30,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=30, **no_window())
         except (OSError, subprocess.SubprocessError):
             pass
         return
@@ -614,12 +616,10 @@ def start_run(project: str, parallel=None, helpers=None) -> dict:
             install()  # the plugin is prepared and added on the first start: no separate set-up needed
         log = _log_path(project)
         fh = open(log, "w", encoding="utf-8")
-        kwargs = {"start_new_session": True} if os.name != "nt" else {
-            "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
         try:
             proc = subprocess.Popen(run_args(project, path, plan), cwd=str(work_folder(project)), stdout=fh,
                                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env={**os.environ, **BOX_ENV},
-                                    **kwargs)
+                                    start_new_session=os.name != "nt", **no_window())
         finally:
             fh.close()
         t0, started = time.time(), now()
@@ -780,7 +780,7 @@ def install_claude_code(timeout: float = 900) -> dict:
     cmd = installer_command()
     try:
         r = subprocess.run(cmd["args"], capture_output=True, text=True, errors="replace", timeout=timeout,
-                           stdin=subprocess.DEVNULL, cwd=str(Path.home()))
+                           stdin=subprocess.DEVNULL, cwd=str(Path.home()), **no_window())
         code, text = r.returncode, ((r.stdout or "") + (r.stderr or ""))
     except (OSError, subprocess.SubprocessError) as e:
         code, text = 1, f"{type(e).__name__}: {e}"
@@ -862,7 +862,7 @@ def _open_window(script: Path) -> str:
     """Open a terminal window running the sign-in script. Returns the window's name, or "" when none could open."""
     try:
         if sys.platform == "darwin":
-            subprocess.Popen(["open", "-a", "Terminal", str(script)])
+            subprocess.Popen(["open", "-a", "Terminal", str(script)])  # console: macOS
             return "Terminal"
         if os.name == "nt":
             from .gui.launcher import _ps_quote
@@ -872,13 +872,13 @@ def _open_window(script: Path) -> str:
             subprocess.Popen(["powershell", "-NoProfile", "-Command",
                               f"Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File',"
                               f"{_ps_quote(chr(34) + str(script) + chr(34))}"],
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                             **no_window())  # the window it opens is Start-Process's own
             return "PowerShell"
         for term, flag in (("x-terminal-emulator", "-e"), ("gnome-terminal", "--"), ("konsole", "-e"),
                            ("xfce4-terminal", "-x"), ("xterm", "-e")):
             exe = shutil.which(term)
             if exe:
-                subprocess.Popen([exe, flag, str(script)], start_new_session=True)
+                subprocess.Popen([exe, flag, str(script)], start_new_session=True)  # console: Linux
                 return term
     except OSError:
         return ""

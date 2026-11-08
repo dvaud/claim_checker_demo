@@ -33,6 +33,8 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+from .procs import no_window
+
 Runner = Callable[[list[str], Path], subprocess.CompletedProcess]
 
 
@@ -54,7 +56,8 @@ GIT_TIMEOUT = 90  # seconds a git command may take (0.14.3)
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
     """Run a command. 0.14.3: it never reads from the terminal (stdin is closed), and a git command never asks for a
     password or a passphrase (a remote that wants credentials fails instead of waiting for ever) and gives up after
-    GIT_TIMEOUT seconds: the app looks every two minutes, and one stuck look held up every later one."""
+    GIT_TIMEOUT seconds: the app looks every two minutes, and one stuck look held up every later one. 0.15.3: without
+    a window on Windows (procs)."""
     env, timeout = None, None
     if cmd and cmd[0] == "git":
         env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
@@ -62,7 +65,7 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
         timeout = GIT_TIMEOUT
     try:
         return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, errors="replace",
-                              stdin=subprocess.DEVNULL, env=env, timeout=timeout)
+                              stdin=subprocess.DEVNULL, env=env, timeout=timeout, **no_window())
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(cmd, 124, "", f"{' '.join(cmd[:2])} took longer than {timeout} s and was "
                                                           "stopped (is the network or the remote not answering?)")

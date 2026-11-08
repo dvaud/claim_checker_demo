@@ -88,7 +88,7 @@ def free_memory() -> int | None:
 
     try:
         if sys.platform == "darwin":
-            out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+            out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout  # console: macOS
             m = re.search(r"page size of (\d+) bytes", out)
             pages = {k.strip().lower(): int(v) for k, v in re.findall(r"^Pages ([^:]+):\s+(\d+)\.", out, re.M)}
             if not m or "free" not in pages:

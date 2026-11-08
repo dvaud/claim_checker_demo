@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.15.3 (November 2026): no flashing windows on Windows
+
+On Windows, ENLENS runs without a window of its own, and each program it started for a moment opened a console
+window of its own, which took the focus from whatever the person was doing and closed again: Claude Code, to see
+whether it is set up and signed in; Tesseract, to read a scanned page; git and uv, to look for and install an update.
+With Claude Code as the AI that was three windows every half minute while a task queue was open. These programs now
+start without a window. Nothing changes for results, or on macOS and Linux.
+
+### Fixed
+
+- **Windows: no console windows flash open while ENLENS runs.** The app's check of Claude Code (`claude --version`,
+  `claude auth status`, `claude plugin list`), made every half minute while a task queue page or the privacy card is
+  open, ran each command in a window of its own that took the focus. It now runs them without one, as it does Claude
+  Code's set-up and installer, Tesseract (one window for each scanned page), git and uv during an update, and
+  PowerShell when the icons are made.
+- **Windows: `ollama serve` runs without a window.** When ENLENS starts Ollama this way (Ollama's own app is not
+  installed), a console window stayed open for as long as Ollama ran, and closing it stopped Ollama.
+
+The windows meant to be seen stay: the PowerShell window of *Sign in to Claude Code*, and Ollama's own app.
+
+### For developers
+
+- `procs.no_window()` gives the keyword arguments that start a program without a window on Windows
+  (`CREATE_NO_WINDOW`; the program keeps a console no one sees, so its output is read as before) and none elsewhere.
+  Every `subprocess` call in the package passes it, or says on its line why it needs none (`# console: …`: a macOS or
+  Linux command; the restart after an update, which keeps the terminal it was started from).
+
+### Tests
+
+- `tests/test_0_15_3_no_console_windows.py`: every place the package starts a program either starts it without a
+  window or says why it needs none (in 0.15.2's code the test finds all 16 places that did neither); the Claude Code
+  status check and the update start their programs without a window; and, on Windows, a console program started by
+  a process without a console, as the app is, gets a window of its own without `no_window()` and none with it.
+
+### Not yet done
+
+- Not yet tried on the user's Windows PC with a task queue open.
+- The advisory test run on Windows still stops part way (the process-number bug in 0.15.2's *Not yet done*), before
+  it reaches this release's Windows test; that test was run on its own on GitHub's Windows machine.
+- A Claude Code run started from the app (*Start Claude Code*) already ran without a window, and the programs it
+  starts share its hidden console; whether Claude Code opens windows of its own for anything was not checked.
+
 ## 0.15.2 (November 2026): Windows user folders with accents
 
 On Windows, a user folder with an accented letter (C:\Users\Dávid) stopped the install at its third step, and the

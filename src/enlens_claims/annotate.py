@@ -26,6 +26,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .procs import no_window
 from .store import Workspace
 from .textutil import _normalise_spans, normalise
 
@@ -294,7 +295,8 @@ def _ocr_page(path: Path, pno: int, lang: str = "eng") -> PageText | None:
     exe = find_tesseract()
     if not exe:
         return None
-    r = subprocess.run([exe, "stdin", "stdout", "-l", lang, "tsv"], input=buf.getvalue(), capture_output=True, timeout=300)
+    r = subprocess.run([exe, "stdin", "stdout", "-l", lang, "tsv"], input=buf.getvalue(), capture_output=True, timeout=300,
+                       **no_window())
     if r.returncode != 0:
         return None
     k = 72 / OCR_DPI
