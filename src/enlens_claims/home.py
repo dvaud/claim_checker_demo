@@ -84,6 +84,8 @@ DEFAULTS = {
     # 0.15: "stable" (the latest full release) or "early" (also release candidates, which come out a week or more
     # before each new version); a git copy follows main and has no channel
     "update_channel": "stable",
+    # 0.15.1: the version whose "what's new" note was last shown (once, after an update; see gui/server.py)
+    "whats_new_seen": "",
 }
 
 BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Local model (automatic)",

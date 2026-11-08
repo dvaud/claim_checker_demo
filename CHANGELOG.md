@@ -1,5 +1,124 @@
 # Changelog
 
+## 0.15.1 (November 2026): text files and books, read without the clutter
+
+Reader 2 (0.15.0) sets aside what is not a document's own text by where it stands on a PDF's page. A text file has no
+pages, and many `.txt` and `.md` files are text copied out of a PDF by a converter: every running head, page number
+and printer's line was still in the text, a Markdown file without marked headings had no headings at all, and a whole
+page could be one paragraph. Reader 3 finds all of that from the text alone, and reads books and theses from their
+table of contents. The reading view gets two quicker corrections, Zotero adds a work's PDF rather than a saved web
+page, and the app says in a small note, once, what is new after an update.
+
+### Changes that can alter your results
+
+- **Reader 3, for documents added from now on** (`ingest.READER` 3). Documents already in a project keep their
+  reading; *Read with the new reader* (in *Reading*) moves one, its results with it. On a text file, and on any page
+  read without positions (OCR, a PDF read from its text layer):
+  - **Running heads and footers** are set aside when they come back about once a page, next to a page break or at
+    regular intervals, with their numbers aside; a short one in capitals with its page number ("2 INTRODUCTION",
+    "THE SYSTEMS LENS 3") is found from two pages, from the contents, or because it interrupts a sentence across a
+    page turn. Answers that come back in an interview ("[P] Ja.") come back irregularly, in mid-text, and stay.
+  - **Page numbers**: lines that are only a number, counting up a page apart.
+  - **Paragraphs and headings**: in text broken into lines of one width, a short line that ends a sentence ends its
+    paragraph and a short line on its own is a heading; a Markdown file, web page or Word file that marks fewer than
+    three headings gets headings by these rules. A line that ends or holds a sentence, introduces a list or runs on
+    into the next block is not taken for a heading.
+  - **Publishing details** at the start of a text file that looks published (a copyright line, an ISBN, a printer,
+    *Other books by*) are set aside as front matter, as a PDF's author details are.
+  - **Repairs**: text printed twice letter by letter ("TTIISS ffiinnaall" → "TIS final"), ligatures a converter broke
+    with a space ("fi nd" → "find", but "off the" stays), and, only in a file that lost many of its spaces (2% or more
+    of its words of 15 letters or longer), words run together, split into words the document itself writes apart and
+    never into word endings ("require ment").
+- **Books and theses, in any format**: the table of contents (lines ending in page numbers that go up) is set aside,
+  and its entries find the chapter headings. What comes before the first chapter is front matter (an abstract,
+  summary or preface stays, and so does a paragraph of text the contents did not name); the notes, the bibliography,
+  the index, *About the author* and the acknowledgements found from the contents are set aside. An index is also known
+  by its lines ("archetypes, 112–116, 191"), and "Notes" and "Index" headings at the end are known by name.
+- **All like this** and **Text starts here / Text ends here** change which passages searches, codes, themes and
+  checks read, when you use them.
+- **Zotero**: when a work has several files, *Add these files to the project* adds its PDF first, then a Word file,
+  then a text file, and a saved web page only when nothing else can be read (it took the first file, often Zotero's
+  snapshot of a landing page). A work with neither author nor year is proposed for a document when its long title
+  (six words that count or more) stands whole on the document's title page; you confirm it.
+
+### New
+
+- **All like this** in the reading view, on a short block that comes back (a running head, a page number, a label):
+  leaves out, or restores, every block that looks the same, their numbers aside.
+- **Text starts here** and **Text ends here** (in the first or last third of a document): everything before or after
+  is left out, for a book's title pages or its end matter the reader did not find. *Undo start* or *Undo end* takes it
+  back; a block you restore there still counts and says *restored by you*. Both are kept by the block's words, so they
+  hold when the document is read again, and move with it to a new reader.
+- **What is new**: after an update, the first start shows a small note of what changed, once, in the corner; *×* or
+  Escape closes it. A new installation shows none.
+- **Reading** says when a text file looks copied out of a PDF ("If you have the PDF, add it instead"), when many of its
+  words still run together, and when a PDF was read without its layout; lines printed twice and read once are among
+  the repairs. A document read by 0.15.0's reader keeps its report beside the offer to move it.
+- **A git copy gets the layout reader** (the `pdfminer` extra) at its next `enlens update` after this one, as the
+  one-line install always has; without it PDFs are read from their text alone.
+
+### Fixed
+
+- A Markdown file without `#` headings got no headings at all (an empty list of marked headings was taken as "this
+  file has none").
+- Zotero's saved web page was added instead of the work's PDF, and then counted as the work's document, so the full
+  text already in the project was never proposed for it.
+- The actions under a block in the reading view could fall under the next row (a left-out block's faded label made a
+  layer of its own); they now stand on a small card above it.
+- The *File in Zotero* column named the first readable file, not the one *Add these files* takes.
+
+### Privacy
+
+- Nothing new leaves the computer. Reader 3, *All like this* and the start and end marks use no AI. The note of what is
+  new is a file inside ENLENS; showing it sends nothing.
+
+### For developers
+
+- `reader3.py`: what reader 3 adds (`text_furniture`, `undouble_lines`, `paragraph_breaks`, `looks_published`,
+  `publishing_details`, `book_parts`, `find_contents`, `ligature_words`, `join_ligature_gaps`, `not_a_heading`,
+  `damaged_spacing`, `split_runs`, `report_warnings`). `reader.READER` and `ingest.READER` are 3;
+  `reader.read_blocks(raw, version)` and `build_document(..., version)` read as 0.15.0 did with `version=2`
+  (`tests/test_0_15_1_reader3.py` checks a book's reading by reader 2 against 0.15.0's fingerprint). New block kinds
+  `contents` and `index`; *front* is called *Front matter*. In lines without positions, page furniture stays where it
+  stood (a block of its own) instead of moving to the end of the page. The report adds `repairs.doubled`,
+  `text_layout` and `book`.
+- `reader.choose_inclusion(items, choices)` decides what counts (kind, then the start and end marks, then the block's
+  own choice) for `apply_choices` and for the preview of a move (`reread.py`); marks are `block_choices` rows
+  `start:<fp>:<k>` and `end:<fp>:<k>` (`reader.bound_key`, `bound_index`). `PUT …/documents/<id>/blocks/<n>` takes
+  `alike`; `PUT …/documents/<id>/bounds` is new; `?view=blocks` adds `alike`, `share` and `bound` (docs/API.md).
+  `App.block_shapes`.
+- `GET /api/whats-new` and `gui/static/whats-new.md`, which each release updates (docs/DEVELOPING.md, *Releases*);
+  the setting `whats_new_seen`.
+- `update.update_git` adds `pdfminer` to a git copy's reinstall when the new version has that extra.
+  `update.WITHDRAWN` is empty: 0.15.1 is released for real.
+- `bibliography.TITLE_ONLY_WORDS`, `_FILE_RANK`.
+- `enlens measure` (the six PDFs of known text): reader 3 reads them as reader 2 does (words that belong 99.9%,
+  leftover boilerplate 0). On the test's book copied out of its PDF, reader 3 keeps every word of its text in order
+  (recall 100%, precision at least 99%) with no running head, slug, contents line, note or index entry left in it;
+  reader 2 left more than ten of them.
+
+New tests: `tests/test_0_15_1_reader3.py` (a book copied out of its PDF, read by reader 3 and, to the byte, by reader
+2; interview answers are not running heads; a journal's running heads and page numbers; headings in a Markdown file
+without marked ones; ligatures; words run together only where spaces were lost; the report's warnings; where the text
+starts and ends; *All like this* and the marks in the reading view, with their errors; a reader-2 document moved to
+reader 3 with the person's mark). `tests/test_0_15_1_zotero_files.py` (the PDF before a saved web page; a web page
+when it is all there is; Word before text; a long title alone proposed, never linked; not a short or partial one; an
+author still outranks it; the whole case of a thesis saved as a web page). `tests/test_0_15_1_whats_new.py` (the
+note's format; shown once after an update; never on a new installation or for another version).
+`tests/test_0_15_1_updates.py` (a git copy gets `pdfminer`; no number is withdrawn). Tests of 0.15.0 that named
+reader 2 as the current one now name `ingest.READER`.
+
+### Not yet done
+
+- Pages are not found again in a text file: a quote from one is cited by paragraph, not page.
+- A running head that comes back once, at a sentence's end, and is not in the contents stays in the text.
+- Text copied out of a two-column PDF stays interleaved, as the converter wrote it: add the PDF itself.
+- Words run together are split only into words the document uses on its own at least twice; a rare word can stay
+  joined.
+- The update that brings `pdfminer` to a git copy is the next one after 0.15.1 (the update to 0.15.1 runs 0.15.0's
+  code): until then, `pip install -e '.[pdfminer]'` in the copy.
+- Checked in Chromium on macOS (light, dark, 390 px wide); not tried by hand on Windows.
+
 ## 0.15.0 (November 2026): a new reader, and results you can trace
 
 0.15 changes how documents are read. A new reader finds the columns of a PDF, sets aside what is not the

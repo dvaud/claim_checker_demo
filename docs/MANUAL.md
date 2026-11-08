@@ -565,8 +565,9 @@ embedding model, embeddings), for tools that read that format.
 ### How documents are read (0.15)
 
 Before anything else, ENLENS turns each file into text and cuts the text into passages: what search, codes,
-themes, concepts and checks read. The part that does this is the *reader*. ENLENS 0.15 has a new one (reader 2);
-documents added before 0.15 keep the reading of reader 1 until you move them over (below).
+themes, concepts and checks read. The part that does this is the *reader*. ENLENS 0.15.0 has a new one (reader 2),
+and 0.15.1 adds to it for text files and books (reader 3, below); documents added earlier keep the reading they have
+until you move them over (below).
 
 **What the new reader does with a PDF.** It looks at where each line stands on the page (with the `pdfminer` extra,
 which the one-line install has; without it, it reads the PDF's text layer, without columns or tables):
@@ -589,6 +590,32 @@ which the one-line install has; without it, it reads the PDF's text layer, witho
 Word files, web pages and text files are read as before, with the same repairs, their headings and the reference
 list set aside in the same way.
 
+**Text files and books (0.15.1, reader 3).** Many `.txt` and `.md` files are text copied out of a PDF by a converter:
+every running head and page number is still in the text, while the pages, the headings and often the spaces between
+words are gone. Reader 3 reads such files with rules on the text alone (no AI):
+
+- **Running heads and footers** are found because they come back about once a page, next to a page break or at
+  regular intervals ("Frontiers in Neurology 04 frontiersin.org", a printer's line drawn twice letter by letter);
+  a short one in capitals with its page number ("2 INTRODUCTION") is found from two pages, or from the contents.
+  Answers that come back in an interview ("[P] Ja.") come back irregularly, in the middle of the text: they stay.
+- **Page numbers**: lines that are only a number, counting up a page apart.
+- **Paragraphs and headings**: a short line that ends a sentence ends its paragraph, and a short line standing on
+  its own is a heading. A Markdown file, web page or Word file that marks fewer than three headings gets headings
+  this way too (before, a Markdown file without marked headings had none).
+- **Books and theses**: the table of contents is found (lines ending in page numbers that go up) and set aside, and
+  its entries find the chapter headings in the text. What comes before the first chapter (half title, other books
+  by the author, the copyright page, the dedication, lists of figures) is set aside as *front matter*, but an
+  abstract, summary or preface stays. The notes, the bibliography, the index, *About the author* and the
+  acknowledgements at the end are set aside. An index is also known by its lines ("archetypes, 112–116, 191").
+- **Repairs**: text printed twice ("TTIISS ffiinnaall" → "TIS final"), ligatures a converter broke with a space ("fi
+  nd" → "find"), and, only in a file that lost many of its spaces, words run together ("peoplelivingwithdementia" →
+  "people living with dementia", using the words the document itself writes apart; never into word endings).
+
+*Reading* says when a text file looks copied out of a PDF, when many of its words still run together, and when a PDF
+was read without its layout (the `pdfminer` extra missing). If you have the PDF, add it instead: it reads better. A
+git copy of ENLENS gets the `pdfminer` extra at its next `enlens update` (0.15.1), as the one-line install always
+has.
+
 **The reading view.** A document's page shows its text the way the new reader found it: headings, paragraphs,
 captions and tables, a mark where each page begins, and what was set aside folded under *Left out of the text* on
 each page. Point at a block, and under where it is cited comes **Leave out** (searches, codes, themes and checks
@@ -596,6 +623,14 @@ will not read it) or **Restore** (they will); a table also has **Excel**. A head
 choice is kept by the block's words, so it holds when the document is read again; *restored by you* or *left out by
 you* stands beside it. Changing what counts makes keyword codes, key terms and themes out of date, as adding a
 document does.
+
+Two more, from 0.15.1. **All like this** (on a short block that comes back, such as a running head or a page number)
+leaves out, or restores, every block that looks the same, their numbers aside: one click for a running head on every
+page. **Text starts here** (on a block in the first third of the document) and **Text ends here** (in the last third)
+leave out everything before or after it: a book's title pages, or its notes, bibliography and index, when the reader
+did not find them. *the text starts here (you said)* stands beside the block, with *Undo start* (or *Undo end*). A
+block you restore before the start or after the end still counts. Both are kept by the block's words, so they hold
+when the document is read again.
 
 **Reading** (a panel beside the text) says how well the document was read: *Read well*, *Read, with something to
 check* or *Read badly*, with the reasons (pages without text, text recognised from scanned pages, a garbled text
@@ -607,8 +642,8 @@ of documents marks the ones that need a look.
 reader found outlined: solid for what counts, dashed for what was left out. It follows the text as you scroll; click
 an outline to go to that block in the text.
 
-**Read with the new reader.** A document added before 0.15 keeps the reading it has, so every quote and judgement in
-it stays where it is. Its *Reading* panel offers **Read with the new reader**. ENLENS first reads the original file
+**Read with the new reader.** A document added before 0.15 (or, for reader 3, before 0.15.1) keeps the reading it
+has, so every quote and judgement in it stays where it is. Its *Reading* panel offers **Read with the new reader**. ENLENS first reads the original file
 again and shows what would happen, changing nothing: how many of your results (a check's grades and your
 judgements, codes and your reviews of them, themes, references) find their place in the new text, and which do not.
 **Move it to the new reader** then does it in one step, or not at all: each result follows its quote to the same
@@ -649,7 +684,9 @@ managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zo
 
 - *Please confirm*: a work whose title stands on the first pages of a document, with an author or the year (the
   reference list of a short document is not read as its first pages), or whose DOI the document only mentions somewhere
-  on its first pages (it may cite the work). The work
+  on its first pages (it may cite the work). A work with neither author nor year (Zotero often saves a *Web Page*
+  that way) is proposed when its title is long (six words that count or more) and stands whole on the document's
+  title page (0.15.1). The work
   and the document are side by side, with the place on the document where the title stands, highlighted, and what was
   found (*Found on page 1: the whole title, the author Lindqvist, the year 2025*). *Same work* links them; *Not the
   same* means the pair is never proposed again. *Confirm all* takes every pair at once.
@@ -657,7 +694,9 @@ managers (BibTeX or RIS). With Zotero's CSV and BibTeX the paths of the files Zo
   their web address and *Open in Zotero*. *Download the list* gives them as a spreadsheet, your to-download list.
   When Zotero keeps a file (a PDF, a saved web page, a Word file) for some of them, a card offers *Add these files to
   the project*: they are read where Zotero keeps them (nothing is copied), after you say who may read them with AI
-  (the project's choice is preselected), and each is linked to its work. *Link a document* says by hand which
+  (the project's choice is preselected), and each is linked to its work. When a work has several, the real document
+  is added (0.15.1): its PDF first, then a Word file, then a text file, and a saved web page (Zotero's snapshot of a
+  landing page) only when nothing else can be read. *Link a document* says by hand which
   document a work is.
 - *Linked*: each work with its document, and how they were linked: *Same file* (a file Zotero keeps for the work is
   the very file you added, by its checksum), *Same DOI* (the document prints the work's DOI on its title page or in its file name), *You confirmed it* or

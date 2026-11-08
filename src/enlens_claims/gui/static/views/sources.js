@@ -407,9 +407,11 @@ const DOC_TABS = [["codes", "Codes", "tag"], ["terms", "Key terms", "network"], 
   ["reading", "Reading", "layers"], ["page", "Page", "file-text"]];
 // 0.15: what each kind of block is called in the reading view (reader.KIND_TEXT), in the plural for counts
 const KIND_PLURAL = { title: ["title", "titles"], heading: ["heading", "headings"], abstract: ["abstract paragraph", "abstract paragraphs"], body: ["paragraph", "paragraphs"],
-  caption: ["caption", "captions"], table: ["table", "tables"], footnote: ["footnote", "footnotes"], front: ["line of author and article details", "lines of author and article details"],
+  caption: ["caption", "captions"], table: ["table", "tables"], footnote: ["footnote", "footnotes"], front: ["part of the front matter (authors, publishing details)", "parts of the front matter (authors, publishing details)"],
   back: ["end note (acknowledgements, funding, licence)", "end notes (acknowledgements, funding, licence)"], references: ["part of the reference list", "parts of the reference list"],
-  figure: ["piece of text inside a figure", "pieces of text inside figures"], furniture: ["running head or page number", "running heads and page numbers"] };
+  figure: ["piece of text inside a figure", "pieces of text inside figures"], furniture: ["running head or page number", "running heads and page numbers"],
+  // 0.15.1 (reader 3)
+  contents: ["line of the table of contents", "lines of the table of contents"], index: ["part of the index", "parts of the index"] };
 // 0.15 (A0): how many results a move to the new reader places (reread.move's counts, per kind of result)
 const movedCount = (r) => Object.values((r && r.counts) || {}).reduce((a, c) => a + (c.moved || 0), 0);
 let keepPlace = null;               // 0.15: where the reader was before a block was restored or left out
@@ -490,7 +492,9 @@ export async function renderDocument(view, [docId], query) {
       const body = h("div", { class: "dv-body" });
       const kindCls = b.kind ? ` dv-k-${b.kind}${b.included === false ? " dv-out" : ""}${b.changed ? " dv-changed" : ""}${b.joined ? " dv-joined" : ""}` : "";
       // the label column: where the block is cited, a mark when a person changed it, and (on hover) its actions
-      const label = h("div", { class: "pp" }, b.label ? h("b", {}, b.label) : null, b.changed ? h("span", { class: "dv-mine" }, b.included ? "restored by you" : "left out by you") : null,
+      const label = h("div", { class: "pp" }, b.label ? h("b", {}, b.label) : null,
+        b.bound ? h("span", { class: "dv-mine" }, b.bound === "start" ? "the text starts here (you said)" : "the text ends here (you said)") : null,
+        b.changed ? h("span", { class: "dv-mine" }, b.included ? "restored by you" : "left out by you") : null,
         b.kind === "table" && b.included === false && !b.changed ? h("span", { class: "dv-mine dv-muted" }, "left out") : null,
         reading ? blockActions(b) : null);
       const row = h("div", { class: "passage-row" + kindCls + (hit >= 0 && b.n === blocks[hit].n ? " hit" : "") }, label, body);
@@ -528,14 +532,30 @@ export async function renderDocument(view, [docId], query) {
       ? h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Restore: ${where}`, title: "Count this in searches, codes, themes and checks again", onClick: (e) => setIncluded(b, true, e.currentTarget) }, icon("refresh", { size: 12 }), "Restore")
       : h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Leave out: ${where}`, title: b.kind === "heading" || b.kind === "title" ? "Leave this heading and the text under it out of searches, codes, themes and checks" : "Leave this out of searches, codes, themes and checks (a heading above it goes with it)", onClick: (e) => setIncluded(b, false, e.currentTarget) }, icon("minus", { size: 12 }), "Leave out");
     wrap.appendChild(btn);
+    // 0.15.1: the same for every block that looks like this one (running heads, page numbers, a repeated label)
+    if (b.alike > 0) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `${b.included === false ? "Restore" : "Leave out"} all ${b.alike + 1} blocks like this: ${where}`,
+      title: b.included === false ? `Restore this and the ${plural(b.alike, "other block")} that look the same (their numbers aside)` : `Leave out this and the ${plural(b.alike, "other block")} that look the same (their numbers aside), such as a running head on every page`,
+      onClick: (e) => setIncluded(b, b.included === false, e.currentTarget, true) }, icon("copy", { size: 12 }), `All like this (${fmt.num(b.alike + 1)})`));
+    // 0.15.1: where the document's own text starts and ends (a book's title pages before, its notes and index after)
+    if (b.bound) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Undo: the text ${b.bound === "start" ? "starts" : "ends"} here`, title: "What was left out by this mark counts again, unless it was left out for another reason", onClick: (e) => setBound(b.bound, null, e.currentTarget) }, icon("x", { size: 12 }), b.bound === "start" ? "Undo start" : "Undo end"));
+    else if (b.included !== false && b.share != null) {
+      if (b.share <= 0.34) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `The text starts here: ${where}`, title: "Leave out everything before this (title pages, publishing details, contents). Anything you restore there still counts.", onClick: (e) => setBound("start", b.n, e.currentTarget) }, icon("chevron-down", { size: 12 }), "Text starts here"));
+      if (b.share >= 0.66) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `The text ends here: ${where}`, title: "Leave out everything after this (notes, bibliography, index, about the author). Anything you restore there still counts.", onClick: (e) => setBound("end", b.n, e.currentTarget) }, icon("chevron-up", { size: 12 }), "Text ends here"));
+    }
     if (b.table) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Download table ${b.table.n} for Excel`, title: "The table's rows and cells, for Excel", onClick: () => download(`${docBase}/tables/${b.table.n}.xlsx`).catch(showError) }, icon("download", { size: 12 }), "Excel"));
     return wrap;
   }
-  async function setIncluded(b, included, btn) {
+  async function setIncluded(b, included, btn, alike = false) {
     btn.disabled = true;
     let r;
-    try { r = await api("PUT", `${docBase}/blocks/${b.n}`, { included }); }
+    try { r = await api("PUT", `${docBase}/blocks/${b.n}`, alike ? { included, alike: true } : { included }); }
     catch (e) { btn.disabled = false; showError(e); return; }
+    if (alike) {
+      toast(`${included ? "Restored" : "Left out"}: ${plural(r.alike || 1, "block")} like this${(r.together || 0) > (r.alike || 0) ? `, with ${plural(r.together - r.alike, "block")} read together with them` : ""}. Searches, codes, themes and checks ${included ? "read them again" : "will not read them"}.`, "ok");
+      keepPlace = { doc: docId, y: window.scrollY, tab, open: (r.blocks || []).map((x) => x.n) };
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+      return;
+    }
     const others = (r.blocks || []).filter((x) => x.n !== b.n);
     const heads = others.filter((x) => x.kind === "heading" || x.kind === "title").map((x) => `“${x.text.length > 60 ? x.text.slice(0, 57) + "…" : x.text}”`);
     const rest = others.length - heads.length;
@@ -545,6 +565,18 @@ export async function renderDocument(view, [docId], query) {
       : `Left out${withWhat ? `, together with ${withWhat}` : ""}. Searches, codes, themes and checks will not read ${others.length ? "them" : "it"}.`, "ok");
     // the simplest true picture: draw the document again, at the same place, with what changed in view
     keepPlace = { doc: docId, y: window.scrollY, tab, open: (r.blocks || []).map((x) => x.n) };
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  }
+  // 0.15.1: where the text starts or ends (block null: no longer)
+  async function setBound(side, n, btn) {
+    btn.disabled = true;
+    let r;
+    try { r = await api("PUT", `${docBase}/bounds`, { side, block: n }); }
+    catch (e) { btn.disabled = false; showError(e); return; }
+    const what = side === "start" ? "before it" : "after it";
+    toast(n == null ? `Undone: ${r.restored ? `${plural(r.restored, "block")} ${what.replace("it", "that mark")} count${r.restored === 1 ? "s" : ""} again` : "nothing else changed"}.`
+      : `The text ${side === "start" ? "starts" : "ends"} here: ${r.left_out ? `${plural(r.left_out, "block")} ${what} left out` : "nothing more to leave out"}. Searches, codes, themes and checks read only the text.`, "ok");
+    keepPlace = { doc: docId, y: window.scrollY, tab, open: [] };
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   }
   // 0.15: after Restore or Leave out, the folds holding what changed stay open
@@ -791,15 +823,17 @@ export async function renderDocument(view, [docId], query) {
     const el = h("section", { class: "dv-panel", "aria-labelledby": "dv-read-h" });
     const rep = d.reading || {};
     const older = (d.reader || 1) < (d.new_reader || 1);
+    const before15 = (d.reader || 1) < 2;  // 0.15.1: a document of 0.15.0's reader has a reading report too
     const qual = { good: ["circle-check", "Read well."], fair: ["alert-triangle", "Read, with something to check."], poor: ["alert-circle", "Read badly: check it before you rely on it."] }[rep.quality];
     const figs = [];
     const fig = (label, value, title) => { if (value) figs.push(h("li", { title: title || null }, h("span", { class: "muted" }, label), " ", value)); };
-    if (!older) {
+    if (!before15) {
       fig("Pages:", rep.pages ? `${fmt.num(rep.pages)}${rep.multi_column_pages ? `, ${fmt.num(rep.multi_column_pages)} in columns (read column by column)` : ""}` : "");
       const rp = rep.repairs || {};
       const fixes = [rp.hyphens_joined && plural(rp.hyphens_joined, "word") + " cut at a line end joined", rp.hyphens_kept && plural(rp.hyphens_kept, "hyphen") + " kept (long-term, well-known)",
         rp.words_split && plural(rp.words_split, "word") + " that ran together split", rp.ligatures && plural(rp.ligatures, "ligature") + " (ﬁ, ﬂ) put right",
-        rp.accents && plural(rp.accents, "accent") + " put on its letter", rp.spaces && plural(rp.spaces, "odd space") + " made plain"].filter(Boolean);
+        rp.accents && plural(rp.accents, "accent") + " put on its letter", rp.spaces && plural(rp.spaces, "odd space") + " made plain",
+        rp.doubled && plural(rp.doubled, "line") + " printed twice read once"].filter(Boolean);
       fig("Repaired:", fixes.join("; "));
       fig("Tables:", rep.tables ? `${fmt.num(rep.tables)}, kept as rows and cells (each can be downloaded for Excel from the text)` : "");
       // live: Restore and Leave out change it
@@ -813,9 +847,10 @@ export async function renderDocument(view, [docId], query) {
     } }), h("span", {}, "Show what was left out in the text")) : null;
     el.append(...[h("h2", { id: "dv-read-h", class: "dv-panel-title", tabindex: "-1" }, "How this document was read"),
       older ? h("div", { class: "notice notice-info" }, icon("info"), h("div", {},
-        h("p", {}, `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`),
+        h("p", {}, before15 ? `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`
+          : `Read by the reader of ENLENS 0.15.0. The reader of ENLENS ${App.state.version || ""} also sets running heads, page numbers, contents pages and indexes aside in text files and books, finds their headings and paragraphs, and puts apart words that ran together.`),
         h("p", { class: "small" }, "Documents already in a project keep their reading, so every quote and judgement in them stays where it is, until you move one over."))) : null,
-      !older && qual ? h("p", { class: `dv-quality dv-q-${rep.quality}` }, icon(qual[0], { size: 14 }), qual[1]) : null,
+      !before15 && qual ? h("p", { class: `dv-quality dv-q-${rep.quality}` }, icon(qual[0], { size: 14 }), qual[1]) : null,
       (rep.warnings || []).length ? h("ul", { class: "dv-warn" }, rep.warnings.map((w) => h("li", {}, w))) : null,
       figs.length ? h("ul", { class: "dv-figs" }, figs) : null,
       outKinds.length ? h("div", { class: "dv-outkinds" }, h("p", { class: "small", style: { margin: "8px 0 4px" } }, h("strong", {}, "Left out of the text: "), outKinds.map(([k, n]) => kindCount(k, n)).join(", "), "."),

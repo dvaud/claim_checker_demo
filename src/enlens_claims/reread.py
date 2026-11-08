@@ -698,8 +698,10 @@ def _plan(ws: Workspace, cx, doc_id: str, new_doc) -> tuple[_Plan, dict]:
     from . import reader as reader2
 
     choices = {r[0]: r[1] for r in cx.execute("SELECT fp, included FROM block_choices WHERE doc_id=?", (doc_id,))}
-    m.set_blocks([(b.start, b.end, b.kind, bool(choices.get(reader2.block_fp(new_doc.text[b.start:b.end]), b.included))
-                   if choices else b.included) for b in (getattr(new_doc, "blocks", None) or [])])
+    new_blocks = getattr(new_doc, "blocks", None) or []
+    counts = reader2.choose_inclusion([(new_doc.text[b.start:b.end], b.kind) for b in new_blocks], choices) \
+        if choices else [b.included for b in new_blocks]
+    m.set_blocks([(b.start, b.end, b.kind, bool(c)) for b, c in zip(new_blocks, counts)])
     tomb = {p.pid: tombstone(p.pid, reader) for p in old}
     by_old = m.by_old
     plan = _Plan()

@@ -1025,3 +1025,14 @@ span.passage-broken > span.passage-heading { font-weight: 650; }
 /* a heat-grid cell with passages holds a button, so the keyboard reaches it (the cell's click still works) */
 .heat-btn { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; width: 100%; min-height: 1.4em; }
 .btn-wrap { white-space: normal; text-align: left; max-width: 100%; height: auto; }
+
+/* 0.15.1: the "what's new" note after an update: small, muted, bottom right, closed by x or Escape */
+.release-note { position: fixed; right: 16px; bottom: 16px; z-index: 80; width: 300px; max-width: calc(100vw - 32px); padding: 10px 12px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--muted); font-size: .8rem; line-height: 1.4; animation: release-note-in .4s ease-out; }
+.release-note-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.release-note-title { margin: 0; font-size: .84rem; font-weight: 600; color: var(--text-2); }
+.release-note-close { flex: none; margin: -3px -5px 0 0; }
+.release-note-sub { margin: 2px 0 6px; font-style: italic; }
+.release-note-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+@keyframes release-note-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .release-note { animation: none; } }
+@media (max-width: 480px) { .release-note { left: 16px; right: 16px; width: auto; } }

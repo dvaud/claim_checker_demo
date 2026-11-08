@@ -313,7 +313,7 @@ export async function renderBibliography(view) {
 
   function drawConfirm(box) {
     const rows = data.confirm || [];
-    if (!rows.length) { box.appendChild(emptyState("circle-check", "Nothing to confirm", "When a work’s title, and an author or the year, are found on the first pages of a document, the pair waits here for you.")); return; }
+    if (!rows.length) { box.appendChild(emptyState("circle-check", "Nothing to confirm", "When a work’s title, and an author or the year (or a long title, whole, on the title page), are found on the first pages of a document, the pair waits here for you.")); return; }
     box.appendChild(h("div", { class: "bib-list-head" },
       h("p", { class: "grow" }, `ENLENS found ${rows.length === 1 ? "this work’s title" : "these works’ titles"} on the first pages of a document. Is it the same work?`),
       rows.length > 1 ? h("button", { class: "btn btn-sm", type: "button", onClick: async () => {

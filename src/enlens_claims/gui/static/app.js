@@ -688,6 +688,23 @@ function connectionInit() {
   setInterval(() => { if (Connection.down) api("GET", "/api/state").catch(() => {}); }, 5000);
 }
 
+// 0.15.1: a small note of what is new, once, on the first start after an update (the app marks it seen when it serves it)
+async function whatsNewInit() {
+  let note = null;
+  try { note = (await api("GET", "/api/whats-new")).note; } catch (e) { return; }
+  if (!note || !Array.isArray(note.points) || !note.points.length) return;
+  const onKey = (ev) => { if (ev.key === "Escape") close(); };
+  const close = () => { document.removeEventListener("keydown", onKey); card.remove(); };
+  const card = h("div", { class: "release-note", role: "status", "aria-live": "polite", "aria-label": "What is new" },
+    h("div", { class: "release-note-head" },
+      h("p", { class: "release-note-title" }, `${note.version}: ${note.title}`),
+      h("button", { class: "icon-btn release-note-close", type: "button", "aria-label": "Close", onClick: close }, icon("x", { size: 14 }))),
+    note.subtitle ? h("p", { class: "release-note-sub" }, note.subtitle) : null,
+    h("ul", { class: "release-note-list" }, ...note.points.map((t) => h("li", {}, t))));
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(card);
+}
+
 async function boot() {
   skipLinkInit();
   connectionInit();
@@ -709,6 +726,7 @@ async function boot() {
   updateInit();
   quitInit();
   route();
+  whatsNewInit();
   // keep the sidebar fresh when the window regains focus
   window.addEventListener("focus", () => { renderJobs(); renderQueue(); });
 }

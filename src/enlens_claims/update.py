@@ -8,7 +8,7 @@ venv for a new version: the editable install runs the code in the git copy, so f
 2. stops if files of the copy were changed by hand (so an update never overwrites them);
 3. fetches and moves forward only (`git merge --ff-only`): nothing is merged or rewritten;
 4. runs `pip install -e .` again only when `pyproject.toml` changed (new dependencies or commands), with the extras
-   already installed (connector, fast, ocr, …), into the same Python;
+   already installed (connector, fast, ocr, …) and, from 0.15.1, the layout reader (pdfminer), into the same Python;
 5. refreshes the Claude Code plugin in the data folder if `enlens claude-setup` wrote one;
 6. says to restart the app if it is running (the browser is told not to cache the page, so a restart is all).
 
@@ -230,7 +230,10 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
         extras = installed_extras(py)  # before the merge (0.11.1): an extra whose packages grew must stay installed
         _git(run, root, "merge", "--ff-only", "--quiet", upstream)
         if _digest(py) != deps_before:
-            pending = sorted(set(pending or []) | set(extras))
+            # 0.15.1: and the layout reader (pdfminer), which the one-line install has always brought: without it
+            # PDFs are read from their text alone (a git copy installed with `pip install -e .` lacked it)
+            layout = {"pdfminer"} if "pdfminer" in _extras_in(py.read_text("utf-8")) else set()
+            pending = sorted(set(pending or []) | set(extras) | layout)
             try:
                 _pending_path(root).write_text(json.dumps({"extras": pending}), encoding="utf-8")
             except OSError:
@@ -335,8 +338,8 @@ def semver(v: str) -> str:
 # still running is older than any later ENLENS, whatever its number says. 0.14.0 is a release again (shared
 # projects), so it left the list. 0.15: a withdrawn number counts as older only while this version is below it
 # (gui/launcher.is_older), so 0.15.0 and 0.15.1 can be released for real without leaving the list first. 0.15.0 is
-# a release (the new reader), so it left the list.
-WITHDRAWN = frozenset({"0.15.1"})
+# a release (the new reader), and so is 0.15.1 (reader 3): both left the list, which is empty now.
+WITHDRAWN: frozenset[str] = frozenset()
 
 
 def is_candidate(v: str) -> bool:

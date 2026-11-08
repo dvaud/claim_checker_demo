@@ -23,10 +23,11 @@ def test_a_withdrawn_version_still_running_counts_as_older():
     from enlens_claims import update
     from enlens_claims.gui import launcher
 
-    assert update.WITHDRAWN == {"0.15.1"}  # 0.14.0 (shared projects) and 0.15.0 (the new reader) are releases again
+    assert update.WITHDRAWN == set()  # 0.14.0 (shared projects), 0.15.0 (the new reader), 0.15.1 (reader 3): releases
     for v in update.WITHDRAWN:
         above = update.version_tuple(v) > update.version_tuple(__version__)
         assert launcher.is_older({"version": v}) == above, v  # 0.15: released for real, a number is a number again
+    assert not launcher.is_older({"version": "0.15.1"}) or update.version_tuple(__version__) > (0, 15, 1)
     assert not launcher.is_older({"version": __version__})
     assert launcher.is_older({"version": "0.13.5"})
     assert not launcher.is_older({"version": "0.16.0"})  # a later number is a later version again

@@ -165,11 +165,11 @@ def test_the_project_stores_blocks_tables_the_report_and_block_kinds(tmp_path):
     cases = measure.make_known_texts(tmp_path / "k")
     ws = Workspace.create(tmp_path / "ws")
     ingest.ingest(ws, [c.path for c in cases])
-    assert ws.scalar("SELECT COUNT(*) FROM documents WHERE reader=2") == len(cases)
+    assert ws.scalar("SELECT COUNT(*) FROM documents WHERE reader=?", (ingest.READER,)) == len(cases)
     assert ws.scalar("SELECT COUNT(*) FROM passages WHERE block IS NULL") == 0
     assert ws.scalar("SELECT COUNT(*) FROM doc_tables") == 1
     rep = json.loads(ws.scalar("SELECT reading_json FROM documents WHERE title LIKE 'Who Borrows%'"))
-    assert rep["reader"] == 2 and rep["tables"] == 1 and rep["quality"] == "good"
+    assert rep["reader"] == ingest.READER and rep["tables"] == 1 and rep["quality"] == "good"
     # a block's passages follow its inclusion
     for r in ws.query("SELECT doc_id, start, end, included FROM blocks"):
         secs = {x[0] for x in ws.query("SELECT section FROM passages WHERE doc_id=? AND start>=? AND end<=?",
@@ -228,9 +228,9 @@ def test_the_reading_view_restore_and_leave_out(api, tmp_path):
     cases = measure.make_known_texts(tmp_path / "k")
     docs = _project(api, tmp_path, [c.path for c in cases])
     d = docs["What Do Coastal Residents Know about Erosion?"]
-    assert d["reading_quality"] == "good" and d["reader"] == 2
+    assert d["reading_quality"] == "good" and d["reader"] == ingest.READER
     st, v = api("GET", f"/api/projects/R/documents/{d['doc_id']}?view=blocks&limit=500")
-    assert st == 200 and v["reading"]["reader"] == 2 and v["new_reader"] == 2
+    assert st == 200 and v["reading"]["reader"] == ingest.READER and v["new_reader"] == ingest.READER
     kinds = Counter(b["kind"] for b in v["blocks"])
     assert kinds["front"] and kinds["back"] and kinds["references"] and kinds["furniture"]
     assert all(b["label"] for b in v["blocks"] if not b["included"])         # what each left-out block is

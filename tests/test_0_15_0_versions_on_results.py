@@ -24,7 +24,7 @@ DEMO = Path(__file__).resolve().parent.parent / "tools" / "demo_corpus"
 
 def test_a_document_records_its_reader_and_version(loaded):
     rows = loaded.query("SELECT reader, app_version FROM documents")
-    assert rows and all(r["reader"] == ingest.READER == 2 and r["app_version"] == __version__ for r in rows)
+    assert rows and all(r["reader"] == ingest.READER and r["app_version"] == __version__ for r in rows)
     one = loaded.query("SELECT doc_id FROM documents ORDER BY doc_id LIMIT 1")[0]["doc_id"]
     docs = {d["doc_id"]: d for d in sources.document_overview(loaded)}
     assert docs[one]["reader"] == ingest.READER and docs[one]["app_version"] == __version__
@@ -112,7 +112,7 @@ def test_how_these_results_were_made_names_the_version_and_the_reader(loaded):
     versions = {r.get("ENLENS version") for r in rows if "ENLENS version" in r}
     assert versions == {__version__, f"before {runs.RECORDED_SINCE}"} or versions == {f"before {runs.RECORDED_SINCE}"}
     n_docs = loaded.scalar("SELECT COUNT(*) FROM documents")
-    assert rows[-1]["Step"].startswith(f"Reading this project's documents: {n_docs} documents by reader 2 (ENLENS {__version__})")
+    assert rows[-1]["Step"].startswith(f"Reading this project's documents: {n_docs} documents by reader {ingest.READER} (ENLENS {__version__})")
     none = runs.provenance_table(loaded, task_ids=[])
     assert none[0]["Step"].startswith("No AI model") and none[-1]["Step"].startswith("Reading this project's documents")
 
@@ -120,7 +120,7 @@ def test_how_these_results_were_made_names_the_version_and_the_reader(loaded):
 def test_made_with_says_what_an_earlier_version_made(loaded):
     claimcheck.create_hypothesis(loaded, "Electrolysis needs water")
     m = runs.made_with(loaded)
-    assert m["version"] == __version__ and m["reader"] == ingest.READER == 2 and not m["older"]
+    assert m["version"] == __version__ and m["reader"] == ingest.READER and not m["older"]
     assert [r["what"] for r in m["results"]] == ["checks"]
     with loaded.connect() as cx:  # a check from before 0.15, and one from an earlier version that said its number
         cx.execute("INSERT INTO hypotheses(hyp_id, text, created_at) VALUES ('h-old', 'Old', '2026-11-01')")

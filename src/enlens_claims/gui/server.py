@@ -28,6 +28,7 @@ import threading
 import time
 import traceback
 import uuid
+from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
@@ -568,8 +569,17 @@ class App:
         for r in ws.query("SELECT start, page FROM paragraphs WHERE doc_id=? ORDER BY start", (doc_id,)):
             paras.setdefault(r["page"], []).append(r["start"])
         chosen = rows[max(0, offset):max(0, offset) + max(1, min(limit, 1000))]
+        # 0.15.1: how many other blocks look the same (a running head, a page number: "All like this"), and where the
+        # person said the text starts and ends
+        shapes = App.block_shapes(text, rows)
+        alike = Counter(x for x in shapes if x)
+        fps = [reader2.block_fp(text[r["start"]:r["end"]]) for r in rows]
+        choices = {r["fp"]: r["included"] for r in ws.query("SELECT fp, included FROM block_choices WHERE doc_id=?",
+                                                             (doc_id,))}
+        marks = {side: reader2.bound_index(choices, side, fps) for side in reader2.BOUNDS}
+        first = max(0, offset)
         out = []
-        for r in chosen:
+        for idx, r in enumerate(chosen, first):
             kind, pg = r["kind"], r["page"]
             starts = paras.get(pg, [])
             para = sum(1 for s0 in starts if s0 <= r["start"]) if kind in reader2.INCLUDED else None
@@ -587,18 +597,33 @@ class App:
                  "start": r["start"], "end": r["end"], "text": text[r["start"]:r["end"]],
                  "headings": [{"at": 0, "end": r["end"] - r["start"], "text": text[r["start"]:r["end"]]}]
                  if kind in ("heading", "title") else [],
-                 "changed": bool(r["included"]) != (kind in reader2.INCLUDED), "joined": joined,
-                 "box": [r["x0"], r["y0"], r["x1"], r["y1"]] if r["x0"] is not None else None}
+                 "changed": bool(r["included"]) != (kind in reader2.INCLUDED) or fps[idx] in choices, "joined": joined,
+                 "box": [r["x0"], r["y0"], r["x1"], r["y1"]] if r["x0"] is not None else None,
+                 "alike": alike[shapes[idx]] - 1 if shapes[idx] else 0,
+                 "share": round(idx / max(1, len(rows) - 1), 3),
+                 "bound": next((side for side, at in marks.items() if at == idx), None)}
             t = tables.get(r["n"])
             if t is not None:
                 b["table"] = {"n": t["n"], "caption": t["caption"], "rows": json.loads(t["rows_json"] or "[]")}
             out.append(b)
         return out, len(rows)
 
-    def set_block(self, name: str, doc_id: str, n: int, included: bool) -> dict:
+    @staticmethod
+    def block_shapes(text: str, rows) -> list[str | None]:
+        """0.15.1: each block's shape for *All like this*: short blocks only (running heads, page numbers, labels),
+        their numbers aside ("TIS final pgs 12" and "TIS final pgs 13" look the same)."""
+        from .. import reader3
+
+        out: list[str | None] = []
+        for r in rows:
+            t = text[r["start"]:r["end"]]
+            out.append(reader3.shape(t) if 0 < len(t.strip()) <= 200 else None)
+        return out
+
+    def set_block(self, name: str, doc_id: str, n: int, included: bool, alike: bool = False) -> dict:
         """0.15 (A4): *Restore* or *Leave out* a block. Blocks that share a passage (a heading and its paragraph,
         short paragraphs put together) go together; the choice is kept by the blocks' text, so it holds when the
-        document is read again."""
+        document is read again. 0.15.1: with `alike`, every block that looks the same (`block_shapes`) too."""
         from .. import people
         from .. import reader as reader2
 
@@ -609,16 +634,36 @@ class App:
             if not text or not row:
                 raise ApiError(404, "No such block in this document.")
             text = text[0]
-            a, z = row
-            # the passages this block is in, and every block in those passages
-            ps = cx.execute("SELECT start, end FROM passages WHERE doc_id=? AND start < ? AND end > ?",
-                            (doc_id, z, a)).fetchall()
-            lo, hi = min([a] + [p[0] for p in ps]), max([z] + [p[1] for p in ps])
-            group = cx.execute("SELECT n, start, end, kind FROM blocks WHERE doc_id=? AND start < ? AND end > ? "
-                               "ORDER BY n", (doc_id, hi, lo)).fetchall()
+            targets = [tuple(row)]
+            if alike:
+                rows = [dict(zip(("n", "start", "end"), r)) for r in
+                        cx.execute("SELECT n, start, end FROM blocks WHERE doc_id=? ORDER BY n", (doc_id,))]
+                shapes = App.block_shapes(text, rows)
+                mine = next((shapes[i] for i, r in enumerate(rows) if r["n"] == n), None)
+                if mine:
+                    targets = [(r["start"], r["end"]) for r, sh in zip(rows, shapes) if sh == mine]
+            group = []
+            seen: set[int] = set()
+            for a, z in targets:
+                # the passages this block is in, and every block in those passages
+                ps = cx.execute("SELECT start, end FROM passages WHERE doc_id=? AND start < ? AND end > ?",
+                                (doc_id, z, a)).fetchall()
+                lo, hi = min([a] + [p[0] for p in ps]), max([z] + [p[1] for p in ps])
+                for g in cx.execute("SELECT n, start, end, kind FROM blocks WHERE doc_id=? AND start < ? AND end > ? "
+                                    "ORDER BY n", (doc_id, hi, lo)).fetchall():
+                    if g[0] not in seen:
+                        seen.add(g[0])
+                        group.append(g)
+            # 0.15.1: what each block would be without a choice of its own: its kind, and where the person said the
+            # text starts and ends (a paragraph restored after the end needs a choice of its own)
+            all_rows = cx.execute("SELECT n, start, end, kind FROM blocks WHERE doc_id=? ORDER BY n", (doc_id,)).fetchall()
+            marks = {r[0]: r[1] for r in cx.execute("SELECT fp, included FROM block_choices WHERE doc_id=? AND "
+                                                    "(fp LIKE 'start:%' OR fp LIKE 'end:%')", (doc_id,))}
+            plain = dict(zip((r[0] for r in all_rows),
+                             reader2.choose_inclusion([(text[r[1]:r[2]], r[3]) for r in all_rows], marks)))
             for gn, ga, gz, kind in group:
                 fp = reader2.block_fp(text[ga:gz])
-                if bool(included) == (kind in reader2.INCLUDED):
+                if bool(included) == bool(plain.get(gn, kind in reader2.INCLUDED)):
                     cx.execute("DELETE FROM block_choices WHERE doc_id=? AND fp=?", (doc_id, fp))
                 else:
                     cx.execute("INSERT OR REPLACE INTO block_choices(doc_id, fp, included, kind, person_id, at) "
@@ -627,7 +672,45 @@ class App:
             ws.bump_corpus(cx)
         blocks, _total = App.reading_blocks(ws, doc_id, text, 0, 100000)
         mine = {g[0] for g in group}
-        return {"blocks": [b for b in blocks if b["n"] in mine], "together": len(mine)}
+        return {"blocks": [b for b in blocks if b["n"] in mine], "together": len(mine), "alike": len(targets)}
+
+    def set_bound(self, name: str, doc_id: str, side: str, n: int | None) -> dict:
+        """0.15.1: *Text starts here* or *Text ends here* at block n (None: no longer). What comes before the start,
+        or after the end, is left out of searches, codes, themes and checks; a block the person restored there still
+        counts. Kept by the block's words, so it holds when the document is read again."""
+        from .. import people
+        from .. import reader as reader2
+
+        if side not in reader2.BOUNDS:
+            raise ApiError(400, "side must be start or end.")
+        ws = self.ws(name)
+        with ws.connect() as cx:
+            text = cx.execute("SELECT text FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
+            rows = cx.execute("SELECT n, start, end FROM blocks WHERE doc_id=? ORDER BY n", (doc_id,)).fetchall()
+            if not text or not rows:
+                raise ApiError(404, "This document has no blocks to mark (it was read before 0.15).")
+            text = text[0]
+            idx = next((i for i, r in enumerate(rows) if r[0] == n), None) if n is not None else None
+            if n is not None and idx is None:
+                raise ApiError(404, "No such block in this document.")
+            fps = [reader2.block_fp(text[a:z]) for _n, a, z in rows]
+            other = {r[0]: r[1] for r in cx.execute("SELECT fp, included FROM block_choices WHERE doc_id=? AND fp LIKE ?",
+                                                    (doc_id, ("end" if side == "start" else "start") + ":%"))}
+            at_other = reader2.bound_index(other, "end" if side == "start" else "start", fps)
+            if idx is not None and at_other is not None and ((side == "start" and idx > at_other)
+                                                             or (side == "end" and idx < at_other)):
+                raise ApiError(400, "The text cannot start after it ends: move or undo the other mark first.")
+            before = {r[0]: r[1] for r in cx.execute("SELECT n, included FROM blocks WHERE doc_id=?", (doc_id,))}
+            cx.execute("DELETE FROM block_choices WHERE doc_id=? AND fp LIKE ?", (doc_id, side + ":%"))
+            if idx is not None:
+                cx.execute("INSERT OR REPLACE INTO block_choices(doc_id, fp, included, kind, person_id, at) "
+                           "VALUES (?,?,?,?,?,?)", (doc_id, reader2.bound_key(side, fps, idx), 0, "bound", people.me(), _now()))
+            reader2.apply_choices(cx, doc_id)
+            after = {r[0]: r[1] for r in cx.execute("SELECT n, included FROM blocks WHERE doc_id=?", (doc_id,))}
+            ws.bump_corpus(cx)
+        changed = [k for k, v in after.items() if before.get(k) != v]
+        return {"side": side, "block": n, "changed": len(changed),
+                "left_out": sum(1 for k in changed if not after[k]), "restored": sum(1 for k in changed if after[k])}
 
     def hypotheses(self, name: str, q: dict) -> dict:
         ws = self.ws(name)
@@ -1912,6 +1995,53 @@ def _csv(rows: list[dict]) -> bytes:
 
 
 # ---------------------------------------------------------------------------------------------
+# 0.15.1: the "what's new" note, shown once after an update
+# ---------------------------------------------------------------------------------------------
+WHATS_NEW_FILE = Path(__file__).resolve().parent / "static" / "whats-new.md"
+_whats_new_lock = threading.Lock()
+
+
+def parse_whats_new(text: str) -> dict | None:
+    """`# 0.15.1: Title`, `*subtitle*` and lines starting with `-` as points; blank lines ignored. Anything else
+    (no heading, no subtitle, no points) is no note: never an error."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if len(lines) < 3:
+        return None
+    m = re.fullmatch(r"#\s*(\d+\.\d+\.\d+\S*)\s*:\s*(.+)", lines[0])
+    sub = re.fullmatch(r"\*([^*].*?)\*", lines[1])
+    if not m or not sub:
+        return None
+    points = []
+    for ln in lines[2:]:
+        if not ln.startswith("-") or not ln[1:].strip():
+            return None
+        points.append(ln[1:].strip())
+    return {"version": m.group(1), "title": m.group(2).strip(), "subtitle": sub.group(1).strip(), "points": points}
+
+
+def whats_new_note() -> dict | None:
+    """The note when it is for the running version and this person has not been shown it; it is marked as shown the
+    moment it is served. A new installation (no project yet, or no settings file) is only marked, never shown."""
+    try:
+        note = parse_whats_new(WHATS_NEW_FILE.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        return None
+    if not note or note["version"] != __version__:
+        return None
+    with _whats_new_lock:
+        try:
+            settings = home.load_settings()
+            if settings.get("whats_new_seen") == __version__:
+                return None
+            fresh = not home.list_projects() or not (home.home() / "settings.json").exists()
+            settings["whats_new_seen"] = __version__
+            home.save_settings(settings)
+        except (OSError, ValueError):
+            return None
+    return None if fresh else note
+
+
+# ---------------------------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------------------------
 P = r"([^/]+)"  # one path segment
@@ -1923,6 +2053,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", r"/api/quit", "post_quit"),
     ("POST", r"/api/restart", "post_restart"),
     ("GET", r"/api/update", "get_update"),
+    ("GET", r"/api/whats-new", "get_whats_new"),
     ("POST", r"/api/update", "post_update"),
     ("GET", r"/api/technical-details", "get_technical_details"),
     ("GET", r"/api/servers", "get_servers"),
@@ -1945,6 +2076,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("DELETE", rf"/api/projects/{P}/documents/{P}", "delete_document"),
     ("GET", rf"/api/projects/{P}/documents/{P}/file", "get_document_file"),
     ("PUT", rf"/api/projects/{P}/documents/{P}/blocks/{P}", "put_block"),
+    ("PUT", rf"/api/projects/{P}/documents/{P}/bounds", "put_bounds"),
     ("GET", rf"/api/projects/{P}/documents/{P}/reread", "get_reread"),
     ("POST", rf"/api/projects/{P}/documents/{P}/reread", "post_reread_document"),
     ("GET", rf"/api/projects/{P}/documents/{P}/pages/{P}\.png", "get_page_image"),
@@ -2354,6 +2486,11 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(409, "This app was not started in a way that can restart itself. Stop it and start it again.")
         return {"restarting": True, "jobs_stopped": self._stop_jobs_then(self.app.restart)}
 
+    def get_whats_new(self, q):
+        """0.15.1: `{"note": {version, title, subtitle, points}}` once, on the first start after an update, else
+        `{"note": null}` (also on a new installation, which is only marked as up to date)."""
+        return {"note": whats_new_note()}
+
     def get_update(self, q):
         """0.13.1: whether a newer ENLENS waits: the latest GitHub release (the one-line install), or new commits on
         the branch a git copy follows. A newer version already on disk (updated while this copy ran) counts.
@@ -2597,7 +2734,17 @@ class Handler(BaseHTTPRequestHandler):
             num = int(n)
         except ValueError:
             raise ApiError(404, "No such block in this document.") from None
-        return self.app.set_block(name, doc_id, num, body["included"])
+        if "alike" in body and not isinstance(body["alike"], bool):
+            raise ApiError(400, "alike must be true or false.")
+        return self.app.set_block(name, doc_id, num, body["included"], bool(body.get("alike")))
+
+    def put_bounds(self, name, doc_id, q):
+        """0.15.1: {"side": "start"|"end", "block": n|null}: where the text starts or ends (null: no longer)."""
+        body = self._body()
+        side, n = body.get("side"), body.get("block")
+        if n is not None and (isinstance(n, bool) or not isinstance(n, int)):
+            raise ApiError(400, "block must be a block number or null.")
+        return self.app.set_bound(name, doc_id, side, n)
 
     def get_reread(self, name, doc_id, q):
         """0.15 (A0): what *Read with the new reader* would do to this document, without doing it."""

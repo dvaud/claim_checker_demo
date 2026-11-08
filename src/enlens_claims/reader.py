@@ -25,6 +25,10 @@ middle of sentences, tables came out as a stream of numbers, and "long-\\nterm" 
 
 The text, its passages and the reading report depend on the file alone (never on the rest of the project), so the same
 file reads the same on every computer with the same reader and engine.
+
+Reader 3 (ENLENS 0.15.1) is this reader with the rules of `reader3.py` added: running heads, page numbers and paragraphs
+in text-only files, headings where a file marks none, the parts of books and theses from their table of contents, an
+index, and words run together. `read_blocks(raw, version=2)` still reads exactly as reader 2 did.
 """
 from __future__ import annotations
 
@@ -36,18 +40,21 @@ from dataclasses import dataclass, field
 
 from .textutil import split_sentences
 
-READER = 2
+READER = 3   # 2: ENLENS 0.15.0; 3: ENLENS 0.15.1 (reader3.py)
 INCLUDED = ("body", "heading", "title", "abstract", "caption")
 KINDS = ("title", "heading", "abstract", "body", "caption", "table", "footnote", "front", "back", "references",
-         "figure", "furniture")
+         "figure", "furniture", "contents", "index")
 # what a person reads for each kind (the reading view, the reading report)
 KIND_TEXT = {"title": "title", "heading": "heading", "abstract": "abstract", "body": "paragraph", "caption": "caption",
-             "table": "table", "footnote": "footnote", "front": "author and article details",
+             "table": "table", "footnote": "footnote",
+             "front": "front matter (authors, article and publishing details)",
              "back": "end notes (acknowledgements, funding, licence)", "references": "reference list",
-             "figure": "text inside a figure", "furniture": "running head or page number"}
+             "figure": "text inside a figure", "furniture": "running head or page number",
+             "contents": "table of contents", "index": "index"}
 # the same, short, where a block left out is named beside it in the reading view
-KIND_LABEL = {"table": "Table", "footnote": "Footnote", "front": "Author details", "back": "End notes",
-              "references": "Reference list", "figure": "Text in a figure", "furniture": "Running head"}
+KIND_LABEL = {"table": "Table", "footnote": "Footnote", "front": "Front matter", "back": "End notes",
+              "references": "Reference list", "figure": "Text in a figure", "furniture": "Running head",
+              "contents": "Contents", "index": "Index"}
 
 
 def furniture_label(text: str) -> str:
@@ -804,15 +811,33 @@ def _is_section(t: str) -> bool:
 
 
 def classify(blocks: list[Block], body_size: float | None, dims: list[tuple[float, float]], pdf: bool,
-             known_headings: set[str] | None) -> None:
+             known_headings: set[str] | None, version: int = 2) -> None:
     """Set each block's kind (see the module's docstring)."""
+    v3 = version >= 3
     total = sum(len(" ".join(ln.text for ln in b.lines)) for b in blocks) or 1
     done = 0
     title_set = False
     front_zone = pdf       # the first pages of a PDF until its abstract, its first section or a long paragraph
-    zone = None            # 'abstract' | 'back' | 'references' while under such a heading
+    marked: set[str] = set()
+    if v3 and not pdf:
+        # reader 3: a file that marks fewer than three headings (a .md copied out of a PDF marks none) gets the
+        # heading rules too; and a text file that looks published has its front matter set aside as a PDF's is
+        if known_headings is not None and len(known_headings) < 3:
+            marked, known_headings = set(known_headings), None
+        from . import reader3
+
+        front_zone = reader3.looks_published(blocks, _FRONT)
+    zone = None            # 'abstract' | 'back' | 'references' | 'index' while under such a heading
     last_abstract = None
-    for b in blocks:
+    # reader 3: the text of the next block that is not page furniture (a "heading" that goes on in it is not one)
+    nexts: list[str | None] = [None] * len(blocks)
+    if v3:
+        following = None
+        for i in range(len(blocks) - 1, -1, -1):
+            nexts[i] = following
+            if not blocks[i].lines[0].furniture:
+                following = " ".join(ln.text.strip() for ln in blocks[i].lines).strip()
+    for bi, b in enumerate(blocks):
         t = " ".join(ln.text.strip() for ln in b.lines).strip()
         frac = done / total
         done += len(t)
@@ -828,10 +853,15 @@ def classify(blocks: list[Block], body_size: float | None, dims: list[tuple[floa
         if known_headings is not None:
             heading = " ".join(t.split()) in known_headings
         else:
-            heading = _heading_like(b, body_size)
+            heading = " ".join(t.split()) in marked or _heading_like(b, body_size)
+            if heading and v3 and b.lines[0].top is None and " ".join(t.split()) not in marked:
+                from . import reader3
+
+                heading = not reader3.not_a_heading(t, nexts[bi])
         if front_zone and (b.page > 0 or (heading and (_is_section(t) or _ABSTRACT.match(t)))
                            or (not heading and len(t) >= 300 and not _FRONT.search(t[:200]))
-                           or (not heading and _ABSTRACT.match(t) and len(t) > 120)):
+                           or (not heading and _ABSTRACT.match(t) and len(t) > 120)
+                           or (v3 and not pdf and frac > 0.15)):
             front_zone = False
         if heading:
             if _REFS_HEAD.match(t) and frac > 0.3:
@@ -842,6 +872,17 @@ def classify(blocks: list[Block], body_size: float | None, dims: list[tuple[floa
                 zone = "back"
                 b.kind = "back"
                 continue
+            if v3 and frac > 0.5:
+                from . import reader3
+
+                if reader3.END_NOTES.match(t):
+                    zone = "back"
+                    b.kind = "back"
+                    continue
+                if reader3.INDEX_HEAD.match(t) and frac > 0.6:
+                    zone = "index"
+                    b.kind = "index"
+                    continue
             if _ABSTRACT.fullmatch(t) or _ABSTRACT.match(t) and len(t) < 30:
                 zone = "abstract"
                 b.kind = "heading"
@@ -853,7 +894,12 @@ def classify(blocks: list[Block], body_size: float | None, dims: list[tuple[floa
                 b.kind = "title"
                 title_set = True
                 continue
-            if front_zone and title_set and not _is_section(t):
+            if v3 and not pdf and front_zone and not title_set and frac < 0.05 and len(t.split()) >= 2 \
+                    and not _FRONT.search(t):
+                b.kind = "title"  # reader 3: a text file's first heading, in its front matter, is its title
+                title_set = True
+                continue
+            if front_zone and (title_set or (v3 and not pdf)) and not _is_section(t):
                 b.kind = "front"  # names and affiliations set large under the title
                 continue
             b.kind = "heading"
@@ -866,6 +912,9 @@ def classify(blocks: list[Block], body_size: float | None, dims: list[tuple[floa
             continue
         if zone == "back":
             b.kind = "back"
+            continue
+        if zone == "index":
+            b.kind = "index"
             continue
         if _CAPTION.match(t):
             b.kind = "caption"
@@ -885,9 +934,15 @@ def classify(blocks: list[Block], body_size: float | None, dims: list[tuple[floa
         if _ABSTRACT.match(t) and b.page <= 1 and len(t) > 120:
             b.kind = "abstract"
             continue
-        if pdf and _BACK_TEXT.match(t):
+        if (pdf or v3) and _BACK_TEXT.match(t):
             b.kind = "back"
             continue
+        if v3 and frac < 0.08 and len(t) < 600:
+            from . import reader3
+
+            if reader3.publishing_details(t):
+                b.kind = "front"  # reader 3: a copyright page, an ISBN, a printer, other books by the author
+                continue
         if front_zone and ((len(t) < 160 and _FRONT.search(t)) or _FRONT_START.match(t)
                            or (len(t) < 300 and ("@" in t or not _sentence_like(t))) or _author_line(t)
                            or (len(t) < 800 and len({m.group(0).lower() for m in _FRONT.finditer(t)}) >= 3)):
@@ -928,8 +983,12 @@ class Reading:
     report: dict = field(default_factory=dict)
 
 
-def read_blocks(raw) -> tuple[list[Block], dict]:
-    """The blocks of a RawDoc in reading order, with their kinds and repaired text, and the reading report."""
+def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
+    """The blocks of a RawDoc in reading order, with their kinds and repaired text, and the reading report. `version`
+    2 reads as ENLENS 0.15.0 did; 3 adds the rules of `reader3.py`."""
+    from . import reader3
+
+    v3 = version >= 3
     counts: Counter = Counter()
     pdf = raw.kind == "pdf"
     engine = "text"
@@ -963,12 +1022,28 @@ def read_blocks(raw) -> tuple[list[Block], dict]:
         pages = [_text_lines(t, i) for i, t in enumerate(raw.pages)]
     if pdf and dims:
         mark_furniture(pages, dims)
+    layout: dict = {}
+    if v3:
+        # lines without positions (text files, OCR, pypdf without them): text printed twice, running heads and page
+        # numbers by repetition, and paragraphs in hard-wrapped text
+        reader3.undouble_lines(pages, counts)
+        layout = reader3.text_furniture(pages)
+        layout["wrapped"] = reader3.paragraph_breaks(pages) is not None
     all_lines = [ln for p in pages for ln in p]
     sizes = Counter()
     for ln in all_lines:
         if ln.size and not ln.furniture:
             sizes[round(ln.size)] += len(ln.text)
     body_size = float(sizes.most_common(1)[0][0]) if sizes else None
+    if v3:
+        # ligatures a converter broke with a space ("fi nd"), joined before the document's words are counted, so the
+        # splitting of words run together does not take "infl uenced" for two words and part them again
+        lig_words = reader3.ligature_words(all_lines)
+        if lig_words is not None:
+            for ln in all_lines:
+                ln.text = reader3.join_ligature_gaps(ln.text, lig_words, counts)
+            reader3.join_ligature_breaks(pages, lig_words, counts)
+            all_lines = [ln for p in pages for ln in p]
     vocab = _vocabulary(all_lines)
     bigrams = _bigrams(all_lines)
 
@@ -979,10 +1054,12 @@ def read_blocks(raw) -> tuple[list[Block], dict]:
         if pdf and width:
             lines, ncol = reading_order(lines, width)
             multi_col += ncol > 1
-        # page furniture leaves the flow of the text: what stands above it first, the rest (and line numbers) last
+        # page furniture leaves the flow of the text: what stands above it first, the rest (and line numbers) last.
+        # Reader 3: in lines without positions it stays where it stood, a block of its own.
         h = dims[pno][1] if pno < len(dims) else 0.0
-        furn = [ln for ln in lines if ln.furniture]
-        lines = [ln for ln in lines if not ln.furniture]
+        placed_lines = any(ln.top is not None for ln in lines)
+        furn = [ln for ln in lines if ln.furniture] if placed_lines or not v3 else []
+        lines = [ln for ln in lines if not ln.furniture] if placed_lines or not v3 else lines
         above = [ln for ln in furn if ln.furniture in ("head", "number") and h and ln.top is not None and ln.top < 0.5 * h]
         below = [ln for ln in furn if ln not in above and ln.furniture in ("head", "number")]
         numbers = [ln for ln in furn if ln.furniture in ("line-number", "turned")]
@@ -1017,7 +1094,17 @@ def read_blocks(raw) -> tuple[list[Block], dict]:
         blocks.extend(Block(pno, [ln], kind="furniture") for ln in below)
         if numbers:
             blocks.append(Block(pno, numbers, kind="furniture"))
-    classify(blocks, body_size, dims, pdf, raw.headings if not pdf else None)
+    classify(blocks, body_size, dims, pdf, raw.headings if not pdf else None, version)
+    parts: dict = {}
+    if v3:
+        # books and theses: the contents, front and end matter, the index
+        total = sum(len(" ".join(ln.text for ln in b.lines)) for b in blocks) or 1
+        fracs, done = [], 0
+        for b in blocks:
+            fracs.append(done / total)
+            done += len(" ".join(ln.text for ln in b.lines))
+        parts = reader3.book_parts(blocks, fracs)
+    damaged = v3 and reader3.damaged_spacing("\n".join(ln.text for ln in all_lines))
 
     # text of each block, repaired
     for b in blocks:
@@ -1029,6 +1116,8 @@ def read_blocks(raw) -> tuple[list[Block], dict]:
         b.text = join_lines(texts, vocab, counts)
         if b.kind not in ("furniture", "figure", "table"):
             b.text = split_run_together(b.text, vocab, bigrams, counts)
+            if damaged:
+                b.text = reader3.split_runs(b.text, vocab, bigrams, _COMMON | _CLOSED, counts)
     blocks = [b for b in blocks if b.text.strip()]
     # captions of tables: the caption block just before or after a table
     for i, b in enumerate(blocks):
@@ -1051,7 +1140,7 @@ def read_blocks(raw) -> tuple[list[Block], dict]:
                 c.text = rest.lstrip()
     blocks = [b for b in blocks if b.text.strip()]
     report = {
-        "reader": READER, "engine": engine, "pages": len(raw.pages),
+        "reader": version, "engine": engine, "pages": len(raw.pages),
         "pages_with_text": sum(1 for p in pages if sum(len(ln.text.strip()) for ln in p) >= 30),
         "ocr_pages": getattr(raw, "ocr_pages", 0) or 0,
         "scanned_pages": getattr(raw, "scanned_pages", 0) or 0,
@@ -1060,6 +1149,10 @@ def read_blocks(raw) -> tuple[list[Block], dict]:
                                            "accents")},
         "tables": sum(1 for b in blocks if b.kind == "table"),
     }
+    if v3:
+        report["repairs"]["doubled"] = counts["doubled"]
+        report["text_layout"] = layout
+        report["book"] = parts
     return blocks, report
 
 
@@ -1165,11 +1258,11 @@ def make_passages(text: str, blocks: list[Block], spans, max_chars: int, min_cha
     return out
 
 
-def build_document(raw, max_chars: int = 1100, min_chars: int = 200):
-    """A Document read by reader 2 (see `ingest.read_document`)."""
+def build_document(raw, max_chars: int = 1100, min_chars: int = 200, version: int = READER):
+    """A Document read by reader 2 or 3 (see `ingest.read_document`)."""
     from .ingest import Document, Layout, guess_doi, guess_title
 
-    blocks, report = read_blocks(raw)
+    blocks, report = read_blocks(raw, version)
     text, spans = assemble(blocks, max(1, len(raw.pages)))
     for n, b in enumerate(blocks, 1):
         b.n = n
@@ -1200,11 +1293,11 @@ def build_document(raw, max_chars: int = 1100, min_chars: int = 200):
             p.page = None
         doc.paragraphs = [s0 for _pg, s0 in lay.paragraphs]
     doc.blocks = blocks
-    doc.reading = finish_report(report, blocks, doc.passages, text)
+    doc.reading = finish_report(report, blocks, doc.passages, text, raw.kind)
     return doc
 
 
-def finish_report(report: dict, blocks: list[Block], passages, text: str) -> dict:
+def finish_report(report: dict, blocks: list[Block], passages, text: str, raw_kind: str = "") -> dict:
     """The reading report (A5): what the reader did and whether the document read well, in figures and warnings."""
     kinds = Counter(b.kind for b in blocks)
     chars = Counter()
@@ -1241,6 +1334,10 @@ def finish_report(report: dict, blocks: list[Block], passages, text: str) -> dic
                         "rest was set aside. Look at what was left out in the reading view.")
     if not body and total > 100:
         warnings.append("No passage of this document is used by searches, codes, themes or checks.")
+    if (out.get("reader") or 2) >= 3:
+        from . import reader3
+
+        warnings += reader3.report_warnings(out, raw_kind, text)
     out["warnings"] = warnings
     out["quality"] = "poor" if (not body and total > 100) or (pages and missing > 0.5 * pages) or (
         in_passages and unreadable > 0.3 * in_passages) else "fair" if warnings else "good"
@@ -1258,11 +1355,53 @@ def block_fp(text: str) -> str:
     return hashlib.sha1(words.encode("utf-8")).hexdigest()[:16]
 
 
+BOUNDS = ("start", "end")   # 0.15.1: "Text starts here" and "Text ends here", kept in block_choices as "<side>:<fp>:<k>"
+
+
+def bound_key(side: str, fps: list[str], i: int) -> str:
+    """The choice that marks block i (of blocks with fingerprints `fps`, in reading order) as where the text starts
+    or ends: its fingerprint and which of the blocks with the same words it is, so it holds when read again."""
+    return f"{side}:{fps[i]}:{sum(1 for f in fps[:i] if f == fps[i])}"
+
+
+def bound_index(choices: dict, side: str, fps: list[str]) -> int | None:
+    """Where the person said the text starts or ends (a block index), if they did and the block is still there."""
+    key = next((k for k in choices if k.startswith(side + ":")), None)
+    if key is None:
+        return None
+    _side, fp, k = key.split(":", 2)
+    seen = -1
+    for i, f in enumerate(fps):
+        if f == fp:
+            seen += 1
+            if str(seen) == k:
+                return i
+    return None
+
+
+def choose_inclusion(items: list[tuple[str, str]], choices: dict) -> list[int]:
+    """Whether each block counts (1) or is left out (0), for blocks given as (text, kind) in reading order: its kind;
+    then the person's *Text starts here* and *Text ends here* (what comes before or after is left out); then the
+    person's *Restore* or *Leave out* of that block, which always wins."""
+    want = [1 if kind in INCLUDED else 0 for _t, kind in items]
+    if not choices:
+        return want
+    fps = [block_fp(t) for t, _k in items]
+    first = bound_index(choices, "start", fps)
+    last = bound_index(choices, "end", fps)
+    for i in range(len(items)):
+        if (first is not None and i < first) or (last is not None and i > last):
+            want[i] = 0
+        if fps[i] in choices:
+            want[i] = int(choices[fps[i]])
+    return want
+
+
 def apply_choices(cx, doc_id: str) -> list[int]:
-    """Apply the person's corrections of a document's blocks: each block's `included` from its kind, then the choices
-    (by fingerprint), and every passage's section from its blocks. A passage that holds several blocks (a heading and
-    its paragraph, short paragraphs put together) is read when any of them is. Returns the blocks whose inclusion
-    changed."""
+    """Apply the person's corrections of a document's blocks: each block's `included` from its kind, then where the
+    person said the text starts and ends, then their choices by fingerprint (`choose_inclusion`), and every passage's
+    section from its blocks. A passage that holds several blocks (a heading and its paragraph, short paragraphs put
+    together) is read when any of them is. Returns the blocks whose inclusion changed."""
     rows = cx.execute("SELECT n, start, end, kind, included FROM blocks WHERE doc_id=? ORDER BY n", (doc_id,)).fetchall()
     if not rows:
         return []
@@ -1270,11 +1409,8 @@ def apply_choices(cx, doc_id: str) -> list[int]:
     choices = {fp: inc for fp, inc in cx.execute("SELECT fp, included FROM block_choices WHERE doc_id=?", (doc_id,))}
     changed = []
     want: dict[int, int] = {}
-    for n, a, z, kind, inc in rows:
-        w = 1 if kind in INCLUDED else 0
-        fp = block_fp(text[a:z]) if choices else None
-        if fp in choices:
-            w = int(choices[fp])
+    chosen = choose_inclusion([(text[a:z], kind) for _n, a, z, kind, _inc in rows], choices)
+    for (n, _a, _z, _kind, inc), w in zip(rows, chosen):
         want[n] = w
         if w != inc:
             changed.append(n)

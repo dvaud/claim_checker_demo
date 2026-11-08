@@ -78,12 +78,12 @@ def test_a_withdrawn_number_released_for_real_is_not_older(monkeypatch):
     from enlens_claims.gui import launcher
 
     monkeypatch.setattr(enlens_claims, "__version__", "0.14.7")
-    # 0.15.0 was released for real (it left update.WITHDRAWN): a running 0.15.0 is newer; 0.15.1 is still withdrawn
-    assert not launcher.is_older({"version": "0.15.0"}) and launcher.is_older({"version": "0.15.1"})
+    # 0.15.0 and 0.15.1 were released for real (they left update.WITHDRAWN): a running one of them is newer
+    assert not launcher.is_older({"version": "0.15.0"}) and not launcher.is_older({"version": "0.15.1"})
     assert not launcher.is_older({"version": "0.15.0rc1"})  # a newer candidate is running: leave it
     monkeypatch.setattr(enlens_claims, "__version__", "0.15.0")
     assert not launcher.is_older({"version": "0.15.0"})      # the same release in another window
-    assert launcher.is_older({"version": "0.15.1"})          # still withdrawn, above this one
+    assert not launcher.is_older({"version": "0.15.1"})      # a newer release (0.15.1 left the list too)
     assert launcher.is_older({"version": "0.15.0rc2"}) and launcher.is_older({"version": "0.14.7"})
     monkeypatch.setattr(enlens_claims, "__version__", "0.15.2")
     assert launcher.is_older({"version": "0.15.1"}) and not launcher.is_older({"version": "0.16.0"})

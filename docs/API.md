@@ -178,6 +178,12 @@ since 0.13.6 only when there is an update).
   0.14.3: while an update runs the answer is the kept one (or `available: true`) with `"updating": true`, and no
   `git fetch` is made beside the update's own git commands; a git command never asks for a password (stdin closed,
   `GIT_TERMINAL_PROMPT=0`, ssh in batch mode) and is stopped after 90 s.
+- `GET /api/whats-new` (0.15.1) → `{"note": {"version", "title", "subtitle", "points": [...]}}` or `{"note": null}`. The
+  note is `gui/static/whats-new.md` (`# 0.15.1: Title`, `*subtitle*`, a few lines starting with `-`). It is served only
+  when its version is the running one and the setting `whats_new_seen` is not that version, and that setting is set
+  the moment it is served, so the page shows it once, on the first start after an update. A new installation (no
+  project yet, or no settings file) is marked silently and gets `null`; a malformed file is `null`, never an error.
+
 - `POST /api/update` `{}` → `{"updated": true, "restarting": true, "from", "version", "jobs_stopped": n}`: installs it
   as `enlens update` does, then restarts on the same address and port (running jobs are stopped first, as for Quit;
   at most 20 s); `{"updated": false, "restarting": false, "version"}` when nothing newer waits. 409 when the update
@@ -378,10 +384,24 @@ where a paragraph begins, empty where the paragraph above goes on (under its hea
 kind in words for a block left out. Passages add `"block"` (the kind of block they were made from; null for reader 1),
 and their `section` may be `"left_out"`.
 
-`PUT /api/projects/<p>/documents/<doc_id>/blocks/<n>` `{"included": true|false}` → *Restore* or *Leave out* a block:
-`{"blocks": [block], "together": n}`, the blocks changed (those sharing a passage with it change together). The
-choice is kept by the block's words (`block_choices`) and applied again when the document is read again; choosing
-what the reader chose removes it. 404 for no such block, 400 when `included` is not a boolean.
+`PUT /api/projects/<p>/documents/<doc_id>/blocks/<n>` `{"included": true|false, "alike": false}` → *Restore* or
+*Leave out* a block: `{"blocks": [block], "together": n, "alike": n}`, the blocks changed (those sharing a passage with
+it change together). The choice is kept by the block's words (`block_choices`) and applied again when the document is
+read again; choosing what the reader chose (and the start and end marks below imply) removes it. 0.15.1: with
+`"alike": true`, every block that looks the same (blocks of up to 200 characters, their numbers and roman numerals
+aside: a running head, a page number) changes too; `alike` in the answer is how many. 404 for no such block, 400 when
+`included` or `alike` is not a boolean.
+
+`PUT /api/projects/<p>/documents/<doc_id>/bounds` (0.15.1) `{"side": "start"|"end", "block": n|null}` → *Text starts
+here* or *Text ends here* at block `n` (`null`: undo): what comes before the start, or after the end, is left out; a
+block the person restored there still counts. Kept in `block_choices` as `<side>:<fingerprint>:<k>` (the k-th block
+with those words), so it holds when the document is read again. `{"side", "block", "changed", "left_out",
+"restored"}`. 400 for another side, a start after the end (or an end before the start), or a block that is not a
+number; 404 for no such block, or a document without blocks (read before 0.15).
+
+In `?view=blocks` (0.15.1), each block also has `alike` (how many other blocks look the same), `share` (where it
+stands in the document, 0 to 1) and `bound` (`"start"`, `"end"` or null); `changed` is also true for a block with a
+choice of its own.
 
 `GET /api/projects/<p>/documents/<doc_id>/pages/<n>.png?scale=1.5` (also `?token=`, for an `<img>`) → page `n` of the
 original PDF as a PNG (`scale` 0.5 to 3 times 72 dots per inch), drawn with pypdfium2 (the OCR extra); 404 with the

@@ -65,7 +65,7 @@ function madeWith(m) {
   const parts = (m.results || []).filter((r) => r.older && MADE[r.what])
     .map((r) => `${plural(r.n, ...MADE[r.what])} ${r.what === "checks" ? "started" : "made"} ${r.app_version ? `with ENLENS ${r.label}` : r.label}`);
   const docs = (m.documents || []).filter((d) => d.older).reduce((a, d) => a + d.n, 0);
-  if (docs) parts.push(`${plural(docs, "document", "documents")} ${docs === 1 ? "was" : "were"} read by the earlier reader`);
+  if (docs) parts.push(`${plural(docs, "document", "documents")} ${docs === 1 ? "was" : "were"} read by an earlier reader`);
   if (!parts.length) return null;
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
   const results = parts.length > (docs ? 1 : 0);

@@ -57,11 +57,13 @@ steps for you. Your projects and settings (the `enlens` folder in your home fold
 
 ## New in 0.15: text you can check, and results you can trace
 
-- **A new reader for PDFs.** Two columns are read in order; running heads, page numbers, author details,
-  acknowledgements, footnotes and the reference list are set aside; tables stay tables; words broken over lines are
-  joined. **Can change results** for documents you add from now on; those already in a project keep their reading.
+- **A new reader.** Two columns are read in order; running heads, page numbers, author details, acknowledgements,
+  footnotes and the reference list are set aside; tables stay tables; words broken over lines are joined. 0.15.1 does
+  the same for text copied out of a PDF and for books (contents, notes, index). **Can change results** for documents
+  you add from now on; those already in a project keep their reading.
 - **See how each document was read**: its text as the reader found it, what was left out, the PDF page beside it,
-  and a warning when a document read badly. *Restore* or *Leave out* any part (**can change results**).
+  and a warning when a document read badly. *Restore* or *Leave out* any part, every running head at once with *All
+  like this*, or mark where the text starts and ends (**can change results**).
 - **Read with the new reader**, one document at a time: a preview first, then each quote, judgement and code moves
   to the same words in the new text. **Can change results** for that document.
 - **Results say which version made them**, and the Overview says which came from an earlier one. *Try new versions

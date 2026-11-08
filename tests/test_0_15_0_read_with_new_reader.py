@@ -119,8 +119,8 @@ def test_a_moved_check_keeps_its_excerpt_and_its_quote_lands_on_the_same_words(p
     rows_before = claimcheck.export_table(ws, hyp_ids=[cid])
 
     rep = reread.move(ws, doc)
-    assert rep["moved"] and rep["reader"] == 1 and rep["new_reader"] == 2
-    assert ws.scalar("SELECT reader FROM documents") == 2
+    assert rep["moved"] and rep["reader"] == 1 and rep["new_reader"] == ingest.READER
+    assert ws.scalar("SELECT reader FROM documents") == ingest.READER
     new_text = ws.scalar("SELECT text FROM documents")
     assert HEAD not in new_text.split("\n")[1:3]  # reader 2 set the running head apart (a block of its own)
 
@@ -805,7 +805,7 @@ def test_a_move_is_all_or_nothing(paper, monkeypatch):
         reread.move(ws, doc)
     assert _dump(ws) == before
     monkeypatch.undo()
-    assert reread.move(ws, doc)["moved"] and ws.scalar("SELECT reader FROM documents") == 2
+    assert reread.move(ws, doc)["moved"] and ws.scalar("SELECT reader FROM documents") == ingest.READER
 
 
 # --- check ------------------------------------------------------------------------------------------------------
@@ -849,10 +849,10 @@ def test_check_refuses_what_cannot_be_done_now(tmp_path, monkeypatch):
     # a document read by the current reader already
     reread.move(ws, doc)
     c = reread.check(ws, doc)
-    assert c == {"ok": False, "reason": c["reason"], "reader": 2, "new_reader": 2} and "already" in c["reason"]
+    assert c == {"ok": False, "reason": c["reason"], "reader": ingest.READER, "new_reader": ingest.READER} and "already" in c["reason"]
     other = tmp_path / "files" / "new.txt"
     other.write_text("Hydrogen made by electrolysis needs water in arid regions, the new study said. " * 5)
-    d2 = _add(ws, monkeypatch, other, reader=2)
+    d2 = _add(ws, monkeypatch, other, reader=ingest.READER)
     assert not reread.check(ws, d2)["ok"]
     # a sync-clash copy's file sum carries a mark, and still counts as the same file
     with ws.connect() as cx:

@@ -222,11 +222,14 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .doc-view .passage-row.dv-k-abstract .dv-body { border-left: 3px solid var(--border-strong); padding-left: 10px; }
 /* the actions sit in the label column, under where the block is cited: never over the text */
 .doc-view .passage-row .pp { position: relative; align-self: start; }
-.doc-view .dv-act { position: absolute; top: 100%; left: -6px; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin-top: 2px; opacity: 0; transition: opacity .12s; }
+.doc-view .dv-act { position: absolute; top: 100%; left: -6px; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin-top: 2px; opacity: 0; transition: opacity .12s;
+  /* 0.15.1: up to four actions: on a card of their own, so they float clearly over the row below */
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; box-shadow: var(--shadow); pointer-events: none; }
+.doc-view .passage-row:hover .dv-act, .doc-view .passage-row:focus-within .dv-act { pointer-events: auto; }
 .doc-view .dv-fold .passage-row, .doc-view .passage-row.dv-k-table { min-height: 4.4em; }
 .doc-view .passage-row:hover .dv-act, .doc-view .passage-row:focus-within .dv-act { opacity: 1; }
 .doc-view .dv-act .btn { font-size: .74rem; padding: .12rem .4rem; gap: .25em; }
-@media (hover: none) { .doc-view .dv-act { opacity: 1; } }
+@media (hover: none) { .doc-view .dv-act { opacity: 1; pointer-events: auto; position: static; margin-top: 4px; background: none; border: 0; padding: 0; box-shadow: none; } }
 .doc-view .passage-row.dv-joined { border-top: 0; padding-top: 2px; }
 .doc-view .dv-mine { display: block; margin-top: 3px; font-size: .72rem; color: var(--accent-text); }
 .doc-view .dv-mine.dv-muted { color: var(--muted); }
@@ -238,7 +241,9 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .doc-view .dv-fold > summary:hover { color: var(--text-2); }
 .doc-view .dv-fold > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .doc-view .dv-fold .passage-row { border-top: 1px dashed var(--border); }
-.doc-view .passage-row.dv-out .dv-body, .doc-view .passage-row.dv-out .pp { opacity: .62; }
+/* 0.15.1: the label's words fade, not the label (a faded label would put its actions under the next row) */
+.doc-view .passage-row.dv-out .dv-body, .doc-view .passage-row.dv-out .pp > :not(.dv-act) { opacity: .62; }
+.doc-view .passage-row:hover, .doc-view .passage-row:focus-within { position: relative; z-index: 3; }
 .doc-view .passage-row.dv-out .dv-body p { font-family: var(--font-ui); font-size: .88rem; }
 .doc-view .dv-table-wrap { overflow-x: auto; max-width: 100%; }
 .doc-view .dv-table { border-collapse: collapse; font-size: .86rem; font-variant-numeric: tabular-nums; }

@@ -30,7 +30,8 @@ SUPPORTED = {".pdf", ".html", ".htm", ".txt", ".md", ".docx"}
 # text or passages raises this number: documents already in a project keep the reading they have, so every result in
 # them stays where it is, until a person has one read with the new reader (planned with the next reader); only new
 # documents get the new reader.
-READER = 2  # 1: ENLENS 0.5 to 0.14 (pypdf's page text, cut by sentences); 2: ENLENS 0.15 (reader.py)
+READER = 3  # 1: ENLENS 0.5 to 0.14 (pypdf's page text, cut by sentences); 2: ENLENS 0.15.0 (reader.py);
+            # 3: ENLENS 0.15.1 (reader.py with reader3.py: text-only files, books, words run together)
 REF_HEADING = re.compile(
     r"(?:^|\s)(References|REFERENCES|Bibliography|BIBLIOGRAPHY|Literature [Cc]ited|Works [Cc]ited|Reference [Ll]ist)"
     r"\s*:?\s+(?=\[?\(?\d|[A-Z][A-Za-z'\-]+,?\s+[A-Z]|[A-Z]{2,})"
@@ -938,7 +939,7 @@ def build_document(raw: RawDoc, max_chars: int = 1100, min_chars: int = 200, rea
     if (reader or READER) >= 2:
         from . import reader as reader2
 
-        return reader2.build_document(raw, max_chars, min_chars)
+        return reader2.build_document(raw, max_chars, min_chars, min(reader or READER, reader2.READER))
     return _build_document_1(raw, max_chars, min_chars)
 
 

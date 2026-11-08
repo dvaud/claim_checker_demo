@@ -71,7 +71,8 @@ themes and at 390 px wide.
 | `tasks.py`, `schema.py`, `prompts.py` | Model tasks, validation with the quote check, versioned prompts |
 | `access.py` | Who may read each document with AI (0.11): the settings, the guard on every task, which model reads what, the ledger of what was sent to Claude, the cap |
 | `ingest.py`, `textutil.py`, `store.py` | Documents and passages with page offsets, layout (paragraphs, headings), local OCR, text normalisation, the workspace database; `ingest.read_document` reads a file with any reader and stores nothing |
-| `reader.py` | The reader of 0.15 (reader 2): lines with their boxes (pdfminer), page furniture, columns and reading order, blocks and their kinds, tables, text repair, passages that never mix what is read with what is left out, the reading report, a person's Restore and Leave out (`apply_choices`) |
+| `reader.py` | The reader of 0.15 (reader 2; `read_blocks(raw, version=3)` adds `reader3.py`): lines with their boxes (pdfminer), page furniture, columns and reading order, blocks and their kinds, tables, text repair, passages that never mix what is read with what is left out, the reading report, a person's Restore and Leave out and *Text starts / ends here* (`choose_inclusion`, `apply_choices`) |
+| `reader3.py` | What reader 3 (0.15.1) adds, on the text alone: running heads and page numbers by repetition in lines without positions, text printed twice, paragraphs in hard-wrapped text, headings where a file marks none, a book's contents, front and end matter and index, ligatures broken by a space, words run together, and the report's warnings |
 | `reread.py` | *Read with the new reader* (0.15): a document of a project read again by the new reader, its results moved by their quotes, all or nothing |
 | `measure.py`, `pdfmake.py` | `enlens measure` (0.15): how well each reader reads PDFs of known text (made by `pdfmake`, a small PDF writer), quotes that still find their place, timings, determinism; the validation report of each release |
 | `bundle.py` | A whole project as one zip (export and import); every project and the settings, to move to another computer (0.10) |
@@ -117,6 +118,8 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   the draft by hand; never make a release by hand, which would lack the files the install line needs.
 - The `CHANGELOG.md` entry (what changed and why, the defects fixed, the tests added, and *Not yet done*) becomes the
   release notes. Update `docs/MANUAL.md` where behaviour changed and `docs/API.md` for new routes.
+- Each release updates `gui/static/whats-new.md` (`# X.Y.Z: Title`, `*subtitle*`, then a few extremely short points,
+  one `-` line each). The app shows it once, after an update, when its version matches the running one.
 - Update the README as the next section says.
 - **Release candidates (0.15).** The roadmap gives every minor release a release candidate, in use for at least a
   week: `0.15.0rc1` in `pyproject.toml`, `__init__.py` and a `## 0.15.0rc1` changelog entry, tagged `v0.15.0rc1`.
@@ -125,8 +128,9 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   offered the release when it comes (`update.version_tuple` puts `0.15.0rc1` after every earlier release and before
   `0.15.0`). A git copy on `main` gets a candidate's commit as it gets every commit. When the release comes, its
   changelog entry replaces the candidates' entries.
-- **Withdrawn numbers.** `update.WITHDRAWN` (0.15.1, withdrawn in 0.13.6; 0.14.0 and 0.15.0 left it when they were
-  released) counts a running copy of those numbers as older only while this version is below them.
+- **Withdrawn numbers.** `update.WITHDRAWN` counts a running copy of a withdrawn number as older only while this
+  version is below it. It is empty since 0.15.1: 0.14.0, 0.15.0 and 0.15.1, withdrawn in 0.13.6, were each released
+  for real later and left it then.
 - **The validation report (0.15).** The release workflow runs `enlens measure --report` and attaches
   `validation-report.md` to the release: how well each reader reads the documents of known text, and that reading is
   the same twice. The half that needs AI comes with 0.16.
@@ -155,7 +159,9 @@ Researchers compare results across versions, so a change that can give other ans
 recorded and announced:
 
 - **The reader.** `ingest.READER` numbers the way a file becomes text and passages: 1 is `ingest._build_document_1`
-  (0.5 to 0.14), 2 is `reader.py` (0.15). A change that gives a document other text or passages raises it, and goes
+  (0.5 to 0.14), 2 is `reader.py` (0.15.0), 3 is `reader.py` with `reader3.py` (0.15.1;
+  `reader.read_blocks(raw, version=2)` still reads exactly as 0.15.0 did, which a test checks to the byte). A change
+  that gives a document other text or passages raises it, and goes
   in a module of its own. Each document records the reader that read it (`documents.reader`), and documents already
   in a project are never read again by themselves: only new documents get the new reader, so every quote and
   judgement in the old ones stays where it is, until a person moves one (`reread.py`). Measure a change with

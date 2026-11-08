@@ -819,6 +819,8 @@ def _title_variants(title: str) -> list[list[str]]:
     return out
 
 
+TITLE_ONLY_WORDS = 6   # 0.15.1: a title of this many significant words (a thesis title is 8 to 15) is proposed with no author or year
+
 _PAIRS: dict = {}   # the last set of candidate pairs of a project, with the fingerprint of what they were made from
 
 
@@ -867,7 +869,9 @@ def _document_info(ws: Workspace) -> dict[str, dict]:
 def _candidate_pairs(ws: Workspace, items: list[dict], docs: dict[str, dict]) -> list[tuple]:
     """(item_key, doc_id, score, evidence) for every work whose title, with an author or the year, is on a document's
     first pages, whatever is linked or decided (so that a decision needs no new search). The cheap author and year
-    test runs before the costly title search (0.14.3)."""
+    test runs before the costly title search (0.14.3). 0.15.1: a work with neither (a Zotero 'Web Page' often has
+    none) is still proposed when its title is long (TITLE_ONLY_WORDS significant words) and stands whole on the
+    document's title page; its score is the title's alone (0.5), below any pair backed by an author or the year."""
     index: dict[str, set[str]] = defaultdict(set)
     for doc_id, d in docs.items():
         for t in d["info"][0]:
@@ -892,11 +896,13 @@ def _candidate_pairs(ws: Workspace, items: list[dict], docs: dict[str, dict]) ->
             if len(sig) < 3:   # a short title ("Hydrogen") says little on its own: it needs both
                 if not (author and year):
                     continue
-            elif not (author or year):
+            elif not (author or year) and len(sig) < TITLE_ONLY_WORDS:
                 continue
             t, how = _title_found(variants, sig, joined, front, front_joined)
             if not t or (len(sig) < 3 and how != "whole"):
                 continue
+            if not (author or year) and not (how == "whole" and t >= 1.0):
+                continue   # 0.15.1: a long title alone counts only when the whole of it stands on the title page
             score = 0.5 * t + (0.25 if author else 0) + (0.2 if year else 0) + (0.05 if year and year in top else 0)
             ev = {"title": how, "author": author, "year": year}
             ev.update(_where(d, it["title"]))
@@ -908,8 +914,8 @@ def _candidate_pairs(ws: Workspace, items: list[dict], docs: dict[str, dict]) ->
 def match(ws: Workspace) -> dict:
     """Link the works of the bibliography with the documents. Links found by checksum or by a DOI the document prints
     on its own title page (or in its file name) are made at once; a work whose title and an author or the year are on a
-    document's first pages, or whose DOI is only somewhere in the document's first pages (it may be cited there), is
-    proposed (probable). A person's decisions are never overruled, and a document or work already linked gets no
+    document's first pages (0.15.1: a long title, whole on the title page, is enough without them), or whose DOI is
+    only somewhere in the document's first pages (it may be cited there), is proposed (probable). A person's decisions are never overruled, and a document or work already linked gets no
     proposal."""
     items = [dict(r) for r in ws.query("SELECT item_key, title, creators_json, year, doi, files_json FROM bib_items")]
     fp = _fingerprint(ws)
@@ -1162,8 +1168,10 @@ def _work_view(r) -> dict:
     return {"key": r["item_key"], "title": r["title"], "cite": cite(creators, r["year"]), "authors": _full_names(creators),
             "year": r["year"], "type": type_text(r["item_type"]),
             "container": r["container"], "doi": r["doi"], "url": r["url"], "link": r["link"],
-            "file": next((f["name"] for f in files if f.get("exists") and Path(f["path"]).suffix.lower() in READABLE),
-                         None)}
+            # 0.15.1: the file ENLENS would add (a PDF before a saved web page, as `files_to_add` chooses)
+            "file": min(((f["name"], _FILE_RANK.get(Path(f["path"]).suffix.lower(), 9), i) for i, f in enumerate(files)
+                         if f.get("exists") and Path(f["path"]).suffix.lower() in READABLE),
+                        key=lambda x: (x[1], x[2]), default=(None,))[0]}
 
 
 def view(ws: Workspace) -> dict:
@@ -1212,8 +1220,13 @@ def file_title(r) -> str | None:
     return own if own and _tokens(own) != _tokens(r["title"] or "") else None
 
 
+_FILE_RANK = {".pdf": 0, ".docx": 1, ".txt": 2, ".md": 2, ".html": 3, ".htm": 3}
+
+
 def files_to_add(ws: Workspace, keys: list[str] | None = None) -> list[Path]:
-    """The files Zotero (or the exported file) has for works without a document yet, that ENLENS can read."""
+    """The files Zotero (or the exported file) has for works without a document yet, that ENLENS can read: one per
+    work, the real document first (PDF, then Word, then text), a web page (Zotero's snapshot of a landing page) only
+    when nothing else can be read. Within a kind, Zotero's order stands."""
     have = {r[0] for r in ws.query("SELECT DISTINCT item_key FROM bib_links WHERE status IN ('auto', 'confirmed', "
                                    "'probable')")}
     known = {r[0] for r in ws.query("SELECT sha1 FROM documents")}
@@ -1221,13 +1234,16 @@ def files_to_add(ws: Workspace, keys: list[str] | None = None) -> list[Path]:
     for r in ws.query("SELECT item_key, files_json FROM bib_items ORDER BY seq"):
         if r["item_key"] in have or (keys is not None and r["item_key"] not in keys):
             continue
+        usable = []
         for f in json.loads(r["files_json"] or "[]"):
             p = Path(f.get("path") or "")
             if (p.suffix.lower() in READABLE and f.get("sha1") not in known and str(p) not in seen
                     and p.is_file()):
-                seen.add(str(p))
-                out.append(p)
-                break  # one file per work: the first readable one (Zotero lists the main file first)
+                usable.append(p)
+        if usable:   # one file per work: the best kind (min keeps Zotero's order within a kind)
+            best = min(usable, key=lambda p: _FILE_RANK.get(p.suffix.lower(), 9))
+            seen.add(str(best))
+            out.append(best)
     return out
 
 
