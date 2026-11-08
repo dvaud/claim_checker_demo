@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.15.4 (November 2026): Update works on Windows too
+
+On a Mac, *Update and restart* installs a new version and opens it again. On Windows it only said to quit ENLENS and
+run the install line by hand, because Windows does not let a program's files be replaced while it runs. Now the app
+downloads the new version and checks it as before, closes, has a small helper install it, and opens again by itself;
+the open page follows. This first works for the update *from* 0.15.4: the update to 0.15.4 itself runs 0.15.3's code,
+so it is still made by hand. Nothing changes for results, or on macOS and Linux.
+
+### New
+
+- **Windows: *Update and restart* installs the update.** The page says *Installing ENLENS …*, ENLENS closes for a
+  minute or two while the new version is installed, then opens again on the same address and the page reloads by
+  itself. Before, it said to quit ENLENS and run the install line or the Windows file again.
+- **When the update cannot finish, ENLENS says so.** ENLENS opens again as it was, with a note in the corner: what
+  happened and what to do. Most often Claude Code still had ENLENS connected, which holds its files: the update then
+  waits a minute for it, installs nothing rather than half, and the note says to close Claude Code and press *Update*
+  again. The details are in `logs/update.log` in the data folder. If ENLENS cannot open at
+  all after an update, a PowerShell window opens by itself, says so and installs ENLENS again.
+
+### Changed
+
+- **`enlens update` in PowerShell** says to press *Update* in the app (which now installs the update), or, as before,
+  to quit ENLENS and run the install line.
+
+### For developers
+
+- `handover.py`: the script that finishes an update on Windows. The app checks the download, writes a job
+  (`updates/<version>/job.json` in the data folder) and starts a copy of the script with the Python uv installed
+  (`update.outside_python()`, outside ENLENS's own environment, which the update replaces), then quits. The script
+  waits for the app's process to end (at most two minutes; if it does not, nothing is installed), then for no other
+  program to run from ENLENS's own folder (at most a minute; `handover.programs_in` asks Windows for every running
+  program's path): with Claude Code's ENLENS connector running, uv removed most of the folder and stopped, and ENLENS
+  could not start again (found on GitHub's Windows machine before this release; Windows lets a folder in use be
+  renamed, so renaming it is no test). It then runs `uv tool install`
+  (four tries, while Windows still holds a file), then the new version's `post-install`, starts
+  the app with the command it was started with (`server.handover_command`), checks that it came back, and leaves
+  `updates/result.json`, which `GET /api/whats-new` turns into a note once (`"kind": "problem"`). It uses Python's
+  standard library only; a test holds it to that.
+- `POST /api/update` answers `"handover": true` on Windows, and the app then quits instead of restarting; the page
+  waits up to five minutes for it.
+- `ENLENS_RELEASE_API` points the update at a stand-in that answers as GitHub's release API does (the release's Windows
+  test). `tools/dev_server.py --update windows` shows the hand-over, `--update windows-fails` its note.
+- `docs/DEVELOPING.md` lists `procs.py` (0.15.3) and `handover.py` in its layout table.
+
+### Tests
+
+- `tests/test_0_15_4_windows_update.py`: the script, run for real with stand-ins for the app, uv and `post-install`:
+  it installs only once the app has gone, installs nothing while another program uses ENLENS's folder (and installs
+  once it lets go), tries again while a file is held, says when a file stays held (and the app still comes back),
+  leaves an app that does not quit alone, notices an app that does not come back, and runs from a
+  copy with a Python that does not know ENLENS; on Windows, a program started from a folder is found by its path.
+  The app's side: the download is checked before anything is handed
+  over, the job holds what the script needs, the script is started with the Python outside, the route quits instead
+  of restarting on Windows (and only there), and a failed update is said once.
+- On GitHub's Windows machine, before this release: ENLENS 0.15.4, installed with its Windows install script and
+  started as its icon starts it, pressed *Update* (`POST /api/update`) twice, against a stand-in release. To 0.15.5:
+  installed, and ENLENS answered again 6 s later. To 0.15.6, with a stand-in for Claude Code's connector running
+  ENLENS's own Python: the script waited a minute, installed nothing, ENLENS 0.15.5 came back unharmed and the note
+  said why. (The first try of this, without the wait, is how the half-removed folder was found.)
+
+### Not yet done
+
+- Not yet tried on the user's Windows PC: the first chance is the update after 0.15.4.
+- An update while Claude Code has ENLENS connected: tried with a stand-in for the connector on GitHub's Windows
+  machine (see above), not with a real Claude Code window. The person closes Claude Code; ENLENS does not close its
+  connector itself. A program that has ENLENS's files open without running from its folder is not seen.
+- The advisory test run on Windows still stops part way (the process-number bug in 0.15.2's *Not yet done*), before
+  it reaches this release's tests; they ran on their own on GitHub's Windows machine.
+
 ## 0.15.3 (November 2026): no flashing windows on Windows
 
 On Windows, ENLENS runs without a window of its own, and each program it started for a moment opened a console

@@ -37,8 +37,8 @@ No Claude plan? Choose *A model on this computer* on the first screen. Used ENLE
    first).
 2. Quit ENLENS (*Quit ENLENS* at the bottom of the sidebar) and open it again from its icon.
 
-ENLENS also tells you when a new version is ready; on a Mac or Linux, *Update and restart* in its pop-up does both
-steps for you. Your projects and settings (the `enlens` folder in your home folder) are never touched.
+ENLENS also tells you when a new version is ready; *Update and restart* in its pop-up does both steps for you (on
+Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your home folder) are never touched.
 
 ## What ENLENS does
 

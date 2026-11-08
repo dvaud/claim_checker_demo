@@ -183,12 +183,19 @@ since 0.13.6 only when there is an update).
   when its version is the running one and the setting `whats_new_seen` is not that version, and that setting is set
   the moment it is served, so the page shows it once, on the first start after an update. A new installation (no
   project yet, or no settings file) is marked silently and gets `null`; a malformed file is `null`, never an error.
+  0.15.4: before it, once, an update on Windows that did not finish: `{"note": {"kind": "problem", "version":
+  running, "title": "The update to X did not finish", "subtitle", "points": [what happened, what to do]}}`, from the
+  result `handover.py` left in `updates/result.json` of the data folder (removed when read; a result that says the
+  update worked is only removed).
 
-- `POST /api/update` `{}` → `{"updated": true, "restarting": true, "from", "version", "jobs_stopped": n}`: installs it
-  as `enlens update` does, then restarts on the same address and port (running jobs are stopped first, as for Quit;
-  at most 20 s); `{"updated": false, "restarting": false, "version"}` when nothing newer waits. 409 when the update
-  fails (nothing restarts; the reason is the error), on Windows with the one-line install (quit, then run the install
-  line again), when this copy cannot restart itself, and for a second request while one is updating or restarting.
+- `POST /api/update` `{}` → `{"updated": true, "restarting": true, "handover": false, "from", "version",
+  "jobs_stopped": n}`: installs it as `enlens update` does, then restarts on the same address and port (running jobs
+  are stopped first, as for Quit; at most 20 s); `{"updated": false, "restarting": false, "version"}` when nothing
+  newer waits. 409 when the update fails (nothing restarts; the reason is the error), when this copy cannot restart
+  itself, and for a second request while one is updating or restarting. 0.15.4, the one-line install on Windows:
+  `"handover": true`: the new version is downloaded and checked, then the app quits and `handover.py` installs it and
+  starts the app again on the same address (`server.handover_command`); the page waits up to five minutes. Before
+  0.15.4 this was a 409 that said to quit and run the install line again.
 - 0.15: *Try new versions early*: the setting `update_channel` (`"stable"`, the default, or `"early"`, validated by
   `PUT /api/settings`) says whether the check and `enlens update` of a one-line install also take release candidates:
   `early` asks GitHub's list of releases (`/releases?per_page=30`, drafts skipped) and takes the highest version

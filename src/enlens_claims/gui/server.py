@@ -178,6 +178,7 @@ class App:
         self.allowed_hosts: set[str] = set()
         self.any_host = False
         self.port = 0
+        self.host = "127.0.0.1"    # 0.15.4: the address it listens on (the hand-over starts it again there)
         self.launcher = False      # started from the ENLENS icon (launcher.py)
         self.stop = None           # stops the server ("Quit ENLENS"); set by serve()
         self.restart = None        # 0.13.1: stops the server and starts the version on disk in its place (serve())
@@ -2019,6 +2020,39 @@ def parse_whats_new(text: str) -> dict | None:
     return {"version": m.group(1), "title": m.group(2).strip(), "subtitle": sub.group(1).strip(), "points": points}
 
 
+UPDATE_PROBLEMS = {  # 0.15.4: what to do when the hand-over on Windows did not finish (handover.py's hints)
+    "in_use": ["Another program was still using ENLENS's files, most likely Claude Code with ENLENS connected",
+               "Close Claude Code, then press Update again"],
+    "not_quit": ["ENLENS did not quit in time, so nothing was installed",
+                 "Press Update again when nothing is running in ENLENS"],
+}
+UPDATE_PROBLEM_OTHER = ["The details are in logs/update.log in the data folder",
+                        "Press Update again, or run the install line again (it is on the release page)"]
+
+
+def update_note() -> dict | None:
+    """0.15.4: once, after an update on Windows that did not finish (the result handover.py left), what happened and
+    what to do; the result is removed the moment it is read, and one that says the update worked is only removed."""
+    from .. import update as upd
+
+    p = upd.result_path()
+    with _whats_new_lock:
+        try:
+            res = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        try:
+            p.unlink()
+        except OSError:
+            pass
+    if not isinstance(res, dict) or res.get("ok"):
+        return None
+    version = str(res.get("version") or "the new version")
+    return {"kind": "problem", "version": __version__, "title": f"The update to {version} did not finish",
+            "subtitle": f"ENLENS {__version__} is running. Your projects and results are kept.",
+            "points": UPDATE_PROBLEMS.get(str(res.get("hint") or ""), UPDATE_PROBLEM_OTHER)}
+
+
 def whats_new_note() -> dict | None:
     """The note when it is for the running version and this person has not been shown it; it is marked as shown the
     moment it is served. A new installation (no project yet, or no settings file) is only marked, never shown."""
@@ -2488,8 +2522,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_whats_new(self, q):
         """0.15.1: `{"note": {version, title, subtitle, points}}` once, on the first start after an update, else
-        `{"note": null}` (also on a new installation, which is only marked as up to date)."""
-        return {"note": whats_new_note()}
+        `{"note": null}` (also on a new installation, which is only marked as up to date). 0.15.4: first, once, an
+        update on Windows that did not finish (`"kind": "problem"`, update_note)."""
+        return {"note": update_note() or whats_new_note()}
 
     def get_update(self, q):
         """0.13.1: whether a newer ENLENS waits: the latest GitHub release (the one-line install), or new commits on
@@ -2552,16 +2587,19 @@ class Handler(BaseHTTPRequestHandler):
             if upd.version_tuple(installed) > upd.version_tuple(__version__):  # on disk already: a restart is all
                 r = {"updated": True, "from": __version__, "version": installed}
             else:
+                cmd = handover_command(self.app)
                 try:
-                    r = upd.update()
+                    r = upd.update(**({"restart": cmd} if cmd else {}))
                 except upd.UpdateError as e:
                     raise ApiError(409, str(e)) from e
             if not r.get("updated"):
                 return {"updated": False, "restarting": False, "version": __version__}
-            stopped = self._stop_jobs_then(self.app.restart)
+            # 0.15.4: on Windows the install waits for this app to quit (handover.py), which then starts it again
+            handover = bool(r.get("handover"))
+            stopped = self._stop_jobs_then(self.app.stop if handover else self.app.restart)
             restarting = True
-            return {"updated": True, "restarting": True, "from": r.get("from", __version__), "version": r["version"],
-                    "jobs_stopped": stopped}
+            return {"updated": True, "restarting": True, "handover": handover, "from": r.get("from", __version__),
+                    "version": r["version"], "jobs_stopped": stopped}
         finally:
             if not restarting:  # kept while restarting: a second click must not update again
                 self.app.updating.release()
@@ -3764,6 +3802,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
         print(f"Ports {port} to {port + 9} are all in use. Choose another with --port.", file=sys.stderr)
         return 1
     app.launcher = launcher
+    app.host = host
     app.freeze_static()
     app.stop = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()
     again = threading.Event()
@@ -3814,6 +3853,12 @@ def restart_command(host: str, port: int, launcher: bool) -> list[str]:
     if launcher:
         cmd += ["--launcher", "--no-start-ollama"]  # Ollama, if it was needed, is running already
     return cmd
+
+
+def handover_command(app: App) -> list[str] | None:
+    """0.15.4: on Windows, the command handover.py starts the app again with after installing an update (as
+    restart_command); None elsewhere, where the update installs in place and the app restarts itself."""
+    return restart_command(app.host, app.port, app.launcher) if os.name == "nt" else None
 
 
 def _restart(cmd: list[str]) -> None:

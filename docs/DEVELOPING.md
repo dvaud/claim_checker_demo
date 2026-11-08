@@ -55,7 +55,7 @@ their names. [docs/USER_TESTS.md](USER_TESTS.md) has the first-time user tests b
 | `--no-tesseract` | as if Tesseract were not installed (0.10) |
 | `--mixed` | documents with each AI setting, the fake local model reading the restricted one (0.11) |
 | `--reading` | a project *Reading* with the PDFs of known text of `enlens measure`, one of them read by the reader of 0.14 and with a check on it (0.15: the reading view, *Read with the new reader*) |
-| `--zotero`, `--update`, `--ollama`, `--low-memory` | a stand-in Zotero (0.13), a stand-in newer version (0.13.1), a local model still to get (0.13.7), too little memory for it (0.13.11) |
+| `--zotero`, `--update`, `--ollama`, `--low-memory` | a stand-in Zotero (0.13), a stand-in newer version (0.13.1; `--update windows`, `windows-fails`: the hand-over of Windows, 0.15.4), a local model still to get (0.13.7), too little memory for it (0.13.11) |
 
 `--home FOLDER` keeps its data apart and `--port` sets the port. Look at every page you touched in the light and dark
 themes and at 390 px wide.
@@ -79,6 +79,8 @@ themes and at 390 px wide.
 | `sync.py` | Shared projects (0.14): a colleague's project zip merged into your copy (newer versions, sync clashes, removed items, the stricter AI setting) |
 | `people.py` | Shared projects (0.14): who you are to colleagues, each person's own judgements and reviews, and how often two people agreed |
 | `installation.py`, `update.py` | How this copy was installed (git copy, the one-line install, a package, pip) and `enlens post-install`; `enlens update` for each (0.10) |
+| `handover.py` | The update on Windows (0.15.4): run outside ENLENS's own folder with the Python uv installed, it waits for the app to quit, installs the new version, starts the app again and leaves what happened in `updates/result.json`. Standard library only (a test holds it to that); `ENLENS_RELEASE_API` points the update at a stand-in for GitHub (the release's Windows test) |
+| `procs.py` | `no_window()`: every program the package starts gets no console window on Windows (0.15.3; a test holds every `subprocess` call to it, or to a `# console: …` reason) |
 | `home.py` | Settings, projects, the optional cloud key |
 | `gui/` | The local app: `server.py` (API and jobs), `static/` (the page; `features.js` describes each feature once), `progress.py`, `launcher.py` (the ENLENS icon), `icons/` (its picture, drawn by `tools/make_icons.py`) |
 | `concordance.py` | Search (0.7): concordance lines, modes, other forms, collocates |

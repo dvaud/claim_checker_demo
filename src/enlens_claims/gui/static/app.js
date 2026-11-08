@@ -424,6 +424,7 @@ function updatePopup(info) {
   const box = document.getElementById("toasts");
   const key = info.latest || `changes-${info.changes}`;
   if (!box || box.querySelector(".update-popup") || store("update-later") === key) return;
+  if (document.querySelector(".release-note-problem")) return;  // 0.15.4: the note says what to do; the button stays
   const later = () => { store("update-later", key); t.remove(); };
   const t = h("div", { class: "toast toast-info update-popup", role: "status" }, icon("arrow-up"),
     h("div", { class: "toast-body" },
@@ -466,7 +467,7 @@ async function updateApp(btn) {
   let r;
   try { r = await api("POST", "/api/update", {}); } catch (e) { showError(e); return done(); }
   if (!r.restarting) { toast(`${appName()} ${r.version} is the newest version.`, "ok"); done(); btn.hidden = true; return; }
-  waitForRestart(r.version);
+  waitForRestart(r.version, r.handover);
 
   function done() { btn.disabled = false; if (btn.lastChild && label) btn.lastChild.textContent = label; }
 }
@@ -484,14 +485,18 @@ async function restartApp(version) {
   waitForRestart(version);
 }
 
-function waitForRestart(version) {
+// `handover` (0.15.4, Windows): the app quits and the new version is installed before it starts again, which takes
+// longer than a restart
+function waitForRestart(version, handover = false) {
   const meta = (name) => (document.querySelector(`meta[name="${name}"]`) || {}).content || "";
   const oldToken = meta("enlens-token");
-  const status = h("p", { class: "muted" }, "This page opens the new version by itself in a moment.");
-  document.title = `${appName()} is restarting`;
+  const status = h("p", { class: "muted" }, handover
+    ? `${appName()} closes while Windows installs the new version, then opens again by itself. This page follows in a minute or two.`
+    : "This page opens the new version by itself in a moment.");
+  document.title = `${appName()} is ${handover ? "updating" : "restarting"}`;
   replace(document.body, h("main", { class: "stopped-page", id: "main" },
     h("img", { src: brand().logo, alt: "", width: 48, height: 48 }),
-    h("h1", {}, `Starting ${appName()} ${version || ""}…`),
+    h("h1", {}, `${handover ? "Installing" : "Starting"} ${appName()} ${version || ""}…`),
     h("p", {}, "Your projects and results are kept."),
     status));
   const t0 = Date.now();
@@ -506,7 +511,7 @@ function waitForRestart(version) {
         return;
       }
     } catch (_) { wentDown = true; }
-    if (Date.now() - t0 > 90000) {
+    if (Date.now() - t0 > (handover ? 300000 : 90000)) {
       replace(status, App.state.launcher
         ? `${appName()} did not come back. Open it again from its icon (on your Desktop, or in Applications).`
         : `${appName()} did not come back. Start it again the way you started it before (for example with enlens-gui).`);
@@ -689,19 +694,24 @@ function connectionInit() {
 }
 
 // 0.15.1: a small note of what is new, once, on the first start after an update (the app marks it seen when it serves it)
+// 0.15.4: or, also once, why an update on Windows did not finish (`kind: "problem"`)
 async function whatsNewInit() {
   let note = null;
   try { note = (await api("GET", "/api/whats-new")).note; } catch (e) { return; }
   if (!note || !Array.isArray(note.points) || !note.points.length) return;
+  const problem = note.kind === "problem";
   const onKey = (ev) => { if (ev.key === "Escape") close(); };
   const close = () => { document.removeEventListener("keydown", onKey); card.remove(); };
-  const card = h("div", { class: "release-note", role: "status", "aria-live": "polite", "aria-label": "What is new" },
+  const card = h("div", { class: problem ? "release-note release-note-problem" : "release-note", role: "status",
+    "aria-live": "polite", "aria-label": problem ? "The update did not finish" : "What is new" },
     h("div", { class: "release-note-head" },
-      h("p", { class: "release-note-title" }, `${note.version}: ${note.title}`),
+      problem ? icon("alert-triangle", { size: 15 }) : null,
+      h("p", { class: "release-note-title" }, problem ? note.title : `${note.version}: ${note.title}`),
       h("button", { class: "icon-btn release-note-close", type: "button", "aria-label": "Close", onClick: close }, icon("x", { size: 14 }))),
     note.subtitle ? h("p", { class: "release-note-sub" }, note.subtitle) : null,
     h("ul", { class: "release-note-list" }, ...note.points.map((t) => h("li", {}, t))));
   document.addEventListener("keydown", onKey);
+  if (problem) document.querySelectorAll(".update-popup").forEach((el) => el.remove());  // the same corner
   document.body.appendChild(card);
 }
 

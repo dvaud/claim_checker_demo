@@ -26,7 +26,9 @@
   installed: the install takes 2 s) and restarts the app in this process, with a new token, so the page's wait and
   reload can be watched. `--update commits` is a git copy with 3 new commits, `--update on-disk` a newer version
   installed while this one ran (the banner with *Restart now*), `--update none` an ENLENS that is up to date, and
-  `--update fails` an install that fails.
+  `--update fails` an install that fails. `--update windows` (0.15.4) is the hand-over of Windows: the app quits and
+  comes back 6 s later (the install), `--update windows-fails` the same with an install that did not finish (the
+  note that says why).
 - with `--ollama` (0.13.7): a model on this computer chosen, but no model yet. `--ollama empty` is an Ollama with no
   model (its *Download* takes 12 s, then the model answers), `--ollama later` an Ollama that starts 15 s after the
   app (the page notices it by itself), `--ollama none` no Ollama at all. Other servers on this computer (LM Studio…)
@@ -38,6 +40,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -89,7 +92,8 @@ def main() -> int:
                          "AI, one no AI), Claude Code is the AI and the fake local model reads the restricted one")
     ap.add_argument("--zotero", nargs="?", const="ready", choices=["ready", "api_off", "old", "closed"],
                     help="0.13: a stand-in Zotero (its local API) with a library for the remote-work demo corpus")
-    ap.add_argument("--update", nargs="?", const="release", choices=["release", "commits", "on-disk", "none", "fails"],
+    ap.add_argument("--update", nargs="?", const="release",
+                    choices=["release", "commits", "on-disk", "none", "fails", "windows", "windows-fails"],
                     help="0.13.1: Update ENLENS finds a stand-in newer version and restarts the app in this process")
     ap.add_argument("--ollama", nargs="?", const="empty", choices=["empty", "later", "none"],
                     help="0.13.7: a model on this computer chosen, but no model yet (empty), Ollama later, or none")
@@ -294,6 +298,18 @@ def main() -> int:
                 break
             finally:
                 srv.server_close()
+            if HANDOVER["pending"]:  # 0.15.4: the app quit for the Windows hand-over: "install", then come back
+                HANDOVER["pending"] = False
+                drop()
+                time.sleep(6)
+                if a.update == "windows-fails":
+                    from enlens_claims import update as _upd
+
+                    _upd.updates_folder().mkdir(parents=True, exist_ok=True)
+                    _upd.result_path().write_text(json.dumps({"ok": False, "hint": "in_use",
+                                                              "version": HANDOVER["version"]}), encoding="utf-8")
+                print("started again after the stand-in hand-over", flush=True)
+                continue
             if not again.is_set():
                 break
             drop()
@@ -329,6 +345,9 @@ def track_connections(srv):
     return drop
 
 
+HANDOVER = {"pending": False, "version": ""}  # 0.15.4: --update windows: the app quit for the hand-over
+
+
 def stand_in_update(mode: str) -> None:
     """0.13.1: `--update`: what update.update() would say, without GitHub, git or uv."""
     from enlens_claims import __version__, update
@@ -349,6 +368,10 @@ def stand_in_update(mode: str) -> None:
         time.sleep(2)
         if mode == "fails":
             raise update.UpdateError("Could not ask GitHub for the newest ENLENS (URLError: timed out). Are you online?")
+        if mode.startswith("windows"):
+            HANDOVER.update(pending=True, version=newer)
+            return {"updated": True, "from": __version__, "version": newer, "route": "release", "handover": True,
+                    "message": "handed over"}
         return {"updated": True, "from": __version__, "version": newer, "message": f"ENLENS updated to {newer}."}
 
     update.update = fake

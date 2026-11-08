@@ -18,8 +18,10 @@ The data folder (ENLENS_HOME, default ~/enlens) is never touched: projects, sett
 0.10: ENLENS installed with the one-line install (installation.py, kind "script") updates from GitHub Releases
 instead (`update_release`): it asks for the latest release, downloads its wheel, checks it against the release's
 SHA256SUMS, installs it with `uv tool install` into the same place (so the icon and the plugin keep working), and runs
-`enlens post-install` from the new version. On Windows the running `enlens` program cannot replace itself, so there
-it says to run the install line again.
+`enlens post-install` from the new version. On Windows a running program's files cannot be replaced: there the app's
+*Update* button downloads and checks the new version, then hands the install over to handover.py and quits; that
+script installs it once the app has gone and starts the app again (0.15.4). `enlens update` in a terminal on Windows
+says to press that button, or to run the install line again.
 """
 from __future__ import annotations
 
@@ -166,10 +168,11 @@ def installed_extras(pyproject: Path) -> list[str]:
 
 
 def update(check_only: bool = False, root: Path | None = None, run: Runner = _run,
-           python: str | None = None, quick: bool = False) -> dict:
+           python: str | None = None, quick: bool = False, restart: list[str] | None = None) -> dict:
     """Bring this ENLENS up to date, the way it was installed (see the module's notes). Returns what happened.
     `quick` (0.13.6, the app's check every two minutes): a one-line install learns the newest version from GitHub's
-    release page, which GitHub's limit of 60 API requests an hour does not count."""
+    release page, which GitHub's limit of 60 API requests an hour does not count. `restart` (0.15.4, the app on
+    Windows): the command that starts the app again, for the hand-over (update_release)."""
     if root is None and source_root() is None:
         from . import installation
 
@@ -177,7 +180,7 @@ def update(check_only: bool = False, root: Path | None = None, run: Runner = _ru
         if k == "script":
             if quick and check_only:
                 return update_release(check_only=True, run=run, peek=_peek)
-            return update_release(check_only=check_only, run=run)
+            return update_release(check_only=check_only, run=run, **({"restart": restart} if restart else {}))
         if k == "package":
             raise UpdateError("This ENLENS came as a download for this system: download the newest one from "
                               f"https://github.com/{installation.REPO}/releases and install it over this one (your "
@@ -381,7 +384,7 @@ def latest_release(fetch: Fetch = _fetch, repo: str | None = None, channel: str 
     from .installation import REPO
 
     early = (channel or update_channel()) == "early"
-    url = f"https://api.github.com/repos/{repo or REPO}/releases" + ("?per_page=30" if early else "/latest")
+    url = f"{_release_api(repo or REPO)}/releases" + ("?per_page=30" if early else "/latest")
     try:
         data = json.loads(fetch(url).decode("utf-8"))
     except Exception as e:  # noqa: BLE001 - offline, rate limited, no release yet: say it plainly
@@ -394,6 +397,12 @@ def latest_release(fetch: Fetch = _fetch, repo: str | None = None, channel: str 
     return {"version": tag.lstrip("v"), "tag": tag, "wheel": wheel, "wheel_url": assets.get(wheel, ""),
             "sums_url": assets.get("SHA256SUMS", ""), "notes": str(data.get("body") or ""),
             "url": str(data.get("html_url") or "")}
+
+
+def _release_api(repo: str) -> str:
+    """Where the releases are asked for: GitHub's API, or (0.15.4, for the release's Windows test of the hand-over)
+    a stand-in named by ENLENS_RELEASE_API that answers as GitHub does."""
+    return os.environ.get("ENLENS_RELEASE_API", "").strip().rstrip("/") or f"https://api.github.com/repos/{repo}"
 
 
 def _peek(url: str) -> str:
@@ -425,7 +434,7 @@ def latest_version(peek: Peek = _peek, repo: str | None = None, channel: str | N
     0.15: "" on the "early" channel: that page never shows a pre-release, so the API list is asked instead."""
     from .installation import REPO
 
-    if (channel or update_channel()) == "early":
+    if (channel or update_channel()) == "early" or os.environ.get("ENLENS_RELEASE_API", "").strip():
         return ""
     try:
         where = peek(f"https://github.com/{repo or REPO}/releases/latest")
@@ -447,11 +456,87 @@ def find_uv() -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------------------------
+# 0.15.4: the hand-over on Windows (handover.py)
+# ---------------------------------------------------------------------------------------------
+def updates_folder() -> Path:
+    """Where a hand-over keeps the new version, its job and what came of it (in the data folder)."""
+    from . import home
+
+    return home.home() / "updates"
+
+
+def result_path() -> Path:
+    """What the last hand-over did (handover.py writes it; the app shows a failure once: update_note)."""
+    return updates_folder() / "result.json"
+
+
+def handover_folder(version: str) -> Path:
+    """A clean folder for the hand-over to `version`: what earlier hand-overs left is removed first."""
+    top = updates_folder()
+    top.mkdir(parents=True, exist_ok=True)
+    for child in top.iterdir():
+        try:
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink()
+        except OSError:
+            pass
+    d = top / re.sub(r"[^0-9A-Za-z.+-]", "_", version)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def outside_python() -> str:
+    """A Python that the update does not replace: the one uv installed, from which ENLENS's own environment was made
+    (pythonw on Windows, which opens no window). This one when it is not in an environment of its own."""
+    base = Path(sys.base_prefix)
+    names = ("pythonw.exe", "python.exe") if os.name == "nt" else ("python3", "python")
+    for name in names:
+        for p in (base / name, base / "bin" / name):
+            if p.is_file():
+                return str(p)
+    return sys.executable
+
+
+def handover_job(rel: dict, have: str, folder: Path, install: list[str], restart: list[str]) -> dict:
+    """What handover.py is to do (see its notes)."""
+    from . import home
+    from .gui import launcher
+    from .installation import REPO
+
+    exe = Path(sys.executable)
+    post_py = exe.with_name("python.exe") if exe.name.lower() == "pythonw.exe" else exe  # its output is read
+    return {"from": have, "version": rel["version"], "folder": str(folder), "pids": [os.getpid()], "env_dir": sys.prefix,
+            "install": install, "env": {"UV_PYTHON_PREFERENCE": "only-managed"},
+            "post": [str(post_py), "-m", "enlens_claims.cli", "post-install", "--by", "script", "--no-icon"],
+            "start": list(restart), "info": str(launcher.info_path()), "result": str(result_path()),
+            "log": str(home.home() / "logs" / "update.log"),
+            "install_url": f"https://github.com/{REPO}/releases/download/{rel.get('tag') or 'v' + rel['version']}/install.ps1",
+            "wait": 120, "free_wait": 60, "tries": 4, "retry_after": 5, "come_back": 90}
+
+
+def start_handover(job: dict) -> None:
+    """Copy handover.py next to the job and start it with outside_python(); it waits for this app to quit."""
+    from . import handover
+
+    folder = Path(job["folder"])
+    script = folder / "handover.py"
+    shutil.copyfile(Path(handover.__file__), script)
+    (folder / "job.json").write_text(json.dumps(job, indent=1), encoding="utf-8")
+    handover._start([outside_python(), str(script), str(folder / "job.json")], str(folder))
+
+
 def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = _fetch, workdir: Path | None = None,
-                   windows: bool | None = None, peek: Peek | None = None, channel: str | None = None) -> dict:
+                   windows: bool | None = None, peek: Peek | None = None, channel: str | None = None,
+                   restart: list[str] | None = None, start: Callable[[dict], None] | None = None) -> dict:
     """Install the newest GitHub Release over a one-line install (see the module's notes). With `peek` (0.13.6), a
     check reads the newest version from the release page (`latest_version`), and asks the API only when the page does
-    not say. 0.15: `channel` ("stable" or "early", default from the settings) says whether a release candidate counts."""
+    not say. 0.15: `channel` ("stable" or "early", default from the settings) says whether a release candidate counts.
+    0.15.4, Windows: with `restart` (the app's command to start again) the download is checked here and the install
+    handed over to handover.py (`start`, default start_handover), which runs once the app has quit; the answer then
+    has `"handover": True` and the app is to quit, not restart. Without it, the person is told what to do."""
     import tempfile
 
     from . import __version__, installation
@@ -465,9 +550,11 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
     if check_only:
         return {"updated": False, "version": have, "waiting": rel["version"],
                 "message": f"ENLENS {rel['version']} is ready to install (you have {have}). Run `enlens update`."}
-    if windows if windows is not None else os.name == "nt":
-        raise UpdateError(f"ENLENS {rel['version']} is ready. On Windows, quit ENLENS (Quit ENLENS in the app), then "
-                          f"download this file and double-click it:\n  {installation.double_click_file('windows')}\n"
+    windows = os.name == "nt" if windows is None else windows
+    if windows and not restart:
+        raise UpdateError(f"ENLENS {rel['version']} is ready. In the ENLENS app, press Update to {rel['version']}: it "
+                          "installs it and opens ENLENS again. Or quit ENLENS (Quit ENLENS in the app), then download "
+                          f"this file and double-click it:\n  {installation.double_click_file('windows')}\n"
                           f"or run the install line again in PowerShell:\n  {installation.install_line('windows')}")
     if not rel["wheel_url"] or not rel["sums_url"]:
         raise UpdateError(f"The release {rel['tag']} has no ENLENS package or no checksums: see {rel['url']}.")
@@ -475,7 +562,8 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
     if not uv:
         raise UpdateError("uv, which installed ENLENS, was not found. Run the install line again:\n  "
                           + installation.install_line())
-    tmp = Path(workdir or tempfile.mkdtemp(prefix="enlens-update-"))
+    tmp = Path(workdir or (handover_folder(rel["version"]) if windows else tempfile.mkdtemp(prefix="enlens-update-")))
+    handed = False
     try:
         wheel = tmp / rel["wheel"]
         wheel.write_bytes(fetch(rel["wheel_url"]))
@@ -487,9 +575,15 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
             raise UpdateError(f"The downloaded {rel['wheel']} does not match the release's checksum, so it was not "
                               "installed. Try again later.")
         spec = f"enlens-claims[{','.join(installation.EXTRAS)}] @ {wheel.resolve().as_uri()}"
+        install = [uv, "tool", "install", "--force", "--quiet", "--python", "3.12", spec]
+        if windows:  # 0.15.4: handover.py installs it once this app has quit, and starts the app again
+            (start or start_handover)(handover_job(rel, have, tmp, install, restart or []))
+            handed = True
+            return {"updated": True, "from": have, "version": rel["version"], "route": "release", "handover": True,
+                    "message": f"ENLENS {rel['version']} is installed as soon as ENLENS has quit; it then opens again."}
         # uv's own Python, as the install line chose (0.11.1): never a system Python 3.12 that may go away
         os.environ.setdefault("UV_PYTHON_PREFERENCE", "only-managed")
-        r = run([uv, "tool", "install", "--force", "--quiet", "--python", "3.12", spec], tmp)
+        r = run(install, tmp)
         if r.returncode != 0:
             raise UpdateError(f"Installing ENLENS {rel['version']} failed:\n{(r.stderr or r.stdout or '').strip()[-2000:]}")
         # the new version finishes the job: the marker, the plugin (the icon points at the same Python)
@@ -499,7 +593,7 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
                               f"{(post.stderr or post.stdout or '').strip()[-2000:]}\nRun `enlens post-install` to try "
                               "that part again.")
     finally:
-        if workdir is None:
+        if workdir is None and not handed:
             shutil.rmtree(tmp, ignore_errors=True)
     out = {"updated": True, "from": have, "version": rel["version"], "route": "release",
            "post_install": (post.stdout or "").strip(), "running": _app_running()}
