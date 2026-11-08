@@ -267,11 +267,15 @@ Claude** (0.10), that does every step still open, in order:
 1. Claude Code is not on the computer: ENLENS shows the command of Anthropic's installer (`curl -fsSL
    https://claude.ai/install.sh | bash`, or `irm https://claude.ai/install.ps1 | iex` on Windows) and runs it when you
    choose *Install Claude Code*. It needs no administrator rights and takes a minute or two. *Anthropic's set-up
-   page* is linked for doing it yourself.
-2. Not signed in: ENLENS opens a Terminal (macOS) or PowerShell (Windows) window already running Claude Code. Sign in
-   there with your Claude plan (it opens a page in your browser) and close the window; ENLENS checks every few
-   seconds and continues by itself (*I have signed in* checks at once). ENLENS never sees your login. If no window
-   can be opened, the page shows the line to type.
+   page* is linked for doing it yourself. Where the program is kept does not decide what it can read: what Claude
+   Code may open depends on the folder it starts in and on its tools and permissions, and ENLENS starts it only in an
+   empty folder of its own, with its tools for reading files, running commands and browsing switched off (see
+   *How it is enforced* in section 8).
+2. Not signed in: ENLENS opens a Terminal (macOS) or PowerShell (Windows) window already running Claude Code, in an
+   empty folder of ENLENS (`claude-runs/sign-in` in the data folder) and with the same tools switched off, so it
+   cannot open your files. Sign in there with your Claude plan (it opens a page in your browser) and close the
+   window; ENLENS checks every few seconds and continues by itself (*I have signed in* checks at once). ENLENS never
+   sees your login. If no window can be opened, the page shows the line to type, which goes to that folder first.
 3. The plugin is not added: ENLENS adds it (as in 0.9).
 
 *Set it up yourself instead* keeps the lines to type. *No Claude plan? Other options* offers a model on this computer
@@ -1170,8 +1174,14 @@ The connector's tools (search, concepts, document profiles, checks) give Claude 
 leave out what a model wrote in its own words (a check's summary, its notes on excerpts) when it read restricted
 text, and show a document marked *No AI* as *Restricted document 3*, because a title can name a person. A project
 zip (*Download as a zip*) holds the files of the documents the project has now, not those of documents you removed
-(0.14.3). The Claude Code run that ENLENS starts may not use Claude Code's own file, shell and web tools and starts
-in an empty folder, away from the projects' databases.
+(0.14.3). The Claude Code run that ENLENS starts works in a box of its own (0.14.6): it starts in an empty folder, away from
+the projects' databases, and has no tool that reads, writes or searches files, runs commands or browses, only the
+one that starts the helpers. It takes nothing from your own Claude Code either: not your settings, hooks or
+`CLAUDE.md` instructions, not your other plugins or the connectors of your claude.ai account; it loads only
+ENLENS's plugin. So all it can see are the passages ENLENS puts in its tasks. These are options of Claude Code itself
+(`--tools`, `--restricted`, `--plugin-dir`), used when your Claude Code knows them; an older Claude Code is only
+denied the file, shell and web tools by name. The window ENLENS opens for the sign-in also starts in an empty folder
+without those tools (it used to start in your home folder, where Claude Code could read your files without asking).
 
 **What Claude has read.** ENLENS writes down every passage at the moment it leaves for Claude (Claude Code, the Claude
 API, a Claude chat through the connector). The column *Sent to Claude* shows the share of each document's text;
@@ -1678,7 +1688,7 @@ For checking hypotheses about any subject, no pack is needed: sections 3 and 4.
 | Windows says it protected your PC, or the browser calls *Install-ENLENS-Windows.cmd* uncommon | The file is not signed. Keep it, then *More info → Run anyway* (section 1), or paste the install line in PowerShell instead. |
 | *Set up Claude* cannot install Claude Code | No network, or the installer was blocked. Install it with Anthropic's set-up page (linked under *Technical details*), then press *Set up Claude* again. |
 | Claude Code answers with the wrong Claude account | The sidebar card (hover *Claude, on your plan*) and *Settings → AI* name the account it uses. To switch, type `claude auth logout` in Terminal or PowerShell, then press *Check again* and *Set up Claude* in *Settings → AI*: it opens the sign-in window, where you sign in with the other account. |
-| *Set up Claude* keeps waiting for the sign-in | Finish signing in in the window it opened (and in the browser page that window opened), then press *I have signed in*. No window? Open Terminal or PowerShell, type `claude`, and sign in. |
+| *Set up Claude* keeps waiting for the sign-in | Finish signing in in the window it opened (and in the browser page that window opened), then press *I have signed in*. No window? Open Terminal or PowerShell, type the line the page shows (it goes to an empty folder of ENLENS, then starts `claude`), and sign in. |
 | "The original file is no longer at …" | The file was moved or renamed after it was added; the app still has its text. Put it back, or add it again. |
 | A document is listed under `mostly_unreadable` | The PDF's fonts have no character map. Get another copy (often the publisher's) or OCR it, `reset-corpus` or ingest the new copy, and run `match-sources` again. |
 | A source is flagged "very short" | It is probably a landing page or an agenda, not the cited work. Replace it, or leave it out with `--exclude`. |

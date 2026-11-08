@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.14.6 (November 2026): Claude Code works in a box of its own
+
+Claude Code started by ENLENS needs nothing from your computer but the passages in its tasks. It now gets nothing
+else: no tool that can open your files, and nothing from your own Claude Code set-up. Nothing changes in the
+installation.
+
+### Privacy
+
+- **Claude Code works in a box of its own.** A run started with *Start Claude Code* now has only one built-in tool,
+  the one that starts the helpers (`--tools Agent`): no tool that reads, writes or searches files, runs commands or
+  browses exists in it at all; the passages reach it through the ENLENS connector. Before, those tools were denied one
+  by one by name, a list that misses whatever tools a later Claude Code adds. Three of its names no longer exist in
+  Claude Code. The run also no longer takes anything from your own Claude Code (`--restricted`): not your
+  settings or hooks, not your `CLAUDE.md` instructions (which were read into every run and sent with it), not your
+  other plugins and their connectors, not the connectors of your claude.ai account. It loads only ENLENS's plugin, as
+  ENLENS wrote it (`--plugin-dir`). Nothing changes in the installation: these are options of Claude Code itself.
+  ENLENS reads `claude --help` and uses them only when this Claude Code knows them; an older one runs as before.
+  Can change results slightly: the helpers no longer receive your own Claude Code instructions, only ENLENS's.
+- **The sign-in window keeps Claude Code out of your files.** *Set up Claude* opened Claude Code in your home folder
+  for the one-time sign-in. Claude Code may read any file inside the folder it starts in without asking, so anything
+  typed into that window after signing in could have had Claude read your documents. The window now starts Claude
+  Code in an empty folder of ENLENS's own (`claude-runs/sign-in` in the data folder, emptied each time) without the
+  tools for reading and writing files, running commands and browsing. When no window can be opened, the line the
+  page shows goes to that folder first. Where Claude Code is installed (`~/.local/bin`) never decided what it can
+  read, so the installer is unchanged; its confirmation now says so. Cannot change results.
+
+### For developers
+
+- `claude_setup.known_options()` reads the options of `claude --help` (once per program file); `box_args()` gives
+  `--tools Agent`, plus `--restricted --plugin-dir <plugin folder>` for a run when the plugin is written, or the old
+  `--disallowedTools` list for a Claude Code that knows neither. `run_args()` takes `options`; `start_run()` adds
+  `BOX_ENV` (`ENABLE_CLAUDEAI_MCP_SERVERS=false`). `--strict-mcp-config` was tried and left out: it also drops the
+  plugin's own connector.
+- `sign_in_folder()` and `sign_in_line()`; `_sign_in_script()` takes the folder and the options;
+  `open_sign_in()` returns that folder's line as `command` and the folder.
+- `tests/fake_claude_cli.py` answers `--help` (`FAKE_CLAUDE_OPTIONS` plays an older Claude Code).
+
+New tests: `tests/test_0_14_6_claude_code_box.py`: the options are read from Claude Code's help once per program
+file; a run gets `--tools Agent --restricted --plugin-dir` and `ENABLE_CLAUDEAI_MCP_SERVERS=false`, an older Claude
+Code the old list, and `--restricted` only when the plugin is written; the sign-in script, run with `/bin/sh`, starts
+the program in the empty folder with the box's options (and the old list for an older Claude Code); the Windows
+script goes to the folder first, quoted for PowerShell; the line to type; the sign-in route; the stand-in signs in
+from the boxed window; the install confirmation's text.
+
+**Tried with the real Claude Code (2.1.319) on a Mac, outside the tests:** in the box, a `CLAUDE.md` in a parent
+folder and the user's own `~/.claude/CLAUDE.md` were not read, where the old command read both; the run's tools were
+`Agent` and the ENLENS connector's alone (the old command also had the user's other plugin, agents and claude.ai
+connectors); a helper asked to read a file found no Read tool; a connector tool the run was not allowed
+(`add_sources`) was refused; the command `run_args()` builds ran `/enlens-run` and reached the connector; and the
+labeller helper reached its three queue tools (against a scratch data folder).
+
+**Not yet done:**
+- The sign-in window was not tried with a real sign-in: the script was run with stand-ins, and `--tools` was checked
+  in `claude --help` to be an option of every session, not only of `-p`. The window does not use `--restricted`,
+  which was not tried with a real sign-in.
+- No real run answered a real queue in the box: the pieces were tried one by one (above).
+- `--restricted` ignores the person's Claude Code settings, so a proxy or an `apiKeyHelper` set only there no longer
+  reaches the runs. ENLENS is used on a Claude plan; a person who needs one there would see the run fail.
+- Windows was not tried: the sign-in script for PowerShell is checked as text.
+- A box from the operating system (a sandbox around the whole program) was left out: on macOS it needs a profile
+  that each Claude Code update can break, on Linux an extra program to install, and Windows has nothing simple.
+
 ## 0.14.5 (November 2026): install by double-clicking a file
 
 **Install without Terminal or PowerShell.** Every release now also has the install as a file to download and

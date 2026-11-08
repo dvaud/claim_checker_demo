@@ -61,12 +61,14 @@ steps for you. Your projects and settings (the `enlens` folder in your home fold
   file, and merges the other's with *Bring in a colleague's work*. No server; nothing changes until you bring work in.
 - **Each person's judgements.** A judgement of an excerpt keeps the name of who made it, and yours always count in
   your copy. **Can change results:** where you made none, a colleague's judgement now counts, marked with their name.
-- **Newer versions come in, clashes keep both.** A result only your colleague changed is brought up to date in your
-  copy (**can change results**); one you both changed comes in beside yours, marked *sync clash*.
-- **The stricter AI setting wins.** A document your colleague keeps from Claude is kept from Claude in your copy too
-  (**can change results** of later checks), and what you removed stays removed.
+- **Newer versions come in, clashes keep both, the stricter AI setting wins.** What only your colleague changed is
+  updated in your copy, what you both changed comes in beside yours (*sync clash*), and a document they keep from
+  Claude is kept from Claude in yours too. **Can change results.**
 - **A review of the whole app, fixed** (0.14.4): a local model's summary no longer reaches Claude, a failed check no
   longer reads "No evidence found", and phrase searches and PDF highlights are right. **Can change results.**
+- **Claude Code works in a box of its own** (0.14.6): it has no tool that can open your files, takes nothing from your
+  own Claude Code set-up, and signs in away from your home folder. **Can change results** slightly: your own Claude
+  Code instructions no longer reach ENLENS's helpers.
 
 How it works: [working on a project together](docs/MANUAL.md#working-on-a-project-together-014) in the manual. Every
 release, with what was not tested: [CHANGELOG.md](CHANGELOG.md).
@@ -86,7 +88,8 @@ behind each answer. It belongs in your methods section or supplementary material
 Your documents, results, judgements and settings stay on your computer. With Claude (the default), only the passages
 inside the AI's tasks are sent to Anthropic, through Claude Code on your own Claude plan (or the Claude API, when a
 shared installation switched it on), and only from documents marked *Claude may read it*; ENLENS records every passage
-it sends (*Sent to Claude* on the *Documents* page). To keep a document from Claude, mark it *Only a local AI* or *No
+it sends (*Sent to Claude* on the *Documents* page). Claude Code, as ENLENS starts it, has no tool that can open your
+files, so those passages are all it sees. To keep a document from Claude, mark it *Only a local AI* or *No
 AI*. To keep everything on the computer, choose *A model on this computer* in *Settings → AI*, or put
 `ENLENS_LOCAL_ONLY=1` before the install line, which removes every cloud option for good. Apart from the AI you chose
 and looking for a new version on GitHub, ENLENS sends nothing anywhere and has no telemetry; bringing in a colleague's

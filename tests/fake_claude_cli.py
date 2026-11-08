@@ -7,6 +7,8 @@ Point ENLENS_CLAUDE at this file. It answers what ENLENS asks of Claude Code: `-
 
 0.10: with FAKE_CLAUDE_LOGGED_OUT=1 it starts signed out; run with no arguments (as the sign-in window of "Set up
 Claude" does) it "signs in".
+
+0.14.6: `--help` lists the options ENLENS looks for (FAKE_CLAUDE_OPTIONS replaces them).
 """
 from __future__ import annotations
 
@@ -51,7 +53,16 @@ def main(argv: list[str]) -> int:
                     out[key] = os.environ[env]
         print(json.dumps(out))
         return 0
-    if not argv:  # the interactive start: the person signs in
+    if argv[:1] in (["--help"], ["-h"]):
+        # 0.14.6: the options ENLENS looks for before it closes Claude Code in (claude_setup.box_args);
+        # FAKE_CLAUDE_OPTIONS replaces the list ("" plays an older Claude Code that knows none of them)
+        known = os.environ.get("FAKE_CLAUDE_OPTIONS", "--allowedTools --disallowedTools --tools --restricted --plugin-dir")
+        print("Usage: claude [options] [command] [prompt]\n\nOptions:")
+        for o in known.split():
+            print(f"  {o} <value>    (stand-in)")
+        return 0
+    if not argv or (argv[0] in ("--tools", "--disallowedTools") and "-p" not in argv):
+        # the interactive start (the sign-in window passes only the options of the box): the person signs in
         st = _state()
         st["logged_in"] = True
         _save(st)

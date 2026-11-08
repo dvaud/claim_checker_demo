@@ -870,8 +870,11 @@ that no session has taken yet out of the queue; a check by queue is removed whol
   the plugin (as 0.8); `{"check": true}` also starts the connector to check it.
 - `POST /api/projects/<p>/queue/claude-code` → `{"running", "started_at", "seconds", "exit_code", "report",
   "stopped"}`: starts Claude Code headless for the project's queue (`claude -p "/enlens-run:enlens-run <p>"
-  --allowedTools Agent mcp__plugin_enlens-run_enlens__{queue_status,next_tasks,submit_answers,release}`), one run per
-  project; adds the plugin first if needed. 400 when Settings do not name Claude Code, when Claude Code is not found,
+  --tools Agent --restricted --plugin-dir <plugin folder> --allowedTools Agent
+  mcp__plugin_enlens-run_enlens__{queue_status,next_tasks,submit_answers,release}`, with
+  `ENABLE_CLAUDEAI_MCP_SERVERS=false`, in an empty folder; an older Claude Code without those options gets
+  `--disallowedTools` with the file, shell and web tools instead), one run per project; adds the plugin first if
+  needed. 400 when Settings do not name Claude Code, when Claude Code is not found,
   or with `--local-only`.
 - `POST /api/projects/<p>/queue/claude-code/stop` → the same object: stops it, and gives the batches it had taken
   back to the queue at once.
@@ -891,9 +894,11 @@ that no session has taken yet out of the queue; a check by queue is removed whol
 - `POST /api/claude-setup/claude-code` `{}` → job (kind `claude-install`): runs that installer (the page shows the
   command and asks first). `result`: `{"ok", "text", "status"}`; the job ends in `error` when Claude Code could not
   be installed. 409 when Claude Code is already found; 403 with `--local-only`.
-- `POST /api/claude-setup/sign-in` `{}` → `{"opened", "window", "command": "claude"}`: opens a terminal window
+- `POST /api/claude-setup/sign-in` `{}` → `{"opened", "window", "command", "folder"}`: opens a terminal window
   (Terminal on macOS, PowerShell on Windows, the first terminal found on Linux) already running `claude`, for the
-  one-time sign-in; `opened: false` when no window could be opened (the page then shows the line to type). The page
+  one-time sign-in, in the empty `folder` (`<data folder>/claude-runs/sign-in`) and without the file, shell and web
+  tools; `opened: false` when no window could be opened (the page then shows `command`, the line to type, which goes
+  to that folder first). The page
   then reads `GET /api/claude-setup?refresh=1` every few seconds until `status.signed_in` is true, and adds the
   plugin. 400 when Claude Code is not found, or with `--local-only`.
 - On start, the app writes the Claude Code plugin again (and runs the two set-up commands again, quietly) when the

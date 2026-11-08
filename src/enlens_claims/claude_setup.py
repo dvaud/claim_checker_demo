@@ -376,12 +376,52 @@ def work_folder(project: str = "") -> Path:
     return d
 
 
-def run_args(project: str, claude: str = "", plan: dict | None = None) -> list[str]:
+# The box: Claude Code started by ENLENS needs nothing from the computer but the passages in its tasks, which reach it
+# through the ENLENS connector. With a Claude Code that knows these options (they are read from `claude --help`):
+# --tools Agent       the only built-in tool is the one that starts the helpers: no tool that reads, writes or searches
+#                     files, runs commands or browses exists in the run at all (a list of tools to deny misses the ones
+#                     a later Claude Code adds);
+# --restricted        Claude Code ignores the person's own Claude Code settings, hooks and CLAUDE.md files, so nothing
+#                     of theirs is read into the run or sent with it, and only ENLENS's plugin is loaded;
+# --plugin-dir        the plugin as ENLENS wrote it, for this run only (the person's other plugins stay out);
+# ENABLE_CLAUDEAI_MCP_SERVERS=false   the connectors of the person's claude.ai account stay out as well.
+# An older Claude Code that lacks them runs as before: denied the tools in DENIED_TOOLS, in an empty folder.
+BOX_ENV = {"ENABLE_CLAUDEAI_MCP_SERVERS": "false"}
+_OPTIONS: dict = {}
+
+
+def known_options(claude: str) -> set[str]:
+    """The long options this Claude Code knows, from `claude --help` (read once per program file, which an update
+    replaces). Empty when its help cannot be read: then nothing new is passed to it."""
+    try:
+        st = Path(claude).stat()
+        key = (claude, st.st_size, st.st_mtime_ns)
+    except OSError:
+        return set()
+    if key not in _OPTIONS:
+        code, text = _run([claude, "--help"], timeout=30)
+        _OPTIONS[key] = set(re.findall(r"(?<![\w-])--[A-Za-z][A-Za-z-]+", text)) if code == 0 else set()
+    return _OPTIONS[key]
+
+
+def box_args(claude: str, run: bool = True, options: set[str] | None = None) -> list[str]:
+    """The options that close Claude Code in (see above). `run`: a headless run of the queue, which also loads the
+    ENLENS plugin alone; otherwise the sign-in window, which needs no plugin."""
+    opts = known_options(claude) if options is None else options
+    args = ["--tools", "Agent"] if "--tools" in opts else ["--disallowedTools", ",".join(DENIED_TOOLS)]
+    if run and {"--restricted", "--plugin-dir"} <= opts and (plugin_folder() / ".mcp.json").exists():
+        args += ["--restricted", "--plugin-dir", str(plugin_folder())]
+    return args
+
+
+def run_args(project: str, claude: str = "", plan: dict | None = None, options: set[str] | None = None) -> list[str]:
     """The command that answers one project's queue headless, allowed only the ENLENS queue tools and the helpers, and
-    denied every built-in tool that reads files, runs commands or fetches pages. `plan` (taskqueue.run_plan): how
-    many helpers at once, and which (0.13.10)."""
+    without any built-in tool that reads files, runs commands or fetches pages (box_args). `plan`
+    (taskqueue.run_plan): how many helpers at once, and which (0.13.10). `options`: what this Claude Code knows
+    (known_options, read when not given)."""
     from . import taskqueue
 
+    claude = claude or find_claude() or "claude"
     tools = ["Agent"] + [TOOL_PREFIX + t for t in QUEUE_TOOLS]
     quoted = '"' + project.replace('"', "") + '"'
     prompt = f"{SLASH} {quoted}"
@@ -389,9 +429,8 @@ def run_args(project: str, claude: str = "", plan: dict | None = None) -> list[s
         prompt += f" --parallel {int(plan['parallel'])}"
         if plan.get("helpers"):
             prompt += f" --helpers {taskqueue.helpers_arg(plan['helpers'])}"
-    return _cmd(claude or find_claude() or "claude") + ["-p", prompt, "--output-format", "text",
-                                                       "--disallowedTools", ",".join(DENIED_TOOLS),
-                                                       "--allowedTools", *tools]
+    return _cmd(claude) + ["-p", prompt, "--output-format", "text", *box_args(claude, options=options),
+                           "--allowedTools", *tools]
 
 
 def _log_path(project: str) -> Path:
@@ -574,7 +613,8 @@ def start_run(project: str, parallel=None, helpers=None) -> dict:
             "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
         try:
             proc = subprocess.Popen(run_args(project, path, plan), cwd=str(work_folder(project)), stdout=fh,
-                                    stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kwargs)
+                                    stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env={**os.environ, **BOX_ENV},
+                                    **kwargs)
         finally:
             fh.close()
         t0, started = time.time(), now()
@@ -748,14 +788,50 @@ def install_claude_code(timeout: float = 900) -> dict:
     return {"ok": ok, "text": text[-1500:], "status": st}
 
 
-def _sign_in_script(claude: str) -> Path:
+# Where the claude program is installed does not limit what it can read: what it may open is set by the folder it
+# starts in (Read, Grep and Glob need no approval inside it) and by its permission rules. So the sign-in window, like
+# the headless runs, starts Claude Code in an empty folder of ENLENS's own without the tools that read, write or fetch
+# files or run commands (box_args). Before, it started in the home folder, where Claude Code could read every file of
+# the person without asking.
+def sign_in_folder() -> Path:
+    """The empty folder the sign-in window starts Claude Code in. Anything found in it is removed first, but the folder
+    itself stays, so a sign-in window still open from an earlier press keeps a folder to work in."""
+    d = core.home() / "claude-runs" / "sign-in"
+    d.mkdir(parents=True, exist_ok=True)
+    for child in d.iterdir():
+        try:
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink()
+        except OSError:
+            pass
+    return d
+
+
+def sign_in_line(folder: Path, windows: bool | None = None) -> str:
+    """The line a person types to sign in by hand (when no window can be opened): go to the empty folder first."""
+    windows = os.name == "nt" if windows is None else windows
+    if windows:   # PowerShell 5.1 has no &&
+        return f"cd '{str(folder).replace(chr(39), chr(39) * 2)}'; claude"
+    import shlex
+
+    return f"cd {shlex.quote(str(folder))} && claude"
+
+
+def _sign_in_script(claude: str, work: Path | None = None, options: set[str] | None = None) -> Path:
     d = core.home() / "claude-runs"
     d.mkdir(parents=True, exist_ok=True)
+    work = work or sign_in_folder()
+    box = box_args(claude, run=False, options=options)
     if os.name == "nt":
+        q = lambda s: "'" + str(s).replace("'", "''") + "'"  # noqa: E731 - a PowerShell string
         p = d / "sign-in.ps1"
         p.write_text("Write-Host 'ENLENS: sign in to Claude Code with your Claude plan.'\r\n"
                      "Write-Host 'Follow the steps below; when Claude Code shows its prompt, close this window.'\r\n"
-                     f"& '{claude.replace(chr(39), chr(39) * 2)}'\r\n",
+                     "Write-Host 'It runs in an empty folder of ENLENS and cannot open your files.'\r\n"
+                     f"Set-Location -LiteralPath {q(work)}\r\n"
+                     f"& {' '.join(q(x) for x in [claude, *box])}\r\n",
                      encoding="utf-8-sig")  # 0.14.3: Windows PowerShell 5.1 reads a file without a BOM as ANSI
         return p
     import shlex
@@ -764,9 +840,11 @@ def _sign_in_script(claude: str) -> Path:
     p.write_text("#!/bin/sh\n"
                  "echo 'ENLENS: sign in to Claude Code with your Claude plan.'\n"
                  "echo 'Follow the steps below; when Claude Code shows its prompt, close this window.'\n"
+                 "echo 'It runs in an empty folder of ENLENS and cannot open your files.'\n"
                  "echo\n"
-                 f"cd {shlex.quote(str(Path.home()))}\n"
-                 f"exec {' '.join(shlex.quote(x) for x in _cmd(claude))}\n", encoding="utf-8")
+                 f"cd {shlex.quote(str(work))} || exit 1\n"
+                 f"exec {' '.join(shlex.quote(x) for x in _cmd(claude) + box)}\n",
+                 encoding="utf-8")
     p.chmod(0o755)
     return p
 
@@ -802,6 +880,7 @@ def open_sign_in() -> dict:
     path = find_claude()
     if not path:
         raise ValueError("Claude Code is not on this computer yet: install it first.")
-    window = _open_window(_sign_in_script(path))
+    work = sign_in_folder()
+    window = _open_window(_sign_in_script(path, work))
     _STATUS["value"] = None
-    return {"opened": bool(window), "window": window, "command": "claude"}
+    return {"opened": bool(window), "window": window, "command": sign_in_line(work), "folder": str(work)}

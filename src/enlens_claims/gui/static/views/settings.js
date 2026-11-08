@@ -928,6 +928,8 @@ export function claudeSetupCard(opts = {}) {
       title: "Install Claude Code?", confirmText: "Install Claude Code", danger: false,
       message: h("div", { class: "stack", style: { gap: "10px" } },
         h("p", {}, "Claude Code is the program that lets Claude work on your own Claude plan. ENLENS will run Anthropic's installer for it, which downloads Claude Code from claude.ai and puts it in your user folder. It needs no administrator rights and takes a minute or two."),
+        // the place a program is kept does not limit what it can open: the folder it starts in and its permissions do
+        h("p", { class: "small" }, icon("shield", { size: 13 }), " Where the program is kept does not decide what it can read. ENLENS starts Claude Code only in an empty folder of its own, with its tools for reading files, running commands and browsing switched off, so it cannot look through your computer: it sees only the passages in ENLENS's tasks."),
         h("p", { class: "small muted" }, "The command it runs:"), copyLine(line, "Copy", "a terminal"),
         h("p", { class: "small muted" }, "Prefer to do it yourself? Follow ", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), ", then press Set up Claude again.")),
     });
@@ -958,7 +960,7 @@ export function claudeSetupCard(opts = {}) {
       const cancel = h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { finish(false); replace(log); } }, "Stop waiting");
       say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("div", {},
         opened.opened ? h("p", {}, `A ${opened.window} window opened with Claude Code. Sign in there with your Claude plan (it opens a page in your browser), then close that window. ENLENS is waiting and continues by itself.`)
-          : h("div", {}, h("p", {}, "Sign in to Claude Code once: open a terminal (Terminal on a Mac, PowerShell on Windows), type the line below, and follow the steps."), copyLine("claude", "Copy", "a terminal")),
+          : h("div", {}, h("p", {}, "Sign in to Claude Code once: open a terminal (Terminal on a Mac, PowerShell on Windows), type the line below, and follow the steps. It starts Claude Code in an empty folder of ENLENS, away from your files."), copyLine(opened.command || "claude", "Copy", "a terminal")),
         h("p", { class: "small muted" }, "ENLENS never sees your login: Claude Code keeps it."),
         h("div", { class: "btn-row", style: { marginTop: "6px" } }, checkNow, cancel)));
       const started = Date.now();
