@@ -164,9 +164,9 @@ expects reader 2's paragraph passages.
   in scanned pages, are not found. GROBID and Docling are not used.
 - Restore and Leave out do not renumber paragraphs; a paragraph restored by hand is cited as part of the one before it.
 - The tests had never run on Windows or macOS before; their first runs (on this release's commit) fail there: on
-  Windows a dozen tests and the run stops part way, on macOS three tests that start the app as the icon does. Those two
-  jobs are advisory (shown, not failing the run) until a 0.15.x patch makes the suite pass on them. Linux, on Python
-  3.10 and 3.13, passes.
+  Windows about a dozen tests fail and the run stops part way; on macOS one test (the app restarting itself in place
+  after an update). Those two jobs are advisory (shown, not failing the run) until a 0.15.x patch makes the suite pass
+  on them. Linux, on Python 3.10 and 3.13, passes, and the one-line install works on all three systems.
 
 ### Coming in 0.16
 
