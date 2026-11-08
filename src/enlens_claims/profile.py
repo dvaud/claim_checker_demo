@@ -27,7 +27,7 @@ import statistics
 from collections import Counter, defaultdict
 from typing import Callable
 
-from . import frameworks
+from . import __version__, frameworks
 from .people import me, mine_sql
 from .store import Workspace, now
 from .textutil import surface_words, tokens
@@ -40,6 +40,13 @@ MEANING_TOP = 5           # ... and the code among the passage's closest codes
 SOURCES = ("keywords", "meaning", "both", "model", "person")
 RELEVANCE = ("main", "mentioned")
 DIRECTIONS = ("helps", "hinders", "mixed", "not_stated")
+
+
+# 0.15: a label row as this module writes it, with the ENLENS version that made it (the table may have more columns:
+# an add-on's); named, so a column added later does not break the writes
+_LABEL_COLS = ("label_id, passage_id, doc_id, framework, code, relevance, direction, confidence, quote, start, end, page, "
+               "source, model, prompt_version, reason, matched_json, score, similarity, task_id, created_at")
+_INSERT_LABEL = f"INSERT OR REPLACE INTO labels({_LABEL_COLS}, app_version) VALUES ({','.join('?' * 22)})"
 
 
 def _h(*parts: str) -> str:
@@ -202,7 +209,7 @@ def keyword_pass(ws: Workspace, framework: str = "sdg", embedder=None, doc_ids: 
             chunk = pids[i:i + 500]
             cx.execute(f"DELETE FROM labels WHERE framework=? AND source IN ('keywords','meaning','both') AND passage_id "
                        f"IN ({','.join('?' * len(chunk))})", (fw.name, *chunk))
-        cx.executemany("INSERT OR REPLACE INTO labels VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", out_rows)
+        cx.executemany(_INSERT_LABEL, [(*r, __version__) for r in out_rows])
         meta = ws.meta("profile_pass1") or {}
         meta[fw.name] = {"at": stamp, "corpus_version": ws.corpus_version(), "passages": len(rows),
                          "meaning_model": getattr(embedder, "model", None) if meaning else None}
@@ -303,8 +310,10 @@ def store_labels(cx, t, payload: dict, obj: dict, model: str) -> tuple[bool, lis
     errors: list[str] = []
     rows = []
     seen = set()
+    from .tasks import doc_span
+
     base = cx.execute("SELECT start, page FROM passages WHERE passage_id=?", (payload["passage_id"],)).fetchone()
-    p_start, p_page = (base["start"], base["page"]) if base else (None, payload.get("page"))
+    p_page = base["page"] if base else payload.get("page")
     for i, lb in enumerate(out.labels):
         code = fw.normalise(lb.code)
         if not code:
@@ -319,15 +328,15 @@ def store_labels(cx, t, payload: dict, obj: dict, model: str) -> tuple[bool, lis
             errors.append(f"labels[{i}]: quote not found in the passage: {lb.quote[:80]!r}")
             continue
         direction = lb.direction if payload.get("directional") else "not_stated"
+        # 0.15: a passage of an earlier reading (a task kept by Read with the new reader) is placed in the new text
+        start, end = doc_span(cx, payload["passage_id"], text, hit[0], hit[1])
         rows.append((label_id(fw.name, payload["passage_id"], code, "model"), payload["passage_id"], payload["doc_id"],
-                     fw.name, code, lb.relevance, direction, lb.confidence, text[hit[0]:hit[1]],
-                     (p_start + hit[0]) if p_start is not None else None,
-                     (p_start + hit[1]) if p_start is not None else None, p_page, "model", model, t["prompt_version"],
-                     lb.reason, None, None, None, t["task_id"], now()))
+                     fw.name, code, lb.relevance, direction, lb.confidence, text[hit[0]:hit[1]], start, end, p_page,
+                     "model", model, t["prompt_version"], lb.reason, None, None, None, t["task_id"], now()))
     if errors:
         return False, errors
     cx.execute("DELETE FROM labels WHERE task_id=? AND source='model'", (t["task_id"],))
-    cx.executemany("INSERT OR REPLACE INTO labels VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    cx.executemany(_INSERT_LABEL, [(*r, __version__) for r in rows])
     return True, []
 
 
@@ -647,10 +656,10 @@ def add_label(ws: Workspace, framework: str, passage_id: str, code: str, quote: 
         q, s, e = p["text"][hit[0]:hit[1]], p["start"] + hit[0], p["start"] + hit[1]
     lid = label_id(fw.name, passage_id, c, "person")
     with ws.connect() as cx:
-        cx.execute("INSERT OR REPLACE INTO labels VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        cx.execute(_INSERT_LABEL,
                    (lid, passage_id, p["doc_id"], fw.name, c, relevance, direction if fw.directional else "not_stated",
                     1.0, q, s, e, p["page"], "person", None, None, (note or "").strip()[:200] or "added by you", None,
-                    None, None, None, now()))
+                    None, None, None, now(), __version__))
     return lid
 
 

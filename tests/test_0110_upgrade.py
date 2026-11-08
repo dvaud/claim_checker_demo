@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
@@ -141,6 +142,7 @@ def test_the_headless_run_is_closed(env, monkeypatch):
     assert "--disallowedTools" in seen["args"]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the stand-in `claude` is a /bin/sh script")
 def test_the_account_kind_from_claude_code(env, monkeypatch, tmp_path):
     """When `claude auth status` says the plan, the panel shows it (the stand-in says nothing: the person picks)."""
     from enlens_claims import claude_setup

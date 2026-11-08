@@ -33,8 +33,10 @@ pip install -e '.[dev,fast,connector,anthropic,pdfminer,ocr]'   # every extra, s
 python -m pytest -q -rs
 ```
 
-The release workflow installs only `.[dev,connector,fast]`, so the tests that need `anthropic` or the OCR extra are
-skipped there: run the whole suite on your own computer before a release. Tests never touch a real Claude Code, uv or
+`.github/workflows/tests.yml` runs the suite on every push to `main` and every pull request, on Linux (Python 3.10
+and 3.13), macOS and Windows (0.15; the macOS and Windows jobs are advisory until the suite passes there), with the extras `dev,connector,fast,pdfminer` and a quick `ruff` check for syntax
+errors and undefined names; the release workflow runs it again on the tag. Neither installs `anthropic` or the OCR
+extra, so the tests that need them are skipped there: run the whole suite on your own computer before a release. Tests never touch a real Claude Code, uv or
 the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere and gives every test its own `ENLENS_HOME`;
 `tests/fake_claude_cli.py`, `tests/fake_claude_installer.py`, `tests/fake_servers.py` and `tests/fake_zotero.py` stand
 in for the real programs. A release's tests go in a new file `tests/test_<X>_<Y>_<Z>_<topic>.py`; older files keep
@@ -52,6 +54,7 @@ their names. [docs/USER_TESTS.md](USER_TESTS.md) has the first-time user tests b
 | `--claude-cli`, `--claude-install` | a stand-in `claude` program the app sets up and starts (0.9); Claude Code still to install and sign in to (0.10) |
 | `--no-tesseract` | as if Tesseract were not installed (0.10) |
 | `--mixed` | documents with each AI setting, the fake local model reading the restricted one (0.11) |
+| `--reading` | a project *Reading* with the PDFs of known text of `enlens measure`, one of them read by the reader of 0.14 and with a check on it (0.15: the reading view, *Read with the new reader*) |
 | `--zotero`, `--update`, `--ollama`, `--low-memory` | a stand-in Zotero (0.13), a stand-in newer version (0.13.1), a local model still to get (0.13.7), too little memory for it (0.13.11) |
 
 `--home FOLDER` keeps its data apart and `--port` sets the port. Look at every page you touched in the light and dark
@@ -67,7 +70,10 @@ themes and at 390 px wide.
 | `llm.py` | Ollama, OpenAI-compatible local servers (LM Studio, llama.cpp…), server detection, Claude API, offline baseline |
 | `tasks.py`, `schema.py`, `prompts.py` | Model tasks, validation with the quote check, versioned prompts |
 | `access.py` | Who may read each document with AI (0.11): the settings, the guard on every task, which model reads what, the ledger of what was sent to Claude, the cap |
-| `ingest.py`, `textutil.py`, `store.py` | Documents and passages with page offsets, layout (paragraphs, headings), local OCR, text normalisation, the workspace database |
+| `ingest.py`, `textutil.py`, `store.py` | Documents and passages with page offsets, layout (paragraphs, headings), local OCR, text normalisation, the workspace database; `ingest.read_document` reads a file with any reader and stores nothing |
+| `reader.py` | The reader of 0.15 (reader 2): lines with their boxes (pdfminer), page furniture, columns and reading order, blocks and their kinds, tables, text repair, passages that never mix what is read with what is left out, the reading report, a person's Restore and Leave out (`apply_choices`) |
+| `reread.py` | *Read with the new reader* (0.15): a document of a project read again by the new reader, its results moved by their quotes, all or nothing |
+| `measure.py`, `pdfmake.py` | `enlens measure` (0.15): how well each reader reads PDFs of known text (made by `pdfmake`, a small PDF writer), quotes that still find their place, timings, determinism; the validation report of each release |
 | `bundle.py` | A whole project as one zip (export and import); every project and the settings, to move to another computer (0.10) |
 | `sync.py` | Shared projects (0.14): a colleague's project zip merged into your copy (newer versions, sync clashes, removed items, the stricter AI setting) |
 | `people.py` | Shared projects (0.14): who you are to colleagues, each person's own judgements and reviews, and how often two people agreed |
@@ -94,7 +100,8 @@ Outside `src/enlens_claims/`: `install/install.sh` and `install/install.ps1` are
 `install/Install-ENLENS-Windows.cmd` is the head of the Windows file to double-click (0.14.5: `tools/release.py` puts
 `install.ps1` below it, so keep both plain ASCII, and no `#>` in the head, which PowerShell reads as one comment);
 `.github/workflows/release.yml` turns a tag `vX.Y.Z` into a draft GitHub Release with `tools/release.py` (below);
-`tools/pdf_to_text.py` turns a folder of PDFs into page-preserving text files; `tools/eval_second_pass.py` measures the
+`tools/pdf_to_text.py` turns a folder of PDFs into page-preserving text files; `tools/arxiv_truth.py` downloads a fixed
+list of open-access arXiv papers with the text of their LaTeX source, for `enlens measure --folder`; `tools/eval_second_pass.py` measures the
 second sorting pass on the pilot; `tools/make_icons.py` draws the icon files. The green hydrogen pilot (workspace,
 report, run notes) is in `pilot/`. The app's HTTP API is in [API.md](API.md); building an app on ENLENS without
 editing its files is in [EXTENDING.md](EXTENDING.md).
@@ -111,6 +118,56 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
 - The `CHANGELOG.md` entry (what changed and why, the defects fixed, the tests added, and *Not yet done*) becomes the
   release notes. Update `docs/MANUAL.md` where behaviour changed and `docs/API.md` for new routes.
 - Update the README as the next section says.
+- **Release candidates (0.15).** The roadmap gives every minor release a release candidate, in use for at least a
+  week: `0.15.0rc1` in `pyproject.toml`, `__init__.py` and a `## 0.15.0rc1` changelog entry, tagged `v0.15.0rc1`.
+  The workflow drafts it as a GitHub pre-release, which the install line and the app's *Update* never take (GitHub's
+  *latest* is the latest full release); its notes give install lines with its own files. A copy of a candidate is
+  offered the release when it comes (`update.version_tuple` puts `0.15.0rc1` after every earlier release and before
+  `0.15.0`). A git copy on `main` gets a candidate's commit as it gets every commit. When the release comes, its
+  changelog entry replaces the candidates' entries.
+- **Withdrawn numbers.** `update.WITHDRAWN` (0.15.1, withdrawn in 0.13.6; 0.14.0 and 0.15.0 left it when they were
+  released) counts a running copy of those numbers as older only while this version is below them.
+- **The validation report (0.15).** The release workflow runs `enlens measure --report` and attaches
+  `validation-report.md` to the release: how well each reader reads the documents of known text, and that reading is
+  the same twice. The half that needs AI comes with 0.16.
+
+## Rolling back a release
+
+A release turns out bad (it loses something, or will not start):
+
+1. Mark it as a pre-release on GitHub: `gh release edit vX.Y.Z --prerelease`. GitHub's *latest* is then the release
+   before it, so the one-line install (`…/releases/latest/download/install.sh`) installs that one again, and the
+   stable *Update* button of everyone who has not yet updated skips the bad one. Nobody is moved backwards: people
+   who already have it keep it until the fix comes. (People on *Try new versions early* still see it, as they see
+   any pre-release.)
+2. Write the fix as a patch release (`X.Y.Z+1`), with its own changelog entry that says what went wrong. It becomes
+   the latest release as soon as it is published, and everyone is offered it.
+3. Never delete a published release or its tag: copies, notes and links point to them. Marking is enough.
+
+Someone who wants to go back by hand uses the install line of the earlier release from its release page, which has
+its own files: `https://github.com/dvaud/claim_checker_demo/releases/download/vX.Y.Z/install.sh` (or `install.ps1` on
+Windows). The projects in `~/enlens` are not touched by an install, so going back loses nothing; a project shared with
+colleagues can show sync clashes after going back (both versions are kept).
+
+## Changes that alter results
+
+Researchers compare results across versions, so a change that can give other answers for the same documents is
+recorded and announced:
+
+- **The reader.** `ingest.READER` numbers the way a file becomes text and passages: 1 is `ingest._build_document_1`
+  (0.5 to 0.14), 2 is `reader.py` (0.15). A change that gives a document other text or passages raises it, and goes
+  in a module of its own. Each document records the reader that read it (`documents.reader`), and documents already
+  in a project are never read again by themselves: only new documents get the new reader, so every quote and
+  judgement in the old ones stays where it is, until a person moves one (`reread.py`). Measure a change with
+  `enlens measure` before and after.
+- **The version on results.** Every AI answer (`results`), run, label, theme run and check records `app_version`.
+  A new kind of result records it too, and writes its rows by column name (a positional `INSERT … VALUES` breaks when
+  a column is added). `app_version` is never part of a sync fingerprint (`sync._HOW`). 0.14 does not know to leave
+  it out: someone who tries a 0.15 candidate on a shared project and goes back to 0.14 gets a sync clash on each check
+  and set of themes made with the candidate (both versions are kept, so nothing is lost). Try a candidate on a project
+  you do not share.
+- **The changelog** lists such a change under *Changes that can alter your results*, and the README's *New in* says
+  **can change results**. A change of that kind is announced in the release notes one minor release ahead.
 
 ## The README
 
@@ -136,8 +193,8 @@ sync (`tools/sync_enlens.py` in Margin) keeps Margin's README and leaves ENLENS'
 5. **New in 0.X**: three to five bullets for the current minor series. Each says what the change does for the
    researcher, and whether it **can change results** (a new parser, prompt, model or rule). A bullet that needs more
    than two lines belongs in the manual.
-6. **How to cite ENLENS**: the `CITATION.cff` entry and the release's DOI. Until those exist (J4 item 1), the
-   repository's address and the version the reader used.
+6. **How to cite ENLENS**: the repository's address and the version the reader used. (ENLENS has no `CITATION.cff`
+   or DOI, by choice.)
 7. **Privacy and your documents**: one paragraph on what stays on the computer, what goes to Anthropic and when, and
    how to turn that off. It links to the privacy statement (J4), or to section 8 of the manual until that exists.
 8. **Documentation**: links to the manual, the methods document (J4, once it exists), the API, `docs/MODEL_CHOICE.md`

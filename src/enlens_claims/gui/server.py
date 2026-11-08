@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import __version__, access, addons, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import sync
+from .. import runs as runs_mod
 from .. import tasks as tasks_mod
 from .. import llm
 from ..llm import BackendError, detect_local
@@ -466,11 +467,14 @@ class App:
 
     def document(self, name: str, doc_id: str, offset: int, limit: int, view: str = "") -> dict:
         ws = self.ws(name)
-        d = ws.query("SELECT doc_id, title, file_title, path, kind, n_pages, n_chars, doi, added_at FROM documents "
-                     "WHERE doc_id=?", (doc_id,))
+        d = ws.query("SELECT doc_id, title, file_title, path, kind, n_pages, n_chars, doi, added_at, "
+                     "COALESCE(reader, 1) AS reader, reading_json FROM documents WHERE doc_id=?", (doc_id,))
         if not d:
             raise ApiError(404, "No such document.")
         out = dict(d[0])
+        # 0.15: how the document was read (the reading report, A5) and whether it has the new reader's blocks
+        out["reading"] = reading_report(ws, doc_id, out.pop("reading_json"), out["reader"])
+        out["new_reader"] = ingest.READER
         out["file_title"] = bibliography.file_title(d[0])  # 0.13.3: the title read from the file, if replaced
         out["file"] = re.sub(r".*[/\\]", "", out.pop("path") or "")
         out["total_passages"] = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE doc_id=?", (doc_id,)) or 0)
@@ -482,6 +486,15 @@ class App:
         out["bib"] = bibliography.doc_citations(ws).get(doc_id)  # 0.13
         info = self.original(ws, doc_id)
         out["original"] = {"available": info["available"], "reason": info["reason"], "name": info["name"]}
+        out["page_images"] = bool(info["available"] and out["kind"] == "pdf" and page_images_available())
+        out["tables"] = int(ws.scalar("SELECT COUNT(*) FROM doc_tables WHERE doc_id=?", (doc_id,)) or 0)
+        out["paragraphs"] = int(ws.scalar("SELECT COUNT(*) FROM paragraphs WHERE doc_id=?", (doc_id,)) or 0)
+        # 0.15: as it stands now (Restore and Leave out change it): what is left out, by kind, and the passages read
+        out["left_out"] = {r[0]: r[1] for r in ws.query("SELECT kind, COUNT(*) FROM blocks WHERE doc_id=? AND included=0 "
+                                                         "GROUP BY kind ORDER BY COUNT(*) DESC", (doc_id,))}
+        out["passages_read"] = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE doc_id=? AND section='body'",
+                                             (doc_id,)) or 0)
+        out["passages_all"] = out["total_passages"]
         if view == "blocks":  # the document as a reader cites it: by page, or by paragraph for files without pages
             out["blocks"], out["total_blocks"] = self.blocks(ws, doc_id, offset, limit)
         return out
@@ -501,6 +514,8 @@ class App:
         paragraph 3"), by page for older ones, by paragraph for files without pages. Each block lists its headings
         (offsets local to the block's text), to show them as headings."""
         text = ws.scalar("SELECT text FROM documents WHERE doc_id=?", (doc_id,)) or ""
+        if ws.scalar("SELECT 1 FROM blocks WHERE doc_id=? LIMIT 1", (doc_id,)):
+            return App.reading_blocks(ws, doc_id, text, offset, limit)
         pages = ws.query("SELECT page, start, end FROM pages WHERE doc_id=? ORDER BY page", (doc_id,))
         paras = ws.query("SELECT start, page FROM paragraphs WHERE doc_id=? ORDER BY n", (doc_id,))
         heads = [(r["start"], r["end"]) for r in ws.query("SELECT start, end FROM headings WHERE doc_id=? ORDER BY start",
@@ -537,6 +552,82 @@ class App:
             out.append({"label": lab, "n": n, "page": pg, "paragraph": pa, "start": s0 + lead, "end": s0 + lead + len(body),
                         "text": body, "headings": hs})
         return out, len(spans)
+
+    @staticmethod
+    def reading_blocks(ws, doc_id: str, text: str, offset: int, limit: int) -> tuple[list[dict], int]:
+        """0.15 (A4): a document read by the new reader, block by block in reading order: what each block is
+        (a heading, a paragraph, a caption, a table, a running head...), whether searches, codes, themes and checks
+        read it, a table's rows, and its box on the page. Paragraphs are numbered per page as quotes are cited."""
+        from .. import reader as reader2
+
+        rows = ws.query("SELECT n, page, start, end, kind, included, x0, y0, x1, y1 FROM blocks WHERE doc_id=? "
+                        "ORDER BY n", (doc_id,))
+        tables = {r["block"]: r for r in ws.query("SELECT n, block, caption, rows_json FROM doc_tables WHERE doc_id=?",
+                                                  (doc_id,))}
+        paras: dict[int | None, list[int]] = {}
+        for r in ws.query("SELECT start, page FROM paragraphs WHERE doc_id=? ORDER BY start", (doc_id,)):
+            paras.setdefault(r["page"], []).append(r["start"])
+        chosen = rows[max(0, offset):max(0, offset) + max(1, min(limit, 1000))]
+        out = []
+        for r in chosen:
+            kind, pg = r["kind"], r["page"]
+            starts = paras.get(pg, [])
+            para = sum(1 for s0 in starts if s0 <= r["start"]) if kind in reader2.INCLUDED else None
+            joined = False
+            if r["start"] in starts:  # a paragraph begins here
+                label = f"Page {pg}, paragraph {para}" if pg else f"Paragraph {para}"
+            elif kind in reader2.INCLUDED:
+                label, joined = "", True  # the paragraph above goes on (under its heading, or across a column)
+            elif kind == "furniture":
+                label = reader2.furniture_label(text[r["start"]:r["end"]])
+            else:
+                label = reader2.KIND_LABEL.get(kind) or reader2.KIND_TEXT.get(kind, kind).capitalize()
+            b = {"n": r["n"], "label": label, "page": pg, "paragraph": para, "kind": kind,
+                 "kind_text": reader2.KIND_TEXT.get(kind, kind), "included": bool(r["included"]),
+                 "start": r["start"], "end": r["end"], "text": text[r["start"]:r["end"]],
+                 "headings": [{"at": 0, "end": r["end"] - r["start"], "text": text[r["start"]:r["end"]]}]
+                 if kind in ("heading", "title") else [],
+                 "changed": bool(r["included"]) != (kind in reader2.INCLUDED), "joined": joined,
+                 "box": [r["x0"], r["y0"], r["x1"], r["y1"]] if r["x0"] is not None else None}
+            t = tables.get(r["n"])
+            if t is not None:
+                b["table"] = {"n": t["n"], "caption": t["caption"], "rows": json.loads(t["rows_json"] or "[]")}
+            out.append(b)
+        return out, len(rows)
+
+    def set_block(self, name: str, doc_id: str, n: int, included: bool) -> dict:
+        """0.15 (A4): *Restore* or *Leave out* a block. Blocks that share a passage (a heading and its paragraph,
+        short paragraphs put together) go together; the choice is kept by the blocks' text, so it holds when the
+        document is read again."""
+        from .. import people
+        from .. import reader as reader2
+
+        ws = self.ws(name)
+        with ws.connect() as cx:
+            text = cx.execute("SELECT text FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
+            row = cx.execute("SELECT start, end FROM blocks WHERE doc_id=? AND n=?", (doc_id, n)).fetchone()
+            if not text or not row:
+                raise ApiError(404, "No such block in this document.")
+            text = text[0]
+            a, z = row
+            # the passages this block is in, and every block in those passages
+            ps = cx.execute("SELECT start, end FROM passages WHERE doc_id=? AND start < ? AND end > ?",
+                            (doc_id, z, a)).fetchall()
+            lo, hi = min([a] + [p[0] for p in ps]), max([z] + [p[1] for p in ps])
+            group = cx.execute("SELECT n, start, end, kind FROM blocks WHERE doc_id=? AND start < ? AND end > ? "
+                               "ORDER BY n", (doc_id, hi, lo)).fetchall()
+            for gn, ga, gz, kind in group:
+                fp = reader2.block_fp(text[ga:gz])
+                if bool(included) == (kind in reader2.INCLUDED):
+                    cx.execute("DELETE FROM block_choices WHERE doc_id=? AND fp=?", (doc_id, fp))
+                else:
+                    cx.execute("INSERT OR REPLACE INTO block_choices(doc_id, fp, included, kind, person_id, at) "
+                               "VALUES (?,?,?,?,?,?)", (doc_id, fp, 1 if included else 0, kind, people.me(), _now()))
+            reader2.apply_choices(cx, doc_id)
+            ws.bump_corpus(cx)
+        blocks, _total = App.reading_blocks(ws, doc_id, text, 0, 100000)
+        mine = {g[0] for g in group}
+        return {"blocks": [b for b in blocks if b["n"] in mine], "together": len(mine)}
 
     def hypotheses(self, name: str, q: dict) -> dict:
         ws = self.ws(name)
@@ -1095,6 +1186,36 @@ class App:
         except (ValueError, BackendError) as e:
             stats["codes_error"] = str(e)
 
+    def start_new_reader(self, name: str, doc_id: str, person: str) -> Job:
+        """0.15 (A0): a document moved to the new reader, then what adding a document does: its search by meaning, the
+        glossary and the codebook's keyword pass. The move itself is one transaction (reread.move)."""
+        from .. import reread
+
+        ws = self.ws(name)
+        s = self.settings()
+        title = ws.scalar("SELECT title FROM documents WHERE doc_id=?", (doc_id,)) or "a document"
+
+        def run(job: Job):
+            job.progress = {"done": 0, "total": 0, "file": title, "phase": "reading"}
+            try:
+                report = reread.move(ws, doc_id, person)
+            except ValueError as e:  # said in words for a researcher; nothing changed
+                raise ApiError(409, str(e)) from None
+            stats = {"report": report}
+            emb = home.make_embedder(s)
+            if emb is not None and not job.cancel.is_set():
+                job.progress = {"done": 0, "total": 0, "file": "", "phase": "embedding"}
+                try:
+                    stats["semantic_index"] = embed.build(ws, emb, progress=lambda d, n: job.progress.update(done=d, total=n),
+                                                          should_stop=job.cancel.is_set)
+                except BackendError as e:
+                    stats["semantic_index_error"] = str(e)
+            if not job.cancel.is_set():
+                self._after_adding(ws, job, stats, [doc_id], s)
+            return stats
+
+        return self.jobs.start("reread", f"Reading “{title[:60]}” with the new reader", name, run, uses_model=False)
+
     def start_index(self, name: str) -> Job:
         ws = self.ws(name)
         emb = home.make_embedder(self.settings())
@@ -1201,6 +1322,8 @@ class App:
             "references": n("SELECT COUNT(DISTINCT doc_id) FROM mentions"),
             "hypotheses": n("SELECT COUNT(*) FROM hypotheses"),
             "waiting": (self._queue_summary(name) or {}).get("waiting", 0),
+            # 0.15 (J4.2): which ENLENS version made what, so the page can say what came from an older one
+            "made_with": runs_mod.made_with(ws),
         }
         out.update(addons.overview(ws, set(out)))  # 0.13.6: an add-on's counts, never in place of ENLENS's
         return out
@@ -1682,6 +1805,62 @@ def _float(q: dict, key: str, default: float) -> float:
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
+def _cell(text: str):
+    """A table cell for Excel: a number when it reads as one ("1.9", "34%" stays text), else the text."""
+    t = (text or "").strip()
+    if re.fullmatch(r"-?\d+(\.\d+)?", t):
+        try:
+            return float(t) if "." in t else int(t)
+        except ValueError:
+            return t
+    return t
+
+
+def reading_report(ws, doc_id: str, raw: str | None, reader: int) -> dict:
+    """0.15 (A5): how a document was read: the new reader's report, or what is known about an older reading."""
+    try:
+        rep = json.loads(raw) if raw else {}
+    except ValueError:
+        rep = {}
+    if rep:
+        return rep
+    n = ws.query("SELECT n_pages, ocr_pages, scanned_pages FROM documents WHERE doc_id=?", (doc_id,))[0]
+    sec = {r[0]: r[1] for r in ws.query("SELECT section, COUNT(*) FROM passages WHERE doc_id=? GROUP BY section",
+                                        (doc_id,))}
+    return {"reader": reader, "older": True, "pages": n["n_pages"], "ocr_pages": n["ocr_pages"] or 0,
+            "scanned_pages": n["scanned_pages"] or 0, "passages": sum(sec.values()), "body_passages": sec.get("body", 0),
+            "unreadable_passages": sec.get("unreadable", 0), "warnings": [], "quality": None}
+
+
+_PDFIUM_LOCK = threading.Lock()  # pdfium may be used by one thread at a time
+
+
+def page_images_available() -> bool:
+    try:
+        import PIL  # noqa: F401
+        import pypdfium2  # noqa: F401
+    except Exception:  # noqa: BLE001 - missing or broken: no pictures of pages
+        return False
+    return True
+
+
+def render_page(path: Path, page: int, scale: float = 1.5) -> bytes | None:
+    """One page of a PDF as PNG bytes (1-based page number), or None when there is no such page."""
+    import pypdfium2 as pdfium
+
+    with _PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            if not 1 <= page <= len(pdf):
+                return None
+            img = pdf[page - 1].render(scale=scale).to_pil()
+            buf = io.BytesIO()
+            img.save(buf, "PNG", optimize=True)
+            return buf.getvalue()
+        finally:
+            pdf.close()
+
+
 def _filename(stem: str, ext: str) -> str:
     """A readable file name: the words of the stem, without characters file systems refuse."""
     clean = re.sub(r'[\x00-\x1f<>:"/\\|?*]+', " ", stem)
@@ -1745,6 +1924,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", r"/api/restart", "post_restart"),
     ("GET", r"/api/update", "get_update"),
     ("POST", r"/api/update", "post_update"),
+    ("GET", r"/api/technical-details", "get_technical_details"),
     ("GET", r"/api/servers", "get_servers"),
     ("POST", r"/api/servers/test", "post_test"),
     ("POST", r"/api/servers/pull", "post_pull"),
@@ -1764,6 +1944,11 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", rf"/api/projects/{P}/documents/{P}", "get_document"),
     ("DELETE", rf"/api/projects/{P}/documents/{P}", "delete_document"),
     ("GET", rf"/api/projects/{P}/documents/{P}/file", "get_document_file"),
+    ("PUT", rf"/api/projects/{P}/documents/{P}/blocks/{P}", "put_block"),
+    ("GET", rf"/api/projects/{P}/documents/{P}/reread", "get_reread"),
+    ("POST", rf"/api/projects/{P}/documents/{P}/reread", "post_reread_document"),
+    ("GET", rf"/api/projects/{P}/documents/{P}/pages/{P}\.png", "get_page_image"),
+    ("GET", rf"/api/projects/{P}/documents/{P}/tables/{P}\.xlsx", "get_table_export"),
     ("POST", rf"/api/projects/{P}/uploads", "post_upload"),
     ("POST", rf"/api/projects/{P}/ingest", "post_ingest"),
     ("POST", rf"/api/projects/{P}/index", "post_index"),
@@ -1868,6 +2053,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", rf"/api/projects/{P}/bibliography/to-find\.(csv|xlsx)", "get_bibliography_export"),
 ]]
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
+             "get_page_image",  # 0.15: a picture of a page, in an <img>
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
              "get_ai_sent_csv", "get_bibliography_export"}
 # (these may take the token as ?token=, for plain links)
@@ -2085,6 +2271,8 @@ class Handler(BaseHTTPRequestHandler):
     def put_settings(self, q):
         body = self._body()
         s = home.update_settings(body)
+        if "update_channel" in body:
+            self.app.update_seen = None  # 0.15: another channel, another answer: the next look asks again
         return {"settings": s, "backend_label": home.backend_label(s)}
 
     def post_key(self, q):
@@ -2176,7 +2364,8 @@ class Handler(BaseHTTPRequestHandler):
 
         installed = _installed_version()
         if upd.version_tuple(installed) > upd.version_tuple(__version__):
-            return {"available": True, "on_disk": True, "version": __version__, "latest": installed}
+            return {"available": True, "on_disk": True, "version": __version__, "latest": installed,
+                    "candidate": upd.is_candidate(installed)}
         if self.app.updating.locked():  # 0.14.3: no `git fetch` beside the update's own git commands (lock files)
             seen = self.app.update_seen
             if seen and "answer" in seen:
@@ -2192,13 +2381,21 @@ class Handler(BaseHTTPRequestHandler):
                     seen = {"at": time.time(), "answer": {
                         "available": bool(waiting), "on_disk": False, "version": __version__,
                         "latest": waiting if isinstance(waiting, str) else None,
-                        "changes": waiting if isinstance(waiting, int) else None}}
+                        "changes": waiting if isinstance(waiting, int) else None,
+                        "candidate": isinstance(waiting, str) and upd.is_candidate(waiting)}}
                 except upd.UpdateError as e:
                     seen = {"at": time.time(), "error": str(e)}
                 self.app.update_seen = seen
         if "error" in seen:
             raise ApiError(409, seen["error"])
         return dict(seen["answer"])
+
+    def get_technical_details(self, q):
+        """0.15: `{"text": "..."}`, a short block for a problem report: version, how installed, system, Python, AI
+        route, --local-only, update channel. No path, project or document name, user name or key."""
+        from .. import installation
+
+        return {"text": installation.technical_details()}
 
     def post_update(self, q):
         """0.13.1, "Update and restart": install the newest ENLENS the way this one was installed (update.py), then
@@ -2390,6 +2587,89 @@ class Handler(BaseHTTPRequestHandler):
 
     def delete_document(self, name, doc_id, q):
         return {"removed": self.app.ws(name).remove_document(doc_id)}
+
+    # -- 0.15: the reading view (A4) -------------------------------------------------------------------------------
+    def put_block(self, name, doc_id, n, q):
+        body = self._body()
+        if not isinstance(body.get("included"), bool):
+            raise ApiError(400, "included must be true or false.")
+        try:
+            num = int(n)
+        except ValueError:
+            raise ApiError(404, "No such block in this document.") from None
+        return self.app.set_block(name, doc_id, num, body["included"])
+
+    def get_reread(self, name, doc_id, q):
+        """0.15 (A0): what *Read with the new reader* would do to this document, without doing it."""
+        from .. import reread
+
+        ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+            raise ApiError(404, "No such document.")
+        return reread.preview(ws, doc_id)  # {"ok": False, "reason"} when it cannot be done now
+
+    def post_reread_document(self, name, doc_id, q):
+        """0.15 (A0): read the document with the new reader and move its results with it (all or nothing)."""
+        from .. import people, reread
+
+        ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+            raise ApiError(404, "No such document.")
+        ok = reread.check(ws, doc_id)
+        if not ok.get("ok"):
+            raise ApiError(409, ok.get("reason") or "This document cannot be read again now.")
+        busy = [j for j in self.app.jobs.jobs.values() if j.project == name and j.state in ("queued", "running")]
+        if busy:
+            raise ApiError(409, f"Wait until “{busy[0].title}” has finished in this project, then read the document "
+                                "with the new reader.")
+        return {"job": self.app.start_new_reader(name, doc_id, people.me()).view()}
+
+    def get_page_image(self, name, doc_id, n, q):
+        """The page of the original PDF as a picture (pypdfium2, from the OCR extra), to set beside the text."""
+        ws = self.app.ws(name)
+        info = self.app.original(ws, doc_id)
+        if not info["available"] or (info.get("kind") or "") != "pdf":
+            raise ApiError(404, info.get("reason") or "The original PDF is not available.")
+        if not page_images_available():
+            raise ApiError(404, "Pictures of pages need the OCR extra (pypdfium2), which is not installed.")
+        try:
+            page = int(n)
+        except ValueError:
+            raise ApiError(404, "No such page.") from None
+        png = render_page(Path(info["path"]), page, min(3.0, max(0.5, _float(q, "scale", 1.5))))
+        if png is None:
+            raise ApiError(404, "No such page.")
+        return self._send(200, png, "image/png", {"Cache-Control": "private, max-age=3600"})
+
+    def get_table_export(self, name, doc_id, n, q):
+        """A table found in a document, for Excel: its caption, then its rows of cells."""
+        ws = self.app.ws(name)
+        try:
+            n = int(n)
+        except ValueError:
+            raise ApiError(404, "No such table in this document.") from None
+        row = ws.query("SELECT t.caption, t.rows_json, t.page, d.title FROM doc_tables t JOIN documents d "
+                       "ON d.doc_id=t.doc_id WHERE t.doc_id=? AND t.n=?", (doc_id, n))
+        if not row:
+            raise ApiError(404, "No such table in this document.")
+        r = row[0]
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        sh = wb.active
+        sh.title = f"Table {n}"[:31]
+        sh.append([r["caption"] or f"Table {n}"])
+        sh["A1"].font = Font(bold=True)
+        sh.append([f"From: {r['title'] or ''}" + (f", page {r['page']}" if r["page"] else "")
+                   + ". Read by ENLENS from the PDF: check the numbers against the original."])
+        sh.append([])
+        for cells in json.loads(r["rows_json"] or "[]"):
+            sh.append([_cell(c) for c in cells])
+        buf = io.BytesIO()
+        wb.save(buf)
+        fname = _filename(f"{(r['title'] or 'Document')[:60]} - table {n}", "xlsx")
+        return self._send(200, buf.getvalue(), XLSX, {"Content-Disposition": _disposition(fname)})
 
     def _body_size(self) -> int:
         """The size of a raw upload, refused above MAX_UPLOAD (the connection is closed: the body is not read)."""

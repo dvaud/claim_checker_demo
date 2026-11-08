@@ -35,6 +35,7 @@ from pathlib import Path
 from . import __version__
 from . import home as core
 from .store import now
+from .update import semver as _semver
 
 PLUGIN = "enlens-run"        # the plugin's name: its root skill is /enlens-run
 MARKETPLACE = "enlens"
@@ -66,7 +67,8 @@ def mcp_config() -> dict:
 
 
 def _fill(text: str) -> str:
-    return text.replace("{{TOOL_PREFIX}}", TOOL_PREFIX).replace("{{VERSION}}", __version__)
+    # 0.15: a release candidate's number in semantic-versioning form (0.15.0-rc.1), which a plugin's version is
+    return text.replace("{{TOOL_PREFIX}}", TOOL_PREFIX).replace("{{VERSION}}", _semver(__version__))
 
 
 def write_plugin(target: Path | None = None) -> Path:
@@ -695,7 +697,7 @@ def stale() -> str:
         written = json.loads((plug / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")).get("version")
     except (OSError, ValueError, AttributeError):
         return "the plugin's version cannot be read"
-    if written != __version__:
+    if written not in (__version__, _semver(__version__)):
         return f"it was written by ENLENS {written}, and this is ENLENS {__version__}"
     return ""
 

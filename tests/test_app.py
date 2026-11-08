@@ -39,7 +39,7 @@ def test_settings_projects_and_key(home, tmp_path):
 
     home.remember_key("sk-test")
     p = home.home() / "credentials.json"
-    assert home.stored_key() == "sk-test" and stat.S_IMODE(os.stat(p).st_mode) == 0o600
+    assert home.stored_key() == "sk-test" and (os.name == "nt" or stat.S_IMODE(os.stat(p).st_mode) == 0o600)  # Windows has no file modes
     home.forget_key()
     assert home.stored_key() == ""
 
@@ -720,7 +720,7 @@ def test_the_icon_starts_one_copy_without_a_terminal_and_quit_stops_it(home, tmp
            "--port", str(port)]
     first = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        for _ in range(100):
+        for _ in range(600):  # 0.15: up to a minute (a cold start on a CI machine is slow)
             if launcher.running():
                 break
             time.sleep(0.1)

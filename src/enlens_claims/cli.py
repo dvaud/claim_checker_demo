@@ -118,6 +118,18 @@ def _main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init", help="create the workspace folder and database")
+    p = sub.add_parser("measure", help="0.15: how well ENLENS reads documents, in figures, with no AI (a validation "
+                                       "report; reader 1 against reader 2)")
+    p.add_argument("--reader", type=int, nargs="+", metavar="N", help="only these readers (default: all)")
+    p.add_argument("--folder", help="a folder of PDFs with the true text beside each (name.pdf and name.txt) to "
+                                    "measure as well")
+    p.add_argument("--ws", dest="measure_ws", metavar="PROJECT", help="a project folder: do its recorded quotes still "
+                   "find their place in the text each reader makes of the original files? (a copy is used; the "
+                   "project is not changed)")
+    p.add_argument("--timings", action="store_true", help="with --ws: also time reading, searching, the glossary and "
+                   "themes by words, and count the AI tasks waiting")
+    p.add_argument("--json", action="store_true", help="print the figures as JSON instead of the report")
+    p.add_argument("--report", metavar="FILE.md", help="write the report to this file instead of printing it")
     p = sub.add_parser("export-project", help="write the whole project (database, uploads, original files) to one zip")
     p.add_argument("zip")
     p = sub.add_parser("import-project", help="unpack a project zip into the folder given by --ws (new or empty)")
@@ -417,6 +429,17 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
     if a.cmd == "claude-setup":
         return _claude_setup(a)
+    if a.cmd == "measure":
+        from . import measure
+
+        result = measure.run(readers=a.reader, folder=a.folder, project=a.measure_ws, timings=a.timings)
+        text = json.dumps(result, indent=2, ensure_ascii=False, default=str) if a.json else measure.to_markdown(result)
+        if a.report:
+            Path(a.report).write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+            print(f"Report written to {a.report}")
+        else:
+            print(text)
+        return 0
     if a.cmd == "detect":
         from .llm import detect_local
 

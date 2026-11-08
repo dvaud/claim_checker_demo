@@ -151,6 +151,17 @@ CREATE TABLE IF NOT EXISTS sync_removed(kind TEXT, key TEXT, title TEXT, at TEXT
 -- each colleague's work brought in: who, when, and what it changed
 CREATE TABLE IF NOT EXISTS sync_log(log_id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, person_id TEXT,
   report_json TEXT);
+
+-- 0.15 (reader 2, see reader.py): each document's blocks in reading order (a paragraph, a heading, a caption, a table,
+-- a running head...), with what kind each is, whether features read it (included) and its box on the page in points
+-- from the top left (NULL: read without boxes); a table's rows and cells; and a person's corrections (Restore, Leave
+-- out), kept by the block's text so they hold when the document is read again
+CREATE TABLE IF NOT EXISTS blocks(doc_id TEXT, n INT, page INT, start INT, end INT, kind TEXT, included INT,
+  x0 REAL, y0 REAL, x1 REAL, y1 REAL, PRIMARY KEY(doc_id, n));
+CREATE TABLE IF NOT EXISTS doc_tables(doc_id TEXT, n INT, block INT, page INT, start INT, end INT, caption TEXT,
+  rows_json TEXT, PRIMARY KEY(doc_id, n));
+CREATE TABLE IF NOT EXISTS block_choices(doc_id TEXT, fp TEXT, included INT, kind TEXT, person_id TEXT, at TEXT,
+  PRIMARY KEY(doc_id, fp));
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
@@ -261,7 +272,23 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               # 0.14, in this copy)
               ("verifications", "user_by", "TEXT"), ("reviews", "person_id", "TEXT"),
               # 0.14: a fingerprint of a document's text (sync.py: the same file read into other text is another copy)
-              ("documents", "text_fp", "TEXT")]
+              ("documents", "text_fp", "TEXT"),
+              # 0.15 (roadmap J4.2): which reader read a document's text (ingest.READER; documents read before 0.15
+              # get 1, the only reader there was) and the ENLENS version that read it; the ENLENS version behind every
+              # AI answer, run, label, theme run and check (NULL: made before 0.15). Never part of a sync
+              # fingerprint: it says how a result was made, not what it is
+              ("documents", "reader", "INT"), ("documents", "app_version", "TEXT"), ("results", "app_version", "TEXT"),
+              ("runs", "app_version", "TEXT"), ("labels", "app_version", "TEXT"), ("theme_runs", "app_version", "TEXT"),
+              ("hypotheses", "app_version", "TEXT"),
+              # 0.15 (reader 2): the kind of block a passage was made from (reader.KINDS; NULL: read by reader 1), and
+              # the document's reading report (what the reader did, and how well it read; reader.finish_report)
+              ("passages", "block", "TEXT"), ("documents", "reading_json", "TEXT"),
+              # 0.15 (Read with the new reader, reread.py): the fingerprints of the texts a document had before it was
+              # read again (a JSON list, oldest first; sync.text_fp), so a colleague's copy of an earlier reading can
+              # be known as the same document later; and the share of it Claude had read in passages that have no
+              # place in the new reading (0 to 1): their ledger rows name no passage now, and it still counts toward
+              # what Claude has read of it (access.shares)
+              ("documents", "old_fps", "TEXT"), ("documents", "sent_share", "REAL")]
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:
@@ -275,6 +302,9 @@ def _add_columns(cx: sqlite3.Connection, migrations) -> None:
 def _migrate(cx: sqlite3.Connection) -> None:
     """Add columns introduced after a workspace was created, and give checks from 0.4 a hypothesis record."""
     _add_columns(cx, MIGRATIONS)
+    # 0.15: a document without a reader was read before readers were counted, so by the first one (also one that
+    # comes in from a colleague's older ENLENS)
+    cx.execute("UPDATE documents SET reader=1 WHERE reader IS NULL")
     # a 0.4 claim check is a hypothesis with one part (the claim itself); its target was an SDG target
     cx.execute("INSERT OR IGNORE INTO hypotheses(hyp_id, text, framework, code, options_json, decomposed, rationale, model, "
                "created_at) SELECT claim_id, text, CASE WHEN COALESCE(target, '') != '' THEN 'sdg' END, NULLIF(target, ''), "
@@ -474,7 +504,8 @@ class Workspace:
                     self.removed(cx, kind, key, title)
             for t in ("documents", "pages", "paragraphs", "headings", "passages", "embeddings", "doc_refs", "claims",
                       "claim_targets", "evidence", "interactions", "verifications", "labels", "terms", "term_mentions",
-                      "concepts", "concept_terms", "theme_runs", "themes", "theme_members", "mentions", "bib_links"):
+                      "concepts", "concept_terms", "theme_runs", "themes", "theme_members", "mentions", "bib_links",
+                      "blocks", "doc_tables", "block_choices"):
                 out[t] = cx.execute(f"DELETE FROM {t}").rowcount
             kinds = ("('extract','verify','verify_set','expand','check','decompose','reread','second','label','link',"
                      "'theme','resolve')")
@@ -526,6 +557,13 @@ class Workspace:
             out["labels"] = cx.execute("DELETE FROM labels WHERE doc_id=?", (doc_id,)).rowcount
             out["mentions"] = cx.execute("DELETE FROM mentions WHERE doc_id=?", (doc_id,)).rowcount
             cx.execute("DELETE FROM term_mentions WHERE doc_id=?", (doc_id,))
+            for tbl in ("blocks", "doc_tables", "block_choices"):  # 0.15
+                cx.execute(f"DELETE FROM {tbl} WHERE doc_id=?", (doc_id,))
+            # 0.15: answers kept as records when the document moved to the new reader name passages that no longer
+            # exist ("<doc>:r1-0005", reread.tombstone); they go with the document
+            for tbl in ("results", "tasks"):
+                cx.execute(f"DELETE FROM {tbl} WHERE instr(task_id, ?) > 0 AND task_id GLOB ?",
+                           (f"{doc_id}:r", f"*{doc_id}:r[0-9]*-[0-9]*"))
             head = f"resolve:{doc_id}:"
             for tbl in ("results", "tasks"):
                 cx.execute(f"DELETE FROM {tbl} WHERE kind='resolve' AND substr(task_id, 1, ?) = ?", (len(head), head))

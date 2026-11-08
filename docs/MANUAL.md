@@ -478,7 +478,7 @@ against it.
 | Profile | The codes each document addresses, how much and where, with the words or quote and reason behind each | keywords first; the AI confirms |
 | Concepts | A glossary of terms grouped into concepts (abbreviations, wordings, your links); where each appears | optional |
 | Themes | Themes across the documents, by document and by code; rename, merge, move, remove | optional (names) |
-| A document | Codes, key terms, references ("it", "they"), search, a highlighted copy | references only |
+| A document | Codes, key terms, references ("it", "they"), search, a highlighted copy; 0.15: how it was read, the page beside the text, Restore and Leave out | references only |
 
 **Search.** Every place words occur, one line per place with the words before and after (a concordance), with the
 count per document first. *Find* any of the words, all of them in one passage, a phrase, or words near each other
@@ -488,8 +488,8 @@ click. Click a word in a line to add it to the search, Shift-click to make a phr
 before or by the words after. *Words that often appear nearby* lists the words within 2 to 10 words of the places
 found, most often or most typical first (point at one for both figures; in one document or one code, "typical" is measured against that document's or code's own passages). Every line opens the document at its words,
 and its flask button starts a check of what the line says. Download all lines for Excel or as CSV. A *passage* is
-the stretch of text the app reads as one unit, up to about 1,100 characters; the location (page, paragraph) is that
-of the original.
+the stretch of text the app reads as one unit, up to about 1,100 characters (from 0.15 a paragraph: see *How
+documents are read*); the location (page, paragraph) is that of the original.
 
 **Profile.** Which codes of a codebook (the 169 SDG targets by default, the 17 goals, or your own CSV) each document
 addresses, how much and where. When documents are added, the app finds candidate codes in seconds by their
@@ -561,6 +561,71 @@ embedding model, embeddings), for tools that read that format.
 | SciCo clusters, communities and summaries | Themes, named by the AI with checked quotes |
 | `pdf_highlight_post.py` | Highlighted copies of a document, an answer, a column of the evidence map |
 | FlexiConc SQLite | *For FlexiConc / Cross-Doc* on the Projects page, `enlens export-flexiconc` |
+
+### How documents are read (0.15)
+
+Before anything else, ENLENS turns each file into text and cuts the text into passages: what search, codes,
+themes, concepts and checks read. The part that does this is the *reader*. ENLENS 0.15 has a new one (reader 2);
+documents added before 0.15 keep the reading of reader 1 until you move them over (below).
+
+**What the new reader does with a PDF.** It looks at where each line stands on the page (with the `pdfminer` extra,
+which the one-line install has; without it, it reads the PDF's text layer, without columns or tables):
+
+- **Columns** are read one after the other, not across, and a title or abstract set across the page comes first.
+- **What is not the document's own text is set aside**: running heads and footers, page numbers, line numbers in the
+  margin, the words inside charts and diagrams, author names, affiliations, e-mail addresses and dates on the first
+  page (*author and article details*), acknowledgements, funding, conflicts of interest, data availability and
+  licence notes (*end notes*), footnotes, and the reference list. They stay in the document and in a search of all its text, but searches, codes, themes and checks
+  do not read them, so themes no longer form around journal names and checks no longer read a funding note.
+- **Tables are kept as tables**, with their caption, rows and cells; they are left out of the passages (a table read
+  as prose is what made most garbled passages), and each can be downloaded for Excel.
+- **Words are repaired**: a word cut at a line end is joined ("exam-ple" → "example"), a compound keeps its hyphen
+  ("long-term", "non-fiction"), words that ran together are split only where the document itself writes them apart
+  ("ofthe" → "of the"), and ligatures (ﬁ, ﬂ), odd spaces and accents set apart from their letter are put right.
+- **A passage is a paragraph** (long ones are cut into parts of about equal size, short ones put together), and a
+  heading starts a new passage with the text under it. Paragraphs are numbered as quotes are cited: per page in a
+  PDF, a heading with the text under it counting as one; every block between blank lines in a text file.
+
+Word files, web pages and text files are read as before, with the same repairs, their headings and the reference
+list set aside in the same way.
+
+**The reading view.** A document's page shows its text the way the new reader found it: headings, paragraphs,
+captions and tables, a mark where each page begins, and what was set aside folded under *Left out of the text* on
+each page. Point at a block, and under where it is cited comes **Leave out** (searches, codes, themes and checks
+will not read it) or **Restore** (they will); a table also has **Excel**. A heading goes with the text under it, and short paragraphs that share a passage go together. Your
+choice is kept by the block's words, so it holds when the document is read again; *restored by you* or *left out by
+you* stands beside it. Changing what counts makes keyword codes, key terms and themes out of date, as adding a
+document does.
+
+**Reading** (a panel beside the text) says how well the document was read: *Read well*, *Read, with something to
+check* or *Read badly*, with the reasons (pages without text, text recognised from scanned pages, a garbled text
+layer, most of the text set aside), how many pages had columns, what was repaired, the tables found, and how many
+of its passages features read. *Show what was left out in the text* unfolds everything that was set aside. The list
+of documents marks the ones that need a look.
+
+**Page** (beside the text, for PDFs, with the OCR extra) shows the page of the original PDF with every block the
+reader found outlined: solid for what counts, dashed for what was left out. It follows the text as you scroll; click
+an outline to go to that block in the text.
+
+**Read with the new reader.** A document added before 0.15 keeps the reading it has, so every quote and judgement in
+it stays where it is. Its *Reading* panel offers **Read with the new reader**. ENLENS first reads the original file
+again and shows what would happen, changing nothing: how many of your results (a check's grades and your
+judgements, codes and your reviews of them, themes, references) find their place in the new text, and which do not.
+**Move it to the new reader** then does it in one step, or not at all: each result follows its quote to the same
+words in the new text; a check keeps the excerpt it showed; keyword codes, key terms and the document's search index
+are made again; work still waiting for the AI about it is asked again; a set of themes is marked out of date where
+its passages changed. What cannot be placed is kept without a place in the text and listed (its check marks it *no
+place in the new reading*). It needs the original
+file, unchanged, and no task of the document out with Claude Code. In a project shared with colleagues, move a
+document on both copies: until then, a colleague's older reading comes in as a second copy of it.
+
+**`enlens measure`** shows in figures how well ENLENS reads, with no AI: it makes small PDFs whose text it knows (one
+and two columns, running heads, line numbers, front and back matter, a table, footnotes), reads them with each
+reader, and reports the share of the words kept, the share that belong, whether they come in order, words run
+together or broken apart, and leftover boilerplate. `--folder DIR` measures PDFs with a `.txt` of their true text
+beside them; `--ws PROJECT` checks how many of a project's quotes still find their place in each reader's text (on a
+copy: the project is never changed), `--timings` adds how long reading, search, key terms and themes take, and
+`--report FILE.md` writes it as a report. Each release carries this report as `validation-report.md`.
 
 ### The bibliography: Zotero (0.13)
 
@@ -727,7 +792,20 @@ Settings has five tabs, each one page with nothing folded inside another (0.9):
   Claude plan* below); with a local model, the **model for second opinions** and the **context length** (automatic by default, see section
   5) with *Sort the best excerpts again by wording* (off; see the changelog of 0.6.0); **Repeatable results** (the
   seed sent with every request, 42 by default, and a test of whether the server gives the same answer twice); *Test a
-  model before trusting it* (section 5); and where your data is.
+  model before trusting it* (section 5); and where your data is. 0.15: **Which new versions to offer** and **Copy
+  technical details** (below).
+
+**Trying new versions early (0.15).** ENLENS offers full releases only, by default. From 0.16 on, a *release
+candidate* (a try-out of the next version) comes out at least a week before each new version. To be offered candidates, choose *Try new
+versions early* under *Settings → Technical → Which new versions to offer*; *Stable (recommended)* goes back. Try a
+candidate on a project you do not share with colleagues: going back to the stable version can show sync clashes on
+what the candidate made (nothing is lost). A copy installed from git follows its branch and has no such choice.
+
+**Reporting a problem (0.15).** *Settings → Technical → Copy technical details* copies a few lines for a problem
+report: the ENLENS version, how it was installed, the system and Python, the AI route, whether cloud models are
+switched off and the update channel; never a path, a project or document name, or a key. *Report a problem* opens a
+short form on GitHub (a free GitHub account is needed) to paste them in; please paste no text from documents that
+must stay private. A security or privacy problem is reported privately instead: see `SECURITY.md` in the repository.
 
 Old links to a section (`#/settings/second`, `#/settings/calibration`…) open its tab.
 
@@ -1071,6 +1149,7 @@ claimed for 30 minutes), `submit_answers` (each answer quote-checked: stored, or
 | second_opinions | A second model's grade of each excerpt it read again (never used for an answer) |
 | task_claims | 0.8: the batches of queued tasks handed out to Claude Code: who took them, when, model, helper; `tasks.queued`, `claimed_by`, `step`, `again` and `results.route`, `helper`, `step` belong with it |
 | meta | Thresholds used by the pack, and the corpus version (search indexes are rebuilt when it changes) |
+| `reader`, `app_version` | 0.15: `documents.reader` is the reader that read a document's text (1 for every document read before 0.15) and `documents.app_version` the ENLENS version that read it; `app_version` in `results`, `runs`, `labels`, `theme_runs` and `hypotheses` is the version that made each (empty: made before 0.15) |
 | bib_items, bib_links | 0.13: the bibliography's works (title, creators, year, DOI, web address, Zotero link, the files Zotero keeps with their checksums) and which document each is (`status`: `auto` for the same file or DOI, `probable`, `confirmed` or `rejected` by a person; `method`: `file`, `doi`, `title`, `person`); where it came from is in `meta` (`bibliography`); 0.13.3: `documents.file_title` keeps the file's own title while a linked work's title replaces it (`meta` `titles_version` rebuilds the keyword index) |
 | people, judgements | 0.14: the people whose work is in the project (id and name), and each person's own judgement of an excerpt; the one in force is copied to `verifications.user_*`, with `user_by`; `reviews.person_id` says who made a review |
 | sync_seen, sync_copies, sync_removed, sync_log | 0.14: every state of a result, set of themes or codebook that was sent or brought in (its fingerprint); a colleague's version kept beside yours (a sync clash); what was removed here; each colleague's work brought in, with its report. `documents.text_fp` is a fingerprint of a document's text; `meta` `project_uid` says which project a copy belongs to |
@@ -1590,6 +1669,13 @@ defaults are starting points until the runs on the pilot (`enlens acceptance que
 temperature 0); since 0.8 also the route (Claude Code, the Claude API, a local server), the helper, and whether the
 answer came from the stronger model. Claude Code gives no seed and no digest (section 6, *What is recorded*). Every
 Excel download ends with *How these results were made*.
+
+**Results across versions (0.15).** Every answer, codebook label and set of themes also records the ENLENS version
+that made it, each check the version that started it, and each document the *reader* that read its text (the part of ENLENS that turns a file into
+text and passages). *How these results were made* names both. When a project holds results an earlier version made,
+the *Overview* says so in one line under its cards. They stay as they were made: nothing is redone by itself. A new
+reader (0.15) reads only the documents added after the update, so the documents you have keep their text, and every
+quote and judgement in them stays where it is, until you move one to the new reader (*How documents are read*).
 
 ### The SDG pack's models
 

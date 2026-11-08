@@ -15,8 +15,8 @@ export const SECTIONS = {
 export const FEATURES = {
   sources: {
     section: "project", title: "Documents", icon: "book-open", href: "#/sources", ai: "optional",
-    what: "Add your reports, papers and web pages, say who may read each with AI, and open one to read it with its codes, key terms and references.",
-    overview: { section: "explore", order: 99, title: "Read one document", what: "Open a document from the list to see its codes, key terms, what “it” and “they” refer to, and a highlighted copy." },
+    what: "Add your reports, papers and web pages, say who may read each with AI, and open one to read it with its codes, key terms and references, and see how it was read.",
+    overview: { section: "explore", order: 99, title: "Read one document", what: "Open a document from the list to see its codes, key terms, what “it” and “they” refer to, how it was read beside its pages, and a highlighted copy." },
   },
   together: {
     section: "project", title: "Work together", icon: "users", href: "#/projects", ai: "none",

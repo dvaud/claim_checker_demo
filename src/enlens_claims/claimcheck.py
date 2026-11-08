@@ -26,10 +26,11 @@ import json
 import uuid
 from typing import Any, Callable
 
-from . import access, frameworks, routing, schema, tasks
+from . import __version__, access, frameworks, routing, schema, tasks
+from .reread import is_tombstone
 from .search import neighbours, passage_index, rank_passages  # noqa: F401  (re-exported for callers)
 from .store import Workspace, now
-from .textutil import find_selection
+from .textutil import find_quote, find_selection
 
 Progress = Callable[..., None]  # progress(step, message) or progress(step, message, info)
 
@@ -341,8 +342,8 @@ def create_hypothesis(ws: Workspace, text: str, framework: str | None = None, co
         origin, origin_id = "batch", batch_id
     with ws.connect() as cx:
         cx.execute("INSERT INTO hypotheses(hyp_id, text, framework, code, options_json, decomposed, created_at, batch_id, "
-                   "origin, origin_id) VALUES (?,?,?,?,?,0,?,?,?,?)",
-                   (hid, text, fw, code, json.dumps(options or {}), now(), batch_id, origin, origin_id))
+                   "origin, origin_id, app_version) VALUES (?,?,?,?,?,0,?,?,?,?,?)",
+                   (hid, text, fw, code, json.dumps(options or {}), now(), batch_id, origin, origin_id, __version__))
     return hid
 
 
@@ -358,8 +359,9 @@ def new_claim(ws: Workspace, text: str, target: str | None = None, options: dict
     cid = claim_id or _new_id("u")
     with ws.connect() as cx:
         if hyp_id is None:
-            cx.execute("INSERT INTO hypotheses(hyp_id, text, framework, code, options_json, decomposed, created_at) "
-                       "VALUES (?,?,?,?,?,0,?)", (cid, text, fw, code, json.dumps(options or {}), now()))
+            cx.execute("INSERT INTO hypotheses(hyp_id, text, framework, code, options_json, decomposed, created_at, "
+                       "app_version) VALUES (?,?,?,?,?,0,?,?)",
+                       (cid, text, fw, code, json.dumps(options or {}), now(), __version__))
             hyp_id = cid
         cx.execute("INSERT INTO user_claims(claim_id, text, target, options_json, created_at, hyp_id, part, role, framework) "
                    "VALUES (?,?,?,?,?,?,?,?,?)", (cid, text, code, json.dumps(options or {}), now(), hyp_id, part, role, fw))
@@ -1141,7 +1143,9 @@ def _payload(ws: Workspace, cid: str, claim: str, code: str | None, framework: s
     for p in picked:
         item = {"passage_id": p["passage_id"], "doc_id": p["doc_id"], "title": p["title"], "page": p["page"],
                 "text": p["text"], **({"found_by": p["found_by"]} if p.get("found_by") else {}),
-                **({"matched": p["matched"]} if p.get("matched") else {})}
+                **({"matched": p["matched"]} if p.get("matched") else {}),
+                # 0.15: an excerpt kept from an earlier reading, read again: where it is in the document now
+                **({"anchor": p["anchor"]} if p.get("anchor") else {})}
         ctx, ctx_start = context_before(ws, p["passage_id"])  # check-v4: the text before, for refers_to
         if ctx:
             item.update(context=ctx, context_start=ctx_start)
@@ -1528,6 +1532,44 @@ def _reference_locations(ws: Workspace, items: list[dict]) -> None:
                                                   else "")
 
 
+def _in_excerpt(p: dict, quote: str | None) -> tuple[int, int] | None:
+    """Where a quote is in an excerpt as it was shown: where it was when the excerpt was kept (`quotes_at`), else
+    its first place in it."""
+    text = p.get("text") or ""
+    if not quote:
+        return None
+    at = (p.get("quotes_at") or {}).get(quote)
+    if isinstance(at, int) and text[at:at + len(quote)] == quote:
+        return at, at + len(quote)
+    i = text.find(quote)
+    if i >= 0:
+        return i, i + len(quote)
+    hit = find_quote(text, quote)
+    return (hit[0], hit[1]) if hit else None
+
+
+def _place_kept(item: dict, p: dict, v: dict) -> None:
+    """0.15: the highlight of an excerpt kept from an earlier reading of its document (Read with the new reader): in
+    the excerpt as it was shown, at the quote shown (the person's, else the AI's). `doc_start` is where the excerpt
+    would begin for that quote to land on its place in the document now, so `doc_start + quote_start` is the
+    quote's document offset as for any excerpt; a quote with no place in the document now points nowhere (the
+    excerpt is shown as one whose document is gone: `in_corpus` false, `not_placed` true)."""
+    if item["quote_by"] == "you":
+        q, ds = v.get("user_quote"), v.get("user_start")
+    elif item["quote_by"]:
+        q, ds = v.get("quote"), v.get("start")
+    else:
+        return
+    local = _in_excerpt(p, q)
+    if local is None:
+        return
+    item.update(quote_start=local[0], quote_end=local[1])
+    if ds is not None and item["in_corpus"]:
+        item["doc_start"] = ds - local[0]
+    elif item["in_corpus"]:
+        item.update(in_corpus=False, not_placed=True)
+
+
 def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict:
     """One claim's check: status, grades with the quote's position in each passage, search terms, rounds.
 
@@ -1603,6 +1645,9 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     for n, (r_i, p, part) in enumerate(shown, 1):
         v = by_passage.get(p["passage_id"])
         loc = locs.get(p["passage_id"], {})
+        # 0.15: an excerpt kept from an earlier reading of its document (Read with the new reader, reread.py): its text
+        # is the record of what was read, its pointers lead into the document as it reads now
+        earlier = p.get("reader") is not None
         item = {"n": n, "round": r_i, "passage_id": p["passage_id"], "doc_id": p["doc_id"],
                 "title": titles_now[p["doc_id"]] if p["doc_id"] in titles_now else p["title"], "page": p["page"],
                 "location": loc.get("location") or (f"page {p['page']}" if p["page"] else None),
@@ -1612,7 +1657,8 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                 "verdict": None, "ai_verdict": None, "confidence": None, "certainty": "", "user_verdict": None,
                 "user_note": None, "counted": False, "quote": None, "quote_start": None, "quote_end": None,
                 "in_corpus": p["passage_id"] in locs, "reviewed": False, "changed": False, "quote_by": None,
-                "ai_quote": None, "breaks": breaks.get(p["passage_id"], []), "scope_note": None, "ai_history": [],
+                "ai_quote": None, "breaks": (p.get("breaks") or []) if earlier else breaks.get(p["passage_id"], []),
+                "scope_note": None, "ai_history": [],
                 "reread": False, "reread_info": None,
                 # 0.7: the words that found it (F6), and what its quote refers to (F5)
                 "matched": p.get("matched") or [], "refers_to": None, "refers_where": None, "refers_location": None,
@@ -1623,7 +1669,10 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                 "waiting_for_you": False, "judged_by": None, "others": others.get((claim_id, p["passage_id"]), []),
                 # 0.14.3: whether a model's judgement of it is stored (not for an excerpt no AI may read, nor for one
                 # whose part is not answered yet or failed)
-                "ai_read": False, "round_failed": p["passage_id"] in failed, "my_verdict": None}
+                "ai_read": False, "round_failed": p["passage_id"] in failed, "my_verdict": None,
+                # 0.15: the excerpt is the text of an earlier reading of its document (`earlier_reader` read it), and
+                # whether its quote has no place in the document as it reads now (it points nowhere)
+                "earlier_reading": earlier, "earlier_reader": p.get("reader"), "not_placed": False}
         if v:
             ai = v["verdict"] if v["verdict"] != "not_enough_info" else None
             item["ai_read"] = v.get("model") != PERSON
@@ -1657,19 +1706,27 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
                                 refers_start=v.get("refers_start"))
                 elif _opens_with_pronoun(v["quote"]) and (v.get("prompt_version") or "") >= "check-v4":
                     item["reference_missing"] = True  # check-v4 could have said what "it" is, and did not
-                if base is not None and v["start"] is not None:
+                if earlier:
+                    pass  # placed below, in the excerpt as it was shown
+                elif base is not None and v["start"] is not None:
                     item.update(quote_start=v["start"] - base, quote_end=v["end"] - base)
                 elif v["quote"] and v["quote"] in p["text"]:  # the document was removed later: find the quote in the copy
                     s0 = p["text"].index(v["quote"])
                     item.update(quote_start=s0, quote_end=s0 + len(v["quote"]))
             if v.get("user_quote") and v.get("user_verdict"):  # the sentence the person points to
                 item.update(quote=v["user_quote"], quote_by="you")
-                if base is not None and v.get("user_start") is not None:
+                if earlier:
+                    pass
+                elif base is not None and v.get("user_start") is not None:
                     item.update(quote_start=v["user_start"] - base, quote_end=v["user_end"] - base)
                 elif v["user_quote"] in p["text"]:
                     s0 = p["text"].index(v["user_quote"])
                     item.update(quote_start=s0, quote_end=s0 + len(v["user_quote"]))
+            if earlier:
+                _place_kept(item, p, v)
             item["counted"] = bool(item["verdict"]) and (eff["confidence"] or 0) >= thr and counts(v)
+        if earlier and is_tombstone(p["passage_id"]):
+            item["not_placed"] = True  # its quote has no place in the document as it reads now
         so = seconds.get(p["passage_id"])
         item["second"] = ({**so, "agrees": so["verdict"] == item["ai_verdict"]} if so else None)
         item["waiting_for_you"] = item["read_by"] == "you" and not item["user_verdict"]
@@ -2581,7 +2638,7 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
 
     me = people.me()
     with ws.connect() as cx:
-        row = cx.execute("SELECT p.text, p.start FROM verifications v LEFT JOIN passages p ON "
+        row = cx.execute("SELECT p.text, p.start, p.doc_id, p.end FROM verifications v LEFT JOIN passages p ON "
                          "p.passage_id=v.passage_id WHERE v.subject_kind='user_claim' AND v.subject_id=? AND "
                          "v.passage_id=?", (claim_id, passage_id)).fetchone()
         if row is None:
@@ -2599,16 +2656,23 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
                 uq = us = ue = None
             else:
                 text, base = row[0], row[1]
-                if text is None:  # the document was removed later: the excerpt's copy is in the check's record
-                    for t in _check_tasks(ws, claim_id):
-                        for p in json.loads(t["payload_json"])["passages"]:
-                            if p["passage_id"] == passage_id:
-                                text, base = p["text"], None
+                kept = None  # 0.15: an excerpt kept from an earlier reading of its document (Read with the new reader)
+                for t in _check_tasks(ws, claim_id):
+                    for p in json.loads(t["payload_json"])["passages"]:
+                        if p["passage_id"] == passage_id and (text is None or p.get("reader") is not None):
+                            kept = p
+                if kept is not None:  # the sentence is chosen in the excerpt as it was shown, the check's record
+                    text, base = kept["text"], None
                 hit = find_selection(text or "", q)  # 0.14.3: a selection cutting a word is widened to whole words
                 if not hit:
                     raise ValueError("The sentence must be text from this excerpt (select it in the excerpt).")
                 uq = (text or "")[hit[0]:hit[1]]
                 us, ue = (base + hit[0], base + hit[1]) if base is not None else (None, None)
+                if kept is not None and row[0] is not None:  # its place in the document as it reads now, if any
+                    from .reread import find_near
+
+                    us, ue = (find_near(cx, row[2], text, hit[0], hit[1], row[1], row[3], kept.get("anchor"))
+                              or (None, None))
         comment = (note or "").strip()[:2000] or None
         people.record(cx, claim_id, passage_id, me, verdict, comment, None, uq, us, ue)
         people.refresh(cx, [claim_id], me)  # yours is in force; removed, a colleague's counts again (if any)

@@ -50,6 +50,30 @@ export async function renderOverview(view) {
     }
     view.appendChild(grid);
   }
+  // 0.15 (J4.2): a project opened in a newer version says which results came from an older one
+  const older = madeWith(o.made_with);
+  if (older) view.appendChild(older);
+}
+
+const MADE = { checks: ["check", "checks"], theme_runs: ["theme run", "theme runs"], labels: ["codebook label", "codebook labels"],
+  answers: ["AI answer", "AI answers"] };
+
+// Results an earlier ENLENS made, in one quiet line under the cards; nothing when every result is from this version
+function madeWith(m) {
+  if (!m || !m.older) return null;
+  // a check records the version that started it; answers, labels and theme runs the one that made them
+  const parts = (m.results || []).filter((r) => r.older && MADE[r.what])
+    .map((r) => `${plural(r.n, ...MADE[r.what])} ${r.what === "checks" ? "started" : "made"} ${r.app_version ? `with ENLENS ${r.label}` : r.label}`);
+  const docs = (m.documents || []).filter((d) => d.older).reduce((a, d) => a + d.n, 0);
+  if (docs) parts.push(`${plural(docs, "document", "documents")} ${docs === 1 ? "was" : "were"} read by the earlier reader`);
+  if (!parts.length) return null;
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+  const results = parts.length > (docs ? 1 : 0);
+  return h("p", { class: "ov-made-with" }, icon("info", { size: 14 }),
+    h("span", {}, `Made with an earlier version of ENLENS (you have ${m.version}): ${list}. `,
+      results ? "Results stay as they were made; each Excel download names the version behind every answer." : null,
+      // 0.15 (A0): how to move a document to the new reader, with its results
+      docs ? [results ? " " : "", `To read ${docs === 1 ? "it" : "one"} with the new reader, open it in `, h("a", { href: "#/sources" }, "Documents"), " and choose ", h("em", {}, "Reading"), "."] : null));
 }
 
 function card(key, [made, text], href, opts = {}) {

@@ -1,0 +1,30 @@
+name: An idea or a wish
+description: Something ENLENS could do, or do better, for your research.
+title: "Idea: "
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for your idea. Plain words are best; no technical knowledge is needed.
+        Please do not paste text from documents that must stay private.
+  - type: textarea
+    id: wish
+    attributes:
+      label: What would you like ENLENS to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What are you trying to get done?
+      description: The research task behind the wish. It helps to find the best way to do it.
+    validations:
+      required: false
+  - type: textarea
+    id: now
+    attributes:
+      label: How do you do it today?
+      description: For example by hand, in another program, or not at all.
+    validations:
+      required: false

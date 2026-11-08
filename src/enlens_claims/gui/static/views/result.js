@@ -1119,7 +1119,11 @@ export async function renderResult(view, [hypId], query) {
         fact(p.access === "none" ? "its document is marked No AI" : "its document is marked Only a local AI, and no local model is chosen")]);
     } else {
       append(top, [gradeBadge(p.verdict, false)]);
-      if (p.verdict && !p.counted) append(top, [h("span", { class: "ev-fact ev-uncounted-fact", title: [certaintyHelp(p), "It is below your strictness: it counts once you judge it yourself (agreeing or otherwise)."].filter(Boolean).join(" ") }, "Not counted")]);
+      // the reason it does not count: below the strictness, or (0.15: said, not left to contradict the certainty) its
+      // round of reading did not finish
+      const below = !(p.confidence !== null && p.confidence !== undefined && p.confidence >= (App.settings().threshold ?? 0.6));
+      if (p.verdict && !p.counted) append(top, [h("span", { class: "ev-fact ev-uncounted-fact", title: below ? [certaintyHelp(p), "It is below your strictness: it counts once you judge it yourself (agreeing or otherwise)."].filter(Boolean).join(" ")
+        : "The round of reading that gave this judgement did not finish, so the AI's judgements in it do not count. It counts once you judge it yourself (agreeing or otherwise)." }, "Not counted")]);
       if (p.verdict && word) append(top, [fact(`Certainty: ${word}`, { title: certaintyHelp(p) })]);
       else if (!p.verdict && p.waiting_local) append(top, [fact("Waiting for the local model")]);
       else if (p.user_note) append(top, [fact("Your comment", { title: "You wrote a comment on this excerpt but have not judged it: the AI's judgement still counts" })]);
@@ -1151,7 +1155,10 @@ export async function renderResult(view, [hypId], query) {
         const yours = o.filter(([, y]) => y.user_verdict).map(([x, y]) => ` In part ${x.part} you judged it ${y.user_verdict === "not_relevant" ? "not about it" : GRADE_TEXT[y.user_verdict].toLowerCase()}.`).join("");
         return h("span", { class: "page also-in", title: `This excerpt was read for each of these parts; each part judges it on its own.${yours}` }, `\u00a0·\u00a0also in ${o.map(([x]) => `part ${x.part}`).join(" and ")}`);
       })(),
-      !p.in_corpus ? h("span", { class: "warn-chip", title: "This document was removed from the project after the check" }, icon("alert-triangle", { size: 12 }), "document removed since") : null));
+      // 0.15: an excerpt whose words have no place in its document's new reading (Read with the new reader) is kept as
+      // it was shown; its document is still there
+      p.not_placed ? h("span", { class: "warn-chip", title: "The document was read again with the new reader, and these words have no place in its new text (the new reader may have set them aside, as it does with acknowledgements or author details). The excerpt is kept as it was shown." }, icon("alert-triangle", { size: 12 }), "no place in the new reading")
+        : !p.in_corpus ? h("span", { class: "warn-chip", title: "This document was removed from the project after the check" }, icon("alert-triangle", { size: 12 }), "document removed since") : null));
     // a sentence marked before a judgement was chosen is shown, but not saved until the judgement comes
     const sq = secondQuote(p);
     const showSecond = sq && secondShown.has(pendingKey(p, part));

@@ -80,7 +80,7 @@ def test_check_reports_a_newer_release(served, monkeypatch):
     _fake_update(monkeypatch, check={"updated": False, "version": __version__, "waiting": "9.9.0", "message": "…"})
     st, r = a("GET", "/api/update")
     assert st == 200 and r == {"available": True, "on_disk": False, "version": __version__, "latest": "9.9.0",
-                               "changes": None}
+                               "changes": None, "candidate": False}
     assert restarts == []  # a check never restarts
 
 
@@ -196,7 +196,7 @@ def test_a_launched_copy_restarts_in_place(home, tmp_path):  # noqa: F811
             return None  # 0.13.5: a restart began between the two: "not answering yet", not an error
 
     try:
-        assert _wait(lambda: token_now() is not None, timeout=15), "ENLENS did not start"
+        assert _wait(lambda: token_now() is not None, timeout=60), "ENLENS did not start"
         url, token = token_now()
         assert url == f"http://127.0.0.1:{port}"
         assert Api(url, token)("POST", "/api/restart", {})[1]["restarting"] is True

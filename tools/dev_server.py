@@ -93,6 +93,10 @@ def main() -> int:
                     help="0.13.1: Update ENLENS finds a stand-in newer version and restarts the app in this process")
     ap.add_argument("--ollama", nargs="?", const="empty", choices=["empty", "later", "none"],
                     help="0.13.7: a model on this computer chosen, but no model yet (empty), Ollama later, or none")
+    ap.add_argument("--reading", action="store_true",
+                    help="0.15: a project 'Reading' with PDFs of known text (columns, running heads, line numbers, front and "
+                         "back matter, a table, footnotes) read by the new reader, and one read by the old reader with a check "
+                         "on it, to try the reading view and Read with the new reader")
     ap.add_argument("--low-memory", action="store_true",
                     help="0.13.11: too little memory free for the local model (2.7 GB free, 8.1 GB needed)")
     a = ap.parse_args()
@@ -164,6 +168,26 @@ def main() -> int:
         for text, dec in checks:
             claimcheck.check_hypothesis(ws, text, be, chat_model, decompose=dec, embedder=emb)
         home.update_settings({"project": "Demo"})
+    if a.reading and "Reading" not in home.list_projects():
+        from enlens_claims import measure
+
+        folder = home_dir / "reading_sources"
+        folder.mkdir(exist_ok=True)
+        cases = measure.make_known_texts(folder)
+        ws = home.create_project("Reading")
+        old = [c.path for c in cases if c.name.startswith("d_")]
+        reader_now = ingest.READER
+        ingest.READER = 1  # one document as ENLENS 0.14 read it, to move to the new reader
+        try:
+            ingest.ingest(ws, old, ai_access="cloud")
+        finally:
+            ingest.READER = reader_now
+        ingest.ingest(ws, [c.path for c in cases if c.path not in old], ai_access="cloud")
+        emb = home.make_embedder(home.load_settings())
+        embed.build(ws, emb)
+        claimcheck.check_hypothesis(ws, "Coastal residents overestimate how fast their cliffs retreat.",
+                                    OllamaBackend(base_url=fake_url), chat_model, embedder=emb)
+        home.update_settings({"project": "Reading"})
     if a.pilot:
         try:
             home.link_existing(a.pilot, "Pilot")

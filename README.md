@@ -55,30 +55,27 @@ steps for you. Your projects and settings (the `enlens` folder in your home fold
 - **[The SDG and value chain pack](docs/MANUAL.md#9-the-sdg-pack-impact-claims-and-the-value-chain-assessment)**:
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
-## New in 0.14: work on a project together
+## New in 0.15: text you can check, and results you can trace
 
-- **Share a project with a colleague.** Each of you keeps a copy on your own computer and plan, sends your work as a
-  file, and merges the other's with *Bring in a colleague's work*. No server; nothing changes until you bring work in.
-- **Each person's judgements.** A judgement of an excerpt keeps the name of who made it, and yours always count in
-  your copy. **Can change results:** where you made none, a colleague's judgement now counts, marked with their name.
-- **Newer versions come in, clashes keep both, the stricter AI setting wins.** What only your colleague changed is
-  updated in your copy, what you both changed comes in beside yours (*sync clash*), and a document they keep from
-  Claude is kept from Claude in yours too. **Can change results.**
-- **A review of the whole app, fixed** (0.14.4): a local model's summary no longer reaches Claude, a failed check no
-  longer reads "No evidence found", and phrase searches and PDF highlights are right. **Can change results.**
-- **Claude Code works in a box of its own** (0.14.6): it has no tool that can open your files, takes nothing from your
-  own Claude Code set-up, and signs in away from your home folder. **Can change results** slightly: your own Claude
-  Code instructions no longer reach ENLENS's helpers.
+- **A new reader for PDFs.** Two columns are read in order; running heads, page numbers, author details,
+  acknowledgements, footnotes and the reference list are set aside; tables stay tables; words broken over lines are
+  joined. **Can change results** for documents you add from now on; those already in a project keep their reading.
+- **See how each document was read**: its text as the reader found it, what was left out, the PDF page beside it,
+  and a warning when a document read badly. *Restore* or *Leave out* any part (**can change results**).
+- **Read with the new reader**, one document at a time: a preview first, then each quote, judgement and code moves
+  to the same words in the new text. **Can change results** for that document.
+- **Results say which version made them**, and the Overview says which came from an earlier one. *Try new versions
+  early* in Settings gets you release candidates. Neither can change results.
 
-How it works: [working on a project together](docs/MANUAL.md#working-on-a-project-together-014) in the manual. Every
-release, with what was not tested: [CHANGELOG.md](CHANGELOG.md).
+How it works: [how documents are read](docs/MANUAL.md#how-documents-are-read-015) in the manual. Every release, with
+what was not tested: [CHANGELOG.md](CHANGELOG.md).
 
 ## How to cite ENLENS
 
-ENLENS has no `CITATION.cff` or DOI yet. Until it does, cite the repository and name the version you used (it is at
-the top of every *Settings* tab). For version 0.14.0, for example:
+Cite the repository and name the version you used (it is at the top of every *Settings* tab). For version 0.15.0,
+for example:
 
-> ENLENS, version 0.14.0. https://github.com/dvaud/claim_checker_demo
+> ENLENS, version 0.15.0. https://github.com/dvaud/claim_checker_demo
 
 Every Excel download ends with *How these results were made*: the models, their versions and the prompt versions
 behind each answer. It belongs in your methods section or supplementary material.

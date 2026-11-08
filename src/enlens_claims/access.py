@@ -135,10 +135,18 @@ def shares(cx_or_ws, doc_ids: Iterable[str] | None = None) -> dict[str, dict]:
     sent = {r[0]: (int(r[1] or 0), int(r[2] or 0)) for r in q(
         f"SELECT p.doc_id, SUM(LENGTH(p.text)), COUNT(*) FROM passages p JOIN (SELECT DISTINCT passage_id FROM ai_sent "
         f"WHERE doc_id IN ({marks})) s ON s.passage_id=p.passage_id GROUP BY p.doc_id", ids)}
+    # 0.15: a document read again with the new reader (reread.py): the share Claude had read of passages that have
+    # no place in the new reading (their ledger rows name no passage now) still counts, on top of what it reads now
+    try:
+        before = {r[0]: float(r[1]) for r in q(f"SELECT doc_id, sent_share FROM documents WHERE doc_id IN ({marks}) "
+                                               "AND sent_share IS NOT NULL", ids)}
+    except sqlite3.OperationalError:  # a database without the column
+        before = {}
     for d in ids:
         chars = total.get(d, 0)
         sc, n = sent.get(d, (0, 0))
-        out[d] = {"sent_chars": sc, "chars": chars, "passages": n, "share": round(min(1.0, sc / chars), 4) if chars else 0.0}
+        share = (sc / chars if chars else 0.0) + before.get(d, 0.0)
+        out[d] = {"sent_chars": sc, "chars": chars, "passages": n, "share": round(min(1.0, share), 4)}
     return out
 
 
@@ -623,6 +631,11 @@ def record_sent(cx, task_id: str | None, payload: Any, route: str, feature: str 
     if context:
         pids = _with_context(cx, payload, pids)
     docs = doc_of_passages(cx, pids)
+    from .reread import is_tombstone
+
+    for p in pids - set(docs):  # 0.15: an excerpt kept from an earlier reading of its document, by a tombstone id
+        if is_tombstone(p):     # ("<doc_id>:r1-0005", see reread.py): it is still that document's text that leaves
+            docs[p] = p.rsplit(":", 1)[0]
     at = now()
     rows = [(p, docs[p], route, task_id, at, feature) for p in sorted(pids) if p in docs]
     cx.executemany("INSERT INTO ai_sent(passage_id, doc_id, route, task_id, sent_at, feature) VALUES (?,?,?,?,?,?)", rows)

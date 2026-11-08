@@ -1,0 +1,45 @@
+name: Something does not work
+description: ENLENS shows an error, gives a strange result or does not do what you expected.
+title: "Problem: "
+labels: ["problem"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for telling us. You do not need to know GitHub or programming: answer in your own words.
+        Please do not paste text from documents that must stay private.
+  - type: textarea
+    id: did
+    attributes:
+      label: What did you do?
+      description: The steps, as well as you remember them. For example "I added three PDFs and pressed Check a claim."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened instead?
+      description: Any message that appeared, word for word if you can. A screenshot is welcome (hide anything private first).
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Technical details
+      description: If you can, in ENLENS press Settings, then Technical, then the button *Copy technical details*, and paste here. It holds the version, the system and the AI route, and no file names, project names or keys. If that does not work, write the version you see at the top of Settings.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you send
+      options:
+        - label: I have not pasted text from documents that must stay private.
+          required: true

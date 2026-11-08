@@ -51,7 +51,7 @@ _TEXT_COLS = {"text"}  # never rewritten (documents', passages' and hypotheses' 
 LOCAL_ONLY = {"meta", "embeddings", "code_vectors", "terms", "term_mentions", "concepts", "concept_terms", "task_claims",
               "sync_log", "sqlite_sequence"}
 # merged by their own rules below; every other table (the SDG pack's, an add-on's) is merged row by row, keeping yours
-OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "labels", "mentions", "tasks", "results",
+OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "blocks", "doc_tables", "labels", "mentions", "tasks", "results",
              "ai_sent", "hypotheses", "user_claims", "second_opinions", "judgements", "people", "theme_runs", "themes",
              "theme_members", "reviews", "concept_links", "bib_items", "bib_links", "sync_seen", "sync_copies",
              "sync_removed", "verifications"}
@@ -126,6 +126,8 @@ def _pk(cx: sqlite3.Connection, table: str) -> list[str]:
 # units: a check, a theme run, a codebook; their rows and fingerprints
 # ---------------------------------------------------------------------------------------------
 _PERSONAL = {"user_verdict", "user_note", "user_at", "user_quote", "user_start", "user_end", "user_by"}
+# 0.15: how a row was made, not what it says: the ENLENS version (a colleague's older version has no such column)
+_HOW = {"rowid", "ver_id", "app_version"}
 
 
 def _check_unit(cx: sqlite3.Connection, hyp_id: str) -> dict[str, list[dict]]:
@@ -171,7 +173,7 @@ def _fp(unit: dict[str, list[dict]], canon: dict[str, str], shape=None) -> str:
             continue
         # each row named by its content, in an order that does not depend on ids
         rows = sorted(_tokens(json.dumps({k: v for k, v in (shape(t, r) if shape else r).items()
-                                          if k not in _PERSONAL and k not in ("rowid", "ver_id")},
+                                          if k not in _PERSONAL and k not in _HOW},
                                          sort_keys=True, ensure_ascii=False, default=str), canon) for r in unit[t])
         parts.append(t + "\n" + "\n".join(rows))
     return _sha("\n\n".join(parts))[:20]
@@ -644,7 +646,10 @@ class _Merge:
                 self.r["documents"]["clash"].append({"title": title, "doc_id": local})
             else:
                 self.r["documents"]["new"].append(title)
-            for table in ("pages", "paragraphs", "headings", "passages"):
+            for table in ("pages", "paragraphs", "headings", "passages", "blocks", "doc_tables"):
+                if table in ("blocks", "doc_tables") and not self.icx.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+                    continue  # 0.15: a colleague's copy from before 0.15 has no blocks
                 self._insert(cx, table, _rows(self.icx, f"SELECT * FROM {table} WHERE doc_id=?", (iid,)))
 
     def _read_there(self, iid: str) -> int:

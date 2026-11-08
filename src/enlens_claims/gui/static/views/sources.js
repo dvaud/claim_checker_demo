@@ -2,7 +2,7 @@
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow } from "../features.js";
 import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
-  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob } from "../lib.js";
+  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
@@ -255,7 +255,7 @@ export async function renderSources(view) {
     countsEl = countsNode();
     docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `In this project (${docs.length})`), docs.length ? countsEl : null));
     if (!docs.length) { docsBox.appendChild(emptyState("book-open", "No documents yet", "Add the reports, papers and web pages you want to check hypotheses against. PDFs keep their page numbers.")); return; }
-    const warned = docs.filter((d) => d.check).length;
+    const warned = docs.filter((d) => d.check || d.reading_quality === "poor").length;
     if (warned) docsBox.appendChild(h("p", { class: "muted small" }, icon("alert-triangle", { size: 12 }), ` ${warned} ${warned === 1 ? "document needs" : "documents need"} a look: see the note next to ${warned === 1 ? "it" : "them"}.`));
     shieldNote = shieldNode();
     docsBox.appendChild(shieldNote);
@@ -296,7 +296,8 @@ export async function renderSources(view) {
           d.clash ? h("span", { class: "it tag-clash", title: `The same file as another document here, read into other text on ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} computer (another ENLENS version, or text recognition on one computer and not the other). Quotes are places in the text, so this reading came in as a document of its own, with the results made from it.` }, icon("copy", { size: 12 }), `sync clash · ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} reading`) : null,
           d.check ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 12 }), d.check) : null,
           d.scanned ? h("span", { class: "it scanned-note" + (/no text/i.test(d.scanned) ? " warn-chip" : " muted small") }, icon(/no text/i.test(d.scanned) ? "alert-triangle" : "eye", { size: 12 }), d.scanned) : null,
-          !d.check && !d.scanned ? h("span", { class: "it muted small" }, icon("check", { size: 12 }), "readable") : null),
+          readingNote(d),
+          !d.check && !d.scanned && !readingNote(d) ? h("span", { class: "it muted small" }, icon("check", { size: 12 }), "readable") : null),
         );
       rows.set(d.doc_id, row);
       return row;
@@ -384,12 +385,35 @@ export async function renderSources(view) {
   return () => watchers.forEach((w) => w.stop());
 }
 
+// 0.15: how a document was read, in the list: one that read badly or has something to check, or one read by the
+// reader before 0.15 (to move to the new reader from its page)
+function readingNote(d) {
+  const href = `#/doc/${encodeURIComponent(d.doc_id)}?tab=reading`;
+  if (d.reading_quality === "poor" || d.reading_quality === "fair") {
+    return h("a", { class: d.reading_quality === "poor" ? "warn-chip it" : "it muted small", href, title: (d.reading_warnings || []).join(" ") || "See how it was read" },
+      icon(d.reading_quality === "poor" ? "alert-triangle" : "info", { size: 12 }), d.reading_quality === "poor" ? "read badly" : "something to check in its reading");
+  }
+  if (!d.reading_quality && (d.reader || 1) < 2) return h("a", { class: "it muted small", href, title: "Read by the reader of ENLENS before 0.15. Open it and choose Reading to read it with the new reader." }, icon("layers", { size: 12 }), "read before 0.15");
+  return null;
+}
+
 // ---------------------------------------------------------------------------------------------
 // document viewer: the document by paragraph or page (the units the locations cite), with the quote highlighted.
 // 0.7: panels beside the text on wide screens (above it on phones): Codes (F2), Key terms (F6), References (F5) and
 // Search in this document (F1); a highlighted copy to download (F7). `?tab=codes|terms|refs|search` opens a panel.
 // ---------------------------------------------------------------------------------------------
-const DOC_TABS = [["codes", "Codes", "tag"], ["terms", "Key terms", "network"], ["refs", "References", "link"], ["search", "Search", "text-search"]];
+const DOC_TABS = [["codes", "Codes", "tag"], ["terms", "Key terms", "network"], ["refs", "References", "link"], ["search", "Search", "text-search"],
+  // 0.15: how the document was read (A5), and the page of the original beside the text (A4)
+  ["reading", "Reading", "layers"], ["page", "Page", "file-text"]];
+// 0.15: what each kind of block is called in the reading view (reader.KIND_TEXT), in the plural for counts
+const KIND_PLURAL = { title: ["title", "titles"], heading: ["heading", "headings"], abstract: ["abstract paragraph", "abstract paragraphs"], body: ["paragraph", "paragraphs"],
+  caption: ["caption", "captions"], table: ["table", "tables"], footnote: ["footnote", "footnotes"], front: ["line of author and article details", "lines of author and article details"],
+  back: ["end note (acknowledgements, funding, licence)", "end notes (acknowledgements, funding, licence)"], references: ["part of the reference list", "parts of the reference list"],
+  figure: ["piece of text inside a figure", "pieces of text inside figures"], furniture: ["running head or page number", "running heads and page numbers"] };
+// 0.15 (A0): how many results a move to the new reader places (reread.move's counts, per kind of result)
+const movedCount = (r) => Object.values((r && r.counts) || {}).reduce((a, c) => a + (c.moved || 0), 0);
+let keepPlace = null;               // 0.15: where the reader was before a block was restored or left out
+const kindCount = (k, n) => `${fmt.num(n)} ${(KIND_PLURAL[k] || [k, k])[n === 1 ? 0 : 1]}`;
 const WORD = /[\p{L}\p{N}_'’-]/u;
 // a job this page started earlier (kept for this tab), if it is still running
 async function stillRunning(key) {
@@ -417,6 +441,7 @@ export async function renderDocument(view, [docId], query) {
   }
   const blocks = d.blocks || [];
   const totalBlocks = d.total_blocks ?? blocks.length;
+  const reading = blocks.some((b) => b.kind);  // 0.15: read by the new reader: blocks that know what they are
   const hit = span ? blocks.findIndex((b) => span.start >= b.start && span.start < b.end) : -1;
   // the quote's text, for opening the original at it (the whole excerpt is too long for that)
   const quoteText = hit >= 0 && !span.whole ? (blocks[hit].text || "").slice(Math.max(0, span.start - blocks[hit].start), Math.max(0, span.end - blocks[hit].start)).trim() || null : null;
@@ -432,7 +457,8 @@ export async function renderDocument(view, [docId], query) {
     h("p", { class: "eyebrow" }, from ? [back, " "] : null, h("a", { href: "#/sources", class: "it" }, icon("book-open", { size: 12 }), "All documents")),
     h("h1", { id: "page-title", tabindex: "-1", class: "serif", style: { fontWeight: 500 } }, d.title || d.file),
     h("div", { class: "result-meta", style: { marginTop: "6px" } }, h("span", {}, d.file), h("span", { class: "sep" }, "·"), h("span", {}, KIND_TEXT[d.kind] || d.kind || ""), d.n_pages ? [h("span", { class: "sep" }, "·"), h("span", {}, `${d.n_pages} pages`)] : null,
-      d.n_pages && blockUnit(blocks[0]) === "pages" && totalBlocks === d.n_pages ? null : [h("span", { class: "sep" }, "·"), h("span", {}, `${totalBlocks} ${blockUnit(blocks[0])}`)], d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.doi}`, target: "_blank", rel: "noopener noreferrer", title: "Opens the publisher's page in your browser" }, `doi ${d.doi}`)] : null,
+      reading ? (d.paragraphs ? [h("span", { class: "sep" }, "·"), h("span", {}, plural(d.paragraphs, "paragraph"))] : null)
+        : d.n_pages && blockUnit(blocks[0]) === "pages" && totalBlocks === d.n_pages ? null : [h("span", { class: "sep" }, "·"), h("span", {}, `${totalBlocks} ${blockUnit(blocks[0])}`)], d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.doi}`, target: "_blank", rel: "noopener noreferrer", title: "Opens the publisher's page in your browser" }, `doi ${d.doi}`)] : null,
       d.scanned ? [h("span", { class: "sep" }, "·"), h("span", { class: "it" }, icon("eye", { size: 12 }), d.scanned)] : null),
     d.bib ? h("p", { class: "dv-bib" }, icon("library", { size: 13 }), h("span", {}, "In your ", h("a", { href: "#/bibliography" }, "bibliography"), ": ", h("strong", {}, d.bib.cite || d.bib.title)),
       d.bib.title && d.bib.title !== d.title ? [h("span", { class: "sep" }, "·"), h("span", { class: "serif" }, d.bib.title)] : null,
@@ -454,16 +480,75 @@ export async function renderDocument(view, [docId], query) {
   const selBar = h("div", { class: "dv-selbar", role: "toolbar", "aria-label": "With the selected text", hidden: true });
   let focus = null;                    // the place jumped to last: {start, end, cls, extra: [decorations]}
 
+  // 0.15 (A4): a document read by the new reader comes block by block, each knowing what it is. Headings, captions and
+  // tables look like what they are, a page mark stands where a page begins, and what was left out of the text
+  // (running heads, page numbers, front and back matter, footnotes, tables...) is folded under "Left out of the text",
+  // each with Restore; every block that counts has Leave out.
+  let fold = null, lastPage = null;
   function addBlocks(bs) {
     for (const b of bs) {
       const body = h("div", { class: "dv-body" });
-      const row = h("div", { class: "passage-row" + (hit >= 0 && b.n === blocks[hit].n ? " hit" : "") }, h("div", { class: "pp" }, h("b", {}, b.label)), body);
+      const kindCls = b.kind ? ` dv-k-${b.kind}${b.included === false ? " dv-out" : ""}${b.changed ? " dv-changed" : ""}${b.joined ? " dv-joined" : ""}` : "";
+      // the label column: where the block is cited, a mark when a person changed it, and (on hover) its actions
+      const label = h("div", { class: "pp" }, b.label ? h("b", {}, b.label) : null, b.changed ? h("span", { class: "dv-mine" }, b.included ? "restored by you" : "left out by you") : null,
+        b.kind === "table" && b.included === false && !b.changed ? h("span", { class: "dv-mine dv-muted" }, "left out") : null,
+        reading ? blockActions(b) : null);
+      const row = h("div", { class: "passage-row" + kindCls + (hit >= 0 && b.n === blocks[hit].n ? " hit" : "") }, label, body);
       row.id = `block-${b.n}`;
-      list.insertBefore(row, selBar);
+      if (reading && b.page != null && b.page !== lastPage) {
+        lastPage = b.page;
+        fold = null;
+        list.insertBefore(h("div", { class: "dv-page-mark", id: `page-${b.page}` }, h("span", {}, `Page ${b.page}`)), selBar);
+      }
+      if (reading && b.included === false && b.kind !== "table") {
+        if (!fold) {
+          fold = { el: h("details", { class: "dv-fold" }), kinds: new Map() };
+          fold.sum = h("summary", {});
+          fold.el.appendChild(fold.sum);
+          if (showLeftOut || keptOpen.has(b.n)) fold.el.open = true;
+          list.insertBefore(fold.el, selBar);
+        }
+        if (keptOpen.has(b.n)) fold.el.open = true;
+        fold.kinds.set(b.kind, (fold.kinds.get(b.kind) || 0) + 1);
+        replace(fold.sum, icon("chevron-right", { size: 13 }), h("span", {}, "Left out of the text: ", [...fold.kinds].map(([k, n]) => kindCount(k, n)).join(", ")));
+        fold.el.appendChild(row);
+      } else {
+        fold = null;
+        list.insertBefore(row, selBar);
+      }
       rows.set(b.n, { row, body, b, sig: null });
       loaded.push(b);
     }
   }
+  let showLeftOut = !!session(`leftout:${docId}`);
+  function blockActions(b) {
+    const wrap = h("div", { class: "dv-act" });
+    const where = b.label || `${b.kind_text || "text"}${b.page ? `, page ${b.page}` : ""}`;
+    const btn = b.included === false
+      ? h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Restore: ${where}`, title: "Count this in searches, codes, themes and checks again", onClick: (e) => setIncluded(b, true, e.currentTarget) }, icon("refresh", { size: 12 }), "Restore")
+      : h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Leave out: ${where}`, title: b.kind === "heading" || b.kind === "title" ? "Leave this heading and the text under it out of searches, codes, themes and checks" : "Leave this out of searches, codes, themes and checks (a heading above it goes with it)", onClick: (e) => setIncluded(b, false, e.currentTarget) }, icon("minus", { size: 12 }), "Leave out");
+    wrap.appendChild(btn);
+    if (b.table) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Download table ${b.table.n} for Excel`, title: "The table's rows and cells, for Excel", onClick: () => download(`${docBase}/tables/${b.table.n}.xlsx`).catch(showError) }, icon("download", { size: 12 }), "Excel"));
+    return wrap;
+  }
+  async function setIncluded(b, included, btn) {
+    btn.disabled = true;
+    let r;
+    try { r = await api("PUT", `${docBase}/blocks/${b.n}`, { included }); }
+    catch (e) { btn.disabled = false; showError(e); return; }
+    const others = (r.blocks || []).filter((x) => x.n !== b.n);
+    const heads = others.filter((x) => x.kind === "heading" || x.kind === "title").map((x) => `“${x.text.length > 60 ? x.text.slice(0, 57) + "…" : x.text}”`);
+    const rest = others.length - heads.length;
+    const withWhat = [heads.length ? `${heads.length > 1 ? "its headings" : "its heading"} ${heads.join(" and ")}` : null,
+      rest ? `${plural(rest, "paragraph")} next to it (they are read as one passage)` : null].filter(Boolean).join(" and ");
+    toast(included ? `Restored${withWhat ? `, together with ${withWhat}` : ""}. Searches, codes, themes and checks read ${others.length ? "them" : "it"} again.`
+      : `Left out${withWhat ? `, together with ${withWhat}` : ""}. Searches, codes, themes and checks will not read ${others.length ? "them" : "it"}.`, "ok");
+    // the simplest true picture: draw the document again, at the same place, with what changed in view
+    keepPlace = { doc: docId, y: window.scrollY, tab, open: (r.blocks || []).map((x) => x.n) };
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  }
+  // 0.15: after Restore or Leave out, the folds holding what changed stay open
+  const keptOpen = new Set(keepPlace && keepPlace.doc === docId ? keepPlace.open || [] : []);
   list.appendChild(selBar);
   addBlocks(blocks);
 
@@ -471,7 +556,7 @@ export async function renderDocument(view, [docId], query) {
     clear(moreBox);
     if (loaded.length >= totalBlocks) return;
     moreBox.appendChild(h("button", { class: "btn btn-sm", type: "button", onClick: (e) => { e.currentTarget.disabled = true; loadMore().then(() => paint()); } }, icon("chevron-down", { size: 13 }),
-      `Show the rest of the document (${fmt.num(totalBlocks - loaded.length)} more ${blockUnit(blocks[0])})`));
+      reading ? `Show the rest of the document (${fmt.num(totalBlocks - loaded.length)} more parts)` : `Show the rest of the document (${fmt.num(totalBlocks - loaded.length)} more ${blockUnit(blocks[0])})`));
   }
   async function loadMore() {
     if (loaded.length >= totalBlocks) return false;
@@ -525,6 +610,12 @@ export async function renderDocument(view, [docId], query) {
   // A block's text cut at its headings (as blockNode does), each piece under the decorations that cover it.
   function blockText(b, decos) {
     const text = b.text || "";
+    if (b.table && !decos.length) {
+      const rowsT = b.table.rows || [];
+      return h("div", { class: "dv-table-wrap" }, h("table", { class: "dv-table" },
+        rowsT.length ? h("thead", {}, h("tr", {}, rowsT[0].map((c) => h("th", { scope: "col" }, c)))) : null,
+        h("tbody", {}, rowsT.slice(1).map((r) => h("tr", {}, r.map((c) => h("td", {}, c)))))));
+    }
     const breaks = (b.headings || []).map((x) => ({ at: x.at, end: x.end, kind: "heading" }));
     const segs = breakSegments(text, breaks);
     const fill = (el, s0, s1) => {
@@ -557,6 +648,8 @@ export async function renderDocument(view, [docId], query) {
     const b = blockAt(where.start);
     if (!b) { toast("This place is not in the text shown.", "warn"); return; }
     const r = rows.get(b.n);
+    const fold = r.row.closest("details");
+    if (fold) fold.open = true;  // 0.15: a place in text that was left out
     const target = r.row.querySelector(".dv-focus, .dv-focus-soft") || r.row;
     target.scrollIntoView({ block: "center", behavior: opts.instant ? "auto" : "smooth" });
     r.row.classList.remove("ev-flash"); void r.row.offsetWidth; r.row.classList.add("ev-flash");
@@ -660,15 +753,15 @@ export async function renderDocument(view, [docId], query) {
   // ----------------------------------------------------------------- the panels
   const tabsRow = h("div", { class: "btn-row dv-tabs", role: "group", "aria-label": "Show next to the text" });
   const panelBox = h("div", { class: "dv-panel-box" });
-  const intro = h("p", { class: "muted small dv-intro" }, "Show next to the text: which codes of a codebook it addresses, its key terms, what “it” and “they” refer to, or search inside it.");
+  const intro = h("p", { class: "muted small dv-intro" }, "Show next to the text: which codes of a codebook it addresses, its key terms, what “it” and “they” refer to, search inside it, how it was read", d.page_images ? ", or the page of the original beside the text." : ".");
   const side = h("aside", { class: "dv-side", "aria-label": "About this document" }, tabsRow, panelBox);
   const layout = h("div", { class: "dv-layout" }, side, h("div", { class: "dv-main" }, list, moreBox));
   view.appendChild(layout);
 
   const panels = {};
-  const makers = { codes: codesPanel, terms: termsPanel, refs: refsPanel, search: searchPanel };
+  const makers = { codes: codesPanel, terms: termsPanel, refs: refsPanel, search: searchPanel, reading: readingPanel, page: pagePanel };
   function drawTabs() {
-    replace(tabsRow, DOC_TABS.map(([k, label, ic]) => h("button", { class: "btn btn-sm seg-btn" + (tab === k ? " seg-on" : ""), type: "button", "aria-pressed": tab === k ? "true" : "false", dataset: { tab: k },
+    replace(tabsRow, DOC_TABS.filter(([k]) => k !== "page" || d.page_images).map(([k, label, ic]) => h("button", { class: "btn btn-sm seg-btn" + (tab === k ? " seg-on" : ""), type: "button", "aria-pressed": tab === k ? "true" : "false", dataset: { tab: k },
       onClick: () => { openTab(tab === k ? null : k); const b = tabsRow.querySelector(`[data-tab="${k}"]`); if (b) b.focus(); } }, icon(ic, { size: 13 }), label)));
   }
   function openTab(k, fromUser = true) {
@@ -691,6 +784,159 @@ export async function renderDocument(view, [docId], query) {
     if (tab === "search" && panels.search && panels.search.query()) s.set("find", panels.search.query());
     const qs = s.toString();
     history.replaceState(null, "", `#/doc/${encodeURIComponent(docId)}${qs ? "?" + qs : ""}`);
+  }
+
+  // ---- 0.15: how the document was read (A5), and moving it to the new reader (A0)
+  function readingPanel() {
+    const el = h("section", { class: "dv-panel", "aria-labelledby": "dv-read-h" });
+    const rep = d.reading || {};
+    const older = (d.reader || 1) < (d.new_reader || 1);
+    const qual = { good: ["circle-check", "Read well."], fair: ["alert-triangle", "Read, with something to check."], poor: ["alert-circle", "Read badly: check it before you rely on it."] }[rep.quality];
+    const figs = [];
+    const fig = (label, value, title) => { if (value) figs.push(h("li", { title: title || null }, h("span", { class: "muted" }, label), " ", value)); };
+    if (!older) {
+      fig("Pages:", rep.pages ? `${fmt.num(rep.pages)}${rep.multi_column_pages ? `, ${fmt.num(rep.multi_column_pages)} in columns (read column by column)` : ""}` : "");
+      const rp = rep.repairs || {};
+      const fixes = [rp.hyphens_joined && plural(rp.hyphens_joined, "word") + " cut at a line end joined", rp.hyphens_kept && plural(rp.hyphens_kept, "hyphen") + " kept (long-term, well-known)",
+        rp.words_split && plural(rp.words_split, "word") + " that ran together split", rp.ligatures && plural(rp.ligatures, "ligature") + " (ﬁ, ﬂ) put right",
+        rp.accents && plural(rp.accents, "accent") + " put on its letter", rp.spaces && plural(rp.spaces, "odd space") + " made plain"].filter(Boolean);
+      fig("Repaired:", fixes.join("; "));
+      fig("Tables:", rep.tables ? `${fmt.num(rep.tables)}, kept as rows and cells (each can be downloaded for Excel from the text)` : "");
+      // live: Restore and Leave out change it
+      fig("Passages that count:", d.passages_read != null ? `${fmt.num(d.passages_read)} of ${fmt.num(d.passages_all)}` : "", "The passages that searches, codes, themes and checks read");
+      if (rep.engine === "pypdf") fig("Read from:", "the text layer only (with the pdfminer extra, columns and tables are found too)");
+    }
+    const outKinds = Object.entries(d.left_out || {});
+    const toggle = outKinds.length ? h("label", { class: "dv-check" }, h("input", { type: "checkbox", checked: showLeftOut, onChange: (e) => {
+      showLeftOut = e.currentTarget.checked; session(`leftout:${docId}`, showLeftOut || null);
+      for (const f of list.querySelectorAll("details.dv-fold")) f.open = showLeftOut;
+    } }), h("span", {}, "Show what was left out in the text")) : null;
+    el.append(...[h("h2", { id: "dv-read-h", class: "dv-panel-title", tabindex: "-1" }, "How this document was read"),
+      older ? h("div", { class: "notice notice-info" }, icon("info"), h("div", {},
+        h("p", {}, `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`),
+        h("p", { class: "small" }, "Documents already in a project keep their reading, so every quote and judgement in them stays where it is, until you move one over."))) : null,
+      !older && qual ? h("p", { class: `dv-quality dv-q-${rep.quality}` }, icon(qual[0], { size: 14 }), qual[1]) : null,
+      (rep.warnings || []).length ? h("ul", { class: "dv-warn" }, rep.warnings.map((w) => h("li", {}, w))) : null,
+      figs.length ? h("ul", { class: "dv-figs" }, figs) : null,
+      outKinds.length ? h("div", { class: "dv-outkinds" }, h("p", { class: "small", style: { margin: "8px 0 4px" } }, h("strong", {}, "Left out of the text: "), outKinds.map(([k, n]) => kindCount(k, n)).join(", "), "."),
+        h("p", { class: "muted small", style: { margin: "0 0 6px" } }, "They stay in the document and in a search of all its text, but searches, codes, themes and checks do not read them. Restore any that should count; leave out any that should not."), toggle) : null,
+      older ? rereadBox() : null].filter(Boolean));  // append(null) would write "null"
+    return { el };
+  }
+
+  // 0.15 (A0): move a document read by an earlier reader to the new one, its results with it, after a preview
+  function rereadBox() {
+    const box = h("div", { class: "dv-reread" });
+    function drawStart(focusIt) {
+      const start = h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: (e) => preview(e.currentTarget) }, icon("layers", { size: 13 }), "Read with the new reader");
+      replace(box, h("p", { class: "small", style: { margin: "10px 0 6px" } }, "See first what would change: how many of your results find their place in the new reading, and which do not. Nothing changes until you confirm."), start);
+      if (focusIt) start.focus();
+    }
+    async function preview(start) {
+      start.disabled = true;
+      replace(box, h("p", { class: "muted small", role: "status" }, icon("loader", { size: 13 }), " Reading the original file again (nothing changes yet)…"));
+      let r;
+      try { r = await api("GET", `${docBase}/reread`); }
+      catch (e) { replace(box, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
+      if (r.ok === false) { replace(box, h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, r.reason || "This document cannot be read again now."))); return; }
+      const lost = r.not_placed || [];
+      const moved = movedCount(r);
+      const aside = Array.isArray(r.left_out) ? r.left_out : [];  // placed, in text the new reader leaves out
+      const go = h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => move(go) }, icon("check", { size: 13 }), "Move it to the new reader");
+      const summary = h("p", { class: "small", tabindex: "-1" }, moved || lost.length ? [h("strong", {}, plural(moved, "result")), moved === 1 ? " finds its place" : " find their place", " in the new reading", lost.length ? [", ", h("strong", {}, `${fmt.num(lost.length)} ${lost.length === 1 ? "does" : "do"} not`)] : "", "."]
+        : "Nothing in your results points into this document yet: it is simply read again.");
+      replace(box, h("div", { class: "dv-reread-preview" }, summary,
+        (r.warnings || []).length ? h("ul", { class: "dv-warn", style: { marginTop: "6px" } }, r.warnings.map((w) => h("li", {}, w))) : null,
+        lost.length ? h("ul", { class: "dv-lost" }, lost.slice(0, 12).map((x) => h("li", { class: "small" }, h("span", { class: "muted" }, `${cap(x.kind_text || x.what || "a result")}${x.page ? `, page ${x.page}` : ""}: `),
+          x.quote ? `“${x.quote}”` : (x.what || ""), x.why ? h("span", { class: "muted" }, ` ${x.why}`) : null))) : null,
+        lost.length > 12 ? h("p", { class: "muted small" }, `and ${fmt.num(lost.length - 12)} more.`) : null,
+        aside.length ? h("ul", { class: "dv-lost" }, aside.slice(0, 12).map((x) => h("li", { class: "small" }, h("span", { class: "muted" }, `${cap(x.kind_text || "a result")}${x.page ? `, page ${x.page}` : ""}: `),
+          x.quote ? `“${x.quote}”` : (x.what || ""), x.note ? h("span", { class: "muted" }, ` ${x.note}`) : null))) : null,
+        r.reading && r.reading.quality ? h("p", { class: "muted small" }, `The new reading: ${plural(r.reading.body_passages, "passage")} that count${(r.reading.warnings || []).length ? `; ${r.reading.warnings.join(" ")}` : ", nothing to warn about."}`) : null,
+        h("div", { class: "btn-row", style: { marginTop: "8px" } }, go, h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => drawStart(true) }, "Not now"))));
+      summary.focus();
+    }
+    async function move(btn) {
+      btn.disabled = true;
+      let job;
+      try { job = (await api("POST", `${docBase}/reread`)).job; }
+      catch (e) { btn.disabled = false; showError(e); return; }
+      // the move is one step; then, as after adding a document, its search by meaning, key terms and keyword codes
+      replace(box, h("p", { class: "muted small", role: "status" }, icon("loader", { size: 13 }), " Moving it to the new reader, then updating its key terms and codes…"));
+      const w = watchJob(job.id);
+      watchers.push(w);
+      let done;
+      try { done = await w.promise; } catch (e) { showError(e); return; }
+      if (done.state !== "done") { replace(box, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, done.error || "The document could not be moved; nothing was changed."))); return; }
+      const r = (done.result || {}).report || {};
+      toast(`Read with the new reader: ${plural(movedCount(r), "result")} moved${(r.not_placed || []).length ? `, ${fmt.num(r.not_placed.length)} without a place` : ""}.`, "ok");
+      keepPlace = { doc: docId, y: 0, tab: "reading", focus: "dv-read-h" };
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    }
+    drawStart(false);
+    return box;
+  }
+
+  // ---- 0.15 (A4): the page of the original PDF beside the text, the blocks the reader found drawn on it
+  function pagePanel() {
+    const el = h("section", { class: "dv-panel", "aria-labelledby": "dv-page-h" });
+    const SCALE = 1.5;
+    let page = null;
+    const img = h("img", { class: "dv-page-img", alt: "" });
+    const boxes = h("div", { class: "dv-page-boxes", "aria-hidden": "true" });
+    const frame = h("div", { class: "dv-page-frame" }, img, boxes);
+    const nav = h("div", { class: "btn-row dv-page-nav" });
+    const note = h("p", { class: "muted small", style: { margin: "6px 0 0" } }, reading ? "Outlined: what the reader found. Solid: read by searches, codes, themes and checks; dashed: left out. Click one to go to it in the text."
+      : "Outlines of what the reader found come with the new reader: see Reading.");
+    el.append(h("h2", { id: "dv-page-h", class: "dv-panel-title" }, "The page"), nav, frame, note);
+    function draw() {
+      const last = d.n_pages || 1;
+      replace(nav, h("button", { class: "btn btn-sm", type: "button", disabled: page <= 1, "aria-label": "Previous page", onClick: () => go(page - 1, true) }, icon("chevron-left", { size: 13 })),
+        h("span", { class: "small" }, `Page ${page} of ${last}`),
+        h("button", { class: "btn btn-sm", type: "button", disabled: page >= last, "aria-label": "Next page", onClick: () => go(page + 1, true) }, icon("chevron-right", { size: 13 })),
+        h("a", { class: "btn btn-sm btn-ghost", href: `${docBase}/file?token=${encodeURIComponent(TOKEN)}#page=${page}`, target: "_blank", rel: "noopener" }, icon("external-link", { size: 12 }), "Open the PDF at this page"));
+    }
+    function drawBoxes() {
+      clear(boxes);
+      const w = img.naturalWidth, hh = img.naturalHeight;
+      if (!w || !hh) return;
+      for (const b of loaded) {
+        if (b.page !== page || !b.box) continue;
+        const [x0, y0, x1, y1] = b.box;
+        boxes.appendChild(h("button", { class: `dv-pbox dv-pbox-${b.included === false ? "out" : "in"}`, type: "button", tabindex: "-1", title: `${cap(b.kind_text || b.kind || "")}${b.included === false ? " (left out)" : ""}`,
+          style: { left: `${(x0 * SCALE / w) * 100}%`, top: `${(y0 * SCALE / hh) * 100}%`, width: `${((x1 - x0) * SCALE / w) * 100}%`, height: `${Math.max(0.6, ((y1 - y0) * SCALE / hh) * 100)}%` },
+          onClick: () => { const r = rows.get(b.n); if (r && r.row.closest("details")) r.row.closest("details").open = true; jumpTo({ start: b.start, end: b.end }); } }));
+      }
+    }
+    img.addEventListener("load", drawBoxes);
+    img.addEventListener("error", () => replace(frame, h("p", { class: "muted small" }, "The page could not be drawn.")));
+    let following = true;  // off while a scroll this panel started is under way (the rows passing by are not "here")
+    async function go(p, scroll) {
+      p = Math.max(1, Math.min(d.n_pages || 1, p));
+      if (p === page) return;
+      page = p;
+      if (scroll) { following = false; setTimeout(() => { following = true; }, 1200); }
+      draw();
+      img.alt = `Page ${page} of the original PDF`;
+      img.src = `${docBase}/pages/${page}.png?scale=${SCALE}&token=${encodeURIComponent(TOKEN)}`;
+      if (scroll && reading) {
+        while (loaded.length < totalBlocks && (loaded[loaded.length - 1].page || 0) < page) { if (!(await loadMore())) break; }
+        paint();
+        const mark = document.getElementById(`page-${page}`);
+        if (mark) mark.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+    }
+    // follow the text: the page of the paragraph at the top of the view
+    const seen = new IntersectionObserver((entries) => {
+      if (tab !== "page" || !following) return;
+      const vis = entries.filter((e) => e.isIntersecting).map((e) => rows.get(Number(e.target.id.slice(6)))).filter(Boolean);
+      const first = vis.map((r) => r.b).filter((b) => b.page).sort((a, z) => a.start - z.start)[0];
+      if (first) go(first.page, false);
+    }, { rootMargin: "0px 0px -60% 0px" });
+    for (const r of rows.values()) seen.observe(r.row);
+    cleanups.push(() => seen.disconnect());
+    go((hit >= 0 && blocks[hit].page) || (loaded[0] && loaded[0].page) || 1, false);
+    return { el };
   }
 
   // ---- Codes (F2)
@@ -1273,9 +1519,15 @@ export async function renderDocument(view, [docId], query) {
   }
 
   drawTabs();
+  // 0.15: back where the reader was after Restore, Leave out or a move to the new reader
+  const kept = keepPlace && keepPlace.doc === docId ? keepPlace : null;
+  keepPlace = null;
+  if (kept && kept.tab && DOC_TABS.some(([k]) => k === kept.tab)) tab = kept.tab;
   if (tab) { const k = tab; tab = null; openTab(k, false); } else { replace(panelBox, intro); paint(); }
   drawMore();
+  if (kept && kept.y) setTimeout(() => window.scrollTo(0, kept.y), 40);
+  if (kept && kept.focus) setTimeout(() => { const f = document.getElementById(kept.focus); if (f) f.focus(); }, 60);
   if (span && span.end > (loaded[loaded.length - 1] || { end: 0 }).end) await ensureLoaded(span.end).then(paint);
-  if (hit >= 0 || span) setTimeout(() => { const b = span ? blockAt(span.start) : null; const row = b ? document.getElementById(`block-${b.n}`) : null; const el = (row && row.querySelector("mark.quote")) || row; if (el) el.scrollIntoView({ block: "center" }); }, 60);
+  if (hit >= 0 || span) setTimeout(() => { const b = span ? blockAt(span.start) : null; const row = b ? document.getElementById(`block-${b.n}`) : null; if (row && row.closest("details")) row.closest("details").open = true; const el = (row && row.querySelector("mark.quote")) || row; if (el) el.scrollIntoView({ block: "center" }); }, 60);
   return () => { watchers.forEach((w) => w.stop()); cleanups.forEach((f) => f()); };
 }

@@ -409,10 +409,11 @@ function showUpdate(btn, info) {
   if (btn.disabled) return;  // updating now: the button says so
   if (!info || !info.available) { btn.hidden = true; return; }
   const to = info.latest ? `Update to ${info.latest}` : `Update ${appName()}`;
+  const rc = info.candidate ? "release candidate " : "";
   replace(btn, icon("arrow-up", { size: 15 }), h("span", {}, to));
   btn.classList.add("update-ready");
   btn.title = info.on_disk ? `${appName()} ${info.latest} is installed: restart to use it`
-    : info.latest ? `${appName()} ${info.latest} is ready (you have ${info.version})`
+    : info.latest ? `${appName()} ${rc}${info.latest} is ready (you have ${info.version})`
     : `${info.changes} new change${info.changes === 1 ? "" : "s"} for this copy of ${appName()}`;
   btn.hidden = false;
   if (!info.on_disk) updatePopup(info);  // a version already on disk has the banner above the page
@@ -426,8 +427,10 @@ function updatePopup(info) {
   const later = () => { store("update-later", key); t.remove(); };
   const t = h("div", { class: "toast toast-info update-popup", role: "status" }, icon("arrow-up"),
     h("div", { class: "toast-body" },
-      h("div", {}, h("strong", {}, info.latest ? `${appName()} ${info.latest} is available.` : `An update for ${appName()} is available.`),
-        ` You have ${info.version}. Updating restarts ${appName()}; your projects and results are kept.`),
+      h("div", {}, h("strong", {}, info.latest ? `${appName()} ${info.candidate ? "release candidate " : ""}${info.latest} is available.` : `An update for ${appName()} is available.`),
+        ` You have ${info.version}. Updating restarts ${appName()}; your projects and results are kept.`,
+        // 0.15: what a candidate is, said where it is offered
+        info.candidate ? ` A release candidate is a try-out of the next version: use it on a project you do not share with colleagues.` : null),
       h("div", { class: "update-popup-actions" },
         h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => { t.remove(); Updates.install(); } }, "Update and restart"),
         h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: later }, "Later"))),
@@ -451,7 +454,7 @@ async function updateApp(btn) {
   if (!info.available) { toast(`${appName()} ${info.version} is the newest version.`, "ok"); done(); btn.hidden = true; return; }
   const running = await runningJobs();
   const what = info.on_disk ? `${appName()} ${info.latest} is installed already; ${appName()} restarts to use it.`
-    : info.latest ? `${appName()} ${info.latest} is ready (you have ${info.version}). ${appName()} downloads it, installs it and restarts.`
+    : info.latest ? `${appName()} ${info.candidate ? "release candidate " : ""}${info.latest} is ready (you have ${info.version}). ${appName()} downloads it, installs it and restarts.`
     : `${info.changes} new change${info.changes === 1 ? " is" : "s are"} waiting (you have ${info.version}). ${appName()} fetches ${info.changes === 1 ? "it" : "them"} and restarts.`;
   const ok = await confirmDialog({
     title: info.on_disk ? `Restart ${appName()}?` : `Update ${appName()}?`,

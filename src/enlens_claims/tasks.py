@@ -18,7 +18,7 @@ from typing import Any, Iterable
 
 from pydantic import ValidationError
 
-from . import access, prompts, taskkinds
+from . import __version__, access, prompts, taskkinds
 from .retrieve import BM25, H2_RE
 from .schema import (CheckOut, DecomposeOut, ExpandOut, ExtractOut, ImpactClaimOut, InteractionOut, SplitOut,
                      VerifyOut, VerifySetOut)
@@ -37,6 +37,27 @@ MAX_ATTEMPTS = 3
 
 def _h(*parts: str) -> str:
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+
+
+def doc_span(cx, passage_id: str, text: str, a: int, b: int, missing: int | None = None,
+             anchor: list | None = None) -> tuple:
+    """Where characters a..b of `text`, the passage text a task showed for `passage_id`, are in the document: the
+    passage's start plus the offsets. 0.15: an excerpt kept from an earlier reading of its document (*Read with the
+    new reader*, reread.py; `anchor`: the point of it tied to the document) is not the passage's text any more: its
+    words are found again where the excerpt now is in the document, or placed nowhere (None, None); so is a passage
+    of that earlier reading that has no place now (its id is a tombstone). `missing`: the start counted from when no
+    passage has the id (a document removed since), as before."""
+    from .reread import find_near, is_tombstone
+
+    row = cx.execute("SELECT start, end, text, doc_id FROM passages WHERE passage_id=?", (passage_id,)).fetchone()
+    if row is None:
+        if missing is None or is_tombstone(passage_id):
+            return None, None
+        return missing + a, missing + b
+    if row[2] == text:
+        return row[0] + a, row[0] + b
+    got = find_near(cx, row[3], text, a, b, row[0], row[1], anchor)
+    return got if got else (None, None)
 
 
 # 0.8: while a thread works "by queue" (Claude Code answers the tasks, see taskqueue), every task it creates or
@@ -487,13 +508,14 @@ def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = Non
         seq = cx.execute("SELECT COALESCE(MAX(attempt), 0) + 1 FROM results WHERE task_id=?", (task_id,)).fetchone()[0]
         prov = provenance or {}
         cx.execute("INSERT INTO results(task_id, attempt, kind, model, prompt_version, raw_json, valid, errors_json, "
-                   "received_at, digest, seed, settings_json, route, helper, step, claimed_at) "
-                   "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   "received_at, digest, seed, settings_json, route, helper, step, claimed_at, app_version) "
+                   "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (task_id, seq, t["kind"], model, version,
                     raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False), int(ok), json.dumps(errors), now(),
                     prov.get("digest"), prov.get("seed"),
                     json.dumps(prov["settings"]) if prov.get("settings") else None,
-                    route or (prov.get("settings") or {}).get("route"), helper, int(t["step"] or 0), claimed_at))
+                    route or (prov.get("settings") or {}).get("route"), helper, int(t["step"] or 0), claimed_at,
+                    __version__))
     return ok, errors
 
 
@@ -516,7 +538,7 @@ def _store_extract(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     out = ExtractOut.model_validate(obj)
     text = payload["text"]
     base = cx.execute("SELECT start, page FROM passages WHERE passage_id=?", (payload["passage_id"],)).fetchone()
-    p_start, p_page = (base["start"], base["page"]) if base else (0, payload.get("page"))
+    p_page = base["page"] if base else payload.get("page")
     thr = _meta_float(cx, "accept_confidence", 0.8)
     # claims a reviewer decided on: a new answer must not silently undo the decision (see _keep_reviews)
     reviewed = {r["claim_id"]: dict(r) for r in cx.execute(
@@ -564,8 +586,9 @@ def _store_extract(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
         for te in c.targets:
             cx.execute("INSERT OR REPLACE INTO claim_targets VALUES (?,?,?,?)", (cid, te.target, te.direction, te.influence))
         for ev, (s, e, kind) in found:
+            ds, de = doc_span(cx, payload["passage_id"], text, s, e, missing=0)
             cx.execute("INSERT INTO evidence VALUES (?,?,?,?,?,?,?,?)",
-                       (cid, ev.field, text[s:e], payload["doc_id"], p_start + s, p_start + e, p_page, kind))
+                       (cid, ev.field, text[s:e], payload["doc_id"], ds, de, p_page, kind))
         stored += 1
     for j, raw_i in enumerate(out.interactions):
         try:
@@ -578,9 +601,10 @@ def _store_extract(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
             errors.append(f"interactions[{j}]: quote not found in the passage")
             continue
         s, e, _k = hit
+        ds, de = doc_span(cx, payload["passage_id"], text, s, e, missing=0)
         cx.execute("INSERT OR REPLACE INTO interactions VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                    (f"i{_h(t['task_id'], str(j))}", f"{t['task_id']}#{j}", payload["doc_id"], it.from_target, it.to_target,
-                    it.score, text[s:e], p_start + s, p_start + e, p_page, "stated"))
+                    it.score, text[s:e], ds, de, p_page, "stated"))
     ok = stored > 0 or not out.claims  # an empty answer is valid; all claims failing is not
     if ok and reviewed:
         _keep_reviews(cx, reviewed)
@@ -654,9 +678,7 @@ def _store_verify(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
         hit = find_quote(text, v.quote)
         if not hit:
             return False, [f"quote not found in the passage: {v.quote[:80]!r}{partial_word_hint(text, v.quote)}"]
-        base = cx.execute("SELECT start FROM passages WHERE passage_id=?", (payload["passage_id"],)).fetchone()
-        off = base[0] if base else 0
-        s, e = off + hit[0], off + hit[1]
+        s, e = doc_span(cx, payload["passage_id"], text, hit[0], hit[1], missing=0, anchor=payload.get("anchor"))
         quote = text[hit[0]:hit[1]]
     vid = f"v{_h(t['task_id'])}"
     cx.execute("INSERT OR REPLACE INTO verifications(ver_id, subject_kind, subject_id, passage_id, doc_id, verdict, confidence, quote, start, end, page, model, prompt_version, scope_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -703,7 +725,7 @@ def _graded_passages(v, passages: list[dict]) -> tuple[dict[int, tuple], list[st
     return graded, errors
 
 
-def _refers(p: dict, ev, off: int | None) -> tuple:
+def _refers(cx, p: dict, ev) -> tuple:
     """(refers_to, start, end, where) in document offsets, for a grade that names what its quote refers to."""
     ref = getattr(ev, "refers_to", None)
     if not ref:
@@ -714,7 +736,10 @@ def _refers(p: dict, ev, off: int | None) -> tuple:
     if not got:
         return (None, None, None, None)
     text, a, b, where = got
-    base = off if where == "excerpt" else p.get("context_start")
+    if where == "excerpt":
+        s, e = doc_span(cx, p["passage_id"], p["text"], a, b, anchor=p.get("anchor"))
+        return (text, s, e, where)
+    base = p.get("context_start")
     return (text, base + a if base is not None else None, base + b if base is not None else None, where)
 
 
@@ -733,8 +758,6 @@ def _store_verify_set(cx, t, payload, obj, model, schema=VerifySetOut) -> tuple[
     # 0.11.1): a person's own judgement stays and the AI's earlier one joins its history
     why = "stepped up" if t["status"] == "done" else "answered again"
     for n, p in enumerate(passages, 1):
-        base = cx.execute("SELECT start FROM passages WHERE passage_id=?", (p["passage_id"],)).fetchone()
-        off = base[0] if base else 0
         vid = f"v{_h(t['task_id'], p['passage_id'])}"
         before = cx.execute("SELECT * FROM verifications WHERE ver_id=?", (vid,)).fetchone()
         note = None
@@ -742,8 +765,9 @@ def _store_verify_set(cx, t, payload, obj, model, schema=VerifySetOut) -> tuple[
         if n in graded:
             ev, hit = graded[n]
             note = getattr(ev, "scope_note", None)
-            row = (capped(ev.verdict, note), ev.confidence, p["text"][hit[0]:hit[1]], off + hit[0], off + hit[1])
-            ref = _refers(p, ev, off if base else None)
+            row = (capped(ev.verdict, note), ev.confidence, p["text"][hit[0]:hit[1]],
+                   *doc_span(cx, p["passage_id"], p["text"], hit[0], hit[1], missing=0, anchor=p.get("anchor")))
+            ref = _refers(cx, p, ev)
         else:
             row = ("not_enough_info", None, None, None, None)
         cx.execute("INSERT OR REPLACE INTO verifications(ver_id, subject_kind, subject_id, passage_id, doc_id, verdict, "
@@ -779,14 +803,12 @@ def _store_reread(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     graded, errors = _graded_passages(v, payload["passages"])
     if errors:
         return False, errors
-    base = cx.execute("SELECT start FROM passages WHERE passage_id=?", (p["passage_id"],)).fetchone()
-    off = base[0] if base else None
     ref = (None, None, None, None)
     if 1 in graded:
         ev, hit = graded[1]
         row = (capped(ev.verdict, ev.scope_note), ev.confidence, p["text"][hit[0]:hit[1]],
-               off + hit[0] if off is not None else None, off + hit[1] if off is not None else None, ev.scope_note)
-        ref = _refers(p, ev, off)
+               *doc_span(cx, p["passage_id"], p["text"], hit[0], hit[1], anchor=p.get("anchor")), ev.scope_note)
+        ref = _refers(cx, p, ev)
     else:
         row = ("not_enough_info", None, None, None, None, None)
     old = cx.execute("SELECT * FROM verifications WHERE subject_kind=? AND subject_id=? AND passage_id=?",
@@ -851,12 +873,10 @@ def _store_second(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
         return False, errors
     second = payload.get("second_model") or model
     for n, p in enumerate(passages, 1):
-        base = cx.execute("SELECT start FROM passages WHERE passage_id=?", (p["passage_id"],)).fetchone()
-        off = base[0] if base else None
         if n in graded:
             ev, hit = graded[n]
             row = (capped(ev.verdict, ev.scope_note), ev.confidence, p["text"][hit[0]:hit[1]],
-                   off + hit[0] if off is not None else None, off + hit[1] if off is not None else None, ev.scope_note)
+                   *doc_span(cx, p["passage_id"], p["text"], hit[0], hit[1], anchor=p.get("anchor")), ev.scope_note)
         else:
             row = ("not_enough_info", None, None, None, None, None)
         cx.execute("INSERT OR REPLACE INTO second_opinions(subject_id, passage_id, model, verdict, confidence, quote, "

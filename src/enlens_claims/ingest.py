@@ -19,10 +19,18 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 
+from . import __version__
 from .store import Workspace, now
 from .textutil import find_dois, split_sentences
 
 SUPPORTED = {".pdf", ".html", ".htm", ".txt", ".md", ".docx"}
+
+# 0.15 (roadmap): the reader, which turns a file into the stored text and passages (read_file, assemble, layout,
+# make_passages). Each document records the one that read it (documents.reader). A change that gives a document other
+# text or passages raises this number: documents already in a project keep the reading they have, so every result in
+# them stays where it is, until a person has one read with the new reader (planned with the next reader); only new
+# documents get the new reader.
+READER = 2  # 1: ENLENS 0.5 to 0.14 (pypdf's page text, cut by sentences); 2: ENLENS 0.15 (reader.py)
 REF_HEADING = re.compile(
     r"(?:^|\s)(References|REFERENCES|Bibliography|BIBLIOGRAPHY|Literature [Cc]ited|Works [Cc]ited|Reference [Ll]ist)"
     r"\s*:?\s+(?=\[?\(?\d|[A-Z][A-Za-z'\-]+,?\s+[A-Z]|[A-Z]{2,})"
@@ -41,6 +49,7 @@ class RawDoc:
     ocr_pages: int = 0       # PDF pages without a text layer whose text was recognised (OCR)
     scanned_pages: int = 0   # PDF pages without a text layer (recognised or not)
     line_pos: list | None = None  # PDFs: per page, the (x, y) where each line of its text starts (None: unknown)
+    page_sizes: list | None = None  # PDFs (0.15): per page, (width, height) in points
 
 
 @dataclass
@@ -128,8 +137,10 @@ def read_file(path: Path, ocr: "OcrOptions | None" = None, should_stop=None) -> 
     ext = path.suffix.lower()
     if ext == ".pdf":
         sha1 = _sha1(path)
-        pages, title, done, scanned, pos = _read_pdf(path, ocr, should_stop)
-        return RawDoc(path, "pdf", pages, title, sha1, ocr_pages=done, scanned_pages=scanned, line_pos=pos)
+        sizes: list = []
+        pages, title, done, scanned, pos = _read_pdf(path, ocr, should_stop, sizes)
+        return RawDoc(path, "pdf", pages, title, sha1, ocr_pages=done, scanned_pages=scanned, line_pos=pos,
+                      page_sizes=sizes or None)
     if ext == ".docx":
         sha1 = _sha1(path)
         pages, title, heads = _read_docx(path)
@@ -530,7 +541,7 @@ def _locked(reader) -> bool:
 
 
 def _read_pdf(path: Path, ocr: OcrOptions | None = None,
-              should_stop=None) -> tuple[list[str], str | None, int, int, list | None]:
+              should_stop=None, sizes: list | None = None) -> tuple[list[str], str | None, int, int, list | None]:
     """The text of each page, the title from the metadata, (pages recognised by OCR, scanned pages), and where each
     line starts on its page (for the layout; None for pages read another way). A PDF that needs a password raises
     ValueError (0.14.3: it was reported as a file without text)."""
@@ -549,6 +560,11 @@ def _read_pdf(path: Path, ocr: OcrOptions | None = None,
         except Exception:
             title = None
         for pg in reader.pages if not locked else []:
+            if sizes is not None:
+                try:
+                    sizes.append((float(pg.mediabox.width), float(pg.mediabox.height)))
+                except Exception:  # noqa: BLE001 - a page without a usable box: no positions for it
+                    sizes.append((0.0, 0.0))
             spots = _LineSpots()
             try:
                 t = pg.extract_text(visitor_text=spots) or ""
@@ -909,7 +925,25 @@ def guess_doi(raw: RawDoc, text: str, spans: list[tuple[int, int]]) -> str | Non
     return sorted(counts, key=lambda d: (-counts[d], first_seen[d]))[0]
 
 
-def build_document(raw: RawDoc, max_chars: int = 1100, min_chars: int = 200) -> Document:
+def read_document(path: Path, reader: int | None = None, ocr: "OcrOptions | None" = None, max_chars: int = 1100,
+                  min_chars: int = 200, should_stop=None) -> Document:
+    """0.15: a file read into a Document by the given reader (default: the current one, READER). Nothing is stored:
+    `ingest` stores what this returns, `enlens measure` compares readers, and *Read with the new reader* reads a
+    document of a project again with it. Passages whose section is 'body' are the ones features use."""
+    raw = read_file(Path(path), ocr if ocr is not None else OcrOptions(mode="off"), should_stop)
+    return build_document(raw, max_chars, min_chars, reader)
+
+
+def build_document(raw: RawDoc, max_chars: int = 1100, min_chars: int = 200, reader: int | None = None) -> Document:
+    if (reader or READER) >= 2:
+        from . import reader as reader2
+
+        return reader2.build_document(raw, max_chars, min_chars)
+    return _build_document_1(raw, max_chars, min_chars)
+
+
+def _build_document_1(raw: RawDoc, max_chars: int = 1100, min_chars: int = 200) -> Document:
+    """Reader 1 (ENLENS 0.5 to 0.14): the page text as pypdf gives it, cleaned, cut into passages by sentences."""
     text, spans = assemble(raw.pages)
     doc = Document("d" + raw.sha1[:10], raw, text, spans, guess_title(raw, text), guess_doi(raw, text, spans))
     doc.passages = make_passages(text, spans, max_chars, min_chars)
@@ -1208,26 +1242,63 @@ def _store_document(ws: Workspace, doc: "Document", raw: RawDoc, f: Path, dec: d
     """One document with its pages and passages, in one transaction (other work is not blocked for long)."""
     with ws.connect() as cx:
         cx.execute("INSERT INTO documents(doc_id, path, sha1, title, doi, kind, n_pages, n_chars, text, added_at, "
-                   "declared_ref, ocr_pages, scanned_pages, ai_access, ai_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   "declared_ref, ocr_pages, scanned_pages, ai_access, ai_note, reader, app_version) "
+                   "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (doc.doc_id, str(f), raw.sha1, doc.title, doc.doi, raw.kind,
                     len(doc.page_spans) if raw.paginated else None,
                     len(doc.text), doc.text, now(), json.dumps(dec["references"], ensure_ascii=False) if dec else None,
                     raw.ocr_pages if raw.kind == "pdf" else None, raw.scanned_pages if raw.kind == "pdf" else None,
-                    ai_access, (ai_note or "")[:300] or None))
+                    ai_access, (ai_note or "")[:300] or None, READER, __version__))
         # 0.14: the file added again on purpose: a colleague's copy of it may come in again
         cx.execute("DELETE FROM sync_removed WHERE kind='document' AND key=?", (doc.doc_id,))
-        if raw.paginated:
-            cx.executemany("INSERT INTO pages VALUES (?,?,?,?)",
-                           [(doc.doc_id, n + 1, s, e) for n, (s, e) in enumerate(doc.page_spans)])
-        lay = doc.layout or Layout([(None, s0) for s0 in doc.paragraphs])
-        if lay.paragraphs:
-            cx.executemany("INSERT INTO paragraphs(doc_id, n, start, page) VALUES (?,?,?,?)",
-                           [(doc.doc_id, n + 1, s0, pg) for n, (pg, s0) in enumerate(lay.paragraphs)])
-        if lay.headings:
-            cx.executemany("INSERT INTO headings(doc_id, start, end, text) VALUES (?,?,?,?)",
-                           [(doc.doc_id, a, b, t) for a, b, t in lay.headings])
-        cx.executemany(
-            "INSERT INTO passages(passage_id, doc_id, seq, page, start, end, text, section) VALUES (?,?,?,?,?,?,?,?)",
-            [(f"{doc.doc_id}:{p.seq:04d}", doc.doc_id, p.seq, p.page, p.start, p.end, doc.text[p.start:p.end], p.section)
-             for p in doc.passages])
+        store_reading(cx, doc)
         ws.bump_corpus(cx)
+
+
+def store_reading(cx, doc: "Document", doc_id: str | None = None) -> None:
+    """A document's reading: its pages, paragraphs, headings and passages, then (reader 2) its blocks, tables and
+    reading report with a person's corrections applied again. `doc_id` stores it under that id (0.15: *Read with the
+    new reader* stores a new reading of a document under the id it has, which a sync-clash copy's file does not give)."""
+    did = doc_id or doc.doc_id
+    if doc.raw.paginated:
+        cx.executemany("INSERT INTO pages VALUES (?,?,?,?)", [(did, n + 1, s, e) for n, (s, e) in enumerate(doc.page_spans)])
+    lay = doc.layout or Layout([(None, s0) for s0 in doc.paragraphs])
+    if lay.paragraphs:
+        cx.executemany("INSERT INTO paragraphs(doc_id, n, start, page) VALUES (?,?,?,?)",
+                       [(did, n + 1, s0, pg) for n, (pg, s0) in enumerate(lay.paragraphs)])
+    if lay.headings:
+        cx.executemany("INSERT INTO headings(doc_id, start, end, text) VALUES (?,?,?,?)",
+                       [(did, a, b, t) for a, b, t in lay.headings])
+    cx.executemany(
+        "INSERT INTO passages(passage_id, doc_id, seq, page, start, end, text, section, block) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        [(f"{did}:{p.seq:04d}", did, p.seq, p.page, p.start, p.end, doc.text[p.start:p.end], p.section,
+          getattr(p, "block", None)) for p in doc.passages])
+    store_blocks(cx, doc, did)
+
+
+def store_blocks(cx, doc: "Document", doc_id: str | None = None) -> None:
+    """0.15: a document's blocks, tables and reading report (reader 2), then a person's earlier corrections of its
+    blocks applied again (see reader.apply_choices)."""
+    blocks = getattr(doc, "blocks", None)
+    if blocks is None:
+        return
+    from . import reader as reader2
+
+    did = doc_id or doc.doc_id
+    rows, tables = [], []
+    for b in blocks:
+        box = b.bbox
+        rows.append((did, b.n, b.page + 1 if doc.raw.paginated else None, b.start, b.end, b.kind,
+                     1 if b.included else 0, *(box or (None, None, None, None))))
+        if b.kind == "table" and b.rows:
+            tables.append((did, len(tables) + 1, b.n, b.page + 1 if doc.raw.paginated else None, b.start, b.end,
+                           b.caption, json.dumps(b.rows, ensure_ascii=False)))
+    cx.executemany("INSERT INTO blocks(doc_id, n, page, start, end, kind, included, x0, y0, x1, y1) "
+                   "VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    if tables:
+        cx.executemany("INSERT INTO doc_tables(doc_id, n, block, page, start, end, caption, rows_json) "
+                       "VALUES (?,?,?,?,?,?,?,?)", tables)
+    cx.execute("UPDATE documents SET reading_json=? WHERE doc_id=?",
+               (json.dumps(getattr(doc, "reading", None) or {}, ensure_ascii=False), did))
+    reader2.apply_choices(cx, did)

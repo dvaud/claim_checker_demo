@@ -459,6 +459,7 @@ def _dev_server(tmp_path, *flags):
     return proc, base, token, marker
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in `claude` is a /bin/sh script")
 @pytest.mark.parametrize("flags", [(), ("--claude-code",), ("--claude-code-paused",)])
 def test_no_dev_server_mode_finds_the_real_claude(tmp_path, flags):
     proc, base, token, marker = _dev_server(tmp_path, *flags)

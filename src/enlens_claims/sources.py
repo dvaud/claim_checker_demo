@@ -152,8 +152,8 @@ def document_overview(ws: Workspace) -> list[dict]:
     claims = {r[0]: r[1] for r in ws.query("SELECT doc_id, COUNT(DISTINCT claim_id) FROM claims GROUP BY doc_id")}
     out = []
     for d in ws.query("SELECT d.doc_id, d.title, d.kind, d.n_pages, d.n_chars, d.path, d.added_at, d.ocr_pages, "
-                      "d.scanned_pages, (SELECT COUNT(*) FROM passages p WHERE p.doc_id=d.doc_id AND p.section='body') AS body "
-                      "FROM documents d ORDER BY d.title"):
+                      "d.scanned_pages, (SELECT COUNT(*) FROM passages p WHERE p.doc_id=d.doc_id AND p.section='body') AS body, "
+                      "COALESCE(d.reader, 1) AS reader, d.app_version, d.reading_json FROM documents d ORDER BY d.title"):
         flags = []
         ocr, scanned = d["ocr_pages"] or 0, d["scanned_pages"] or 0
         scan = ""
@@ -171,8 +171,20 @@ def document_overview(ws: Workspace) -> list[dict]:
                     "chars": d["n_chars"],
                     "passages": d["body"], "claims": claims.get(d["doc_id"], 0), "file": re.sub(r".*[/\\]", "", d["path"] or ""),
                     "added": (d["added_at"] or "")[:16].replace("T", " "), "added_at": d["added_at"] or "",
-                    "check": "; ".join(flags), "scanned": scan, "ocr_pages": ocr, "scanned_pages": scanned})
+                    "check": "; ".join(flags), "scanned": scan, "ocr_pages": ocr, "scanned_pages": scanned,
+                    # 0.15: the reader that read it and the ENLENS version (None: before 0.15), and how well it read
+                    "reader": d["reader"], "app_version": d["app_version"], **_reading_summary(d["reading_json"])})
     return out
+
+
+def _reading_summary(raw: str | None) -> dict:
+    """0.15 (A5): from a document's reading report, how well it read ('good', 'fair', 'poor'; None: read before 0.15)
+    and its warnings, for the list of documents."""
+    try:
+        rep = json.loads(raw) if raw else {}
+    except ValueError:
+        rep = {}
+    return {"reading_quality": rep.get("quality"), "reading_warnings": rep.get("warnings") or []}
 
 
 _SHA1S: dict[tuple, str] = {}  # checksums of original files, by (path, modified, size)

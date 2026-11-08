@@ -306,28 +306,82 @@ def _fetch(url: str) -> bytes:
         return r.read()
 
 
+# 0.15: a pre-release (development, alpha, beta, release candidate) comes before the release it leads to
+_STAGES = {"dev": 0, "a": 1, "alpha": 1, "b": 2, "beta": 2, "c": 3, "rc": 3}
+_RELEASE = 9
+
+
 def version_tuple(v: str) -> tuple[int, ...]:
-    """'v0.10.1' -> (0, 10, 1); anything after the numbers is ignored."""
-    m = re.match(r"v?(\d+(?:\.\d+)*)", v.strip())
-    return tuple(int(x) for x in m.group(1).split(".")) if m else ()
+    """What orders versions: four numbers, then the stage and its number. 'v0.10.1' -> (0, 10, 1, 0, 9, 0);
+    0.15: a release candidate comes after every earlier release and before its own, '0.15.0rc1' ->
+    (0, 15, 0, 0, 3, 1) (before, it counted as 0.15.0, so a copy of it never heard of 0.15.0 itself). Other words after
+    the numbers are ignored ('0.15.0candidate' is 0.15.0). () for no version."""
+    m = re.match(r"v?(\d+(?:\.\d+)*)(?:[-_.]?(dev|alpha|beta|rc|a|b|c)[-_.]?(\d*)(?![A-Za-z]))?", v.strip(), re.I)
+    if not m:
+        return ()
+    nums = [int(x) for x in m.group(1).split(".")][:4]
+    stage = _STAGES[m.group(2).lower()] if m.group(2) else _RELEASE
+    return (*nums, *[0] * (4 - len(nums)), stage, int(m.group(3) or 0) if m.group(2) else 0)
+
+
+def semver(v: str) -> str:
+    """0.15: a version as semantic versioning writes it, for files read by other programs (the Claude Code
+    plugin): '0.15.0rc1' -> '0.15.0-rc.1'; a release stays as it is."""
+    return re.sub(r"^(\d+\.\d+\.\d+)[-_.]?(rc|a|b)[-_.]?(\d+)$", r"\1-\2.\3", v)
 
 
 # 0.13.6: 0.14.0, 0.15.0 and 0.15.1 were numbered higher than their changes called for (they changed nothing for
 # people using ENLENS), so they were withdrawn and their changes are part of 0.13.6. A copy of one of them that is
 # still running is older than any later ENLENS, whatever its number says. 0.14.0 is a release again (shared
-# projects), so it left the list; a number that is released for real must leave it before its release.
-WITHDRAWN = frozenset({"0.15.0", "0.15.1"})
+# projects), so it left the list. 0.15: a withdrawn number counts as older only while this version is below it
+# (gui/launcher.is_older), so 0.15.0 and 0.15.1 can be released for real without leaving the list first. 0.15.0 is
+# a release (the new reader), so it left the list.
+WITHDRAWN = frozenset({"0.15.1"})
 
 
-def latest_release(fetch: Fetch = _fetch, repo: str | None = None) -> dict:
-    """The latest published release: {"version", "tag", "wheel_url", "wheel", "sums_url", "notes", "url"}."""
+def is_candidate(v: str) -> bool:
+    """0.15: whether a version is a pre-release (a release candidate, beta, alpha or development version)."""
+    t = version_tuple(v)
+    return bool(t) and t[4] != _RELEASE
+
+
+def update_channel() -> str:
+    """0.15: "stable" (the default) or "early" (also release candidates), from the settings (Settings → Technical)."""
+    try:
+        from . import home
+
+        c = str(home.load_settings().get("update_channel") or "stable")
+    except Exception:  # noqa: BLE001 - unreadable settings: the cautious channel
+        return "stable"
+    return c if c in ("stable", "early") else "stable"
+
+
+def highest_release(releases: list) -> dict:
+    """0.15: of GitHub's list of releases (newest first, drafts included when the person may see them), the published
+    one with the highest version, a pre-release too. {} when there is none."""
+    best: dict = {}
+    for r in releases if isinstance(releases, list) else []:
+        if not isinstance(r, dict) or r.get("draft") or not version_tuple(str(r.get("tag_name") or "")):
+            continue
+        if not best or version_tuple(str(r["tag_name"])) > version_tuple(str(best["tag_name"])):
+            best = r
+    return best
+
+
+def latest_release(fetch: Fetch = _fetch, repo: str | None = None, channel: str | None = None) -> dict:
+    """The latest published release: {"version", "tag", "wheel_url", "wheel", "sums_url", "notes", "url"}.
+    0.15: on the "early" channel (default from the settings) the highest version of all published releases,
+    a pre-release too; on "stable" GitHub's *latest*, which is never a pre-release."""
     from .installation import REPO
 
-    url = f"https://api.github.com/repos/{repo or REPO}/releases/latest"
+    early = (channel or update_channel()) == "early"
+    url = f"https://api.github.com/repos/{repo or REPO}/releases" + ("?per_page=30" if early else "/latest")
     try:
         data = json.loads(fetch(url).decode("utf-8"))
     except Exception as e:  # noqa: BLE001 - offline, rate limited, no release yet: say it plainly
         raise UpdateError(f"Could not ask GitHub for the newest ENLENS ({type(e).__name__}: {e}). Are you online?") from e
+    if early:
+        data = highest_release(data)
     assets = {a.get("name", ""): a.get("browser_download_url", "") for a in data.get("assets") or []}
     wheel = next((n for n in assets if n.startswith("enlens_claims-") and n.endswith(".whl")), "")
     tag = str(data.get("tag_name") or "")
@@ -358,12 +412,15 @@ def _peek(url: str) -> str:
 Peek = Callable[[str], str]
 
 
-def latest_version(peek: Peek = _peek, repo: str | None = None) -> str:
+def latest_version(peek: Peek = _peek, repo: str | None = None, channel: str | None = None) -> str:
     """0.13.6: the newest release's version, from where github.com/…/releases/latest redirects to
     (…/releases/tag/v0.13.6). A web page, not the API: GitHub's limit of 60 API requests an hour for each address
-    does not count it, so the app can ask every two minutes on every computer in an office. "" when it cannot tell."""
+    does not count it, so the app can ask every two minutes on every computer in an office. "" when it cannot tell.
+    0.15: "" on the "early" channel: that page never shows a pre-release, so the API list is asked instead."""
     from .installation import REPO
 
+    if (channel or update_channel()) == "early":
+        return ""
     try:
         where = peek(f"https://github.com/{repo or REPO}/releases/latest")
     except Exception as e:  # noqa: BLE001 - offline, GitHub down: say it plainly
@@ -385,17 +442,18 @@ def find_uv() -> str:
 
 
 def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = _fetch, workdir: Path | None = None,
-                   windows: bool | None = None, peek: Peek | None = None) -> dict:
+                   windows: bool | None = None, peek: Peek | None = None, channel: str | None = None) -> dict:
     """Install the newest GitHub Release over a one-line install (see the module's notes). With `peek` (0.13.6), a
     check reads the newest version from the release page (`latest_version`), and asks the API only when the page does
-    not say."""
+    not say. 0.15: `channel` ("stable" or "early", default from the settings) says whether a release candidate counts."""
     import tempfile
 
     from . import __version__, installation
 
     have = __version__
-    seen = latest_version(peek) if check_only and peek is not None else ""
-    rel = {"version": seen} if seen else latest_release(fetch)
+    channel = channel or update_channel()
+    seen = latest_version(peek, channel=channel) if check_only and peek is not None else ""
+    rel = {"version": seen} if seen else latest_release(fetch, channel=channel)
     if not rel["version"] or version_tuple(rel["version"]) <= version_tuple(have):
         return {"updated": False, "version": have, "message": f"ENLENS {have} is up to date."}
     if check_only:

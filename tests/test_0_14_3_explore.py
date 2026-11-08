@@ -231,7 +231,10 @@ def _topic_of(view_theme) -> str:
     return max(TOPICS, key=lambda t: sum(w in words for w in TOPICS[t]))
 
 
-def test_edits_follow_their_themes_when_documents_are_added(tmp_path):
+def test_edits_follow_their_themes_when_documents_are_added(tmp_path, monkeypatch):
+    # about theme edits, not reading: these word-soup documents are read as 0.14 read them (0.15's reader makes a
+    # passage per paragraph, and k-means then numbers this made-up corpus's themes another way)
+    monkeypatch.setattr(ingest, "READER", 1)
     rng = random.Random(1)
     c = tmp_path / "c"
     c.mkdir()

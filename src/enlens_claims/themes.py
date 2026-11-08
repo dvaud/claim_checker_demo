@@ -40,6 +40,7 @@ import uuid
 from collections import Counter, defaultdict
 from typing import Callable
 
+from . import __version__
 from .store import Workspace, now
 from .textutil import fast_normalise
 
@@ -303,9 +304,10 @@ def run(ws: Workspace, k: int = DEFAULT_K, seed: int = 0, mode: str = "auto", em
                 without_vector, "asked_k": asked_k}  # recorded with the run (0.11.1: it was counted and then written as None)
     with ws.connect() as cx:
         previous = _previous_run(cx, mode, seed, embed_model if mode == "meaning" else None, asked_k, k, rkey)
-        cx.execute("INSERT INTO theme_runs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        cx.execute("INSERT INTO theme_runs(run_id, mode, k, seed, embed_model, chat_model, created_at, passages, run_key, "
+                   "settings_json, corpus_version, app_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                    (rid, mode, k, seed, embed_model if mode == "meaning" else None, None, created, len(rows), rkey,
-                    json.dumps(settings), ws.corpus_version()))
+                    json.dumps(settings), ws.corpus_version(), __version__))
         cx.executemany(f"INSERT INTO themes({_THEME_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)", theme_rows)
         cx.executemany("INSERT INTO theme_members(run_id, theme_id, passage_id, similarity) VALUES (?,?,?,?)",
                        member_rows)

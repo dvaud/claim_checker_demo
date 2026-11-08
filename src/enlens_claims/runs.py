@@ -12,6 +12,10 @@ answer is kept in `results`. 0.7 adds:
   the app can warn and offer to label a sample again first (`profile.compare_sample`);
 - a sheet "How these results were made" in every Excel download (`provenance_table`).
 
+0.15 (roadmap J4.2): every answer, run, label, theme run and check also records the ENLENS version that made it, and
+each document the reader that read its text (ingest.READER); the sheet names both, and `made_with` sums them up for a
+project, so a project opened in a newer version can say which results came from an older one.
+
 The keyword-and-meaning pass, the term index and the clustering are deterministic (fixed seed) and need none of this.
 """
 from __future__ import annotations
@@ -20,10 +24,16 @@ import json
 import statistics
 import uuid
 
-from . import prompts, taskkinds
+from . import __version__, prompts, taskkinds
 from .store import Workspace, now
 
 FIELDS = ("model", "digest", "prompt_version", "seed", "num_ctx", "think", "think_budget", "backend")
+RECORDED_SINCE = "0.15"  # the first version that records itself with its results
+
+
+def version_label(v: str | None) -> str:
+    """The ENLENS version behind a result, as people read it ("before 0.15" for one made before it was recorded)."""
+    return v or f"before {RECORDED_SINCE}"
 
 
 def _settings_of(prov: dict) -> dict:
@@ -44,9 +54,10 @@ def start(ws: Workspace, kind: str, scope: str, backend, model: str, n_tasks: in
     prov = provenance(backend, model)
     rid = "u" + uuid.uuid4().hex[:12]
     with ws.connect() as cx:
-        cx.execute("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        cx.execute("INSERT INTO runs(run_id, kind, scope, model, digest, prompt_version, seed, settings_json, started_at, "
+                   "finished_at, tasks, app_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                    (rid, kind, scope, model, prov.get("digest"), prompts.VERSIONS.get(kind), prov.get("seed"),
-                    json.dumps(_settings_of(prov)), now(), None, n_tasks))
+                    json.dumps(_settings_of(prov)), now(), None, n_tasks, __version__))
     return rid
 
 
@@ -111,6 +122,7 @@ def provenance_table(ws: Workspace, task_ids: list[str] | None = None, kinds: tu
     """"How these results were made": one row per model, digest, prompt version, seed and settings behind the
     answers of these tasks (or of these kinds), with how many answers and the dates."""
     sql = ("SELECT r.kind, r.model, r.digest, r.prompt_version, r.seed, r.settings_json, COUNT(*) AS n, "
+           "COALESCE(r.app_version, '') AS app_version, "
            "MIN(r.received_at) AS first, MAX(r.received_at) AS last, COALESCE(r.route, '') AS route, "
            "COALESCE(r.helper, '') AS helper, SUM(COALESCE(r.step, 0)) AS stepped, MIN(r.claimed_at) AS claimed "
            "FROM results r WHERE r.valid=1")
@@ -118,14 +130,14 @@ def provenance_table(ws: Workspace, task_ids: list[str] | None = None, kinds: tu
     if task_ids is not None:
         if not task_ids:
             return [{"Step": "No AI model was used for these rows: they come from the documents' text alone, and "
-                             "the same documents always give the same rows."}]
+                             "the same documents always give the same rows."}, *_reading_rows(ws)]
         sql += " AND r.task_id IN (" + ",".join("?" * len(task_ids)) + ")"
         args += task_ids
     if kinds:
         sql += " AND r.kind IN (" + ",".join("?" * len(kinds)) + ")"
         args += list(kinds)
     sql += (" GROUP BY r.kind, r.model, r.digest, r.prompt_version, r.seed, r.settings_json, COALESCE(r.route, ''), "
-            "COALESCE(r.helper, '') ORDER BY r.kind, first")
+            "COALESCE(r.helper, ''), COALESCE(r.app_version, '') ORDER BY r.kind, first")
     names = taskkinds.Table("run_name")  # 0.13.6: from the registry (taskkinds.py)
     out = []
     claude_code = False
@@ -140,6 +152,7 @@ def provenance_table(ws: Workspace, task_ids: list[str] | None = None, kinds: tu
                     "Exact model (digest or file)": r["digest"] or ("Claude Code reports none" if cc else
                                                                     "not reported by the model server"),
                     "Prompt version": r["prompt_version"] or "",
+                    "ENLENS version": version_label(r["app_version"]),
                     "Seed": "" if r["seed"] is None else r["seed"],
                     "Server": s.get("backend") or "", "Context length": s.get("num_ctx") or "",
                     "Reasoning": s.get("think") if s.get("think") is not None else "",
@@ -153,7 +166,44 @@ def provenance_table(ws: Workspace, task_ids: list[str] | None = None, kinds: tu
         out.append({"Step": "Note: answers by Claude Code carry no seed and no model digest, so they are not "
                             "repeatable by seed the way a seeded local model's are; the model is the one set for its "
                             "helper. How much two readings differ is measured by the acceptance runs (see the manual)."})
-    return out
+    return out + _reading_rows(ws)
+
+
+def _reading_rows(ws: Workspace) -> list[dict]:
+    """0.15: which reader read the project's documents (every result rests on their text)."""
+    rows = ws.query("SELECT COALESCE(reader, 1) AS reader, app_version, COUNT(*) AS n FROM documents "
+                    "GROUP BY COALESCE(reader, 1), app_version ORDER BY reader, app_version")
+    if not rows:
+        return []
+    parts = [f"{r['n']} {'document' if r['n'] == 1 else 'documents'} by reader {r['reader']} "
+             f"(ENLENS {version_label(r['app_version'])})" for r in rows]
+    return [{"Step": "Reading this project's documents: " + "; ".join(parts) + ". A later reader can give a document other text, "
+                     "and so other results; each document keeps the reading it has until it is read again."}]
+
+
+def made_with(ws: Workspace) -> dict:
+    """0.15 (J4.2): what in this project was made by which ENLENS version, so a project opened in a newer version
+    says which results came from an older one: {"version", "reader", "documents": [{"reader", "app_version", "n",
+    "older"}], "results": [{"what", "app_version", "label", "n", "older"}], "older": bool}. `what` is "checks",
+    "theme_runs", "labels" (people's own labels left out: they do not depend on a version) or "answers" (AI answers).
+    A document is older when an earlier reader read it (the version that read it does not matter otherwise)."""
+    from . import __version__ as current
+    from .ingest import READER
+    from .update import version_tuple
+
+    docs = [{**dict(r), "label": version_label(r["app_version"]), "older": r["reader"] < READER} for r in ws.query(
+        "SELECT COALESCE(reader, 1) AS reader, app_version, COUNT(*) AS n FROM documents "
+        "GROUP BY COALESCE(reader, 1), app_version ORDER BY reader, app_version")]
+    now_t = version_tuple(current)
+    res = []
+    for what, sql in (("checks", "SELECT app_version, COUNT(*) FROM hypotheses GROUP BY app_version"),
+                      ("theme_runs", "SELECT app_version, COUNT(*) FROM theme_runs GROUP BY app_version"),
+                      ("labels", "SELECT app_version, COUNT(*) FROM labels WHERE source != 'person' GROUP BY app_version"),
+                      ("answers", "SELECT app_version, COUNT(*) FROM results WHERE valid=1 GROUP BY app_version")):
+        res += [{"what": what, "app_version": v, "label": version_label(v), "n": n,
+                 "older": not v or version_tuple(v) < now_t} for v, n in ws.query(sql) if n]
+    return {"version": current, "reader": READER, "documents": docs, "results": res,
+            "older": any(x["older"] for x in docs + res)}
 
 
 def hypothesis_task_ids(ws: Workspace, hyp_ids: list[str]) -> list[str]:

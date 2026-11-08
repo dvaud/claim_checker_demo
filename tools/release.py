@@ -1,6 +1,7 @@
 """Release helper for the GitHub Actions workflow (.github/workflows/release.yml), also usable by hand (0.10).
 
     python tools/release.py check [v0.10.0]     # the tag, pyproject.toml, __init__.py and CHANGELOG.md agree
+    python tools/release.py prerelease v0.15.0rc1   # "true" for a release candidate (0.15), else "false"
     python tools/release.py notes [0.10.0]      # the CHANGELOG entry of that version (the release notes)
     python tools/release.py assets dist         # next to the wheel in dist/: install.sh and install.ps1 with the
                                                 # version filled in, the same as files to double-click
@@ -44,8 +45,18 @@ def package_version(root: Path = ROOT) -> str:
     return m.group(1)
 
 
+# 0.15: a version is X.Y.Z, or X.Y.ZrcN for a release candidate of X.Y.Z (published as a GitHub pre-release)
+VERSION = r"\d+\.\d+\.\d+(?:rc\d+)?"
+
+
 def changelog_versions(root: Path = ROOT) -> list[str]:
-    return re.findall(r"^## (\d+\.\d+\.\d+)\b", (root / "CHANGELOG.md").read_text("utf-8"), re.M)
+    return re.findall(rf"^## ({VERSION})(?![\w.])", (root / "CHANGELOG.md").read_text("utf-8"), re.M)
+
+
+def is_prerelease(version: str) -> bool:
+    """0.15: a release candidate (v0.15.0rc1) is published as a GitHub pre-release: the install line and the
+    app's Update take the latest full release, so only someone who asks for it gets it."""
+    return bool(re.fullmatch(r"v?\d+\.\d+\.\d+rc\d+", version.strip()))
 
 
 def check(tag: str | None = None, root: Path = ROOT) -> str:
@@ -59,8 +70,8 @@ def check(tag: str | None = None, root: Path = ROOT) -> str:
         problems.append(f"the top entry of CHANGELOG.md is {top}, pyproject.toml says {v}")
     if tag and tag.lstrip("v") != v:
         problems.append(f"the tag is {tag}, pyproject.toml says {v}")
-    if tag and not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
-        problems.append(f"the tag {tag} is not of the form v1.2.3")
+    if tag and not re.fullmatch(rf"v{VERSION}", tag):
+        problems.append(f"the tag {tag} is not of the form v1.2.3 (or v1.2.3rc1 for a release candidate)")
     if problems:
         raise ReleaseError("; ".join(problems))
     return v
@@ -70,15 +81,22 @@ def notes(version: str | None = None, root: Path = ROOT) -> str:
     """The CHANGELOG entry of `version` (without its heading line), with how to install on top."""
     version = version or pyproject_version(root)
     text = (root / "CHANGELOG.md").read_text("utf-8")
-    m = re.search(rf"^## {re.escape(version)}\b[^\n]*\n(.*?)(?=^## \d|\Z)", text, re.M | re.S)
+    m = re.search(rf"^## {re.escape(version)}(?![\w.])[^\n]*\n(.*?)(?=^## \d|\Z)", text, re.M | re.S)
     if not m:
         raise ReleaseError(f"CHANGELOG.md has no entry for {version}")
     repo = "dvaud/claim_checker_demo"
     files = f"https://github.com/{repo}/releases/download/v{version}"
-    head = (f"**Install or update** (your projects stay where they are):\n\n"
+    # 0.15: a release candidate's lines name its own files: "latest" is the latest full release
+    lines = files if is_prerelease(version) else f"https://github.com/{repo}/releases/latest/download"
+    final = re.sub(r"rc\d+$", "", version)
+    head = (f"**This is a release candidate** of ENLENS {final}, to try before it becomes the release. The install "
+            f"line on the ENLENS page and *Update* in the app keep giving the latest full release; the lines below "
+            f"install this one. When {final} itself is out, *Update* offers it.\n\n"
+            if is_prerelease(version) else "")
+    head += (f"**Install or update** (your projects stay where they are):\n\n"
             f"| System | Paste this |\n| --- | --- |\n"
-            f"| macOS, Linux (Terminal) | `curl -fsSL https://github.com/{repo}/releases/latest/download/install.sh \\| sh` |\n"
-            f"| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c \"irm https://github.com/{repo}/releases/latest/download/install.ps1 \\| iex\"` |\n\n"
+            f"| macOS, Linux (Terminal) | `curl -fsSL {lines}/install.sh \\| sh` |\n"
+            f"| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c \"irm {lines}/install.ps1 \\| iex\"` |\n\n"
             "**Or download a file and double-click it** (it does the same as the line):\n\n"
             f"- **Windows:** [{WINDOWS_FILE}]({files}/{WINDOWS_FILE}). If the browser warns about the file, keep it; "
             "if Windows says it protected your PC, click *More info*, then *Run anyway*. Quit ENLENS before updating.\n"
@@ -139,11 +157,13 @@ def double_click_files(dist: Path, v: str, root: Path = ROOT) -> list[Path]:
 
 def main(argv: list[str]) -> int:
     try:
-        if not argv or argv[0] not in ("check", "notes", "assets"):
+        if not argv or argv[0] not in ("check", "notes", "assets", "prerelease"):
             print(__doc__)
             return 2
         if argv[0] == "check":
             print(check(argv[1] if len(argv) > 1 and argv[1] else None))
+        elif argv[0] == "prerelease":
+            print("true" if is_prerelease(argv[1] if len(argv) > 1 else pyproject_version()) else "false")
         elif argv[0] == "notes":
             print(notes(argv[1] if len(argv) > 1 else None), end="")
         else:

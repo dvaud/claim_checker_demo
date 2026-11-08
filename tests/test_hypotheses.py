@@ -592,8 +592,10 @@ A second paragraph of the discussion says that public transport lost riders.
 """
 
 
-def test_layout_finds_paragraphs_and_headings_without_changing_the_text(ws, tmp_path):
+def test_layout_finds_paragraphs_and_headings_without_changing_the_text(ws, tmp_path, monkeypatch):
     from helpers import make_pdf
+
+    monkeypatch.setattr(ingest, "READER", 1)  # 0.15: reader 1's layout (reader 2's: tests/test_0_15_0_reader.py)
 
     (tmp_path / "r.txt").write_text(REPORT_WITH_HEADINGS)
     (tmp_path / "w.html").write_text("<html><body><h1>Rush hour is back</h1><p>Dateline, 2025</p>"
@@ -642,9 +644,11 @@ def test_pdf_quotes_are_cited_by_page_and_paragraph_and_excerpts_keep_their_brea
     res = claimcheck.result(ws, hid)
     pdf_item = next(x for x in res["passages"] if x["page"])
     assert pdf_item["quote"] and "Loneliness rose" in pdf_item["quote"]
-    assert pdf_item["location"] == "page 1, paragraph 3" and pdf_item["span"] == "page 1, paragraphs 1–3"
+    # 0.15: reader 2 starts a passage at a heading ("Results"), so the excerpt is that paragraph alone (reader 1 ran
+    # the title, the abstract and the results into one passage: "page 1, paragraphs 1–3")
+    assert pdf_item["location"] == "page 1, paragraph 3" and pdf_item["span"] == "page 1, paragraph 3"
     kinds = [(b["kind"], pdf_item["text"][b["at"]:b.get("end", b["at"] + 10)]) for b in pdf_item["breaks"]]
-    assert ("heading", "Results") in kinds and ("paragraph", "Abstract. ") in kinds
+    assert ("heading", "Results") in kinds
     txt = next(x for x in res["passages"] if not x["page"])
     assert any(b["kind"] == "heading" and txt["text"][b["at"]:b["end"]] == "Summary" for b in txt["breaks"])
     ctx = claimcheck.neighbours(ws, pdf_item["passage_id"], 0, 0)

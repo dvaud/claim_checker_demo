@@ -165,7 +165,7 @@ def test_the_icon_replaces_an_older_running_copy(home, tmp_path):  # noqa: F811
     procs = [subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
 
     def wait_for(pid):
-        for _ in range(150):
+        for _ in range(600):  # 0.15: up to a minute (a cold start on a CI machine is slow)
             live = launcher.running()
             if live and live["pid"] == pid:
                 return live

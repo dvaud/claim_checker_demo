@@ -209,3 +209,56 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
   .dv-term-bar { display: none; }
   .dv-selbar { left: 8px !important; right: 8px; }
 }
+
+/* 0.15 (A4, A5): the reading view of a document read by the new reader, its reading report and the page beside it */
+.doc-view .dv-page-mark { display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; color: var(--muted); font-size: .76rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+.doc-view .dv-page-mark::after { content: ""; flex: 1; border-top: 1px dashed var(--border-strong); }
+.doc-view .dv-page-mark:first-child { margin-top: 0; }
+.doc-view .passage-row { position: relative; }
+.doc-view .passage-row.dv-k-heading .dv-body p, .doc-view .passage-row.dv-k-title .dv-body p { font-family: var(--font-ui); font-weight: 650; font-size: 1.02rem; }
+.doc-view .passage-row.dv-k-title .dv-body p { font-size: 1.15rem; }
+.doc-view .passage-row.dv-k-heading, .doc-view .passage-row.dv-k-title { padding-bottom: 2px; }
+.doc-view .passage-row.dv-k-caption .dv-body p { font-family: var(--font-ui); font-size: .9rem; font-style: italic; color: var(--text-2); }
+.doc-view .passage-row.dv-k-abstract .dv-body { border-left: 3px solid var(--border-strong); padding-left: 10px; }
+/* the actions sit in the label column, under where the block is cited: never over the text */
+.doc-view .passage-row .pp { position: relative; align-self: start; }
+.doc-view .dv-act { position: absolute; top: 100%; left: -6px; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin-top: 2px; opacity: 0; transition: opacity .12s; }
+.doc-view .dv-fold .passage-row, .doc-view .passage-row.dv-k-table { min-height: 4.4em; }
+.doc-view .passage-row:hover .dv-act, .doc-view .passage-row:focus-within .dv-act { opacity: 1; }
+.doc-view .dv-act .btn { font-size: .74rem; padding: .12rem .4rem; gap: .25em; }
+@media (hover: none) { .doc-view .dv-act { opacity: 1; } }
+.doc-view .passage-row.dv-joined { border-top: 0; padding-top: 2px; }
+.doc-view .dv-mine { display: block; margin-top: 3px; font-size: .72rem; color: var(--accent-text); }
+.doc-view .dv-mine.dv-muted { color: var(--muted); }
+.doc-view .dv-fold { margin: 2px 0; border-top: 1px solid var(--border); }
+.doc-view .dv-fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 7px 0; font-size: .8rem; color: var(--muted); }
+.doc-view .dv-fold > summary::-webkit-details-marker { display: none; }
+.doc-view .dv-fold > summary .icon { transition: transform .15s; flex: none; }
+.doc-view .dv-fold[open] > summary .icon { transform: rotate(90deg); }
+.doc-view .dv-fold > summary:hover { color: var(--text-2); }
+.doc-view .dv-fold > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.doc-view .dv-fold .passage-row { border-top: 1px dashed var(--border); }
+.doc-view .passage-row.dv-out .dv-body, .doc-view .passage-row.dv-out .pp { opacity: .62; }
+.doc-view .passage-row.dv-out .dv-body p { font-family: var(--font-ui); font-size: .88rem; }
+.doc-view .dv-table-wrap { overflow-x: auto; max-width: 100%; }
+.doc-view .dv-table { border-collapse: collapse; font-size: .86rem; font-variant-numeric: tabular-nums; }
+.doc-view .dv-table th, .doc-view .dv-table td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; white-space: nowrap; }
+.doc-view .dv-table th { background: var(--surface-2); font-weight: 600; }
+.dv-quality { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-weight: 600; font-size: .92rem; }
+.dv-q-good .icon { color: var(--ok); }
+.dv-q-fair .icon { color: var(--warn); }
+.dv-q-poor .icon { color: var(--bad); }
+.dv-warn { margin: 0 0 8px; padding-left: 1.1em; font-size: .86rem; color: var(--text-2); }
+.dv-warn li + li { margin-top: 3px; }
+.dv-figs { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: .86rem; }
+.dv-check { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; cursor: pointer; }
+.dv-reread-preview { margin-top: 8px; }
+.dv-lost { margin: 6px 0 0; padding-left: 1.1em; }
+.dv-lost li + li { margin-top: 2px; }
+.dv-page-nav { align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.dv-page-frame { position: relative; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; background: #fff; line-height: 0; }
+.dv-page-img { width: 100%; height: auto; display: block; }
+.dv-page-boxes { position: absolute; inset: 0; }
+.dv-pbox { position: absolute; padding: 0; margin: 0; background: transparent; border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); border-radius: 2px; cursor: pointer; }
+.dv-pbox-out { border-style: dashed; border-color: color-mix(in srgb, #8a8a8a 80%, transparent); }
+.dv-pbox:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }

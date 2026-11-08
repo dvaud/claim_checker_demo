@@ -32,8 +32,8 @@ from _static import defined_tokens
 from helpers import api_docs
 
 # 0.10.1: the tests follow the package's version (a newer published release is the next patch), so a release no
-# longer has to edit them
-NEXT = ".".join(VERSION.split(".")[:2] + [str(int(VERSION.split(".")[2]) + 1)])
+# longer has to edit them (0.15: a release candidate, 0.15.0rc1, has 0.15.1 next)
+NEXT = "{}.{}.{}".format(*(int(x) + (i == 2) for i, x in enumerate(re.match(r"(\d+)\.(\d+)\.(\d+)", VERSION).groups())))
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE = str(Path(__file__).with_name("fake_claude_cli.py"))
@@ -167,7 +167,7 @@ def test_update_from_the_latest_release(monkeypatch, tmp_path):
     from enlens_claims import update
 
     monkeypatch.setattr(update, "find_uv", lambda: "/bin/uv")
-    assert update.version_tuple("v0.10.1") == (0, 10, 1) and update.version_tuple("0.9.1") < update.version_tuple("0.10.0")
+    assert update.version_tuple("v0.10.1") == update.version_tuple("0.10.1") and update.version_tuple("0.9.1") < update.version_tuple("0.10.0")
     r = update.update_release(fetch=_releases(VERSION), run=Runs())
     assert r["updated"] is False and "up to date" in r["message"]
     r = update.update_release(check_only=True, fetch=_releases(), run=Runs())
@@ -232,6 +232,8 @@ cp "$FAKE_DL/$(basename "$url")" "$out"
 
 @pytest.fixture
 def sandbox(tmp_path):
+    if sys.platform == "win32":
+        pytest.skip("install.sh is for macOS and Linux (Windows has install.ps1)")
     if not shutil.which("sh"):
         pytest.skip("no POSIX shell")
     bin_dir = tmp_path / "bin"
@@ -305,7 +307,7 @@ def test_release_check_notes_and_assets(tmp_path):
     with pytest.raises(release.ReleaseError, match="the tag is v0.9.9"):
         release.check("v0.9.9")
     notes = release.notes(v)
-    headings = re.findall(r"^## (\d+\.\d+\.\d+)", (ROOT / "CHANGELOG.md").read_text(), re.M)
+    headings = release.changelog_versions()
     assert headings[0] == v
     assert "install.sh \\| sh" in notes and f"## {v}" not in notes and f"## {headings[1]}" not in notes
     dist = tmp_path / "dist"

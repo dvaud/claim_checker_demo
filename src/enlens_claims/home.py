@@ -81,6 +81,9 @@ DEFAULTS = {
     # in every project you share (made once, see people.py)
     "your_name": "",
     "person_id": "",
+    # 0.15: "stable" (the latest full release) or "early" (also release candidates, which come out a week or more
+    # before each new version); a git copy follows main and has no channel
+    "update_channel": "stable",
 }
 
 BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Local model (automatic)",
@@ -184,6 +187,8 @@ def clean_settings(changes: dict) -> dict:
         raise ValueError("claude_plan must be auto, free, pro or max.")
     if "claude_plan_detected" in out and out["claude_plan_detected"] not in ("", "free", "pro", "max"):
         raise ValueError("claude_plan_detected must be free, pro, max or empty.")
+    if "update_channel" in out and out["update_channel"] not in ("stable", "early"):
+        raise ValueError("update_channel must be stable or early.")
     if "ocr" in out and out["ocr"] not in ("auto", "off"):
         raise ValueError("ocr must be auto or off.")
     if "ocr_lang" in out and not re.fullmatch(r"[A-Za-z_]{2,}(\+[A-Za-z_]{2,})*", out["ocr_lang"] or ""):

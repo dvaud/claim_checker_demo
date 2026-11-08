@@ -93,6 +93,33 @@ def info() -> dict:
             "updates": how, "install_line": install_line(), "releases": f"https://github.com/{REPO}/releases"}
 
 
+def technical_details(settings: dict | None = None, local_only: bool | None = None) -> str:
+    """0.15: a short plain-text block a person pastes into a problem report (Settings → Technical → Copy technical
+    details). The version, how ENLENS was installed, the operating system, Python, the AI route, whether
+    --local-only is on and the update channel. Never a path, a project or document name, a user name or a key."""
+    import platform
+
+    from . import home
+
+    s = settings if settings is not None else home.load_settings()
+    off = home.local_only() if local_only is None else local_only
+    route = home.BACKEND_LABELS.get(s.get("backend", ""), str(s.get("backend", "")))
+    if kind() == "git":
+        channel = "follows main (git copy)"
+    else:
+        channel = "early (release candidates too)" if s.get("update_channel") == "early" else "stable"
+    shown = {"windows": "Windows", "mac": "macOS", "linux": "Linux"}[system()]
+    return "\n".join([
+        f"ENLENS version: {__version__}",
+        f"Installed: {kind()}",
+        f"System: {shown} {platform.release()} ({platform.machine()})",
+        f"Python: {platform.python_version()}",
+        f"AI route: {route}",
+        f"Local only: {'yes' if off else 'no'}",
+        f"Update channel: {channel}",
+    ])
+
+
 def post_install(by: str | None = "script", icon: bool = True, open_app: bool = False, home: str | None = None,
                  local_only: bool | None = None) -> dict:
     """What an installer does last (`enlens post-install`). Returns what was done, with a message to print."""

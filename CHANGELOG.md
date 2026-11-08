@@ -1,5 +1,179 @@
 # Changelog
 
+## 0.15.0 (November 2026): a new reader, and results you can trace
+
+0.15 changes how documents are read. A new reader finds the columns of a PDF, sets aside what is not the
+document's own text (running heads, page numbers, author details, acknowledgements, footnotes, the reference list),
+keeps tables as tables and repairs words broken over lines. Each document's page now shows its text the way the
+reader found it, with the PDF page beside it, a report on how well it read, and *Restore* and *Leave out* for any
+part. Documents already in a project keep the reading they have, so nothing you made moves by itself; *Read with the
+new reader* moves one when you choose, its results with it. Every result now records the ENLENS version that made
+it, and `enlens measure` shows in figures how well each reader reads.
+
+### Changes that can alter your results
+
+- **A new reader for documents added from now on** (reader 2). Search hits, codes, key terms, themes and the
+  excerpts a check reads come from other passages than before:
+  - **Two columns are read one after the other**, not across; a title or abstract set across the page comes first.
+  - **What is not the document's own text is set aside**: running heads and footers, page numbers and line numbers,
+    words inside charts, author names, affiliations, e-mails and dates on the first page, acknowledgements, funding,
+    conflicts of interest, data availability, licence lines, footnotes and the reference list. They stay in the
+    document and in a search of all its text; searches, codes, themes and checks do not read them.
+  - **Tables are kept as tables** (rows and cells, with their caption), left out of the passages, and downloadable
+    for Excel.
+  - **Words are repaired**: a word cut at a line end is joined, a compound keeps its hyphen (reader 1 made
+    "long-term" into "longterm"), words that ran together are split where the document writes them apart, and
+    ligatures, odd spaces and accents set apart from their letter are put right in the stored text.
+  - **A passage is a paragraph** (long ones cut into parts of about equal size, short ones put together), and a
+    heading starts a passage with the text under it; reader 1 ran sentences together across paragraphs and headings.
+    Paragraphs are numbered as before for text files; in a PDF a heading counts with the text under it.
+  - Measured with `enlens measure` on six PDFs of known text: the share of the words in the text that searches and
+    the AI read that belong there rose from 85% to 99.9% (the figures are under *For developers*).
+- **Restore and Leave out** change which passages searches, codes, themes and checks read, when you use them.
+- **Read with the new reader** gives the document you move a new text and new passages.
+
+### New
+
+- **The reading view** (the page of a document read by the new reader): headings, paragraphs, captions and tables
+  as they are, a mark where each page begins, and what was set aside folded under *Left out of the text* on each
+  page. Point at a block for *Leave out* or *Restore*; a heading goes with its text, and paragraphs that share a
+  passage go together. The choice is kept by the block's words, so it holds when the document is read again.
+- **Reading**, a panel beside the text: *Read well*, *Read, with something to check* or *Read badly*, with the
+  reasons (pages without text, text recognised by OCR, a garbled text layer, most of the text set aside), what was
+  repaired, the tables found, how many passages count, and *Show what was left out in the text*. The list of
+  documents marks one that read badly, and one read by the earlier reader.
+- **Page**, a panel beside the text (PDFs, with the OCR extra): the page of the original with every block the reader
+  found outlined (solid: read; dashed: left out). It follows the text as you scroll; click an outline to go to it.
+- **Read with the new reader** (in *Reading*, for a document added before 0.15): a preview first, changing nothing
+  (how many of its results find their place in the new text, and which do not), then *Move it to the new reader*, all
+  or nothing. Each result follows its quote to the same words; a check keeps the excerpt it showed; keyword codes, key
+  terms and the search index are made again; work still waiting for the AI is asked again; a set of themes is marked
+  out of date where its passages changed; what cannot be placed is kept without a place and listed (its check marks it
+  *no place in the new reading*). The Overview's line about earlier versions, and *read before 0.15* in the list of
+  documents, say where to find it.
+- **Every result says which ENLENS made it.** Each AI answer, codebook label and set of themes, and the run behind
+  them, records the ENLENS version; a check records the version that started it; each document the reader that read
+  it. *How these results were made*, at the end of every Excel download, has a column *ENLENS version* and a line
+  naming the readers. The Overview says, in one quiet line, which results an earlier version made; they stay as they
+  were made. Results made before this version say "before 0.15".
+- **`enlens measure`**: how well ENLENS reads, in figures, with no AI. It makes six small PDFs whose text it knows (one
+  and two columns, running heads, line numbers, front and back matter, a table, footnotes), reads them with each
+  reader and reports the words kept, the words that belong, their order, words run together or broken apart, and
+  leftover boilerplate. `--folder DIR` measures PDFs with their true text beside them (`tools/arxiv_truth.py` makes a
+  folder from open-access arXiv papers); `--ws PROJECT` counts the quotes of a project that still find their place in
+  each reader's text, on a copy; `--timings` adds how long reading, search, key terms and themes take. Each release now
+  carries `validation-report.md`, made by it: the half of a validation report that needs no AI.
+- **Try new versions early.** *Settings → Technical → Which new versions to offer*: *Stable (recommended)* or *Try
+  new versions early*, which also offers release candidates (a candidate comes at least a week before each new
+  version). Try one on a project you do not share: going back can show sync clashes (nothing is lost). A git copy
+  follows its branch and has no choice. The update pop-up says "release candidate" when it offers one.
+- **Reporting a problem.** *Settings → Technical → Copy technical details* copies the version, how ENLENS was
+  installed, the system, Python, the AI route, whether cloud models are off and the update channel (never a path, a
+  project or document name, or a key); *Report a problem* opens a plain-language form on GitHub. A form for ideas, and
+  `SECURITY.md` on reporting a security or privacy problem privately.
+
+### Privacy
+
+- Nothing new leaves the computer. The new reader, the reading view, the pictures of pages, `enlens measure` and
+  *Read with the new reader* all run on this computer, with no AI. *Copy technical details* holds no path, name or
+  key, and goes nowhere until you paste it. `tools/arxiv_truth.py`, a developer's tool never run by the app, is the
+  only part that downloads anything (open-access papers from arXiv).
+
+### For developers
+
+- **The reader.** `reader.py` is reader 2 and `ingest.READER` is 2; reader 1 stays as `ingest._build_document_1`, and
+  `ingest.read_document(path, reader=…)` reads a file with either and stores nothing. New tables `blocks` (each
+  block's kind, whether it is read, its box), `doc_tables` (rows of cells and caption) and `block_choices` (a person's
+  Restore and Leave out, kept by `reader.block_fp`); `passages.block` and `documents.reading_json` (the reading
+  report); passages of left-out blocks have `section` `left_out`. `reader.apply_choices` sets blocks and passage
+  sections from the choices; `ingest.store_blocks` stores a reading. `sync.py` brings in a colleague's blocks and
+  tables with their documents; removing a document removes its blocks. `RawDoc.page_sizes`.
+- **Read with the new reader**: `reread.py` (`check`, `preview`, `move`): old text aligned to the new sentence by
+  sentence, each result moved by its quote near where it was; ids made from passage ids made again, and an old
+  passage id that cannot move becomes a tombstone (`<doc>:r1-0005`) that names no passage, so nothing ever points at
+  other words; a kept excerpt stores the reader it was shown from, its breaks and quote positions (`tasks.doc_span`
+  places later answers in the document as it reads now); `documents.old_fps` (the older text's fingerprints, for a
+  later sync fix) and `documents.sent_share` (so the share Claude has read never drops below what was sent);
+  quotes across a reader-2 table's cell marks still find their place. `GET …/documents/<id>/reread` (preview),
+  `POST` (a job: the move, then search by meaning, the glossary and the keyword pass); refused while another job of the
+  project runs. Removing a document also removes answers kept under its old passage ids.
+- **The reading view's routes**: `GET …/documents/<id>?view=blocks` gives a reader-2 document block by block with
+  kinds, inclusion, boxes and tables; `PUT …/documents/<id>/blocks/<n>`, `GET …/documents/<id>/pages/<n>.png`
+  (pypdfium2, one thread at a time), `GET …/documents/<id>/tables/<n>.xlsx`; the document detail adds `reader`,
+  `new_reader`, `reading`, `page_images`, `tables`, `paragraphs`, and the list `reading_quality` and
+  `reading_warnings` (docs/API.md).
+- **Versions on results**: `app_version` in `results`, `runs`, `labels`, `theme_runs`, `hypotheses` and
+  `documents`, and `documents.reader` (`store._migrate` gives documents read before 0.15 reader 1). Labels, runs and
+  theme runs are written by column name (`profile._INSERT_LABEL`): the positional `INSERT … VALUES` broke as soon as a
+  table gained a column. `sync._HOW` keeps `app_version` out of every fingerprint (0.14 cannot: going back from a
+  0.15 candidate to 0.14 on a shared project gives sync clashes; docs/DEVELOPING.md). `runs.made_with()`,
+  `runs.version_label()`, `runs.RECORDED_SINCE`.
+- **Release candidates.** `update.version_tuple()` orders `0.15.0rc1` after every earlier release and before
+  `0.15.0`; `tools/release.py` takes `v0.15.0rc1` tags and changelog entries headed 0.15.0rc1 (`release.py prerelease`),
+  and a candidate's notes give install lines with its own files; `release.yml` drafts a candidate as a pre-release.
+  `update.semver` gives the plugin a candidate's number as semantic versioning. The update channel:
+  `settings.update_channel`, `update.highest_release`, `update.is_candidate`; `GET /api/technical-details`.
+- **Withdrawn numbers.** 0.15.0 left `update.WITHDRAWN` (now 0.15.1); a running copy of a withdrawn number counts as
+  older only while this version is below it (`launcher.is_older`).
+- **CI on three systems.** `tests.yml` runs on Linux (Python 3.10 and 3.13), macOS and Windows on every push and pull
+  request (macOS and Windows advisory for now, see *Not yet done*), in UTF-8 mode, with the pdfminer extra and a
+  `ruff` check for syntax errors and undefined names; tests of programs that exist only on macOS and Linux skip on
+  Windows, and the tests that start the app as its icon does wait up to a minute for it. `release.yml` installs the pdfminer extra too, and makes
+  `validation-report.md`. `docs/DEVELOPING.md` has *Rolling back a release* and *Changes that alter results*.
+- **The new reader in figures** (`enlens measure`). On six PDFs of known text: words that belong 99.9% (reader 1:
+  85%), words of the body kept and in order 99.9% (98.9%), running heads, page numbers, author details, table cells and
+  footnotes left in the text that searches and the AI read: none (4.3 per document). On ten open-access papers (arXiv,
+  their LaTeX source as an approximate true text): words kept 97.8% (97.6%), words run together 6 per paper (14),
+  broken apart 10 (35), order 94.9% (96.1%; a little worse on papers with wide figures and tables).
+- `pdfmake.py`, a small PDF writer for documents of known text; `tools/dev_server.py --reading` makes a project of
+  them, one read by reader 1 with a check on it.
+
+New tests: `tests/test_0_15_0_reader.py` (text repair; the known texts read whole, in order and without boilerplate;
+two columns; a page that repeats another is not running heads; tables; passages never mix read and left-out text;
+reading is the same twice; without pdfminer; paragraph numbering; what the project stores; a person's choice holds
+when the document is stored again; the reading view, Restore and Leave out, a table for Excel, a picture of a page, a
+document read before 0.15; moving a document from the app, refused while a job runs; removing a document removes
+its records under old passage ids). `tests/test_0_15_0_read_with_new_reader.py` (a check keeps its excerpt and its
+quote lands on the same words; judgements, labels and their reviews move; theme runs keep one-to-one members or go
+out of date; waiting tasks are asked again and answered ones never collide with new passage ids; no row names an old
+passage id with a new meaning; what cannot be placed is reported and points nowhere; the preview writes nothing; a
+move is all or nothing; which judgements count is the same before and after, also for a check answered through the
+queue; refusals; block choices applied again). `tests/test_0_15_0_measure.py` (the known-text PDFs are the same every
+time; the figures on hand-made cases; quotes of a project counted on a copy that is never changed; the report and
+`--json`; reader 2 at least as good as reader 1). `tests/test_0_15_0_testing_and_updates.py` (the update channel,
+candidates found and drafts skipped, the technical details hold nothing private, the issue forms and
+`SECURITY.md`). `tests/test_0_15_0_release_candidates.py`, `tests/test_0_15_0_versions_on_results.py` (the
+groundwork). Tests of reader 1's own layout and of theme edits on a made-up corpus pin reader 1; a citation test now
+expects reader 2's paragraph passages.
+
+**Not yet done:**
+- The roadmap planned a release candidate (0.15.0rc1) in use for a week before 0.15.0; 0.15.0 is released directly,
+  so its first patches refine what use shows.
+- The new reader was measured on six made-up PDFs and ten machine-learning papers, not yet on a large corpus of
+  reports from other fields (`enlens measure --folder`, or `--ws` on a real project). A layout it does not know
+  (three columns, a table or figure across two columns, text in boxes) can still come out out of order.
+- *Read with the new reader* was tried in tests and on the dev server's documents, not on a real project with checks
+  made by Claude Code.
+- In a shared project, a colleague whose copy still has a document's older reading brings it in as a second copy at
+  the next sync (the document remembers its older text's fingerprint for a later fix).
+- After a move, an old passage rarely maps one to one onto a new one in a PDF (the new reader's passages are
+  paragraphs): sets of themes that include it are mostly marked out of date, and the AI's codes for it are kept as
+  records, so a new AI pass reads its passages again. An excerpt that finds no place still counts in its check's
+  answer, as the check read it.
+- Tables are found by the line positions pdfminer gives; tables without clear gaps between their columns, and tables
+  in scanned pages, are not found. GROBID and Docling are not used.
+- Restore and Leave out do not renumber paragraphs; a paragraph restored by hand is cited as part of the one before it.
+- The tests had never run on Windows or macOS before; their first runs (on this release's commit) fail there: on
+  Windows a dozen tests and the run stops part way, on macOS three tests that start the app as the icon does. Those two
+  jobs are advisory (shown, not failing the run) until a 0.15.x patch makes the suite pass on them. Linux, on Python
+  3.10 and 3.13, passes.
+
+### Coming in 0.16
+
+Working with the text, and the AI mix: notes and highlights, a research log and history, better concepts, retracted
+papers flagged, export to NVivo and ATLAS.ti, and, last, a mix of a local model and Claude per kind of task (which
+**can change results**, and is announced here one minor release ahead).
+
 ## 0.14.6 (November 2026): Claude Code works in a box of its own
 
 Claude Code started by ENLENS needs nothing from your computer but the passages in its tasks. It now gets nothing

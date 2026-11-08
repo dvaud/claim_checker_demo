@@ -56,6 +56,9 @@
 .ov-grid-small .ov-card { padding: 12px 14px; box-shadow: none; }
 .ov-grid-small .ov-card-icon { width: 28px; height: 28px; }
 .ov-empty-docs { margin-bottom: 18px; }
+/* 0.15: results an earlier ENLENS made (J4.2), one quiet line under the cards */
+.ov-made-with { display: flex; align-items: flex-start; gap: 7px; margin: 24px 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
+.ov-made-with svg { flex: none; margin-top: 2px; }
 
 /* ---------------------------------------------------------------- settings as tabs */
 .settings-tabs {

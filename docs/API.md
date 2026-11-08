@@ -183,6 +183,15 @@ since 0.13.6 only when there is an update).
   at most 20 s); `{"updated": false, "restarting": false, "version"}` when nothing newer waits. 409 when the update
   fails (nothing restarts; the reason is the error), on Windows with the one-line install (quit, then run the install
   line again), when this copy cannot restart itself, and for a second request while one is updating or restarting.
+- 0.15: *Try new versions early*: the setting `update_channel` (`"stable"`, the default, or `"early"`, validated by
+  `PUT /api/settings`) says whether the check and `enlens update` of a one-line install also take release candidates:
+  `early` asks GitHub's list of releases (`/releases?per_page=30`, drafts skipped) and takes the highest version
+  (`update.version_tuple`); `stable` asks `/releases/latest`, which is never a pre-release. A git copy follows
+  `main` and ignores it. `GET /api/update` carries `"candidate": true` when `latest` is a release candidate, and
+  changing the channel makes the next look ask again.
+- `GET /api/technical-details` (0.15) → `{"text": "ENLENS version: …\nInstalled: …\nSystem: …\nPython: …\nAI route: …\nLocal
+  only: yes|no\nUpdate channel: …"}`: a short block for a problem report (*Copy technical details* in Settings →
+  Technical). It holds no path, project or document name, user name or key.
 - `POST /api/restart` `{}` → `{"restarting": true, "jobs_stopped": n}`: restarts into the version on disk (*Restart
   now* on the banner *ENLENS X is installed, but Y is still running*); 409 when this copy cannot restart itself.
 
@@ -351,6 +360,51 @@ Opening it at the quote: for a PDF add `#page=N`; for a text file add `&quote=<t
 then shown as a page with the quote highlighted (found as quotes are), scrolled to it (no script; the same sandbox
 policy as web pages; without a match the plain file is sent); for a web page add a text fragment,
 `#:~:text=<first words>,<last words>` (browsers that support it scroll to and highlight that text).
+
+**0.15: how a document was read, and the reading view.** The detail adds `"reader"` (1: read before 0.15; 2: the new
+reader), `"new_reader"` (the reader new documents get), `"reading"` (the reading report: `{"reader", "engine":
+"pdfminer"|"pypdf"|"text", "pages", "pages_with_text", "ocr_pages", "scanned_pages", "multi_column_pages",
+"repairs": {"hyphens_joined", "hyphens_kept", "words_split", "ligatures", "spaces", "accents"}, "tables", "blocks":
+{kind: n}, "left_out_chars": {kind: n}, "included_share", "passages", "body_passages", "unreadable_passages", "words",
+"warnings": [sentence], "quality": "good"|"fair"|"poor"}`; for a document read before 0.15 `{"reader": 1, "older":
+true, "pages", "ocr_pages", "scanned_pages", "passages", "body_passages", "unreadable_passages", "warnings": [],
+"quality": null}`), `"page_images"` (a picture of each page can be had), `"tables"` and `"paragraphs"` (counts).
+With `&view=blocks`, a document read by the new reader comes block by block in reading order (`limit` up to 1000):
+each block adds `"kind"` (`title`, `heading`, `abstract`, `body`, `caption`, `table`, `footnote`, `front`, `back`,
+`references`, `figure`, `furniture`), `"kind_text"` (in words), `"included"` (searches, codes, themes and checks read
+it), `"changed"` (a person restored or left it out), `"box"` (`[x0, top, x1, bottom]` on the page in points from the
+top left, or null) and, for a table, `"table": {"n", "caption", "rows": [[cell]]}`. `label` is "Page 2, paragraph 3"
+where a paragraph begins, empty where the paragraph above goes on (under its heading, or across a column), and the
+kind in words for a block left out. Passages add `"block"` (the kind of block they were made from; null for reader 1),
+and their `section` may be `"left_out"`.
+
+`PUT /api/projects/<p>/documents/<doc_id>/blocks/<n>` `{"included": true|false}` → *Restore* or *Leave out* a block:
+`{"blocks": [block], "together": n}`, the blocks changed (those sharing a passage with it change together). The
+choice is kept by the block's words (`block_choices`) and applied again when the document is read again; choosing
+what the reader chose removes it. 404 for no such block, 400 when `included` is not a boolean.
+
+`GET /api/projects/<p>/documents/<doc_id>/pages/<n>.png?scale=1.5` (also `?token=`, for an `<img>`) → page `n` of the
+original PDF as a PNG (`scale` 0.5 to 3 times 72 dots per inch), drawn with pypdfium2 (the OCR extra); 404 with the
+reason when the original is missing or not a PDF, the extra is not installed, or there is no such page. A block's
+`box` times `scale` is its place in pixels.
+
+`GET /api/projects/<p>/documents/<doc_id>/tables/<n>.xlsx` → a table the reader found, for Excel: its caption, where
+it comes from, then its rows (cells that read as numbers are numbers).
+
+`GET /api/projects/<p>/documents/<doc_id>/reread` → whether the document can be read with the new reader now and what
+that would do, changing nothing: `{"ok": false, "reason", "reader", "new_reader", "doc_id", "title"}` when it cannot
+(read by the new reader already, the original missing or changed, a task of it waiting or out with Claude Code, almost
+no text in the new reading), otherwise the report: `{"ok": true, "moved": false, "doc_id", "title", "reader",
+"new_reader", "counts": {kind: {"moved", "not_placed", "left_out"}}` (kinds: `check`, `judgement`, `second_opinion`,
+`label`, `claim`, `sdg_check`, `theme_member`), `"not_placed": [{"kind", "kind_text", "what", "quote", "page", "where",
+"left_out_kind", "why"}]` (page in the old reading), `"left_out": [{… "note"}]` (placed, in text the new reader leaves
+out; page in the new reading), `"remade"`, `"tasks": {"asked_again", "moved", "kept_as_records"}`, `"themes":
+{"runs_kept_up_to_date", "runs_out_of_date", "runs"}`, `"passages": {"before", "after", "one_to_one", "body_before",
+"body_after"}`, `"ai_share": {"before", "after"}`, `"addons": [{"table", "rows"}]`, `"reading"` (the new reading
+report), `"warnings": [sentence]}` (`reread.py`). `POST …/reread` → `{"job"}` (kind `reread`): the move in one
+transaction (all or nothing), then the document's search by meaning, the glossary and the keyword pass, as after adding
+a document; the job's result is `{"report": {… "moved": true}, "glossary", "codes", …}`. 409 with the reason when it
+cannot be done, or while another job of the project runs.
 
 `DELETE /api/projects/<p>/documents/<doc_id>` → `{"removed": {...counts}}` (past checks keep their evidence).
 `DELETE /api/projects/<p>/documents` `{"confirm": true}` → removes every document **and every check**.
@@ -1009,6 +1063,20 @@ from a reference manager (BibTeX, RIS, CSL JSON, Zotero's CSV). Nothing goes ove
   Zotero are not touched.
 - `GET /api/projects/<p>/documents` adds `"bib"` per document (`{"cite", "title", "doi", "link", "url", "type",
   "container"}` of its linked work, or null); `GET /api/projects/<p>/documents/<id>` adds the same `"bib"`.
+
+### Results across versions (0.15)
+
+- `GET /api/projects/<p>/documents` adds `"reader"` (the reader that read the document's text: 1 for every document
+  read before 0.15, 2 from 0.15), `"app_version"` (the ENLENS version that read it; null before 0.15),
+  `"reading_quality"` (`"good"`, `"fair"`, `"poor"`; null for a document read before 0.15) and `"reading_warnings"`
+  (sentences) per document. The reading view's routes are under *Documents* above.
+- `GET /api/projects/<p>/overview` adds `"made_with"`: `{"version": "0.15.0", "reader": 2, "documents": [{"reader",
+  "app_version", "label", "n", "older"}], "results": [{"what": "checks" | "theme_runs" | "labels" | "answers",
+  "app_version", "label", "n", "older"}], "older": bool}`. `label` is the version as people read it ("before 0.15"
+  when it was not recorded); `older` marks results an earlier version made, and documents an earlier reader read.
+  People's own labels are not counted: they do not depend on a version.
+- The sheet *How these results were made* of every Excel download has a column *ENLENS version* and ends with a row
+  saying which reader read the project's documents.
 
 ### Jobs
 

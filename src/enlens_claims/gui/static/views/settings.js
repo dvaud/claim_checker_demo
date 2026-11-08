@@ -851,7 +851,7 @@ function updatesSection() {
       return;
     }
     const what = info.on_disk ? `${name} ${info.latest} is installed, but ${info.version} is still running.`
-      : info.latest ? `${name} ${info.latest} is available (you have ${info.version}).`
+      : info.latest ? `${name} ${info.candidate ? "release candidate " : ""}${info.latest} is available (you have ${info.version}).`
       : `${info.changes} new change${info.changes === 1 ? " is" : "s are"} waiting for this copy of ${name} (version ${info.version}).`;
     replace(out, h("div", { class: "notice notice-info" }, icon("arrow-up"),
       h("div", {}, h("p", {}, h("strong", {}, what)),
@@ -869,7 +869,36 @@ function updatesSection() {
   return sectionCard("updates", "Updates", st.can_restart
     ? `${name} looks for a new version when it opens and every two minutes after. When there is one, it says so in a pop-up, and an Update button appears at the bottom of the sidebar until you install it. Your projects and results are kept.`
     : `Look for a new version of ${name}. Your projects and results are kept when you update.`,
-    h("div", { class: "save-row" }, btn), out);
+    channelField(st), h("div", { class: "save-row" }, btn), out, problemRow());
+}
+
+// 0.15: which versions the update check offers. A git copy follows main and has no choice.
+function channelField(st) {
+  if (st.installation && st.installation.kind === "git")
+    return h("p", { class: "muted small" }, icon("info", { size: 13 }), ` This copy of ${appName()} is a git copy: it follows the main branch, so there is no choice of versions here.`);
+  const state = h("span", { class: "save-state", "aria-live": "polite" });
+  const sel = h("select", { class: "select", id: "update-channel" },
+    [["stable", "Stable (recommended)"], ["early", "Try new versions early"]].map(([v, t]) => h("option", { value: v, selected: ((st.settings || {}).update_channel || "stable") === v }, t)));
+  sel.addEventListener("change", async () => {
+    try { await save({ update_channel: sel.value }, state); checkUpdate(true).catch(() => {}); } catch (_) { /* shown */ }
+  });
+  return h("div", {}, field("Which new versions to offer", sel, { help: "From 0.16 on, a release candidate (a try-out of the next version) comes out at least a week before each new version, so you can try it on your own projects. Try it on a project you do not share with colleagues: going back to the stable version can show sync clashes (nothing is lost)." }), state);
+}
+
+// 0.15: a problem report without knowing GitHub: the technical details to paste, and the form to paste them in
+function problemRow() {
+  const btn = h("button", { class: "btn", type: "button" }, icon("copy", { size: 14 }), "Copy technical details");
+  btn.addEventListener("click", async () => {
+    try {
+      const r = await api("GET", "/api/technical-details");
+      try { await navigator.clipboard.writeText(r.text); toast("Copied. Paste it in your problem report.", "ok", { ttl: 2500 }); }
+      catch (_) { replace(box, h("pre", { class: "mono small" }, r.text)); toast("Select the text and copy it with Ctrl+C (or Cmd+C).", "info"); }
+    } catch (e) { showError(e); }
+  });
+  const box = h("div", {});
+  return h("div", {}, h("p", { class: "muted small", style: { marginTop: "12px" } }, "Something does not work? Copy the technical details (the version, the system and the AI route: no file names, project names or keys) and paste them in a report."),
+    h("div", { class: "save-row" }, btn,
+      h("a", { class: "btn btn-ghost", href: "https://github.com/dvaud/claim_checker_demo/issues/new?template=problem.yml", target: "_blank", rel: "noopener" }, icon("external-link", { size: 14 }), "Report a problem (on GitHub)")), box);
 }
 
 // 0.11: every passage sent to Claude, as a table for records such as a data management plan
