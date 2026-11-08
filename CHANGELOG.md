@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.15.2 (November 2026): Windows user folders with accents
+
+On Windows, a user folder with an accented letter (C:\Users\Dávid) stopped the install at its third step, and the
+icons would have gone to a folder that does not exist. Windows programs answer in one text encoding and ENLENS read
+them in another; it now asks Windows in a way no encoding can garble, and the release's Windows test machine installs
+for such a user before every release. Nothing changes for results.
+
+### Fixed
+
+- **Windows: ENLENS installs for a user whose folder has accents** (C:\Users\Dávid). The install stopped at
+  "ENLENS was installed, but C:\Users\D├ívid\.local\bin\enlens.exe is missing": uv names its folder in UTF-8 and
+  PowerShell read that in the console's code page. The installer now reads uv's answer as UTF-8 and also looks in the
+  folders uv itself uses. Run the install again (the line or *Install-ENLENS-Windows.cmd*): what the failed run
+  installed is replaced, and the icons are made.
+- **Windows: the Desktop icon goes to the Desktop** for such a user. The Desktop folder was read from PowerShell's
+  output in another code page ("á" became a no-break space), so the icon was put in a folder that does not exist, or
+  no icon was made at all; ENLENS now asks Windows for the folder directly (a Desktop moved to OneDrive too). A path
+  with a typographic apostrophe (O’Brien) no longer breaks the shortcut either.
+- **Windows: no stop on an unreadable letter.** What PowerShell, Claude Code, `tasklist` or git write back is read so
+  that a byte the computer's code page has no letter for cannot stop ENLENS (the second byte of "Á" in UTF-8 did), and
+  `enlens` no longer stops after its work when it prints a letter the code page lacks ("ő" on an English Windows) to
+  another program.
+- **Windows: the icons are shortcuts for any name.** WScript.Shell, which made them, cannot store a letter missing from
+  the computer's code page (C:\Users\Gergő on an English Windows), so such a user got a plain command file on the
+  Desktop. The shortcut is now written with the Shell's own Unicode interface; WScript.Shell and the command file stay
+  as fallbacks.
+- **Windows: Claude Code's sign-in window opens when the folder name has a space** (C:\Users\Ábel Gergő): the path of
+  its script was cut at the space.
+
+### Tests
+
+- The release's Windows test machine installs for a user folder named "Ábel Gergő" (a letter whose UTF-8 has a byte
+  Windows-1252 lacks, a letter Windows-1252 lacks, and a space), with uv, the temporary folder, the Start menu, the
+  Desktop and the downloaded install file in it and a Hungarian console (code page 852). It checks that uv's answer
+  is still garbled when read the 0.15.1 way, that ENLENS starts, and that both icons are shortcuts that start it.
+  0.15.1's own install file, run there, stops at "enlens.exe is missing" as on the user's computer.
+- `tests/test_0_15_2_accented_user_folder.py`: finding enlens.exe (PowerShell, with a stand-in for uv), the Desktop
+  folder, shortcuts in an accented folder (Windows), PowerShell quoting, the sign-in window, and reading and printing
+  text that a code page lacks.
+
+### Not yet done
+
+- Tried on GitHub's Windows machine with a user folder made to look like one with accents, not on a computer whose
+  real user name has them. The Claude Code sign-in window with such a name was checked by its command, not opened.
+- The advisory test run on Windows still stops part way, and its cause is now known: on Windows a recorded Claude Code
+  run is recognised by its process number alone (on macOS and Linux also by its command line), so a test that
+  records its own process as a run has that process ended. Outside the tests, a record left behind whose number
+  Windows has given to another program would count as a run. This waits for a patch of its own.
+
 ## 0.15.1 (November 2026): text files and books, read without the clutter
 
 Reader 2 (0.15.0) sets aside what is not a document's own text by where it stands on a PDF's page. A text file has no

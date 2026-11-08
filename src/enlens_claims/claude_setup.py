@@ -217,10 +217,13 @@ def _cmd(path: str) -> list[str]:
 
 
 def _run(args: list[str], timeout: float = 60) -> tuple[int, str]:
+    """Run Claude Code and return its exit code and what it wrote. 0.15.2: what it writes is UTF-8 (on Windows too),
+    and is read as such: in this Python's code page a path like C:\\Users\\Ábel came back garbled, or stopped the
+    status with an error (the second byte of "Á" is no letter in Windows-1252)."""
     args = _cmd(args[0]) + list(args[1:])
     try:
-        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=str(core.home()),
-                           stdin=subprocess.DEVNULL)
+        r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+                           cwd=str(core.home()), stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as e:
         return 1, f"{type(e).__name__}: {e}"
     return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
@@ -482,8 +485,8 @@ def _pid_runs_enlens(pid: int) -> bool:
         return False
     if os.name == "nt":
         try:
-            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, timeout=15,
-                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True,
+                               errors="replace", timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.SubprocessError):
             return False
         return str(pid) in (r.stdout or "")
@@ -776,8 +779,8 @@ def install_claude_code(timeout: float = 900) -> dict:
         raise ValueError("Cloud models are switched off on this computer: Claude Code is not available.")
     cmd = installer_command()
     try:
-        r = subprocess.run(cmd["args"], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL,
-                           cwd=str(Path.home()))
+        r = subprocess.run(cmd["args"], capture_output=True, text=True, errors="replace", timeout=timeout,
+                           stdin=subprocess.DEVNULL, cwd=str(Path.home()))
         code, text = r.returncode, ((r.stdout or "") + (r.stderr or ""))
     except (OSError, subprocess.SubprocessError) as e:
         code, text = 1, f"{type(e).__name__}: {e}"
@@ -815,7 +818,9 @@ def sign_in_line(folder: Path, windows: bool | None = None) -> str:
     """The line a person types to sign in by hand (when no window can be opened): go to the empty folder first."""
     windows = os.name == "nt" if windows is None else windows
     if windows:   # PowerShell 5.1 has no &&
-        return f"cd '{str(folder).replace(chr(39), chr(39) * 2)}'; claude"
+        from .gui.launcher import _ps_quote
+
+        return f"cd {_ps_quote(str(folder))}; claude"
     import shlex
 
     return f"cd {shlex.quote(str(folder))} && claude"
@@ -827,7 +832,9 @@ def _sign_in_script(claude: str, work: Path | None = None, options: set[str] | N
     work = work or sign_in_folder()
     box = box_args(claude, run=False, options=options)
     if os.name == "nt":
-        q = lambda s: "'" + str(s).replace("'", "''") + "'"  # noqa: E731 - a PowerShell string
+        from .gui.launcher import _ps_quote
+
+        q = lambda s: _ps_quote(str(s))  # noqa: E731 - a PowerShell string
         p = d / "sign-in.ps1"
         p.write_text("Write-Host 'ENLENS: sign in to Claude Code with your Claude plan.'\r\n"
                      "Write-Host 'Follow the steps below; when Claude Code shows its prompt, close this window.'\r\n"
@@ -858,9 +865,13 @@ def _open_window(script: Path) -> str:
             subprocess.Popen(["open", "-a", "Terminal", str(script)])
             return "Terminal"
         if os.name == "nt":
+            from .gui.launcher import _ps_quote
+
+            # 0.15.2: Windows PowerShell's Start-Process joins these with spaces and quotes none of them, so the
+            # script's path is quoted here (C:\\Users\\Ábel Gergő\\enlens\\... was cut at the space)
             subprocess.Popen(["powershell", "-NoProfile", "-Command",
                               f"Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File',"
-                              f"'{str(script).replace(chr(39), chr(39) * 2)}'"],
+                              f"{_ps_quote(chr(34) + str(script) + chr(34))}"],
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             return "PowerShell"
         for term, flag in (("x-terminal-emulator", "-e"), ("gnome-terminal", "--"), ("konsole", "-e"),

@@ -120,6 +120,18 @@ def technical_details(settings: dict | None = None, local_only: bool | None = No
     ])
 
 
+def printable_streams() -> None:
+    """0.15.2: on Windows, when what ENLENS prints goes to a pipe (an installer reading it, say), Python writes it in
+    the computer's code page, and a letter that page lacks ("ő" in C:\\Users\\Gergő, on an English Windows) stopped
+    the command with an error after its work was done. Such a letter is now written as an escape instead."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None and (stream.encoding or "").lower().replace("-", "") != "utf8":
+                stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def post_install(by: str | None = "script", icon: bool = True, open_app: bool = False, home: str | None = None,
                  local_only: bool | None = None) -> dict:
     """What an installer does last (`enlens post-install`). Returns what was done, with a message to print."""

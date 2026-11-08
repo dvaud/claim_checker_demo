@@ -101,6 +101,9 @@ def _print_progress(step, msg, info=None):
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .installation import printable_streams
+
+    printable_streams()
     try:
         return _main(argv)
     except BackendError as e:

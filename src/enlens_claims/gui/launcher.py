@@ -262,15 +262,123 @@ def _start_menu() -> Path:
     return Path(os.environ.get("APPDATA", str(Path.home()))) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
 
 
+FOLDERID_DESKTOP = "B4BFCC3A-DB2C-424C-B029-7FE99A87C641"
+CLSID_SHELLLINK = "00021401-0000-0000-C000-000000000046"
+IID_ISHELLLINKW = "000214F9-0000-0000-C000-000000000046"
+IID_IPERSISTFILE = "0000010B-0000-0000-C000-000000000046"
+
+
+def _guid(text: str):
+    """A Windows GUID structure (for ctypes) from its text."""
+    import ctypes
+    import uuid
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("Data1", ctypes.c_uint32), ("Data2", ctypes.c_uint16), ("Data3", ctypes.c_uint16),
+                    ("Data4", ctypes.c_ubyte * 8)]
+
+    return GUID.from_buffer_copy(uuid.UUID(text).bytes_le)
+
+
+def _windows_desktop() -> Path | None:
+    """0.15.2: the Desktop folder as Windows itself names it (moved to OneDrive or elsewhere too), from the
+    Known Folder API in UTF-16. Before, PowerShell printed it and Python read that in another code page: in
+    C:\\Users\\Dávid the "á" came back as a no-break space, so the icon went to a folder that does not exist (or none
+    was made at all)."""
+    import ctypes
+
+    try:
+        shell32, ole32 = ctypes.WinDLL("shell32"), ctypes.WinDLL("ole32")
+        get = shell32.SHGetKnownFolderPath
+        get.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        get.restype = ctypes.c_long
+        ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+        ole32.CoTaskMemFree.restype = None
+        guid = _guid(FOLDERID_DESKTOP)
+        buf = ctypes.c_void_p()
+        hr = get(ctypes.byref(guid), 0, None, ctypes.byref(buf))
+        try:
+            return Path(ctypes.wstring_at(buf.value)) if hr == 0 and buf.value else None
+        finally:
+            if buf.value:
+                ole32.CoTaskMemFree(buf)
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
+def _com_shortcut(link: Path, target: str, arguments: str, workdir: str, description: str, icon: str) -> bool:
+    """0.15.2: write a shortcut with the Shell's own IShellLinkW, in UTF-16 throughout. WScript.Shell, which PowerShell
+    used, goes through the computer's ANSI code page, so a folder with a letter that page lacks (C:\\Users\\Gergő on
+    an English Windows) got a command file instead of an icon. Returns whether the shortcut was saved."""
+    import ctypes
+
+    if os.name != "nt":
+        return False
+    try:
+        ole32 = ctypes.WinDLL("ole32")
+        ole32.CoInitialize.argtypes = [ctypes.c_void_p]
+        ole32.CoInitialize.restype = ctypes.c_long
+        ole32.CoUninitialize.argtypes = []
+        ole32.CoUninitialize.restype = None
+        ole32.CoCreateInstance.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p,
+                                           ctypes.POINTER(ctypes.c_void_p)]
+        ole32.CoCreateInstance.restype = ctypes.c_long
+    except (OSError, AttributeError):
+        return False
+
+    def method(obj: ctypes.c_void_p, index: int, *argtypes):
+        """Method `index` of a COM object's table of methods, as a function of the remaining arguments."""
+        table = ctypes.cast(obj, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0]
+        fn = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, *argtypes)(table[index])
+        return lambda *a: fn(obj, *a)
+
+    wstr, release = ctypes.c_wchar_p, 2
+    started = ole32.CoInitialize(None) in (0, 1)  # S_OK, S_FALSE; otherwise COM is already set up differently
+    shell_link, persist = ctypes.c_void_p(), ctypes.c_void_p()
+    try:
+        hr = ole32.CoCreateInstance(ctypes.byref(_guid(CLSID_SHELLLINK)), None, 1,  # CLSCTX_INPROC_SERVER
+                                    ctypes.byref(_guid(IID_ISHELLLINKW)), ctypes.byref(shell_link))
+        if hr < 0 or not shell_link.value:
+            return False
+        calls = [method(shell_link, 20, wstr)(target),           # SetPath
+                 method(shell_link, 11, wstr)(arguments),        # SetArguments
+                 method(shell_link, 9, wstr)(workdir),           # SetWorkingDirectory
+                 method(shell_link, 7, wstr)(description)]       # SetDescription
+        if icon:
+            calls.append(method(shell_link, 17, wstr, ctypes.c_int)(icon, 0))  # SetIconLocation
+        if any(hr < 0 for hr in calls):
+            return False
+        hr = method(shell_link, 0, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(  # QueryInterface
+            ctypes.byref(_guid(IID_IPERSISTFILE)), ctypes.byref(persist))
+        if hr < 0 or not persist.value:
+            return False
+        return method(persist, 6, wstr, ctypes.c_int)(str(link), 1) >= 0  # IPersistFile::Save, remember it
+    except (OSError, AttributeError, ValueError, TypeError):
+        return False
+    finally:
+        for obj in (persist, shell_link):
+            if obj.value:
+                method(obj, release)()
+        if started:
+            ole32.CoUninitialize()
+
+
+def _ps_quote(s: str) -> str:
+    """A PowerShell string literal that holds `s` as it is. PowerShell also ends a quoted string at the typographic
+    single quotes (as in O’Brien), so those are doubled as well."""
+    return "'" + re.sub("(['\u2018\u2019\u201a\u201b])", r"\1\1", s) + "'"
+
+
+# What PowerShell writes back is only looked at for its exit code, and it is in the console's code page: read it so
+# that a byte this Python's code page does not have can never stop the icon being made (0.15.2).
+_PS_TEXT = {"capture_output": True, "text": True, "errors": "replace"}
+
+
 def _desktop() -> Path:
     if os.name == "nt":
-        try:
-            r = subprocess.run(["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"],
-                               capture_output=True, text=True, timeout=30)
-            if r.returncode == 0 and r.stdout.strip():
-                return Path(r.stdout.strip())
-        except (OSError, subprocess.SubprocessError):
-            pass
+        found = _windows_desktop()
+        if found:
+            return found
     try:
         r = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True, timeout=5)
         if r.returncode == 0 and r.stdout.strip() and Path(r.stdout.strip()) != Path.home():
@@ -314,17 +422,16 @@ def _windows_shortcut(folder: Path, python: str, args: list[str]) -> Path:
     icon_path = str(ico) if _put_icon(ico, "ico") else ""
     link = folder / f"{APP_NAME}.lnk"
     arg_line = subprocess.list2cmdline(args)
-
-    def ps(s: str) -> str:
-        return "'" + s.replace("'", "''") + "'"
-
+    if _com_shortcut(link, str(target), arg_line, str(Path.home()), "Start ENLENS", icon_path) and link.exists():
+        return link
+    ps = _ps_quote  # without the Shell's interface: WScript.Shell, through PowerShell
     script = (f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({ps(str(link))}); "
               f"$s.TargetPath = {ps(str(target))}; $s.Arguments = {ps(arg_line)}; "
               f"$s.WorkingDirectory = {ps(str(Path.home()))}; $s.Description = 'Start ENLENS'; "
               + (f"$s.IconLocation = {ps(icon_path)}; " if icon_path else "") + "$s.Save()")
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
-                           text=True, timeout=60)
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], timeout=60,
+                           **_PS_TEXT)
         if r.returncode == 0 and link.exists():
             return link
     except (OSError, subprocess.SubprocessError):
@@ -417,14 +524,11 @@ def repair_icons(folders: list[Path] | None = None, platform: str | None = None,
         if ico.is_file() or not links or not _put_icon(ico, "ico"):
             return fixed
 
-        def ps(x: str) -> str:
-            return "'" + x.replace("'", "''") + "'"
-
+        ps = _ps_quote
         script = "; ".join(f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({ps(str(p))}); "
                            f"$s.IconLocation = {ps(str(ico))}; $s.Save()" for p in links)
         try:
-            r = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
-                    text=True, timeout=60)
+            r = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], timeout=60, **_PS_TEXT)
             if r.returncode == 0:
                 fixed += links
         except (OSError, subprocess.SubprocessError):

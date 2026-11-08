@@ -43,7 +43,10 @@ def main(argv: list[str] | None = None) -> int:
     if a.home:
         os.environ["ENLENS_HOME"] = str(Path(a.home).expanduser().resolve())
     if a.make_launcher:
+        from ..installation import printable_streams
         from .launcher import make_launcher
+
+        printable_streams()  # it prints where the icons are
 
         made = make_launcher(a.home, a.local_only, [Path(f).expanduser() for f in a.launcher_dir or []] or None)
         print("ENLENS can now be started without the terminal: double-click")

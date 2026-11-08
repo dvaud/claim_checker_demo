@@ -118,7 +118,73 @@ jobs:
           $py = Join-Path (uv tool dir).Trim() 'enlens-claims\Scripts\python.exe'
           & $py -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
           if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
-
+      # 0.15.2: 0.15.1 stopped at "enlens.exe is missing" for C:\Users\D<a-acute>vid (PowerShell read uv's UTF-8
+      # answer in the console's code page), and would have put the Desktop icon in a folder that does not exist. Here
+      # the user folder is "<A-acute>bel Gerg<o-double-acute>": a letter whose UTF-8 has a byte Windows-1252 lacks, a
+      # letter Windows-1252 lacks (WScript.Shell cannot store it in a shortcut), and a space. uv itself, uv's folders,
+      # the temporary folder, the Start menu, the Desktop and the downloaded install file are all in it, and the
+      # console uses code page 852 (Hungarian), as on such a user's computer.
+      - name: Install with Install-ENLENS-Windows.cmd for a user folder with accents and a space
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $env:ENLENS_WHEEL = (Get-ChildItem dist\enlens_claims-*.whl).FullName
+          $uvHere = "$env:USERPROFILE\.local\bin"   # the uv the steps above installed
+          $user = Join-Path $env:RUNNER_TEMP "$([char]0xC1)bel Gerg$([char]0x151)"
+          $userBin = Join-Path $user '.local\bin'
+          $downloads = Join-Path $user 'Downloads'
+          New-Item -ItemType Directory -Force -Path $userBin, $downloads | Out-Null
+          Copy-Item "$uvHere\uv*.exe" $userBin   # uv where its installer puts it for this user
+          $env:Path = "$userBin;$env:Path"
+          Copy-Item dist\Install-ENLENS-Windows.cmd $downloads
+          $env:USERPROFILE = $user
+          $env:HOME = $user
+          $env:APPDATA = Join-Path $user 'AppData\Roaming'
+          $env:LOCALAPPDATA = Join-Path $user 'AppData\Local'
+          $env:TEMP = Join-Path $user 'AppData\Local\Temp'
+          $env:TMP = $env:TEMP
+          $desk = Join-Path $user 'Desktop'
+          New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:TEMP, $desk | Out-Null
+          $shell = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders'
+          if (-not (Test-Path $shell)) { New-Item -Path $shell -Force | Out-Null }
+          New-ItemProperty -Path $shell -Name Desktop -Value $desk -PropertyType ExpandString -Force | Out-Null
+          $out = cmd /d /c "chcp 852 >nul & `"$downloads\Install-ENLENS-Windows.cmd`" < NUL" 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "the file ended with $LASTEXITCODE" }
+          # (the printed path may lose its accents in this pipe: its start, the ASCII runner folder, is enough)
+          if ($out -notmatch "uv is here already \($([regex]::Escape($env:RUNNER_TEMP))") { throw "the install did not use this user's uv" }
+          if ($out -notmatch '4/4' -or $out -notmatch 'Done\. Next time' -or $out -match 'could not be installed') {
+            throw "the file did not install ENLENS"
+          }
+          # Does Windows PowerShell here still garble uv's answer as 0.15.1 read it? Otherwise this step no longer
+          # shows that failure (it still checks everything else).
+          Set-Content -Encoding ascii old-read.ps1 "if (Test-Path -LiteralPath (Join-Path ((& uv tool dir --bin) -join '').Trim() 'enlens.exe')) { 'read right' } else { 'garbled' }"
+          $old = (cmd /d /c "chcp 852 >nul & powershell -NoProfile -ExecutionPolicy Bypass -File old-read.ps1" | Out-String).Trim()
+          Write-Host "uv's answer as 0.15.1 read it: $old"
+          if ($old -ne 'garbled') { Write-Host "::warning::uv's answer was read right the 0.15.1 way: this step no longer shows the 0.15.1 failure" }
+          $env:PYTHONIOENCODING = 'utf-8'   # this step's own checks print the folder
+          try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+          $enlens = Join-Path $userBin 'enlens.exe'
+          if (-not (Test-Path -LiteralPath $enlens)) { throw "enlens.exe is not in $userBin" }
+          & $enlens --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "enlens did not start" }
+          $py = Join-Path (uv tool dir).Trim() 'enlens-claims\Scripts\python.exe'
+          if (-not $py.StartsWith($user)) { throw "uv keeps ENLENS in $py, not in the user folder" }
+          & $py -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
+          if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
+          # both icons are shortcuts (not the command file made when no shortcut can be) that start this ENLENS;
+          # Shell.Application reads them in UTF-16 (WScript.Shell would garble the target it reads back)
+          $app = New-Object -ComObject Shell.Application
+          foreach ($folder in @($desk, (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'))) {
+            $link = Join-Path $folder 'ENLENS.lnk'
+            if (-not (Test-Path -LiteralPath $link)) { throw "no ENLENS shortcut at $link" }
+            $target = $app.Namespace($folder).ParseName('ENLENS.lnk').GetLink.Path
+            if (-not $target.StartsWith($user) -or -not (Test-Path -LiteralPath $target)) {
+              throw "the shortcut $link starts $target, which is not this ENLENS"
+            }
+            Write-Host "icon: $link -> $target"
+          }
   try-install-mac:
     name: One-line install on macos-latest (does not hold up the draft)
     needs: build

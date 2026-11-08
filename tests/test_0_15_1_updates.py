@@ -53,5 +53,6 @@ def test_no_version_is_withdrawn_any_more():
     from enlens_claims import __version__, update
     from enlens_claims.gui import launcher
 
-    assert update.WITHDRAWN == frozenset() and __version__ == "0.15.1"
-    assert launcher.is_older({"version": "0.15.0"}) and not launcher.is_older({"version": "0.15.1"})
+    assert update.WITHDRAWN == frozenset()
+    assert launcher.is_older({"version": "0.15.0"}) and not launcher.is_older({"version": __version__})
+    assert launcher.is_older({"version": "0.15.1"}) is (__version__ != "0.15.1")  # 0.15.2: no longer pinned to 0.15.1

@@ -418,6 +418,7 @@ def test_the_windows_command_file_switches_to_utf8(tmp_path, monkeypatch, home):
         raise OSError("no PowerShell")
 
     monkeypatch.setattr(subprocess, "run", no_powershell)
+    monkeypatch.setattr(launcher, "_com_shortcut", lambda *a: False)  # 0.15.2: nor the Shell's own interface
     python = str(tmp_path / "Kovács" / "Scripts" / "python.exe")
     cmd = launcher._windows_shortcut(tmp_path, python, ["-m", "enlens_claims.gui.launch", "--launcher"])
     raw = cmd.read_bytes()

@@ -42,6 +42,40 @@ function Install-Enlens {
             }
             return $null
         }
+        # 0.15.2: where uv put enlens.exe. uv writes the folder in UTF-8, but PowerShell reads what a program writes
+        # in the console's code page (437, 850, 852...), so a user folder with an accent came back garbled (the a with
+        # an acute accent of C:\Users\David became two box-drawing characters) and the install stopped at "enlens.exe
+        # is missing" although it was there. So uv's answer is read as UTF-8 bytes, and the folders uv itself would
+        # choose, in its order, are looked at too, should the answer still be unreadable.
+        function Get-Utf8Output([string]$Exe, [string]$Arguments) {
+            try {
+                $psi = New-Object System.Diagnostics.ProcessStartInfo $Exe, $Arguments
+                $psi.UseShellExecute = $false
+                $psi.CreateNoWindow = $true
+                $psi.RedirectStandardOutput = $true
+                $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding $false
+                $p = [System.Diagnostics.Process]::Start($psi)
+                $text = $p.StandardOutput.ReadToEnd()
+                $p.WaitForExit()
+                if ($p.ExitCode -eq 0) { return $text.Trim() }
+            } catch { }
+            return ''
+        }
+        function Get-EnlensBinFolders([string]$Uv) {
+            $folders = @((Get-Utf8Output $Uv 'tool dir --bin'), $env:UV_TOOL_BIN_DIR, $env:XDG_BIN_HOME)
+            try { if ($env:XDG_DATA_HOME) { $folders += Join-Path (Split-Path $env:XDG_DATA_HOME -Parent) 'bin' } } catch { }
+            if ($env:USERPROFILE) { $folders += Join-Path (Join-Path $env:USERPROFILE '.local') 'bin' }
+            return @($folders | Where-Object { $_ } | Select-Object -Unique)
+        }
+        function Find-EnlensExe([string]$Uv) {
+            foreach ($folder in (Get-EnlensBinFolders $Uv)) {
+                try {
+                    $exe = Join-Path $folder 'enlens.exe'
+                    if (Test-Path -LiteralPath $exe) { return $exe }
+                } catch { }
+            }
+            return $null
+        }
         $uv = Find-Uv
         if (-not $uv) {
             Write-Host '1/4  Getting uv, which installs ENLENS and its own Python...'
@@ -88,9 +122,10 @@ function Install-Enlens {
         if ($LASTEXITCODE -ne 0) {
             throw 'uv could not install ENLENS (see the lines above). If ENLENS is running, choose Quit ENLENS in it and run the line again.'
         }
-        $bin = (& $uv tool dir --bin).Trim()
-        $enlens = Join-Path $bin 'enlens.exe'
-        if (-not (Test-Path $enlens)) { throw "ENLENS was installed, but $enlens is missing." }
+        $enlens = Find-EnlensExe $uv
+        if (-not $enlens) {
+            throw "ENLENS was installed, but enlens.exe is in none of these folders: $((Get-EnlensBinFolders $uv) -join '; ')"
+        }
 
         # 4. the icon, the Claude Code plugin, and open -------------------------------------------
         Write-Host '4/4  Making the ENLENS icon...'

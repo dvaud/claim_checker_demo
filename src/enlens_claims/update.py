@@ -61,8 +61,8 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
         env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
         timeout = GIT_TIMEOUT
     try:
-        return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env,
-                              timeout=timeout)
+        return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, errors="replace",
+                              stdin=subprocess.DEVNULL, env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(cmd, 124, "", f"{' '.join(cmd[:2])} took longer than {timeout} s and was "
                                                           "stopped (is the network or the remote not answering?)")
