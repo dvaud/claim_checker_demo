@@ -118,6 +118,9 @@ reader 2 as the current one now name `ingest.READER`.
 - The update that brings `pdfminer` to a git copy is the next one after 0.15.1 (the update to 0.15.1 runs 0.15.0's
   code): until then, `pip install -e '.[pdfminer]'` in the copy.
 - Checked in Chromium on macOS (light, dark, 390 px wide); not tried by hand on Windows.
+- The advisory test runs on macOS and Windows still fail as they did for 0.15.0 (the app restarting itself in place
+  on macOS; on Windows about a dozen tests, and the run stops part way); Linux passes. They wait for a patch of
+  their own.
 
 ## 0.15.0 (November 2026): a new reader, and results you can trace
 
