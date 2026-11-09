@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Update gets the new version when GitHub's download links are busy.** On 9 November 2026 *Update* from 0.15.6 to
+  0.15.7 stopped with *Something went wrong inside the app* and *HTTP Error 504: Gateway Time-out*: GitHub's download
+  links timed out for everyone, while GitHub's API still handed out the same files. Now each file is fetched from the
+  download link, else through the API, and both are tried again a few seconds later. If the file still cannot be
+  downloaded, the app says so in plain words (*could not be downloaded from GitHub … Nothing was changed … try again
+  in a few minutes*) instead of an unexpected problem. The checksum is checked as before. This works from the
+  version that has it on: the update *to* that version still downloads the old way.
+- Tests: `test_0_16_2_update_download.py`.
+
 ## 0.16.1 (November 2026): short code names from the themes
 
 ### Changed

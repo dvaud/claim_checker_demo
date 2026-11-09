@@ -310,9 +310,46 @@ Fetch = Callable[[str], bytes]
 def _fetch(url: str) -> bytes:
     from urllib.request import Request, urlopen
 
-    req = Request(url, headers={"User-Agent": "enlens-update", "Accept": "application/vnd.github+json"})
+    # 0.16.2: the API's route to a release file (…/releases/assets/<id>) hands over the file itself only when asked
+    # for it; asked for JSON, it describes the file
+    accept = "application/octet-stream" if "/releases/assets/" in url else "application/vnd.github+json"
+    req = Request(url, headers={"User-Agent": "enlens-update", "Accept": accept})
     with urlopen(req, timeout=60) as r:
         return r.read()
+
+
+# 0.16.2: how often each route to a release file is tried, and the pause between rounds (seconds)
+DOWNLOAD_ROUNDS = 2
+DOWNLOAD_PAUSE = 3.0
+
+
+def download(fetch: Fetch, urls: list[str]) -> bytes:
+    """0.16.2: a release file from the first of `urls` (its routes) that hands it over: GitHub's download link, then
+    the API's own route to the same file. On 2026-11-09 the download links answered 504 Gateway Time-out for everyone
+    while the API's route worked, and the error showed as "Something went wrong inside the app". Every route is tried
+    DOWNLOAD_ROUNDS times, DOWNLOAD_PAUSE seconds apart; when none works, the last route's error is raised."""
+    import time
+
+    routes = [u for u in urls if u]
+    last: Exception = ValueError("no address for the file")
+    for n in range(DOWNLOAD_ROUNDS if routes else 0):
+        if n:
+            time.sleep(DOWNLOAD_PAUSE)
+        for url in routes:
+            try:
+                return fetch(url)
+            except Exception as e:  # noqa: BLE001 - GitHub busy, offline: the next route, the next round, then raised
+                last = e
+    raise last
+
+
+def download_problem(e: Exception) -> str:
+    """0.16.2: what went wrong with a download, in a few words ("HTTP 504 Gateway Time-out")."""
+    from urllib.error import HTTPError
+
+    if isinstance(e, HTTPError):
+        return f"HTTP {e.code} {e.reason}".strip()
+    return f"{type(e).__name__}: {e}"
 
 
 # 0.15: a pre-release (development, alpha, beta, release candidate) comes before the release it leads to
@@ -392,11 +429,13 @@ def latest_release(fetch: Fetch = _fetch, repo: str | None = None, channel: str 
     if early:
         data = highest_release(data)
     assets = {a.get("name", ""): a.get("browser_download_url", "") for a in data.get("assets") or []}
+    # 0.16.2: each file's second route, through the API (download())
+    api = {a.get("name", ""): a.get("url", "") for a in data.get("assets") or []}
     wheel = next((n for n in assets if n.startswith("enlens_claims-") and n.endswith(".whl")), "")
     tag = str(data.get("tag_name") or "")
     return {"version": tag.lstrip("v"), "tag": tag, "wheel": wheel, "wheel_url": assets.get(wheel, ""),
-            "sums_url": assets.get("SHA256SUMS", ""), "notes": str(data.get("body") or ""),
-            "url": str(data.get("html_url") or "")}
+            "sums_url": assets.get("SHA256SUMS", ""), "wheel_api": api.get(wheel, ""), "sums_api": api.get("SHA256SUMS", ""),
+            "notes": str(data.get("body") or ""), "url": str(data.get("html_url") or "")}
 
 
 def _release_api(repo: str) -> str:
@@ -567,8 +606,13 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
     handed = False
     try:
         wheel = tmp / rel["wheel"]
-        wheel.write_bytes(fetch(rel["wheel_url"]))
-        sums = fetch(rel["sums_url"]).decode("utf-8", errors="replace")
+        try:  # 0.16.2: a second route and a second try; a failure in plain words, not an "unexpected problem"
+            wheel.write_bytes(download(fetch, [rel["wheel_url"], rel.get("wheel_api", "")]))
+            sums = download(fetch, [rel["sums_url"], rel.get("sums_api", "")]).decode("utf-8", errors="replace")
+        except Exception as e:  # noqa: BLE001 - GitHub busy or offline: nothing was installed
+            raise UpdateError(f"ENLENS {rel['version']} could not be downloaded from GitHub ({download_problem(e)}). "
+                              "Nothing was changed. Are you online? If you are, GitHub is busy: try again in a few "
+                              "minutes.") from e
         want = next((line.split()[0].lower() for line in sums.splitlines()
                      if len(line.split()) == 2 and line.split()[1].lstrip("*") == rel["wheel"]), "")
         got = hashlib.sha256(wheel.read_bytes()).hexdigest()
