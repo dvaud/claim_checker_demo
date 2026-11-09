@@ -59,3 +59,11 @@ def _no_real_enlens_home(tmp_path, monkeypatch):
     ENLENS_HOME read the real settings, so the models recommended for the plan Claude Code found there (Max: Opus)
     replaced the ones the test expects (Pro). A test that sets ENLENS_HOME itself still gets its own."""
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "enlens-home"))
+
+
+@pytest.fixture(autouse=True)
+def _read_one_file_at_a_time(monkeypatch):
+    """0.16: adding documents reads several files at once in reading processes (`ingest.read_workers`). Tests read
+    them here, one at a time, so what a test changes in this process (a stand-in for OCR, say) is what reading sees;
+    tests/test_0_16_0_speed.py reads at once on purpose and compares."""
+    monkeypatch.setenv("ENLENS_READ_WORKERS", "1")

@@ -123,8 +123,12 @@ def test_the_release_helper_takes_a_candidate(candidate):
     assert "## 0.14" not in notes  # only the candidate's own entry
 
 
-def test_a_full_release_still_installs_the_latest():
-    notes = release.notes()
+def test_a_full_release_still_installs_the_latest(tmp_path):
+    # 0.16: a full release's own changelog, not the repository's top entry (which is a candidate while one is out)
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "CHANGELOG.md").write_text("# Changelog\n\n## 0.15.7 (November 2026): a release\n\nIt works.\n", "utf-8")
+    notes = release.notes("0.15.7", root)
     assert "This is a release candidate" not in notes and "releases/latest/download/install.sh" in notes
 
 

@@ -143,6 +143,27 @@ def _sdot(a: dict, inv: dict, k: int) -> list[float]:
     return acc
 
 
+def _assign(vecs: list[dict], inv: dict, k: int) -> tuple[list[int], list[float]]:
+    """Each vector's nearest centre and its similarity: `_sdot` for each vector, the same sums in the same order, and
+    the first of the highest (as `max(range(k), key=lambda x: (acc[x], -x))` found it). 0.16: in one loop, with the
+    centres' words looked up once per word; about twice as quick."""
+    new: list[int] = []
+    sim: list[float] = []
+    zero = [0.0] * k
+    get = inv.get
+    for v in vecs:
+        acc = zero[:]
+        for t, w in v.items():
+            lst = get(t)
+            if lst:
+                for j, cw in lst:
+                    acc[j] += w * cw
+        m = max(acc)
+        new.append(acc.index(m))
+        sim.append(m)
+    return new, sim
+
+
 def _inverted(centres: list[dict]) -> dict:
     inv: dict[str, list[tuple[int, float]]] = defaultdict(list)
     for j, c in enumerate(centres):
@@ -183,13 +204,7 @@ def kmeans_sparse(vecs: list[dict], k: int, seed: int = 0, should_stop: Callable
     for _it in range(MAX_ITER):
         if should_stop and should_stop():
             raise _stopped()
-        inv = _inverted(centres)
-        new, sim = [], []
-        for v in vecs:
-            acc = _sdot(v, inv, k)
-            j = max(range(k), key=lambda x: (acc[x], -x))
-            new.append(j)
-            sim.append(acc[j])
+        new, sim = _assign(vecs, _inverted(centres), k)
         if new == assign:
             break
         assign = new
@@ -205,13 +220,7 @@ def kmeans_sparse(vecs: list[dict], k: int, seed: int = 0, should_stop: Callable
                 assign[far] = j
             top = sorted(sums[j].items(), key=lambda x: (-x[1], x[0]))[:CENTROID_TERMS]
             centres[j] = _unit_sparse(dict(top))
-    inv = _inverted(centres)
-    assign, sim = [], []
-    for v in vecs:
-        acc = _sdot(v, inv, k)
-        j = max(range(k), key=lambda x: (acc[x], -x))
-        assign.append(j)
-        sim.append(acc[j])
+    assign, sim = _assign(vecs, _inverted(centres), k)
     return assign, sim, centres
 
 

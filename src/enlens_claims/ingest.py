@@ -5,16 +5,21 @@ blank line. Quotes, evidence and highlights are resolved against that string.
 """
 from __future__ import annotations
 
+import atexit
 import bisect
 import codecs
 import hashlib
 import json
+import os
 import re
 import shutil
 import sqlite3
+import threading
+import weakref
 import zipfile
 import zlib
 from collections import Counter
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
@@ -1135,9 +1140,284 @@ def discover(inputs: list[str | Path], unpack_dir: Path, manifests: list[Path] |
     return files
 
 
+# ------------------------------------------------------------------------------------------
+# 0.16 (H3): files read at once when documents are added. Reading a file is pure Python and parsing a PDF takes
+# seconds, so several are read side by side, each in a process of its own (`readworker.py`). What is stored is taken
+# in the order of the files, exactly as reading them one after the other stores it: only the waiting is shorter.
+# ------------------------------------------------------------------------------------------
+READ_WORKERS = 3                 # at most this many files read at once
+POOL_MIN_BYTES = 512 * 1024      # a smaller batch is read in this process (starting the readers costs more)
+WORKER_MEMORY = 600 * 1024 ** 2  # free memory each reader is given room for (a long PDF's layout is large)
+
+
+def read_workers(files: list[Path]) -> int:
+    """How many files to read at once: 1 for one file or a small batch, else up to READ_WORKERS, one less than the
+    computer's processors and what its free memory allows. `ENLENS_READ_WORKERS` sets it (1: one at a time)."""
+    env = os.environ.get("ENLENS_READ_WORKERS")
+    if env is not None:
+        try:
+            return max(1, min(int(env), len(files)))
+        except ValueError:
+            return 1
+    if len(files) < 2:
+        return 1
+    size = 0
+    for f in files:
+        try:
+            size += f.stat().st_size
+        except OSError:
+            pass
+    if size < POOL_MIN_BYTES:
+        return 1
+    n = min(READ_WORKERS, (os.cpu_count() or 2) - 1, len(files))
+    try:
+        from .llm import free_memory
+
+        free = free_memory()
+    except Exception:  # noqa: BLE001 - not known: the processors decide
+        free = None
+    if free is not None:
+        n = min(n, free // WORKER_MEMORY)
+    return max(1, int(n))
+
+
+def _read_whole(f: Path, ocr: OcrOptions, max_chars: int, min_chars: int, should_stop=None,
+                known: frozenset | set = frozenset()) -> tuple:
+    """A file read and made into a Document, as `ingest` does it: ("ok", raw, doc); ("failed", the problem in words);
+    ("stopped",) for Stop during OCR; ("unbuilt", raw, the exception) when the Document could not be made, which
+    `ingest` raises only for a file that is not a duplicate, as before. A file whose checksum is in `known` (a
+    duplicate) is read but not made into a Document: ("ok", raw, None), as `ingest` never made one of a duplicate."""
+    try:
+        raw = read_file(f, ocr, should_stop)
+    except Stopped:
+        return ("stopped",)
+    except Exception as e:  # noqa: BLE001 - one unreadable file should not stop the others
+        return ("failed", _read_problem(e))
+    if raw.sha1 in known:
+        return ("ok", raw, None)
+    try:
+        return ("ok", raw, build_document(raw, max_chars, min_chars))
+    except Exception as e:  # noqa: BLE001 - raised by `ingest` once it knows the file is new
+        return ("unbuilt", raw, e)
+
+
+def _checksum(f: Path) -> str | None:
+    """The checksum `read_file` gives a file (None when it cannot be read now: reading it says why)."""
+    try:
+        if f.suffix.lower() in (".pdf", ".docx"):
+            return _sha1(f)
+        return hashlib.sha1(f.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+_LIVE: "weakref.WeakSet" = weakref.WeakSet()  # every reading process started and not yet ended
+_LIVE_LOCK = threading.Lock()
+_ENDING = False  # set by end_reading_processes: no reading process is started after it
+
+
+def end_reading_processes() -> None:
+    """End every reading process this program started, at once (a file half read is simply not added), and start no
+    other: the files still to read are read here. Run when ENLENS exits (atexit), and by the app before it becomes
+    its new version (`os.execv` runs no exit handlers, and keeps the process number the readers watch)."""
+    global _ENDING
+    with _LIVE_LOCK:
+        _ENDING = True
+        procs = list(_LIVE)
+    for p in procs:
+        try:
+            if p.poll() is None:
+                p.kill()
+        except OSError:
+            pass
+
+
+atexit.register(end_reading_processes)
+
+
+class _Readings:
+    """The readings of a batch of files, in their order. With `workers` above 1, files are read ahead in that many
+    reading processes (`readworker.py`, each kept busy by a thread of its own); with 1, or for a file whose reading in
+    a process went wrong in any way (the process could not start, ended, or its answer could not come back), here,
+    the way `ingest` read every file before 0.16. The threads are daemon threads and the processes end when ENLENS
+    does (`end_reading_processes`), so neither Quit nor an update waits for a file being read; a reading process also
+    ends by itself when the program that started it is gone."""
+
+    def __init__(self, files: list[Path], ocr: OcrOptions, max_chars: int, min_chars: int, should_stop=None,
+                 workers: int = 1, known: set | None = None):
+        self.files, self.ocr, self.max_chars, self.min_chars = files, ocr, max_chars, min_chars
+        self.should_stop = should_stop
+        self.workers = workers
+        self.known = known if known is not None else set()  # the checksums stored so far: `ingest`'s own set
+        self.tasks = None  # the queue the reading threads take files from
+        self.futures: dict[int, Future] = {}
+        self.local = threading.local()
+        self.lock = threading.Lock()
+        self.procs: list = []
+        self.closed = False
+        self.stop_dir: str | None = None
+        self.stop_file = ""
+        self.parallel = False  # whether reading processes were used
+
+    def here(self, i: int) -> tuple:
+        return _read_whole(self.files[i], self.ocr, self.max_chars, self.min_chars, self.should_stop, self.known)
+
+    def _start(self) -> None:
+        import queue
+        import tempfile
+
+        self.stop_dir = tempfile.mkdtemp(prefix="enlens-read-")
+        self.stop_file = os.path.join(self.stop_dir, "stop")
+        tasks: queue.Queue = queue.Queue()
+        started = 0
+        for n in range(self.workers):
+            try:
+                threading.Thread(target=self._serve, args=(tasks,), name=f"enlens-read-{n}", daemon=True).start()
+            except RuntimeError:  # no more threads to be had: as many as started (none: one at a time, here)
+                break
+            started += 1
+        if not started:
+            shutil.rmtree(self.stop_dir, ignore_errors=True)
+            raise RuntimeError("no reading thread could start")
+        self.workers, self.tasks = started, tasks
+        self.parallel = True
+
+    def _serve(self, tasks) -> None:
+        """A reading thread: the files put in the queue, each read by this thread's process, until None comes."""
+        while True:
+            item = tasks.get()
+            if item is None:
+                break
+            j, fut = item
+            if not fut.set_running_or_notify_cancel():
+                continue
+            try:
+                fut.set_result(self._away(j))
+            except BaseException as e:  # noqa: BLE001 - handed to the waiting `get`, which reads the file here
+                fut.set_exception(e)
+        p = getattr(self.local, "proc", None)
+        if p is not None:
+            try:
+                p.stdin.close()  # an idle reading process ends when its input closes
+            except OSError:
+                pass
+
+    def _process(self):
+        """This thread's reading process, started when it has none or its last one ended: the same Python, finding
+        its modules exactly where this program finds them (its `sys.path`), told which program to outlive."""
+        import subprocess
+        import sys
+
+        p = getattr(self.local, "proc", None)
+        if p is not None and p.poll() is None:
+            return p
+        code = (f"import sys; sys.path[:] = {sys.path!r}; "
+                "from enlens_claims.readworker import main; sys.exit(main())")
+        cmd = [sys.executable] + (["-X", "utf8"] if sys.flags.utf8_mode else []) + ["-c", code]
+        env = {**os.environ, "ENLENS_READ_PARENT": str(os.getpid())}
+        with self.lock, _LIVE_LOCK:
+            if self.closed or _ENDING:
+                raise ChildProcessError("the batch is over, or ENLENS is ending")
+            p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 env=env, **no_window())
+            self.procs.append(p)
+            _LIVE.add(p)
+        self.local.proc = p
+        return p
+
+    def _away(self, i: int) -> tuple:
+        """File i read by this thread's reading process (in a reading thread)."""
+        from . import readworker
+
+        p = self._process()
+        cs = _checksum(self.files[i]) if self.known else None  # a new project has no duplicate to look for
+        known = frozenset([cs]) if cs is not None and cs in self.known else frozenset()  # a duplicate: not built
+        try:
+            readworker.send(p.stdin, (self.files[i], self.ocr, self.max_chars, self.min_chars, self.stop_file, known))
+            got = readworker.receive(p.stdout)
+        except Exception:  # noqa: BLE001 - the pipe broke: as when the process ended
+            got = None
+        if got is None:  # the process ended (or was ended): the next file gets a new one
+            try:
+                p.kill()
+            except OSError:
+                pass
+            raise ChildProcessError("the reading process ended")
+        return got
+
+    def get(self, i: int) -> tuple:
+        if self.workers > 1 and self.tasks is None:
+            try:
+                self._start()
+            except Exception:  # noqa: BLE001 - no threads or no temporary folder: one at a time, here
+                self.workers = 1
+        if self.tasks is None:
+            return self.here(i)
+        from concurrent.futures import TimeoutError as FutureTimeout
+
+        try:
+            for j in range(i, min(len(self.files), i + self.workers + 1)):  # this file and the next ones
+                if j not in self.futures:
+                    fut: Future = Future()
+                    self.futures[j] = fut
+                    self.tasks.put((j, fut))
+            fut = self.futures.pop(i)
+            while True:
+                try:
+                    got = fut.result(timeout=0.25)
+                    break
+                except FutureTimeout:
+                    if self.should_stop and self.should_stop():
+                        self._stop()  # OCR in the reading process stops at its next page
+        except Exception:  # noqa: BLE001 - this file's reading did not come back: read it here, the old way
+            return self.here(i)
+        if got[0] == "redo":
+            return self.here(i)
+        if got[0] == "ok" and got[2] is None and got[1].sha1 not in self.known:
+            return self.here(i)  # not built as a duplicate, but no longer one (cannot happen: the checksums only grow)
+        return got
+
+    def _stop(self) -> None:
+        if self.stop_file and not os.path.exists(self.stop_file):
+            try:
+                Path(self.stop_file).touch()
+            except OSError:
+                pass
+
+    def close(self) -> None:
+        """Every reading process ended (those still reading a file the batch no longer needs, at once), the threads
+        let go, the stop file's folder removed."""
+        if self.tasks is None:
+            return
+        with self.lock:
+            self.closed = True
+            procs, self.procs = self.procs, []
+        self._stop()
+        busy = any(not f.done() for f in self.futures.values())
+        for fut in self.futures.values():
+            fut.cancel()
+        self.futures.clear()
+        for _ in range(self.workers):
+            self.tasks.put(None)
+        for p in procs:
+            if busy and p.poll() is None:
+                try:
+                    p.kill()
+                except OSError:
+                    pass
+        for p in procs:
+            try:
+                p.wait(timeout=5)
+            except Exception:  # noqa: BLE001 - it ends by itself once its input closes
+                pass
+        self.tasks = None
+        if self.stop_dir:
+            shutil.rmtree(self.stop_dir, ignore_errors=True)
+
+
 def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = None,
            progress=None, should_stop=None, ocr: OcrOptions | None = None, ai_access: str | None = None,
-           ai_note: str | None = None) -> dict:
+           ai_note: str | None = None, workers: int | None = None) -> dict:
     """Add documents. `exclude` holds file-name patterns (e.g. 'A_18_*') to leave out, such as a wrong download.
 
     `progress(done, total, file_name)` is called before each file is read (for a progress bar). Each document is
@@ -1149,6 +1429,9 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
     0.11: `ai_access` is who may read the new documents with AI (cloud, local, none; None: the project's default);
     a project whose default is not chosen yet takes it as its default. An `ai_access` column in a manifest.csv sets
     it per file (and `ai_note` the reason), which wins over the one answer for all.
+
+    0.16: `workers` files are read at once, each in a process of its own (None: as `read_workers` decides), and stored
+    in the order of the files, as reading them one after the other stores them; `read_at_once` in the result says so.
     """
     from fnmatch import fnmatch
 
@@ -1164,8 +1447,6 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
         if ai_access == access.default(ws):
             ai_access = None  # follows the project's default
 
-    from .textutil import clean_doi
-
     cfg = ws.config["passages"]
     manifest_files: list[Path] = []
     unpack_failed: list[str] = []
@@ -1180,25 +1461,47 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
     if exclude:
         stats["excluded"] = [f.name for f in skipped]
     known = {r[0] for r in ws.query("SELECT sha1 FROM documents")}
+    # 0.16: read ahead in several processes when the batch is large (`read_workers`), taken here in file order
+    readings = _Readings(files, ocr if ocr is not None else OcrOptions(), cfg["max_chars"], cfg["min_chars"],
+                         should_stop, read_workers(files) if workers is None else max(1, int(workers)), known)
+    try:
+        _ingest_files(ws, files, readings, known, declared, stats, progress, should_stop, ai_access, ai_note)
+    finally:
+        readings.close()
+    if readings.parallel:
+        stats["read_at_once"] = readings.workers
+    if progress:
+        progress(len(files), len(files), "")
+    return stats
+
+
+def _ingest_files(ws: Workspace, files: list[Path], readings: _Readings, known: set, declared: dict, stats: dict,
+                  progress, should_stop, ai_access: str | None, ai_note: str | None) -> None:
+    """Each file of the batch, in order: its reading (`readings`), then stored, counted or listed as `ingest` says."""
+    from . import access
+    from .textutil import clean_doi
+
     for i, f in enumerate(files):
         if should_stop and should_stop():
             stats["stopped"] = True
             break
         if progress:
             progress(i, len(files), f.name)
-        try:
-            raw = read_file(f, ocr if ocr is not None else OcrOptions(), should_stop)
-        except Stopped:  # 0.14.3: Stop during the text recognition of a scanned PDF: that file is not added
+        got = readings.get(i)
+        if got[0] == "stopped":  # 0.14.3: Stop during the text recognition of a scanned PDF: that file is not added
             stats["stopped"] = True
             break
-        except Exception as e:  # noqa: BLE001 - one unreadable file should not stop the others (0.14.3: whatever
-            # it raises: a damaged Word file gave a zip or XML error that stopped the whole add)
-            stats.setdefault("failed", []).append(f"{f.name}: {_read_problem(e)}")
+        if got[0] == "failed":  # one unreadable file should not stop the others (0.14.3: whatever it raises: a
+            # damaged Word file gave a zip or XML error that stopped the whole add)
+            stats.setdefault("failed", []).append(f"{f.name}: {got[1]}")
             continue
+        raw = got[1]
         if raw.sha1 in known:
             stats["duplicates"] += 1
             continue
-        doc = build_document(raw, cfg["max_chars"], cfg["min_chars"])
+        if got[0] == "unbuilt":
+            raise got[2]
+        doc = got[2]
         if raw.ocr_pages:
             stats.setdefault("ocr", []).append(f.name)
         if raw.scanned_pages > raw.ocr_pages:
@@ -1235,9 +1538,6 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
         bad = sum(1 for p in doc.passages if p.section == "unreadable")
         if bad > 0.3 * max(1, len(doc.passages)):
             stats.setdefault("mostly_unreadable", []).append(f.name)
-    if progress:
-        progress(len(files), len(files), "")
-    return stats
 
 
 def _store_document(ws: Workspace, doc: "Document", raw: RawDoc, f: Path, dec: dict, ai_access: str | None = None,

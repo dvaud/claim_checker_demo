@@ -8,7 +8,8 @@ with no AI at all, so the figures can be repeated at every release:
 - a folder of your own PDFs, each with a `.txt` beside it holding its true text (`tools/arxiv_truth.py` makes one);
 - a project: do the quotes ENLENS recorded still find their place in the text a reader makes of the original file?
   (nothing in the project is changed: the work is done on a copy);
-- timings (reading, searching, the glossary, themes by words) and the number of AI tasks waiting;
+- timings (reading, searching, words nearby, the codebook's keyword pass and the Profile page, the glossary,
+  themes by words) and the number of AI tasks waiting;
 - determinism: reading a file twice gives the very same text.
 
 `run()` gathers it all, `to_markdown()` writes the "Validation report: reading documents (no AI)".
@@ -612,7 +613,13 @@ def recorded_quotes(ws) -> dict[str, list[str]]:
 def copy_project(project: str | Path, into: Path) -> Path:
     """A copy of a project folder to work on (the project itself is never opened for writing)."""
     dest = Path(into) / "project"
-    shutil.copytree(project, dest, symlinks=True, ignore=shutil.ignore_patterns("*.sqlite-shm"))
+    project = Path(project)
+    shm = shutil.ignore_patterns("*.sqlite-shm")
+
+    def ignore(folder, names):  # 0.16: without the glossary's kept readings (`cache/`), so its timing starts afresh
+        return set(shm(folder, names)) | ({"cache"} if Path(folder) == project else set())
+
+    shutil.copytree(project, dest, symlinks=True, ignore=ignore)
     return dest
 
 
@@ -689,6 +696,24 @@ def measure_timings(ws) -> dict:
         res = concordance.search(ws, w, limit=50)
         per[w] = {"hits": res["total"], "seconds": round(time.perf_counter() - t0, 3)}
     out["steps"]["searches"] = per
+    if top:  # 0.16: the words found near the most frequent word, as the Search page's Words nearby shows them
+        t0 = time.perf_counter()
+        res = concordance.collocates(ws, top[0])
+        out["steps"]["collocates"] = {"word": top[0], "hits": res["hits"], "seconds": round(time.perf_counter() - t0, 3)}
+    try:  # 0.16: the codebook's keyword pass over every passage, then the Profile page's grid and counts
+        from . import profile
+
+        t0 = time.perf_counter()
+        kp = profile.keyword_pass(ws, "sdg")
+        out["steps"]["keyword_pass_seconds"] = round(time.perf_counter() - t0, 2)
+        out["steps"]["keyword_pass_candidates"] = kp.get("candidates")
+        t0 = time.perf_counter()
+        labs = profile.effective(ws, "sdg", light=True)
+        profile.grid(ws, "sdg", None, "code", labs=labs)
+        profile.stats(ws, "sdg", labs=labs)
+        out["steps"]["profile_page_seconds"] = round(time.perf_counter() - t0, 3)
+    except Exception as e:  # noqa: BLE001
+        out["skipped"]["profile"] = (str(e) or type(e).__name__)[:120]
     t0 = time.perf_counter()
     try:
         st = terms.build(ws)
@@ -705,7 +730,35 @@ def measure_timings(ws) -> dict:
             out["skipped"]["themes"] = (str(e) or type(e).__name__)[:120]
     else:
         out["skipped"]["themes"] = "needs the glossary, which could not be built"
+    if "terms" not in out["skipped"]:
+        try:
+            out["steps"].update(_one_more_document(ws))
+        except Exception as e:  # noqa: BLE001
+            out["skipped"]["terms_one_more_document"] = (str(e) or type(e).__name__)[:120]
     return out
+
+
+def _one_more_document(ws) -> dict:
+    """0.16 (H3): the glossary after one more document, as after adding one: a document of middle size is taken out
+    of the copy, the glossary built without it, and the time of the build once it is back is what is measured."""
+    from . import terms
+
+    docs = [r[0] for r in ws.query("SELECT doc_id FROM passages WHERE section='body' GROUP BY doc_id "
+                                   "ORDER BY COUNT(*), doc_id")]
+    if len(docs) < 2:
+        return {}
+    one = docs[len(docs) // 2]
+    with ws.connect() as cx:
+        cx.execute("UPDATE passages SET section='measure-held' WHERE doc_id=? AND section='body'", (one,))
+        ws.bump_corpus(cx)
+    terms.build(ws)
+    with ws.connect() as cx:
+        cx.execute("UPDATE passages SET section='body' WHERE doc_id=? AND section='measure-held'", (one,))
+        ws.bump_corpus(cx)
+    t0 = time.perf_counter()
+    st = terms.build(ws)
+    return {"terms_one_more_document_seconds": round(time.perf_counter() - t0, 2),
+            "terms_one_more_document_read": st.get("documents_read")}
 
 
 def measure_project(project: str | Path, readers: list[int], timings: bool = False) -> dict:
@@ -898,8 +951,20 @@ def to_markdown(result: dict) -> str:
                 L.append(f"| Building the search index | {st['search_index_seconds']} |")
             for w, v in st.get("searches", {}).items():
                 L.append(f"| Searching for \"{w}\" ({v['hits']} places) | {v['seconds']} |")
+            if "collocates" in st:
+                c = st["collocates"]
+                L.append(f"| Words nearby \"{c['word']}\" ({c['hits']} places) | {c['seconds']} |")
+            if "keyword_pass_seconds" in st:
+                L.append(f"| The SDG targets found by keywords in every passage ({st.get('keyword_pass_candidates')} "
+                         f"candidates) | {st['keyword_pass_seconds']} |")
+            if "profile_page_seconds" in st:
+                L.append(f"| The Profile page's grid and counts | {st['profile_page_seconds']} |")
             if "terms_seconds" in st:
                 L.append(f"| Building the glossary ({st.get('terms')} terms) | {st['terms_seconds']} |")
+            if "terms_one_more_document_seconds" in st:
+                L.append(f"| The glossary after one more document (documents read: "
+                         f"{st.get('terms_one_more_document_read')}, the new one included) | "
+                         f"{st['terms_one_more_document_seconds']} |")
             if "themes_seconds" in st:
                 L.append(f"| Six themes, found by words | {st['themes_seconds']} |")
             L.append("")

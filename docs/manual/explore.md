@@ -55,7 +55,8 @@ default, the 17 goals, or your own CSV ([Settings → Exploring](settings.md#the
    of your own. Your labels always count: a keyword label you agreed with or changed stays even after the AI has
    read the passage.
 
-Count by code or by group (the SDG goals). The grid opens the passages behind each cell. *Technical details* shows
+Count by code or by group (the SDG goals). The grid opens the passages behind each cell; a long grid draws its first
+documents at once and the rest as you scroll down (or *Show more documents*). *Technical details* shows
 the model, its exact version (digest), the prompt and the seed, and warns when they differ from the last run.
 
 ## Concepts

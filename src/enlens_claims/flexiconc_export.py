@@ -181,7 +181,8 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
             spans: dict[int, list] = {}
             if kt:
                 q = ",".join("?" * len(kt))
-                for m in ws.query(f"SELECT term_id, start, end FROM term_mentions WHERE doc_id=? AND term_id IN ({q})",
+                for m in ws.query(f"SELECT term_id, start, end FROM term_mentions WHERE doc_id=? AND term_id IN ({q}) "
+                                  "ORDER BY start, end",
                                   (doc_id, *kt)):
                     spans.setdefault(sid_at(m["start"]), []).append(
                         {"text": text[m["start"]:m["end"]], "start_char": m["start"], "end_char": m["end"],

@@ -30,7 +30,7 @@ from typing import Callable
 from . import __version__, frameworks
 from .people import me, mine_sql
 from .store import Workspace, now
-from .textutil import surface_words, tokens
+from .textutil import STOPWORDS, _TOKEN_RE, fast_normalise, stem
 
 MAX_CANDIDATES = 8
 KEYWORD_FLOOR = 0.2       # share of a code text's (idf-weighted) words a passage must have to be a candidate
@@ -103,6 +103,19 @@ def code_vectors(ws: Workspace, fw: frameworks.Framework, embedder) -> dict[str,
     return {c: list(array("f", b)) for c, (_t, b) in have.items() if c in fw.codes}
 
 
+def _words(text: str) -> tuple[list[str], dict[str, str]]:
+    """`tokens(text)` and `surface_words(text)` from one reading of the text: the same words, stop words and stems.
+    0.16: the keyword pass normalised and split each passage twice for them."""
+    toks: list[str] = []
+    surface: dict[str, str] = {}
+    for w in _TOKEN_RE.findall(fast_normalise(text)):
+        if len(w) > 1 and w not in STOPWORDS:
+            s = stem(w)
+            toks.append(s)
+            surface.setdefault(s, w)
+    return toks, surface
+
+
 def _meaning_candidates(ws: Workspace, fw, embedder, pids: list[str]) -> dict[str, list[tuple[str, float]]]:
     """{passage_id: [(code, cosine)]} for the passages unusually close to a code (see MEANING_Z, MEANING_TOP)."""
     from . import embed
@@ -159,14 +172,14 @@ def keyword_pass(ws: Workspace, framework: str = "sdg", embedder=None, doc_ids: 
     fw = frameworks.get(framework, ws)
     idx = passage_index(ws)
     only = set(doc_ids) if doc_ids else None
-    rows = [r for r in idx.rows if only is None or r["doc_id"] in only]
+    rows = idx.read([i for i, d in enumerate(idx.doc_of) if only is None or d in only])
     idf = idx.bm25.idf
     meaning = _meaning_candidates(ws, fw, embedder, [r["passage_id"] for r in rows]) if embedder is not None else {}
     out_rows = []
     stamp = now()
     totals: dict[str, float] = {}
     for n, r in enumerate(rows, 1):
-        toks = tokens(r["text"])
+        toks, words = _words(r["text"])
         have = set(toks)
         lex_hits = fw.lexicon_hits(r["text"]) if fw.lexicon else set()
         scores = fw.scores(r["text"], toks, lex_hits)  # the phrasings matched once, not twice (0.11.1)
@@ -183,7 +196,7 @@ def keyword_pass(ws: Workspace, framework: str = "sdg", embedder=None, doc_ids: 
                                                                                    x[1]["lexicon"])),
                                                       -max(x[1]["coverage"], 0.6 if x[1]["lexicon"] else 0),
                                                       -x[1].get("similarity", 0), x[0]))[:MAX_CANDIDATES]
-        surface = surface_words(r["text"]) if ranked else {}
+        surface = words if ranked else {}
         for code, c in ranked:
             kw = c["coverage"] > 0 or c["lexicon"]
             source = "both" if kw and "similarity" in c else "keywords" if kw else "meaning"
@@ -425,12 +438,17 @@ def _decisions(ws: Workspace, ids: list[str] | None = None) -> dict[str, dict]:
     return out
 
 
+# 0.16: what `effective(light=True)` reads of each label: what the rule needs and what the grid and the counts show
+_LIGHT = "l.label_id, l.passage_id, l.doc_id, l.code, l.source, l.confidence, l.relevance, l.direction"
+
+
 def effective(ws: Workspace, framework: str, doc_ids: list[str] | None = None, passage_ids: list[str] | None = None,
-              provisional: bool = True, code: str | None = None) -> list[dict]:
+              provisional: bool = True, code: str | None = None, light: bool = False) -> list[dict]:
     """The labels that count: per passage, the model's once the model read it, else the strong pass-1 candidates
     (when `provisional`); a person's rejection removes a label, a change replaces its fields, their own labels add,
     and a keyword label a person accepted or changed stays whether or not the model read the passage.
-    `code` keeps the query to one code (the rule per passage and code is the same, so nothing else changes)."""
+    `code` keeps the query to one code (the rule per passage and code is the same, so nothing else changes).
+    0.16: `light` reads only the fields of `_LIGHT` (the same labels, for the grid and the counts: a quicker page)."""
     where, args = ["l.framework=?"], [framework]
     if doc_ids:
         where.append(f"l.doc_id IN ({','.join('?' * len(doc_ids))})")
@@ -441,7 +459,8 @@ def effective(ws: Workspace, framework: str, doc_ids: list[str] | None = None, p
     if code:
         where.append("l.code=?")
         args.append(code)
-    rows = [dict(r) for r in ws.query("SELECT l.*, p.seq, p.start AS pstart FROM labels l JOIN passages p ON "
+    cols = _LIGHT if light else "l.*, p.seq, p.start AS pstart"
+    rows = [dict(r) for r in ws.query(f"SELECT {cols} FROM labels l JOIN passages p ON "
                                       f"p.passage_id=l.passage_id WHERE {' AND '.join(where)}", args)]
     head = f"label:{framework}:"
     read = {r[0][len(head):] for r in ws.query(
@@ -534,11 +553,14 @@ def doc_profile(ws: Workspace, framework: str, doc_id: str) -> dict:
             "read_by_model": read, "codes": codes, "pass1": pass1_status(ws, framework)}
 
 
-def grid(ws: Workspace, framework: str, doc_ids: list[str] | None = None, level: str = "code") -> dict:
+def grid(ws: Workspace, framework: str, doc_ids: list[str] | None = None, level: str = "code",
+         labs: list[dict] | None = None) -> dict:
     """Documents × codes: in each cell the number of passages of the document with that code (`level` "group":
-    codes added up by their group, the 17 goals for the SDG targets)."""
+    codes added up by their group, the 17 goals for the SDG targets). 0.16: `labs`, the labels that count for these
+    documents when already known (`effective(..., light=True)`), so the profile page works them out once."""
     fw = frameworks.get(framework, ws)
-    labs = effective(ws, framework, doc_ids=doc_ids)
+    if labs is None:
+        labs = effective(ws, framework, doc_ids=doc_ids, light=True)
     titles = {r["doc_id"]: r["title"] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
     cells: dict[str, dict[str, set]] = defaultdict(lambda: defaultdict(set))
     for r in labs:
@@ -780,8 +802,11 @@ def recall_at_candidates(ws: Workspace, framework: str, gold: dict[str, set[str]
             "passages_all_found": round(per_passage / len(gold), 3) if gold else None}
 
 
-def stats(ws: Workspace, framework: str) -> dict:
-    labs = effective(ws, framework)
+def stats(ws: Workspace, framework: str, labs: list[dict] | None = None) -> dict:
+    """How many labels count, in how many documents and passages, by where they come from. 0.16: `labs`, the labels
+    that count in the whole project when already known (see `grid`)."""
+    if labs is None:
+        labs = effective(ws, framework, light=True)
     return {"labels": len(labs), "documents": len({r["doc_id"] for r in labs}),
             "passages": len({r["passage_id"] for r in labs}),
             "by_source": dict(Counter(r["source"] for r in labs)), "pass1": pass1_status(ws, framework)}

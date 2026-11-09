@@ -143,7 +143,7 @@ broken apart, and leftover boilerplate.
 | --- | --- |
 | `--folder DIR` | Measures PDFs that have a `.txt` of their true text beside them. |
 | `--ws PROJECT` | How many of a project's quotes still find their place in each reader's text (on a copy: the project never changes). |
-| `--timings` | How long reading, search, key terms and themes take. |
+| `--timings` | How long reading, search, *Words nearby*, the keyword pass, the Profile page, key terms and themes take. |
 | `--report FILE.md` | Writes it all as a report. |
 
 Each release carries this report as `validation-report.md`.

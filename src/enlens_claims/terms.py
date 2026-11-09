@@ -20,8 +20,15 @@ Links are kept by term id (a hash of the term's stems), so they survive a rebuil
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
+import sqlite3
+import sys
+import threading
+import uuid
+import zlib
+from array import array
 from collections import Counter, defaultdict
 from typing import Callable
 
@@ -124,23 +131,33 @@ FRAGMENT_PIECES = 8     # most pieces one word is joined from
 _PIECE = re.compile(r"[^\W\d_]{1,%d}" % FRAGMENT_MAX)
 
 
-class Joiner:
-    """The corpus's whole words, to join the pieces of letter-spaced words (see FRAGMENT_MAX)."""
+def joiner_counts(texts) -> tuple[Counter, Counter]:
+    """What the joiner counts in some texts: every word, and every run of pieces that stands apart. Both are sums
+    over the texts, so a corpus's counts are the sums of its documents' (0.16, H3: each document's are kept)."""
+    vocab: Counter[str] = Counter()
+    split: Counter[str] = Counter()   # how often each run of pieces stands apart ("net zero": often)
+    for t in texts:
+        toks = token_spans(t, keep_stop=True)
+        vocab.update(w for _a, _b, _s, w in toks)
+        for i in range(len(toks) - 1):
+            if not _PIECE.fullmatch(toks[i][3]):
+                continue
+            j = i + 1
+            while j < len(toks) and j - i < FRAGMENT_PIECES and t[toks[j - 1][1]:toks[j][0]] == " " \
+                    and _PIECE.fullmatch(toks[j][3]):
+                split[" ".join(x[3] for x in toks[i:j + 1])] += 1
+                j += 1
+    return vocab, split
 
-    def __init__(self, texts):
-        self.vocab: Counter[str] = Counter()
-        self.split: Counter[str] = Counter()   # how often each run of pieces stands apart ("net zero": often)
-        for t in texts:
-            toks = token_spans(t, keep_stop=True)
-            self.vocab.update(w for _a, _b, _s, w in toks)
-            for i in range(len(toks) - 1):
-                if not _PIECE.fullmatch(toks[i][3]):
-                    continue
-                j = i + 1
-                while j < len(toks) and j - i < FRAGMENT_PIECES and t[toks[j - 1][1]:toks[j][0]] == " " \
-                        and _PIECE.fullmatch(toks[j][3]):
-                    self.split[" ".join(x[3] for x in toks[i:j + 1])] += 1
-                    j += 1
+
+class Joiner:
+    """The corpus's whole words, to join the pieces of letter-spaced words (see FRAGMENT_MAX).
+
+    Every run of pieces that `join` weighs is a key of `split` (the same runs are counted), so whatever the joiner
+    does to a text depends only on its decisions (`whole`) for the runs of that text."""
+
+    def __init__(self, texts=(), counts: tuple[Counter, Counter] | None = None):
+        self.vocab, self.split = counts if counts is not None else joiner_counts(texts)
 
     def word(self, w: str) -> bool:
         """A piece that is a word of its own: a stop word, or a word of three letters or more the documents use."""
@@ -247,40 +264,308 @@ def running_heads(rows, joiner: Joiner | None = None) -> tuple[dict[str, tuple[i
     return {pid: (e[0], e[1]) for pid, e in edges.items()}, boiler
 
 
-def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
-          should_stop: Callable[[], bool] | None = None, embedder=None, max_terms: int = MAX_TERMS) -> dict:
-    """(Re)build the glossary of the project's body text. Takes seconds to a minute; nothing is sent anywhere."""
-    rows = ws.query("SELECT passage_id, doc_id, page, start, text FROM passages WHERE section='body' ORDER BY doc_id, seq")
-    version = ws.corpus_version()
-    joiner = Joiner(r["text"] for r in rows)   # 0.8: letter-spaced words read whole (glossary and key terms only)
-    edges, boiler = running_heads(rows, joiner)
+# ---------------------------------------------------------------------------------------------
+# 0.16 (H3): each document's reading is kept, so adding a document does not read every document again
+# ---------------------------------------------------------------------------------------------
+READING_FORMAT = 2   # raise it when what a kept reading holds changes (a change to this file or textutil.py also)
 
-    def grams(r):
-        """The candidate terms of a passage, without the running heads and feet of its document's pages."""
+
+def _doc_fp(rows) -> str:
+    """A document's body text as the glossary reads it: its passages with their pages and places, in order."""
+    h = hashlib.sha1()
+    for r in rows:
+        h.update(f"{r['passage_id']}\x1e{r['page']}\x1e{r['start']}\x1e".encode())
+        h.update(r["text"].encode("utf-8", "surrogatepass"))
+        h.update(b"\x1f")
+    return h.hexdigest()
+
+
+def _reading_stamp() -> str:
+    """What a kept reading was made with: its format, the code that reads (this file as imported, and the word rule
+    of textutil.py), not ENLENS's version, so an update that leaves them alone keeps the readings, and a connector of
+    another version shares them with the app (0.16 review)."""
+    return _STAMP
+
+
+def _code_digest() -> str:
+    try:
+        from pathlib import Path
+
+        code = Path(__file__).read_bytes()
+    except OSError:   # installed without its source
+        from . import __version__
+
+        code = __version__.encode()
+    from .textutil import RULE_DIGEST
+
+    return hashlib.sha1(code + b"|" + RULE_DIGEST.encode()).hexdigest()[:16]
+
+
+_STAMP = f"{READING_FORMAT}:{_code_digest()}:{sys.byteorder}"   # when this module is imported (0.16 review)
+
+
+def _blobs(reading: dict, grams: array) -> tuple[bytes, bytes, str]:
+    """A reading as kept: its two blobs and their digest (which says which reading a build used)."""
+    rb = zlib.compress(json.dumps(reading).encode(), 1)
+    gb = zlib.compress(grams.tobytes(), 1)
+    return rb, gb, hashlib.sha1(rb + b"\x00" + gb).hexdigest()[:24]
+
+
+def _decode(rb: bytes | None, gb: bytes | None) -> tuple[dict, array] | None:
+    try:
+        rd = json.loads(zlib.decompress(rb)) if rb else None
+        g = array("I")
+        g.frombytes(zlib.decompress(gb)) if gb else None
+    except (ValueError, TypeError, zlib.error):
+        return None
+    if not isinstance(rd, dict) or not isinstance(rd.get("keys"), list) or len(g) % 4:
+        return None
+    return rd, g
+
+
+class _Readings:
+    """Where each document's reading is kept: `cache/glossary.sqlite` in the project folder. A file of its own, not
+    the project's database, so it is never in a project's zip or a sync; held in memory for one build when it cannot
+    be written. A reading that is missing, of another version or cannot be read only means reading that document
+    again: nothing in the glossary depends on the file being there. Each reading carries a digest, so a build knows
+    whether the reading it finds is the one it (or the last build) used."""
+
+    COLUMNS = ["doc_id", "fp", "stamp", "counts", "reading", "grams", "digest"]
+
+    def __init__(self, ws: Workspace):
+        self.stamp = _reading_stamp()
+        self.mem: dict[str, tuple] = {}
+        self.cx = None
+        try:
+            from .searchindex import Unavailable, connect_cache
+
+            folder = ws.root / "cache"
+            folder.mkdir(exist_ok=True)
+            cx = connect_cache(folder / "glossary.sqlite")
+            have = [r[1] for r in cx.execute("PRAGMA table_info(readings)")]
+            if have and have != self.COLUMNS:   # an earlier layout: made again
+                cx.execute("DROP TABLE readings")
+                cx.execute("DROP TABLE IF EXISTS state")
+            cx.execute("CREATE TABLE IF NOT EXISTS readings(doc_id TEXT PRIMARY KEY, fp TEXT, stamp TEXT, counts BLOB, "
+                       "reading BLOB, grams BLOB, digest TEXT)")
+            cx.execute("CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY, value TEXT)")
+            cx.commit()
+            self.cx = cx
+        except (OSError, sqlite3.Error, Unavailable):
+            self.cx = None
+
+    def _select(self, doc_id: str, fp: str, cols: str):
+        if self.cx is None:
+            hit = self.mem.get(doc_id)
+            if hit is None or hit[0] != fp:
+                return None
+            row = dict(zip(("fp", "counts", "reading", "grams", "digest"), hit))
+            return tuple(row[c.strip()] for c in cols.split(","))
+        try:
+            return self.cx.execute(f"SELECT {cols} FROM readings WHERE doc_id=? AND fp=? AND stamp=?",
+                                   (doc_id, fp, self.stamp)).fetchone()
+        except sqlite3.Error:
+            return None
+
+    def counts(self, doc_id: str, fp: str) -> tuple[dict, dict] | None:
+        """What the document adds to the joiner (its words, its runs of pieces): its text's alone. Or None."""
+        r = self._select(doc_id, fp, "counts")
+        try:
+            v = json.loads(zlib.decompress(r[0])) if r and r[0] else None
+            return (v["vocab"], v["split"]) if isinstance(v, dict) else None
+        except (ValueError, KeyError, TypeError, zlib.error):
+            return None
+
+    def joined(self, doc_id: str, fp: str) -> tuple[set, str] | None:
+        """The joiner's decisions the reading was made with (its runs read whole), and its digest. Or None."""
+        r = self._select(doc_id, fp, "reading, digest")
+        try:
+            rd = json.loads(zlib.decompress(r[0])) if r and r[0] else None
+        except (ValueError, TypeError, zlib.error):
+            return None
+        return (set(rd.get("joined") or ()), r[1]) if isinstance(rd, dict) and r[1] else None
+
+    def load(self, doc_id: str, fp: str, digest: str) -> tuple[dict, array] | None:
+        """The reading with that digest (candidates, their places, abbreviations), or None (another program's build
+        may have put another there meanwhile)."""
+        r = self._select(doc_id, fp, "reading, grams, digest")
+        return _decode(r[0], r[1]) if r and r[2] == digest else None
+
+    def put(self, doc_id: str, fp: str, counts: tuple[dict, dict], reading: dict, grams: array) -> str:
+        cb = zlib.compress(json.dumps({"vocab": counts[0], "split": counts[1]}).encode(), 1)
+        rb, gb, digest = _blobs(reading, grams)
+        if self.cx is not None:
+            try:
+                self.cx.execute("INSERT OR REPLACE INTO readings VALUES (?,?,?,?,?,?,?)",
+                                (doc_id, fp, self.stamp, cb, rb, gb, digest))
+                self.cx.commit()
+                return digest
+            except sqlite3.Error:  # a full disk, a locked file: this build goes on in memory
+                self.close()
+                self.mem.clear()
+        self.mem[doc_id] = (fp, cb, rb, gb, digest)
+        return digest
+
+    def state(self) -> dict | None:
+        if self.cx is None:
+            return None
+        try:
+            r = self.cx.execute("SELECT value FROM state WHERE key='last_build'").fetchone()
+            v = json.loads(r[0]) if r else None
+            return v if isinstance(v, dict) and v.get("stamp") == self.stamp else None
+        except (sqlite3.Error, ValueError):
+            return None
+
+    def finish(self, doc_ids: set[str], state: dict | None) -> None:
+        """After the build is written: the readings of documents no longer in the project go, and what the build
+        wrote is noted (None: nothing may be assumed about the database next time)."""
+        if self.cx is None:
+            return
+        try:
+            gone = [r[0] for r in self.cx.execute("SELECT doc_id FROM readings") if r[0] not in doc_ids]
+            self.cx.executemany("DELETE FROM readings WHERE doc_id=?", [(d,) for d in gone])
+            self.cx.execute("DELETE FROM state WHERE key='last_build'")
+            if state is not None:
+                self.cx.execute("INSERT INTO state VALUES ('last_build', ?)", (json.dumps({**state, "stamp": self.stamp}),))
+            self.cx.commit()
+        except sqlite3.Error:
+            pass
+
+    def close(self) -> None:
+        if self.cx is not None:
+            try:
+                self.cx.close()
+            except sqlite3.Error:
+                pass
+            self.cx = None
+
+
+def _read_document(rows, joiner: Joiner, split: dict) -> tuple[dict, array]:
+    """One document's candidate terms with their places (running heads and feet left out), as `build` read them
+    before 0.16, and the joiner's decisions for its runs of pieces."""
+    edges, boiler = running_heads(rows, joiner)
+    keys: dict[str, int] = {}
+    grams = array("I")
+    for n, r in enumerate(rows):
         e = edges.get(r["passage_id"])
         for a, b, key in _grams(r["text"], joiner):
             if e and (r["doc_id"], key) in boiler and _at_edge(a, b, e):
                 continue
-            yield a, b, key
+            k = keys.get(key)
+            if k is None:
+                k = keys[key] = len(keys)
+            grams.extend((n, a, b, k))
+    abbrev: Counter = Counter()
+    for r in rows:
+        if "(" in r["text"]:
+            for short, long in abbreviations(r["text"]):
+                abbrev[(short, long)] += 1
+    joined = sorted(k for k in split if joiner.whole(k.split(" ")))
+    return {"keys": list(keys), "joined": joined, "abbrev": [[s, lf, c] for (s, lf), c in abbrev.items()]}, grams
 
+
+_BUILDING: dict[str, threading.Lock] = {}
+_BUILDING_GUARD = threading.Lock()
+
+
+def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
+          should_stop: Callable[[], bool] | None = None, embedder=None, max_terms: int = MAX_TERMS) -> dict:
+    """(Re)build the glossary of the project's body text. Takes seconds to a minute; nothing is sent anywhere.
+
+    0.16 (H3): a document whose text is unchanged, and for whose runs of pieces the joiner decides as before, is not
+    read again (its reading is kept, see `_Readings`); and only the mentions that changed are written. The glossary
+    is the same as a build from scratch, mention for mention. One build of a project at a time in this process."""
+    with _BUILDING_GUARD:
+        lock = _BUILDING.setdefault(str(ws.db_path.resolve()), threading.Lock())
+    with lock:
+        store = _Readings(ws)
+        try:
+            return _build(ws, store, progress, should_stop, embedder, max_terms)
+        finally:
+            store.close()
+
+
+def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max_terms: int) -> dict:
+    rows = ws.query("SELECT passage_id, doc_id, page, start, text FROM passages WHERE section='body' ORDER BY doc_id, seq")
+    version = ws.corpus_version()
+    by_doc: dict[str, list] = {}
+    for r in rows:
+        by_doc.setdefault(r["doc_id"], []).append(r)
+    fps = {d: _doc_fp(rs) for d, rs in by_doc.items()}
+
+    def stop_check():
+        if should_stop and should_stop():
+            raise _stopped()
+
+    # the joiner (0.8: letter-spaced words read whole, glossary and key terms only), from every document's counts
+    vocab: Counter[str] = Counter()
+    split: Counter[str] = Counter()
+    fresh: dict[str, tuple[dict, dict]] = {}
+    for d, rs in by_doc.items():
+        c = store.counts(d, fps[d])
+        if c is None:
+            stop_check()
+            c = fresh[d] = joiner_counts(r["text"] for r in rs)
+        vocab.update(c[0])
+        split.update(c[1])
+    joiner = Joiner(counts=(vocab, split))
+    whole_now = {k for k in split if joiner.whole(k.split(" "))}
+
+    def counts_of(d: str) -> tuple[dict, dict]:
+        return fresh.get(d) or store.counts(d, fps[d]) or joiner_counts(r["text"] for r in by_doc[d])
+
+    # a kept reading holds when the joiner decides each of the document's runs as it did then
+    digests: dict[str, str] = {}   # the reading this build uses, by its digest
+    plain: dict[str, bool] = {}    # no word of the document read whole: its spellings are its words as written
+    to_read = []
+    for d in by_doc:
+        got = store.joined(d, fps[d]) if d not in fresh else None
+        if got is not None:
+            mine = store.counts(d, fps[d])
+            if mine is not None and {k for k in whole_now if k in mine[1]} == got[0]:
+                digests[d], plain[d] = got[1], not got[0]
+                continue
+        to_read.append(d)
+    total = sum(len(by_doc[d]) for d in to_read) + 2 * len(rows)
+    done = 0
+    here: dict[str, tuple[dict, array]] = {}   # readings this build holds itself (the file could not take them)
+    for d in to_read:
+        stop_check()
+        rd, g = _read_document(by_doc[d], joiner, counts_of(d)[1])
+        digests[d], plain[d] = store.put(d, fps[d], counts_of(d), rd, g), not rd["joined"]
+        if store.cx is None:
+            here[d] = (rd, g)
+        done += len(by_doc[d])
+        if progress:
+            progress(done, total)
+    fresh.clear()
+
+    def reading(d: str) -> tuple[dict, array]:
+        """The document's reading this build decided on: kept, or (when another program's build put another in
+        its place meanwhile, or the file went) read again here with this build's joiner."""
+        got = here.get(d) or store.load(d, fps[d], digests[d])
+        if got is None:
+            got = here[d] = _read_document(by_doc[d], joiner, counts_of(d)[1])
+            digests[d], plain[d] = _blobs(*got)[2], not got[0]["joined"]
+        return got
+
+    # first reading: how often each candidate occurs and in how many documents
     tf: Counter[str] = Counter()
     df: Counter[str] = Counter()
-    last: dict[str, str] = {}
-    for n, r in enumerate(rows, 1):
-        if should_stop and n % 200 == 0 and should_stop():
-            raise _stopped()
-        d = r["doc_id"]
-        for _a, _b, key in grams(r):
-            tf[key] += 1
-            if last.get(key) != d:
-                last[key] = d
-                df[key] += 1
-        if progress and n % 500 == 0:
-            progress(n, 2 * len(rows))
-    n_docs = len({r["doc_id"] for r in rows})
+    for d, rs in by_doc.items():
+        stop_check()
+        rd, g = reading(d)
+        keys = rd["keys"]
+        for i, n in Counter(g[3::4]).items():
+            k = keys[i]
+            tf[k] += n
+            df[k] += 1
+        done += len(rs)
+        if progress:
+            progress(done, total)
+    n_docs = len(by_doc)
     min_df = MIN_DF if n_docs >= MIN_DF else 1   # a project of one document (a quick look) still gets its terms
     kept = {k: tf[k] for k in tf if tf[k] >= MIN_TF and df[k] >= min_df and k not in _GENERAL_STEMS}
-    del last
     # C-value: log2(|a| + 1) * (f(a) - mean f of the longer kept candidates that contain a)
     containers: dict[str, list[int]] = defaultdict(list)
     for k, f in kept.items():
@@ -299,43 +584,103 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
         cval[k] = math.log2(n_words + 1) * (f - (sum(nested) / len(nested) if nested else 0.0))
     chosen = sorted((k for k in kept if cval[k] > 0), key=lambda k: (-cval[k], k))[:max(1, int(max_terms))]
     keep = set(chosen)
-    # second reading: the places of the chosen terms, their spellings, and the abbreviations the text defines
-    mentions: list[tuple] = []
-    spell: dict[str, Counter] = defaultdict(Counter)
-    passages: Counter[str] = Counter()
-    abbrev: Counter[tuple[str, str]] = Counter()
-    spelt: dict[str, str] = {}  # a mention's spelling by its raw text: the same words recur (0.11.1, a large corpus
-    #                             spent a third of the build re-tokenising them)
-    for n, r in enumerate(rows, 1):
-        if should_stop and n % 200 == 0 and should_stop():
-            raise _stopped()
-        text = r["text"]
-        seen = set()
-        for a, b, key in grams(r):
-            if key in keep:
-                tid = term_id(key)
-                mentions.append((tid, r["passage_id"], r["doc_id"], r["start"] + a, r["start"] + b))
-                raw = text[a:b]
-                sp = spelt.get(raw)
-                if sp is None:
-                    sp = spelt[raw] = _spelling(raw, joiner)
+    tid = {k: term_id(k) for k in chosen}
+
+    # What the last build wrote, when the database still holds exactly that: then only what changed is written. A
+    # document's rows stand when the last build wrote them from the reading this build uses (its digest) and they are
+    # all still there (outside a build, rows go only a whole document at a time: removing or reading it again); the
+    # database must not have been written by any other build since (its id, time and corpus version, which a build of
+    # before 0.16 also changes). The count comes from an index; sums of places cost half a second a look (review).
+    def db_state(cx) -> tuple[dict, list]:
+        per = {r[0]: [r[1]] for r in cx.execute("SELECT doc_id, COUNT(*) FROM term_mentions GROUP BY doc_id")}
+        stamps = [json.loads(r[0]) if r and r[0] is not None else None for r in (
+            cx.execute("SELECT value FROM meta WHERE key=?", (k,)).fetchone()
+            for k in ("terms_build_id", "terms_built_at", "terms_corpus_version"))]
+        return per, stamps
+
+    prev = store.state()
+    have, stamps = db_state(ws._conn())
+    same: set[str] = set()   # documents whose mentions of the terms kept from the last build stand as they are
+    if prev and prev.get("stamps") == stamps and stamps[0]:
+        read_now = set(to_read)
+        before = prev.get("docs") or {}
+        same = {d for d in by_doc if d not in read_now and before.get(d) == [fps[d], digests[d], *have.get(d, [0])]}
+    old_keys = set(prev.get("chosen") or ()) if same else set()
+    entering = keep - old_keys
+
+    def second_reading(diff: bool):
+        """The places of the chosen terms, their spellings and passages, and the abbreviations the text defines.
+        With `diff`, only the mentions to write: every mention of a document read again or new, and the mentions of
+        terms new to the glossary in the others."""
+        mentions: list[tuple] = []
+        spell: dict[str, Counter] = defaultdict(Counter)
+        passages: Counter[str] = Counter()
+        abbrev: Counter[tuple[str, str]] = Counter()
+        per_doc: dict[str, list[int]] = {}
+        spelt: dict[str, str] = {}  # a mention's spelling by its raw text: the same words recur (0.11.1)
+        nonlocal done
+        for d, rs in by_doc.items():
+            stop_check()
+            rd, g = reading(d)
+            keys = rd["keys"]
+            want = {i: k for i, k in enumerate(keys) if k in keep}
+            write = {i for i, k in want.items() if not diff or d not in same or k in entering}
+            single = plain[d]
+            seen = set()
+            n_doc = 0
+            for x in range(0, len(g), 4):
+                i = g[x + 3]
+                key = want.get(i)
+                if key is None:
+                    continue
+                n, a, b = g[x], g[x + 1], g[x + 2]
+                r = rs[n]
+                n_doc += 1
+                if i in write:
+                    mentions.append((tid[key], r["passage_id"], d, r["start"] + a, r["start"] + b))
+                raw = r["text"][a:b]
+                # a document with no word read whole, and a mention whose words stand one space apart: each run of
+                # pieces in it is one of the document's own runs, none read whole, so `_spelling` would change
+                # nothing (other spaces, a line break, it may join: 0.16 review)
+                if single and " ".join(raw.split()) == raw:
+                    sp = raw
+                else:
+                    sp = spelt.get(raw)
+                    if sp is None:
+                        sp = spelt[raw] = _spelling(raw, joiner)
                 spell[key][sp] += 1
-                if key not in seen:
-                    seen.add(key)
+                if (n, i) not in seen:
+                    seen.add((n, i))
                     passages[key] += 1
-        if "(" in text:
-            for short, long in abbreviations(text):
-                abbrev[(short, long)] += 1
-        if progress and n % 500 == 0:
-            progress(len(rows) + n, 2 * len(rows))
+            for short, long, c in rd["abbrev"]:
+                abbrev[(short, long)] += c
+            per_doc[d] = [n_doc]
+            done += len(rs)
+            if progress:
+                progress(min(done, total), total)
+        return mentions, spell, passages, abbrev, per_doc
+
+    diff = bool(same)
+    mentions, spell, passages, abbrev, per_doc = second_reading(diff)
     terms = []
     for k in chosen:
         label = _label(spell[k])
-        terms.append((term_id(k), label, k, k.count(" ") + 1, df[k], tf[k], passages[k], round(cval[k], 3)))
-    with ws.connect() as cx:
+        terms.append((tid[k], label, k, k.count(" ") + 1, df[k], tf[k], passages[k], round(cval[k], 3)))
+    build_id = uuid.uuid4().hex
+    built_at = now()
+
+    def write(cx, diff: bool) -> int:
         cx.execute("DELETE FROM terms")
-        cx.execute("DELETE FROM term_mentions")
         cx.executemany("INSERT INTO terms VALUES (?,?,?,?,?,?,?,?)", terms)
+        if diff:
+            for d in [d for d in set(have) | set(by_doc) if d not in same]:
+                cx.execute("DELETE FROM term_mentions WHERE doc_id=?", (d,))
+            gone = [term_id(k) for k in old_keys - keep]
+            for i in range(0, len(gone), 500):
+                chunk = gone[i:i + 500]
+                cx.execute(f"DELETE FROM term_mentions WHERE term_id IN ({','.join('?' * len(chunk))})", chunk)
+        else:
+            cx.execute("DELETE FROM term_mentions")
         cx.executemany("INSERT INTO term_mentions VALUES (?,?,?,?,?)", mentions)
         # abbreviation links: the short form and the long form, both terms of the index
         cx.execute("DELETE FROM concept_links WHERE source='abbreviation'")
@@ -353,7 +698,25 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
                        (a, b, "same", "abbreviation", 1.0, f"{long} ({short})", short, None, now()))
             n_abbr += 1
         ws.set_meta("terms_corpus_version", version, cx)
-        ws.set_meta("terms_built_at", now(), cx)
+        ws.set_meta("terms_built_at", built_at, cx)
+        ws.set_meta("terms_build_id", build_id, cx)
+        return n_abbr
+
+    class _Moved(Exception):
+        pass
+
+    try:
+        with ws.connect() as cx:
+            if diff and db_state(cx) != (have, stamps):   # another build (another program) wrote since this one looked
+                raise _Moved()
+            n_abbr = write(cx, diff)
+    except _Moved:
+        done = total - len(rows)
+        mentions, spell, passages, abbrev, per_doc = second_reading(False)
+        with ws.connect() as cx:
+            n_abbr = write(cx, False)
+    store.finish(set(by_doc), {"stamps": [build_id, built_at, version], "chosen": chosen,
+                               "docs": {d: [fps[d], digests[d], *per_doc.get(d, [0])] for d in by_doc}})
     variants = 0
     if embedder is not None:
         try:
@@ -361,8 +724,9 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
         except Exception as e:  # the glossary is useful without them; say why there are none
             ws.set_meta("terms_meaning_error", str(e)[:300])
     rebuild_concepts(ws)
-    return {**status(ws), "candidates": len(kept), "mentions": len(mentions), "abbreviations": n_abbr,
-            "meaning_pairs": variants}
+    return {**status(ws), "candidates": len(kept), "mentions": sum(v[0] for v in per_doc.values()),
+            "abbreviations": n_abbr, "meaning_pairs": variants, "documents_read": len(to_read),
+            "documents_kept": len(by_doc) - len(to_read)}
 
 
 def _spelling(span: str, joiner: Joiner | None = None) -> str:
@@ -958,10 +1322,17 @@ def key_terms_table(ws: Workspace, n: int = 15) -> list[dict]:
 
 
 def passage_term_counts(ws: Workspace) -> dict[str, Counter]:
-    """{passage_id: Counter(term_id)} over the body text (the vectors of themes by words)."""
+    """{passage_id: Counter(term_id)} over the body text (the vectors of themes by words). In the order of the text
+    (0.16: a build writes only the mentions that changed, so the table's own order is no longer the text's; the order
+    of a passage's terms decides the order sums are taken in, and so the last digits of a theme's similarities)."""
+    places: dict[str, list] = defaultdict(list)
+    for pid, tid, a, b in ws.query("SELECT passage_id, term_id, start, end FROM term_mentions"):
+        places[pid].append((a, b, tid))
     out: dict[str, Counter] = defaultdict(Counter)
-    for r in ws.query("SELECT passage_id, term_id FROM term_mentions"):
-        out[r["passage_id"]][r["term_id"]] += 1
+    for pid in sorted(places):
+        c = out[pid]
+        for _a, _b, tid in sorted(places[pid]):
+            c[tid] += 1
     return out
 
 

@@ -2761,7 +2761,8 @@ def more_available(ws: Workspace, claim_id: str, semantic: bool = False) -> bool
     opts = json.loads(uc["options_json"] or "{}")
     docs = set(opts.get("doc_ids") or [])
     if semantic:
-        return any(r["passage_id"] not in seen and (not docs or r["doc_id"] in docs) for r in passage_index(ws).rows)
+        idx = passage_index(ws)
+        return any(pid not in seen and (not docs or d in docs) for pid, d in zip(idx.ids, idx.doc_of))
     return bool(rank_passages(ws, uc["text"], json.loads(uc["terms_json"] or "[]"), k=1,
                               doc_ids=list(docs) or None, exclude=seen))
 

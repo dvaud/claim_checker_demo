@@ -2,7 +2,7 @@
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow } from "../features.js";
 import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
-  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN } from "../lib.js";
+  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
@@ -275,7 +275,8 @@ export async function renderSources(view) {
       h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { picked.clear(); for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = false; drawBulk(); } }, "Clear"));
     const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected: who may read them with AI?`; drawNr(); };
     const pickAll = h("input", { type: "checkbox", class: "doc-pick-all", "aria-label": "Select every document" });
-    pickAll.addEventListener("change", () => { for (const c of docsBox.querySelectorAll(".doc-pick")) { c.checked = pickAll.checked; if (pickAll.checked) picked.add(c.value); else picked.delete(c.value); } drawBulk(); });
+    // 0.16: every document of the list, drawn yet or not (the rows are drawn as the list scrolls into view)
+    pickAll.addEventListener("change", () => { for (const d of docs) { if (pickAll.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); } for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = pickAll.checked; drawBulk(); });
     const sentCell = (d) => {
       const pct = Math.round((d.sent || 0) * 1000) / 10;
       const label = d.ai_access !== "cloud" && !pct ? "never" : pct ? `${pct < 1 ? "<1" : Math.round(pct)}%` : "0%";
@@ -347,7 +348,11 @@ export async function renderSources(view) {
     }
     docsBox.appendChild(bulk);
     drawBulk();
-    tbody = h("tbody", {}, docs.map(rowFor));
+    tbody = h("tbody");
+    // 0.16 (H5): the rows are drawn as the list scrolls into view (hundreds of documents drew thousands of controls
+    // before the page showed); ticking, the counts and the AI settings work on every document all the same
+    drawInSteps(tbody, docs, rowFor, { first: 60, step: 120, more: (left, onClick) => h("tr", { class: "draw-more-row" },
+      h("td", { colspan: "8" }, h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick }, icon("chevron-down", { size: 13 }), `Show more documents (${left} more)`))) });
     docsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"))),
       tbody)));

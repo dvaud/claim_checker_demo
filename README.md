@@ -72,6 +72,10 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **Ollama with one button** (0.15.6): *Install Ollama* says the size of the download first, then installs and starts
   Ollama, a free program for AI models on your own computer; no terminal. Cannot change results.
 
+**Coming in 0.16**, first as the release candidate 0.16.0rc1 for *Try new versions early*: large projects are
+quicker. Several documents are read at once when you add them, the glossary and search no longer start from every
+passage, and the Profile page and long lists open at once. Cannot change results.
+
 How it works: [how documents are read](docs/manual/reading.md) in the manual. Every release, with
 what was not tested: [CHANGELOG.md](CHANGELOG.md).
 

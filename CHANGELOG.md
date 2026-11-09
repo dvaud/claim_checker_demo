@@ -1,5 +1,151 @@
 # Changelog
 
+## 0.16.0rc1 (November 2026): speed for large projects
+
+The first release candidate of 0.16: everything that got slower as a project grew, made quicker before 0.16's new
+features add to it. Several documents are now read at the same time when you add them. The glossary reads only the
+documents that changed, and search keeps each document's words, so neither starts from every passage again. The
+Profile page, *Words nearby*, the codebook's keyword pass and themes by words do less work for the same answer, and the
+long lists of the Documents and Profile pages appear at once. **Nothing changes for results**: every step was
+compared, on a copy of a project of 39 reports, with what 0.15.7 makes of it, and gives the same, number for number.
+
+It is a release candidate: only copies with *Try new versions early* (Settings) get it. The rest of 0.16 (the research
+log, notes, a codebook of your own, concepts, retractions, export to NVivo and ATLAS.ti, and the mix of local and cloud
+AI) comes in the next candidates. Tables, figures and images (A6) are left out of 0.16 for now.
+
+### New
+
+- **Adding many documents is quicker.** Up to three files are read at the same time, each by a reading process of its
+  own, and stored in the order of the files, exactly as reading them one after the other stores them. Reading a PDF is
+  seconds of work for the computer, and most computers have several processors that sat idle. A batch of 13 reports
+  and papers (three PDFs, eight long reports as text, a copy and a damaged file) took 8 seconds instead of 17. A small
+  batch, a single file, or a computer short of free memory is read one file at a time, as before; so is a file whose
+  reading process does not answer.
+- **Adding a document is quicker on a large project.** The glossary keeps what it read in each document and reads
+  only the new ones, and the few others whose words the new one changes (a word printed letter-spaced, such as
+  "t oday", is read whole once the documents also write it whole). On a project of 39 reports (8,804 passages), the
+  glossary after one more document takes about 4 seconds instead of 9, after removing one 2.3, and with nothing
+  changed 1.3. On a project of several hundred PDFs the difference is minutes.
+- **Search is ready sooner, in far less memory.** The index a search reads (which passages hold each word, and how
+  often) was made after each start of the app and each change of the documents by reading every passage and
+  splitting it into words again, and it kept every passage's text in memory, twice when reference lists were
+  included. Now each document's words are kept on disk and only new or changed documents are split; the passages'
+  text is read when a search shows them. On 100,000 passages the index takes 2.2 seconds instead of 4.6, and the app
+  needs about 270 MB for it instead of 1.2 GB (the first time, when every document is split once, 8 seconds); on the
+  39 reports, 0.16 seconds instead of 0.6.
+- **The Profile page opens five times quicker.** It worked out which labels count twice on every visit, once for the
+  grid and once for the counts above it, reading every field of every label. Now once, reading only what the two
+  show: 0.09 seconds instead of 0.45 on the 39 reports (51,786 labels).
+- **Long lists appear at once.** The Documents list and the Profile grid draw their first rows straight away and the
+  rest as you scroll down to them (or with *Show more*). On a project of several hundred documents the grid had tens of
+  thousands of cells to draw before the page showed. *Select every document* still selects all of them.
+- **Words nearby, the codebook's keyword pass and themes by words do less.** *Words nearby* split each passage with a
+  hit into words twice and read every word of it for each hit: about a third quicker. The keyword pass (which codes a
+  passage's words point to) split each passage twice, and tried each of the codebook's 26 common phrasings on every
+  passage; a phrasing is now tried only where one of its words occurs: 1.7 seconds instead of 2.8 over 8,804 passages.
+  Themes by words find each passage's nearest theme in one tighter loop, with the same sums in the same order: a few
+  per cent quicker.
+
+### For developers
+
+- `terms.build` (H3): each document's reading (what it adds to the joiner, the joiner's decisions for its runs of
+  pieces, its candidates with their places, its abbreviations, and a digest of it) in `cache/glossary.sqlite`, used
+  again while the document's body text is the same and the joiner decides each of its runs as before; loaded with its
+  places in one go and checked by its digest, so another program's build cannot mix two readings. Only the mentions
+  that changed are written: a document's rows stand when the last build wrote them from the same reading and they are
+  all still there, and the database's build stamps (`meta.terms_build_id`, `terms_built_at`,
+  `terms_corpus_version`, checked again in the write transaction) show that no other build, of any version, wrote
+  since; any doubt writes everything. The result is a build from scratch's, mention for mention. A mention's spelling
+  skips `_spelling` only when that cannot change it. `passage_term_counts` reads the mentions in the order of the
+  text. `documents_read` and `documents_kept` in its result.
+- `searchindex.py` (H2): each document's words (per passage: word, count; and the passage's length) in
+  `cache/search.sqlite`, one row per document, used again while the document's passages (a fingerprint of their
+  ids, sections and text) and the word rule (`textutil.RULE_DIGEST`: its code as imported and the Unicode data, not
+  ENLENS's version) are unchanged, written in one transaction; the fingerprints and the words come from one read
+  transaction of the project, so a row is never kept under another state's fingerprint. `search.PassageIndex` is built
+  from them in memory, one snapshot of the project: postings packed in arrays (`PackedBM25`, with `retrieve.BM25`'s
+  own ranking, number for number) and no passage text (`rows` reads it when needed, `ids` and `doc_of` without
+  reading, `prefetch`, `read`, `terms_starting`); a passage gone while an index is used raises `searchindex.Changed`
+  ("run it again"). Nothing stays open (the file is opened for a load and closed). `search.IN_MEMORY` is the index of
+  before 0.16.
+- `searchindex.connect_cache` opens a cache file and makes a damaged one again (a busy one is left alone; damage beyond
+  the first page and another layout count too). Both cache files are stamped with the code that makes them, taken when
+  it is imported, so an update that leaves it alone keeps them.
+- `enlens measure --timings`: the glossary after one more document, *Words nearby* for the most frequent word, the
+  SDG keyword pass over every passage and the Profile page's grid and counts. `measure.copy_project` leaves `cache/`
+  out.
+- The concordance reads each candidate passage once.
+- `ingest.ingest(..., workers=None)` reads `workers` files at once (`read_workers`: 1 for one file or a batch under
+  `POOL_MIN_BYTES`, else up to `READ_WORKERS` = 3, one less than the processors, and `WORKER_MEMORY` = 600 MB of free
+  memory each; `ENLENS_READ_WORKERS` sets it, and `tests/conftest.py` sets it to 1). `_Readings` reads ahead in
+  `readworker.py` processes (the same Python with `-c`, setting the app's own `sys.path` before anything is imported,
+  through `procs.no_window()`; one daemon thread per process; tasks and answers as length-prefixed pickles on standard
+  input and output, which the process keeps to itself). Not `multiprocessing`: its spawn runs the calling script's
+  top-level code again in every process, so a script without a `__main__` guard would add its documents once per
+  reader. Stop makes a file the text recognition of a scanned PDF looks for between pages. A file whose reading
+  process cannot start, ends, or cannot send its answer back is read in the app's process; `_read_whole` is the one
+  reading both use, so the stored rows are the same either way, and a file already stored (by its checksum) is read
+  but never made into a document, as before. `ingest.end_reading_processes()` ends them all: at exit (`atexit`) and
+  before an update's restart (`os.execv` runs no exit handlers); a reading process also ends as soon as the program
+  that started it is gone (`ENLENS_READ_PARENT`: a thread waits on it on Windows and watches the parent on POSIX).
+  `read_at_once` in the result when processes read.
+- An independent review of this candidate found that Quit and an update's restart waited for the files being read,
+  that reading processes outlived a crashed app, that they could find other copies of pypdf or pdfminer than the app
+  (another `PYTHONPATH`), that a duplicate was made into a document before it was counted, that their lower priority
+  could make a scanned page's text recognition time out, and that *Show more* dropped the keyboard focus; its second
+  look found that adding hung when no reading thread could start, and that a reader started just before a restart
+  could outlive it. All fixed before release, each with a test where one can hold it.
+- `profile.effective(..., light=True)` reads only the fields the grid and the counts need; `profile.grid(..., labs=)`
+  and `profile.stats(..., labs=)` take labels already worked out (`GET /api/projects/<p>/profile` works them out once).
+- `frameworks.needles(rx)`: strings one of which a text must contain for a pattern to match (the letters each
+  alternative starts with, from the pattern's parse; None when that cannot be said, then the pattern always runs).
+  `Framework.lexicon_hits` tries a phrasing only when one occurs. `profile._words`: `tokens` and `surface_words` from
+  one split. `themes._assign`: the nearest centre of every vector, `_sdot`'s sums in its order. `concordance._hits_in`
+  takes words already split. `lib.js` `drawInSteps(parent, items, render, {first, step, more})`.
+- `gui/server.py` split along the features it serves (H6), from 4,074 lines to about 1,850: the endpoints in mixins of
+  `Handler` (`api_documents.py`, `api_explore.py`, `api_checks.py`, `api_setup.py`), the bibliography, search and
+  queue parts of `App` in mixins (`app_library.py`, `app_queue.py`), and `ApiError`, `Job`, `Jobs` and the shared
+  helpers in `api_common.py`. Every function moved unchanged (a script compared all 310), `App` and `Handler` have the
+  same methods, every name importable from `gui.server` still is, and `ROUTES` is the same.
+
+### Tests
+
+- `tests/test_0_16_0_recompute.py`: the glossary after adding, removing and changing documents, after a new document
+  joins letter-spaced words in another (and when that flips back), with the kept readings damaged, gone, unwritable or
+  locked, with the mentions changed behind its back, after a build stopped half-way, after a build by an earlier
+  version, and with a reading replaced by another program while it runs, is the glossary of a build from scratch;
+  themes by words are the same; a word written across two spaces is spelt as before.
+- `tests/test_0_16_0_search_index.py`: rankings (with search words, the second pass, document filters, required
+  words), the documents matched, the concordance (every sort and mode, reference lists, the export), collocates and the
+  keyword pass are the same as with the index of before 0.16, as documents come and go and passages are left out, with
+  the file gone, damaged (also inside) or unwritable; only new or changed documents are split into words, an update
+  keeps them, a document changed while its words are split is kept under the right fingerprint, nothing stays open,
+  nothing goes into a project's zip, and a passage gone while an index is used says so.
+- `tests/test_0_16_0_speed.py`: a batch of PDFs, text files, a copy, a damaged PDF and a damaged Word file stores
+  exactly the same documents, passages and blocks read one, two or three at a time (and none of it is read in the
+  app's process when the reading processes work); a reading process that cannot start, ends at once or cannot send its
+  answer leaves the file to be read here, with the same result; Stop and closing leave no reading process running;
+  quitting while long files are read ends at once and leaves none, and neither does a crash of the app; a duplicate is
+  read but never made into a document; no reading thread to be had, or ENLENS ending, reads here without waiting; a
+  reading process answers what reading here gives; how many are read at once (the setting, small batches, little
+  memory, the processors); the phrase patterns' quick check finds the same codes over the test corpus and 2,000 made-up
+  texts; the keyword pass, *Words nearby* (every mode, four windows, both orders), the Profile page's grid and counts
+  (also after a person's labels), its API, and themes by words (random vectors with ties, and a whole run) give what
+  the code of before 0.16, copied into the test, gives; `enlens measure --timings` names the new steps.
+- Two older tests assumed a full release: the Claude Code plugin's version is now compared in the form a plugin takes
+  (`0.16.0-rc.1`), and a full release's notes are made from a changelog of its own.
+
+### Not yet done
+
+- **Reading at once on a real Windows PC.** The test run on Windows reads at once under `python.exe`; the ENLENS icon
+  starts the app with `pythonw.exe`, whose reading processes have no console at all. Not yet tried there by hand.
+- **Very long PDFs side by side.** A reading process took at most 96 MB for a 61-page PDF; three readers are allowed
+  600 MB of free memory each. Not measured with PDFs of several hundred pages on a computer short of memory.
+- **Themes still go out of date** when documents are added, as before: putting new passages into the existing themes
+  would give other themes than finding them again, so it waits for a decision.
+- **The rest of 0.16** comes in the next candidates (see the opening paragraph). This candidate changes no results,
+  so its validation report should read as 0.15.7's.
+
 ## 0.15.7 (November 2026): documents moved to the new reader from the Documents page
 
 Two things from using 0.15 on a real project. A document read by an earlier reader could only be moved to the new

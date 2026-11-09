@@ -116,6 +116,15 @@ A project is a plain folder with one SQLite database, `enlens.sqlite`. Open it w
 `evidence` and `verifications` index into `documents.text`. Removing one document keeps past checks intact (each check
 stores the passages it showed); removing all documents also removes every check.
 
+The folder also has `cache/`: each document's words for the keyword index (`search.sqlite`) and each document's
+reading for the glossary (`glossary.sqlite`), kept so that adding a document does not read every other one again. Both
+are made from the documents and brought up to date by themselves; neither goes into a project's zip or a sync with
+colleagues, and the folder can be deleted at any time (the next search and the next glossary are a little slower,
+once). A project folder that a cloud service copies (Dropbox, OneDrive) copies `cache/` too; it can be left out there.
+
+Adding documents reads up to three files at a time in reading processes of their own; `ENLENS_READ_WORKERS=1` reads
+them one at a time (any number sets how many at once).
+
 <details>
 <summary>The tables</summary>
 
@@ -130,7 +139,7 @@ stores the passages it showed); removing all documents also removes every check.
 | paragraphs, headings | Where each paragraph (with its page) and heading of a document starts, found when it was added |
 | second_opinions | A second model's grade of each excerpt it read again (never used for an answer) |
 | task_claims | The batches of queued tasks handed out to Claude Code: who took them, when, model, helper; `tasks.queued`, `claimed_by`, `step`, `again` and `results.route`, `helper`, `step` belong with it |
-| meta | Thresholds used by the pack, and the corpus version (search indexes are rebuilt when it changes) |
+| meta | Thresholds used by the pack, and the corpus version (the search index and the glossary are brought up to date when it changes) |
 | `reader`, `app_version` | `documents.reader` is the reader that read a document's text (1 for every document read before 0.15) and `documents.app_version` the ENLENS version that read it; `app_version` in `results`, `runs`, `labels`, `theme_runs` and `hypotheses` is the version that made each (empty: made before 0.15) |
 | bib_items, bib_links | The bibliography's works (title, creators, year, DOI, web address, Zotero link, the files Zotero keeps with their checksums) and which document each is (`status`: `auto` for the same file or DOI, `probable`, `confirmed` or `rejected` by a person; `method`: `file`, `doi`, `title`, `person`); where it came from is in `meta` (`bibliography`); `documents.file_title` keeps the file's own title while a linked work's title replaces it (`meta` `titles_version` rebuilds the keyword index) |
 | people, judgements | The people whose work is in the project (id and name), and each person's own judgement of an excerpt; the one in force is copied to `verifications.user_*`, with `user_by`; `reviews.person_id` says who made a review |

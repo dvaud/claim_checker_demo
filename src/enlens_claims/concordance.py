@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from dataclasses import dataclass
 
@@ -30,6 +31,7 @@ SORTS = ("doc", "left", "right")
 MAX_GAP = 3          # stop words allowed between the words of a phrase
 WINDOW = 5           # words on each side counted for collocates
 PAGE = 200           # lines per page
+CHUNK = 2000         # candidate passages read at a time (0.16)
 
 
 @dataclass
@@ -121,9 +123,12 @@ def _phrase_at(toks, i: int, ph, query: Query) -> int | None:
     return j - 1
 
 
-def _hits_in(text: str, query: Query, rare: tuple[str, str] | None) -> list[tuple[int, int, list[tuple[int, int]]]]:
-    """(start, end, marks) of every hit in one passage text; marks are other query words to highlight nearby."""
-    toks = token_spans(text, keep_stop=True)
+def _hits_in(text: str, query: Query, rare: tuple[str, str] | None,
+             toks: list | None = None) -> list[tuple[int, int, list[tuple[int, int]]]]:
+    """(start, end, marks) of every hit in one passage text; marks are other query words to highlight nearby.
+    `toks`: the text's words with stop words (`token_spans(text, keep_stop=True)`), when already split."""
+    if toks is None:
+        toks = token_spans(text, keep_stop=True)
     if not toks:
         return []
     k = query.key
@@ -240,39 +245,39 @@ def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = No
     allowed_docs = set(docs) if docs else None
     allowed_passages = _code_passages(ws, code)
     rare = _rarest(idx, query) if mode == "all" else None
-    found: list[tuple] = []   # (row index, start, end, marks)
-    for i in _candidates(idx, query):
-        r = idx.rows[i]
-        if allowed_docs is not None and r["doc_id"] not in allowed_docs:
-            continue
-        if allowed_passages is not None and r["passage_id"] not in allowed_passages:
-            continue
-        for a, b, marks in _hits_in(r["text"], query, rare):
-            found.append((i, a, b, marks))
-    per: dict[str, dict] = {}
-    for i, a, _b, _m in found:
-        r = idx.rows[i]
-        d = per.setdefault(r["doc_id"], {"doc_id": r["doc_id"], "title": r["title"] or "", "hits": 0, "_p": set()})
-        d["hits"] += 1
-        d["_p"].add(r["passage_id"])
-    per_doc = sorted(({**{k: v for k, v in d.items() if k != "_p"}, "passages": len(d["_p"])} for d in per.values()),
-                     key=lambda d: (-d["hits"], d["title"].lower()))
+    # 0.16 (H2): each candidate passage is read once, in chunks, and what the counts and the sorting need is kept
+    # with its hits: (row index, start, end, marks, doc_id, title, seq, passage_id, sort words)
+    found: list[tuple] = []
+    cands = [i for i in _candidates(idx, query)
+             if (allowed_docs is None or idx.doc_of[i] in allowed_docs)
+             and (allowed_passages is None or idx.ids[i] in allowed_passages)]
 
-    def words_left(i, a):
-        t = idx.rows[i]["text"][max(0, a - 80):a]
+    def words_left(text, a):
+        t = text[max(0, a - 80):a]
         return [w for _s, _e, _st, w in reversed(token_spans(t, keep_stop=True))][:3]
 
-    def words_right(i, b):
-        t = idx.rows[i]["text"][b:b + 80]
+    def words_right(text, b):
+        t = text[b:b + 80]
         return [w for _s, _e, _st, w in token_spans(t, keep_stop=True)][:3]
 
+    for k in range(0, len(cands), CHUNK):
+        chunk = cands[k:k + CHUNK]
+        for i, r in zip(chunk, idx.read(chunk)):
+            for a, b, marks in _hits_in(r["text"], query, rare):
+                words = (words_left(r["text"], a) if sort == "left" else
+                         words_right(r["text"], b) if sort == "right" else None)
+                found.append((i, a, b, marks, r["doc_id"], r["title"] or "", r["seq"], r["passage_id"], words))
+    per: dict[str, dict] = {}
+    for h in found:
+        d = per.setdefault(h[4], {"doc_id": h[4], "title": h[5], "hits": 0, "_p": set()})
+        d["hits"] += 1
+        d["_p"].add(h[7])
+    per_doc = sorted(({**{k: v for k, v in d.items() if k != "_p"}, "passages": len(d["_p"])} for d in per.values()),
+                     key=lambda d: (-d["hits"], d["title"].lower()))
     if sort == "doc":
-        found.sort(key=lambda h: ((idx.rows[h[0]]["title"] or "").lower(), idx.rows[h[0]]["doc_id"],
-                                  idx.rows[h[0]]["seq"], h[1]))
-    elif sort == "left":
-        found.sort(key=lambda h: (words_left(h[0], h[1]), idx.rows[h[0]]["passage_id"], h[1]))
+        found.sort(key=lambda h: (h[5].lower(), h[4], h[6], h[1]))
     else:
-        found.sort(key=lambda h: (words_right(h[0], h[2]), idx.rows[h[0]]["passage_id"], h[1]))
+        found.sort(key=lambda h: (h[8], h[7], h[1]))
     # a page of lines; `limit` None gives every hit at once, for the export (0.11.1: it ran the whole search once per
     # thousand lines), at most EXPORT_MAX
     offset = max(0, int(offset))
@@ -280,11 +285,10 @@ def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = No
     page = found[offset:offset + limit]
     from .claimcheck import locate
 
-    where = locate(ws, [(n, idx.rows[i]["passage_id"], (idx.rows[i]["start"] or 0) + a)
-                        for n, (i, a, _b, _m) in enumerate(page)])
+    page_rows = idx.read([h[0] for h in page])
+    where = locate(ws, [(n, r["passage_id"], (r["start"] or 0) + h[1]) for n, (h, r) in enumerate(zip(page, page_rows))])
     lines = []
-    for n, (i, a, b, marks) in enumerate(page):
-        r = idx.rows[i]
+    for n, ((i, a, b, marks, *_rest), r) in enumerate(zip(page, page_rows)):
         left, right = _context(r["text"], a, b, width)
         base = a - len(left)  # marks as offsets into left + node + right
         rel = [(ma - base, mb - base) for ma, mb in marks if a - len(left) <= ma and mb <= b + len(right)
@@ -297,7 +301,7 @@ def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = No
     return {"query": q, "mode": mode, "exact": bool(exact), "near": query.near, "sort": sort,
             "words": [w for _s, w in query.words] + [" ".join(w for _s, w in ph) for ph in query.phrases],
             "other_forms": [] if exact else other_forms(idx, query), "rarest": rare[1] if rare else None,
-            "total": len(found), "passages": len({idx.rows[h[0]]["passage_id"] for h in found}),
+            "total": len(found), "passages": len({h[7] for h in found}),
             "documents": len(per_doc), "per_doc": per_doc, "lines": lines, "offset": offset, "limit": limit}
 
 
@@ -309,9 +313,9 @@ def other_forms(idx, query: Query, n: int = 8) -> list[dict]:
     for st, _w in list(query.words) + [x for ph in query.phrases for x in ph]:
         if len(st) < 4 or is_stop(st):
             continue
-        for other, plist in post.items():
-            if other != st and other.startswith(st) and len(other) - len(st) <= 4 and not any(c.isdigit() for c in other):
-                out[other] = out.get(other, 0) + sum(f for _i, f in plist)
+        for other, total in idx.terms_starting(st):   # 0.16: the words of the index that start so, not all of them
+            if other != st and len(other) - len(st) <= 4 and not any(c.isdigit() for c in other):
+                out[other] = out.get(other, 0) + total
     forms = []
     for st, c in sorted(out.items(), key=lambda x: (-x[1], x[0]))[:n]:
         word = st
@@ -347,22 +351,27 @@ def collocates(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None 
     # part of the corpus, not the whole of it (0.14.3), or the list would just be the filtered document's vocabulary
     scope: set[int] | None = None
     if allowed_docs is not None or allowed_passages is not None:
-        scope = {i for i, r in enumerate(idx.rows)
-                 if (allowed_docs is None or r["doc_id"] in allowed_docs)
-                 and (allowed_passages is None or r["passage_id"] in allowed_passages)}
-    for i in _candidates(idx, query):
-        r = idx.rows[i]
-        if scope is not None and i not in scope:
-            continue
-        found = _hits_in(r["text"], query, rare)
+        scope = {i for i, (pid, doc) in enumerate(zip(idx.ids, idx.doc_of))
+                 if (allowed_docs is None or doc in allowed_docs)
+                 and (allowed_passages is None or pid in allowed_passages)}
+    cands = [i for i in _candidates(idx, query) if scope is None or i in scope]
+    for r in (r for k in range(0, len(cands), CHUNK) for r in idx.read(cands[k:k + CHUNK])):
+        every = token_spans(r["text"], keep_stop=True)
+        found = _hits_in(r["text"], query, rare, every)
         if not found:
             continue
-        toks = token_spans(r["text"])  # content words only, as the index counts them
+        # content words only, as the index counts them: the same words `token_spans(text)` gives (0.16: taken from
+        # the words already split, and the words beside each hit found by bisection, not by reading them all)
+        toks = [t for t in every if not is_stop(t[3])]
+        ends = [t[1] for t in toks]
+        starts = [t[0] for t in toks]
         for a, b, _m in found:
             hits += 1
-            left = [t for t in toks if t[1] <= a][-window:]
-            right = [t for t in toks if t[0] >= b][:window]
-            for t in left + right:
+            i = bisect_right(ends, a)
+            j = bisect_left(starts, b)
+            # the words end and start in order (a word's place never comes before the one before it), so those
+            # ending by `a` are the first i and those starting from `b` the rest from j, as the filters found them
+            for t in toks[:i][-window:] + toks[j:][:window]:
                 window_words += 1
                 if t[2] in qstems or any(ch.isdigit() for ch in t[3]):
                     continue

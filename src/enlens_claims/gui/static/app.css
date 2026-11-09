@@ -881,6 +881,9 @@ span.passage-broken > span.passage-heading { font-weight: 650; }
 .row-link:hover .map-hyp { background: var(--surface-2); }
 .row-link:hover .map-cell { background: var(--surface-2); }
 .map-scroll-hint { display: none; }
+/* 0.16 (H5): the end of a long list drawn in steps (lib.js drawInSteps) */
+.draw-more { padding: 10px 0; }
+.draw-more-row > th, .draw-more-row > td { padding: 8px 10px; text-align: left; background: var(--surface); }
 @media (max-width: 860px) {
   .map-table .map-hyp-head, .map-table .map-hyp { min-width: 150px; max-width: 170px; padding: 8px; }
   .map-doc-head { min-width: 84px; max-width: 120px; }

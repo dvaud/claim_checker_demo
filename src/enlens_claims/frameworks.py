@@ -100,9 +100,12 @@ class Framework:
         if not self.lexicon:
             return set()
         if self._lex is None:  # the patterns are lower case: matching lower-cased text is faster than re.I
-            self._lex = [(re.compile(p.lower()), c) for p, c in self.lexicon if c in self.codes]
+            lex = [(re.compile(p.lower()), c) for p, c in self.lexicon if c in self.codes]
+            self._lex = [(rx, c, needles(rx)) for rx, c in lex]
         low = text.lower()
-        return {c for rx, c in self._lex if rx.search(low)}
+        # 0.16: a pattern is tried only where one of the words its alternatives start with occurs (the same codes:
+        # it cannot match without one), about three times quicker over a corpus
+        return {c for rx, c, need in self._lex if (need is None or any(n in low for n in need)) and rx.search(low)}
 
     def code_stems(self, code: str) -> set[str]:
         return self._bm()[2].get(code, set())
@@ -121,6 +124,47 @@ class Framework:
             out["items"] = [{"code": c.code, "description": c.description, "group": c.group, "group_name": c.group_name}
                             for c in self.sorted_codes()]
         return out
+
+
+def needles(rx: re.Pattern) -> tuple[str, ...] | None:
+    """0.16: strings one of which a text must contain for the pattern to match anywhere in it: the letters each of its
+    alternatives starts with (after `\\b` or `^`). None when that cannot be said (the pattern then always runs):
+    an alternative that starts with anything but a letter, a pattern that ignores case (`(?i)`: "ſ" matches "s"),
+    or a Python whose parser of patterns this does not know."""
+    if rx.flags & re.IGNORECASE:
+        return None
+    try:
+        try:
+            from re import _constants as sc
+            from re import _parser as sp
+        except ImportError:  # Python 3.10
+            import sre_constants as sc
+            import sre_parse as sp
+        return _starts(list(sp.parse(rx.pattern, rx.flags)), sc)
+    except Exception:  # noqa: BLE001 - not known: always run the pattern
+        return None
+
+
+def _starts(items: list, sc) -> tuple[str, ...] | None:
+    i = 0
+    while i < len(items) and items[i][0] is sc.AT:  # \b, ^: no letter of the text
+        i += 1
+    if i < len(items) and items[i][0] is sc.BRANCH:  # a|b: one of each alternative's
+        out: list[str] = []
+        for alt in items[i][1][1]:
+            got = _starts(list(alt), sc)
+            if not got:
+                return None
+            out.extend(got)
+        return tuple(out)
+    if i < len(items) and items[i][0] is sc.SUBPATTERN:  # (…): what the group starts with
+        _group, add, _del, sub = items[i][1]
+        return None if add & sc.SRE_FLAG_IGNORECASE else _starts(list(sub), sc)
+    lit = []
+    while i < len(items) and items[i][0] is sc.LITERAL:
+        lit.append(chr(items[i][1]))
+        i += 1
+    return ("".join(lit),) if lit else None
 
 
 def _natural(code: str) -> list:

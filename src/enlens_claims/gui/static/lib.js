@@ -769,6 +769,44 @@ export function heatCell(n, max, label, prefix, onClick) {
       : [h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·")]);
 }
 
+// 0.16 (H5): a long list drawn in steps, so a project of hundreds of documents opens its page at once: the first
+// `first` items now, then `step` more whenever the end of what is drawn comes within about a screen of the window
+// (or "Show more" is used, from the keyboard or where the page cannot tell). `more(left, onClick)` makes the element
+// that stands at the end (a table row for a table body); `render` may return null for an item to leave out.
+export function drawInSteps(parent, items, render, { first = 60, step = 120, more } = {}) {
+  let done = 0, observer = null;
+  const button = (left, onClick) => h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick }, icon("chevron-down", { size: 13 }), `Show more (${left} more)`);
+  const tail = more || ((left, onClick) => h("div", { class: "draw-more" }, button(left, onClick)));
+  let end = null;
+  const next = (n, byHand) => {
+    const slice = items.slice(done, done + n);
+    done += slice.length;
+    const nodes = slice.map(render).filter((x) => x != null);
+    if (end) end.remove();
+    parent.append(...nodes);
+    // "Show more" used from the keyboard: the focus goes on to the first new row, not back to the top of the page
+    if (byHand && nodes.length) {
+      const first = nodes[0].querySelector("a[href], button, input, select, [tabindex]") || nodes[0];
+      if (first === nodes[0] && !first.hasAttribute("tabindex")) first.setAttribute("tabindex", "-1");
+      first.focus({ preventScroll: false });
+    }
+    end = null;
+    if (done < items.length) {
+      end = tail(items.length - done, () => next(step, true));
+      parent.append(end);
+      if (observer) observer.observe(end);
+    } else if (observer) { observer.disconnect(); observer = null; }
+  };
+  if ("IntersectionObserver" in window && items.length > first) {
+    observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && end && end.isConnected) next(step);
+      else if (end && !end.isConnected) { observer.disconnect(); observer = null; }  // the list was drawn again
+    }, { rootMargin: "900px 0px" });
+  }
+  next(first);
+  return { drawn: () => done, button };
+}
+
 // 0.13.3: the result page's help mark, for every page: a small (?) whose explanation opens on hover, focus or click,
 // so a page says one short line and keeps the longer explanation one step away.
 export function helpMark(label, text, opts = {}) {

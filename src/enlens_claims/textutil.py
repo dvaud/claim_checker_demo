@@ -478,3 +478,24 @@ def tokens_v1(text: str, keep_stop: bool = False) -> list[str]:
     if not keep_stop:
         toks = [t for t in toks if t not in STOPWORDS_V1 and len(t) > 1]
     return [stem_v1(t) for t in toks]
+
+
+def _rule_digest() -> str:
+    """0.16: the word rule as this program uses it, for the caches that keep words split by it (the keyword index,
+    the glossary): this file's code as it was imported (an update replaces it on disk, not in a program already
+    running), and the Unicode data that normalising and the word pattern follow (a newer Python may bring other)."""
+    import hashlib
+    import sys
+    from pathlib import Path
+
+    try:
+        code = Path(__file__).read_bytes()
+    except OSError:   # installed without its source: the version stands for it
+        from . import __version__
+
+        code = __version__.encode()
+    extra = f"|{unicodedata.unidata_version}|{sys.version_info[0]}.{sys.version_info[1]}".encode()
+    return hashlib.sha1(code + extra).hexdigest()[:16]
+
+
+RULE_DIGEST = _rule_digest()

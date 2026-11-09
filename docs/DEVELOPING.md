@@ -37,7 +37,9 @@ python -m pytest -q -rs
 and 3.13), macOS and Windows (0.15; required since 0.15.7, when the suite first passed on all three), with the extras `dev,connector,fast,pdfminer` and a quick `ruff` check for syntax
 errors and undefined names; the release workflow runs it again on the tag. Neither installs `anthropic` or the OCR
 extra, so the tests that need them are skipped there: run the whole suite on your own computer before a release. Tests never touch a real Claude Code, uv or
-the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere and gives every test its own `ENLENS_HOME`;
+the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere, gives every test its own `ENLENS_HOME` and reads
+added documents one at a time (`ENLENS_READ_WORKERS=1`, so a stand-in a test puts in this process is what reading
+sees; `tests/test_0_16_0_speed.py` reads at once on purpose);
 `tests/fake_claude_cli.py`, `tests/fake_claude_installer.py`, `tests/fake_servers.py` and `tests/fake_zotero.py` stand
 in for the real programs. A release's tests go in a new file `tests/test_<X>_<Y>_<Z>_<topic>.py`; older files keep
 their names. [docs/USER_TESTS.md](USER_TESTS.md) has the first-time user tests behind the app (0.5.1 to 0.7.0).
@@ -65,12 +67,14 @@ themes and at 390 px wide.
 | Module | Role |
 | --- | --- |
 | `claimcheck.py` | Hypotheses: decomposition, checks, statuses, a person's judgements, who says what, rounds, re-reads, second opinions, new documents, the evidence map, calibration, batches, history, Excel |
-| `search.py`, `embed.py`, `retrieve.py` | Cached keyword index, local embeddings and hybrid ranking; BM25 (inverted index) |
+| `search.py`, `embed.py`, `retrieve.py` | Hybrid ranking over the keyword index, local embeddings; BM25 (inverted index, in memory) |
+| `searchindex.py` | The keyword index made from each document's words kept on disk (0.16, H2): `cache/search.sqlite`, one row per document, used again while its passages and `textutil.py` are unchanged; the index in memory is one snapshot (`PackedBM25`, `retrieve.BM25`'s ranking number for number), without passage text (read when needed). `connect_cache` opens a cache file and makes a damaged one again |
 | `frameworks.py`, `taxonomy.py` | Optional codebooks (SDG targets bundled, custom CSVs) |
 | `llm.py` | Ollama, OpenAI-compatible local servers (LM Studio, llama.cpp…), server detection, Claude API, offline baseline |
 | `tasks.py`, `schema.py`, `prompts.py` | Model tasks, validation with the quote check, versioned prompts |
 | `access.py` | Who may read each document with AI (0.11): the settings, the guard on every task, which model reads what, the ledger of what was sent to Claude, the cap |
 | `ingest.py`, `textutil.py`, `store.py` | Documents and passages with page offsets, layout (paragraphs, headings), local OCR, text normalisation, the workspace database; `ingest.read_document` reads a file with any reader and stores nothing |
+| `readworker.py` | A reading process (0.16, H3): `ingest` reads up to three added files at once, each in one of these (the same Python with the app's `sys.path`, started through `procs.no_window()`), and stores them in the order of the files; tasks and answers are length-prefixed pickles on its standard input and output; `ingest._read_whole` is the one reading both use. They end with the app (`ingest.end_reading_processes`, at exit and before a restart) and by themselves when it is gone |
 | `reader.py` | The reader of 0.15 (reader 2; `read_blocks(raw, version=3)` adds `reader3.py`): lines with their boxes (pdfminer), page furniture, columns and reading order, blocks and their kinds, tables, text repair, passages that never mix what is read with what is left out, the reading report, a person's Restore and Leave out and *Text starts / ends here* (`choose_inclusion`, `apply_choices`) |
 | `reader3.py` | What reader 3 (0.15.1) adds, on the text alone: running heads and page numbers by repetition in lines without positions, text printed twice, paragraphs in hard-wrapped text, headings where a file marks none, a book's contents, front and end matter and index, ligatures broken by a space, words run together, and the report's warnings |
 | `reread.py` | *Read with the new reader* (0.15): a document of a project read again by the new reader, its results moved by their quotes, all or nothing |
@@ -82,10 +86,10 @@ themes and at 390 px wide.
 | `handover.py` | The update on Windows (0.15.4): run outside ENLENS's own folder with the Python uv installed, it waits for the app to quit, installs the new version, starts the app again and leaves what happened in `updates/result.json`. Standard library only (a test holds it to that); `ENLENS_RELEASE_API` points the update at a stand-in for GitHub (the release's Windows test) |
 | `procs.py` | `no_window()`: every program the package starts gets no console window on Windows (0.15.3; a test holds every `subprocess` call to it, or to a `# console: …` reason) |
 | `home.py` | Settings, projects, the optional cloud key |
-| `gui/` | The local app: `server.py` (API and jobs), `static/` (the page; `features.js` describes each feature once), `progress.py`, `launcher.py` (the ENLENS icon), `icons/` (its picture, drawn by `tools/make_icons.py`) |
+| `gui/` | The local app: `server.py` (the server, `App`, `Handler`, the routes), `api_documents.py`, `api_explore.py`, `api_checks.py` and `api_setup.py` (the endpoints of `Handler`: documents and reading, search and profiles, checks and the queue, settings and setup), `app_library.py` and `app_queue.py` (bibliography and search, the task queue: parts of `App`), `api_common.py` (errors, jobs, shared helpers), `static/` (the page; `features.js` describes each feature once), `progress.py`, `launcher.py` (the ENLENS icon), `icons/` (its picture, drawn by `tools/make_icons.py`) |
 | `concordance.py` | Search (0.7): concordance lines, modes, other forms, collocates |
 | `profile.py` | Codebook profiles: the keyword and meaning pass, the AI's labels, grids, a person's labels |
-| `terms.py` | The glossary (C-value terms, abbreviations), concepts and their links, key terms |
+| `terms.py` | The glossary (C-value terms, abbreviations), concepts and their links, key terms. 0.16 (H3): each document's reading kept in `cache/glossary.sqlite` and used again while its text and the joiner's decisions for it are unchanged; only changed mentions are written; the result is a build from scratch's, mention for mention (`tests/test_0_16_0_recompute.py`) |
 | `themes.py` | Themes: spherical k-means (numpy or pure Python), c-TF-IDF names, a person's edits |
 | `references.py` | References inside a document (chains), and what a quote's "it" refers to |
 | `bibliography.py` | The bibliography (0.13): Zotero read through its local API, BibTeX / RIS / CSL JSON / CSV files, matching works with documents |

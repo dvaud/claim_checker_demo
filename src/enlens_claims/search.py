@@ -1,14 +1,14 @@
 """Find the passages that bear on a hypothesis: keyword ranking (BM25), optionally fused with semantic search.
 
-The keyword index of a project is built once per corpus state and kept in memory (a few projects at a time),
-shared by all threads. With embeddings (see embed.py) the keyword and the semantic rankings are fused by
+The keyword index of a project is built once per corpus state and kept in memory (a few projects at a time), shared
+by all threads; since 0.16 (`searchindex`) from each document's words kept on disk, so only new or changed documents
+are split into words, and without the passages' text, which a search reads when it shows them. With embeddings (see embed.py) the keyword and the semantic rankings are fused by
 reciprocal rank fusion, which needs no tuning of score scales: a passage ranked high by either method rises.
 """
 from __future__ import annotations
 
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass
 
 from .retrieve import BM25
 from .store import Workspace
@@ -18,23 +18,67 @@ RRF_K = 60          # reciprocal rank fusion constant (the usual value)
 DEPTH = 200         # how far down each ranking is read before fusing
 
 
-@dataclass
 class PassageIndex:
-    rows: list[dict]
-    bm25: BM25
-    pos: dict[str, int]
+    """The passages a search reads (`rows`, numbered in the order of their ids), their BM25 index (`bm25`) and each
+    passage's number (`pos`). 0.16 (H2): made from each document's words kept on disk (`searchindex`), without the
+    passages' text, which is read when first needed; `ids` and `doc_of` give each passage's id and document without
+    reading it, `prefetch` reads many rows in one go and `read` gives rows without keeping them. As before 0.16 (every
+    passage read and split into words, its text kept) with `IN_MEMORY`."""
+
+    def __init__(self, rows, bm25, pos: dict[str, int], ids: list[str] | None = None,
+                 doc_of: list[str] | None = None):
+        self.rows, self.bm25, self.pos = rows, bm25, pos
+        self.ids = ids if ids is not None else [r["passage_id"] for r in rows]
+        self.doc_of = doc_of if doc_of is not None else [r["doc_id"] for r in rows]
+
+    @property
+    def on_disk(self) -> bool:
+        return not isinstance(self.rows, list)
+
+    def prefetch(self, indices) -> None:
+        if self.on_disk:
+            self.rows.prefetch(indices)
+
+    def read(self, indices) -> list[dict]:
+        """The rows of these passages (in this order), read in chunks and not kept: for reading many at once."""
+        indices = list(indices)
+        if not self.on_disk:
+            return [self.rows[i] for i in indices]
+        out: list[dict] = []
+        for k in range(0, len(indices), 2000):
+            got = self.rows._read(indices[k:k + 2000])
+            out.extend(got[i] for i in indices[k:k + 2000])
+        return out
+
+    def terms_starting(self, prefix: str) -> list[tuple[str, int]]:
+        """(word, occurrences) of every indexed word starting with `prefix`, in the order of words."""
+        return sorted((t, sum(f for _i, f in pl)) for t, pl in self.bm25.postings.items() if t.startswith(prefix))
 
 
 _INDEXES: "OrderedDict[tuple, PassageIndex]" = OrderedDict()
 _LOCK = threading.Lock()
 _BUILDING: dict[tuple, threading.Lock] = {}
 MAX_CACHED = 4
+IN_MEMORY = False   # True: the index of before 0.16 (tests compare the two)
 
 
 def _key(ws: Workspace, all_sections: bool = False) -> tuple:
     # 0.13.3: and the titles' version (a document takes its work's title from the bibliography; see bibliography.py)
     row = ws.query("SELECT COUNT(*), MAX(rowid), (SELECT value FROM meta WHERE key='titles_version') FROM passages")[0]
     return (str(ws.db_path.resolve()), ws.corpus_version(), row[0], row[1], row[2], bool(all_sections))
+
+
+def _build(ws: Workspace, all_sections: bool) -> PassageIndex:
+    if not IN_MEMORY:
+        from . import searchindex
+
+        rows, bm25, pos, ids, doc_of = searchindex.load(ws, all_sections)
+        return PassageIndex(rows, bm25, pos, ids, doc_of)
+    rows = [dict(r) for r in ws.query(
+        "SELECT p.passage_id, p.doc_id, p.seq, p.page, p.text, d.title, p.start, p.section FROM passages p "
+        "JOIN documents d ON d.doc_id=p.doc_id" + ("" if all_sections else " WHERE p.section='body'") +
+        " ORDER BY p.passage_id")]
+    return PassageIndex(rows, BM25([tokens(r["text"]) for r in rows]), {r["passage_id"]: i for i, r in enumerate(rows)})
 
 
 def passage_index(ws: Workspace, all_sections: bool = False) -> PassageIndex:
@@ -54,11 +98,7 @@ def passage_index(ws: Workspace, all_sections: bool = False) -> PassageIndex:
             hit = _INDEXES.get(key)
         if hit is not None:
             return hit
-        rows = [dict(r) for r in ws.query(
-            "SELECT p.passage_id, p.doc_id, p.seq, p.page, p.text, d.title, p.start, p.section FROM passages p "
-            "JOIN documents d ON d.doc_id=p.doc_id" + ("" if all_sections else " WHERE p.section='body'") +
-            " ORDER BY p.passage_id")]
-        idx = PassageIndex(rows, BM25([tokens(r["text"]) for r in rows]), {r["passage_id"]: i for i, r in enumerate(rows)})
+        idx = _build(ws, all_sections)
         with _LOCK:
             for k in [k for k in _INDEXES if k[0] == key[0] and k[-1] == key[-1]]:  # older states of the project
                 del _INDEXES[k]
@@ -100,6 +140,7 @@ def rerank(idx: "PassageIndex", query_text: str, ranked: list[tuple[int, float]]
     """The second sorting pass (no model): the best RERANK_POOL × k candidates sorted again by `lexical_score`,
     in steps of 0.1 so passages that word the claim about equally well keep the order of the first ranking."""
     pool = ranked[:RERANK_POOL * k]
+    idx.prefetch(i for i, _s in pool)
     q = tokens(query_text)
     keyed = [(-round(lexical_score(q, idx.bm25.idf, idx.rows[i]["text"]), 1), pos, (i, s))
              for pos, (i, s) in enumerate(pool)]
@@ -128,10 +169,10 @@ def rank_passages(ws: Workspace, query_text: str, terms: list[str] | None = None
     having = None
     if require_terms:
         having = set(idx.bm25.sparse(tokens(" ".join(terms or []))))  # every passage containing one of them
+    ids, doc_of = idx.ids, idx.doc_of
 
     def ok(i: int) -> bool:
-        r = rows[i]
-        return ((allowed is None or r["doc_id"] in allowed) and r["passage_id"] not in skip
+        return ((allowed is None or doc_of[i] in allowed) and ids[i] not in skip
                 and (having is None or i in having))
 
     q = tokens(query_text) * 2 + tokens(" ".join(terms or []))  # the claim's own words count double
@@ -164,7 +205,7 @@ def rank_passages(ws: Workspace, query_text: str, terms: list[str] | None = None
     for i, _s in ranked:
         if len(picked) >= k:
             break
-        d = rows[i]["doc_id"]
+        d = doc_of[i]
         if count.get(d, 0) < per_doc:
             picked.append(i)
             count[d] = count.get(d, 0) + 1
@@ -177,6 +218,7 @@ def rank_passages(ws: Workspace, query_text: str, terms: list[str] | None = None
             chosen.add(i)
     score = dict(ranked)
     qstems = set(q)
+    idx.prefetch(picked)
     out = []
     for i in picked:
         found = "both" if (i in lex_set and i in sem_set) else ("meaning" if i in sem_set else "keywords")
@@ -203,7 +245,7 @@ def docs_matching(ws: Workspace, query_text: str, terms: list[str] | None, doc_i
         return set()
     idx = passage_index(ws)
     q = tokens(query_text) + tokens(" ".join(terms or []))
-    return {idx.rows[i]["doc_id"] for i, sc in idx.bm25.sparse(q).items() if sc > 0 and idx.rows[i]["doc_id"] in doc_ids}
+    return {idx.doc_of[i] for i, sc in idx.bm25.sparse(q).items() if sc > 0 and idx.doc_of[i] in doc_ids}
 
 
 def neighbours(ws: Workspace, passage_id: str, before: int = 1, after: int = 1) -> dict:
