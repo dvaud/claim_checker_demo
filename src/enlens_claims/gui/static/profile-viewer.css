@@ -245,6 +245,14 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .doc-view .passage-row.dv-out .dv-body, .doc-view .passage-row.dv-out .pp > :not(.dv-act) { opacity: .62; }
 .doc-view .passage-row:hover, .doc-view .passage-row:focus-within { position: relative; z-index: 3; }
 .doc-view .passage-row.dv-out .dv-body p { font-family: var(--font-ui); font-size: .88rem; }
+/* 0.16: Leave out in place: the block greys, then folds away into the line "Left out of the text", which glows a
+   moment; a restored block glows where it joins the text (no redraw of the document) */
+.doc-view .passage-row.dv-leaving .dv-body, .doc-view .passage-row.dv-leaving .pp > :not(.dv-act) { opacity: .35; transition: opacity .2s ease-out; }
+.doc-view .passage-row.dv-leaving .dv-act { visibility: hidden; }
+.doc-view .passage-row.dv-folding { overflow: hidden; padding-top: 0; padding-bottom: 0; transition: height .28s ease-in-out, padding .28s ease-in-out; }
+.doc-view .passage-row.dv-folding .dv-body, .doc-view .passage-row.dv-folding .pp { opacity: 0; transition: opacity .2s ease-in; }
+@keyframes dv-glow { from { background-color: var(--accent-soft); box-shadow: 0 0 0 6px var(--accent-soft); } to { background-color: transparent; box-shadow: 0 0 0 6px transparent; } }
+.doc-view .dv-glow { animation: dv-glow 1.6s ease-out; border-radius: 6px; }
 .doc-view .dv-table-wrap { overflow-x: auto; max-width: 100%; }
 .doc-view .dv-table { border-collapse: collapse; font-size: .86rem; font-variant-numeric: tabular-nums; }
 .doc-view .dv-table th, .doc-view .dv-table td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; white-space: nowrap; }

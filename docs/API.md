@@ -419,8 +419,12 @@ kind in words for a block left out. Passages add `"block"` (the kind of block th
 and their `section` may be `"left_out"`.
 
 `PUT /api/projects/<p>/documents/<doc_id>/blocks/<n>` `{"included": true|false, "alike": false}` → *Restore* or
-*Leave out* a block: `{"blocks": [block], "together": n, "alike": n}`, the blocks changed (those sharing a passage with
-it change together). The choice is kept by the block's words (`block_choices`) and applied again when the document is
+*Leave out* a block: `{"blocks": [block], "group": [n], "together": n, "alike": n, "doc": {...}}`. `group`: the blocks
+chosen (those sharing a passage with it change together). `blocks`: every block that changed, as `?view=blocks` lists
+them now, wherever they are in the document (0.16: the first 1000 blocks of the group only before); since a choice is
+kept by the block's words, that includes blocks elsewhere with the same words. `doc`: the reading's figures now
+(`left_out`, `passages_read`, `passages_all`, as the document's own answer has them), so the reading view shows the
+change in place. The choice is kept by the block's words (`block_choices`) and applied again when the document is
 read again; choosing what the reader chose (and the start and end marks below imply) removes it. 0.15.1: with
 `"alike": true`, every block that looks the same (blocks of up to 200 characters, their numbers and roman numerals
 aside: a running head, a page number) changes too; `alike` in the answer is how many. 404 for no such block, 400 when
@@ -430,7 +434,8 @@ aside: a running head, a page number) changes too; `alike` in the answer is how 
 here* or *Text ends here* at block `n` (`null`: undo): what comes before the start, or after the end, is left out; a
 block the person restored there still counts. Kept in `block_choices` as `<side>:<fingerprint>:<k>` (the k-th block
 with those words), so it holds when the document is read again. `{"side", "block", "changed", "left_out",
-"restored"}`. 400 for another side, a start after the end (or an end before the start), or a block that is not a
+"restored", "blocks", "doc"}`: 0.16: `blocks` are the blocks that changed and the blocks that carry or carried the
+mark, as `?view=blocks` lists them now; `doc` as above. 400 for another side, a start after the end (or an end before the start), or a block that is not a
 number; 404 for no such block, or a document without blocks (read before 0.15).
 
 In `?view=blocks` (0.15.1), each block also has `alike` (how many other blocks look the same), `share` (where it

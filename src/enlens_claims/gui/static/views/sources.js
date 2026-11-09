@@ -570,41 +570,50 @@ export async function renderDocument(view, [docId], query) {
   // (running heads, page numbers, front and back matter, footnotes, tables...) is folded under "Left out of the text",
   // each with Restore; every block that counts has Leave out.
   let fold = null, lastPage = null;
+  // the label column: where the block is cited, a mark when a person changed it, and (on hover) its actions
+  function labelParts(b) {
+    return [b.label ? h("b", {}, b.label) : null,
+      b.bound ? h("span", { class: "dv-mine" }, b.bound === "start" ? "the text starts here (you said)" : "the text ends here (you said)") : null,
+      b.changed ? h("span", { class: "dv-mine" }, b.included ? "restored by you" : "left out by you") : null,
+      b.kind === "table" && b.included === false && !b.changed ? h("span", { class: "dv-mine dv-muted" }, "left out") : null,
+      reading ? blockActions(b) : null];
+  }
   function addBlocks(bs) {
     for (const b of bs) {
       const body = h("div", { class: "dv-body" });
       const kindCls = b.kind ? ` dv-k-${b.kind}${b.included === false ? " dv-out" : ""}${b.changed ? " dv-changed" : ""}${b.joined ? " dv-joined" : ""}` : "";
-      // the label column: where the block is cited, a mark when a person changed it, and (on hover) its actions
-      const label = h("div", { class: "pp" }, b.label ? h("b", {}, b.label) : null,
-        b.bound ? h("span", { class: "dv-mine" }, b.bound === "start" ? "the text starts here (you said)" : "the text ends here (you said)") : null,
-        b.changed ? h("span", { class: "dv-mine" }, b.included ? "restored by you" : "left out by you") : null,
-        b.kind === "table" && b.included === false && !b.changed ? h("span", { class: "dv-mine dv-muted" }, "left out") : null,
-        reading ? blockActions(b) : null);
+      const label = h("div", { class: "pp" }, labelParts(b));
       const row = h("div", { class: "passage-row" + kindCls + (hit >= 0 && b.n === blocks[hit].n ? " hit" : "") }, label, body);
       row.id = `block-${b.n}`;
-      if (reading && b.page != null && b.page !== lastPage) {
-        lastPage = b.page;
-        fold = null;
-        list.insertBefore(h("div", { class: "dv-page-mark", id: `page-${b.page}` }, h("span", {}, `Page ${b.page}`)), selBar);
-      }
-      if (reading && b.included === false && b.kind !== "table") {
-        if (!fold) {
-          fold = { el: h("details", { class: "dv-fold" }), kinds: new Map() };
-          fold.sum = h("summary", {});
-          fold.el.appendChild(fold.sum);
-          if (showLeftOut || keptOpen.has(b.n)) fold.el.open = true;
-          list.insertBefore(fold.el, selBar);
-        }
-        if (keptOpen.has(b.n)) fold.el.open = true;
-        fold.kinds.set(b.kind, (fold.kinds.get(b.kind) || 0) + 1);
-        replace(fold.sum, icon("chevron-right", { size: 13 }), h("span", {}, "Left out of the text: ", [...fold.kinds].map(([k, n]) => kindCount(k, n)).join(", ")));
-        fold.el.appendChild(row);
-      } else {
-        fold = null;
-        list.insertBefore(row, selBar);
-      }
-      rows.set(b.n, { row, body, b, sig: null });
+      rows.set(b.n, { row, body, label, b, sig: null });
+      place(b, row, keptOpen);
       loaded.push(b);
+    }
+  }
+  // where a block's row goes: after a page mark where a page begins; folded under "Left out of the text" when it is
+  // left out (a table stays in the text, greyed), the fold open when what is left out is shown or `openNs` (blocks by
+  // n) holds one of its blocks
+  function place(b, row, openNs) {
+    if (reading && b.page != null && b.page !== lastPage) {
+      lastPage = b.page;
+      fold = null;
+      list.insertBefore(h("div", { class: "dv-page-mark", id: `page-${b.page}` }, h("span", {}, `Page ${b.page}`)), selBar);
+    }
+    if (reading && b.included === false && b.kind !== "table") {
+      if (!fold) {
+        fold = { el: h("details", { class: "dv-fold" }), kinds: new Map() };
+        fold.sum = h("summary", {});
+        fold.el.appendChild(fold.sum);
+        if (showLeftOut) fold.el.open = true;
+        list.insertBefore(fold.el, selBar);
+      }
+      if (openNs.has(b.n)) fold.el.open = true;
+      fold.kinds.set(b.kind, (fold.kinds.get(b.kind) || 0) + 1);
+      replace(fold.sum, icon("chevron-right", { size: 13 }), h("span", {}, "Left out of the text: ", [...fold.kinds].map(([k, n]) => kindCount(k, n)).join(", ")));
+      fold.el.appendChild(row);
+    } else {
+      fold = null;
+      list.insertBefore(row, selBar);
     }
   }
   let showLeftOut = !!session(`leftout:${docId}`);
@@ -628,41 +637,166 @@ export async function renderDocument(view, [docId], query) {
     if (b.table) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Download table ${b.table.n} for Excel`, title: "The table's rows and cells, for Excel", onClick: () => download(`${docBase}/tables/${b.table.n}.xlsx`).catch(showError) }, icon("download", { size: 12 }), "Excel"));
     return wrap;
   }
-  async function setIncluded(b, included, btn, alike = false) {
+  // 0.16: Restore, Leave out and where the text starts or ends change the reading where it is. Before, the whole
+  // document was drawn again: the page flashed and it was hard to tell what had happened. Now what leaves the text
+  // greys and folds away into the line "Left out of the text", what comes back joins the text again, and the rest of
+  // the page stays where it was.
+  let turn = Promise.resolve();   // one change at a time, in the order clicked: a click during another waits for it
+  const inTurn = (job) => { turn = turn.catch(() => {}).then(job); return turn; };
+  function setIncluded(b, included, btn, alike = false) {
     btn.disabled = true;
+    return inTurn(() => changeIncluded(b, included, btn, alike));
+  }
+  async function changeIncluded(b, included, btn, alike) {
+    const hadFocus = list.contains(document.activeElement);
+    const r0 = rows.get(b.n);
+    const greyNow = !included && r0 && r0.row.parentElement === list && b.kind !== "table";
+    if (greyNow) r0.row.classList.add("dv-leaving");  // at once: the answer from the app follows
     let r;
     try { r = await api("PUT", `${docBase}/blocks/${b.n}`, alike ? { included, alike: true } : { included }); }
-    catch (e) { btn.disabled = false; showError(e); return; }
+    catch (e) { btn.disabled = false; if (greyNow) r0.row.classList.remove("dv-leaving"); showError(e); return; }
+    const folded = await showChange(r, b, hadFocus);
+    // where it went, when it folded away out of sight
+    const away = (them) => (!included && folded ? ` ${them ? "They are" : "It is"} folded under “Left out of the text”, where Restore brings ${them ? "them" : "it"} back.` : "");
     if (alike) {
-      toast(`${included ? "Restored" : "Left out"}: ${plural(r.alike || 1, "block")} like this${(r.together || 0) > (r.alike || 0) ? `, with ${plural(r.together - r.alike, "block")} read together with them` : ""}. Searches, codes, themes and checks ${included ? "read them again" : "will not read them"}.`, "ok");
-      keepPlace = { doc: docId, y: window.scrollY, tab, open: (r.blocks || []).map((x) => x.n) };
-      window.dispatchEvent(new HashChangeEvent("hashchange"));
+      toast(`${included ? "Restored" : "Left out"}: ${plural(r.alike || 1, "block")} like this${(r.together || 0) > (r.alike || 0) ? `, with ${plural(r.together - r.alike, "block")} read together with them` : ""}. Searches, codes, themes and checks ${included ? "read them again" : "will not read them"}.${away(true)}`, "ok");
       return;
     }
-    const others = (r.blocks || []).filter((x) => x.n !== b.n);
+    // what went with it (its passage), and blocks elsewhere with the same words (the choice is kept by the words)
+    const group = new Set(r.group || (r.blocks || []).map((x) => x.n));
+    const others = (r.blocks || []).filter((x) => x.n !== b.n && group.has(x.n));
+    const same = (r.blocks || []).filter((x) => !group.has(x.n) && (x.included !== false) === included).length;
+    const elsewhere = same ? ` So ${same === 1 ? "is" : "are"} ${plural(same, "block")} elsewhere with the same words.` : "";
     const heads = others.filter((x) => x.kind === "heading" || x.kind === "title").map((x) => `“${x.text.length > 60 ? x.text.slice(0, 57) + "…" : x.text}”`);
     const rest = others.length - heads.length;
     const withWhat = [heads.length ? `${heads.length > 1 ? "its headings" : "its heading"} ${heads.join(" and ")}` : null,
       rest ? `${plural(rest, "paragraph")} next to it (they are read as one passage)` : null].filter(Boolean).join(" and ");
-    toast(included ? `Restored${withWhat ? `, together with ${withWhat}` : ""}. Searches, codes, themes and checks read ${others.length ? "them" : "it"} again.`
-      : `Left out${withWhat ? `, together with ${withWhat}` : ""}. Searches, codes, themes and checks will not read ${others.length ? "them" : "it"}.`, "ok");
-    // the simplest true picture: draw the document again, at the same place, with what changed in view
-    keepPlace = { doc: docId, y: window.scrollY, tab, open: (r.blocks || []).map((x) => x.n) };
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    toast(included ? `Restored${withWhat ? `, together with ${withWhat}` : ""}. Searches, codes, themes and checks read ${others.length ? "them" : "it"} again.${elsewhere}`
+      : `Left out${withWhat ? `, together with ${withWhat}` : ""}. Searches, codes, themes and checks will not read ${others.length ? "them" : "it"}.${away(others.length > 0)}${elsewhere}`, "ok");
   }
   // 0.15.1: where the text starts or ends (block null: no longer)
-  async function setBound(side, n, btn) {
+  function setBound(side, n, btn) {
     btn.disabled = true;
+    return inTurn(() => changeBound(side, n, btn));
+  }
+  async function changeBound(side, n, btn) {
+    const hadFocus = list.contains(document.activeElement);
+    const at = rows.get(Number(btn.closest(".passage-row").id.slice(6)));   // the block whose button was pressed
     let r;
     try { r = await api("PUT", `${docBase}/bounds`, { side, block: n }); }
     catch (e) { btn.disabled = false; showError(e); return; }
+    await showChange(r, at ? at.b : null, hadFocus);
     const what = side === "start" ? "before it" : "after it";
     toast(n == null ? `Undone: ${r.restored ? `${plural(r.restored, "block")} ${what.replace("it", "that mark")} count${r.restored === 1 ? "s" : ""} again` : "nothing else changed"}.`
-      : `The text ${side === "start" ? "starts" : "ends"} here: ${r.left_out ? `${plural(r.left_out, "block")} ${what} left out` : "nothing more to leave out"}. Searches, codes, themes and checks read only the text.`, "ok");
-    keepPlace = { doc: docId, y: window.scrollY, tab, open: [] };
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
+      : `The text ${side === "start" ? "starts" : "ends"} here: ${r.left_out ? `${plural(r.left_out, "block")} ${what} left out, folded under “Left out of the text”` : "nothing more to leave out"}. Searches, codes, themes and checks read only the text.`, "ok");
   }
-  // 0.15: after Restore or Leave out, the folds holding what changed stay open
+  const calm = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const pause = (ms) => new Promise((ok) => setTimeout(ok, calm() ? 0 : ms));
+  // whether a row is shown (not in a closed fold), and where it is seen: the row itself or the line of its fold
+  const isShown = (row) => { const f = row.closest("details.dv-fold"); return !f || f.open; };
+  const shownBox = (row) => (!row.isConnected ? null : isShown(row) ? row : row.closest("details.dv-fold").querySelector(":scope > summary"));
+  const onScreen = (el) => { const q = el && el.getBoundingClientRect(); return !!q && q.height > 0 && q.bottom > 0 && q.top < window.innerHeight; };
+  // the height of a fold's line "Left out of the text" with its margins: what a row that folds away shrinks to
+  function foldLineHeight() {
+    const probe = h("details", { class: "dv-fold", style: { visibility: "hidden" } }, h("summary", {}, icon("chevron-right", { size: 13 }), h("span", {}, "Left out of the text")));
+    list.insertBefore(probe, selBar);
+    const cs = getComputedStyle(probe);
+    const px = probe.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+    probe.remove();
+    return px;
+  }
+  // Show what the app changed (`res.blocks`: the blocks as they are now, `res.doc`: the reading's figures) in place.
+  // `clicked`: the block whose button was pressed. Returns whether a block that was on the screen folded away.
+  async function showChange(res, clicked, hadFocus) {
+    const now = new Map((res.blocks || []).map((x) => [x.n, x]));
+    const folds = (b) => b.included === false && b.kind !== "table";   // a left-out table stays in the text
+    // which fold each left-out block will be in (named by its first block), laid out as place() will lay them out,
+    // and which of those will be open: shown, or holding a block whose fold is open now
+    const key = new Map();
+    let k = null, page;
+    for (const b of loaded) {
+      if (b.page != null && b.page !== page) { page = b.page; k = null; }
+      if (folds(now.get(b.n) || b)) { if (k == null) k = b.n; key.set(b.n, k); } else k = null;
+    }
+    const openNow = () => {
+      const ns = new Set();
+      for (const f of list.querySelectorAll("details.dv-fold[open]")) for (const x of f.querySelectorAll(":scope > .passage-row")) ns.add(Number(x.id.slice(6)));
+      return ns;
+    };
+    const openNs = openNow();
+    const openKeys = new Set([...key].filter(([n]) => openNs.has(n)).map(([, f]) => f));
+    const foldedBefore = new Set();   // folds that hold a block folded already (their line is there now)
+    for (const [n, f] of key) if (folds(rows.get(n).b)) foldedBefore.add(f);
+    const going = [], coming = [];
+    for (const [n, x] of now) {
+      const r = rows.get(n);
+      if (!r) continue;   // not drawn yet: it comes as it now is with the rest of the document
+      if (!folds(r.b) && folds(x)) going.push(r);
+      else if (folds(r.b) && !folds(x)) coming.push(r);
+    }
+    // 1. what leaves the text and is on the screen greys
+    const seen = going.filter((r) => onScreen(r.row));
+    for (const r of seen) r.row.classList.add("dv-leaving");
+    if (seen.length) await pause(200);
+    // 2. and folds away, into the line "Left out of the text" that takes its place (unless that fold is shown open):
+    // a fold's first block shrinks to the line, the others to nothing; a block joining a fold already there, to nothing
+    const folding = seen.filter((r) => !showLeftOut && !openKeys.has(key.get(r.b.n)));
+    if (folding.length) {
+      const line = foldLineHeight();
+      for (const r of folding) r.row.style.height = `${r.row.getBoundingClientRect().height}px`;
+      void list.offsetHeight;   // the heights above are where the shrinking starts
+      for (const r of folding) {
+        const f = key.get(r.b.n);
+        r.row.classList.add("dv-folding");
+        r.row.style.height = `${f === r.b.n && !foldedBefore.has(f) ? line : 0}px`;
+      }
+      await pause(280);
+    }
+    // 3. the rows as they are now, laid out again; the row just above the first change on the screen (or, when that
+    // row is not on the screen, the first unchanged row that is) stays where it is, so a change above the screen
+    // moves nothing
+    const changed = (n) => now.has(n);
+    const rowOf = (b) => rows.get(b.n).row;
+    let anchor = null;
+    const firstSeen = loaded.findIndex((b) => changed(b.n) && onScreen(shownBox(rowOf(b))));
+    for (let i = firstSeen - 1; i >= 0 && !anchor; i--) if (!changed(loaded[i].n) && isShown(rowOf(loaded[i]))) anchor = rowOf(loaded[i]);
+    if (anchor && anchor.getBoundingClientRect().bottom < 0) anchor = null;   // far above: changes in between would move the screen
+    if (!anchor) { const b = loaded.find((x) => !changed(x.n) && isShown(rowOf(x)) && onScreen(rowOf(x))); if (b) anchor = rowOf(b); }
+    const top0 = anchor ? anchor.getBoundingClientRect().top : 0;
+    for (const [n, x] of now) {
+      const r = rows.get(n);
+      if (!r) continue;
+      Object.assign(r.b, x);
+      r.row.classList.toggle("dv-out", r.b.included === false);
+      r.row.classList.toggle("dv-changed", !!r.b.changed);
+      replace(r.label, labelParts(r.b));
+    }
+    const openThen = openNow();   // as they are now: a fold opened or closed during the animation stays so
+    for (const el of [...list.children]) if (el !== selBar) el.remove();
+    fold = null; lastPage = null;
+    for (const b of loaded) place(b, rows.get(b.n).row, openThen);
+    for (const el of list.querySelectorAll(".dv-leaving, .dv-folding")) { el.classList.remove("dv-leaving", "dv-folding"); el.style.height = ""; }
+    if (anchor) {
+      const dy = anchor.getBoundingClientRect().top - top0;
+      if (Math.abs(dy) >= 1) window.scrollBy(0, dy);
+    }
+    // 4. a short glow where it went: the fold's line, or the row itself when it is in view
+    const glow = new Set();
+    for (const r of [...seen, ...coming]) { const el = shownBox(r.row); if (el && onScreen(el)) glow.add(el); }
+    for (const el of glow) { el.classList.remove("dv-glow"); void el.offsetWidth; el.classList.add("dv-glow"); setTimeout(() => el.classList.remove("dv-glow"), 1700); }
+    // the keyboard stays where the change happened: on the block's first action, or the line of the fold it went into
+    if (hadFocus && clicked && rows.get(clicked.n) && !list.contains(document.activeElement)) {
+      const el = shownBox(rows.get(clicked.n).row);
+      const to = el && (el.tagName === "SUMMARY" ? el : el.querySelector(".dv-act button"));
+      if (to) to.focus({ preventScroll: true });
+    }
+    // the reading's figures, the page beside the text, and the panels that depend on what counts
+    Object.assign(d, res.doc || {});
+    for (const p of Object.values(panels)) if (p.live) Promise.resolve(p.live()).then(paint, () => {});
+    const mine = clicked && rows.get(clicked.n);
+    return !!mine && !isShown(mine.row);
+  }
+  // 0.15: after a move to the new reader, the folds holding what changed stay open
   const keptOpen = new Set(keepPlace && keepPlace.doc === docId ? keepPlace.open || [] : []);
   list.appendChild(selBar);
   addBlocks(blocks);
@@ -910,6 +1044,7 @@ export async function renderDocument(view, [docId], query) {
     const qual = { good: ["circle-check", "Read well."], fair: ["alert-triangle", "Read, with something to check."], poor: ["alert-circle", "Read badly: check it before you rely on it."] }[rep.quality];
     const figs = [];
     const fig = (label, value, title) => { if (value) figs.push(h("li", { title: title || null }, h("span", { class: "muted" }, label), " ", value)); };
+    const passFig = h("li", { title: "The passages that searches, codes, themes and checks read" });
     if (!before15) {
       fig("Pages:", rep.pages ? `${fmt.num(rep.pages)}${rep.multi_column_pages ? `, ${fmt.num(rep.multi_column_pages)} in columns (read column by column)` : ""}` : "");
       const rp = rep.repairs || {};
@@ -919,17 +1054,26 @@ export async function renderDocument(view, [docId], query) {
         rp.doubled && plural(rp.doubled, "line") + " printed twice read once"].filter(Boolean);
       fig("Repaired:", fixes.join("; "));
       fig("Tables:", rep.tables ? `${fmt.num(rep.tables)}, kept as rows and cells (each can be downloaded for Excel from the text)` : "");
-      // live: Restore and Leave out change it
-      fig("Passages that count:", d.passages_read != null ? `${fmt.num(d.passages_read)} of ${fmt.num(d.passages_all)}` : "", "The passages that searches, codes, themes and checks read");
+      // live: Restore and Leave out change it (0.16: drawn again in place, by live())
+      if (d.passages_read != null) figs.push(passFig);
       if (rep.engine === "pypdf") fig("Read from:", "the text layer only (with the pdfminer extra, columns and tables are found too)");
     }
-    const outKinds = Object.entries(d.left_out || {});
+    const outKinds = () => Object.entries(d.left_out || {});
     const setLeftOut = (on) => {
       showLeftOut = on; session(`leftout:${docId}`, showLeftOut || null);
       for (const f of list.querySelectorAll("details.dv-fold")) f.open = showLeftOut;
     };
-    const outBox = outKinds.length ? h("input", { type: "checkbox", checked: showLeftOut, onChange: (e) => setLeftOut(e.currentTarget.checked) }) : null;
-    const toggle = outKinds.length ? h("label", { class: "dv-check" }, outBox, h("span", {}, "Show what was left out in the text")) : null;
+    let outBox = null;
+    const outPart = h("div", { class: "dv-outkinds" });
+    function live() {
+      replace(passFig, h("span", { class: "muted" }, "Passages that count:"), " ", `${fmt.num(d.passages_read || 0)} of ${fmt.num(d.passages_all || 0)}`);
+      const kinds = outKinds();
+      outPart.hidden = !kinds.length;
+      outBox = kinds.length ? h("input", { type: "checkbox", checked: showLeftOut, onChange: (e) => setLeftOut(e.currentTarget.checked) }) : null;
+      replace(outPart, kinds.length ? [h("p", { class: "small", style: { margin: "8px 0 4px" } }, h("strong", {}, "Left out of the text: "), kinds.map(([k, n]) => kindCount(k, n)).join(", "), "."),
+        h("p", { class: "muted small", style: { margin: "0 0 6px" } }, "They stay in the document and in a search of all its text, but searches, codes, themes and checks do not read them. Restore any that should count; leave out any that should not."),
+        h("label", { class: "dv-check" }, outBox, h("span", {}, "Show what was left out in the text"))] : []);
+    }
     // 0.15.7: a warning's way to what it is about: the pages of the original, or what the reader set aside
     const showOut = () => {
       if (outBox) outBox.checked = true;
@@ -938,7 +1082,7 @@ export async function renderDocument(view, [docId], query) {
       if (f) f.scrollIntoView({ block: "center", behavior: "smooth" });
     };
     const placeBtn = (place) => place === "page" && d.page_images ? h("button", { class: "link-btn small", type: "button", onClick: () => openTab("page") }, icon("file-text", { size: 12 }), "Look at the pages")
-      : place === "left_out" && outKinds.length ? h("button", { class: "link-btn small", type: "button", onClick: showOut }, icon("eye", { size: 12 }), "Show what was left out") : null;
+      : place === "left_out" && outKinds().length ? h("button", { class: "link-btn small", type: "button", onClick: showOut }, icon("eye", { size: 12 }), "Show what was left out") : null;
     el.append(...[h("h2", { id: "dv-read-h", class: "dv-panel-title", tabindex: "-1" }, "How this document was read"),
       older ? h("div", { class: "notice notice-info" }, icon("info"), h("div", {},
         h("p", {}, before15 ? `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`
@@ -948,10 +1092,10 @@ export async function renderDocument(view, [docId], query) {
       (rep.warnings || []).length ? h("ul", { class: "dv-warn" }, rep.warnings.map((w, i) => h("li", {}, w, " ", placeBtn((rep.places || [])[i])))) : null,
       !before15 && (rep.quality === "fair" || rep.quality === "poor") ? checkedBox(rep) : null,
       figs.length ? h("ul", { class: "dv-figs" }, figs) : null,
-      outKinds.length ? h("div", { class: "dv-outkinds" }, h("p", { class: "small", style: { margin: "8px 0 4px" } }, h("strong", {}, "Left out of the text: "), outKinds.map(([k, n]) => kindCount(k, n)).join(", "), "."),
-        h("p", { class: "muted small", style: { margin: "0 0 6px" } }, "They stay in the document and in a search of all its text, but searches, codes, themes and checks do not read them. Restore any that should count; leave out any that should not."), toggle) : null,
+      outPart,
       older ? rereadBox() : null].filter(Boolean));  // append(null) would write "null"
-    return { el };
+    live();
+    return { el, live };
   }
 
   // 0.15.7: the person looked at what the reading report names and marks the reading as checked (or takes it
@@ -1094,7 +1238,7 @@ export async function renderDocument(view, [docId], query) {
     for (const r of rows.values()) seen.observe(r.row);
     cleanups.push(() => seen.disconnect());
     go((hit >= 0 && blocks[hit].page) || (loaded[0] && loaded[0].page) || 1, false);
-    return { el };
+    return { el, live: drawBoxes };   // 0.16: Restore and Leave out change the outlines (solid or dashed)
   }
 
   // ---- Codes (F2)
@@ -1379,6 +1523,7 @@ export async function renderDocument(view, [docId], query) {
     load();
     return {
       el, labelSelection,
+      live: load,   // 0.16: what counts changed (Restore, Leave out): the codes read again, in place
       decos: () => marks,
       show() { runningJob(project, ["keywords"]).then((j) => { if (j) watchers.push(jobCard(jobBox, j.id, "Finding the codes by keywords and meaning", keywordLabel, () => { jobBox.hidden = true; load(); }, { small: true, plain: true })); }); },
       framework: () => framework,
@@ -1452,6 +1597,7 @@ export async function renderDocument(view, [docId], query) {
     load();
     return {
       el,
+      live: load,   // 0.16: what counts changed (Restore, Leave out): the key terms read again, in place
       decos: () => (data ? (data.spans || []).map((s) => ({ start: s.start, end: s.end, cls: pinned === s.term_id ? "kt kt-pin" : "kt", term: s.term_id, mark: pinned === s.term_id })) : []),
     };
   }

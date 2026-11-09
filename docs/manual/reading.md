@@ -71,7 +71,7 @@ where it is cited you get:
 
 | Button | What it does |
 | --- | --- |
-| **Leave out** | Searches, codes, themes and checks will not read this block. |
+| **Leave out** | Searches, codes, themes and checks will not read this block. It greys and folds away into the line *Left out of the text*, which lights up for a moment. |
 | **Restore** | They will read it again. |
 | **All like this** | On a short block that comes back (a running head, a page number): leaves out, or restores, every block that looks the same, numbers aside. One click for a running head on every page. |
 | **Text starts here** | On a block in the first third: leaves out everything before it (a book's title pages). *Undo start* takes it back. |

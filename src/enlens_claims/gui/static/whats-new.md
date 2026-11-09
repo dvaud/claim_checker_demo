@@ -1,7 +1,6 @@
-# 0.16.0rc1: Speed for large projects
-*A release candidate: the same results, sooner.*
-- Several documents are read at once when you add them
-- The glossary reads only new or changed documents
-- Search is ready sooner and needs far less memory
-- The Profile page and long lists open at once
-- No result changes: every step gives what 0.15.7 gave
+# 0.16.0rc2: Leave out without the flash
+*A release candidate: the reading view changes where you click.*
+- Leave out greys the paragraph and folds it away, with no flash
+- The line “Left out of the text” lights up where it went
+- Restore, All like this and Text starts or ends here work in place too
+- No result changes

@@ -441,12 +441,7 @@ class App(LibraryMixin, QueueMixin):
         out["page_images"] = bool(info["available"] and out["kind"] == "pdf" and page_images_available())
         out["tables"] = int(ws.scalar("SELECT COUNT(*) FROM doc_tables WHERE doc_id=?", (doc_id,)) or 0)
         out["paragraphs"] = int(ws.scalar("SELECT COUNT(*) FROM paragraphs WHERE doc_id=?", (doc_id,)) or 0)
-        # 0.15: as it stands now (Restore and Leave out change it): what is left out, by kind, and the passages read
-        out["left_out"] = {r[0]: r[1] for r in ws.query("SELECT kind, COUNT(*) FROM blocks WHERE doc_id=? AND included=0 "
-                                                         "GROUP BY kind ORDER BY COUNT(*) DESC", (doc_id,))}
-        out["passages_read"] = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE doc_id=? AND section='body'",
-                                             (doc_id,)) or 0)
-        out["passages_all"] = out["total_passages"]
+        out.update(App.reading_now(ws, doc_id))
         if view == "blocks":  # the document as a reader cites it: by page, or by paragraph for files without pages
             out["blocks"], out["total_blocks"] = self.blocks(ws, doc_id, offset, limit)
         return out
@@ -506,10 +501,23 @@ class App(LibraryMixin, QueueMixin):
         return out, len(spans)
 
     @staticmethod
-    def reading_blocks(ws, doc_id: str, text: str, offset: int, limit: int) -> tuple[list[dict], int]:
+    def reading_now(ws, doc_id: str) -> dict:
+        """0.15: a document's reading as it stands now (Restore and Leave out change it): what is left out, by kind,
+        and the passages read. 0.16: also sent back by Restore, Leave out and the text's start and end, so the
+        reading view shows them without being drawn again."""
+        left_out = {r[0]: r[1] for r in ws.query("SELECT kind, COUNT(*) FROM blocks WHERE doc_id=? AND included=0 "
+                                                  "GROUP BY kind ORDER BY COUNT(*) DESC", (doc_id,))}
+        read = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE doc_id=? AND section='body'", (doc_id,)) or 0)
+        every = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE doc_id=?", (doc_id,)) or 0)
+        return {"left_out": left_out, "passages_read": read, "passages_all": every}
+
+    @staticmethod
+    def reading_blocks(ws, doc_id: str, text: str, offset: int, limit: int,
+                       only: set[int] | None = None) -> tuple[list[dict], int]:
         """0.15 (A4): a document read by the new reader, block by block in reading order: what each block is
         (a heading, a paragraph, a caption, a table, a running head...), whether searches, codes, themes and checks
-        read it, a table's rows, and its box on the page. Paragraphs are numbered per page as quotes are cited."""
+        read it, a table's rows, and its box on the page. Paragraphs are numbered per page as quotes are cited.
+        0.16: `only`: just these blocks (by n), wherever they are in the document (offset and limit aside)."""
         from .. import reader as reader2
 
         rows = ws.query("SELECT n, page, start, end, kind, included, x0, y0, x1, y1 FROM blocks WHERE doc_id=? "
@@ -519,7 +527,9 @@ class App(LibraryMixin, QueueMixin):
         paras: dict[int | None, list[int]] = {}
         for r in ws.query("SELECT start, page FROM paragraphs WHERE doc_id=? ORDER BY start", (doc_id,)):
             paras.setdefault(r["page"], []).append(r["start"])
-        chosen = rows[max(0, offset):max(0, offset) + max(1, min(limit, 1000))]
+        first = max(0, offset)
+        chosen = ([(i, r) for i, r in enumerate(rows) if r["n"] in only] if only is not None
+                  else list(enumerate(rows[first:first + max(1, min(limit, 1000))], first)))
         # 0.15.1: how many other blocks look the same (a running head, a page number: "All like this"), and where the
         # person said the text starts and ends
         shapes = App.block_shapes(text, rows)
@@ -528,9 +538,8 @@ class App(LibraryMixin, QueueMixin):
         choices = {r["fp"]: r["included"] for r in ws.query("SELECT fp, included FROM block_choices WHERE doc_id=?",
                                                              (doc_id,))}
         marks = {side: reader2.bound_index(choices, side, fps) for side in reader2.BOUNDS}
-        first = max(0, offset)
         out = []
-        for idx, r in enumerate(chosen, first):
+        for idx, r in chosen:
             kind, pg = r["kind"], r["page"]
             starts = paras.get(pg, [])
             para = sum(1 for s0 in starts if s0 <= r["start"]) if kind in reader2.INCLUDED else None
@@ -612,18 +621,26 @@ class App(LibraryMixin, QueueMixin):
                                                     "(fp LIKE 'start:%' OR fp LIKE 'end:%')", (doc_id,))}
             plain = dict(zip((r[0] for r in all_rows),
                              reader2.choose_inclusion([(text[r[1]:r[2]], r[3]) for r in all_rows], marks)))
+            fps = set()
             for gn, ga, gz, kind in group:
                 fp = reader2.block_fp(text[ga:gz])
+                fps.add(fp)
                 if bool(included) == bool(plain.get(gn, kind in reader2.INCLUDED)):
                     cx.execute("DELETE FROM block_choices WHERE doc_id=? AND fp=?", (doc_id, fp))
                 else:
                     cx.execute("INSERT OR REPLACE INTO block_choices(doc_id, fp, included, kind, person_id, at) "
                                "VALUES (?,?,?,?,?,?)", (doc_id, fp, 1 if included else 0, kind, people.me(), _now()))
-            reader2.apply_choices(cx, doc_id)
+            moved = reader2.apply_choices(cx, doc_id)
             ws.bump_corpus(cx)
-        blocks, _total = App.reading_blocks(ws, doc_id, text, 0, 100000)
         mine = {g[0] for g in group}
-        return {"blocks": [b for b in blocks if b["n"] in mine], "together": len(mine), "alike": len(targets)}
+        # 0.16: each block as it is now, wherever it is in the document (the first 1000 only before), and the
+        # reading's figures, so the reading view shows the change where it happened instead of drawing itself again.
+        # A choice is kept by the block's words, so blocks elsewhere with the same words change with it (a title
+        # repeated on every page): they are sent too, with those whose mark ("left out by you") changed
+        same = {r[0] for r in all_rows if reader2.block_fp(text[r[1]:r[2]]) in fps}
+        blocks, _total = App.reading_blocks(ws, doc_id, text, 0, 0, only=mine | set(moved) | same)
+        return {"blocks": blocks, "group": sorted(mine), "together": len(mine), "alike": len(targets),
+                "doc": App.reading_now(ws, doc_id)}
 
     def set_bound(self, name: str, doc_id: str, side: str, n: int | None) -> dict:
         """0.15.1: *Text starts here* or *Text ends here* at block n (None: no longer). What comes before the start,
@@ -652,6 +669,9 @@ class App(LibraryMixin, QueueMixin):
                                                              or (side == "end" and idx < at_other)):
                 raise ApiError(400, "The text cannot start after it ends: move or undo the other mark first.")
             before = {r[0]: r[1] for r in cx.execute("SELECT n, included FROM blocks WHERE doc_id=?", (doc_id,))}
+            mine = {r[0]: r[1] for r in cx.execute("SELECT fp, included FROM block_choices WHERE doc_id=? AND fp LIKE ?",
+                                                   (doc_id, side + ":%"))}
+            was = reader2.bound_index(mine, side, fps)   # where this mark was (its block changes too)
             cx.execute("DELETE FROM block_choices WHERE doc_id=? AND fp LIKE ?", (doc_id, side + ":%"))
             if idx is not None:
                 cx.execute("INSERT OR REPLACE INTO block_choices(doc_id, fp, included, kind, person_id, at) "
@@ -660,8 +680,13 @@ class App(LibraryMixin, QueueMixin):
             after = {r[0]: r[1] for r in cx.execute("SELECT n, included FROM blocks WHERE doc_id=?", (doc_id,))}
             ws.bump_corpus(cx)
         changed = [k for k, v in after.items() if before.get(k) != v]
+        # 0.16: the blocks as they are now (those that changed and those that carry or carried the mark), and the
+        # reading's figures, so the reading view shows the change in place
+        marked = {rows[i][0] for i in (was, idx) if i is not None}
+        blocks, _total = App.reading_blocks(ws, doc_id, text, 0, 0, only=set(changed) | marked)
         return {"side": side, "block": n, "changed": len(changed),
-                "left_out": sum(1 for k in changed if not after[k]), "restored": sum(1 for k in changed if after[k])}
+                "left_out": sum(1 for k in changed if not after[k]), "restored": sum(1 for k in changed if after[k]),
+                "blocks": blocks, "doc": App.reading_now(ws, doc_id)}
 
     def hypotheses(self, name: str, q: dict) -> dict:
         ws = self.ws(name)

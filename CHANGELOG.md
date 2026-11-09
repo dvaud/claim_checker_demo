@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.16.0rc2 (November 2026): Leave out without the flash
+
+A second candidate of 0.16, with one change from using the reading view. Clicking *Leave out* on a paragraph drew the
+whole document again: the page flashed and it was hard to tell what had happened (the text had been greyed out, and
+somewhere a fold had opened). Now the change happens where you click. **Nothing changes for results**: the app makes
+the same choices as before; only the way the page shows them changed.
+
+It is a release candidate: only copies with *Try new versions early* (Settings) get it. The rest of 0.16 comes in the
+next candidates, as rc1 said.
+
+### Changed
+
+- **Leave out folds the paragraph away where it is.** The paragraph greys, then folds away into the line *Left out
+  of the text* that takes its place, and that line lights up for a moment. The message says where it went and that
+  *Restore* brings it back. With *Show what was left out in the text* on, it greys and stays in view, marked *left
+  out by you*. The rest of the page does not move.
+- *Restore*, *All like this*, *Text starts here*, *Text ends here* and their *Undo* change the text in place the same
+  way: what comes back joins the text and lights up. The *Reading* panel's figures (passages that count, what is
+  left out) and the outlines on *Page* follow at once; an open *Codes* or *Key terms* panel reads again, since what
+  counts has changed. A second click while a change is shown waits for it instead of being lost.
+- A choice is kept by the block's words, so it also holds for blocks elsewhere with the same words (a title on every
+  page). The message now says how many, and they change on the page too.
+
+### Fixed
+
+- Past the first 1000 blocks of a long book, the message after *Leave out* or *Restore* did not name the heading or
+  paragraphs that changed with the block: the app sent back only blocks among the first 1000.
+
+### For developers
+
+- `PUT …/documents/<doc_id>/blocks/<n>` answers with every block that changed (`blocks`, as `?view=blocks` lists
+  them, wherever they are, blocks with the same words included), the blocks chosen (`group`) and the reading's
+  figures (`doc`: `left_out`, `passages_read`, `passages_all`). `PUT …/bounds` adds `blocks` (those that changed and
+  the blocks that carry or carried the mark) and `doc`. `App.reading_blocks(..., only=…)` gives blocks by number;
+  `App.reading_now` gives the figures (`docs/API.md`).
+- The reading view no longer redraws the page after a change (`showChange` in `views/sources.js`): rows are kept and
+  placed again under their page marks and folds, with the row above the change on the screen held in place.
+
+### Tests
+
+- `tests/test_0_16_0_leave_out_in_place.py`: *Leave out*, *Restore* and *All like this* send back each block exactly as
+  the listing now has it and the figures as the document has them; *Text starts / ends here* and its undo send back
+  the blocks they changed and the block that carries or carried the mark; blocks elsewhere with the same words are
+  sent too (this test fails without the fix); blocks asked for by number are those of the listing.
+- Checked in Chromium with Playwright, in light and dark and at 390 px with touch: the list is never drawn again, the
+  page stays still in the middle of a 169-block book, the keyboard lands on the fold's line, two quick clicks both
+  count, and no console errors.
+
+### Not yet done
+
+- **Safari and Firefox.** The animation and the in-place change were tried in Chromium only. The code uses nothing
+  newer than `<details>` and CSS transitions, but the copy you run in Safari has not been looked at.
+- **A heading partly above the window** folds away with its paragraph; the line it becomes can end up just above the
+  top of the window, where it is not seen lighting up.
+- **The rest of 0.16** comes in the next candidates.
+
 ## 0.16.0rc1 (November 2026): speed for large projects
 
 The first release candidate of 0.16: everything that got slower as a project grew, made quicker before 0.16's new
