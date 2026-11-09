@@ -87,6 +87,9 @@ did not say, the excerpt is flagged *Check what the quote's first word refers to
 
 Excerpts the AI found not about the hypothesis are folded under the cards, so you can check those too.
 
+Under a part, *Add one of your notes* turns a note you made on a document into an excerpt you judged
+([Use a note as evidence](notes-and-log.md#use-a-note-as-evidence)).
+
 ### Looking further
 
 Under the cards:
@@ -124,6 +127,10 @@ count either way. When the AI chosen in Settings has no stronger model, the card
 | *Highlighted documents (.zip)* | The documents, with this hypothesis's quotes marked. |
 | *Whole project (.zip)* | The project in one file ([Work together](together.md)). |
 | *CSV · JSON (for programmers)* | The same data, for scripts. |
+
+At the foot of a result, *History of your judgements* lists the earlier states of your judgements, comments and the
+check's note, to compare with now and restore ([Earlier versions](notes-and-log.md#earlier-versions)). *Delete this
+result* asks *Why? (optional, kept in the research log)*.
 
 *Technical details* has the strictness slider (this page only), the models and settings of the check, what each
 search looked for and the AI's note on what it read.

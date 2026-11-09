@@ -111,9 +111,16 @@ def set_default(ws: Workspace, value: str) -> str:
     if v == "cloud" and _local_only():
         raise ValueError("Cloud models are switched off on this computer by whoever installed ENLENS: documents can be "
                          "read by a local AI or by you only.")
+    before = default(ws) if default_chosen(ws) else None
     _write_config(ws, {"ai_access_default": v, "ai_access_ask": False})
     with ws.connect() as cx:
         relabel(cx)
+        if before is not None and before != v:  # 0.16: a decision about privacy goes into the research log
+            from . import researchlog
+
+            researchlog.record(cx, "ai-access", f"New documents of this project: {researchlog.access_words(v, True)} "
+                                                f"(before: {researchlog.access_words(before, True)}).",
+                               data={"default": v})
     return v
 
 
@@ -383,6 +390,23 @@ def set_documents(ws: Workspace, doc_ids: list[str], setting: Any = _KEEP, note:
         unknown = [d for d in doc_ids if d not in found]
         if unknown:
             raise KeyError(unknown[0])
+        if setting is not _KEEP:  # 0.16: a decision about privacy goes into the research log
+            was = {r[0]: r[1] for r in cx.execute(f"SELECT doc_id, ai_access FROM documents WHERE doc_id IN "
+                                                  f"({','.join('?' * len(doc_ids))})", list(doc_ids))}
+            moved = [d for d in doc_ids if was.get(d) != lv]
+            if moved:
+                from . import researchlog
+
+                titles = {r[0]: r[1] for r in cx.execute(f"SELECT doc_id, title FROM documents WHERE doc_id IN "
+                                                         f"({','.join('?' * len(moved))})", moved)}
+                one = len(moved) == 1
+                what = researchlog.access_words(lv, not one) if lv else "the project's setting for new documents"
+                researchlog.record(cx, "ai-access", (f"Who may read {researchlog.quoted(titles.get(moved[0]), 80)} "
+                                                     if one else f"Who may read {len(moved)} documents ")
+                                   + f"with AI: {what}.",
+                                   "document" if one else "documents", moved[0] if one else None,
+                                   titles.get(moved[0]) if one else None,
+                                   data={"documents": moved, "setting": lv})
         for d in doc_ids:
             if setting is not _KEEP:
                 cx.execute("UPDATE documents SET ai_access=? WHERE doc_id=?", (lv, d))

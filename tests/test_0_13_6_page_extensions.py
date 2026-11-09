@@ -60,10 +60,12 @@ out.batch = [reg.originLink({ batch_id: "b1" }), reg.originLink({ origin: "batch
              reg.originLink({}), reg.originLink({ origin: "unknown", origin_id: "x" })];
 """, tmp_path)
     assert out["local"] == {"sections": [], "features": [], "routes": 0, "jobKinds": [], "welcome": 0, "origins": []}
-    # the Overview as 0.13.5 drew it: explore (four cards and "Read one document"), then check (compact)
+    # the Overview as 0.13.5 drew it: explore (four cards and "Read one document"), then check (compact); 0.16 adds
+    # "Your own codebook" after Profile and a compact section of your notes and the research log
     assert [(s["key"], s["features"], s["compact"]) for s in out["sections"]] == [
-        ("explore", ["search", "profile", "concepts", "themes", "sources"], False),
-        ("check", ["check", "batch", "history"], True)]
+        ("explore", ["search", "profile", "codebooks", "concepts", "themes", "sources"], False),
+        ("check", ["check", "batch", "history"], True),
+        ("record", ["annotations", "researchlog"], True)]
     assert out["sections"][0]["sub"] == "Start here: no hypothesis needed."
     check, second, ingest, prepare, unknown, reread = out["rows"]
     assert check == {"href": "#/check?job=j1", "icon": "flask", "text": "Water use rises", "tooltip": "Water use rises"}
@@ -101,7 +103,7 @@ out.scoped = reg.jobRow({ id: "j8", kind: "per-note", scope: "n2" });
     assert out["check"] == "Check a hypothesis"  # ENLENS's own entry is never replaced
     # the Overview gains the add-on's section, after ENLENS's, with its card and its own state line
     assert out["sections"][-1] == ["notes", ["notes"], "Your notes", "What you wrote down in the field."]
-    assert [s[0] for s in out["sections"]] == ["explore", "check", "notes"]
+    assert [s[0] for s in out["sections"]] == ["explore", "check", "record", "notes"]  # 0.16: ENLENS's "record"
     assert out["notes"]["state"] == [True, "4 notes"] and out["notes"]["nav"] is True and out["notes"]["ai"] == "optional"
     assert out["route"][0][1:] == ["notes", True]
     assert out["job"] == {"href": "#/fake/notes?job=j9", "icon": "tag", "text": "Stand-in labels", "tooltip": "Stand-in labels"}

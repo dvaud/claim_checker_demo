@@ -37,7 +37,7 @@ for when you mean to combine two projects.
 
 | What | What happens |
 | --- | --- |
-| **Something new** | Comes in: documents with their original files, results, sets of themes, codebooks (also those kept for all your projects), the AI's labels and reference chains, links between terms, and the bibliography (when you have none, or it comes from the same Zotero collection or file). |
+| **Something new** | Comes in: documents with their original files, results, sets of themes, codebooks (also those kept for all your projects), the AI's labels and reference chains, links between terms, the research log entries and notes of your colleague, and the bibliography (when you have none, or it comes from the same Zotero collection or file). |
 | **A newer version** | Replaces the older one. A result your colleague changed (a note, excerpts read again, more excerpts) and you did not is brought up to date, and the other way round. Colleagues on different ENLENS versions work together as well. |
 | **Both of you changed it** | A **sync clash**: both are kept ([below](#a-sync-clash)). |
 | **The same file, read into other text** | When you both added the same file but the two computers read it differently (another ENLENS version, or text recognition on one computer only), your colleague's reading comes in as a document of its own, marked *sync clash · Anna's reading* on the *Documents* page, and their results point at it. |
@@ -45,6 +45,8 @@ for when you mean to combine two projects.
 | **Reviews** of labels, links between terms and themes | Yours count over a colleague's on the same thing. *Clear* and *Undo* take back only your own. |
 | **AI work you both did** on the same document (labels of a codebook, reference chains) | Not doubled: yours is kept. |
 | **Who may read a document with AI** | The stricter setting wins: *No AI* over *Only a local AI* over *Claude may read it*, and the report says so. New documents get your copy's setting for new documents when it is stricter than theirs. |
+| **Notes and log entries** | Each person's own: your colleague's come in under their name and you cannot change them, yours stay as you wrote them, and one removed by its author does not come back. The log also records that their work was brought in ([Notes, the research log and earlier versions](notes-and-log.md)). |
+| **Earlier versions** (*History*) | Stay with the copy that made them: bringing in a colleague's work neither takes over theirs nor gives them yours. |
 | **Something you removed** | Stays removed: a document, result or set of themes, or a colleague's reading of a file you removed. When your colleague removed something you still have, the report names it and leaves it in your copy. |
 | **Not brought in yet** | A check still running in your colleague's copy (bring in a later file when it is done), and the vectors of search by meaning (your computer makes them for the new documents). |
 

@@ -4,8 +4,9 @@
 // A theme that is not relevant can be removed (its passages are left out until it is brought back), and a new theme
 // found in its place, on this computer without AI (POST …/new, job "theme-new").
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, confirmDialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks } from "../lib.js";
 import { simpleProgress, MiniJob, jobError } from "./progress.js";
+import { historyButton, askWhy } from "./versions.js";
 
 const PASSAGES = 30;   // passages per page on a theme's page
 const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}&mode=phrase`;
@@ -22,12 +23,16 @@ function starter(t) {
 }
 
 // "Remove this theme?": "remove" (just remove it), "replace" (remove it and find a new theme in its place) or null.
-function askRemove(t) {
+// 0.16: with the reason, for the research log. Returns null, or { how: "remove" | "replace", why }.
+async function askRemove(t) {
+  const why = h("textarea", { class: "input", rows: 2, maxlength: 2000, placeholder: "For example: boilerplate, off-topic, too broad" });
   const body = h("div", {},
     h("p", { style: { marginTop: 0 } }, `Its ${plural(t.size, "passage")} are left out of the themes, the grids and the Excel file. It waits under “Removed themes”, where you can bring it back.`),
-    h("p", {}, h("strong", {}, "Remove and find a new theme"), " also looks for a new theme in its place, on this computer and without AI: the passages that fit their own theme least well, grouped by what they share. It never takes passages that are closer to a theme you removed, so this one does not come back under another name."));
-  return dialog({ title: `Remove “${shortTitle(t.name, 60)}”?`, body,
+    h("p", {}, h("strong", {}, "Remove and find a new theme"), " also looks for a new theme in its place, on this computer and without AI: the passages that fit their own theme least well, grouped by what they share. It never takes passages that are closer to a theme you removed, so this one does not come back under another name."),
+    h("label", { class: "field" }, h("span", { class: "field-label" }, "Why? (optional, kept in the research log)"), why));
+  const how = await dialog({ title: `Remove “${shortTitle(t.name, 60)}”?`, body,
     actions: [{ text: "Cancel", value: null }, { text: "Just remove it", value: "remove" }, { text: "Remove and find a new theme", value: "replace", primary: true }] });
+  return how ? { how, why: why.value.trim() } : null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -168,7 +173,7 @@ async function renderRun(view, runId, info, query) {
     replace(head, pageHead("Themes", {
       eyebrow: latest ? featureEyebrow("themes") : h("span", {}, icon("history", { size: 12 }), ` An earlier set of themes, found ${fmt.date(r.created_at)} · `, h("a", { href: "#/themes" }, "Show the newest")),
       sub: `${plural(v.themes.length, "theme")}${(v.removed || []).length ? ` (${(v.removed || []).length} removed)` : ""} in ${plural(r.passages, "passage")} of ${plural(nDocs, "document")}, found ${modeWords(r.mode)} on ${fmt.date(r.created_at)}. Open a theme to read its passages.`,
-      actions: [nameBtn, xlsx],
+      actions: [nameBtn, historyButton("themes", runId, { onRestored: () => reload() }), xlsx],   // 0.16 (F5)
     }));
     clear(notes);
     if (r.stale) notes.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "12px" } }, icon("alert-triangle"),
@@ -343,10 +348,10 @@ async function renderRun(view, runId, info, query) {
   }
 
   async function deleteRun(r) {
-    const ok = await confirmDialog({ title: "Delete this set of themes?", message: `The ${r.themes_now ?? r.k} themes found ${fmt.date(r.created_at)} are deleted, with the names the AI gave them. Your renames, merges and moves are kept for a new set with the same number of themes.`, confirmText: "Delete" });
+    const ok = await askWhy({ title: "Delete this set of themes?", message: `The ${r.themes_now ?? r.k} themes found ${fmt.date(r.created_at)} are deleted, with the names the AI gave them. Your renames, merges and moves are kept for a new set with the same number of themes.`, confirmText: "Delete" });
     if (!ok) return;
     try {
-      await api("DELETE", `/api/projects/${P(project)}/themes/${P(r.run_id)}`);
+      await api("DELETE", `/api/projects/${P(project)}/themes/${P(r.run_id)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`);
       toast("Set of themes deleted.", "ok", { small: true });
       if (r.run_id === runId) navigate("#/themes");
       else { const i = runs.indexOf(r); if (i >= 0) runs.splice(i, 1); drawRuns(); }
@@ -386,8 +391,8 @@ async function renderRun(view, runId, info, query) {
     const r = await askRemove(t);
     if (!r) return;
     openRemoved = true;
-    if (!(await edit({ what: "remove", theme_id: t.theme_id, value: true }, `“${shortTitle(t.name, 60)}” removed.`))) return;
-    if (r === "replace") startNew(t);
+    if (!(await edit({ what: "remove", theme_id: t.theme_id, value: true, why: r.why || undefined }, `“${shortTitle(t.name, 60)}” removed.`))) return;
+    if (r.how === "replace") startNew(t);
   }
   async function bringBack(t) {
     await edit({ what: "remove", theme_id: t.theme_id, value: false }, `“${shortTitle(t.name, 60)}” is one of the themes again.`);
@@ -535,8 +540,8 @@ export async function renderTheme(view, [runId, themeId], query) {
     // remove it (the list follows a new theme being found), or bring it back
     const removeBtn = t.removed ? null : h("button", { class: "btn btn-sm btn-ghost", type: "button", disabled: !d.others.length, onClick: async () => {
       const r = await askRemove(t);
-      if (!r || !(await edit({ what: "remove", theme_id: t.theme_id, value: true }, `“${shortTitle(t.name, 60)}” removed.`))) return;
-      if (r === "replace") { try { await api("POST", `${base}/new`, { replaces: t.theme_id }); } catch (e) { showError(e); } }
+      if (!r || !(await edit({ what: "remove", theme_id: t.theme_id, value: true, why: r.why || undefined }, `“${shortTitle(t.name, 60)}” removed.`))) return;
+      if (r.how === "replace") { try { await api("POST", `${base}/new`, { replaces: t.theme_id }); } catch (e) { showError(e); } }
       navigate(runHref(runId));
     } }, icon("circle-minus", { size: 13 }), "Remove…");
     replace(head, h("header", { class: "page-head" },

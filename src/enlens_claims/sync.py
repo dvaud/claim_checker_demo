@@ -49,12 +49,14 @@ UNFINISHED = ("pending", "retry")
 _TEXT_COLS = {"text"}  # never rewritten (documents', passages' and hypotheses' own words)
 # the tables of a copy that are never merged: derived again from the documents, or about this copy only
 LOCAL_ONLY = {"meta", "embeddings", "code_vectors", "terms", "term_mentions", "concepts", "concept_terms", "task_claims",
-              "sync_log", "sqlite_sequence"}
+              "sync_log", "sqlite_sequence",
+              "versions"}  # 0.16: earlier versions of themes and checks are this copy's history (history.py)
 # merged by their own rules below; every other table (the SDG pack's, an add-on's) is merged row by row, keeping yours
 OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "blocks", "doc_tables", "labels", "mentions", "tasks", "results",
              "ai_sent", "hypotheses", "user_claims", "second_opinions", "judgements", "people", "theme_runs", "themes",
              "theme_members", "reviews", "concept_links", "bib_items", "bib_links", "sync_seen", "sync_copies",
-             "sync_removed", "verifications"}
+             "sync_removed", "verifications",
+             "research_log", "notes"}  # 0.16: merged entry by entry and note by note (researchlog.merge, notes.merge)
 # the columns that hold ids of documents, passages, tasks, checks, runs (rewritten when an id changes in a merge)
 ID_COLS = {"doc_id", "passage_id", "task_id", "claim_id", "subject_id", "ver_id", "hyp_id", "run_id", "item_id",
            "label_id", "window", "payload_json", "options_json", "parts_json", "key", "of_key", "origin_id"}
@@ -431,6 +433,11 @@ def bring_in(ws: Workspace, zip_path: str | Path, anyway: bool = False) -> dict:
             ws.set_meta("project_uids_known", sorted(known | {theirs}), cx)
         cx.execute("INSERT INTO sync_log(at, person_id, report_json) VALUES (?,?,?)",
                    (report["at"], report["from"]["id"], json.dumps(report, ensure_ascii=False)))
+        from . import researchlog  # 0.16: the research log says when whose work came in, and what it brought
+
+        who = report["from"]["name"] or "a colleague"
+        researchlog.record(cx, "sync", f"Brought in {who}'s work. " + " ".join(report.get("lines") or []),
+                           data={"from": report["from"], "version": report.get("version")})
     return report
 
 
@@ -468,6 +475,8 @@ class _Merge:
         self.history: set[tuple[str, str]] = set()  # units whose states in the colleague's copy become this copy's
         self.files: list[tuple[Path, Path]] = []    # files to copy once the database is merged (source, destination)
         self.codebook_marks: list[tuple[str, str]] = []  # sync-clash copies of codebooks made here (name, of)
+        self.new_labels: dict[str, set[str]] = {}  # 0.16: the labels that came in, per codebook here (their ids here)
+        self.hyps_before: set[str] = set()          # 0.16: the checks this copy had before the merge
         self.r = {"from": self.sender, "project": info.get("name"), "version": info.get("version"), "at": self.at,
                   "documents": {"new": [], "clash": [], "removed_here": [], "removed_there": []},
                   "checks": {"new": 0, "updated": 0, "same": 0, "yours_newer": 0, "clash": [], "running": [],
@@ -475,6 +484,7 @@ class _Merge:
                   "themes": {"new": 0, "updated": 0, "clash": [], "removed_here": 0, "running_here": []},
                   "codebooks": {"new": [], "updated": [], "clash": []},
                   "judgements": 0, "reviews": 0, "labels": 0, "labels_kept_yours": 0, "links": 0, "other_rows": 0,
+                  "log": 0, "notes": 0,
                   "bibliography": None, "ai_access": []}
 
     # ---- ids --------------------------------------------------------------------------------
@@ -547,6 +557,7 @@ class _Merge:
             text_fps(icx, again=True)             # worked out here: what the file says about itself is not trusted
         with self.ws.connect() as cx:
             people.adopt(cx, self.me)            # and what you decided before 0.14 is yours
+            self.hyps_before = {r[0] for r in cx.execute("SELECT hyp_id FROM hypotheses")}
             self._codebooks(cx)
             self._documents(cx)
             self._document_files(cx)
@@ -557,6 +568,8 @@ class _Merge:
             self._reviews(cx)
             links = self._links(cx)
             self._bibliography(cx)
+            self._log_and_notes(cx)
+            self._follow_codebooks(cx)
             self._other_tables(cx)
             self._removed(cx)
             self._people(cx)
@@ -792,15 +805,22 @@ class _Merge:
                 continue
             rows.append(r)
 
+        had = {r[0] for r in cx.execute("SELECT label_id FROM labels")}
+        came: list[tuple[str, str]] = []
+
         def fix(t: dict) -> dict:
             # a label's id is made of its passage and codebook: worked out again where their names here differ
             new = label_id(t["framework"], t["passage_id"], t["code"], t["source"])
             if new != t["label_id"]:
                 self.ids[t["label_id"]] = new
                 t["label_id"] = new
+            if t["label_id"] not in had:
+                came.append((t["framework"], t["label_id"]))
             return t
 
         self.r["labels"] = self._insert(cx, "labels", rows, fix=fix)
+        for fw_here, lid in came:  # 0.16: they follow the codebook's changes their copy had not followed
+            self.new_labels.setdefault(fw_here, set()).add(lid)
         self.r["labels_kept_yours"] = len(kept)
         mentions = [r for r in _rows(self.icx, "SELECT * FROM mentions")
                     if self._doc_ok(r) and r["doc_id"] in self.docs and self.docs[r["doc_id"]] not in have_mentions]
@@ -1099,6 +1119,65 @@ class _Merge:
             self.ws.set_meta("bibliography", theirs, cx)
         self.r["bibliography"] = "merged" if mine else "new"
 
+    def _follow_codebooks(self, cx: sqlite3.Connection) -> None:
+        """0.16 (codebooks.py): labels follow a codebook's renames and merges. Yours follow the changes your copy had not
+        followed yet; those that came in follow the changes the colleague's copy had not (its own record of them)."""
+        from . import codebooks
+        from .frameworks import available
+
+        here = Path(self.ws.root) / "frameworks"
+        taken = {Path(d).stem: Path(src) for src, d in self.files
+                 if Path(d).suffix == ".json" and Path(d).parent == here}
+        theirs_of = {v: k for k, v in self.fw.items()}
+        now_here = available(self.ws)
+        for name in sorted(set(self.new_labels) | set(taken)):
+            if name in taken:
+                try:
+                    meta = json.loads(taken[name].read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    meta = {}
+            else:
+                meta = (now_here[name].meta if name in now_here else {}) or {}
+            if not isinstance(meta, dict):
+                continue
+            row = self.icx.execute("SELECT value FROM meta WHERE key=?",
+                                   (f"codebook_followed:{theirs_of.get(name, name)}",)).fetchone()
+            try:
+                theirs_done = set(json.loads(row[0])) if row else set()
+            except ValueError:
+                theirs_done = set()
+            codebooks.follow_merged(cx, self.ws, name, meta, theirs_done, self.new_labels.get(name, set()),
+                                    self.hyps_before)
+
+    def _log_and_notes(self, cx: sqlite3.Connection) -> None:
+        """0.16: the colleague's research log entries and notes: theirs come in (or are brought up to date), yours stay as
+        they are, and what you removed stays removed."""
+        from . import notes, researchlog
+
+        def fix(r: dict) -> dict | None:
+            if not self._doc_ok(r):
+                return None
+            cols = list(r)
+            return dict(zip(cols, self._row(r, cols)))
+
+        here = {r[0] for r in cx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        there = {r[0] for r in self.icx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "research_log" in there and "research_log" in here:
+            self.r["log"] = researchlog.merge(cx, _rows(self.icx, "SELECT * FROM research_log ORDER BY at"), fix)
+        if "notes" in there and "notes" in here:
+            self.r["notes"] = notes.merge(cx, _rows(self.icx, "SELECT * FROM notes"), fix)
+        # a note or an entry its own author removed in their copy goes here too (and stays gone)
+        for r in _rows(self.icx, "SELECT * FROM sync_removed WHERE kind IN ('note', 'log')"):
+            table, col = ("notes", "note_id") if r["kind"] == "note" else ("research_log", "entry_id")
+            if table not in here:
+                continue
+            row = cx.execute(f"SELECT person_id FROM {table} WHERE {col}=?", (r["key"],)).fetchone()
+            if row is not None and row[0] != self.me and row[0] == r["person_id"]:
+                cx.execute(f"DELETE FROM {table} WHERE {col}=?", (r["key"],))
+            if row is None or row[0] == r["person_id"]:
+                cx.execute("INSERT OR IGNORE INTO sync_removed(kind, key, title, at, person_id) VALUES (?,?,?,?,?)",
+                           (r["kind"], r["key"], r["title"], r["at"], r["person_id"]))
+
     def _other_tables(self, cx: sqlite3.Connection) -> None:
         """The SDG pack's tables, an add-on's, the record of model runs: rows not here yet come in (yours are kept)."""
         here = {r[0] for r in cx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -1167,6 +1246,10 @@ def summary(r: dict) -> list[str]:
     if r["judgements"]:
         out.append(f"{_n(r['judgements'], 'judgement')} of excerpts came in, each under the name of who made it. "
                    "Yours still count where you judged an excerpt yourself.")
+    extra = [x for x in (_n(r.get("log") or 0, "research log entry", "research log entries") if r.get("log") else "",
+                         _n(r.get("notes") or 0, "note") if r.get("notes") else "") if x]
+    if extra:  # 0.16
+        out.append(f"{' and '.join(extra)} of {who}'s came in or were brought up to date, under their name.")
     both = [x for x in (_n(len(c["clash"]), "result") if c["clash"] else "",
                         _n(len(t["clash"]), "set of themes", "sets of themes") if t["clash"] else "",
                         _n(len(cb["clash"]), "codebook") if cb["clash"] else "") if x]

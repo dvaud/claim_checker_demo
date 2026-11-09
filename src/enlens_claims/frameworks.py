@@ -34,6 +34,12 @@ class Code:
     description: str
     group: str = ""
     group_name: str = ""
+    # 0.16 (K1, codebooks.py): when to use the code and when not, the words it is matched by besides its description,
+    # and example quotes from the documents (optional columns of the CSV)
+    include: str = ""
+    exclude: str = ""
+    keywords: tuple[str, ...] = ()
+    examples: tuple[str, ...] = ()
 
 
 @dataclass
@@ -46,10 +52,14 @@ class Framework:
     lexicon: list[tuple[str, str]] = field(default_factory=list)
     directional: bool = False        # its codes are aims a text can help or hinder (the SDG targets): labels say which
     match_text: dict[str, str] = field(default_factory=dict)  # the text a code is matched by, when not its description
+    ordered: bool = False            # 0.16: its codes keep the file's order (a codebook made in the editor)
+    meta: dict = field(default_factory=dict)  # 0.16: the codebook's side file as read (codebooks.py)
     _index: tuple | None = None
     _lex: tuple | None = None
 
     def sorted_codes(self) -> list[Code]:
+        if self.ordered:
+            return list(self.codes.values())
         if self.name == "sdg":
             from .taxonomy import target_sort_key
 
@@ -75,7 +85,10 @@ class Framework:
     def code_text(self, code: str) -> str:
         """The words a code is matched by: its description and group name (or its own matching text)."""
         c = self.codes[code]
-        return self.match_text.get(code) or f"{c.description} {c.group_name}"
+        if code in self.match_text:
+            return self.match_text[code]
+        # 0.16: a code's own words to match it by come after its description (none: the text of before)
+        return f"{c.description} {c.group_name}" + (" " + " ".join(c.keywords) if c.keywords else "")
 
     def _bm(self) -> tuple:
         if self._index is None:
@@ -121,7 +134,11 @@ class Framework:
         out = {"name": self.name, "title": self.title, "label": self.label, "source": self.source, "codes": len(self.codes),
                "directional": self.directional, "groups": len({c.group for c in self.codes.values() if c.group})}
         if with_codes:
-            out["items"] = [{"code": c.code, "description": c.description, "group": c.group, "group_name": c.group_name}
+            out["items"] = [{"code": c.code, "description": c.description, "group": c.group, "group_name": c.group_name,
+                             **({"include": c.include} if c.include else {}),
+                             **({"exclude": c.exclude} if c.exclude else {}),
+                             **({"keywords": list(c.keywords)} if c.keywords else {}),
+                             **({"examples": list(c.examples)} if c.examples else {})}
                             for c in self.sorted_codes()]
         return out
 
@@ -225,11 +242,31 @@ def _delimiter(text: str) -> str:
     return best if head.count(best) else ","
 
 
-def parse_csv(text: str) -> dict[str, Code]:
-    """Codes from CSV text (commas or semicolons). Raises ValueError naming the problem."""
-    text = text.lstrip("﻿")
-    rows = list(csv.DictReader(io.StringIO(text), delimiter=_delimiter(text)))
+# 0.16: the optional columns of a codebook made in the editor (the CSV still opens in a spreadsheet)
+EXTRA_COLUMNS = ("when_to_use", "when_not_to_use", "keywords", "examples")
+
+
+def _split_list(value: str | None, sep: str) -> tuple[str, ...]:
+    out = []
+    for x in (value or "").split(sep):
+        x = " ".join(x.split())
+        if x and x not in out:
+            out.append(x)
+    return tuple(out)
+
+
+def parse_csv(text: str, allow_empty: bool = False, extra: bool = False) -> dict[str, Code]:
+    """Codes from CSV text (commas or semicolons). Raises ValueError naming the problem. `allow_empty`: a codebook with
+    no codes yet (one just started in the editor) is not a problem. `extra`: read the editor's columns too
+    (`EXTRA_COLUMNS`); a codebook not made in the editor keeps them out, so a CSV that happened to have a column of
+    that name is read as before 0.16."""
+    text = text.lstrip("\ufeff")
+    reader = csv.DictReader(io.StringIO(text), delimiter=_delimiter(text))
+    rows = list(reader)
     if not rows:
+        heads = {(c or "").strip().lower() for c in (reader.fieldnames or [])}
+        if allow_empty and {"code", "description"} <= heads:
+            return {}
         raise ValueError("The file has no rows. Columns: code, description (and optionally group, group_name).")
     cols = {c.strip().lower(): c for c in rows[0].keys() if c}
     if "code" not in cols or "description" not in cols:
@@ -246,8 +283,14 @@ def parse_csv(text: str) -> dict[str, Code]:
             raise ValueError(f"Row {i}: the code {code[:40]!r}… is longer than 40 characters.")
         if code in out:
             raise ValueError(f"Row {i}: the code {code!r} appears twice.")
-        out[code] = Code(code, desc, (r.get(cols.get("group", ""), "") or "").strip(),
-                         (r.get(cols.get("group_name", ""), "") or "").strip())
+        def col(name: str) -> str:
+            if name in EXTRA_COLUMNS and not extra:
+                return ""
+            return (r.get(cols[name]) or "") if name in cols else ""
+
+        out[code] = Code(code, desc, col("group").strip(), col("group_name").strip(),
+                         " ".join(col("when_to_use").split()), " ".join(col("when_not_to_use").split()),
+                         _split_list(col("keywords"), ";"), _split_list(col("examples"), "\n"))
     if len(out) > 5000:
         raise ValueError("A framework can hold at most 5,000 codes.")
     return out
@@ -259,23 +302,28 @@ def _load_file(path: Path, source: str) -> Framework | None:
         key = (str(path), st.st_mtime_ns, st.st_size)
     except OSError:
         return None
-    with _LOCK:
-        if key in _CACHE:
-            return _CACHE[key]
-    try:
-        codes = parse_csv(decode(path.read_bytes()))
-    except (ValueError, OSError):
-        return None
     meta = {}
     side = path.with_suffix(".json")
     if side.exists():
         try:
             meta = json.loads(side.read_text(encoding="utf-8"))
+            st2 = side.stat()
+            key = (*key, st2.st_mtime_ns, st2.st_size)  # 0.16: a change of the side file alone is seen too
         except (json.JSONDecodeError, OSError):
             meta = {}
+    if not isinstance(meta, dict):
+        meta = {}
+    with _LOCK:
+        if key in _CACHE:
+            return _CACHE[key]
+    try:
+        codes = parse_csv(decode(path.read_bytes()), allow_empty=bool(meta.get("editor")), extra=bool(meta.get("editor")))
+    except (ValueError, OSError):
+        return None
     name = path.stem.lower()
     fw = Framework(name, str(meta.get("title") or name.replace("_", " ").replace("-", " ").capitalize()),
-                   str(meta.get("label") or "code"), codes, source, directional=bool(meta.get("directional")))
+                   str(meta.get("label") or "code"), codes, source, directional=bool(meta.get("directional")),
+                   ordered=bool(meta.get("ordered")), meta=meta)
     with _LOCK:
         _CACHE[key] = fw
     return fw
@@ -313,10 +361,17 @@ def problems(ws=None) -> list[dict]:
             try:
                 if not NAME_RE.match(p.stem.lower()):
                     raise ValueError("The file name must be a short name of letters, digits, - or _ (up to 40).")
-                parse_csv(decode(p.read_bytes()))
+                parse_csv(decode(p.read_bytes()), allow_empty=_editor_made(p))
             except (ValueError, OSError) as e:
                 out.append({"file": p.name, "source": source, "error": str(e)})
     return out
+
+
+def _editor_made(path: Path) -> bool:
+    try:
+        return bool(json.loads(path.with_suffix(".json").read_text(encoding="utf-8")).get("editor"))
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def get(name: str | None, ws=None) -> Framework | None:

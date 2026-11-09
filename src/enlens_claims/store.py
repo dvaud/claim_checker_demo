@@ -163,6 +163,25 @@ CREATE TABLE IF NOT EXISTS doc_tables(doc_id TEXT, n INT, block INT, page INT, s
   rows_json TEXT, PRIMARY KEY(doc_id, n));
 CREATE TABLE IF NOT EXISTS block_choices(doc_id TEXT, fp TEXT, included INT, kind TEXT, person_id TEXT, at TEXT,
   PRIMARY KEY(doc_id, fp));
+
+-- 0.16 (roadmap F4, researchlog.py): the research log, a dated record of what was decided: written by the app as it
+-- happens (kind: what happened, subject: what about, title: its name then) and a person's own entries (kind 'entry');
+-- `why` is a person's reason, `version_id` the state before the change (history.py)
+CREATE TABLE IF NOT EXISTS research_log(entry_id TEXT PRIMARY KEY, at TEXT, person_id TEXT, kind TEXT,
+  subject_kind TEXT, subject_id TEXT, title TEXT, text TEXT, why TEXT, version_id TEXT, data_json TEXT,
+  edited_at TEXT, app_version TEXT);
+CREATE INDEX IF NOT EXISTS ix_research_log_at ON research_log(at);
+CREATE INDEX IF NOT EXISTS ix_research_log_subject ON research_log(subject_kind, subject_id);
+-- 0.16 (F2, notes.py): a person's notes and highlights on exact words of a document (document offsets, the words as
+-- `quote`, the note as `text`: empty for a highlight)
+CREATE TABLE IF NOT EXISTS notes(note_id TEXT PRIMARY KEY, doc_id TEXT, start INT, end INT, quote TEXT, page INT,
+  text TEXT, colour TEXT, person_id TEXT, created_at TEXT, edited_at TEXT);
+CREATE INDEX IF NOT EXISTS ix_notes_doc ON notes(doc_id, start);
+-- 0.16 (F5, history.py): the state of a set of themes or of a check before a person changed it, to compare and
+-- restore (codebooks keep theirs beside their file)
+CREATE TABLE IF NOT EXISTS versions(version_id TEXT PRIMARY KEY, kind TEXT, key TEXT, at TEXT, person_id TEXT,
+  label TEXT, data_json TEXT);
+CREATE INDEX IF NOT EXISTS ix_versions_key ON versions(kind, key, at);
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
@@ -289,7 +308,10 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               # be known as the same document later; and the share of it Claude had read in passages that have no
               # place in the new reading (0 to 1): their ledger rows name no passage now, and it still counts toward
               # what Claude has read of it (access.shares)
-              ("documents", "old_fps", "TEXT"), ("documents", "sent_share", "REAL")]
+              ("documents", "old_fps", "TEXT"), ("documents", "sent_share", "REAL"),
+              # 0.16 (K1, codebooks.py): the code a label had before its code was merged into another, so restoring
+              # the codebook from before the merge gives it back (NULL: never merged)
+              ("labels", "merged_from", "TEXT")]
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:
@@ -549,11 +571,12 @@ class Workspace:
             self.bump_corpus(cx)
         return out
 
-    def remove_document(self, doc_id: str) -> dict[str, int]:
+    def remove_document(self, doc_id: str, why: str | None = None) -> dict[str, int]:
         """Remove one document and what the pipeline derived from it.
 
         Hypothesis checks keep their grades: they are a record of what was read (each check stores the passage
-        text and title it showed), so a past verdict does not change when a source is removed later.
+        text and title it showed), so a past verdict does not change when a source is removed later. 0.16: the
+        research log says so (`why`: the person's reason), and a person's notes on it stay (notes.py lists them).
         """
         out: dict[str, int] = {}
         with self.connect() as cx:
@@ -561,6 +584,10 @@ class Workspace:
             if not row:
                 raise KeyError(doc_id)
             self.removed(cx, "document", doc_id, row[0])
+            from . import researchlog
+
+            researchlog.record(cx, "document-removed", f"Removed the document {researchlog.quoted(row[0])}.",
+                               "document", doc_id, row[0], why=why)
             cx.execute("DELETE FROM sync_copies WHERE kind='document' AND key=?", (doc_id,))
             pids = [r[0] for r in cx.execute("SELECT passage_id FROM passages WHERE doc_id=?", (doc_id,))]
             claim_ids = [r[0] for r in cx.execute("SELECT claim_id FROM claims WHERE doc_id=?", (doc_id,))]

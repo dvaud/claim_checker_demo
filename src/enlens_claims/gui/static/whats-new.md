@@ -1,6 +1,7 @@
-# 0.16.0rc2: Leave out without the flash
-*A release candidate: the reading view changes where you click.*
-- Leave out greys the paragraph and folds it away, with no flash
-- The line “Left out of the text” lights up where it went
-- Restore, All like this and Text starts or ends here work in place too
-- No result changes
+# 0.16.0: Notes, a research log and your own codebook
+*Keep a record of the work, and code with your own categories.*
+- Highlight or annotate words in a document; use a note as evidence
+- The research log writes down what was decided, with your reasons
+- History: compare and restore themes, your judgements and codebooks
+- Codebooks: make your own, fresh or from the themes; try it without AI
+- Large projects are quicker

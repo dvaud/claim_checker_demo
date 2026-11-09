@@ -56,28 +56,24 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **[The SDG and value chain pack](docs/manual/sdg-pack.md)**:
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
-## New in 0.15: text you can check, and results you can trace
+## New in 0.16: notes, a research log and your own codebook
 
-- **A new reader.** Two columns are read in order; running heads, page numbers, author details, acknowledgements,
-  footnotes and the reference list are set aside; tables stay tables; words broken over lines are joined. 0.15.1 does
-  the same for text copied out of a PDF and for books (contents, notes, index). **Can change results** for documents
-  you add from now on; those already in a project keep their reading.
-- **See how each document was read**: its text as the reader found it, what was left out, the PDF page beside it,
-  and a warning when a document read badly, which you can mark as checked. *Restore* or *Leave out* any part, every
-  running head at once with *All like this*, or mark where the text starts and ends (**can change results**).
-- **Read with the new reader**: one document after a preview, or several at once from the Documents page. Each quote,
-  judgement and code moves to the same words in the new text. **Can change results** for the documents moved.
-- **Results say which version made them**, and the Overview says which came from an earlier one. *Try new versions
-  early* in Settings gets you release candidates. Neither can change results.
-- **Ollama with one button** (0.15.6): *Install Ollama* says the size of the download first, then installs and starts
-  Ollama, a free program for AI models on your own computer; no terminal. Cannot change results.
+- **Notes and highlights** on the exact words of a document: select words, then *Highlight* or *Note*. Search them
+  all on the *Notes* page, and use a note as evidence in a check. Cannot change results.
+- **A research log** that ENLENS keeps as you work (documents added, checks dropped and why, themes removed, codebook
+  changes), with your own entries and reasons, to download for an appendix or an audit. Cannot change results.
+- **Compare and restore** earlier versions of a set of themes, your judgements in a check, or a codebook. A restore
+  puts back what you had before, and can be undone the same way.
+- **Your own codebook**, made in the app fresh or from the themes found: definitions, when to use each code and when
+  not, the words it is matched by, checked examples, and *Try it* without AI. Labels follow renames and merges.
+  **Can change results** for codebooks you change: the AI reads when to use a code, and a removed code's labels stop
+  counting until it comes back.
+- **Quicker on large projects**: several documents read at once, a glossary and search that keep what they read.
+  Cannot change results.
 
-**Coming in 0.16**, first as the release candidate 0.16.0rc1 for *Try new versions early*: large projects are
-quicker. Several documents are read at once when you add them, the glossary and search no longer start from every
-passage, and the Profile page and long lists open at once. Cannot change results.
-
-How it works: [how documents are read](docs/manual/reading.md) in the manual. Every release, with
-what was not tested: [CHANGELOG.md](CHANGELOG.md).
+How it works: [notes, the research log and earlier versions](docs/manual/notes-and-log.md) and
+[your own codebook](docs/manual/codebooks.md) in the manual. Every release, with what was not tested:
+[CHANGELOG.md](CHANGELOG.md).
 
 ## How to cite ENLENS
 

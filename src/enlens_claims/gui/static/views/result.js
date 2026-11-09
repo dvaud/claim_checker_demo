@@ -5,6 +5,8 @@
 import { App, api, h, icon, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark } from "../lib.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
 import { originLink } from "../registry.js";
+import { addNoteToPart } from "./notes.js";
+import { historyButton, askWhy } from "./versions.js";
 
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
 const about = (p) => p.verdict !== null && p.verdict !== undefined;   // the judgement that counts says it is about the hypothesis
@@ -326,7 +328,10 @@ export async function renderResult(view, [hypId], query) {
       box.appendChild(modelsCard(r, allPassages));
       box.appendChild(noteCard(r));
       box.appendChild(downloadsCard(r, parts));
-      box.appendChild(h("div", { class: "result-foot" }, techCard(r, parts), h("button", { class: "link-btn danger-link", type: "button", onClick: () => deleteHyp(r) }, icon("trash", { size: 13 }), "Delete this result")));
+      box.appendChild(h("div", { class: "result-foot" }, techCard(r, parts),
+        // 0.16 (F5): your judgements as they were before each change, to compare and restore
+        historyButton("check", hypId, { text: "History of your judgements", onRestored: async () => { current = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`); draw(current); } }),
+        h("button", { class: "link-btn danger-link", type: "button", onClick: () => deleteHyp(r) }, icon("trash", { size: 13 }), "Delete this result")));
     }
 
     // keep the person's place after a save or a re-read: the card they acted on stays where it was on the screen,
@@ -1232,7 +1237,7 @@ export async function renderResult(view, [hypId], query) {
       rereadBtn ? h("div", { class: "ev-more-actions" }, rereadBtn) : null,
       h("dl", { class: "ev-tech-list" },
         p.confidence !== null && p.confidence !== undefined ? h("div", {}, h("dt", {}, "AI certainty"), h("dd", {}, `${Math.round(p.confidence * 100)}%; your strictness counts from ${Math.round(threshold * 100)}%`)) : null,
-        h("div", {}, h("dt", {}, "Found"), h("dd", {}, { keywords: "same words", meaning: "search by meaning", both: "same words and search by meaning" }[p.found_by] || p.found_by || "")),
+        h("div", {}, h("dt", {}, "Found"), h("dd", {}, { keywords: "same words", meaning: "search by meaning", both: "same words and search by meaning", note: "your note" }[p.found_by] || p.found_by || "")),
         (p.matched || []).length ? h("div", {}, h("dt", {}, "Words that found it"), h("dd", {}, p.matched.join(", "))) : null,
         p.refers_to ? h("div", {}, h("dt", {}, "The quote refers to"), h("dd", {}, `${p.refers_to}${p.refers_location ? ` (${p.refers_location})` : ""}`)) : null,
         p.round ? h("div", {}, h("dt", {}, "Search round"), h("dd", {}, String(p.round))) : null,
@@ -1545,9 +1550,20 @@ export async function renderResult(view, [hypId], query) {
     // 0.12: the two buttons side by side, one line under them
     moreBtn.title = `The AI reads up to ${k} more excerpts that match the same words.`;   // 0.12: "Look for more evidence"
     termsBtn.title = "Type words your documents might use; the AI reads the excerpts that contain them.";
+    // 0.16 (F2): a note of yours, made on a document, as an excerpt you judged
+    const noteBtn = h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "One of your notes on a document's words becomes an excerpt you judged",
+      onClick: async () => {
+        const res = await addNoteToPart(part.claim_id, r.decomposed ? part.claim : null);
+        if (!res) return;
+        toast(res.new ? "Your note is an excerpt of the check now, with your judgement." : "The check had that passage already: your judgement of it is set.", "ok", { small: true });
+        const y = window.scrollY;
+        current = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`);
+        draw(current);
+        window.scrollTo(0, y);
+      } }, icon("highlighter", { size: 13 }), "Add one of your notes");
     row.append(...[
       none ? h("p", { class: "more-line more-first" }, totalEx && readN >= totalEx ? "Every excerpt in your documents has been read." : "Every matching excerpt has been read.") : null,
-      h("div", { class: "more-btns" }, none ? null : moreBtn, termsBtn),
+      h("div", { class: "more-btns" }, none ? null : moreBtn, termsBtn, noteBtn),
       termsBox, status].filter(Boolean));   // Element.append(null) would write "null"
     return row;
   }
@@ -1627,9 +1643,11 @@ export async function renderResult(view, [hypId], query) {
   }
 
   async function deleteHyp(r) {
-    const ok = await confirmDialog({ title: "Delete this result?", message: h("div", {}, h("p", {}, "The hypothesis, the judgements and your notes are removed from the results. The documents stay."), h("p", { class: "serif" }, r.text)), confirmText: "Delete" });
+    // 0.16 (F4): why the claim was dropped goes into the research log
+    const ok = await askWhy({ title: "Delete this result?", confirmText: "Delete", placeholder: "For example: the claim was reworded, outside the scope, a duplicate",
+      message: h("div", {}, h("p", {}, "The hypothesis, the judgements and your notes are removed from the results. The documents stay; the research log keeps a line about it."), h("p", { class: "serif" }, r.text)) });
     if (!ok) return;
-    try { await api("DELETE", `/api/projects/${P(project)}/hypotheses/${P(hypId)}`); toast("Result deleted.", "ok"); navigate("#/history"); }
+    try { await api("DELETE", `/api/projects/${P(project)}/hypotheses/${P(hypId)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast("Result deleted.", "ok"); navigate("#/history"); }
     catch (e) { showError(e); }
   }
 

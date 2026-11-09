@@ -39,6 +39,11 @@
   --warn: #9a5a00;    --warn-soft: #fff0d6;
   --mark: #fff0a6;
   --mark-line: #e8c33b;
+  /* 0.16: a person's highlights and notes (notes.js, the reading view) */
+  --hl-yellow: #fff1a8; --hl-yellow-line: #e2bf2f;
+  --hl-green: #d6f2d9;  --hl-green-line: #6dbb7b;
+  --hl-blue: #d9e9fb;   --hl-blue-line: #6f9fd6;
+  --hl-pink: #fbdbe6;   --hl-pink-line: #d67a9a;
   --focus: #0f6e6a;
   --shadow: 0 1px 2px rgba(30, 25, 10, .06), 0 6px 18px -8px rgba(30, 25, 10, .18);
   --shadow-lg: 0 20px 50px -20px rgba(30, 25, 10, .35);
@@ -76,6 +81,10 @@
     --warn: #f0b86a;    --warn-soft: #33260f;
     --mark: #4a3d0d;
     --mark-line: #c7a235;
+    --hl-yellow: #4a3f10; --hl-yellow-line: #c7a235;
+    --hl-green: #1d3a24;  --hl-green-line: #4f9a62;
+    --hl-blue: #1b2f47;   --hl-blue-line: #5a8cc4;
+    --hl-pink: #3f1f2b;   --hl-pink-line: #b8627f;
     --focus: #7fd6ce;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -10px rgba(0, 0, 0, .6);
     --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, .7);
@@ -108,6 +117,10 @@
   --warn: #f0b86a;    --warn-soft: #33260f;
   --mark: #4a3d0d;
   --mark-line: #c7a235;
+  --hl-yellow: #4a3f10; --hl-yellow-line: #c7a235;
+  --hl-green: #1d3a24;  --hl-green-line: #4f9a62;
+  --hl-blue: #1b2f47;   --hl-blue-line: #5a8cc4;
+  --hl-pink: #3f1f2b;   --hl-pink-line: #b8627f;
   --focus: #7fd6ce;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -10px rgba(0, 0, 0, .6);
   --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, .7);

@@ -7,6 +7,8 @@ import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
 import { aiLabelCard, startKeywordPass, keywordLabel, SOURCE_WORDS, RELEVANCE_WORDS, DIRECTION_WORDS } from "./profile.js";
+import { colourPicker, editNote, removeNote, useAsEvidence, noteCard } from "./notes.js";
+import { askWhy } from "./versions.js";
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
 const OK_EXT = ["pdf", "docx", "html", "htm", "txt", "md", "zip"];
@@ -424,9 +426,11 @@ export async function renderSources(view) {
   }
 
   async function removeDoc(d) {
-    const ok = await confirmDialog({ title: "Remove this document?", message: h("div", {}, h("p", {}, h("strong", {}, d.title || d.file)), h("p", {}, "It is no longer searched. Results you already have keep their quotes, marked as coming from a removed document.")), confirmText: "Remove" });
+    // 0.16 (F4): the reason goes into the research log
+    const ok = await askWhy({ title: "Remove this document?", confirmText: "Remove", placeholder: "For example: a duplicate, the wrong version, outside the scope",
+      message: h("div", {}, h("p", {}, h("strong", {}, d.title || d.file)), h("p", {}, "It is no longer searched. Results you already have keep their quotes, marked as coming from a removed document. Your notes on it are kept in Notes.")) });
     if (!ok) return;
-    try { await api("DELETE", `/api/projects/${P(project)}/documents/${P(d.doc_id)}`); toast("Document removed.", "ok"); await reloadDocs(); await App.refresh(); }
+    try { await api("DELETE", `/api/projects/${P(project)}/documents/${P(d.doc_id)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast("Document removed.", "ok"); await reloadDocs(); await App.refresh(); }
     catch (e) { showError(e); }
   }
 
@@ -486,6 +490,8 @@ function readingNote(d) {
 // Search in this document (F1); a highlighted copy to download (F7). `?tab=codes|terms|refs|search` opens a panel.
 // ---------------------------------------------------------------------------------------------
 const DOC_TABS = [["codes", "Codes", "tag"], ["terms", "Key terms", "network"], ["refs", "References", "link"], ["search", "Search", "text-search"],
+  // 0.16 (F2): your notes and highlights on the document's words
+  ["notes", "Notes", "highlighter"],
   // 0.15: how the document was read (A5), and the page of the original beside the text (A4)
   ["reading", "Reading", "layers"], ["page", "Page", "file-text"]];
 // 0.15: what each kind of block is called in the reading view (reader.KIND_TEXT), in the plural for counts
@@ -564,6 +570,7 @@ export async function renderDocument(view, [docId], query) {
   const moreBox = h("div", { class: "dv-more" });
   const selBar = h("div", { class: "dv-selbar", role: "toolbar", "aria-label": "With the selected text", hidden: true });
   let focus = null;                    // the place jumped to last: {start, end, cls, extra: [decorations]}
+  let docNotes = [];                   // 0.16 (F2): the notes and highlights on this document's words
 
   // 0.15 (A4): a document read by the new reader comes block by block, each knowing what it is. Headings, captions and
   // tables look like what they are, a page mark stands where a page begins, and what was left out of the text
@@ -840,6 +847,8 @@ export async function renderDocument(view, [docId], query) {
   function decorations() {
     const out = [];
     if (span) out.push({ start: span.start, end: span.end, cls: "quote", mark: true });
+    // 0.16: your highlights and notes, always shown (a note with words of yours is underlined too)
+    for (const n of docNotes) if (!n.lost) out.push({ start: n.start, end: n.end, cls: `hl hl-${n.colour || "yellow"}${n.text ? " hl-noted" : ""}`, mark: true, note: n.note_id });
     const p = tab && panels[tab];
     if (p && p.decos) for (const x of p.decos()) out.push(x);
     if (focus) { out.push({ start: focus.start, end: focus.end, cls: focus.cls || "dv-focus", mark: !focus.soft }); for (const x of focus.extra || []) out.push(x); }
@@ -850,7 +859,7 @@ export async function renderDocument(view, [docId], query) {
     for (const b of loaded) {
       const r = rows.get(b.n);
       const mine = all.filter((x) => x.start < b.end && x.end > b.start);
-      const sig = mine.map((x) => `${x.start}-${x.end}-${x.cls}-${x.term || ""}`).join("|");
+      const sig = mine.map((x) => `${x.start}-${x.end}-${x.cls}-${x.term || ""}-${x.note || ""}`).join("|");
       if (r.sig === sig) continue;
       r.sig = sig;
       replace(r.body, blockText(b, mine));
@@ -878,7 +887,11 @@ export async function renderDocument(view, [docId], query) {
         nodeAt.set(t, b.start + a);
         if (!on.length) { el.appendChild(t); continue; }
         const terms = on.filter((x) => x.term).map((x) => x.term);
-        const piece = h(on.some((x) => x.mark) ? "mark" : "span", { class: [...new Set(on.map((x) => x.cls))].join(" "), dataset: terms.length ? { terms: terms.join(" ") } : null });
+        const noteIds = on.filter((x) => x.note).map((x) => x.note);   // 0.16: a click on a highlight opens its note
+        const ds = {};
+        if (terms.length) ds.terms = terms.join(" ");
+        if (noteIds.length) ds.notes = noteIds.join(" ");
+        const piece = h(on.some((x) => x.mark) ? "mark" : "span", { class: [...new Set(on.map((x) => x.cls))].join(" "), dataset: Object.keys(ds).length ? ds : null });
         piece.appendChild(t);
         el.appendChild(piece);
       }
@@ -943,7 +956,7 @@ export async function renderDocument(view, [docId], query) {
   // a click on a word (with Search in this document open) adds it to the search; Shift-click makes a phrase
   list.addEventListener("mousedown", (e) => { if (tab === "search" && e.shiftKey && !e.target.closest(".dv-selbar")) e.preventDefault(); });
   list.addEventListener("click", (e) => {
-    if (tab !== "search" || e.target.closest(".dv-selbar, button, a")) return;
+    if (tab !== "search" || e.target.closest(".dv-selbar, button, a, [data-notes]")) return;
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
     const pos = caretAt(e.clientX, e.clientY);
@@ -979,6 +992,9 @@ export async function renderDocument(view, [docId], query) {
       selNow = s;
       const act = (ic, label, fn) => h("button", { class: "btn btn-sm btn-ghost", type: "button", onMousedown: (e) => e.preventDefault(), onClick: () => { const x = selNow; selBar.hidden = true; fn(x); } }, icon(ic, { size: 13 }), label);
       replace(selBar,
+        // 0.16 (F2): keep the words, plainly or with a note of yours
+        act("highlighter", "Highlight", (x) => addNote(x, "", "yellow")),
+        act("note", "Note", (x) => noteDialog(x)),
         act("text-search", "Search in this document", (x) => { openTab("search"); panels.search.searchFor(x.text.split(" ").length > 1 ? `"${x.text}"` : x.text); }),
         x0(s) ? act("link", "Every mention of this", (x) => { openTab("refs"); panels.refs.lookup(x); }) : null,
         act("tag", "Label it with a code", (x) => { openTab("codes"); panels.codes.labelSelection(x); }));
@@ -991,8 +1007,77 @@ export async function renderDocument(view, [docId], query) {
     selBar.style.left = `${Math.round(Math.max(8, Math.min(rect.left - lr.left, lr.width - w - 8)))}px`;
   }
   const x0 = (s) => s.text.length <= 120;
-  list.addEventListener("mouseup", () => setTimeout(showSelBar, 0));
-  list.addEventListener("touchend", () => setTimeout(showSelBar, 250));
+
+  // ---- 0.16 (F2): notes and highlights on the words of the document
+  async function loadNotes() {
+    try { docNotes = (await api("GET", `${docBase}/notes`)).notes || []; } catch (e) { docNotes = []; return; }
+    paint();
+    if (panels.notes) panels.notes.refresh();
+  }
+  async function addNote(x, text, colour) {
+    try {
+      const r = await api("POST", `${base}/notes`, { doc_id: docId, start: x.start, end: x.end, quote: x.text, text, colour });
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+      docNotes.push(r.note);
+      paint();
+      if (panels.notes) panels.notes.refresh();
+      toast(text ? "Note kept. It is in Notes, and can be evidence in a check." : "Highlighted. Click it to add a note, use it as evidence or remove it.", "ok", { small: true, group: "note" });
+    } catch (e) { showError(e); }
+  }
+  async function noteDialog(x) {
+    let colour = "yellow";
+    const ta = h("textarea", { class: "input", rows: 4, maxlength: 10000, placeholder: "What these words mean for your work…" });
+    const body = h("div", {}, h("blockquote", { class: "note-quote" }, x.text),
+      h("label", { class: "field" }, h("span", { class: "field-label" }, "Your note"), ta),
+      h("div", { class: "field" }, h("span", { class: "field-label" }, "Colour"), colourPicker(colour, (c) => { colour = c; })));
+    ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { const b = ta.closest("dialog").querySelector(".btn-primary"); if (b) b.click(); } });
+    const r = await dialog({ title: "Add a note", body, actions: [{ text: "Cancel", value: null }, { text: "Keep the note", value: true, primary: true }], onOpen: () => ta.focus() });
+    if (r) await addNote(x, ta.value.trim(), colour);
+  }
+  function showNoteBar(n, rect) {
+    selNow = null;
+    const act = (ic, label, fn, cls) => h("button", { class: "btn btn-sm btn-ghost" + (cls ? " " + cls : ""), type: "button", onClick: () => { selBar.hidden = true; fn(); } }, icon(ic, { size: 13 }), label);
+    replace(selBar,
+      h("div", { class: "dv-notebar-text" }, n.text ? n.text : h("span", { class: "muted" }, n.mine ? "A highlight (no note)" : `A highlight by ${n.who}`), n.mine ? null : h("span", { class: "muted small" }, ` · ${n.who}`)),
+      h("div", { class: "dv-notebar-actions" },
+        n.mine ? act("note", n.text ? "Edit" : "Add a note", async () => { const got = await editNote(n); if (got) { Object.assign(n, got); paint(); if (panels.notes) panels.notes.refresh(); } }) : null,
+        act("flask", "Use as evidence", () => useAsEvidence(n)),
+        n.mine ? act("trash", "Remove", async () => { if (await removeNote(n)) { docNotes = docNotes.filter((x) => x.note_id !== n.note_id); paint(); if (panels.notes) panels.notes.refresh(); } }, "danger-link") : null));
+    const lr = list.getBoundingClientRect();
+    selBar.hidden = false;
+    const w = selBar.offsetWidth || 300;
+    selBar.style.top = `${Math.round(rect.bottom - lr.top + 6)}px`;
+    selBar.style.left = `${Math.round(Math.max(8, Math.min(rect.left - lr.left, lr.width - w - 8)))}px`;
+    const first = selBar.querySelector("button");
+    if (first) first.focus({ preventScroll: true });
+  }
+  list.addEventListener("click", (e) => {
+    const m = e.target.closest("[data-notes]");
+    if (!m || e.target.closest(".dv-selbar, button, a")) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    const n = docNotes.find((x) => x.note_id === m.dataset.notes.split(" ")[0]);
+    if (n) showNoteBar(n, m.getBoundingClientRect());
+  });
+  function notesPanel() {
+    const listEl = h("ul", { class: "notes-cards notes-cards-doc" });
+    const head = h("p", { class: "muted small" });
+    const el = h("section", { class: "dv-panel", "aria-labelledby": "dv-notes-h" },
+      h("h2", { id: "dv-notes-h", class: "dv-panel-title" }, "Your notes"), head, listEl,
+      h("p", { class: "small" }, h("a", { href: "#/notes" }, "All notes of the project"), " · notes stay on this computer and go with the project when you share it."));
+    function refresh() {
+      replace(head, docNotes.length ? `${plural(docNotes.length, "note")} on this document. Click one to find it in the text.` : "None yet. Select words in the text, then choose Highlight or Note.");
+      clear(listEl);
+      for (const n of docNotes) listEl.appendChild(noteCard(n, loadNotes, { inDocument: true, onJump: (x) => jumpTo({ start: x.start, end: x.end }) }));
+    }
+    refresh();
+    return { el, refresh };
+  }
+  // 0.16: a click on a highlight (no words selected) opens its note's bar: the selection's bar must not close it
+  const onHighlight = (e) => { const sel = window.getSelection(); return !!(e.target.closest && e.target.closest("[data-notes]") && (!sel || sel.isCollapsed)); };
+  list.addEventListener("mouseup", (e) => { if (!onHighlight(e)) setTimeout(showSelBar, 0); });
+  list.addEventListener("touchend", (e) => { if (!onHighlight(e)) setTimeout(showSelBar, 250); });
   list.addEventListener("keyup", (e) => { if (e.shiftKey) setTimeout(showSelBar, 0); });
   const onSelChange = () => { const sel = window.getSelection(); if (!selBar.hidden && (!sel || sel.isCollapsed) && !selBar.contains(document.activeElement)) selBar.hidden = true; };
   document.addEventListener("selectionchange", onSelChange);
@@ -1008,7 +1093,7 @@ export async function renderDocument(view, [docId], query) {
   view.appendChild(layout);
 
   const panels = {};
-  const makers = { codes: codesPanel, terms: termsPanel, refs: refsPanel, search: searchPanel, reading: readingPanel, page: pagePanel };
+  const makers = { codes: codesPanel, terms: termsPanel, refs: refsPanel, search: searchPanel, notes: notesPanel, reading: readingPanel, page: pagePanel };
   function drawTabs() {
     replace(tabsRow, DOC_TABS.filter(([k]) => k !== "page" || d.page_images).map(([k, label, ic]) => h("button", { class: "btn btn-sm seg-btn" + (tab === k ? " seg-on" : ""), type: "button", "aria-pressed": tab === k ? "true" : "false", dataset: { tab: k },
       onClick: () => { openTab(tab === k ? null : k); const b = tabsRow.querySelector(`[data-tab="${k}"]`); if (b) b.focus(); } }, icon(ic, { size: 13 }), label)));
@@ -1829,6 +1914,12 @@ export async function renderDocument(view, [docId], query) {
   if (kept && kept.tab && DOC_TABS.some(([k]) => k === kept.tab)) tab = kept.tab;
   if (tab) { const k = tab; tab = null; openTab(k, false); } else { replace(panelBox, intro); paint(); }
   drawMore();
+  await loadNotes();  // 0.16
+  if (query.at && /^\d+$/.test(query.at)) {  // from the Notes page: the note at this place
+    const at = Number(query.at);
+    const n = docNotes.find((x) => !x.lost && x.start <= at && x.end > at);
+    if (n) setTimeout(() => jumpTo({ start: n.start, end: n.end }), 60);
+  }
   if (kept && kept.y) setTimeout(() => window.scrollTo(0, kept.y), 40);
   if (kept && kept.focus) setTimeout(() => { const f = document.getElementById(kept.focus); if (f) f.focus(); }, 60);
   if (span && span.end > (loaded[loaded.length - 1] || { end: 0 }).end) await ensureLoaded(span.end).then(paint);

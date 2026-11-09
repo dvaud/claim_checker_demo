@@ -93,7 +93,8 @@ class ChecksApi:
         ws = self.app.ws(name)
         if not ws.scalar("SELECT 1 FROM hypotheses WHERE hyp_id=?", (hyp_id,)):
             raise ApiError(404, "No such hypothesis.")
-        claimcheck.delete_hypothesis(ws, hyp_id)
+        why = _str(q, "why") or self._body().get("why")
+        claimcheck.delete_hypothesis(ws, hyp_id, why=str(why or "") or None)  # 0.16: the reason goes into the log
         return {"deleted": hyp_id}
 
     def put_note(self, name, hyp_id, q):
@@ -305,7 +306,7 @@ class ChecksApi:
             for (hid,) in ws.query("SELECT hyp_id FROM hypotheses WHERE queue='waiting'"):
                 if claimcheck.only_local_waits(ws, hid):
                     continue
-                claimcheck.delete_hypothesis(ws, hid)
+                claimcheck.delete_hypothesis(ws, hid, unmade=True)
                 removed += 1
         n = taskqueue.withdraw(ws, [kind])
         return {"withdrawn": n, "checks_removed": removed}

@@ -1464,10 +1464,13 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
     # 0.16: read ahead in several processes when the batch is large (`read_workers`), taken here in file order
     readings = _Readings(files, ocr if ocr is not None else OcrOptions(), cfg["max_chars"], cfg["min_chars"],
                          should_stop, read_workers(files) if workers is None else max(1, int(workers)), known)
+    added: list[tuple[str, str]] = []
     try:
-        _ingest_files(ws, files, readings, known, declared, stats, progress, should_stop, ai_access, ai_note)
+        _ingest_files(ws, files, readings, known, declared, stats, progress, should_stop, ai_access, ai_note, added)
     finally:
         readings.close()
+        if added:
+            _log_added(ws, added)
     if readings.parallel:
         stats["read_at_once"] = readings.workers
     if progress:
@@ -1475,8 +1478,22 @@ def ingest(ws: Workspace, inputs: list[str | Path], exclude: list[str] | None = 
     return stats
 
 
+def _log_added(ws: Workspace, added: list[tuple[str, str]]) -> None:
+    """0.16: the research log notes the documents added, in one entry per batch."""
+    from . import researchlog
+
+    names = "; ".join(researchlog.quoted(t, 80) for _d, t in added[:5]) + (f"; and {len(added) - 5} more"
+                                                                           if len(added) > 5 else "")
+    with ws.connect() as cx:
+        researchlog.record(cx, "documents-added", f"Added {len(added)} document{'s' if len(added) != 1 else ''}: "
+                                                  f"{names}.", "document" if len(added) == 1 else "documents",
+                           added[0][0] if len(added) == 1 else None, added[0][1] if len(added) == 1 else None,
+                           data={"documents": [{"doc_id": d, "title": t} for d, t in added]})
+
+
 def _ingest_files(ws: Workspace, files: list[Path], readings: _Readings, known: set, declared: dict, stats: dict,
-                  progress, should_stop, ai_access: str | None, ai_note: str | None) -> None:
+                  progress, should_stop, ai_access: str | None, ai_note: str | None,
+                  added: list | None = None) -> None:
     """Each file of the batch, in order: its reading (`readings`), then stored, counted or listed as `ingest` says."""
     from . import access
     from .textutil import clean_doi
@@ -1534,6 +1551,8 @@ def _ingest_files(ws: Workspace, files: list[Path], readings: _Readings, known: 
             stats["duplicates"] += 1
             continue
         stats["added"] += 1
+        if added is not None:
+            added.append((doc.doc_id, doc.title or f.name))
         stats["passages"] += len(doc.passages)
         bad = sum(1 for p in doc.passages if p.section == "unreadable")
         if bad > 0.3 * max(1, len(doc.passages)):

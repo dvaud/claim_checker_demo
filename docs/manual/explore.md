@@ -42,7 +42,7 @@ that of the original.
 <img src="../images/manual/profile.png" alt="Profile: codes by document" width="800">
 
 Which codes of a codebook each document addresses, how much and where. The codebook is the 169 SDG targets by
-default, the 17 goals, or your own CSV ([Settings → Exploring](settings.md#the-five-tabs)).
+default, the 17 goals, or a codebook of your own ([Make your own codebook](codebooks.md)).
 
 1. **Keywords first.** When documents are added, the app finds candidate codes in seconds by their keywords (and by
    meaning, with an embedding model): a *provisional* profile.
@@ -58,6 +58,10 @@ default, the 17 goals, or your own CSV ([Settings → Exploring](settings.md#the
 Count by code or by group (the SDG goals). The grid opens the passages behind each cell; a long grid draws its first
 documents at once and the rest as you scroll down (or *Show more documents*). *Technical details* shows
 the model, its exact version (digest), the prompt and the seed, and warns when they differ from the last run.
+
+When you change the codebook, a notice above the grid says so: the codebook changed since the keyword pass (*Find the
+codes again* takes seconds), codes were reworded after the AI labelled with them, or labels of removed codes wait and
+are not counted. *Open the codebook* goes to its editor ([What happens to labels](codebooks.md#what-happens-to-labels)).
 
 ## Concepts
 
@@ -86,6 +90,8 @@ model). A small project gets fewer themes than asked: about three passages a the
   documents were added: an edit follows its theme by the passages they share, and stays behind when no theme of the
   new set has them.
 - *Let the AI name the themes* gives names and short descriptions, with checked quotes.
+- **History** on a set of themes lists its earlier versions, to compare and restore
+  ([Earlier versions](notes-and-log.md#earlier-versions)); removing a theme or a set asks *Why?* for the research log.
 - **Remove** a theme that is not relevant to you (running headers, reference lists, a topic outside your question):
   its passages are left out of the themes, the grids and the downloads. It waits under *Removed themes* at the foot
   of the list, where *Bring it back* undoes it.
@@ -113,6 +119,7 @@ it:
 | **Key terms** | The terms that set the document apart; point at one to underline it in the text. |
 | **References** | *Follow the references*: the AI reads the document three passages at a time and links "it", "they" or "the study" to the name they stand for. Select a name in the text to see every later mention. |
 | **Search** | Search within the document. |
+| **Notes** | Your highlights and notes on this document's words ([Notes, the research log and earlier versions](notes-and-log.md#highlights-and-notes)). |
 | **Reading**, **Page** | How well it was read, and the original page beside the text ([How documents are read](reading.md)). |
 
 *Download a highlighted copy* gives the PDF with highlights for the judgements, codes, concepts or references you

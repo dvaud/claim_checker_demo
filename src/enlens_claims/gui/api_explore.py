@@ -107,13 +107,19 @@ class ExploreApi:
     def get_profile(self, name, q):
         from .. import profile
 
+        from .. import codebooks
+
         ws = self.app.ws(name)
         fw = self._fw(ws, q)
         level = _str(q, "level") or "code"
         if level not in ("code", "group"):
             raise ApiError(400, "level must be code or group.")
+        codebooks.follow(ws, fw)  # 0.16: labels follow the codebook's renames and merges
         out = {"framework": fw, "pass1": profile.pass1_status(ws, fw), "frameworks": [f.info() for f in
-                                                                                      frameworks.available(ws).values()]}
+                                                                                      frameworks.available(ws).values()],
+               # 0.16: codes taken out whose labels wait, and codes the AI labelled with an earlier wording
+               "removed_codes": [{"code": r["code"], "labels": r["labels"]} for r in codebooks.removed_codes(ws, fw)],
+               "stale_codes": codebooks.stale(ws, fw)}
         if out["pass1"]["done"]:
             docs = _list(q, "docs")
             # 0.16: the labels that count are worked out once for the grid and the counts when both are of every
@@ -160,8 +166,12 @@ class ExploreApi:
     def get_document_profile(self, name, doc_id, q):
         from .. import profile
 
+        from .. import codebooks
+
         ws = self.app.ws(name)
-        return profile.doc_profile(ws, self._fw(ws, q), doc_id)
+        fw = self._fw(ws, q)
+        codebooks.follow(ws, fw)  # 0.16: labels follow the codebook's renames and merges
+        return profile.doc_profile(ws, fw, doc_id)
 
     def post_label(self, name, q):
         from .. import profile
@@ -268,7 +278,8 @@ class ExploreApi:
     def delete_theme_run(self, name, run_id, q):
         from .. import themes
 
-        themes.delete_run(self.app.ws(name), run_id)
+        why = _str(q, "why") or self._body().get("why")  # 0.16: the reason, for the research log
+        themes.delete_run(self.app.ws(name), run_id, why=str(why or "") or None)
         return {"deleted": run_id}
 
     def get_themes_export(self, name, run_id, q):
@@ -289,7 +300,7 @@ class ExploreApi:
         body = self._body()
         tid = body.get("theme_id")
         themes.edit(self.app.ws(name), run_id, str(body.get("what") or ""), int(tid) if tid is not None else None,
-                    body.get("value"), body.get("passage_id") or None)
+                    body.get("value"), body.get("passage_id") or None, reason=str(body.get("why") or "") or None)
         return {"saved": True}
 
     def post_theme_names(self, name, run_id, q):

@@ -316,7 +316,12 @@ def user_prompt(kind: str, payload: dict) -> str:
                  f"{payload.get('code_label') or 'code'}). Directions apply: "
                  f"{'yes' if payload.get('directional') else 'no (use not_stated)'}."]
         cands = payload.get("candidates") or []
-        parts.append("CANDIDATE CODES:\n" + ("\n".join(f"{c['code']}: {c['description']}" for c in cands)
+        # 0.16: a code's own "when to use it" and "when not" (codebooks.py), only when it has them: a codebook without
+        # them gives the prompt of before, word for word
+        parts.append("CANDIDATE CODES:\n" + ("\n".join(f"{c['code']}: {c['description']}"
+                                                       + (f" Use it when: {c['include']}" if c.get("include") else "")
+                                                       + (f" Not when: {c['exclude']}" if c.get("exclude") else "")
+                                                       for c in cands)
                                               if cands else "(none found by the search: name codes only if the passage "
                                                             "clearly addresses them)"))
         parts.append(f"DOCUMENT: {payload.get('title') or 'untitled'}" + (f", page {payload['page']}" if payload.get("page") else ""))

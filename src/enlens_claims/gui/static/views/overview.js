@@ -37,6 +37,10 @@ export async function renderOverview(view) {
     themes: th.themes ? [true, `${plural(th.themes, "theme", "themes")} found`] : [false, "Not made yet · takes seconds"],
     sources: [!!o.references, o.references ? `References followed in ${plural(o.references, "document", "documents")}` : `${plural(nDocs, "document", "documents")}`],
     history: o.hypotheses ? [true, `${plural(o.hypotheses, "result", "results")}`] : [false, "None yet"],
+    // 0.16
+    codebooks: o.codebooks ? [true, `${plural(o.codebooks, "codebook", "codebooks")} of your own`] : [false, "None yet · start from the themes"],
+    annotations: o.notes ? [true, plural(o.notes, "note", "notes")] : [false, "None yet · select words in a document"],
+    researchlog: o.log ? [true, plural(o.log, "entry", "entries")] : [false, "Kept by itself as you work"],
   };
   const HREF = { themes: th.latest ? `#/themes/${encodeURIComponent(th.latest)}` : null };
   for (const sec of overviewSections(FEATURES, SECTIONS)) {

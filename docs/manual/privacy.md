@@ -12,7 +12,7 @@
 
 | Where it goes | What |
 | --- | --- |
-| **Stays on your computer** | Projects (plain folders with one SQLite database each) and settings, in `~/enlens` or `ENLENS_HOME`. The documents themselves, your judgements, notes and reviews. |
+| **Stays on your computer** | Projects (plain folders with one SQLite database each) and settings, in `~/enlens` or `ENLENS_HOME`. The documents themselves, your judgements, notes, highlights, the research log and reviews. They go to a colleague only inside a project zip you send yourself ([Work together](together.md)), and never to the AI. |
 | **To Anthropic, on your Claude plan** | With Claude Code: only the passages inside the tasks it takes, from documents Claude may read. ENLENS never sees your Claude login. |
 | **To Anthropic, on a team key** | With the Claude API, only after *Allow cloud models* is switched on (or `--backend anthropic` on the command line): the hypothesis and the passages read. |
 | **Into your chat** | With the [connector](claude-code.md#claude-in-a-chat-the-connector): the passages shown to Claude are part of your chat. |

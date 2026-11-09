@@ -22,8 +22,13 @@ The app speaks plain language; the command line, the API and the code use techni
 | **Second opinion** | Model for second opinions | Another model that reads the same excerpts on its own, to show where it differs. Its judgements never change an answer. |
 | **Stronger model** | Model routing (*Steps up to*) | The model a check steps up to: it reads the excerpts again and its judgements replace the first ones; the answer shows what it was at first. |
 | **The auditor** | Auditor | The model for second opinions and hard cases on Claude: Opus, or Fable when switched on. |
-| **Codebook** | Framework | An optional list of codes (like codes in NVivo or Atlas.ti). The 169 SDG targets ship with ENLENS; add your own as a CSV. The AI sees each code's text. |
+| **Codebook** | Framework | An optional list of codes (like codes in NVivo or Atlas.ti). The 169 SDG targets ship with ENLENS; make your own ([Make your own codebook](codebooks.md)). The AI sees each code's text. |
 | **Code**, **label** | Code, label | One entry of a codebook; a label says that a passage addresses it. |
+| **Words it is matched by** | Keywords | The words of a code, besides its definition, that the keyword pass looks for ([Make your own codebook](codebooks.md)). |
+| **Removed codes** | Removed codes | Codes taken out of a codebook. The labels made with them wait, are not counted, and count again when the code is brought back ([What happens to labels](codebooks.md#what-happens-to-labels)). |
+| **Highlight**, **note** | Note | Words of a document that you marked, with your own words about them (none, for a plain highlight) and one of four colours. A note can be used as evidence in a check ([Notes, the research log and earlier versions](notes-and-log.md#highlights-and-notes)). |
+| **Research log** | Research log | The dated record of what was decided in a project: entries ENLENS writes by itself, and your own ([The research log](notes-and-log.md#the-research-log)). |
+| **Version**, **History** | Version | The state of a set of themes, your judgements in a check, or a codebook, kept before each change, to compare with now and restore. Each copy of a project keeps its own ([Earlier versions](notes-and-log.md#earlier-versions)). |
 | **Reader** | Reader | The part of ENLENS that turns a file into text and passages. Every document records which reader read it. |
 | **Who may read with AI** | `ai_access` | A document's setting: *Claude may read it* (`cloud`), *Only a local AI* (`local`), *No AI* (`none`) ([Privacy](privacy.md#who-may-read-each-document-with-ai)). |
 | **Sync clash** | Sync clash | Two versions of the same thing, after you and a colleague both changed it; both are kept ([Work together](together.md#a-sync-clash)). |

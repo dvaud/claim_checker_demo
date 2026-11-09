@@ -47,6 +47,7 @@ from .progress import Tracker
 from .api_checks import ChecksApi
 from .api_documents import DocumentsApi
 from .api_explore import ExploreApi
+from .api_record import RecordApi
 from .api_setup import SetupApi
 from .app_library import LibraryMixin
 from .app_queue import QueueMixin
@@ -833,7 +834,7 @@ class App(LibraryMixin, QueueMixin):
                 return
             if job.cancel.is_set():
                 for hid in left:
-                    claimcheck.delete_hypothesis(ws, hid)  # a stopped check leaves nothing behind, as in 0.7
+                    claimcheck.delete_hypothesis(ws, hid, unmade=True)  # a stopped check leaves nothing behind, as in 0.7
                 raise Cancelled()
             if readers.memory_short and all(claimcheck.only_local_waits(ws, hid) for hid in left):
                 return  # 0.13.11: Claude Code is done; the local excerpts wait for "Read them now" on the result
@@ -1415,15 +1416,44 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/bibliography/confirm-all", "post_bibliography_confirm_all"),
     ("POST", rf"/api/projects/{P}/bibliography/files", "post_bibliography_files"),
     ("GET", rf"/api/projects/{P}/bibliography/to-find\.(csv|xlsx)", "get_bibliography_export"),
+    # 0.16: the research log, notes and highlights, earlier versions, your own codebooks (api_record.py)
+    ("GET", rf"/api/projects/{P}/log", "get_log"),
+    ("POST", rf"/api/projects/{P}/log", "post_log"),
+    ("GET", rf"/api/projects/{P}/log\.(md|xlsx)", "get_log_export"),
+    ("PUT", rf"/api/projects/{P}/log/{P}", "put_log"),
+    ("DELETE", rf"/api/projects/{P}/log/{P}", "delete_log"),
+    ("GET", rf"/api/projects/{P}/notes", "get_notes"),
+    ("POST", rf"/api/projects/{P}/notes", "post_note"),
+    ("GET", rf"/api/projects/{P}/notes\.(md|xlsx)", "get_notes_export"),
+    ("PUT", rf"/api/projects/{P}/notes/{P}", "put_note_item"),
+    ("DELETE", rf"/api/projects/{P}/notes/{P}", "delete_note_item"),
+    ("POST", rf"/api/projects/{P}/notes/{P}/evidence", "post_note_evidence"),
+    ("GET", rf"/api/projects/{P}/documents/{P}/notes", "get_document_notes"),
+    ("GET", rf"/api/projects/{P}/history/(themes|check|codebook)/{P}", "get_versions"),
+    ("GET", rf"/api/projects/{P}/history/(themes|check|codebook)/{P}/{P}", "get_version"),
+    ("POST", rf"/api/projects/{P}/history/(themes|check|codebook)/{P}/{P}/restore", "post_restore"),
+    ("GET", rf"/api/projects/{P}/codebooks", "get_codebooks"),
+    ("POST", rf"/api/projects/{P}/codebooks", "post_codebook"),
+    ("GET", rf"/api/projects/{P}/codebooks/sources", "get_codebook_sources"),
+    ("POST", rf"/api/projects/{P}/codebooks/example", "post_codebook_example"),
+    ("GET", rf"/api/projects/{P}/codebooks/{P}\.csv", "get_codebook_csv"),
+    ("GET", rf"/api/projects/{P}/codebooks/{P}", "get_codebook"),
+    ("PUT", rf"/api/projects/{P}/codebooks/{P}", "put_codebook"),
+    ("DELETE", rf"/api/projects/{P}/codebooks/{P}", "delete_codebook"),
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/move", "post_codebook_move"),
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/copy-here", "post_codebook_copy_here"),
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/try", "post_codebook_try"),
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/relabel", "post_codebook_relabel"),
 ]]
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
              "get_page_image",  # 0.15: a picture of a page, in an <img>
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
-             "get_ai_sent_csv", "get_bibliography_export"}
+             "get_ai_sent_csv", "get_bibliography_export",
+             "get_log_export", "get_notes_export", "get_codebook_csv"}  # 0.16
 # (these may take the token as ?token=, for plain links)
 
 
-class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, SetupApi):
+class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, SetupApi, RecordApi):
     app: App
     server_version = f"enlens/{__version__}"
     protocol_version = "HTTP/1.1"
@@ -1581,6 +1611,8 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
             self._json(404, {"error": f"Not found: {e.args[0] if e.args else e}", "kind": "request"})
         except (ValueError, FileNotFoundError) as e:
             self._json(400, {"error": str(e), "kind": "request"})
+        except PermissionError as e:  # 0.16: a colleague's note or log entry, which only they can change
+            self._json(403, {"error": str(e), "kind": "request"})
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:  # pragma: no cover - a bug: report it without stopping the server

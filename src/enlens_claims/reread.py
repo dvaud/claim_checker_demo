@@ -1412,6 +1412,9 @@ def _apply(ws: Workspace, cx, doc_id: str, plan: _Plan, info: dict, new_doc, who
     fps = json.loads(drow.get("old_fps") or "[]")
     fps.append(text_fp(info["old_text"]))
     raw = new_doc.raw
+    from . import notes, researchlog
+
+    moved_notes = notes.move(cx, doc_id, new_doc.text)  # 0.16: a person's notes follow their words
     # what Claude had read of passages that have no place now still counts (access.shares)
     sent = info["sent_share"]
     cx.execute("UPDATE documents SET text=?, n_chars=?, n_pages=?, reader=?, app_version=?, text_fp=?, "
@@ -1429,3 +1432,13 @@ def _apply(ws: Workspace, cx, doc_id: str, plan: _Plan, info: dict, new_doc, who
                 "app_version": __version__, "not_placed": len(rep["not_placed"]),
                 "counts": rep["counts"]})
     ws.set_meta(f"read_again:{doc_id}", log, cx)
+    title = drow.get("title")
+    researchlog.record(cx, "reread", f"Read {researchlog.quoted(title)} again with the new reader (reader "
+                                     f"{info['reader']} to {ingest.READER})"
+                                     + (f"; {len(rep['not_placed'])} results found no place in the new text."
+                                        if rep["not_placed"] else "; every result found its place.")
+                                     + (f" {moved_notes['lost']} of your notes did not find their words."
+                                        if moved_notes["lost"] else ""),
+                       "document", doc_id, title, person_id=who,
+                       data={"from_reader": info["reader"], "to_reader": ingest.READER,
+                             "not_placed": len(rep["not_placed"]), "notes": moved_notes})

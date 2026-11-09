@@ -315,7 +315,9 @@ export async function renderProfile(view, params, query) {
     if (docSel) docSel.addEventListener("change", () => { if (docSel.value) navigate(`#/doc/${encodeURIComponent(docSel.value)}?tab=codes${framework !== (App.settings().profile_framework || "sdg") ? `&framework=${encodeURIComponent(framework)}` : ""}`); });
     replace(controls,
       h("div", { class: "pf-control" }, h("label", { class: "field-label", for: "pf-fw" }, "Codebook"), sel,
-        h("span", { class: "field-help" }, "New documents get this codebook's codes when they are added. ", h("a", { href: "#/settings/frameworks" }, "Add your own codebook (CSV)"))),
+        h("span", { class: "field-help" }, "New documents get this codebook's codes when they are added. ",
+          h("a", { href: `#/codebooks/${encodeURIComponent(framework)}` }, /^sdg/.test(framework) ? "See its codes" : "Edit this codebook"), " · ",
+          h("a", { href: "#/codebooks" }, "Your own codebook"))),
       fw.groups === 0 ? null : h("div", { class: "pf-control" }, h("span", { class: "field-label", id: "pf-level-l" }, "Count by"),
         h("div", { class: "btn-row pf-seg", role: "group", "aria-labelledby": "pf-level-l" }, seg("code", fw.label ? cap(fw.label) : "Code"), seg("group", /^sdg/.test(framework) ? "Goal" : "Group"))),
       docSel ? h("div", { class: "pf-control" }, h("label", { class: "field-label", for: "pf-doc" }, "Show the profile of"), docSel) : null);
@@ -332,6 +334,22 @@ export async function renderProfile(view, params, query) {
         `First the app finds the ${fw.label || "code"}s of “${fw.title || framework}” in every passage by their keywords${App.settings().embed_backend === "off" ? "" : " and by meaning"}. It takes seconds, runs on this computer, and gives a provisional profile at once. The AI can then read the passages to confirm or correct it.`,
         h("button", { class: "btn btn-primary", type: "button", onClick: (e) => startKeywordPass(project, framework, jobBox, watchers, keywordsEnded, e.currentTarget) }, icon("tag", { size: 14 }), "Find the codes by keywords")));
       return;
+    }
+    // 0.16 (K1): the codebook changed since its codes were found, a code's wording since the AI labelled with it, or
+    // codes were taken out (their labels wait and do not count)
+    if (p1.codebook_changed && !p1.stale && jobBox.hidden) {
+      statusBox.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "14px" } }, icon("alert-triangle"),
+        h("div", { class: "grow" }, h("p", {}, "The codebook changed since the codes were found by keywords: codes or the words they are matched by are new. The keyword labels are those of before until you find them again."),
+          h("button", { class: "btn btn-sm", type: "button", style: { marginTop: "8px" }, onClick: (e) => startKeywordPass(project, framework, jobBox, watchers, keywordsEnded, e.currentTarget) }, icon("refresh", { size: 13 }), "Find the codes again (seconds)"))));
+    }
+    const staleCodes = Object.keys(prof.stale_codes || {});
+    const removedCodes = prof.removed_codes || [];
+    if (staleCodes.length || removedCodes.length) {
+      statusBox.appendChild(h("div", { class: "notice notice-info", style: { marginBottom: "14px" } }, icon("book-marked"),
+        h("div", { class: "grow" },
+          staleCodes.length ? h("p", {}, `${plural(staleCodes.length, "code")} changed wording after the AI labelled with ${staleCodes.length === 1 ? "it" : "them"} (${staleCodes.slice(0, 4).join(", ")}${staleCodes.length > 4 ? "…" : ""}). The labels stay until you ask for those passages to be labelled again.`) : null,
+          removedCodes.length ? h("p", {}, `${plural(removedCodes.reduce((a, r) => a + r.labels, 0), "label")} of ${plural(removedCodes.length, "removed code")} wait in the codebook and are not counted here.`) : null,
+          h("a", { class: "btn btn-sm", href: `#/codebooks/${encodeURIComponent(framework)}`, style: { marginTop: "8px" } }, icon("book-marked", { size: 13 }), "Open the codebook"))));
     }
     if (p1.stale && jobBox.hidden) {
       statusBox.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "14px" } }, icon("alert-triangle"),

@@ -1,27 +1,92 @@
 # Changelog
 
-## 0.16.0rc2 (November 2026): Leave out without the flash
+## 0.16.0 (November 2026): notes, a research log, history and your own codebook
 
-A second candidate of 0.16, with one change from using the reading view. Clicking *Leave out* on a paragraph drew the
-whole document again: the page flashed and it was hard to tell what had happened (the text had been greyed out, and
-somewhere a fold had opened). Now the change happens where you click. **Nothing changes for results**: the app makes
-the same choices as before; only the way the page shows them changed.
+0.16 is about working with the text and keeping a record of the work. You can now highlight and annotate the exact
+words of a document and use a note as evidence in a check; ENLENS keeps a dated research log of what was decided, by
+itself, with room for your own entries and reasons; a set of themes, your judgements in a check and a codebook can be
+compared with an earlier version and restored; and you can make and change a codebook of your own in the app, fresh
+or from the themes already found. It also brings the two release candidates of 0.16 to everyone: large projects are
+quicker (several documents read at once, a glossary and search that keep what they read), and *Leave out* changes the
+reading view where you click. Tables, figures and images (A6) are left out of 0.16 for now.
 
-It is a release candidate: only copies with *Try new versions early* (Settings) get it. The rest of 0.16 comes in the
-next candidates, as rc1 said.
+Nothing here changes the results you already have. Two things can change what new labels say, and only for codebooks
+you change: the AI reads a code's *When to use it* and *When not to use it*, and the labels of a code you remove from
+a codebook no longer count (they wait, kept). See *Changes that can alter your results*.
 
-### Changed
+### New
 
-- **Leave out folds the paragraph away where it is.** The paragraph greys, then folds away into the line *Left out
-  of the text* that takes its place, and that line lights up for a moment. The message says where it went and that
-  *Restore* brings it back. With *Show what was left out in the text* on, it greys and stays in view, marked *left
-  out by you*. The rest of the page does not move.
-- *Restore*, *All like this*, *Text starts here*, *Text ends here* and their *Undo* change the text in place the same
-  way: what comes back joins the text and lights up. The *Reading* panel's figures (passages that count, what is
-  left out) and the outlines on *Page* follow at once; an open *Codes* or *Key terms* panel reads again, since what
-  counts has changed. A second click while a change is shown waits for it instead of being lost.
-- A choice is kept by the block's words, so it also holds for blocks elsewhere with the same words (a title on every
-  page). The message now says how many, and they change on the page too.
+- **The research log** (sidebar: *Research log*). A dated record of what was decided in the project, written by ENLENS
+  as it happens: documents added and removed, who may read a document with AI, a document read again with the new
+  reader, a hypothesis checked or a check removed, themes found, removed, renamed or merged, a codebook made, changed,
+  moved or removed, a note used as evidence, an earlier version restored, a colleague's work brought in. Add entries of
+  your own (field notes, decisions), and *Say why* beside what the app wrote down about your work. Removing a document,
+  a check, a set of themes or a theme now asks *Why?*, optionally, and keeps the answer there. The app's entries cannot
+  be removed: they are the record. Filter by kind, search, and download it as Markdown (oldest first, a heading per day:
+  for an appendix or an audit) or Excel. Valuable for reflexivity in qualitative work, and as an audit trail.
+- **Notes and highlights on the words of a document.** Select words in a document's text: the bar now offers
+  *Highlight* and *Note* (four colours). Click a highlight to see its note, change it, remove it or use it as evidence.
+  A document's new *Notes* panel lists its notes; the new *Notes* page lists them all, searchable by the note and by
+  the words it marks, by document and colour, with Markdown and Excel downloads. A note's words are checked against
+  the document as every quote is (a selection cut inside a word takes the whole word). When a document is read again
+  with the new reader, its notes follow their words; one whose words are gone says so and is kept. Notes on a removed
+  document are kept too. Nothing about notes uses AI.
+- **A note as evidence in a check.** *Use as evidence* (on a note) or *Add one of your notes* (under each part of a
+  result): the passage holding the note's words becomes an excerpt of the check, judged by you, with the note's
+  words as the sentence you point to. It counts as every judgement of yours does, is marked *found by: your note*, and
+  the research log says so. If the check shows that passage already, only your judgement is set.
+- **History: compare and restore.** *History* on a set of themes, *History of your judgements* at the foot of a
+  result, and *History* on a codebook list the states before each change you made. *Compare with now* says in a table
+  what changed (*What*, *Then*, *Now*); *Restore this version* puts it back, keeping the present state as a version too,
+  so a restore can be undone the same way. The research log's entries about a change have *Compare with before*. Only
+  what you made is kept: theme names, merges, moves and removals; your verdicts, comments and sentences in a check, and
+  its note (not the AI's answers, nor a colleague's judgements); codebooks. Versions are your copy's own: bringing
+  in a colleague's work neither takes theirs nor gives them yours.
+- **Your own codebook** (sidebar: *Codebooks*). *New codebook*: *Start fresh*; *From the themes* (each theme you
+  tick becomes a draft code with its name, its description where the AI named it, its key terms as the words it is
+  matched by, and its best passages as examples; removed themes are left out, and a codebook kept with all projects
+  can start from any project's themes); *A copy of a codebook* (the SDG targets too); *From a CSV file*. Keep it with
+  this project or with all your projects, and move it between them; a project can take its own copy of a shared
+  codebook. In the editor each code has a *Name*, a *Definition*, *When to use it*, *When not to use it*, *Words it is
+  matched by* and *Examples from the documents* (each checked: it must be words of a document). Codes sit in groups;
+  drag them, or use *Up* and *Down*, to reorder or move them between groups; *Split*, *Merge into…* and *Remove*.
+  *Save* asks an optional *Why?* for the log; *Discard* and *History* are beside it.
+- **Try a codebook before labelling.** *Try it* counts, without AI and in seconds, how many passages and documents
+  the keyword pass would pick for each code, with three of them, and says which codes match nothing or a large part of
+  the documents.
+- **Changing a codebook in use.** Labels follow a rename and a merge, in this project at once and in every other
+  project that uses a codebook kept with all projects when it is next opened; checks tagged with the code follow too.
+  A removed code's labels are not deleted: they wait under *Removed codes* and come back with *Bring it back*. A code
+  whose wording changed after the AI labelled with it says so (on the codebook and on Profile), and *Label them again*
+  sends only those passages to the AI. Profile also says when the codebook changed since its keyword pass. An edit
+  changes no result by itself. The CSV stays the file, with the editor's columns (`when_to_use`, `when_not_to_use`,
+  `keywords`, `examples`); codebooks are no longer added under *Settings → Exploring*, which links to the new page.
+
+### From the release candidates
+
+- **Speed for large projects** (0.16.0rc1). Up to three added files are read at the same time, each by a reading
+  process of its own, and stored in the order of the files (a batch of 13 files: 8 seconds instead of 17). The
+  glossary keeps what it read in each document and reads only what changed (a project of 39 reports: 4 seconds instead
+  of 9 after one more document). Search keeps each document's words on disk: on 100,000 passages its index takes 2.2
+  seconds instead of 4.6 and about 270 MB of memory instead of 1.2 GB. The Profile page opens five times quicker,
+  long lists draw their first rows at once, and *Words nearby*, the keyword pass and themes by words do less work for
+  the same answer. Every step was compared with 0.15.7 on a copy of a project of 39 reports: the same, number for
+  number.
+- **Leave out without the flash** (0.16.0rc2). *Leave out* greys the paragraph and folds it into the line *Left out of
+  the text* where it was, which lights up; *Restore*, *All like this* and *Text starts / ends here* change the text in
+  place too, and the *Reading* panel's figures follow at once.
+
+### Changes that can alter your results
+
+- **The AI reads a code's *When to use it* and *When not to use it*** when it labels passages, for codebooks that have
+  them (made or changed in the editor). For every other codebook the AI is shown exactly what it was shown before,
+  word for word (a test holds it), and the prompt's version stays `label-v1`.
+- **The labels of a code removed from a codebook no longer count** in Profile, a document's *Codes* panel, the Excel
+  file and the connector. They are kept, under *Removed codes*, and count again when the code comes back. Before, a
+  code taken out of a CSV by hand still showed its labels under its bare name.
+- **Labels follow renames and merges.** A label's code is the code's new name (a merged code's labels are the other
+  code's), which is what a person changing the codebook means; restoring the codebook's earlier version gives every
+  label back as it was. A label made after a change keeps its code.
 
 ### Fixed
 
@@ -35,83 +100,55 @@ next candidates, as rc1 said.
 
 ### For developers
 
-- `PUT …/documents/<doc_id>/blocks/<n>` answers with every block that changed (`blocks`, as `?view=blocks` lists
-  them, wherever they are, blocks with the same words included), the blocks chosen (`group`) and the reading's
-  figures (`doc`: `left_out`, `passages_read`, `passages_all`). `PUT …/bounds` adds `blocks` (those that changed and
-  the blocks that carry or carried the mark) and `doc`. `App.reading_blocks(..., only=…)` gives blocks by number;
-  `App.reading_now` gives the figures (`docs/API.md`).
-- The reading view no longer redraws the page after a change (`showChange` in `views/sources.js`): rows are kept and
-  placed again under their page marks and folds, with the row above the change on the screen held in place.
-
-### Tests
-
-- `tests/test_0_16_0_leave_out_in_place.py`: *Leave out*, *Restore* and *All like this* send back each block exactly as
-  the listing now has it and the figures as the document has them; *Text starts / ends here* and its undo send back
-  the blocks they changed and the block that carries or carried the mark; blocks elsewhere with the same words are
-  sent too (this test fails without the fix); blocks asked for by number are those of the listing.
-- `tests/test_0_16_0_scratch_copy_removal.py`: a copy held during removal is removed on the next try on Windows,
-  closed again before each; elsewhere it is tried once; a copy held for good is left for the trash, as before.
-- `tests/test_0_16_0_speed.py` (rc1): the clean-up of the test whose reading process ends at once failed now and then
-  on Linux and macOS (a job still in the pipe of an ended process); it closes the pipes as `ingest` does.
-- Checked in Chromium with Playwright, in light and dark and at 390 px with touch: the list is never drawn again, the
-  page stays still in the middle of a 169-block book, the keyboard lands on the fold's line, two quick clicks both
-  count, and no console errors.
-
-### Not yet done
-
-- **Safari and Firefox.** The animation and the in-place change were tried in Chromium only. The code uses nothing
-  newer than `<details>` and CSS transitions, but the copy you run in Safari has not been looked at.
-- **A heading partly above the window** folds away with its paragraph; the line it becomes can end up just above the
-  top of the window, where it is not seen lighting up.
-- **The rest of 0.16** comes in the next candidates.
-
-## 0.16.0rc1 (November 2026): speed for large projects
-
-The first release candidate of 0.16: everything that got slower as a project grew, made quicker before 0.16's new
-features add to it. Several documents are now read at the same time when you add them. The glossary reads only the
-documents that changed, and search keeps each document's words, so neither starts from every passage again. The
-Profile page, *Words nearby*, the codebook's keyword pass and themes by words do less work for the same answer, and the
-long lists of the Documents and Profile pages appear at once. **Nothing changes for results**: every step was
-compared, on a copy of a project of 39 reports, with what 0.15.7 makes of it, and gives the same, number for number.
-
-It is a release candidate: only copies with *Try new versions early* (Settings) get it. The rest of 0.16 (the research
-log, notes, a codebook of your own, concepts, retractions, export to NVivo and ATLAS.ti, and the mix of local and cloud
-AI) comes in the next candidates. Tables, figures and images (A6) are left out of 0.16 for now.
-
-### New
-
-- **Adding many documents is quicker.** Up to three files are read at the same time, each by a reading process of its
-  own, and stored in the order of the files, exactly as reading them one after the other stores them. Reading a PDF is
-  seconds of work for the computer, and most computers have several processors that sat idle. A batch of 13 reports
-  and papers (three PDFs, eight long reports as text, a copy and a damaged file) took 8 seconds instead of 17. A small
-  batch, a single file, or a computer short of free memory is read one file at a time, as before; so is a file whose
-  reading process does not answer.
-- **Adding a document is quicker on a large project.** The glossary keeps what it read in each document and reads
-  only the new ones, and the few others whose words the new one changes (a word printed letter-spaced, such as
-  "t oday", is read whole once the documents also write it whole). On a project of 39 reports (8,804 passages), the
-  glossary after one more document takes about 4 seconds instead of 9, after removing one 2.3, and with nothing
-  changed 1.3. On a project of several hundred PDFs the difference is minutes.
-- **Search is ready sooner, in far less memory.** The index a search reads (which passages hold each word, and how
-  often) was made after each start of the app and each change of the documents by reading every passage and
-  splitting it into words again, and it kept every passage's text in memory, twice when reference lists were
-  included. Now each document's words are kept on disk and only new or changed documents are split; the passages'
-  text is read when a search shows them. On 100,000 passages the index takes 2.2 seconds instead of 4.6, and the app
-  needs about 270 MB for it instead of 1.2 GB (the first time, when every document is split once, 8 seconds); on the
-  39 reports, 0.16 seconds instead of 0.6.
-- **The Profile page opens five times quicker.** It worked out which labels count twice on every visit, once for the
-  grid and once for the counts above it, reading every field of every label. Now once, reading only what the two
-  show: 0.09 seconds instead of 0.45 on the 39 reports (51,786 labels).
-- **Long lists appear at once.** The Documents list and the Profile grid draw their first rows straight away and the
-  rest as you scroll down to them (or with *Show more*). On a project of several hundred documents the grid had tens of
-  thousands of cells to draw before the page showed. *Select every document* still selects all of them.
-- **Words nearby, the codebook's keyword pass and themes by words do less.** *Words nearby* split each passage with a
-  hit into words twice and read every word of it for each hit: about a third quicker. The keyword pass (which codes a
-  passage's words point to) split each passage twice, and tried each of the codebook's 26 common phrasings on every
-  passage; a phrasing is now tried only where one of its words occurs: 1.7 seconds instead of 2.8 over 8,804 passages.
-  Themes by words find each passage's nearest theme in one tighter loop, with the same sums in the same order: a few
-  per cent quicker.
-
-### For developers
+- New modules: `researchlog.py` (the log: `record(cx, kind, text, …)` in the transaction of the change it records,
+  `add`, `update`, `remove`, `entries`, `markdown`, `table`, `merge`), `notes.py` (`add`, `update`, `remove`,
+  `for_document`, `search`, `use_as_evidence`, `move` for a document read again, `merge`), `history.py` (versions:
+  `snapshot(ws, cx, kind, key, label)` before a person's change, `versions`, `compare`, `restore`; a kind is a
+  `history.Kind` with its capture, changes and apply, or keeps its own versions, as codebooks do) and `codebooks.py`
+  (the editor's state, `save` with renames, merges, splits and removals told apart by each code's id, `follow`,
+  `removed_codes`, `stale`, `relabel_passages`, `try_codes`, `theme_sources`, `create`, `move`, `copy_here`,
+  `remove`, `find_example`). The endpoints are in `gui/api_record.py`; the routes are in `docs/API.md`.
+- New tables: `research_log`, `notes`, `versions` (`store.SCHEMA`), and the column `labels.merged_from`. `sync.py`
+  merges the log and notes entry by entry (`_log_and_notes`: theirs come in, yours never change, what you removed
+  stays removed, and what its author removed goes); `versions` is `LOCAL_ONLY`. Codebook versions are files under
+  `frameworks/history/<name>/` beside the codebook, so a codebook kept with all projects has one history.
+- A codebook's side file (`<name>.json`) may hold `editor`, `ordered`, `ids`, `groups`, `events`, `removed` and
+  `places`; `frameworks.Code` gains `include`, `exclude`, `keywords` and `examples`; `Framework.code_text` adds a code's
+  keywords after its description only when it has some. `frameworks.parse_csv(…, allow_empty=True)` for a codebook the
+  editor started with no codes, and `extra=True` to read the editor's columns. Events (`rename`, `merge`, `unmerge`,
+  `reword`) are applied once per project and event id (`meta.codebook_followed:<name>`), in the codebook's order, to
+  labels made up to the event (`created_at`), with their ids made again (`profile.label_id`) and their reviews moved.
+- `profile.keyword_candidates` and `profile.rank_candidates`: the keyword pass's choice of codes for one passage, now
+  one function for the pass and *Try it* (the pass gives the same labels: the speed tests compare it with the code of
+  before 0.16). `profile.effective` leaves out the labels of codes a codebook no longer has. `profile.codes_fp` and
+  `pass1_status(...)["codebook_changed"]`. `profile.label_plan` / `run_labels(..., passage_ids=)` and the body field
+  `passage_ids` of `POST …/profile/label`.
+- `claimcheck.delete_hypothesis(ws, hyp_id, why=None, unmade=False)`: `unmade` for a check the app takes back before
+  it was made (stopped, withdrawn, a look before checking), which leaves nothing in the log. `store.remove_document`,
+  `themes.delete_run` and `themes.edit` take the person's reason; `DELETE` of a document, a check and a set of themes
+  takes `?why=`. A `PermissionError` (a colleague's note or entry) answers 403.
+- An independent review of 0.16.0 before release reproduced, with scripts, four ways labels could go wrong and found
+  five more by reading: a code renamed to the name of one removed or merged in the same save (labels deleted or mixed:
+  now refused, and a rename never deletes a label), changes saved in the same second followed out of order (now in the
+  codebook's own order), restoring the version after a merge not merging again, *Label them again* deleting the labels
+  of removed codes (`profile.store_labels` now replaces only the task's labels of the codebook's codes), two requests
+  following a change twice (the record is read inside the write lock), a note anchored to an earlier occurrence of its
+  words, a colleague's labels coming in under a name changed here, a hand-made CSV with a `keywords` column read
+  differently (the editor's columns are read only for codebooks made in the editor: `frameworks.parse_csv(...,
+  extra=True)`), and codebook names from a URL reaching a path (`codebooks._name_ok`). Its second look found that
+  replaying every change after a sync undid swapped names: now, when a colleague's work comes in, your labels follow the
+  changes your copy had not followed and theirs the changes their copy had not (`sync._follow_codebooks`,
+  `codebooks.follow_merged`, each copy's own record of what it followed). Also: a codebook's two files are written both
+  or neither (a CSV open in a spreadsheet on Windows says so in words), unsaved edits made on an earlier state of a
+  codebook are discarded rather than saved over it, and *Why?* keeps its text while you edit. All fixed before release,
+  each with a test.
+- Handler names of the mixins are unique (`put_note` was taken by the note on a check: the notes' are
+  `put_note_item`, `delete_note_item`); a test holds every name to one module.
+- The page: `views/log.js`, `views/notes.js` (also `noteCard`, `editNote`, `useAsEvidence`, `addNoteToPart`),
+  `views/codebooks.js`, `views/versions.js` (`historyButton`, `showHistory`, `compareVersion`, `askWhy`). Highlights are
+  decorations of the reading view (`views/sources.js`), drawn as `mark.hl` with the note's id. New features
+  `codebooks`, `annotations` and `researchlog` in `features.js` (keys an add-on is unlikely to use: core keys win over
+  an add-on's) and the Overview section `record`. Colours `--hl-*` in `tokens.css`; styles in `app.css`.
 
 - `terms.build` (H3): each document's reading (what it adds to the joiner, the joiner's decisions for its runs of
   pieces, its candidates with their places, its abbreviations, and a digest of it) in `cache/glossary.sqlite`, used
@@ -174,8 +211,34 @@ AI) comes in the next candidates. Tables, figures and images (A6) are left out o
   queue parts of `App` in mixins (`app_library.py`, `app_queue.py`), and `ApiError`, `Job`, `Jobs` and the shared
   helpers in `api_common.py`. Every function moved unchanged (a script compared all 310), `App` and `Handler` have the
   same methods, every name importable from `gui.server` still is, and `ROUTES` is the same.
+- `PUT …/documents/<doc_id>/blocks/<n>` answers with every block that changed (`blocks`, as `?view=blocks` lists
+  them, wherever they are, blocks with the same words included), the blocks chosen (`group`) and the reading's
+  figures (`doc`: `left_out`, `passages_read`, `passages_all`). `PUT …/bounds` adds `blocks` (those that changed and
+  the blocks that carry or carried the mark) and `doc`. `App.reading_blocks(..., only=…)` gives blocks by number;
+  `App.reading_now` gives the figures (`docs/API.md`).
+- The reading view no longer redraws the page after a change (`showChange` in `views/sources.js`): rows are kept and
+  placed again under their page marks and folds, with the row above the change on the screen held in place.
 
 ### Tests
+
+- `tests/test_0_16_0_research_log.py`: what the app writes down, and when it writes nothing (a check taken back);
+  your entries and reasons, and what cannot be changed (the app's entries, a colleague's); filters, search, Markdown
+  and Excel; entries brought in from a colleague, edited and removed on either side; the endpoints.
+- `tests/test_0_16_0_notes.py`: words checked and widened to whole words; search; a note as evidence (a new excerpt,
+  an excerpt the check had, words across two passages or in text left out); notes following their words, lost words,
+  a removed document; notes brought in from a colleague; the endpoints.
+- `tests/test_0_16_0_history.py`: themes and a check compared and restored, and the restore undone; one version for
+  the same state, at most `KEEP`; a colleague's judgement untouched; versions never sent; the endpoints; no handler
+  name defined twice.
+- `tests/test_0_16_0_codebook_editor.py`: fresh, from themes (examples at their place), a copy of the SDG targets, a
+  CSV; a codebook without the editor's columns matched by the same words as before; labels, their reviews and tagged
+  checks following a rename and a merge, and back with a restore; a merged label on a passage with both codes; names
+  swapped; removed codes' labels waiting and counting again; a reworded code's passages labelled again, those alone;
+  a codebook kept with all projects followed in another project, once, with a later label left alone; *Try it* equal
+  to the keyword pass; Profile seeing a changed codebook; move, copy, remove and bring back; the AI shown when to use a
+  code only where the codebook says; the endpoints.
+- `tests/test_0_13_6_page_extensions.py` and `tests/test_0_14_3_explore.py` follow the Overview's new cards and the
+  codebook page.
 
 - `tests/test_0_16_0_recompute.py`: the glossary after adding, removing and changing documents, after a new document
   joins letter-spaced words in another (and when that flips back), with the kept readings damaged, gone, unwritable or
@@ -201,17 +264,37 @@ AI) comes in the next candidates. Tables, figures and images (A6) are left out o
   the code of before 0.16, copied into the test, gives; `enlens measure --timings` names the new steps.
 - Two older tests assumed a full release: the Claude Code plugin's version is now compared in the form a plugin takes
   (`0.16.0-rc.1`), and a full release's notes are made from a changelog of its own.
+- `tests/test_0_16_0_leave_out_in_place.py`: *Leave out*, *Restore* and *All like this* send back each block exactly as
+  the listing now has it and the figures as the document has them; *Text starts / ends here* and its undo send back
+  the blocks they changed and the block that carries or carried the mark; blocks elsewhere with the same words are
+  sent too (this test fails without the fix); blocks asked for by number are those of the listing.
+- `tests/test_0_16_0_scratch_copy_removal.py`: a copy held during removal is removed on the next try on Windows,
+  closed again before each; elsewhere it is tried once; a copy held for good is left for the trash, as before.
+- `tests/test_0_16_0_speed.py` (rc1): the clean-up of the test whose reading process ends at once failed now and then
+  on Linux and macOS (a job still in the pipe of an ended process); it closes the pipes as `ingest` does.
+- Checked in Chromium with Playwright, in light and dark and at 390 px with touch: the list is never drawn again, the
+  page stays still in the middle of a 169-block book, the keyboard lands on the fold's line, two quick clicks both
+  count, and no console errors.
+
+- Checked in Chromium with Playwright, in light and dark and at 390 px: the research log, the Notes page, a
+  document's highlights, its *Notes* panel and the bars on a selection and on a highlight, the codebooks and the editor
+  with *Try it*, a new codebook, a theme set's history and its comparison, and the Overview, with no console errors.
 
 ### Not yet done
 
-- **Reading at once on a real Windows PC.** The test run on Windows reads at once under `python.exe`; the ENLENS icon
-  starts the app with `pythonw.exe`, whose reading processes have no console at all. Not yet tried there by hand.
-- **Very long PDFs side by side.** A reading process took at most 96 MB for a 61-page PDF; three readers are allowed
-  600 MB of free memory each. Not measured with PDFs of several hundred pages on a computer short of memory.
-- **Themes still go out of date** when documents are added, as before: putting new passages into the existing themes
-  would give other themes than finding them again, so it waits for a decision.
-- **The rest of 0.16** comes in the next candidates (see the opening paragraph). This candidate changes no results,
-  so its validation report should read as 0.15.7's.
+- **REFI-QDA codebooks (`.qdc`)** for NVivo, ATLAS.ti and MAXQDA come with the export (G5), with notes as memos.
+- **A draft definition from the AI** for a code (from its example passages), the optional part of K1, is not built:
+  the editor is complete without it.
+- **Notes on a colleague's copy of a document read differently** (a sync clash copy) come in on that copy, as their
+  other work does.
+- **A home-wide codebook's history** is one history, kept with the codebook; a project that is removed does not take
+  it along, and a version restored in one project changes the codebook for all.
+- **Safari and Firefox**: the new pages and the drag and drop were tried in Chromium only; on a phone the codes move
+  with *Up*, *Down* and the group list, not by dragging.
+- From the candidates: reading at once on a real Windows PC under `pythonw.exe` was not tried by hand; very long PDFs
+  side by side on a computer short of memory were not measured; themes still go out of date when documents are added.
+- **The rest of the roadmap's 0.16 list** (concepts D1 to D4, retractions B5, export to NVivo and ATLAS.ti G5, the mix
+  of local and cloud AI, and the methods and privacy documents) waits for the next release.
 
 ## 0.15.7 (November 2026): documents moved to the new reader from the Documents page
 

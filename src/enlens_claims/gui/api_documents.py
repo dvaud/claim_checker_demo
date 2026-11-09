@@ -105,7 +105,13 @@ class DocumentsApi:
             raise ApiError(409, f"This project also holds results of the SDG pipeline ({held}); removing all documents "
                                 f"would delete them too. Remove documents one by one, or run `enlens --ws \"{ws.root}\" "
                                 "reset-corpus --yes` if that is what you want.")
-        return {"removed": ws.reset_corpus()}
+        removed = ws.reset_corpus()
+        from .. import researchlog  # 0.16
+
+        with ws.connect() as cx:
+            researchlog.record(cx, "document-removed", f"Removed every document ({removed.get('documents', 0)}) and "
+                                                       f"every check ({removed.get('hypotheses', 0)}).")
+        return {"removed": removed}
 
     def get_document(self, name, doc_id, q):
         return self.app.document(name, doc_id, int(_float(q, "offset", 0)), int(_float(q, "limit", 50)),
@@ -144,7 +150,8 @@ class DocumentsApi:
                                                                 "Content-Disposition": disp})
 
     def delete_document(self, name, doc_id, q):
-        return {"removed": self.app.ws(name).remove_document(doc_id)}
+        why = _str(q, "why") or self._body().get("why")  # 0.16: the reason, for the research log
+        return {"removed": self.app.ws(name).remove_document(doc_id, why=str(why or "") or None)}
 
     def put_block(self, name, doc_id, n, q):
         body = self._body()

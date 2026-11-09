@@ -50,8 +50,10 @@ Three things hold everywhere:
 | **Your work** | [Check a hypothesis](manual/check.md) | What a check does, the answers, hypotheses in parts, checking many at once |
 | | [Read and review a result](manual/review.md) | The result page, excerpt cards, second opinions, downloads, the evidence map |
 | | [Explore your documents](manual/explore.md) | Search, Profile, Concepts, Themes, a document's panels, Quick look |
+| | [Make your own codebook](manual/codebooks.md) | Codes of your own: from the themes, a copy or a CSV file; try them, change them, labels follow |
 | | [How documents are read](manual/reading.md) | What is read and what is left out, the reading view, moving to a new reader |
 | | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find |
+| | [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights and notes, the dated record of decisions, compare and restore |
 | | [Work together](manual/together.md) | Sharing a project with colleagues, sync clashes, moving to another computer |
 | **The AI and your privacy** | [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI, how it is enforced |
 | | [Claude Code](manual/claude-code.md) | Starting it, its speed and helpers, the queue; Claude in a chat (the connector) |
@@ -70,12 +72,16 @@ Three things hold everywhere:
 | find every place a word occurs | [Search](manual/explore.md#search) |
 | see which SDG targets (or codes of my own) a document addresses | [Profile](manual/explore.md#profile) |
 | test whether my documents back a statement | [Check a hypothesis](manual/check.md) |
+| make my own codebook | [Make your own codebook](manual/codebooks.md) |
+| highlight or note words of a document | [Highlights and notes](manual/notes-and-log.md#highlights-and-notes) |
 | overrule the AI on an excerpt | [An excerpt card](manual/review.md#an-excerpt-card) |
 | know which AI models a result used, for a methods section | [Notes and downloads](manual/review.md#notes-and-downloads), [What every answer records](manual/models.md#what-every-answer-records) |
 | keep a licensed PDF or an interview away from Claude | [Who may read each document with AI](manual/privacy.md#who-may-read-each-document-with-ai) |
 | use ENLENS with no cloud at all | [A model on your own computer](manual/local-models.md), [For whoever installs ENLENS](manual/settings.md#for-whoever-installs-enlens) |
 | fix a document that reads badly | [The reading view](manual/reading.md#the-reading-view) |
 | see which works of my Zotero library I still need to find | [Your bibliography](manual/bibliography.md#the-four-lists) |
+| see what was decided in a project, and when | [The research log](manual/notes-and-log.md#the-research-log) |
+| go back to an earlier version of my themes, judgements or codebook | [Earlier versions](manual/notes-and-log.md#earlier-versions) |
 | share a project with a colleague | [Work together](manual/together.md) |
 | move ENLENS to a new computer | [Moving to another computer](manual/together.md#moving-to-another-computer) |
 | make Claude Code go faster, or easier on my plan's limits | [How fast it works](manual/claude-code.md#how-fast-it-works) |

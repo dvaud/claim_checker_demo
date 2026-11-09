@@ -63,6 +63,10 @@ class QueueMixin:
                        "latest": run[0]["run_id"] if run else None},
             "references": n("SELECT COUNT(DISTINCT doc_id) FROM mentions"),
             "hypotheses": n("SELECT COUNT(*) FROM hypotheses"),
+            # 0.16: notes, the research log, your own codebooks
+            "notes": n("SELECT COUNT(*) FROM notes"),
+            "log": n("SELECT COUNT(*) FROM research_log"),
+            "codebooks": sum(1 for f in frameworks.available(ws).values() if f.source != "bundled"),
             "waiting": (self._queue_summary(name) or {}).get("waiting", 0),
             # 0.15 (J4.2): which ENLENS version made what, so the page can say what came from an older one
             "made_with": runs_mod.made_with(ws),
@@ -189,9 +193,12 @@ class QueueMixin:
         if not profile.pass1_status(ws, fw)["done"]:
             raise ApiError(409, "Find the codes by keywords first (it takes seconds): the AI reads the passages they found.")
         limit = _body_int(body, "limit", None, 1, 10 ** 7)
+        pids = body.get("passage_ids")  # 0.16: only these passages (a code labelled again after its wording changed)
+        if pids is not None and not (isinstance(pids, list) and all(isinstance(p, str) for p in pids)):
+            raise ApiError(400, "passage_ids must be a list of passage ids.")
         job = self._model_job("label", f"The AI labels passages ({fw})", name, lambda job, be, model, prog:
                                profile.run_labels(ws, fw, be, model, docs, bool(body.get("all_passages")), limit,
-                                                  progress=prog, should_stop=job.cancel.is_set))
+                                                  progress=prog, should_stop=job.cancel.is_set, passage_ids=pids))
         job.scope = ",".join(docs) if docs else fw
         return job
 

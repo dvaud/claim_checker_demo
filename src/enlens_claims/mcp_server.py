@@ -449,6 +449,9 @@ def build_server():
         from . import profile
 
         name, ws = _project(project)
+        from . import codebooks
+
+        codebooks.follow(ws, framework)  # 0.16: labels follow the codebook's renames and merges
         profile.ensure_pass1(ws, framework)
         d = profile.doc_profile(ws, framework, document_id)
         level = access.levels(ws, [document_id]).get(document_id, "none")

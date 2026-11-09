@@ -481,7 +481,9 @@ reading asks again; the list of documents gives `reading_checked` beside `readin
 not true or false; 404 for no such document; 409 for one read before 0.15 (it has no reading report). The document's
 `reading` also has `places` (0.15.7, not stored): for each warning, `"page"`, `"left_out"` or null, where to look.
 
-`DELETE /api/projects/<p>/documents/<doc_id>` → `{"removed": {...counts}}` (past checks keep their evidence).
+`DELETE /api/projects/<p>/documents/<doc_id>[?why=<reason>]` → `{"removed": {...counts}}` (past checks keep their
+evidence; 0.16: the reason, up to 2,000 characters, goes into the research log, as `{"why": "…"}` in the body does;
+the project's notes on the document are kept).
 `DELETE /api/projects/<p>/documents` `{"confirm": true}` → removes every document **and every check**.
 
 #### Who may read each document with AI (0.11)
@@ -541,6 +543,7 @@ commas, semicolons or tabs.
 `GET /api/projects/<p>/frameworks/<name>` → `{"framework": {...info, "items": [{"code", "description", "group", "group_name"}]}}`.
 `POST /api/projects/<p>/frameworks` `{"name": "h2", "csv": "code,description\nH1,…", "title": "…", "label": "hypothesis code"}`
 → `{"framework": info}`; 400 with the row problem. `DELETE /api/projects/<p>/frameworks/<name>`.
+0.16: the Codebooks page uses the routes under *Your record* below; these four stay.
 `GET /api/projects/<p>/suggest?text=<claim>&framework=sdg&n=5` → `{"codes": [{"code": "6.4", "group": "6",
 "description": "…", "score": 16.9}]}` (keyword match; empty for texts under 10 characters).
 
@@ -804,7 +807,7 @@ later ones may follow the person's own hint). The
 suggestion is the lowest strictness from which on agreement is at least 80% (starting at a bin with at least 3
 judgements), once at least 20 were judged. Show it next to the strictness: a small chart and "Use 70%".
 
-`DELETE /api/projects/<p>/hypotheses/<hyp_id>` → `{"deleted": "h…"}`.
+`DELETE /api/projects/<p>/hypotheses/<hyp_id>[?why=<reason>]` → `{"deleted": "h…"}` (0.16: `why` as for a document).
 `PUT /api/projects/<p>/hypotheses/<hyp_id>/note` `{"note": "…"}` → `{"saved": true}`.
 `GET /api/projects/<p>/hypotheses/<hyp_id>/export.xlsx` → an Excel file for people, in the app's own words and local
 times, with two sheets: *Summary* (one row per hypothesis: answer, answer for each part, documents per side, excerpts
@@ -849,12 +852,17 @@ every answer they store records the model, its digest, the prompt version, the s
 
 - `GET /api/projects/<p>/profile?framework=sdg&level=code|group&docs=` → the keyword pass status (`pass1`), the
   grid documents × codes (`grid`), counts by source (`stats`), the codebooks (`frameworks`, each with `groups`).
+  0.16: `pass1.codebook_changed` is true when the codebook's codes or the words they are matched by changed since the
+  keyword pass; `removed_codes` is `[{"code", "labels"}]`, codes taken out of the codebook whose labels wait and are
+  not counted; `stale_codes` is `{code: {"since", "passages"}}`, codes whose wording changed after the AI labelled
+  with them. Labels first follow the codebook's renames and merges (`codebooks.follow`).
 - `POST /api/projects/<p>/profile/keywords {framework?}` → job: the keyword (and meaning) pass, seconds.
 - `GET /api/projects/<p>/profile/plan?framework=&docs=&all=1` → `{passages, with_candidates, already_read,
   to_read, estimate_seconds, run: {now, last, changed}}`; `changed` lists what differs from the last run (model,
   digest, prompt, seed, settings).
-- `POST /api/projects/<p>/profile/label {framework?, doc_ids?, all_passages?, limit?}` → job: the AI reads the
-  passages (task `label`, prompt `label-v1`). Its result: `{read, failed, planned, stopped, changes: {confirmed,
+- `POST /api/projects/<p>/profile/label {framework?, doc_ids?, all_passages?, limit?, passage_ids?}` → job: the AI reads the
+  passages (task `label`, prompt `label-v1`; 0.16: `passage_ids`, a list, reads only these passages, as
+  `POST …/codebooks/<name>/relabel` does). Its result: `{read, failed, planned, stopped, changes: {confirmed,
   not_confirmed, added}}`.
 - `POST /api/projects/<p>/profile/compare {…}` → job: a second model labels the same sample (`benchmark` measure).
 - `GET /api/projects/<p>/profile/calibration?framework=` → how often people agreed with the AI per certainty.
@@ -893,8 +901,9 @@ every answer they store records the model, its digest, the prompt version, the s
   name}` of the removed theme a new theme was found in place of, or null), `replaced_by` and `drawn_from` (`[{theme_id,
   name, passages}]`: the themes a new theme took its passages from); `edits` also counts `removed` and `added`.
   `GET …/themes/<run>/<theme_id>?offset=&limit=` → one theme (a removed one too) and its passages. `DELETE
-  …/themes/<run>`.
-- `PUT /api/projects/<p>/themes/<run>/edit {what: rename|merge|move|remove, theme_id?, value?, passage_id?}`:
+  …/themes/<run>[?why=<reason>]` (0.16: `why` as for a document).
+- `PUT /api/projects/<p>/themes/<run>/edit {what: rename|merge|move|remove, theme_id?, value?, passage_id?, why?}`
+  (0.16: `why`, an optional reason, goes into the research log; each edit also keeps the state before it as a version):
   rename, merge and move are kept as reviews, so they survive a new set with the same settings; `value: null` (or
   `""` for a name) undoes. `remove` with `value: true` leaves a theme and its passages out of the themes, `false`
   brings it back; it belongs to this set only. A removed theme takes no merge and no moved passage (400), and the
@@ -1013,7 +1022,8 @@ that no session has taken yet out of the queue; a check by queue is removed whol
   is ready, `claude` the status, `warning` when it is not signed in.
 - `GET /api/projects/<p>/overview` → `{"documents", "passages", "profile": {"framework", "keyword", "labels",
   "documents"}, "concepts": {"terms", "concepts"}, "themes": {"runs", "themes", "latest"}, "references",
-  "hypotheses", "waiting"}`: what each feature has made, for the Overview page.
+  "hypotheses", "waiting"}`: what each feature has made, for the Overview page. 0.16 adds `"notes"`, `"log"` (entries)
+  and `"codebooks"` (those of your own: not the bundled ones).
 
 ### Set-up in one button, moving to another computer (0.10)
 
@@ -1152,6 +1162,115 @@ from a reference manager (BibTeX, RIS, CSL JSON, Zotero's CSV). Nothing goes ove
   People's own labels are not counted: they do not depend on a version.
 - The sheet *How these results were made* of every Excel download has a column *ENLENS version* and ends with a row
   saying which reader read the project's documents.
+
+### Your record: research log, notes, earlier versions, codebooks (0.16)
+
+Everything here runs on this computer, without AI. Errors are the usual `{"error"}`: 400 for a value that cannot be
+used, 404 for something that is not there, 403 (`PermissionError`) for a colleague's note or log entry, which only
+they can change. The downloads (`…/log.md|xlsx`, `…/notes.md|xlsx`, `…/codebooks/<name>.csv`) also accept `?token=`.
+
+#### The research log
+
+An entry: `{"entry_id", "at", "person_id", "who", "mine", "kind", "group", "text", "title", "subject_kind",
+"subject_id", "why", "edited_at", "version_id", "has_version", "can_edit", "can_why", "data", "app_version"}`.
+`kind` `entry` is a person's own; every other kind is written by the app (documents added or removed, `ai-access`,
+`reread`, checks added or removed, `evidence-added`, themes found, removed, renamed, merged or restored, codebooks
+made, changed, moved, copied or removed, `restored`, `sync`). `group` is one of `entries`, `documents`, `checks`,
+`themes`, `codebooks`, `history`, `together`. `has_version` says an earlier version from before the change exists
+(`version_id`, see *Earlier versions*).
+
+- `GET /api/projects/<p>/log?group=&q=&subject_kind=&subject_id=&offset=&limit=` → `{"entries": [entry], "total",
+  "groups": {group: count}, "group_names"}`, newest first (`limit` up to 2000, default 200). `q` matches the text,
+  the title and the reason.
+- `POST /api/projects/<p>/log {"text", "subject_kind"?, "subject_id"?, "title"?}` → `{"entry"}`: an entry of your own
+  (at most 10,000 characters; empty is a 400).
+- `PUT /api/projects/<p>/log/<entry_id> {"text"?, "why"?}` → `{"entry"}`. `why` (at most 2,000 characters; `""`
+  takes it away) can be set on any entry of yours; `text` only on an entry of your own (`kind` `entry`).
+- `DELETE /api/projects/<p>/log/<entry_id>` → `{"deleted"}`: only your own entries (400 for the app's); it does not come
+  back when a colleague's copy is brought in.
+- `GET /api/projects/<p>/log.md` and `…/log.xlsx`: the whole log, oldest first. Markdown has a heading per day; the
+  sheet *Research log* has *When (UTC)*, *Who*, *What*, *Entry*, *About*, *Why* and *ENLENS version*, with the usual
+  *How these results were made* sheet.
+
+#### Notes and highlights
+
+A note: `{"note_id", "doc_id", "title", "present", "start", "end", "quote", "text", "colour", "page", "lost", "mine",
+"who", "created_at", "edited_at"}`. `start` and `end` are character offsets into the document's text; `quote` is the
+words, checked against the text when the note is made (a selection cut inside a word is widened). `text` is empty for
+a plain highlight. `colour` is `yellow`, `green`, `blue` or `pink`. When the document was read again, the words are
+found again and `start`, `end` and `page` follow them; `lost` is true when they cannot be found (the note is kept).
+`present` is false for a note on a removed document (kept).
+
+- `GET /api/projects/<p>/notes?q=&doc=&colour=&mine=1&offset=&limit=` → `{"notes", "total", "documents": [{"doc_id",
+  "title", "present", "notes"}], "colours"}`, newest first. `q`: every word of it, in the note or its words.
+- `GET /api/projects/<p>/documents/<doc_id>/notes` → `{"notes", "colours"}` in the order of the text (404 for an
+  unknown document).
+- `POST /api/projects/<p>/notes {"doc_id", "start", "end", "quote"?, "text"?, "colour"?}` → `{"note"}`. Without
+  `colour`, yellow. A selection of more than 4,000 characters, or words that are not in the text, is a 400.
+- `PUT /api/projects/<p>/notes/<note_id> {"text"?, "colour"?}` → `{"note"}`; `DELETE …/notes/<note_id>` →
+  `{"deleted"}`. Only your own notes (403 for a colleague's).
+- `POST /api/projects/<p>/notes/<note_id>/evidence {"claim_id", "verdict", "comment"?}` → `{"hyp_id", "claim_id",
+  "passage_id", "new"}`: the passage holding the note's words becomes an excerpt of that part of a check, judged by
+  you (`verdict`: `supports`, `partially_supports`, `refutes` or `not_relevant`), with the note's words as the sentence
+  you point to; `new` is false when the check showed the passage already (your judgement of it is set). 400 when the
+  words are no longer in the text, run across two passages, or lie in text left out of the reading.
+- `GET /api/projects/<p>/notes.md` and `…/notes.xlsx`: every note (columns *Document*, *Page*, *Words*, *Note*,
+  *Colour*, *Who*, *Made (UTC)*, *Changed (UTC)*, *Found in the text now*).
+
+#### Earlier versions
+
+`kind` is `themes` (key: the run id), `check` (key: the hypothesis id) or `codebook` (key: its name). A version is
+kept before each change a person makes: theme names, merges, moves and removals; your own judgements, comments,
+sentences and the check's note; a codebook. Not the themes found, nor the AI's answers. The latest 200 of each are
+kept. Versions of themes and checks are in the project's database (the `versions` table); bringing in a colleague's
+work does not take over theirs, nor give them yours. (A project zip is a copy of the whole database, so it carries them
+too: a move to another computer keeps them.) A codebook's are beside its file.
+
+- `GET /api/projects/<p>/history/<kind>/<key>` → `{"kind", "key", "title", "versions": [{"version_id", "at", "label",
+  "person_id", "who", "mine"}]}`, newest first.
+- `GET /api/projects/<p>/history/<kind>/<key>/<version_id>` → `{"kind", "key", "title", "version", "changes": [{"what",
+  "before", "after"}], "same"}`: what changed from that version to now, in words.
+- `POST /api/projects/<p>/history/<kind>/<key>/<version_id>/restore {}` → `{"restored": true, "changes"}`, or
+  `{"restored": false, "changes": []}` when it is the same as now. The state it replaces is kept as a version first,
+  and the research log gets a `restored` entry that points to it.
+
+#### Codebooks
+
+A codebook stays a CSV file (see *Frameworks* above), kept `project` (`<project>/frameworks/`) or `home` (all projects),
+with a side file for what a spreadsheet cannot hold: a stable id for each code, renames, merges and rewordings, removed
+codes, where each example was found, the groups and their order. The old routes under `…/frameworks` still work.
+
+- `GET /api/projects/<p>/codebooks` → `{"codebooks": [info + {"where": "project" | "home" | "bundled", "labels",
+  "checks", "profile_default"}], "problems": [...]}`. Labels first follow renames and merges.
+- `GET /api/projects/<p>/codebooks/<name>` → `{"codebook": {"title", "label", "directional", "groups": [{"group",
+  "group_name"}], "codes": [{"code", "uid", "description", "group", "include", "exclude", "keywords", "examples":
+  [{"quote", "doc_id", "title", "page"}]}], "where", "editable", "shadows_home", "in_home", "used": {"labels",
+  "by_code", "checks"}, "removed": [{"code", "uid", "labels", …}], "stale": {code: {"since", "passages"}},
+  "versions", "profile_default"}}`. `include` is *When to use it*, `exclude` *When not to use it*, `keywords` *Words it
+  is matched by*. A code's `uid` is empty for a code not saved yet.
+- `POST /api/projects/<p>/codebooks {"name", "title"?, "where"?: "project" | "home", "start"?: "fresh" | "themes" |
+  "copy" | "csv", "source"?, "label"?}` → `{"codebook"}`. `source`: `{"codes": [...]}` (drafts from
+  `GET …/codebooks/sources`, the ones kept), `{"of": "<codebook name>"}` or `{"csv": "<text>"}`. The columns of a CSV
+  are `code`, `description`, `group`, `group_name`, `when_to_use`, `when_not_to_use`, `keywords` (separated by `;`) and
+  `examples` (one per line); `code` and `description` are required. A name that is taken gets a number.
+- `GET /api/projects/<p>/codebooks/sources?all=1` → `{"runs": [{"run_id", "project", "here", "created_at", "themes":
+  [{"name", "size", "code": {"code", "description", "described", "keywords", "examples"}}]}]}`: the sets of themes a
+  codebook can start from (removed themes left out); `all` adds those of every project.
+- `PUT /api/projects/<p>/codebooks/<name> {"codebook": {…as above…}, "merges"?: [{"from": uid, "into": uid}], "why"?}`
+  → `{"changes": [words], "version_id", "codebook"}`: writes the editor's state. A code without a `uid` is new; one
+  that is gone is removed (its labels wait), unless named in `merges` (its labels go to the other). A bundled codebook
+  is a 400. Each saved change keeps the earlier state as a version and goes into the research log with `why`.
+- `DELETE /api/projects/<p>/codebooks/<name>[?why=]` → `{"deleted"}`. Labels made with it stay.
+- `POST …/codebooks/<name>/move {"to": "home" | "project"}` → `{"codebook"}`: keep it with all projects, or with this
+  one. `POST …/codebooks/<name>/copy-here {}` → `{"codebook"}`: this project's own copy of one kept with all projects.
+- `POST …/codebooks/example {"quote", "doc_id"?}` → `{"example": {"doc_id", "title", "page", "start", "end", …}}`: where
+  words are in the documents (400 when they are not).
+- `POST …/codebooks/<name>/try {"codebook"?}` → job (`codebook-try`, no model): for each code of the saved codebook,
+  or of the state sent, `{"passages", "documents", "codes": {code: {"passages", "documents", "examples", "share",
+  "note"}}}`; `note` says a code matches nothing, or more than a quarter of the passages.
+- `POST …/codebooks/<name>/relabel {"code"}` → `{"passages", "job"}`: the AI labels again the passages it labelled with
+  that code before its wording changed (a label job with `passage_ids`); 409 when there are none.
+- `GET /api/projects/<p>/codebooks/<name>.csv` → the codebook as a CSV file (the columns above).
 
 ### Jobs
 

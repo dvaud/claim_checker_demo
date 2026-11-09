@@ -344,6 +344,11 @@ def create_hypothesis(ws: Workspace, text: str, framework: str | None = None, co
         cx.execute("INSERT INTO hypotheses(hyp_id, text, framework, code, options_json, decomposed, created_at, batch_id, "
                    "origin, origin_id, app_version) VALUES (?,?,?,?,?,0,?,?,?,?,?)",
                    (hid, text, fw, code, json.dumps(options or {}), now(), batch_id, origin, origin_id, __version__))
+        from . import researchlog  # 0.16
+
+        researchlog.record(cx, "check-added", f"Checked the hypothesis {researchlog.quoted(text, 200)}"
+                                              + (" (one of a set)." if batch_id else "."), "check", hid, text,
+                           data={"batch_id": batch_id} if batch_id else None)
     return hid
 
 
@@ -783,7 +788,7 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
         with ws.connect() as cx:
             cx.execute("UPDATE hypotheses SET model=? WHERE hyp_id=?", (used, hid))
     except BaseException:
-        delete_hypothesis(ws, hid)  # a check stopped by a connection or key problem should not linger in the history
+        delete_hypothesis(ws, hid, unmade=True)  # a check stopped by a connection or key problem should not linger in the history
         raise
     finally:
         if own:
@@ -834,7 +839,7 @@ def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool
     frameworks.resolve(ws, framework, code)
     used = _used(backend, model)
     for (old,) in ws.query("SELECT hyp_id FROM hypotheses WHERE hyp_id LIKE 'prep%'"):
-        delete_hypothesis(ws, old)  # left by an earlier one that was interrupted
+        delete_hypothesis(ws, old, unmade=True)  # left by an earlier one that was interrupted
     hid = _new_id("prep")
     new_hypothesis(ws, text, None, None, {"prepare": True}, None, hyp_id=hid)
     try:
@@ -864,7 +869,7 @@ def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool
                 else "No other words proposed", {**info, "terms": got, "new_terms": new})
         return {"parts": parts, "terms": terms, "split": split}
     finally:
-        delete_hypothesis(ws, hid)
+        delete_hypothesis(ws, hid, unmade=True)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -2674,6 +2679,15 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
                     us, ue = (find_near(cx, row[2], text, hit[0], hit[1], row[1], row[3], kept.get("anchor"))
                               or (None, None))
         comment = (note or "").strip()[:2000] or None
+        was = cx.execute("SELECT verdict, note, quote FROM judgements WHERE claim_id=? AND passage_id=? AND person_id=?",
+                         (claim_id, passage_id, me)).fetchone()
+        if tuple(was or (None, None, None)) != ((verdict or None), comment, (uq if verdict else None)):
+            from . import history  # 0.16: your judgements in the check as they were, to compare and restore
+
+            hyp = cx.execute("SELECT COALESCE(hyp_id, claim_id) FROM user_claims WHERE claim_id=?",
+                             (claim_id,)).fetchone()
+            if hyp:
+                history.snapshot(ws, cx, "check", hyp[0], "your judgement of an excerpt")
         people.record(cx, claim_id, passage_id, me, verdict, comment, None, uq, us, ue)
         people.refresh(cx, [claim_id], me)  # yours is in force; removed, a colleague's counts again (if any)
 
@@ -2767,7 +2781,7 @@ def more_available(ws: Workspace, claim_id: str, semantic: bool = False) -> bool
                               doc_ids=list(docs) or None, exclude=seen))
 
 
-def delete_claim(ws: Workspace, claim_id: str) -> None:
+def delete_claim(ws: Workspace, claim_id: str, why: str | None = None, _log: bool = True) -> None:
     with ws.connect() as cx:
         hyp = cx.execute("SELECT hyp_id FROM user_claims WHERE claim_id=?", (claim_id,)).fetchone()
         cx.execute("DELETE FROM verifications WHERE subject_kind='user_claim' AND subject_id=?", (claim_id,))
@@ -2781,32 +2795,54 @@ def delete_claim(ws: Workspace, claim_id: str) -> None:
         cx.execute("DELETE FROM user_claims WHERE claim_id=?", (claim_id,))
         hid = hyp[0] if hyp and hyp[0] else claim_id
         if not cx.execute("SELECT 1 FROM user_claims WHERE hyp_id=?", (hid,)).fetchone():
-            _note_removed(ws, cx, hid)
+            _note_removed(ws, cx, hid, why, _log)
             cx.execute("DELETE FROM results WHERE task_id=?", (f"decompose:{hid}",))
             cx.execute("DELETE FROM tasks WHERE task_id=?", (f"decompose:{hid}",))
             cx.execute("DELETE FROM hypotheses WHERE hyp_id=?", (hid,))
 
 
-def delete_hypothesis(ws: Workspace, hyp_id: str) -> None:
+def delete_hypothesis(ws: Workspace, hyp_id: str, why: str | None = None, unmade: bool = False) -> None:
+    """Remove a check. 0.16: the research log says so, with the person's reason (`why`) when they gave one; a check
+    the app takes back before it was made (stopped, withdrawn, interrupted: `unmade`) leaves nothing in the log."""
     with ws.connect() as cx:
+        if unmade:
+            cx.execute("DELETE FROM research_log WHERE subject_kind='check' AND subject_id=? AND kind='check-added'",
+                       (hyp_id,))
+        else:
+            _log_removed(cx, hyp_id, why)
         for (cid,) in cx.execute("SELECT claim_id FROM user_claims WHERE hyp_id=?", (hyp_id,)).fetchall():
-            delete_claim(ws, cid)  # nested: one transaction
-        _note_removed(ws, cx, hyp_id)
+            delete_claim(ws, cid, _log=False)  # nested: one transaction
+        _note_removed(ws, cx, hyp_id, log=False)
         cx.execute("DELETE FROM results WHERE task_id=?", (f"decompose:{hyp_id}",))
         cx.execute("DELETE FROM tasks WHERE task_id=?", (f"decompose:{hyp_id}",))
         cx.execute("DELETE FROM hypotheses WHERE hyp_id=?", (hyp_id,))
 
 
-def _note_removed(ws: Workspace, cx, hyp_id: str) -> None:
+def _note_removed(ws: Workspace, cx, hyp_id: str, why: str | None = None, log: bool = True) -> None:
     """0.14: a removed check does not come back with a colleague's work (sync.py); its own sync-clash mark goes."""
     row = cx.execute("SELECT text FROM hypotheses WHERE hyp_id=?", (hyp_id,)).fetchone()
     if row:
         ws.removed(cx, "check", hyp_id, row[0])
+        if log:
+            _log_removed(cx, hyp_id, why)
     cx.execute("DELETE FROM sync_copies WHERE kind='check' AND key=?", (hyp_id,))
 
 
+def _log_removed(cx, hyp_id: str, why: str | None) -> None:
+    """0.16: a check removed, in the research log (the claim dropped, and why)."""
+    from . import researchlog
+
+    row = cx.execute("SELECT text FROM hypotheses WHERE hyp_id=?", (hyp_id,)).fetchone()
+    if row:
+        researchlog.record(cx, "check-removed", f"Removed the check of {researchlog.quoted(row[0], 200)}.", "check",
+                           hyp_id, row[0], why=why)
+
+
 def set_note(ws: Workspace, hyp_id: str, note: str) -> None:
+    from . import history
+
     with ws.connect() as cx:
+        history.snapshot(ws, cx, "check", hyp_id, "the note on the check")
         if not cx.execute("UPDATE hypotheses SET note=? WHERE hyp_id=?", ((note or "").strip()[:4000], hyp_id)).rowcount:
             raise KeyError(hyp_id)
 

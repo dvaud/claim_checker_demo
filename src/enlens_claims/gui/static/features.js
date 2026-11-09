@@ -8,6 +8,8 @@ export const SECTIONS = {
   explore: { title: "Explore the documents", short: "Explore", sub: "Start here: no hypothesis needed." },
   check: { title: "Check hypotheses", short: "Check", sub: "When you have a statement to test against the documents.", compact: true },
   project: { title: "Your project", short: "Project" },
+  // 0.16: what you note and decide, kept as you work (notes and highlights, the research log)
+  record: { title: "Your notes and decisions", short: "Notes", sub: "Kept as you work, with the date and who made them.", compact: true },
 };
 
 // ai: "none" (never uses the AI), "optional" (works without it; the AI can add to it), "uses" (the AI does the work).
@@ -27,6 +29,12 @@ export const FEATURES = {
     section: "project", title: "Bibliography", icon: "library", href: "#/bibliography", ai: "none",
     what: "Your Zotero library or a collection of it, matched with the documents: which works you have, which you still need to find, and which documents Zotero does not have.",
     overview: false,
+  },
+  codebooks: {
+    section: "project", title: "Codebooks", icon: "book-marked", href: "#/codebooks", ai: "none",
+    what: "Make and change your own codebooks: codes with a definition, when to use them and when not, the words they are matched by and examples from the documents. Start fresh or from the themes found.",
+    use: "To code the documents with your own categories, and see before any AI labels what each code would pick.",
+    overview: { section: "explore", order: 5.5, title: "Your own codebook" },
   },
   search: {
     section: "explore", title: "Search", icon: "text-search", href: "#/search", ai: "none",
@@ -59,6 +67,15 @@ export const FEATURES = {
   history: {
     section: "check", title: "Results", icon: "history", href: "#/history", ai: "optional",
     what: "Every hypothesis checked in this project: the answers, your reviews, the evidence map and Excel downloads.",
+  },
+  // 0.16 (F2, F4)
+  annotations: {
+    section: "record", title: "Notes", icon: "highlighter", href: "#/notes", ai: "none",
+    what: "Your highlights and notes on exact words of the documents, in one searchable list. A note can be evidence in a check.",
+  },
+  researchlog: {
+    section: "record", title: "Research log", icon: "notebook", href: "#/log", ai: "none",
+    what: "A dated record of what was decided: documents added, checks made and dropped, themes removed, codebook changes. Add your own entries, say why, and go back to an earlier version.",
   },
 };
 
