@@ -51,6 +51,8 @@ next candidates, as rc1 said.
   sent too (this test fails without the fix); blocks asked for by number are those of the listing.
 - `tests/test_0_16_0_scratch_copy_removal.py`: a copy held during removal is removed on the next try on Windows,
   closed again before each; elsewhere it is tried once; a copy held for good is left for the trash, as before.
+- `tests/test_0_16_0_speed.py` (rc1): the clean-up of the test whose reading process ends at once failed now and then
+  on Linux and macOS (a job still in the pipe of an ended process); it closes the pipes as `ingest` does.
 - Checked in Chromium with Playwright, in light and dark and at 390 px with touch: the list is never drawn again, the
   page stays still in the middle of a 169-block book, the keyboard lands on the fold's line, two quick clicks both
   count, and no console errors.

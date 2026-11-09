@@ -136,8 +136,11 @@ def test_a_reading_process_that_ends_at_once_leaves_the_file_to_be_read_here(tmp
         for p in started:
             p.kill()
             p.wait()
-            p.stdin.close()
-            p.stdout.close()
+            for pipe in (p.stdin, p.stdout):
+                try:  # 0.16.0rc2: a job still in the buffer goes to a process that has ended (as ingest closes it)
+                    pipe.close()
+                except OSError:
+                    pass
     assert started
 
 
