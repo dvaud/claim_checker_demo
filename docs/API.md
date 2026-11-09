@@ -222,7 +222,34 @@ as the icon starts it (`--launcher`, output to `logs/enlens.log`), without openi
  "suggested": [{"name": "qwen3:8b", "use": "chat", "size": "about 5 GB"},
                {"name": "nomic-embed-text", "use": "embed", "size": "about 0.3 GB"}]}
 ```
-`suggested` (0.13.7): the models the page offers to download into Ollama with one button.
+`suggested` (0.13.7): the models the page offers to download into Ollama with one button. `ollama_app` (0.15.6):
+whether Ollama is on this computer, running or not: `{"installed", "path", "system": "windows" | "mac" | "linux",
+"how": "app" | "terminal", "line", "manual"}` (`how`: the app installs it itself, or on Linux opens a terminal window
+running Ollama's own `line`; `manual`: Ollama's installer file, for doing it by hand).
+
+`GET /api/ollama` (0.15.6) → what the page shows before Ollama is installed from the app: `ollama_app`'s fields plus
+`"size": {"bytes", "exact"}` (the download for this kind of computer, as ollama.com says it now, kept an hour; when
+ollama.com cannot be asked, the size known in November 2026, `exact` false: 1.7 GB for Windows, 230 MB for macOS),
+`"needs"` (the free disk space asked for: four times the download, for the file and Ollama unpacked), `"free"` (free
+space in the temporary folder) and `"from"` (the address it downloads).
+
+`POST /api/ollama/install` (0.15.6) → installs Ollama without a terminal, as `POST /api/claude-setup/claude-code` installs
+Claude Code. Windows and macOS: `{"job": …}` of kind `ollama-install` (one at a time) that downloads Ollama's own
+installer (`OllamaSetup.exe`, `Ollama-darwin.zip`: the files ollama.com's install lines download), checks that it is
+Ollama's (Windows: the Authenticode signature is valid and its signer is `O=Ollama Inc.`, as Ollama's install.ps1
+checks; macOS: `codesign --verify --deep --strict` against Ollama's Developer ID team, 3MU9H2V9Y9), installs it for this
+user (Windows: the installer's silent per-user mode, `%LOCALAPPDATA%\Programs\Ollama`, no administrator rights; macOS:
+`/Applications`, else `~/Applications`) and starts it hidden. Its `progress` is `{"step": "download" | "check" |
+"install" | "start", "done", "total"}` (bytes while downloading); `POST /api/jobs/<id>/cancel` stops it while it
+downloads, and nothing is installed. Its `result` is `{"path", "running"}` (`running`: Ollama answered within a
+minute). An Ollama already on the computer is only started (`"already": true`). A failed install is a job `error` in
+plain words (not enough disk space, offline, a file that is not Ollama's: nothing is installed from it). Linux:
+`{"terminal": {"opened", "window", "command"}}`: a terminal window runs Ollama's own line, which asks for the password
+(it installs for everyone and sets up a service); `command` is the line to type when no window could be opened.
+Nothing of the person's is sent, so it is allowed with `--local-only` too.
+
+`POST /api/ollama/start` (0.15.6) → starts the Ollama that is on this computer but not running, hidden: `{"started",
+"path"}`; 409 when Ollama is not on this computer. The page notices it within a few seconds.
 
 `POST /api/servers/pull` (0.13.7) → downloads models into the Ollama running on this computer, so a local model needs
 no terminal. Body `{"models": ["qwen3:8b", "nomic-embed-text"]}` (one to four names as Ollama's library writes them;

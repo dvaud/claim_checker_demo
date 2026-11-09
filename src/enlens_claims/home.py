@@ -493,8 +493,9 @@ def _make_backend(settings: dict, api_key: str = "", kinds: tuple[str, ...] = ("
         if found:
             raise BackendError("A local model server is running but has no chat model. With Ollama, download one "
                                "in Settings → AI (one button); with another server, load a model in it.")
-        raise BackendError("No local model server is running. Open Ollama (free, from ollama.com) or LM Studio, "
-                           "then download a model in Settings → AI; or choose the offline demo in Settings.")
+        raise BackendError("No local model server is running. Install or start Ollama (free) in Settings → AI, one "
+                           "button, then download a model there; or open LM Studio, or choose the offline demo in "
+                           "Settings.")
     return BaselineBackend(), "baseline"
 
 

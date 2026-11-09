@@ -5,15 +5,25 @@
 > **In short**
 > - No Claude plan, or documents that must stay on your computer? A model served on your own computer keeps every
 >   word on it.
-> - Choose *A model on this computer*, get Ollama, and ENLENS downloads a model with one button.
+> - Choose *A model on this computer*: ENLENS installs Ollama and then downloads a model, each with one button.
 > - Local models are private and free but weaker: test one before you trust it.
 
 ## Getting one
 
-Choose *A model on this computer* (on the first screen or in *Settings → AI*), get
-[Ollama](https://ollama.com/download) (free) and open it. ENLENS notices it and downloads a model with one button:
-*Download qwen3:8b* (about 5 GB), and if you like *nomic-embed-text* for search by meaning
-([First steps](first-steps.md#1-the-ai)). **LM Studio**, **llama.cpp**, **Jan** and **vLLM** work too, as
+Choose *A model on this computer* (on the first screen or in *Settings → AI*). Without a model server, the step
+offers **Ollama**, a free program that runs AI models on your computer:
+
+- *Install Ollama* first says how big the download is on your computer (in November 2026 about **1.7 GB on Windows**
+  and **230 MB on a Mac**) and how much free disk space it needs (about four times that), before anything is
+  downloaded. Then ENLENS downloads Ollama's own installer from ollama.com, checks that it is signed by Ollama, installs
+  it (Windows: in your user folder, no administrator rights; Mac: in *Applications*) and starts it, with a progress
+  bar and *Stop*. On Linux, Ollama's installer asks for your password, so ENLENS opens a terminal window running it.
+- Ollama already on the computer but not running: *Start Ollama*.
+- Rather do it yourself? *Download Ollama's installer* gets the file itself (ollama.com's own download page now leads
+  with a line to type in a terminal).
+
+Then ENLENS downloads a model with one button: *Download qwen3:8b* (about 5 GB), and if you like *nomic-embed-text*
+for search by meaning ([First steps](first-steps.md#1-the-ai)). None of your documents are sent. **LM Studio**, **llama.cpp**, **Jan** and **vLLM** work too, as
 OpenAI-compatible servers: in [LM Studio](https://lmstudio.ai), *Developer → Start server* with a model loaded.
 
 In a terminal instead:

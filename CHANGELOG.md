@@ -1,5 +1,82 @@
 # Changelog
 
+## 0.15.6 (November 2026): Ollama installed from the app
+
+The card for a model on this computer promised "no terminal", but its first step sent people to ollama.com, whose
+download page now leads with a line to type in a terminal (with "Download manually" in small print). Now one button,
+*Install Ollama*, gets Ollama, the way *Set up Claude* gets Claude Code. Before anything is downloaded it says how big
+the download is on this kind of computer and how much free disk space it needs. Also: hovering a task in the sidebar
+shows its whole name. Nothing changes for results.
+
+### New
+
+- **Install Ollama, with one button.** The dialog says the size of Ollama's download for this computer, as ollama.com
+  gives it at that moment (in November 2026, 1.7 GB for Windows and 229 MB for a Mac), and the free disk space it
+  needs: about four times that, with the space this computer has. When there is not enough, it says so and downloads
+  nothing. Then ENLENS downloads Ollama's own installer from ollama.com, with a progress bar and *Stop*, checks that it
+  is Ollama's, installs it and starts it. A moment later the step offers *Download qwen3:8b*.
+  - **Windows:** `OllamaSetup.exe` must carry a valid signature by Ollama Inc. (the same check Ollama's own install
+    line makes). It installs in your user folder with no administrator rights, and Ollama starts in the tray.
+  - **Mac:** the app must be signed with Ollama's Developer ID and notarised by Apple. It goes to *Applications* (or
+    *Applications* in your home folder when that cannot be written) and opens in the menu bar.
+  - **Linux:** Ollama's installer needs your password (it installs for everyone and sets up a service), so ENLENS opens
+    a terminal window running Ollama's own line, or gives the line to copy when no window can open.
+  - A file that is not Ollama's is never installed: the install stops and says why.
+- **Start Ollama.** Ollama on the computer but not running: one button starts it, and the step notices it within a
+  few seconds. After a minute without an answer, it says so. Ollama installed with Homebrew (the `ollama` program
+  alone) counts as installed and is started as `ollama serve`.
+- **Prefer to do it yourself?** The step links to Ollama's installer file itself, not to the download page.
+
+### Fixed
+
+- **Hovering a task in the sidebar shows its whole name.** The task panel cuts long names short ("Reading an ex…"),
+  and every row now has a tooltip with the whole name. While work ran, the panel was drawn again every 2 seconds, which
+  closed a tooltip as soon as it opened; it now changes only the times in its rows when nothing else changed.
+- Messages that said "Open Ollama (free, from ollama.com)" now point to *Install or start Ollama* in *Settings → AI*.
+
+### For developers
+
+- `ollama_setup.py`: `status()` (asked with `GET /api/servers`, as `ollama_app`), `plan()` (`GET /api/ollama`: the size
+  by a HEAD request through ollama.com's redirects, kept an hour, else the November 2026 size), `install()` (the job
+  `ollama-install` of `POST /api/ollama/install`: `{"step": "download" | "check" | "install" | "start", "done",
+  "total"}`), `start()` (`POST /api/ollama/start`) and `open_terminal()` (Linux). Windows: `Get-AuthenticodeSignature`
+  with the path passed in the environment (so a folder such as `C:\Users\Dávid` needs no quoting), the
+  `%LOCALAPPDATA%\Ollama\upgraded` marker install.ps1 leaves (Ollama starts hidden), and `/VERYSILENT /NORESTART
+  /SUPPRESSMSGBOXES`; the installer starts Ollama itself, so ENLENS does not. macOS: `ditto -x -k`, then `codesign
+  --verify --deep --strict` with a requirement naming Ollama's team (3MU9H2V9Y9), a Developer ID certificate and
+  `notarized` (Ollama staples its ticket, so this holds offline), then `open -g -a … --args hidden`.
+- The download goes to `~/enlens/downloads/ollama`, emptied when an install begins and when the app starts. A Stop
+  ends the download within moments (`read1`); once Ollama is installed, a Stop or quitting the app starts nothing.
+  While an install runs, `POST /api/ollama/start` (and a second install) returns its job, and the page shows its
+  progress even when Ollama already looks installed: the Windows installer writes `ollama app.exe` first.
+- `launcher.start_ollama` (the icon starts Ollama when it is the AI) now uses `ollama_setup.start()`; `ollama serve`'s
+  output still goes nowhere.
+- `tools/dev_server.py --ollama install` (no Ollama: the real size from ollama.com, then a stand-in install) and
+  `--ollama stopped` (an Ollama to start). Neither finds, starts or replaces the Ollama on the computer.
+
+### Tests
+
+- `tests/test_0_15_6_ollama_install.py`: the size from ollama.com (a local web server stands in) and the known size
+  when it cannot be asked; the room it needs; the download's progress and *Stop*; offline; the Windows signature
+  (valid and Ollama's, someone else's, unsigned, a bad hash; an accented path passed whole); the silent per-user
+  install and its marker (a shell script stands in for `OllamaSetup.exe`); nothing installed from a file that is not
+  Ollama's on Windows or macOS; the move to *Applications* in the home folder when */Applications* cannot be written;
+  `codesign` refusing an app that is not Ollama's (and, on a Mac that has it, passing Ollama's own); an installed
+  Ollama started, not downloaded; a Stop after installing starting nothing; leftovers cleared; Linux's terminal
+  window; the API (one install at a time, Stop, no start while an install runs); the page and the docs.
+- `tests/test_0_13_6_page_extensions.py`: every task row's tooltip is its whole name.
+- On this Mac the real `Ollama-darwin.zip` (229 MB) was downloaded, unpacked and checked with the strict requirement;
+  it passes. Nothing was installed.
+
+### Not yet done
+
+- **The Windows install has not run on a real Windows PC.** It does what Ollama's own `install.ps1` does, step by
+  step, and its parts are tested, but neither this Mac nor the release's Windows test machine ran a real
+  `OllamaSetup.exe` through it.
+- A real Linux terminal window running Ollama's line was not tried; the step's text and the line were.
+- The mac install was tried with a stand-in app; the real one was downloaded and checked, not installed (this Mac has
+  Ollama already).
+
 ## 0.15.5 (November 2026): the Windows install waits for Claude Code
 
 On Windows, running the install line (or *Install-ENLENS-Windows.cmd*) while Claude Code had ENLENS connected broke

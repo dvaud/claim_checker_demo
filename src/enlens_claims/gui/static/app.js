@@ -221,6 +221,7 @@ function keepInView(details, summary) {
 
 let jobsTimer = null;
 let jobsBusy = false, jobsAgain = false;
+let jobsKey = "";  // 0.15.6: what the panel drawn last shows, all but the seconds
 async function renderJobs() {
   if (jobsBusy) { jobsAgain = true; return; }
   jobsBusy = true;
@@ -234,6 +235,23 @@ async function drawJobs() {
   const active = jobs.filter((j) => !TERMINAL.has(j.state));
   const recent = jobs.filter((j) => TERMINAL.has(j.state)).slice(0, 5);
   box.hidden = !active.length && !recent.length;  // 0.9: nothing to show yet: no empty box in the sidebar
+  const stateText = (j) => j.on_hold ? "not running"
+    : j.state === "running" ? `running · ${fmt.secs(j.seconds)}` : j.state === "queued" ? "waiting its turn"
+    : j.state === "done" ? "done" : j.state === "error" ? "did not work" : "stopped";
+  // 0.15.6: while work runs the panel is drawn again every 2 s. When only the seconds changed, the rows stay and only
+  // their times change: a new row under the pointer closed its tooltip (the whole name) as soon as it opened.
+  const key = JSON.stringify([App.project, [...active, ...recent].map((j) => [j.id, j.kind, j.title, j.scope, j.project, j.state, !!j.on_hold])]);
+  const old = box.querySelector("details");
+  if (old && key === jobsKey) {
+    old.querySelectorAll(".job-row[data-job]").forEach((r) => {
+      const j = active.find((a) => a.id === r.dataset.job);
+      const s = r.querySelector(".job-state");
+      if (j && s && s.textContent !== stateText(j)) s.textContent = stateText(j);
+    });
+    clearTimeout(jobsTimer);
+    if (active.length) jobsTimer = setTimeout(renderJobs, 2000);
+    return;
+  }
   // 0.12: work that waits for Claude Code with nothing answering it is not running: it says so, in its own colour,
   // with a still pause mark instead of the pulsing dot
   const hold = active.filter((j) => j.on_hold);
@@ -251,9 +269,8 @@ async function drawJobs() {
   // 0.13.6: each kind's link, icon and name are in registry.js (JOB_KINDS), where an add-on adds its own
   const row = (j) => {
     const v = jobRow(j);
-    return h("a", { class: "job-row", href: v.href, title: v.tooltip }, icon(v.icon, { size: 14 }), h("span", { class: "job-title" }, v.text),
-    j.on_hold ? h("span", { class: "job-state job-hold" }, "not running")
-      : h("span", { class: "job-state" }, j.state === "running" ? `running · ${fmt.secs(j.seconds)}` : j.state === "queued" ? "waiting its turn" : j.state === "done" ? "done" : j.state === "error" ? "did not work" : "stopped"));
+    return h("a", { class: "job-row", href: v.href, title: v.tooltip, dataset: { job: j.id } }, icon(v.icon, { size: 14 }), h("span", { class: "job-title" }, v.text),
+      h("span", { class: "job-state" + (j.on_hold ? " job-hold" : "") }, stateText(j)));
   };
   if (!active.length && !recent.length) menu.appendChild(h("div", { class: "muted small", style: { padding: "6px 8px" } }, "Work that takes a while (checks, adding documents) shows up here, so you can move around the app and come back to it."));
   if (hold.some((j) => j.project === App.project)) {
@@ -267,9 +284,9 @@ async function drawJobs() {
   recent.forEach((j) => menu.appendChild(row(j)));
   keepInView(details, summary);
   details.append(summary, menu);
-  const old = box.querySelector("details");
   if (old && old.open) details.open = true;
   replace(box, details);
+  jobsKey = key;
   clearTimeout(jobsTimer);
   if (active.length) jobsTimer = setTimeout(renderJobs, 2000);
 }

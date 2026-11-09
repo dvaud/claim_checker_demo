@@ -182,26 +182,14 @@ def start_ollama(settings: dict) -> str | None:
             return None  # running
     except OSError:
         pass
-    try:
-        if sys.platform == "darwin":
-            for app in (Path("/Applications/Ollama.app"), Path.home() / "Applications" / "Ollama.app"):
-                if app.exists():
-                    subprocess.Popen(["open", "-g", "-a", str(app)])  # console: macOS
-                    return "Ollama app"
-        elif os.name == "nt":
-            exe = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama app.exe"
-            if exe.exists():
-                subprocess.Popen([str(exe)], creationflags=0x00000008 | 0x00000200)  # detached, own group (a GUI)
-                return "Ollama app"
-        exe = shutil.which("ollama")
-        if exe:
-            # 0.15.3: without a window on Windows: from the icon's pythonw it had one of its own for as long as it ran
-            subprocess.Popen([exe, "serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=os.name == "posix", **no_window())
-            return "ollama serve"
-    except OSError:
+    from .. import ollama_setup   # 0.15.6: the same start as the page's Start Ollama button
+
+    if not ollama_setup.app_path():
         return None
-    return None
+    try:
+        return "ollama serve" if ollama_setup.start()["serve"] else "Ollama app"
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------------------------

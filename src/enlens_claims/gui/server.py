@@ -38,7 +38,7 @@ from .. import __version__, access, addons, bibliography, claimcheck, embed, fra
 from .. import sync
 from .. import runs as runs_mod
 from .. import tasks as tasks_mod
-from .. import llm
+from .. import llm, ollama_setup
 from ..llm import BackendError, detect_local
 from ..claude_setup import setup_info as claude_setup_info
 from ..store import now as _now
@@ -339,8 +339,40 @@ class App:
         for srv in found:
             srv["chat_models"] = [m for m in srv["models"] if not re.search(r"embed|bge-|e5-|minilm|rerank", m, re.I)]
             srv["embedding_models"] = [m for m in srv["models"] if re.search(r"embed|bge-|e5-|minilm", m, re.I)]
-        # 0.13.7: the models the page offers to download into Ollama with one button
-        return {"servers": found, "suggested": [dict(m) for m in llm.SUGGESTED_MODELS]}
+        # 0.13.7: the models the page offers to download into Ollama with one button; 0.15.6: whether Ollama is on
+        # this computer (running or not), for the button that installs or starts it
+        return {"servers": found, "suggested": [dict(m) for m in llm.SUGGESTED_MODELS],
+                "ollama_app": ollama_setup.status()}
+
+    _OLLAMA_INSTALL = threading.Lock()   # two presses (two tabs) never start two downloads of 1.7 GB
+
+    def ollama_install_job(self) -> Job | None:
+        """0.15.6: the install of Ollama that is running, if any."""
+        return next((j for j in self.jobs.all() if j.kind == "ollama-install" and j.state in ("queued", "running")), None)
+
+    def install_ollama(self) -> Job:
+        """0.15.6: download Ollama's installer, check that it is Ollama's, install it for this user and start it (a
+        job that can be stopped while it downloads). Ollama on this computer already is only started."""
+        with self._OLLAMA_INSTALL:
+            running = self.ollama_install_job()
+            if running:
+                return running
+            return self._start_ollama_install()
+
+    def _start_ollama_install(self) -> Job:
+        def is_running() -> bool:   # where Settings says Ollama listens (localhost:11434 unless changed)
+            return any(x["kind"] == "ollama" for x in detect_local(ollama_url=self.settings().get("ollama_url"),
+                                                                   cache_seconds=0))
+
+        def run(job: Job):
+            def tick(p: dict) -> None:
+                job.progress = p
+
+            r = ollama_setup.install(on_progress=tick, should_stop=job.cancel.is_set, is_running=is_running)
+            llm._DETECTED.clear()   # the next look at the servers finds it
+            return None if r.get("stopped") else r
+
+        return self.jobs.start("ollama-install", "Installing Ollama", None, run, uses_model=False)
 
     # 0.13.7: what a downloaded model is for, and the settings that choose it (applied when the download is done)
     PULL_USES = {"ai": ("backend", "ollama_url", "ollama_model", "embed_backend", "embed_model", "embed_url"),
@@ -2093,6 +2125,10 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", r"/api/servers", "get_servers"),
     ("POST", r"/api/servers/test", "post_test"),
     ("POST", r"/api/servers/pull", "post_pull"),
+    # 0.15.6: Ollama installed (or started) from the app, as Claude Code is
+    ("GET", r"/api/ollama", "get_ollama"),
+    ("POST", r"/api/ollama/install", "post_ollama_install"),
+    ("POST", r"/api/ollama/start", "post_ollama_start"),
     ("GET", r"/api/projects", "get_projects"),
     ("POST", r"/api/projects", "post_project"),
     ("POST", r"/api/projects/link", "post_link"),
@@ -2610,6 +2646,40 @@ class Handler(BaseHTTPRequestHandler):
     def post_test(self, q):
         return self.app.test_backend()
 
+    def get_ollama(self, q):
+        """0.15.6: before Ollama is installed from the app: how big the download is on this kind of computer, the free
+        space it needs and the free space there is (asks ollama.com for the size)."""
+        return ollama_setup.plan()
+
+    def post_ollama_install(self, q):
+        """0.15.6: install Ollama (a job; Windows and macOS), after the person saw the size; on Linux, open a terminal
+        window running Ollama's own line ({"terminal": ...}). Ollama on this computer already is started instead."""
+        self._body()
+        running = self.app.ollama_install_job()
+        if running:
+            return {"job": running.view()}
+        st = ollama_setup.status()
+        if st["how"] == "terminal" and not st["installed"]:
+            return {"terminal": ollama_setup.open_terminal()}
+        if st["installed"] and st["how"] == "terminal":
+            return self._start_ollama()
+        return {"job": self.app.install_ollama().view()}
+
+    def post_ollama_start(self, q):
+        """0.15.6: start the Ollama that is on this computer (hidden; the page notices it within a few seconds). While
+        an install runs, its job instead: Ollama's files are still being written, and the installer starts it itself."""
+        self._body()
+        running = self.app.ollama_install_job()
+        if running:
+            return {"job": running.view()}
+        return self._start_ollama()
+
+    def _start_ollama(self) -> dict:
+        try:
+            return ollama_setup.start()
+        except ValueError as e:
+            raise ApiError(409, str(e)) from e
+
     def post_pull(self, q):
         """0.13.7: download models into the Ollama running on this computer (a job). Body: {"models": [names]}
         (or {"model": name}), optionally {"url": the Ollama's address, as GET /api/servers lists it} and {"use":
@@ -2628,8 +2698,8 @@ class Handler(BaseHTTPRequestHandler):
         found = [x for x in detect_local(ollama_url=s.get("ollama_url"), cache_seconds=0) if x["kind"] == "ollama"]
         srv = next((x for x in found if not url or x["url"].rstrip("/") == url), None)
         if srv is None:  # only an Ollama that answers on this computer (or at the address in Settings) is asked
-            raise ApiError(409, "No Ollama is running on this computer just now. Open the Ollama app (ollama.com) "
-                                "and try again.")
+            raise ApiError(409, "No Ollama is running on this computer just now. Open the Ollama app (or press Start "
+                                "Ollama in Settings → AI) and try again.")
         return {"job": self.app.pull_models(models, srv["url"], use).view()}
 
     def get_projects(self, q):
@@ -3825,6 +3895,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
               "with that link and access to this address can use the app and read your projects.", file=sys.stderr)
     print("Stop it with Quit ENLENS in the app." if launcher else "Stop it with Ctrl+C (or Quit ENLENS in the app).")
     threading.Thread(target=_repair_plugin, daemon=True, name="plugin-repair").start()
+    ollama_setup.clear_downloads()   # 0.15.6: what an install cut short by quitting left behind (no job runs yet)
     threading.Thread(target=_repair_icons, daemon=True, name="icon-repair").start()
     if open_browser:
         import webbrowser

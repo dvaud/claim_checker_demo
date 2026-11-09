@@ -54,6 +54,7 @@ out.rows = [
   reg.jobRow({ id: "j3", kind: "ingest", title: "Adding sources" }),
   reg.jobRow({ id: "j4", kind: "prepare", title: "Water" }),
   reg.jobRow({ id: "j5", kind: "nobody-knows", title: "Something an add-on runs" }),
+  reg.jobRow({ id: "j6", kind: "reread", title: "Reading an excerpt again" }),
 ];
 out.batch = [reg.originLink({ batch_id: "b1" }), reg.originLink({ origin: "batch", origin_id: "b2", batch_id: "b2" }),
              reg.originLink({}), reg.originLink({ origin: "unknown", origin_id: "x" })];
@@ -64,11 +65,14 @@ out.batch = [reg.originLink({ batch_id: "b1" }), reg.originLink({ origin: "batch
         ("explore", ["search", "profile", "concepts", "themes", "sources"], False),
         ("check", ["check", "batch", "history"], True)]
     assert out["sections"][0]["sub"] == "Start here: no hypothesis needed."
-    check, second, ingest, prepare, unknown = out["rows"]
+    check, second, ingest, prepare, unknown, reread = out["rows"]
     assert check == {"href": "#/check?job=j1", "icon": "flask", "text": "Water use rises", "tooltip": "Water use rises"}
     assert second["text"] == "Second opinion (3 hypotheses)" and second["href"] == "#/history?job=j2"
-    assert ingest == {"href": "#/sources", "icon": "upload", "text": "Adding documents", "tooltip": None}
+    assert ingest == {"href": "#/sources", "icon": "upload", "text": "Adding documents", "tooltip": "Adding documents"}
     assert prepare["text"] == "Look before checking (Water)" and prepare["href"] == "#/check"
+    # 0.15.6: every row's tooltip is its whole name, which the sidebar may cut short
+    assert prepare["tooltip"] == "Look before checking (Water)" and second["tooltip"] == second["text"]
+    assert reread["tooltip"] == "Reading an excerpt again" and unknown["tooltip"] == "Something an add-on runs"
     assert unknown["text"] == "Something an add-on runs" and unknown["icon"] == "circle"
     b_old, b_new, none, unknown_origin = out["batch"]
     assert b_old == {"eyebrow": None, "meta": "part of a set", "href": "#/history?batch=b1"} == {**b_new, "href": "#/history?batch=b1"}
@@ -100,7 +104,7 @@ out.scoped = reg.jobRow({ id: "j8", kind: "per-note", scope: "n2" });
     assert [s[0] for s in out["sections"]] == ["explore", "check", "notes"]
     assert out["notes"]["state"] == [True, "4 notes"] and out["notes"]["nav"] is True and out["notes"]["ai"] == "optional"
     assert out["route"][0][1:] == ["notes", True]
-    assert out["job"] == {"href": "#/fake/notes?job=j9", "icon": "tag", "text": "Stand-in labels", "tooltip": None}
+    assert out["job"] == {"href": "#/fake/notes?job=j9", "icon": "tag", "text": "Stand-in labels", "tooltip": "Stand-in labels"}
     assert out["welcome"][0]["title"] == "Bring your field notes"
     assert out["scoped"]["href"] == "#/fake/notes/n2?job=j8"  # a link made from the job
     assert out["origin"] == {"eyebrow": "Back to the note", "meta": "from a note", "href": "#/fake/notes?note=n%201"}

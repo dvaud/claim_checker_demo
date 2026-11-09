@@ -32,7 +32,10 @@
 - with `--ollama` (0.13.7): a model on this computer chosen, but no model yet. `--ollama empty` is an Ollama with no
   model (its *Download* takes 12 s, then the model answers), `--ollama later` an Ollama that starts 15 s after the
   app (the page notices it by itself), `--ollama none` no Ollama at all. Other servers on this computer (LM Studio…)
-  are not looked for. Combine with `--empty` for a new user's first screen.
+  are not looked for. Combine with `--empty` for a new user's first screen. 0.15.6: `--ollama install` is no Ollama on
+  the computer: *Install Ollama* shows the real size of Ollama's download for this computer (asked of ollama.com), then
+  a stand-in install (nothing is downloaded or installed: 12 s of download, 2 s each to check and install), after which
+  the stand-in Ollama answers; `--ollama stopped` is an Ollama installed but not running (*Start Ollama*, 3 s).
 - with `--low-memory` (0.13.11): the computer has 2.7 GB free and every local model needs 8.1 GB, so the local model
   for documents marked Only a local AI is not started (use it with `--mixed --claude-code`): see the note on the
   progress, the excerpts that wait, and *Read them now* → *Start it anyway*.
@@ -95,8 +98,9 @@ def main() -> int:
     ap.add_argument("--update", nargs="?", const="release",
                     choices=["release", "commits", "on-disk", "none", "fails", "windows", "windows-fails"],
                     help="0.13.1: Update ENLENS finds a stand-in newer version and restarts the app in this process")
-    ap.add_argument("--ollama", nargs="?", const="empty", choices=["empty", "later", "none"],
-                    help="0.13.7: a model on this computer chosen, but no model yet (empty), Ollama later, or none")
+    ap.add_argument("--ollama", nargs="?", const="empty", choices=["empty", "later", "none", "install", "stopped"],
+                    help="0.13.7: a model on this computer chosen, but no model yet (empty), Ollama later, or none; "
+                         "0.15.6: Ollama not on the computer (install, a stand-in install) or not running (stopped)")
     ap.add_argument("--reading", action="store_true",
                     help="0.15: a project 'Reading' with PDFs of known text (columns, running heads, line numbers, front and "
                          "back matter, a table, footnotes) read by the new reader, and one read by the old reader with a check "
@@ -213,6 +217,40 @@ def main() -> int:
                 home.update_settings({"ollama_url": fake_url})
                 print(f"stand-in Ollama now answers at {fake_url}, with no model")
             threading.Thread(target=start_later, daemon=True).start()
+    if a.ollama in ("install", "stopped"):   # 0.15.6: the real Ollama of this computer is never found, started or replaced
+        from enlens_claims import ollama_setup
+
+        there = {"installed": a.ollama == "stopped"}
+        fake_app = home_dir / "Ollama.app"
+        ollama_setup.app_path = lambda sys_name=None: fake_app if there["installed"] else None
+
+        def fake_start(sys_name=None):
+            def later():
+                time.sleep(3)
+                home.update_settings({"ollama_url": fake_url})
+                print(f"stand-in Ollama started: it answers at {fake_url}, with no model")
+            threading.Thread(target=later, daemon=True).start()
+            return {"started": True, "path": str(fake_app), "serve": False}
+
+        def fake_download(url, dest, on_progress, should_stop):   # nothing is fetched: 12 s at the real size
+            total = ollama_setup.download_size()["bytes"]
+            for i in range(61):
+                if should_stop():
+                    return False
+                on_progress({"step": "download", "done": total * i // 60, "total": total})
+                time.sleep(0.2)
+            return True
+
+        def fake_install(app):
+            time.sleep(2)
+            there["installed"] = True
+            return fake_app
+
+        ollama_setup.start = fake_start
+        ollama_setup._download = fake_download
+        ollama_setup._unpack_mac = lambda zip_path, work: work
+        ollama_setup.check_mac = ollama_setup.check_windows = lambda path: time.sleep(2) or ""
+        ollama_setup._install_mac = ollama_setup._install_windows = fake_install
     if a.no_tesseract:
         ingest.find_tesseract = lambda: ""
         ingest._OCR_STATUS[:] = [0.0, None]

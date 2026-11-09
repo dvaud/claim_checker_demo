@@ -69,6 +69,8 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   to the same words in the new text. **Can change results** for that document.
 - **Results say which version made them**, and the Overview says which came from an earlier one. *Try new versions
   early* in Settings gets you release candidates. Neither can change results.
+- **Ollama with one button** (0.15.6): *Install Ollama* says the size of the download first, then installs and starts
+  Ollama, a free program for AI models on your own computer; no terminal. Cannot change results.
 
 How it works: [how documents are read](docs/manual/reading.md) in the manual. Every release, with
 what was not tested: [CHANGELOG.md](CHANGELOG.md).

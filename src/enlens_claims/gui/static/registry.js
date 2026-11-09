@@ -5,7 +5,8 @@
 
 // Jobs in the sidebar: where a job's row links to, its icon and its name. `withJob`: the link carries ?job=<id>, so
 // the page follows that job. `label(j, text)`: the row's words when they are more than the kind's name; `tooltip`:
-// the row's title is the job's own title.
+// the row's tooltip adds the job's own title when the row's words leave it out.
+// 0.15.6: every row has a tooltip, its whole name: the sidebar cuts a long name short ("Reading an ex…").
 export const JOB_KINDS = {
   check: { icon: "flask", text: "Check", link: "#/check", withJob: true, tooltip: true, label: (j) => j.title || "Check" },
   prepare: { icon: "eye", text: "Look before checking", link: "#/check", tooltip: true, label: (j, t) => `${t}${j.title ? ` (${j.title})` : ""}` },
@@ -32,17 +33,18 @@ export const JOB_KINDS = {
   quicklook: { icon: "eye", text: "Quick look", link: "#/sources" },
   "claude-install": { icon: "download", text: "Installing Claude Code", link: "#/settings/model" },
   "model-pull": { icon: "download", text: "Downloading a model", link: "#/settings/model" },   // 0.13.7
+  "ollama-install": { icon: "download", text: "Installing Ollama", link: "#/settings/model" },   // 0.15.6
   bibliography: { icon: "library", text: "Bringing in the bibliography", link: "#/bibliography" },
 };
 
 // A job's row: {href, icon, text, tooltip}. A kind no one registered shows its own title (an add-on's job).
 export function jobRow(j) {
   const k = JOB_KINDS[j.kind];
-  if (!k) return { href: "#/overview", icon: "circle", text: j.title || j.kind, tooltip: null };
+  if (!k) return { href: "#/overview", icon: "circle", text: j.title || j.kind, tooltip: j.title || j.kind };
   const text = k.label ? k.label(j, k.text) : k.text;
   const link = typeof k.link === "function" ? k.link(j) : k.link;  // a link may depend on the job (its scope)
   return { href: link + (k.withJob ? `?job=${encodeURIComponent(j.id)}` : ""), icon: k.icon, text,
-    tooltip: k.tooltip ? (j.title || "") : null };
+    tooltip: k.tooltip && j.title && !text.includes(j.title) ? `${text}: ${j.title}` : text };
 }
 
 // Pages an add-on adds: [pattern, the sidebar entry it lights up, render(view, groups, query)], after ENLENS's own.

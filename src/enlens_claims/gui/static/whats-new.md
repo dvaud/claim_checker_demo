@@ -1,5 +1,6 @@
-# 0.15.5: the Windows install waits for Claude Code
-*Installing again on Windows no longer breaks ENLENS while Claude Code is open.*
-- The install line says what to close, and waits for it
-- An ENLENS broken this way is repaired by running the line again
+# 0.15.6: Ollama installed from the app
+*A model on your own computer, without a terminal.*
+- Install Ollama: one button, with the download's size first
+- Start Ollama when it is installed but not running
+- Hovering a task in the sidebar shows its full name
 - Nothing changes for results
