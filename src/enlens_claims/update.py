@@ -553,7 +553,8 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
     windows = os.name == "nt" if windows is None else windows
     if windows and not restart:
         raise UpdateError(f"ENLENS {rel['version']} is ready. In the ENLENS app, press Update to {rel['version']}: it "
-                          "installs it and opens ENLENS again. Or quit ENLENS (Quit ENLENS in the app), then download "
+                          "installs it and opens ENLENS again. Or quit ENLENS (Quit ENLENS in the app) and close "
+                          "Claude Code, then download "
                           f"this file and double-click it:\n  {installation.double_click_file('windows')}\n"
                           f"or run the install line again in PowerShell:\n  {installation.install_line('windows')}")
     if not rel["wheel_url"] or not rel["sums_url"]:

@@ -18,6 +18,70 @@
 #   ENLENS_VERSION=0.10.0 install that release instead of the one this script came with
 #   ENLENS_WHEEL=<file>   install this package file instead of downloading one (for testing a build)
 #   ENLENS_NO_OPEN=1      do not open ENLENS at the end
+#   ENLENS_FREE_WAIT=300  how many seconds to wait for programs that use ENLENS's folder to close (0.15.5)
+
+# 0.15.5: the programs running from ENLENS's own folder (the one uv keeps it in, ...\uv\tools\enlens-claims). uv
+# replaces that whole folder, and Windows does not let a running program's files go: while one ran (most often the
+# ENLENS connector of an open Claude Code window, which runs ENLENS's own python.exe), uv removed part of the folder
+# and stopped with "Access is denied", and every enlens command then said "uv trampoline failed to canonicalize script
+# path". So the install waits until none runs. Each comes back as Id, Name, Path and Line (its command line; empty
+# where only Get-Process can be asked, as on Linux).
+function Get-ProgramsIn([string[]]$Folders) {
+    $sep = [IO.Path]::DirectorySeparatorChar
+    $prefixes = @()
+    foreach ($f in $Folders) {
+        if (-not $f) { continue }
+        try { $f = [IO.Path]::GetFullPath($f) } catch { }
+        $prefixes += $f.TrimEnd('\', '/') + $sep
+    }
+    $procs = $null
+    try {
+        $procs = @(Get-CimInstance Win32_Process -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ Id = [int]$_.ProcessId; Name = $_.Name; Path = $_.ExecutablePath; Line = $_.CommandLine } })
+    } catch { }
+    if ($null -eq $procs) {
+        $procs = @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+            $path = $null
+            try { $path = $_.Path } catch { }   # a program of another user or of Windows itself does not say
+            [pscustomobject]@{ Id = $_.Id; Name = $_.ProcessName; Path = $path; Line = '' } })
+    }
+    $found = @()
+    foreach ($p in $procs) {
+        if (-not $p.Path -or $p.Id -eq $PID) { continue }
+        foreach ($prefix in $prefixes) {
+            if (([string]$p.Path).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { $found += $p; break }
+        }
+    }
+    return $found
+}
+function Get-ProgramLabel($Program) {
+    $what = "$($Program.Name), process $($Program.Id)"
+    if ($Program.Line -match 'enlens_claims\.mcp_server') { return "Claude Code's ENLENS connector ($what)" }
+    if ($Program.Line -match 'enlens_claims\.gui|enlens-gui') { return "the ENLENS app ($what)" }
+    return $what
+}
+function Wait-FolderFree([string[]]$Folders, [int]$Seconds) {
+    $busy = @(Get-ProgramsIn $Folders)
+    if ($busy.Count -eq 0) { return }
+    Write-Host ''
+    Write-Host '     ENLENS cannot be replaced while these programs run from its folder:' -ForegroundColor Yellow
+    foreach ($p in $busy) { Write-Host "       - $(Get-ProgramLabel $p)" }
+    Write-Host '     Quit ENLENS (Quit ENLENS in the app) and close Claude Code: the Claude app, and every terminal or'
+    Write-Host '     editor where Claude Code runs. The install goes on by itself once they have closed. Nothing has'
+    Write-Host "     been changed yet. If one does not close, end it in another PowerShell: Stop-Process -Id $(@($busy | ForEach-Object { $_.Id }) -join ',')"
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 2
+        $busy = @(Get-ProgramsIn $Folders)
+        if ($busy.Count -eq 0) {
+            Write-Host '     They have closed.'
+            return
+        }
+    }
+    $names = @($busy | ForEach-Object { Get-ProgramLabel $_ }) -join '; '
+    $ids = @($busy | ForEach-Object { $_.Id }) -join ','
+    throw "these programs still run from ENLENS's folder: $names. Nothing was changed. Quit ENLENS and close Claude Code (or end them: Stop-Process -Id $ids), then run the line again."
+}
 
 function Install-Enlens {
     $ErrorActionPreference = 'Stop'
@@ -76,6 +140,12 @@ function Install-Enlens {
             }
             return $null
         }
+        # 0.15.5: the folder uv keeps ENLENS in (uv's answer read as UTF-8, then the folders uv itself would choose)
+        function Get-EnlensEnvFolders([string]$Uv) {
+            $tools = @((Get-Utf8Output $Uv 'tool dir'), $env:UV_TOOL_DIR)
+            if ($env:APPDATA) { $tools += Join-Path (Join-Path $env:APPDATA 'uv') 'tools' }
+            return @($tools | Where-Object { $_ } | ForEach-Object { Join-Path $_ 'enlens-claims' } | Select-Object -Unique)
+        }
         $uv = Find-Uv
         if (-not $uv) {
             Write-Host '1/4  Getting uv, which installs ENLENS and its own Python...'
@@ -115,12 +185,16 @@ function Install-Enlens {
         }
 
         # 3. install --------------------------------------------------------------------------
+        # 0.15.5: nothing may run from ENLENS's folder while uv replaces it (see Get-ProgramsIn)
+        $wait = 300
+        if ($env:ENLENS_FREE_WAIT) { $wait = [int]$env:ENLENS_FREE_WAIT }
+        Wait-FolderFree (Get-EnlensEnvFolders $uv) $wait
         Write-Host '3/4  Installing ENLENS (the first time this also fetches Python 3.12; a minute or two)...'
         $uri = ([System.Uri](Resolve-Path $wheel).Path).AbsoluteUri
         $env:UV_PYTHON_PREFERENCE = 'only-managed'
         & $uv tool install --force --quiet --python 3.12 "enlens-claims[$extras] @ $uri"
         if ($LASTEXITCODE -ne 0) {
-            throw 'uv could not install ENLENS (see the lines above). If ENLENS is running, choose Quit ENLENS in it and run the line again.'
+            throw 'uv could not install ENLENS (see the lines above). If it says access is denied, a program still used ENLENS: quit ENLENS, close Claude Code and run the line again. That also repairs an ENLENS that no longer starts.'
         }
         $enlens = Find-EnlensExe $uv
         if (-not $enlens) {

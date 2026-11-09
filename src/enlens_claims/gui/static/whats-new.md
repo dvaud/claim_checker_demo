@@ -1,5 +1,5 @@
-# 0.15.4: Update works on Windows too
-*Update and restart now installs the new version on Windows, as on a Mac.*
-- ENLENS closes for a minute or two and opens again by itself
-- If it cannot finish, a note says why and what to do
+# 0.15.5: the Windows install waits for Claude Code
+*Installing again on Windows no longer breaks ENLENS while Claude Code is open.*
+- The install line says what to close, and waits for it
+- An ENLENS broken this way is repaired by running the line again
 - Nothing changes for results

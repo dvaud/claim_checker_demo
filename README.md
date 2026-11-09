@@ -35,7 +35,7 @@ No Claude plan? Choose *A model on this computer* on the first screen. Used ENLE
 ## Update
 
 1. Type `enlens update` in Terminal or PowerShell, or run the install line or file again (on Windows, quit ENLENS
-   first).
+   and close Claude Code first).
 2. Quit ENLENS (*Quit ENLENS* at the bottom of the sidebar) and open it again from its icon.
 
 ENLENS also tells you when a new version is ready; *Update and restart* in its pop-up does both steps for you (on

@@ -96,6 +96,65 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
           & $py -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
           if ($LASTEXITCODE -ne 0) { throw "the connector did not start" }
+      # 0.15.5: on the user's PC the install line ran while Claude Code had ENLENS connected (its connector runs
+      # ENLENS's own python.exe): uv removed part of ENLENS's folder, stopped with "Access is denied", and ENLENS no
+      # longer started ("uv trampoline failed to canonicalize script path"). Here a stand-in for the connector runs
+      # ENLENS's own Python while the install line runs in Windows PowerShell, as on that PC. One that closes: the
+      # line waits for it and then installs. One that stays: the line stops, and ENLENS still starts.
+      - name: Install while a program runs from ENLENS's folder
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $env:ENLENS_WHEEL = (Get-ChildItem dist\enlens_claims-*.whl).FullName
+          $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
+          $bin = (uv tool dir --bin).Trim()
+          $py = Join-Path (uv tool dir).Trim() 'enlens-claims\Scripts\python.exe'
+          function Start-Connector([int]$Seconds) {
+            # its command line names the connector's module, as Claude Code's does; it only sleeps
+            Start-Process -FilePath $py -PassThru -WindowStyle Hidden `
+              -ArgumentList "-c `"import sys, time; time.sleep(int(sys.argv[1]))`" $Seconds enlens_claims.mcp_server"
+          }
+          # 1. a connector that closes after 25 s: the line waits for it, then installs
+          $c = Start-Connector 25
+          Start-Sleep -Seconds 3
+          if ($c.HasExited) { throw "the stand-in did not start" }
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File dist\install.ps1 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "Claude Code's ENLENS connector \(python\.exe, process $($c.Id)\)") { throw "the line did not name the connector" }
+          if ($out -notmatch 'They have closed' -or $out -notmatch '4/4' -or $out -notmatch 'Done\. Next time' -or $out -match 'could not be installed') {
+            throw "the line did not wait for the connector and then install"
+          }
+          & "$bin\enlens.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "enlens did not start" }
+          # 2. a connector that stays: the line stops before uv touches anything, and ENLENS still starts
+          $c = Start-Connector 600
+          Start-Sleep -Seconds 3
+          $env:ENLENS_FREE_WAIT = '8'
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File dist\install.ps1 2>&1 | Out-String
+          Remove-Item Env:ENLENS_FREE_WAIT
+          Write-Host $out
+          $alive = -not $c.HasExited
+          taskkill /pid $c.Id /t /f | Out-Null
+          if (-not $alive) { throw "the stand-in ended early, so this showed nothing" }
+          if ($out -notmatch "could not be installed: these programs still run from ENLENS's folder") { throw "the line did not stop" }
+          if ($out -notmatch "process $($c.Id)" -or $out -notmatch 'Nothing was changed' -or $out -match '3/4') {
+            throw "the line did not stop before installing, or did not say what to close"
+          }
+          & "$bin\enlens.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "ENLENS no longer starts: the line changed its folder after all" }
+          & $py -c "import enlens_claims, pydantic; print('ENLENS', enlens_claims.__version__, 'is whole')"
+          if ($LASTEXITCODE -ne 0) { throw "ENLENS's folder is not whole" }
+          # 3. an ENLENS half removed by an older line (most of Scripts and Lib gone): the line installs it whole again
+          $envDir = Split-Path (Split-Path $py -Parent) -Parent
+          Remove-Item -Recurse -Force (Join-Path $envDir 'Lib\site-packages\enlens_claims'), (Join-Path $envDir 'Scripts\enlens.exe')
+          & "$bin\enlens.exe" --help 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw "the half-removed ENLENS still started, so this showed nothing" }
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File dist\install.ps1 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'Done\. Next time' -or $out -match 'could not be installed') { throw "the line did not repair ENLENS" }
+          & "$bin\enlens.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "ENLENS still does not start after the line" }
       - name: Install with Install-ENLENS-Windows.cmd, as a double-click runs it
         if: runner.os == 'Windows'
         shell: pwsh

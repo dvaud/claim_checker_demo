@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.15.5 (November 2026): the Windows install waits for Claude Code
+
+On Windows, running the install line (or *Install-ENLENS-Windows.cmd*) while Claude Code had ENLENS connected broke
+ENLENS: the line stopped with "failed to remove directory … Access is denied", and afterwards every `enlens` command
+said "uv trampoline failed to canonicalize script path" and the icon did nothing. Claude Code's ENLENS connector runs
+ENLENS's own Python; uv, which installs ENLENS, replaces ENLENS's whole folder, removed what Windows let go and stopped
+at the rest. This happened on a real PC installing 0.15.4. The line now looks first, says which programs still use
+ENLENS and what to close, and waits for them. Nothing changes for results, or on macOS and Linux.
+
+### Fixed
+
+- **Windows: the install line no longer half-removes ENLENS.** Before uv touches ENLENS's folder, the line lists the
+  programs running from it: *Claude Code's ENLENS connector*, *the ENLENS app*, or any other by name, each with its
+  process number. It says to quit ENLENS and close Claude Code (the Claude app, and every terminal or editor where it
+  runs), and goes on by itself once they have closed. If they are still running after five minutes it stops with
+  nothing changed, and says how to end them (`Stop-Process -Id …`) and to run the line again. The same holds for
+  *Install-ENLENS-Windows.cmd*, which is the same script.
+- **An ENLENS broken this way is repaired by the line of 0.15.5.** Close Claude Code and run the install line again: it
+  waits for anything left over and installs ENLENS whole. Projects and settings were never touched.
+- **What to close, said everywhere it matters.** When uv still fails, the line says that "access is denied" means a
+  program still used ENLENS: quit ENLENS, close Claude Code, run the line again. `enlens update` in PowerShell, the
+  README's *Update*, the manual's install page and its troubleshooting table (with both error messages) now say to
+  close Claude Code too.
+
+### Documentation
+
+- The manual is now a one-page start and a short page per task, with pictures of the app and diagrams; nothing was
+  left out.
+
+### For developers
+
+- `install.ps1` has `Get-ProgramsIn` (the programs whose path lies in a folder: `Win32_Process` through CIM, with
+  each command line, or `Get-Process` where CIM is missing, as on Linux; never the PowerShell asking),
+  `Get-ProgramLabel` and `Wait-FolderFree`, called with the folder uv keeps ENLENS in (`uv tool dir`, read as UTF-8,
+  then `UV_TOOL_DIR` and `%APPDATA%\uv\tools`) right before `uv tool install --force`. `ENLENS_FREE_WAIT` sets the wait
+  (default 300 seconds). The app's *Update* on Windows already waited for the same programs (`handover.py`, 0.15.4).
+
+### Tests
+
+- `tests/test_0_15_5_install_waits.py`: the line waits before uv replaces the folder and finds it where uv keeps it;
+  the connector and the app are named; in PowerShell, a program running from the folder is found (and nothing
+  else), the wait ends when it closes, and one that stays stops the install with what to close and how to end it,
+  leaving the program running. These need PowerShell and a copy of `sleep` that runs: GitHub's Linux machine runs
+  them; this Mac skips them (they were run here with a portable PowerShell and a stand-in program instead).
+- The release's Windows machine runs the line in Windows PowerShell 5.1 while a stand-in for Claude Code's connector
+  runs ENLENS's own `python.exe`: one that closes after 25 seconds (the line names it, waits and installs), and one
+  that stays (the line stops before installing, and ENLENS still starts and imports whole). Then, with ENLENS's
+  package and `enlens.exe` removed from its folder, so that `enlens` no longer starts, the line installs it whole.
+
+### Not yet done
+
+- Not yet tried on the user's Windows PC, where ENLENS is in the broken state this fixes.
+- Tried with a stand-in for the connector, not with a real Claude Code window. ENLENS does not close Claude Code
+  itself; the person does. A program that has ENLENS's files open without running from its folder is not seen.
+- The advisory test run on Windows still stops part way (the process-number bug in 0.15.2's *Not yet done*).
+
 ## 0.15.4 (November 2026): Update works on Windows too
 
 On a Mac, *Update and restart* installs a new version and opens it again. On Windows it only said to quit ENLENS and
