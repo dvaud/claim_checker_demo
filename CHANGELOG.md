@@ -27,6 +27,11 @@ next candidates, as rc1 said.
 
 - Past the first 1000 blocks of a long book, the message after *Leave out* or *Restore* did not name the heading or
   paragraphs that changed with the block: the app sent back only blocks among the first 1000.
+- **Windows: the scratch copy of a model test is removed.** A model test or a comparison of labels with Claude Code
+  answers from a copy of the project, removed afterwards. When a helper read the copy just as it was removed, Windows
+  kept it (its database was open again) and it stayed in the list of projects. On Windows the removal is now tried
+  again for a few seconds (`taskqueue.remove_copy`). The test run on Windows had failed on this now and then since
+  rc1.
 
 ### For developers
 
@@ -44,6 +49,8 @@ next candidates, as rc1 said.
   the listing now has it and the figures as the document has them; *Text starts / ends here* and its undo send back
   the blocks they changed and the block that carries or carried the mark; blocks elsewhere with the same words are
   sent too (this test fails without the fix); blocks asked for by number are those of the listing.
+- `tests/test_0_16_0_scratch_copy_removal.py`: a copy held during removal is removed on the next try on Windows,
+  closed again before each; elsewhere it is tried once; a copy held for good is left for the trash, as before.
 - Checked in Chromium with Playwright, in light and dark and at 390 px with touch: the list is never drawn again, the
   page stays still in the middle of a 169-block book, the keyboard lands on the fold's line, two quick clicks both
   count, and no console errors.

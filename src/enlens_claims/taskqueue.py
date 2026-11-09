@@ -780,6 +780,28 @@ def run_here(ws: Workspace, backend, kinds: list[str] | None = None, limit: int 
 # ---------------------------------------------------------------------------------------------
 # 0.8.1: model tests by queue (label compare, the model test): asked on a scratch copy, nothing stored
 # ---------------------------------------------------------------------------------------------
+def remove_copy(copy: Workspace, tries: int = 8, windows: bool | None = None) -> bool:
+    """Remove a scratch copy of a project (answer_on_copy); True when it is gone. 0.15.7: every connection to it is
+    closed first, in every thread (also the ones open_project keeps), or Windows keeps the copy: its database is open.
+    0.16.0rc2: a helper that reads the copy at that moment (Claude Code's connector in the middle of a call) opens it
+    again before it is gone, and Windows keeps it then too: there, closing and removing are tried again for a few
+    seconds."""
+    import os
+    import shutil
+
+    from . import home
+
+    windows = os.name == "nt" if windows is None else windows
+    for attempt in range(max(1, tries)):
+        copy.close_all()
+        home.close_project(copy.root)
+        shutil.rmtree(copy.root, ignore_errors=True)
+        if not copy.root.exists() or not windows:
+            break
+        time.sleep(0.1 * (attempt + 1))
+    return not copy.root.exists()
+
+
 def answer_on_copy(ws: Workspace, items: list[tuple[str, str, dict, str]], backend, purpose: str = "test",
                    should_stop=None) -> tuple[dict, dict]:
     """Have Claude Code answer tasks without storing anything in `ws`: they wait in the queue of a scratch copy of
@@ -789,7 +811,6 @@ def answer_on_copy(ws: Workspace, items: list[tuple[str, str, dict, str]], backe
     researcher types `/enlens-run "<copy>"`. Returns ({task_id: the first answer as given (raw JSON text), or None
     when there was none}, {(kind, model): median seconds per task as Claude Code took them, or None}).
     A stop (`backend.should_stop`) raises BackendError, as any wait does; the copy is removed then too."""
-    import shutil
     import statistics
 
     from . import home
@@ -842,11 +863,7 @@ def answer_on_copy(ws: Workspace, items: list[tuple[str, str, dict, str]], backe
                                     [(r[0], r[1], r[2], None, r[4], f"{r[5]} ({purpose})") for r in sent])
         except Exception:  # noqa: BLE001 - the ledger must not stop the clean-up below
             pass
-        # 0.15.7: every connection to the copy, in every thread (also the ones open_project keeps), or Windows
-        # keeps the copy: its database is open
-        copy.close_all()
-        home.close_project(copy.root)
-        shutil.rmtree(copy.root, ignore_errors=True)
+        remove_copy(copy)
         if not copy.root.exists():  # 0.15.7: still there (a file held): moved to the trash later, as a quick look
             try:
                 q = home._quicklooks()
