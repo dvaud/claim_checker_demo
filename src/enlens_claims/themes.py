@@ -731,6 +731,7 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
                      "codes": sorted({c for v in cg.values() for c in v}, key=lambda c: (order.get(c, 10 ** 6), c))}
     run_row["settings"] = json.loads(run_row.pop("settings_json") or "{}")
     run_row["stale"] = run_row["corpus_version"] != ws.corpus_version()
+    run_row["terms_left_out"] = _left_out(ws, [w for t in out_themes for w in t.get("terms") or []])
     return {"run": run_row, "themes": out_themes, "removed": removed_themes, "doc_grid": doc_grid,
             "code_grid": code_grid,
             "documents": [{"doc_id": d, "title": titles.get(d, "")} for d in
@@ -739,6 +740,43 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
             "edits": {"renamed": len(ed["names"]), "merged": len(ed["merges"]), "moved": len(ed["moves"]),
                       "removed": len(removed_themes),
                       "added": sum(1 for t in themes.values() if t.get("replaces") is not None)}}
+
+
+def _left_out(ws: Workspace, labels: list[str]) -> list[str]:
+    """0.17: the key terms (of a set of themes) that the glossary now leaves out: no longer a term, because they start
+    or end with a common word (of English or of a language found in a share of the passages) or a word of the
+    project's own, or are one of its own phrases. A term that left for another reason (documents changed, the
+    glossary's limit) is not named. Finding the themes again gives key terms without them. Empty while the glossary is
+    out of date (it cannot tell yet)."""
+    from . import stopwords, terms
+    from .textutil import token_spans
+
+    st = terms.status(ws)
+    if not labels or not st["built"] or st["stale"]:
+        return []
+    rules = stopwords.rules(ws)
+    found = [f for f in stopwords.found(ws) if f["on"]]
+    total = sum(f["passages"] for f in found) or 1
+    common = set(rules.stops("en"))
+    for f in found:
+        if f["passages"] >= 0.01 * total:    # not a language read in a few tables or references
+            common |= rules.stops(f["code"])
+    keys = {lb: terms._key_of(lb, rules) for lb in dict.fromkeys(labels)}
+    ids = {lb: terms.term_id(k) for lb, k in keys.items() if k}
+    have: set[str] = set()
+    todo = sorted(set(ids.values()))
+    for i in range(0, len(todo), 500):
+        chunk = todo[i:i + 500]
+        have.update(r[0] for r in ws.query(f"SELECT term_id FROM terms WHERE term_id IN ({','.join('?' * len(chunk))})",
+                                           chunk))
+    out = []
+    for lb, k in keys.items():
+        if k and ids[lb] in have:
+            continue
+        words = [t[3] for t in token_spans(lb, keep_stop=True)]
+        if not k or k in rules.phrases or (words and (words[0] in common or words[-1] in common)):
+            out.append(lb)
+    return out
 
 
 def theme_passages(ws: Workspace, run_id: str, theme_id: int, offset: int = 0, limit: int = 50) -> dict:

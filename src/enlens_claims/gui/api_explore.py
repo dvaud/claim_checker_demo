@@ -202,6 +202,32 @@ class ExploreApi:
         self._body()
         return {"job": self.app.start_terms(name).view()}
 
+    def get_terms_words(self, name, q):
+        """0.17: what the glossary and key terms leave out: the languages found (each can be switched off) and the
+        project's own words."""
+        from .. import stopwords, terms
+
+        ws = self.app.ws(name)
+        s = stopwords.settings(ws)
+        return {"languages": stopwords.found(ws), "off": s["off"], "own": s["own"], "status": terms.status(ws),
+                "max_own": stopwords.MAX_OWN}
+
+    def put_terms_words(self, name, q):
+        from .. import stopwords
+
+        body = self._body()
+        off, own = body.get("off"), body.get("own")
+        if off is not None and not (isinstance(off, list) and all(isinstance(c, str) for c in off)):
+            raise ApiError(400, "off must be a list of language codes.")
+        if own is not None and not (isinstance(own, str) or (isinstance(own, list) and
+                                                             all(isinstance(e, str) for e in own))):
+            raise ApiError(400, "own must be a list of words (or one per line).")
+        try:
+            stopwords.save(self.app.ws(name), off, own)
+        except ValueError as e:
+            raise ApiError(400, str(e))
+        return self.get_terms_words(name, q)
+
     def get_concept_lookup(self, name, q):
         from .. import terms
 

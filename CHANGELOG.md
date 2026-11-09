@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **The glossary and the key terms of themes leave out each language's common words.** In a project with Dutch
+  interviews the most frequent glossary terms were "ik", "ja", "je", "dan", "die", "wel" and "maar", a theme's key
+  terms were the same words, and themes found by words held the interviews together by them (370 of one theme's 371
+  passages came from the interviews). Now each passage is read by the common words of its own language: lists for 58
+  languages come with ENLENS (stopwords-iso, MIT licence), English and Dutch edited by hand (Dutch with the words of
+  speech: "nou", "oké", "allee", "denk"). A passage's language is told by its common words; words that are also
+  English ("care", "global") tell nothing, so an English heading or table is never read as Romanian or Malay, and a
+  short passage ("Ja.") takes the language of the passage before it. A Dutch word that is also English ("net", "door", "die") is left out only in
+  Dutch passages, so "net zero" stays a term of an English report. English also leaves out "because", "themselves",
+  "yeah" and the like. Search is not changed.
+- **Words the glossary leaves out** (Concepts page): the languages found, with their passages, each of which can be
+  switched off, and a box for your own words, such as a speaker label ("Interviewer", "R1"); a phrase there leaves out
+  just that term. Saving makes the glossary again and is written in the research log.
+- **The Themes page says which key terms are now left out**, and that finding the themes again gives key terms
+  without them (themes found by words were also grouped by them). The themes found before are kept as they were.
+- A glossary made before is out of date after the update (what it leaves out changed) and is made again when next
+  needed, or with *Update the glossary*.
+
 ## 0.17.0rc1 (November 2026): a sidebar of seven places
 
 The first release candidate of 0.17: the app is reached in a new way. The sidebar had grown to fifteen entries and a

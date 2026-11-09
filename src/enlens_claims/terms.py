@@ -4,7 +4,8 @@ No model is needed to build it. After documents are added (and whenever the corp
 passages are read once:
 
 - Candidates are runs of one to four words (`textutil.token_spans`, the checker's own word rule and stemmer) that
-  neither start nor end with a stop word or a number, and do not cross punctuation.
+  neither start nor end with a common word of the passage's language (0.17: `stopwords`) or a number, and do not
+  cross punctuation.
 - A candidate is kept when it occurs at least MIN_TF times in at least MIN_DF documents. Kept candidates are ranked
   by C-value (Frantzi et al.), which favours a whole term ("proton exchange membrane") over its fragments
   ("exchange membrane"); the best MAX_TERMS become terms, each with every place it occurs (`term_mentions`).
@@ -34,6 +35,7 @@ from typing import Callable
 
 from .people import me, mine_sql
 from .store import Workspace, now
+from . import stopwords
 from .textutil import fast_normalise, is_stop, stem, token_spans
 
 MIN_TF = 3
@@ -112,14 +114,18 @@ various vary very view way ways well whether whole wide widely will within witho
 year years yet
 accordance al annex appendix chap dr et exhibit fig figs ibid journal mr mrs ms online page pages pp table tables vol
 volume yes
+after alongside anyway know now off oh out say says seem seems try utilise utilised utilize utilized want whereby
 """.split())
 
 
 _GENERAL_STEMS = frozenset(stem(w) for w in GENERAL)
 
 
-def _edge_ok(word: str) -> bool:
-    return not is_stop(word) and not word.isdigit() and len(word) <= 30
+def _edge_ok(word: str, stops: frozenset[str] | None = None) -> bool:
+    """Whether a term may start or end with this (normalised) word: no common word of the passage's language (`stops`;
+    by default the English rule), no number."""
+    s = stopwords.DEFAULT.stops("en") if stops is None else stops
+    return len(word) > 1 and word not in s and not word.isdigit() and len(word) <= 30
 
 
 # 0.8: letter-spaced PDFs. Some PDFs put spaces inside words ("Elec tr oly ser" in the pilot). For the glossary and
@@ -192,26 +198,35 @@ class Joiner:
         return out
 
 
-def _grams(text: str, joiner: Joiner | None = None):
-    """(start, end, stems key) of every candidate in a text. With a `joiner`, letter-spaced words are read whole."""
-    toks = token_spans(text, keep_stop=True)
+def _grams(text: str, joiner: Joiner | None = None, stops: frozenset[str] | None = None, toks: list | None = None):
+    """(start, end, stems key) of every candidate in a text. With a `joiner`, letter-spaced words are read whole.
+    `stops`: the common words of the text's language (by default the English rule); `toks`: its words, when read."""
+    if toks is None:
+        toks = token_spans(text, keep_stop=True)
     if joiner is not None:
         toks = joiner.join(text, toks)
     for run in _runs(text, toks):
         n = len(run)
         for i in range(n):
-            if not _edge_ok(run[i][3]):
+            if not _edge_ok(run[i][3], stops):
                 continue
             for j in range(i, min(n, i + MAX_N)):
-                if not _edge_ok(run[j][3]):
+                if not _edge_ok(run[j][3], stops):
                     continue
                 yield run[i][0], run[j][1], " ".join(x[2] for x in run[i:j + 1])
 
 
 def status(ws: Workspace) -> dict:
+    """Whether the glossary is made, and whether it is out of date: documents changed (`documents_changed`) or what it
+    leaves out changed (`words_changed`, 0.17: a person's choice, or the lists of a newer ENLENS)."""
     built = ws.meta("terms_corpus_version")
     n = int(ws.scalar("SELECT COUNT(*) FROM terms") or 0)
-    return {"built": built is not None, "stale": built is not None and built != ws.corpus_version(),
+    docs = built is not None and built != ws.corpus_version()
+    # the rules of the last build, as that build noted them: a build by an ENLENS before 0.17 notes none
+    noted = ws.meta("terms_words")
+    words = built is not None and not (isinstance(noted, dict) and noted.get("digest") == stopwords.rules(ws).digest
+                                       and noted.get("build") == ws.meta("terms_build_id"))
+    return {"built": built is not None, "stale": docs or words, "documents_changed": docs, "words_changed": words,
             "missing": built is None, "terms": n, "built_at": ws.meta("terms_built_at"),
             "concepts": int(ws.scalar("SELECT COUNT(*) FROM concepts") or 0)}
 
@@ -231,12 +246,13 @@ def _at_edge(a: int, b: int, e: tuple[int, int]) -> bool:
     return b <= e[0] or a >= e[1]
 
 
-def running_heads(rows, joiner: Joiner | None = None) -> tuple[dict[str, tuple[int, int]], set[tuple[str, str]]]:
+def running_heads(rows, joiner: Joiner | None = None,
+                  stops_of: dict[str, frozenset[str]] | None = None) -> tuple[dict[str, tuple[int, int]], set[tuple[str, str]]]:
     """Running heads and feet ("Journal of Energy in Southern Africa • Vol 33", "IEA. All rights reserved"): the
     candidate terms found at the top or bottom of at least 3 pages, and of at least a third of the pages, of one
     document. Returns {passage_id: (head end, foot start)} for the first and last passage of each page, and the
     (doc_id, term key) pairs that are running heads; their mentions there are left out of the glossary (search still
-    finds them)."""
+    finds them). `stops_of`: {passage_id: the common words of its language} (by default the English rule)."""
     first: dict[tuple, dict] = {}
     lastp: dict[tuple, dict] = {}
     pages: dict[str, set] = defaultdict(set)
@@ -257,7 +273,7 @@ def running_heads(rows, joiner: Joiner | None = None) -> tuple[dict[str, tuple[i
         e = edges.get(r["passage_id"])
         if not e:
             continue
-        for a, b, key in _grams(r["text"], joiner):
+        for a, b, key in _grams(r["text"], joiner, (stops_of or {}).get(r["passage_id"])):
             if _at_edge(a, b, e):
                 seen[(r["doc_id"], key)].add(r["page"])
     boiler = {dk for dk, pg in seen.items() if len(pg) >= 3 and len(pg) * 3 >= len(pages[dk[0]])}
@@ -280,11 +296,11 @@ def _doc_fp(rows) -> str:
     return h.hexdigest()
 
 
-def _reading_stamp() -> str:
+def _reading_stamp(rules: stopwords.Rules | None = None) -> str:
     """What a kept reading was made with: its format, the code that reads (this file as imported, and the word rule
     of textutil.py), not ENLENS's version, so an update that leaves them alone keeps the readings, and a connector of
     another version shares them with the app (0.16 review)."""
-    return _STAMP
+    return f"{_STAMP}:{(rules or stopwords.DEFAULT).reading_digest}"   # 0.17: and the words the project leaves out
 
 
 def _code_digest() -> str:
@@ -332,8 +348,8 @@ class _Readings:
 
     COLUMNS = ["doc_id", "fp", "stamp", "counts", "reading", "grams", "digest"]
 
-    def __init__(self, ws: Workspace):
-        self.stamp = _reading_stamp()
+    def __init__(self, ws: Workspace, rules: stopwords.Rules | None = None):
+        self.stamp = _reading_stamp(rules)
         self.mem: dict[str, tuple] = {}
         self.cx = None
         try:
@@ -440,15 +456,20 @@ class _Readings:
             self.cx = None
 
 
-def _read_document(rows, joiner: Joiner, split: dict) -> tuple[dict, array]:
+def _read_document(rows, joiner: Joiner, split: dict, rules: stopwords.Rules | None = None) -> tuple[dict, array]:
     """One document's candidate terms with their places (running heads and feet left out), as `build` read them
-    before 0.16, and the joiner's decisions for its runs of pieces."""
-    edges, boiler = running_heads(rows, joiner)
+    before 0.16, the joiner's decisions for its runs of pieces, and (0.17) how many of its passages are in each
+    language: each passage is read by the common words of its own language (`stopwords`)."""
+    rules = rules or stopwords.DEFAULT
+    words = [token_spans(r["text"], keep_stop=True) for r in rows]
+    langs = stopwords.fill([stopwords.detect(t[3] for t in toks) for toks in words])
+    stops_of = {r["passage_id"]: rules.stops(c) for r, c in zip(rows, langs)}
+    edges, boiler = running_heads(rows, joiner, stops_of)
     keys: dict[str, int] = {}
     grams = array("I")
     for n, r in enumerate(rows):
         e = edges.get(r["passage_id"])
-        for a, b, key in _grams(r["text"], joiner):
+        for a, b, key in _grams(r["text"], joiner, stops_of[r["passage_id"]], words[n]):
             if e and (r["doc_id"], key) in boiler and _at_edge(a, b, e):
                 continue
             k = keys.get(key)
@@ -461,7 +482,8 @@ def _read_document(rows, joiner: Joiner, split: dict) -> tuple[dict, array]:
             for short, long in abbreviations(r["text"]):
                 abbrev[(short, long)] += 1
     joined = sorted(k for k in split if joiner.whole(k.split(" ")))
-    return {"keys": list(keys), "joined": joined, "abbrev": [[s, lf, c] for (s, lf), c in abbrev.items()]}, grams
+    return {"keys": list(keys), "joined": joined, "abbrev": [[s, lf, c] for (s, lf), c in abbrev.items()],
+            "langs": dict(Counter(langs))}, grams
 
 
 _BUILDING: dict[str, threading.Lock] = {}
@@ -478,14 +500,16 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
     with _BUILDING_GUARD:
         lock = _BUILDING.setdefault(str(ws.db_path.resolve()), threading.Lock())
     with lock:
-        store = _Readings(ws)
+        rules = stopwords.rules(ws)
+        store = _Readings(ws, rules)
         try:
-            return _build(ws, store, progress, should_stop, embedder, max_terms)
+            return _build(ws, store, progress, should_stop, embedder, max_terms, rules)
         finally:
             store.close()
 
 
-def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max_terms: int) -> dict:
+def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max_terms: int,
+           rules: stopwords.Rules = stopwords.DEFAULT) -> dict:
     rows = ws.query("SELECT passage_id, doc_id, page, start, text FROM passages WHERE section='body' ORDER BY doc_id, seq")
     version = ws.corpus_version()
     by_doc: dict[str, list] = {}
@@ -531,7 +555,7 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
     here: dict[str, tuple[dict, array]] = {}   # readings this build holds itself (the file could not take them)
     for d in to_read:
         stop_check()
-        rd, g = _read_document(by_doc[d], joiner, counts_of(d)[1])
+        rd, g = _read_document(by_doc[d], joiner, counts_of(d)[1], rules)
         digests[d], plain[d] = store.put(d, fps[d], counts_of(d), rd, g), not rd["joined"]
         if store.cx is None:
             here[d] = (rd, g)
@@ -545,17 +569,19 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
         its place meanwhile, or the file went) read again here with this build's joiner."""
         got = here.get(d) or store.load(d, fps[d], digests[d])
         if got is None:
-            got = here[d] = _read_document(by_doc[d], joiner, counts_of(d)[1])
+            got = here[d] = _read_document(by_doc[d], joiner, counts_of(d)[1], rules)
             digests[d], plain[d] = _blobs(*got)[2], not got[0]["joined"]
         return got
 
     # first reading: how often each candidate occurs and in how many documents
     tf: Counter[str] = Counter()
     df: Counter[str] = Counter()
+    languages: Counter[str] = Counter()   # passages per language (0.17)
     for d, rs in by_doc.items():
         stop_check()
         rd, g = reading(d)
         keys = rd["keys"]
+        languages.update(rd.get("langs") or {})
         for i, n in Counter(g[3::4]).items():
             k = keys[i]
             tf[k] += n
@@ -565,7 +591,8 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
             progress(done, total)
     n_docs = len(by_doc)
     min_df = MIN_DF if n_docs >= MIN_DF else 1   # a project of one document (a quick look) still gets its terms
-    kept = {k: tf[k] for k in tf if tf[k] >= MIN_TF and df[k] >= min_df and k not in _GENERAL_STEMS}
+    kept = {k: tf[k] for k in tf if tf[k] >= MIN_TF and df[k] >= min_df and k not in _GENERAL_STEMS
+            and k not in rules.phrases}
     # C-value: log2(|a| + 1) * (f(a) - mean f of the longer kept candidates that contain a)
     containers: dict[str, list[int]] = defaultdict(list)
     for k, f in kept.items():
@@ -690,7 +717,7 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
                 best[short] = (c, long)
         n_abbr = 0
         for short, (c, long) in best.items():
-            ks, kl = _key_of(short), _key_of(long)
+            ks, kl = _key_of(short, rules), _key_of(long, rules)
             if not ks or not kl or ks == kl or ks not in keep or kl not in keep:
                 continue
             a, b = sorted((term_id(ks), term_id(kl)))
@@ -698,6 +725,8 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
                        (a, b, "same", "abbreviation", 1.0, f"{long} ({short})", short, None, now()))
             n_abbr += 1
         ws.set_meta("terms_corpus_version", version, cx)
+        ws.set_meta("terms_words", {"digest": rules.digest, "build": build_id}, cx)   # 0.17: what it left out
+        ws.set_meta("terms_languages", dict(languages), cx)
         ws.set_meta("terms_built_at", built_at, cx)
         ws.set_meta("terms_build_id", build_id, cx)
         return n_abbr
@@ -766,12 +795,15 @@ def _label(spellings: Counter) -> str:
     return top
 
 
-def _key_of(text: str) -> str | None:
-    """The stems key of a phrase as the index writes it (None when it does not start and end with a content word)."""
+def _key_of(text: str, rules: stopwords.Rules | None = None) -> str | None:
+    """The stems key of a phrase as the index writes it (None when it does not start and end with a content word). By
+    the English rule and the project's own words (`rules`): no term starts or ends with a common word of any language,
+    so this finds a term whatever its language; a phrase is too short to tell its language (0.17 review)."""
+    stops = (rules or stopwords.DEFAULT).stops("en")
     toks = token_spans(text, keep_stop=True)
-    while toks and not _edge_ok(toks[0][3]):
+    while toks and not _edge_ok(toks[0][3], stops):
         toks = toks[1:]
-    while toks and not _edge_ok(toks[-1][3]):
+    while toks and not _edge_ok(toks[-1][3], stops):
         toks = toks[:-1]
     if not toks or len(toks) > MAX_N:
         return None
@@ -1002,7 +1034,7 @@ def concept_of(ws: Workspace, term: str) -> list[str]:
 def find_term(ws: Workspace, text: str) -> str | None:
     """The term id for a typed name or word ("PEM electrolysis", "electrolysers"): its stems, or failing that the
     best term containing its words."""
-    key = _key_of(text)
+    key = _key_of(text, stopwords.rules(ws))
     if key:
         tid = term_id(key)
         if ws.scalar("SELECT 1 FROM terms WHERE term_id=?", (tid,)):

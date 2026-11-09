@@ -34,6 +34,7 @@ GROUPS = {
     "theme-renamed": "themes", "theme-merged": "themes", "theme-separated": "themes",
     "codebook-added": "codebooks", "codebook-changed": "codebooks", "codebook-removed": "codebooks",
     "codebook-moved": "codebooks", "codebook-copied": "codebooks",
+    "glossary-words": "themes",
     "restored": "history",
     "sync": "together",
 }

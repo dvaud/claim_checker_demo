@@ -130,10 +130,12 @@ class _Evidence:
     """Counts over one theme run's passages: the keyword index's passage numbers, the glossary's terms."""
 
     def __init__(self, ws: Workspace, run_id: str, merged: dict[int, int]):
+        from . import stopwords
         from .search import passage_index
         from .terms import _key_of, term_id
 
         self.ws, self._key_of, self._term_id = ws, _key_of, term_id
+        self._rules = stopwords.rules(ws)   # 0.17: the project's own words are no glossary term
         self.theme: dict[int, set[int]] = {}
         self.idx = None
         try:
@@ -161,7 +163,7 @@ class _Evidence:
     def term(self, text: str) -> tuple[str, int] | None:
         """(term id, occurrences) of the glossary term written so, None when the glossary has none."""
         n = len(token_spans(text, keep_stop=True))
-        k = self._key_of(text)
+        k = self._key_of(text, self._rules)
         if not k or len(k.split()) != n:
             return None
         if k not in self._terms:

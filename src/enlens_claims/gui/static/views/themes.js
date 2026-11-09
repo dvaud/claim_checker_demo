@@ -178,6 +178,13 @@ async function renderRun(view, runId, info, query) {
     clear(notes);
     if (r.stale) notes.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "12px" } }, icon("alert-triangle"),
       h("p", {}, "Documents were added or removed since these themes were found, so they leave out the changes. Find the themes again to include them; this set is kept, so you can compare.")));
+    // 0.17: key terms that the glossary now leaves out (each language's common words, the project's own words)
+    const leftOut = r.terms_left_out || [];
+    if (leftOut.length) notes.appendChild(h("div", { class: "notice notice-info", style: { marginBottom: "12px" } }, icon("info"),
+      h("p", {}, `Some key terms here are words the glossary now leaves out: ${leftOut.slice(0, 8).map((w) => `“${w}”`).join(", ")}${leftOut.length > 8 ? ` and ${leftOut.length - 8} more` : ""}. `,
+        r.mode === "words" ? "These themes were found by words, so those words also helped group them. " : "",
+        "Find the themes again for key terms without them; this set is kept, so you can compare. ",
+        h("a", { href: "#/concepts?words=1" }, "What the glossary leaves out"), ".")));
     const ed = v.edits || {};
     const bits = [ed.renamed ? plural(ed.renamed, "theme") + " renamed" : null, ed.merged ? plural(ed.merged, "merge") : null, ed.moved ? plural(ed.moved, "passage") + " moved" : null,
       ed.removed ? plural(ed.removed, "theme") + " removed" : null, ed.added ? plural(ed.added, "new theme") + " found" : null].filter(Boolean);

@@ -78,6 +78,25 @@ where it first appears, every line where it occurs, and related concepts (the sa
 often together). *Ask the AI for other wordings* lists wordings the documents use: add them, or say *Not the same*
 and they are not proposed again.
 
+### Words the glossary leaves out
+
+No term starts or ends with a common word of its passage's language: "because" and "themselves" in English, "dan",
+"wel", "maar" and "ja" in Dutch. ENLENS tells each passage's language by the common words it uses (lists for 58
+languages come with it; a passage too short to tell, such as "Ja.", takes the language of the one before it). A Dutch
+word that is also English ("net", "door") is left out only in Dutch passages, so "net zero" stays a term of an English
+report. The key terms of themes come from the glossary, so they leave out the same words.
+
+Under *Words the glossary leaves out* on the Concepts page:
+
+- **Languages found**, with how many passages each. Switch one off to read its passages as English; a language with a
+  few passages is often a table or a reference list. English common words are always left out.
+- **Your own words**, one per line: a speaker label such as "Interviewer" or "R1", or a word that says nothing in your
+  project. No term starts or ends with a word listed here; a phrase ("zeg maar") leaves out just that term.
+
+*Save and update the glossary* makes the glossary again. Themes found before keep their key terms; the Themes page
+says which of them are now left out, and finding the themes again gives key terms without them. Search is not
+changed: it still finds every word.
+
 ## Themes
 
 <img src="../images/manual/themes.png" alt="Themes: each with key terms, size and documents" width="800">

@@ -1367,6 +1367,8 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("PUT", rf"/api/projects/{P}/labels/{P}", "put_label"),
     ("GET", rf"/api/projects/{P}/terms", "get_terms"),
     ("POST", rf"/api/projects/{P}/terms/build", "post_terms_build"),
+    ("GET", rf"/api/projects/{P}/terms/words", "get_terms_words"),
+    ("PUT", rf"/api/projects/{P}/terms/words", "put_terms_words"),
     ("GET", rf"/api/projects/{P}/concepts", "get_concept_lookup"),
     ("PUT", rf"/api/projects/{P}/concepts/links", "put_concept_link"),
     ("POST", rf"/api/projects/{P}/concepts/judge", "post_concepts_judge"),

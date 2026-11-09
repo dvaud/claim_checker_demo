@@ -878,6 +878,12 @@ every answer they store records the model, its digest, the prompt version, the s
 
 - `GET /api/projects/<p>/terms?q=&sort=&offset=&limit=` → the glossary (`status`, `terms`, `concepts`).
   `POST /api/projects/<p>/terms/build` → job: rebuild it (seconds; also run after documents are added).
+  The answer's `stale` is `documents_changed` or `words_changed` (0.17: what it leaves out changed).
+- `GET /api/projects/<p>/terms/words` → what the glossary and key terms leave out (0.17): `languages`
+  (`code`, `name`, `passages`, `on`) found by the last build, `off` (codes switched off), `own` (the
+  project's own words and phrases), `status`, `max_own`. `PUT` with `off` (a list of codes; not `en`) and/or
+  `own` (a list, or one per line) saves them (400 on an unknown code or a word over 80 characters); the
+  glossary is then out of date: `POST .../terms/build` makes it again.
 - `GET /api/projects/<p>/concepts?name=…` → the concept a wording belongs to. `GET /api/projects/<p>/concepts/<term_id>?refs=1&offset=&limit=`
   → the card: `wordings` (with `joined_by` and `joins`), `documents` (with `first`, `first_end`,
   `first_location`), `lines`, `related`, `suggested_wordings`.

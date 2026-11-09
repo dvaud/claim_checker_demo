@@ -47,7 +47,8 @@ export async function renderConcepts(view, params, query) {
   const live = h("p", { class: "visually-hidden", "aria-live": "polite" });
   const listBox = h("div", { "aria-busy": "false" });
   const judgeBox = h("div");
-  view.append(jobBox, statusBox, filters, live, listBox, judgeBox);
+  const wordsBox = h("div");
+  view.append(jobBox, statusBox, filters, live, listBox, judgeBox, wordsBox);
 
   function keepUrl() {
     const s = new URLSearchParams();
@@ -70,6 +71,7 @@ export async function renderConcepts(view, params, query) {
       filters.hidden = false;
       if (job.state === "done") { jobBox.hidden = true; toast("The glossary is ready.", "ok", { small: true }); }
       await load();
+      drawWords();
     }));
   }
 
@@ -87,6 +89,7 @@ export async function renderConcepts(view, params, query) {
   }
 
   function draw(g) {
+    lastBuilt = !!g.built;
     clear(statusBox); clear(listBox); clear(judgeBox);
     if (!g.built) {
       filters.hidden = true;
@@ -96,8 +99,13 @@ export async function renderConcepts(view, params, query) {
     }
     filters.hidden = !jobBox.hidden;
     if (g.stale) {
+      // 0.17: out of date because documents changed, or because what it leaves out changed
+      const why = g.documents_changed === false && g.words_changed
+        ? h("p", {}, "What the glossary leaves out changed since it was made (your choice under “Words the glossary leaves out”, or the common words of a newer ENLENS), so it may still list such words. ",
+          h("a", { href: "#/concepts?words=1", onClick: (e) => { e.preventDefault(); openWords(); } }, "See what it leaves out"), ".")
+        : h("p", {}, "Documents were added or removed since the glossary was made, so the counts may be out of date.");
       statusBox.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "14px" } }, icon("alert-triangle"),
-        h("div", { class: "grow" }, h("p", {}, "Documents were added or removed since the glossary was made, so the counts may be out of date."),
+        h("div", { class: "grow" }, why,
           jobBox.hidden ? h("button", { class: "btn btn-sm", type: "button", style: { marginTop: "8px" }, onClick: (e) => build(e.currentTarget) }, icon("refresh", { size: 13 }), "Update the glossary") : null)));
     }
     const total = g.total || 0;
@@ -161,12 +169,67 @@ export async function renderConcepts(view, params, query) {
         h("div", { class: "btn-row" }, btn), mini)));
   }
 
+  // 0.17: what the glossary and the key terms of themes leave out: each language's common words (a language can be
+  // switched off) and the project's own words. Saving makes the glossary again.
+  let wordsFold = null;
+  function openWords() {
+    if (!wordsFold) return;
+    wordsFold.open = true;
+    wordsFold.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  async function drawWords() {
+    let w;
+    try { w = await api("GET", `/api/projects/${P(project)}/terms/words`); } catch (e) { return; }
+    const wasOpen = wordsFold ? wordsFold.open : query.words === "1";
+    clear(wordsBox);
+    const switches = [];
+    const langList = h("ul", { class: "ct-langs" }, w.languages.map((l) => {
+      const count = h("span", { class: "muted" }, ` · ${plural(l.passages, "passage")}`);
+      if (l.code === "en") return h("li", {}, h("strong", {}, l.name), count, h("span", { class: "muted small" }, " · its common words are always left out, as search leaves them out"));
+      const sw = switchControl(h("span", {}, h("strong", {}, l.name), count), l.on);
+      sw.input.dataset.code = l.code;
+      switches.push(sw.input);
+      return h("li", {}, sw);
+    }));
+    const own = h("textarea", { class: "textarea", rows: 5, id: "ct-own-words", spellcheck: "false", "aria-describedby": "ct-own-help",
+      placeholder: "Interviewer\nR1\nzeg maar" }, (w.own || []).join("\n"));
+    const state = h("span", { class: "save-state", "aria-live": "polite" });
+    const save = h("button", { class: "btn btn-primary btn-sm", type: "button" }, icon("refresh", { size: 13 }), "Save and update the glossary");
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      state.textContent = "Saving…";
+      const off = switches.filter((i) => !i.checked).map((i) => i.dataset.code).concat((w.off || []).filter((c) => !w.languages.some((l) => l.code === c)));
+      try {
+        await api("PUT", `/api/projects/${P(project)}/terms/words`, { off, own: own.value.split("\n") });
+        state.textContent = "Saved.";
+        build(null);
+      } catch (e) { state.textContent = ""; showError(e); }
+      finally { save.disabled = false; }
+    });
+    wordsFold = h("details", { class: "fold section", id: "left-out", open: wasOpen }, h("summary", {}, "Words the glossary leaves out"),
+      h("div", { class: "card card-plain stack", style: { marginTop: "8px", gap: "14px" } },
+        h("p", { style: { margin: 0 } }, "The glossary and the key terms of themes leave out the common words of each language: no term starts or ends with “because” or “themselves”, or in Dutch with “dan”, “wel” or “maar”. ENLENS tells each passage’s language by the common words it uses, so a Dutch word that is also English (“net”, “door”) is left out only in Dutch passages. Search is not changed: it still finds every word."),
+        w.languages.length
+          ? h("div", {}, h("h3", { style: { margin: "0 0 6px", fontSize: "1rem" } }, "Languages found"),
+            h("p", { class: "muted small", style: { margin: "0 0 8px" } }, "Switch a language off to read its passages as English. A language with only a few passages is often a table or a list of references."),
+            langList)
+          : h("p", { class: "muted small", style: { margin: 0 } }, g_built() ? "Update the glossary to see the languages it finds in your documents." : "The languages show here once the glossary is made."),
+        h("div", { class: "field" }, h("label", { for: "ct-own-words", class: "field-label" }, "Your own words"), own,
+          h("div", { class: "field-help", id: "ct-own-help" }, `One word or phrase per line (at most ${fmt.num(w.max_own || 500)}): a speaker label such as “Interviewer” or “R1”, or a word that says nothing in your project. No term starts or ends with a word listed here; a phrase leaves out just that term.`)),
+        h("div", { class: "btn-row" }, save, state)));
+    wordsBox.appendChild(wordsFold);
+    if (query.words === "1" && wasOpen && !wordsBox.dataset.shown) { wordsBox.dataset.shown = "1"; setTimeout(() => wordsFold.scrollIntoView({ block: "start" }), 80); }
+  }
+  let lastBuilt = false;
+  const g_built = () => lastBuilt;
+
   search.addEventListener("input", debounce(() => { q = search.value.trim(); offset = 0; keepUrl(); load(); }, 250));
   sortSel.addEventListener("change", () => { sort = sortSel.value; offset = 0; keepUrl(); load(); });
 
   const running = await runningJob(project, ["terms"]);
   if (running) follow(running.id);
   await load();
+  await drawWords();
   return () => watchers.forEach((w) => w.stop());
 }
 

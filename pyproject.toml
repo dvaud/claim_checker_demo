@@ -33,7 +33,7 @@ enlens-mcp = "enlens_claims.mcp_server:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-enlens_claims = ["data/*.csv", "data/*.md", "gui/static/*", "gui/static/views/*", "gui/icons/*", "claude_plugin/*", "claude_plugin/agents/*"]
+enlens_claims = ["data/*.csv", "data/*.md", "data/*.json", "data/*.txt", "gui/static/*", "gui/static/views/*", "gui/icons/*", "claude_plugin/*", "claude_plugin/agents/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
