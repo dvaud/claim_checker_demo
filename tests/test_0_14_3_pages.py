@@ -116,7 +116,9 @@ def test_a_failed_request_is_never_no_documents():
 # ------------------------------------------------------------------ sidebar, keyboard, contrast
 def test_the_queue_panel_scrolls_into_view_and_the_skip_link_works():
     app = _js("app.js")
-    assert "function keepInView(" in app and app.count("keepInView(details") == 3   # the definition and the two panels
+    # 0.16.2: the foot of the sidebar stays in the window, so an open panel is always in view: keepInView went
+    # (tests/test_0_16_2_sidebar.py)
+    assert "keepInView(" not in app and "sidebarScrollInit();" in app
     assert 'querySelector(".skip-link")' in app and "e.preventDefault()" in app
     assert "main.inert = open" in app and "main.inert = false" in app
 

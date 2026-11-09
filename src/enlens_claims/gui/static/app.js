@@ -221,10 +221,28 @@ function accountPart(st) {
   return h("div", { class: "privacy-account" }, h("span", {}, say));
 }
 
-// 0.14.3: the jobs and queue panels open in place at the foot of the sidebar, below the visible part of a short
-// window: opening one scrolls the sidebar to show the whole panel (the click seemed to do nothing)
-function keepInView(details, summary) {
-  summary.addEventListener("click", () => setTimeout(() => { if (details.open) details.scrollIntoView({ block: "end", behavior: "smooth" }); }, 30));
+// The jobs and queue panels open in place at the foot of the sidebar, which stays in the window (app.css): an open
+// panel is always in view. (0.14.3 scrolled the sidebar to show it, when the foot could be below the window.)
+
+// A wheel or touchpad turn over the sidebar never scrolls the page behind it: it scrolls the part of the sidebar under
+// the pointer that can still move that way (the list of features, an open panel, the project menu), or nothing.
+// (A box with nothing left to scroll hands the turn on to the page, and CSS alone cannot stop that everywhere.)
+function sidebarScrollInit() {
+  const sb = document.getElementById("sidebar");
+  if (!sb) return;
+  const canMove = (el, dy) => {
+    if (el.scrollHeight <= el.clientHeight + 1) return false;
+    const oy = getComputedStyle(el).overflowY;
+    if (oy !== "auto" && oy !== "scroll") return false;
+    return dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+  };
+  sb.addEventListener("wheel", (e) => {
+    if (e.ctrlKey || !e.deltaY) return;  // a pinch zooms the page; a sideways turn is left alone
+    for (let el = e.target; el && el !== sb.parentElement; el = el.parentElement) {
+      if (el.nodeType === 1 && canMove(el, e.deltaY)) return;
+    }
+    e.preventDefault();
+  }, { passive: false });
 }
 
 let jobsTimer = null;
@@ -290,7 +308,6 @@ async function drawJobs() {
   if (active.length && recent.length) menu.appendChild(h("div", { class: "ps-sep" }));
   if (recent.length) menu.appendChild(h("div", { class: "muted small", style: { padding: "2px 8px" } }, "Recent"));
   recent.forEach((j) => menu.appendChild(row(j)));
-  keepInView(details, summary);
   details.append(summary, menu);
   if (old && old.open) details.open = true;
   replace(box, details);
@@ -343,7 +360,6 @@ async function drawQueue() {
     : q.waiting ? (q.paused ? `Paused: ${q.waiting.toLocaleString()} waiting` : `${(q.waiting + q.being_answered).toLocaleString()} waiting for Claude Code`)
     : q.being_answered ? `Claude Code is answering ${q.being_answered}` : "Queue for Claude Code: empty";
   const qSummary = h("summary", {}, icon(q.paused ? "pause" : "inbox", { size: 14 }), h("span", { class: "grow" }, head), icon("chevron-up", { size: 14 }));
-  keepInView(details, qSummary);
   details.appendChild(qSummary);
   const menu = h("div", { class: "ps-menu queue-menu" });
   menu.appendChild(h("div", { class: "muted small qp-privacy" }, icon("cloud", { size: 12 }), " ", q.privacy));
@@ -745,6 +761,7 @@ async function boot() {
   connectionInit();
   themeInit();
   drawerInit();
+  sidebarScrollInit();
   navIcons();
   App.onChange(() => { renderProjectSwitch(); renderPrivacy(); renderQueue(); renderUpdateBanner(); });
   onJobsChanged(() => { renderJobs(); renderQueue(); });

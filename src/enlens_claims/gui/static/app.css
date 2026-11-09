@@ -48,11 +48,26 @@ mark.quote {
 /* ------------------------------------------------------------------ shell */
 .shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
 .topbar { display: none; }
+/* The sidebar is one window-high column that never scrolls as a whole: the brand and the project stay at the top, the
+   foot (work running, the AI line, Settings, Update, Quit) stays at the bottom, and only the list of features between
+   them scrolls when the window is short. A wheel over the sidebar never scrolls the page (sidebarScrollInit, app.js). */
 .sidebar {
   background: var(--bg-2); border-right: 1px solid var(--border);
-  position: sticky; top: 0; height: 100vh; overflow: auto;
+  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow: hidden;
 }
 .sidebar-inner { display: flex; flex-direction: column; height: 100%; padding: 18px 14px 14px; gap: 14px; }
+.sidebar-inner > .brand, .sidebar-inner > .project-switch { flex: none; }
+#nav {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  margin: -4px -6px; padding: 4px 6px;  /* room for the focus ring, which the scrolling box would cut */
+  scrollbar-width: thin;
+  /* a soft shadow at an edge says there are more features beyond it; the shadows show only while there are */
+  background:
+    linear-gradient(var(--bg-2) 30%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--bg-2) 70%) bottom / 100% 28px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--text) 16%, transparent), transparent) top / 100% 10px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--text) 16%, transparent), transparent) bottom / 100% 10px no-repeat scroll;
+}
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; padding: 2px 6px; }
 .brand img { border-radius: 8px; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
@@ -66,7 +81,11 @@ mark.quote {
 .nav a:hover { background: var(--surface-3); color: var(--text); }
 .nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
 .nav-icon { display: inline-flex; width: 18px; height: 18px; }
-.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.sidebar-foot { flex: none; margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+/* An open panel of work (the jobs, the queue) opens in place in the foot: it scrolls inside itself, short enough that
+   Settings and Quit stay in the window. (The foot itself is not a scrolling box: the AI line's card opens upwards out
+   of it.) The other parts of the sidebar take about 480px. */
+.sidebar-foot .jobs > .ps-menu { max-height: max(120px, calc(100vh - 480px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 /* ---------------------------------------------------------------- sidebar foot: Settings (with the theme icon), Update, Quit */
 /* 0.10.1, moved here in 0.14.2. One short list, aligned like the features above it: the same padding, icon width and gap. */
 .sidebar-app { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--border); }
@@ -551,7 +570,7 @@ details.fold > summary:hover { color: var(--accent-text); }
   .topbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg-2); position: sticky; top: 0; z-index: 40; }
   .topbar-project { margin-left: auto; font-size: .85rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45vw; }
   .brand-small { padding: 0; gap: 6px; font-weight: 700; letter-spacing: .06em; font-size: .95rem; }
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: min(300px, 86vw); height: 100vh; z-index: 60; transform: translateX(-100%); transition: transform .2s ease; box-shadow: none; }
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: min(300px, 86vw); height: 100vh; height: 100dvh; z-index: 60; transform: translateX(-100%); transition: transform .2s ease; box-shadow: none; }
   .sidebar.open { transform: none; box-shadow: var(--shadow-lg); }
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 50; }
   .view { padding: 18px 16px 60px; }
