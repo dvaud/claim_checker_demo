@@ -66,7 +66,9 @@ AI) comes in the next candidates. Tables, figures and images (A6) are left out o
   from them in memory, one snapshot of the project: postings packed in arrays (`PackedBM25`, with `retrieve.BM25`'s
   own ranking, number for number) and no passage text (`rows` reads it when needed, `ids` and `doc_of` without
   reading, `prefetch`, `read`, `terms_starting`); a passage gone while an index is used raises `searchindex.Changed`
-  ("run it again"). Nothing stays open (the file is opened for a load and closed). `search.IN_MEMORY` is the index of
+  ("run it again"). Nothing stays open: the file is opened for a load and closed, and `rows` keeps the database's path,
+  not the project, reading through a connection it closes at once (a cached index kept a project, and with it open
+  connections, so Windows could not remove a scratch copy). `search.IN_MEMORY` is the index of
   before 0.16.
 - `searchindex.connect_cache` opens a cache file and makes a damaged one again (a busy one is left alone; damage beyond
   the first page and another layout count too). Both cache files are stamped with the code that makes them, taken when

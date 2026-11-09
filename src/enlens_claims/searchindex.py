@@ -274,7 +274,9 @@ class _Rows:
     gone from the project meanwhile raises `Changed`."""
 
     def __init__(self, ws: Workspace, ids: list[str]):
-        self.ws, self.ids = ws, ids
+        # 0.16: the database's path, not the project: an index stays cached after its search, and a project kept by
+        # it keeps its connections open, so Windows could not remove the folder (the scratch copy of a model test)
+        self.db, self.ids = ws.db_path, ids
         self.cache: OrderedDict[int, dict] = OrderedDict()
         self.lock = threading.Lock()
 
@@ -287,11 +289,16 @@ class _Rows:
     def _read(self, wanted: list[int]) -> dict[int, dict]:
         out: dict[int, dict] = {}
         wanted = list(dict.fromkeys(wanted))   # a passage asked for twice is read once
-        for k in range(0, len(wanted), 500):
-            at = {self.ids[i]: i for i in wanted[k:k + 500]}
-            for r in self.ws.query(f"SELECT {_FIELDS} FROM passages p JOIN documents d ON d.doc_id=p.doc_id "
-                                   f"WHERE p.passage_id IN ({','.join('?' * len(at))})", list(at)):
-                out[at[r["passage_id"]]] = dict(r)
+        cx = sqlite3.connect(self.db, timeout=60, isolation_level=None)  # closed again at once: nothing stays open
+        try:
+            cx.row_factory = sqlite3.Row
+            for k in range(0, len(wanted), 500):
+                at = {self.ids[i]: i for i in wanted[k:k + 500]}
+                for r in cx.execute(f"SELECT {_FIELDS} FROM passages p JOIN documents d ON d.doc_id=p.doc_id "
+                                    f"WHERE p.passage_id IN ({','.join('?' * len(at))})", list(at)):
+                    out[at[r["passage_id"]]] = dict(r)
+        finally:
+            cx.close()
         if len(out) < len(wanted):
             raise Changed("The documents changed while this ran (a passage it was reading is gone). Run it again.")
         return out
