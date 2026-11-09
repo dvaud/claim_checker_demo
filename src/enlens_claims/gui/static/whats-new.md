@@ -1,7 +1,5 @@
-# 0.17.0rc1: A sidebar of seven places
-*A release candidate: everything is where it was, in fewer places.*
-- Seven places in the sidebar; their other views are tabs
-- Hypotheses: check one or a list, and every answer, on one page
-- Find any page or setting with Ctrl+K (⌘K)
-- The research log opens beside every page
-- The sidebar's top and foot always stay in the window
+# 0.17.0rc2: Key terms in each passage's language
+*A release candidate: the glossary and themes leave out each language's common words.*
+- No more "dan", "wel" or "maar" as key terms: 58 languages are known
+- Concepts › *Words the glossary leaves out*: switch a language off, add your own words
+- Update the glossary, then find your themes again

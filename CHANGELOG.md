@@ -1,24 +1,51 @@
 # Changelog
 
-## Unreleased
+## 0.17.0rc2 (November 2026): key terms without each language's common words
 
-- **The glossary and the key terms of themes leave out each language's common words.** In a project with Dutch
-  interviews the most frequent glossary terms were "ik", "ja", "je", "dan", "die", "wel" and "maar", a theme's key
-  terms were the same words, and themes found by words held the interviews together by them (370 of one theme's 371
-  passages came from the interviews). Now each passage is read by the common words of its own language: lists for 58
-  languages come with ENLENS (stopwords-iso, MIT licence), English and Dutch edited by hand (Dutch with the words of
-  speech: "nou", "oké", "allee", "denk"). A passage's language is told by its common words; words that are also
-  English ("care", "global") tell nothing, so an English heading or table is never read as Romanian or Malay, and a
-  short passage ("Ja.") takes the language of the passage before it. A Dutch word that is also English ("net", "door", "die") is left out only in
-  Dutch passages, so "net zero" stays a term of an English report. English also leaves out "because", "themselves",
-  "yeah" and the like. Search is not changed.
+The second release candidate of 0.17. In a project with Dutch interviews beside English papers, the most frequent
+glossary terms were "ik", "ja", "je", "dan", "die", "wel" and "maar"; a theme's key terms were the same words, and
+themes found by words held the interviews together by them (370 of one theme's 371 passages came from the
+interviews). The glossary now reads each passage in its own language. **Search is not changed**: it still finds every
+word. Themes found before keep their key terms until you find them again.
+
+It is a release candidate: only copies with *Try new versions early* (Settings) get it.
+
+### Changed
+
+- **The glossary and the key terms of themes leave out each language's common words.** No term starts or ends with
+  one. Lists for 58 languages come with ENLENS (stopwords-iso 1.1.0, MIT licence); English and Dutch are edited by
+  hand (Dutch with the words of speech: "nou", "oké", "allee", "denk"; English adds "because", "themselves", "yeah"
+  and the like). A passage's language is told by its common words; words that are also English ("care", "global")
+  tell nothing, so an English heading or table is never read as Romanian or Malay, and a short passage ("Ja.") takes
+  the language of the passage before it. A Dutch word that is also English ("net", "door", "die") is left out only in
+  Dutch passages, so "net zero" stays a term of an English report.
+- A glossary made before is out of date after the update (what it leaves out changed): it is made again when next
+  needed, or with *Update the glossary* on the Concepts page.
+
+### New
+
 - **Words the glossary leaves out** (Concepts page): the languages found, with their passages, each of which can be
-  switched off, and a box for your own words, such as a speaker label ("Interviewer", "R1"); a phrase there leaves out
-  just that term. Saving makes the glossary again and is written in the research log.
-- **The Themes page says which key terms are now left out**, and that finding the themes again gives key terms
+  switched off (its passages are then read as English), and a box for your own words, such as a speaker label
+  ("Interviewer", "R1"); a phrase there leaves out just that term. Saving updates the glossary and is written in the
+  research log. Like the glossary, these belong to this copy of a project.
+- **The Themes page names the key terms now left out** and says that finding the themes again gives key terms
   without them (themes found by words were also grouped by them). The themes found before are kept as they were.
-- A glossary made before is out of date after the update (what it leaves out changed) and is made again when next
-  needed, or with *Update the glossary*.
+- `GET`/`PUT /api/projects/<p>/terms/words`; `tools/make_stopwords.py` makes the lists' file again.
+
+### Not yet done
+
+- A few words of another language can still be glossary terms when they stand in passages read as English (in the
+  Tovertafel project "ik" 8 times and "ja" 6 times, of 4,136 terms).
+- From rc1: the design guide's styling, and the manual's pictures of the old screens.
+
+### Tests
+
+`tests/test_0_17_0_glossary_languages.py` (13 tests): Dutch common words are no terms while "net zero", "care home"
+and "eigen regie" stay; a passage's language and the passages that do not tell; English headings and tables not read
+as another language; own words and phrases, languages switched off, and the research log; readings made under other
+rules not used, a phrase not reading every document again; a build by an older ENLENS noticed; the Themes page's
+left-out key terms (not a term that left for another reason); the API. An Opus review found six defects, all fixed
+with tests. 1,089 passed, 17 skipped.
 
 ## 0.17.0rc1 (November 2026): a sidebar of seven places
 
