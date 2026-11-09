@@ -53,7 +53,7 @@ for when you mean to combine two projects.
 ### A sync clash
 
 When you both changed the same result, set of themes or codebook, your colleague's version comes in as a copy beside
-yours, marked *sync clash · Anna's version* in the *Results* list, with a notice and a link to the other version on
+yours, marked *sync clash · Anna's version* in the list of answers under *Hypotheses*, with a notice and a link to the other version on
 the result.
 
 - Compare them, keep the one you want and delete the other: the *sync clash* mark goes.
@@ -102,7 +102,7 @@ On the *Projects* page (the project menu → *Manage projects*):
 
 - **Download as a zip** puts the whole project in one file: the database, the documents and their original files,
   the codebooks. The file of a document you removed is not in it. *Download the whole project (.zip)* is also on the
-  Results page.
+  *Hypotheses* page.
 - **Import a project (.zip)** opens such a file as a new project. A damaged zip, or one whose database cannot be
   read, is refused with a plain message and leaves nothing behind.
 

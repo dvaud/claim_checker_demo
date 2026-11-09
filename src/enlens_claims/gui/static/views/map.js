@@ -1,5 +1,7 @@
 // Evidence map: hypotheses as rows, documents as columns, each cell the side a document takes on a hypothesis
-// (judgements that count at the strictness; a person's always count), with symbols as well as colours.
+// (judgements that count at the strictness; a person's always count), with symbols as well as colours. 0.17.0: a view
+// of the Hypotheses page (its tab beside Answers), with the page's head.
+import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks } from "../lib.js";
 
 const SIDE = {
@@ -20,14 +22,22 @@ export async function renderMap(view, params, query) {
   const hyps = m.hypotheses || [], docs = m.documents || [], cells = m.cells || {};
   // 0.13.3: the download is a quiet link, as on the result page
   const xlsx = downloadLinks([{ text: "Excel (.xlsx)", title: "Three sheets: a summary, every excerpt read, and this map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) }]);
-  view.appendChild(pageHead("Evidence map", {
+  view.appendChild(pageHead("Hypotheses", {
+    eyebrow: featureEyebrow("check"),
     sub: "Which documents are behind which answers: one row per hypothesis, one column per document with an excerpt that counts.",
-    actions: [h("a", { class: "btn btn-sm", href: batch ? `#/history?batch=${encodeURIComponent(batch)}` : "#/history" }, icon("history", { size: 13 }), batch ? "Back to the set" : "All results"), xlsx],
+    actions: xlsx,
   }));
-  if (batch) view.appendChild(h("div", { class: "batch-banner", style: { marginBottom: "12px" } }, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${hyps.length} ${hyps.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), h("a", { class: "btn btn-sm btn-ghost", href: "#/map" }, "Show all results")));
+  // the tabs of the place; the answers of one set stay one set when you go back to them
+  const tabs = viewTabs("hypotheses", "map");
+  if (tabs) {
+    const answersTab = tabs.querySelector('a[href="#/hypotheses"]');
+    if (answersTab && batch) answersTab.setAttribute("href", `#/hypotheses?batch=${encodeURIComponent(batch)}`);
+    view.appendChild(tabs);
+  }
+  if (batch) view.appendChild(h("div", { class: "batch-banner", style: { marginBottom: "12px" } }, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${hyps.length} ${hyps.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), h("a", { class: "btn btn-sm btn-ghost", href: "#/map" }, "Show all hypotheses")));
 
   if (!hyps.length) {
-    view.appendChild(emptyState("layers", "Nothing to map yet", "Check a hypothesis and it appears here with the documents behind its answer.", h("a", { class: "btn btn-primary", href: "#/check" }, "Check a hypothesis")));
+    view.appendChild(emptyState("layers", "Nothing to map yet", "Check a hypothesis and it appears here with the documents behind its answer.", h("a", { class: "btn btn-primary", href: "#/hypotheses" }, icon("flask", { size: 14 }), "Check a hypothesis")));
     return;
   }
 
@@ -79,5 +89,5 @@ export async function renderMap(view, params, query) {
   table.append(h("caption", { class: "visually-hidden" }, "Evidence map: hypotheses by documents"), thead, tbody);
   view.appendChild(h("p", { class: "muted small map-scroll-hint", style: { margin: "0 0 6px" } }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every document."));
   view.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": "Evidence map grid (scrolls sideways)" }, table));
-  view.appendChild(h("p", { class: "muted small", style: { marginTop: "10px" } }, "Click a hypothesis to open its result, or a document title to open the document; “highlighted” downloads it with the quotes marked. The Excel download of all results has this map as a sheet called “Map”."));
+  view.appendChild(h("p", { class: "muted small", style: { marginTop: "10px" } }, "Click a hypothesis to open its result, or a document title to open the document; “highlighted” downloads it with the quotes marked. The Excel download of all answers has this map as a sheet called “Map”."));
 }

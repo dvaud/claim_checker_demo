@@ -582,7 +582,7 @@ export function rememberClaude(st) { claudeSeen.status = st || {}; claudeSeen.at
 // little less than that, so several tabs share one look. `fresh` looks again now. `install` is set by app.js (the
 // confirmation, the update and the restart).
 export const UPDATE_EVERY = 120000;
-export const Updates = { info: null, error: null, at: 0, pending: null, listeners: new Set(), install: () => {} };
+export const Updates = { info: null, error: null, at: 0, pending: null, listeners: new Set(), install: () => {}, quit: null };  // 0.17.0: quit (app.js) for Settings, while Update takes Quit's place
 export function checkUpdate(fresh = false) {
   if (Updates.pending && !fresh) return Updates.pending;
   const ask = api("GET", fresh ? "/api/update?fresh=1" : "/api/update")
@@ -1120,6 +1120,15 @@ function queueFetch(project) {
     .finally(() => { const now = QUEUE_CACHE.get(project); if (now && now.inflight === p) delete now.inflight; });
   QUEUE_CACHE.set(project, { ...c, inflight: p });
   return p;
+}
+
+// 0.17.0: start Claude Code for a project's queue from a single button (the status area at the foot of the sidebar),
+// with the speed of Settings or the helpers chosen for this run. Settings › AI has the whole choice.
+export async function startClaudeNow(project) {
+  const q = await queueFetch(project);
+  await api("POST", `/api/projects/${P(project)}/queue/claude-code`, runBody(project, q));
+  RUN_CHOICE.delete(project);
+  QUEUE_CACHE.delete(project);
 }
 
 // 0.10: how to get Tesseract (text recognition for scanned PDFs) on this computer's system, as the server says

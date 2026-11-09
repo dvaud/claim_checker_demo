@@ -4,18 +4,18 @@
 
 > **In short**
 > - A codebook is your list of codes: each with a definition, when to use it and when not, the words it is matched by
->   and examples from your documents. *Codebooks* in the sidebar makes, changes and removes them.
+>   and examples from your documents. *Codes* › *Codebooks* makes, changes and removes them.
 > - Start fresh, from the themes already found, from a copy of another codebook, or from a CSV file.
 > - Changing a codebook changes no result by itself: labels follow renames and merges, and wait when a code is removed.
 
 ## What a codebook is for
 
-Profile and a document's *Codes* panel look for the codes of a codebook, and a hypothesis can be tagged with one of its
-codes ([Explore your documents](explore.md#profile)). The 169 SDG targets ship with ENLENS; they cannot be changed, but
+*Codes* › *By document* and a document's *Codes* panel look for the codes of a codebook, and a hypothesis can be
+tagged with one of its codes ([Explore your documents](explore.md#codes)). The 169 SDG targets ship with ENLENS; they cannot be changed, but
 you can make a copy and change that. A codebook stays a CSV file, so it still opens in a spreadsheet.
 
 The page lists *Your codebooks* and those that ship with ENLENS. Each card says how many codes it has, where it is
-kept, how many labels and checks use it and whether Profile uses it. A codebook file that cannot be used is listed
+kept, how many labels and checks use it and whether *By document* uses it. A codebook file that cannot be used is listed
 above them, with the reason.
 
 ## Make one
@@ -96,7 +96,7 @@ An edit changes no result by itself: labels are moved, never made or deleted.
 | Remove a code | Wait under *Removed codes*, are not counted, and come back with *Bring it back*. |
 | Reword a code after the AI labelled with it | Stay as they are. The code shows *earlier wording* and *Label them again*, which has the AI label only those passages again. |
 
-*Profile* shows a notice when the codebook changed since the keyword pass (*Find the codes again* takes seconds), when
+*By document* shows a notice when the codebook changed since the keyword pass (*Find the codes again* takes seconds), when
 codes were reworded and when removed codes' labels wait, each with *Open the codebook*.
 
 ## Where it is kept

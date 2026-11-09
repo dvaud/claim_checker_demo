@@ -1,4 +1,4 @@
-"""0.16.2: *Update* downloads the new version by a second route when GitHub's download links are busy.
+"""0.17.0: *Update* downloads the new version by a second route when GitHub's download links are busy.
 
 On 2026-11-09 the update from 0.15.6 to 0.15.7 stopped with "Something went wrong inside the app" and
 "Unexpected problem: HTTP Error 504: Gateway Time-out". GitHub's download links (github.com/…/releases/download/…)

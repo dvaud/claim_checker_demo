@@ -134,7 +134,7 @@ def test_the_sidebar_card_and_the_settings_checklist():
     settings = (STATIC / "views" / "settings.js").read_text()
     overview = (STATIC / "views" / "overview.js").read_text()
     # the sidebar line opens a card (it had the browser's tooltip, which could not name the account)
-    body = app[app.index("function renderPrivacy()"):app.index("let jobsTimer")]
+    body = app[app.index("function renderPrivacy()"):app.index("function sidebarScrollInit()")]
     assert "title:" not in body and '"aria-describedby": "privacy-card"' in body and 'role: "tooltip"' in body
     assert "Signed in to Claude Code as" in body and "Escape" in body
     assert "mouseenter" in body and "claudeStatus()" in body

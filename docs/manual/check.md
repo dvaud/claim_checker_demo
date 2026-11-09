@@ -3,14 +3,19 @@
 # Check a hypothesis
 
 > **In short**
-> - Write one sentence that could be true or false, and press *Check* (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).
+> - In *Hypotheses*, write one sentence that could be true or false (or several, one per line) and press *Check*
+>   (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).
 > - ENLENS finds the excerpts that bear on it, the AI judges each with a quote, and every quote is checked against
 >   the source.
 > - The answer counts only judgements the AI is sure enough about, and always yours.
 
 ## Writing the hypothesis
 
-One sentence that could be true or false: *Remote work lowers commuting emissions in large cities*, *Green hydrogen
+*Hypotheses* (under **Check** in the sidebar, marked *Uses the AI*) has one box for what you want to test, with the
+answers listed under it and an *Evidence map* tab ([Read and review a result](review.md#the-list-of-answers)). By the
+*Check* button, *Claude, on your plan, reads the excerpts it needs* says which AI reads your text.
+
+The box takes one hypothesis, or several ([below](#checking-many-at-once)). One sentence that could be true or false: *Remote work lowers commuting emissions in large cities*, *Green hydrogen
 production increases water stress in arid regions*. When it contains "and", "but" or a semicolon, the app offers to
 **check each part separately**. *What happens when you check* explains the steps.
 
@@ -47,7 +52,7 @@ flowchart LR
    listed, and so is one a local model could not finish (cut off, stuck); the check goes on with its other parts.
 6. The answer counts the judgements the AI is sure enough about, and yours ([below](#the-answers)).
 
-**While it runs**, the panel shows each step as it finishes: the parts, the other words searched for, how many
+**While it runs**, the page shows each step as it finishes: the parts, the other words searched for, how many
 excerpts from how many documents, the AI reading them. *Technical details* shows what the model does second by
 second. Remarks about the round appear under the steps (excerpts of restricted documents read on this computer, or
 waiting for you). *Stop* ends the check and leaves nothing behind; with a model on this computer it also stops the
@@ -116,10 +121,11 @@ excerpts read; it is not a measure of truth.
 
 ## Checking many at once
 
-**Check several** checks a list of hypotheses one after the other. Paste them one per line, or load a CSV with a
-column `hypothesis` (or `claim`, `text`, `statement`) and optional `framework` and `code` columns. *Show the list*
-previews what will be checked; *Check all N* runs them. A hypothesis that cannot be checked is listed and the next one
-is checked; a problem with the AI stops the set and keeps what was done. The end screen lists each answer.
+The same box checks a list of hypotheses one after the other. Write them one per line, or load a spreadsheet or CSV
+with a column `hypothesis` (or `claim`, `text`, `statement`) and optional `framework` and `code` columns. The button
+counts what it will check (*Check 3*). *Look before checking* is for one hypothesis at a time. A hypothesis that
+cannot be checked is listed and the next one is checked; a problem with the AI stops the set and keeps what was
+done. Each answer then appears in the list under the box.
 
 ---
 

@@ -92,21 +92,20 @@ def test_an_old_answer_does_not_count_as_answering(api, corpus):  # noqa: F811
 
 
 def test_the_sidebar_says_not_running_in_its_own_colour():
+    # 0.17.0: the jobs and queue panels became one status area of a fixed size (app.js drawStatus); the rule stays
     app = (STATIC / "app.js").read_text()
-    draw = app[app.index("async function drawJobs()"):app.index("// 0.8: the queue panel")]
+    draw = app[app.index("async function drawStatus()"):app.index("// 0.14.2: the theme is a small icon beside Settings")]
     # on hold and running are told apart, with their own class, words and mark
     assert "const hold = active.filter((j) => j.on_hold);" in draw and "const going = active.filter((j) => !j.on_hold);" in draw
-    assert '"jobs-hold"' in draw and "not running" in draw and 'icon("pause"' in draw
-    assert "Waiting for Claude Code to start" in draw
+    assert 'kind: "stalled"' in draw and '"Not running"' in draw and 'icon: "pause"' in draw
+    assert "for Claude`" in draw   # "2 tasks wait for Claude" (the tooltip says Claude Code)
     # the pulsing dot is only for work that runs
-    assert 'going.length ? h("span", { class: "running-dot"' in draw
-    # the panel offers to start Claude Code for the current project's work on hold
-    assert "startClaude(App.project)" in draw
-    index = (STATIC / "index.html").read_text()
-    assert index.index("/static/v0113.css") < index.index("/static/v012.css")
-    css = (STATIC / "v012.css").read_text()
-    assert ".jobs-hold summary" in css and "var(--warn)" in css
-    assert "running-dot" not in css  # no pulse for work on hold
+    assert 'w.kind === "running" ? h("span", { class: "running-dot"' in draw
+    # it offers to start Claude Code for the current project's work on hold, in one button
+    assert "startClaudeNow(App.project)" in draw and '"Start"' in draw
+    css = (STATIC / "navigation.css").read_text()
+    stalled = css[css.index(".work-box.work-stalled"):]
+    assert "var(--warn)" in stalled[:200] and "running-dot" not in stalled[:200]  # no pulse for work on hold
 
 
 # ---------------------------------------------------------------------------------------------

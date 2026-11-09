@@ -153,10 +153,11 @@ def test_the_page_puts_exploring_first_and_marks_the_ai():
     static = ROOT / "src" / "enlens_claims" / "gui" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     nav = html[html.index('<nav class="nav"'):html.index("</nav>")]
-    order = [nav.index(f'data-route="{r}"') for r in ("overview", "sources", "search", "profile", "concepts", "themes",
-                                                       "check", "batch", "history")]
+    # 0.17.0: seven places, exploring before checking; the groups say whether they use the AI
+    order = [nav.index(f'data-route="{r}"') for r in ("overview", "documents", "search", "codes", "concepts", "themes",
+                                                       "hypotheses")]
     assert order == sorted(order)
-    assert nav.index("Explore the documents") < nav.index("Check hypotheses")
+    assert nav.index('data-section="explore">Explore') < nav.index('data-section="check">Check')
     feats = (static / "features.js").read_text(encoding="utf-8")
     feats = feats[feats.index("export const FEATURES"):]
     for key, ai in (("search", "none"), ("profile", "optional"), ("concepts", "optional"), ("themes", "optional"),
@@ -164,7 +165,9 @@ def test_the_page_puts_exploring_first_and_marks_the_ai():
         block = feats[feats.index(f"  {key}: {{"):]
         assert f'ai: "{ai}"' in block[:block.index("\n  },")], key
     app = (static / "app.js").read_text(encoding="utf-8")
-    assert "nav-ai" in app and "nav-legend" in app and '[/^\\/?$/, "overview", renderOverview]' in app
+    # 0.17.0: no mark on each entry and no legend: the groups carry the one AI mark (features.js aiTag)
+    assert "nav-ai" not in app and "nav-legend" not in app and '[/^\\/?$/, "overview", renderOverview]' in app
+    assert 'GROUP_AI = { explore: "optional", check: "uses" }' in app and "aiTag(level)" in app
 
 
 def test_a_link_button_keeps_its_colours_on_hover():

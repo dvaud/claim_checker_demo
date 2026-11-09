@@ -54,7 +54,7 @@ export function importProjectDialog(opts = {}) {
             navigate(n ? "#/projects" : "#/overview");
           } else {
             toast(`Project “${r.project.name}” imported: ${r.project.documents} ${r.project.documents === 1 ? "document" : "documents"}, ${r.project.hypotheses} ${r.project.hypotheses === 1 ? "result" : "results"}. It is now the current project.`, "ok", { ttl: 7000 });
-            navigate("#/history");
+            navigate("#/hypotheses");
           }
         } catch (e) {
           btn.disabled = false; status.textContent = "";
@@ -240,7 +240,7 @@ export function linkProjectDialog() {
           const r = await api("POST", "/api/projects/link", { path: path.value.trim(), name: name.value.trim() || undefined });
           await App.refresh();
           toast(`Project “${r.project.name}” added.`, "ok");
-          navigate("#/check");
+          navigate("#/hypotheses");
         } catch (e) { err.textContent = e.message; return false; }
         return true;
       },

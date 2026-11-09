@@ -5,7 +5,7 @@
 > **In short**
 > - The first screen has three steps: **the AI** (*Set up Claude* does it all), **a project**, then **documents**.
 > - No Claude plan? Choose a model on your own computer, or no AI for now.
-> - The sidebar always says where your text goes.
+> - The sidebar has seven parts, a finder (<kbd>Ctrl</kbd>+<kbd>K</kbd>) and a line that always says where your text goes.
 
 ## The first screen
 
@@ -75,27 +75,64 @@ selects all of them.
 
 ![The Overview of a project](../images/overview.png)
 
-**The sidebar**, from top to bottom:
+**The sidebar** has seven parts, from top to bottom:
 
 | Part | What is there |
 | --- | --- |
-| Project | *Overview* (the start page of a project), *Documents*, *Bibliography* |
-| **Explore the documents** | *Search*, *Profile*, *Concepts*, *Themes* ([Explore](explore.md)) |
-| **Check hypotheses** | *Check a hypothesis*, *Check several*, *Results* ([Check](check.md)) |
-| Bottom | The line that says where text goes, *Settings* (with the theme icon), *Update to …* (only when there is an update), *Quit ENLENS* |
+| The name | *ENLENS*, and the project switch under it. |
+| *Find a feature or page* | The finder ([below](#the-finder)). <kbd>Ctrl</kbd>+<kbd>K</kbd>, or <kbd>⌘</kbd>+<kbd>K</kbd> on a Mac, opens it from anywhere. |
+| The project | *Overview*, *Documents*. |
+| **Explore**, marked *AI on request* | *Search*, *Codes*, *Concepts*, *Themes* ([Explore](explore.md)). |
+| **Check**, marked *Uses the AI* | *Hypotheses* ([Check a hypothesis](check.md)). |
+| The foot | One status area, then *Settings*, *Quit* and the theme icon. |
 
-**AI marks.** Beside each feature, a filled **AI** mark means it needs the AI, a dashed one that the AI is optional,
-and no mark that it never uses the AI. The marks are grey: green, amber, red and purple are kept for judgements and
-answers.
+Each of these is a **place**. A place's other parts are **views**, shown as tabs under the page title:
 
-**The theme icon** at the end of the *Settings* row: a screen follows your computer, a sun is light, a moon is dark.
-Click it for the next one; hover it to see which is in use.
+| Place | Views |
+| --- | --- |
+| *Overview* | *Overview*, *Research log* ([Notes, the research log and earlier versions](notes-and-log.md#the-research-log)) |
+| *Documents* | *Documents*, *Notes* ([Highlights and notes](notes-and-log.md#highlights-and-notes)), *Bibliography* ([Your bibliography](bibliography.md)) |
+| *Codes* | *By document* (which codes each document addresses, [Explore](explore.md#codes)), *Codebooks* ([Make your own codebook](codebooks.md)) |
+| *Hypotheses* | *Answers*, *Evidence map* ([Read and review a result](review.md#the-evidence-map)) |
 
-**The Overview** shows every feature with one line on what it does, whether it uses the AI and what is already made
-in the project (a profile, a glossary, a set of themes, results), and the AI in use with anything left to set up.
-Hover a card for what the feature is for. *Quick look at one document* is here too ([Explore](explore.md#quick-look)).
+Links from earlier versions of ENLENS, and bookmarks to them, open the new home of the page.
 
-**Where your text goes.** The line at the bottom of the sidebar always says it:
+### The finder
+
+*Find a feature or page* (or <kbd>Ctrl</kbd>+<kbd>K</kbd>, <kbd>⌘</kbd>+<kbd>K</kbd> on a Mac) opens a box: type what
+you want and press <kbd>Enter</kbd>. Typos are fine. It suggests places, views and actions, and always offers
+*Search the documents for "…"* with your words. It uses no AI. The *Overview* has the same finder at the top, under
+*What do you want to do?*.
+
+### The AI mark
+
+One mark says whether a feature uses the AI: a chip icon with *Uses the AI*, *AI on request* (it works without the AI,
+and the AI adds to it only when you ask) or *No AI*. It sits on the sidebar groups, on each page's top line and beside
+actions that start AI work. A cloud icon marks only where your text goes (the line at the foot of the sidebar, and
+the line by the *Check* button). The marks are grey: green, amber, red and purple are kept for judgements and answers.
+
+### The foot of the sidebar
+
+One status area of a fixed size, so the sidebar does not jump.
+
+- **Normally** it says where your text goes ([below](#where-your-text-goes)).
+- **While work runs or waits**, the work takes its place: what runs, for how long, how many tasks wait, and the name
+  of the AI. When work waits for Claude Code and nothing answers it, the area turns to the warning colour with a
+  *Start* button ([Claude Code](claude-code.md#start-claude-code)).
+
+Under it are *Settings*, *Quit* and **the theme icon**: a screen follows your computer, a sun is light, a moon is dark.
+Click it for the next one; hover it to see which is in use. When an update is ready, *Update* takes *Quit*'s place
+([Update](install.md#update)); *Quit* is then in *Settings → Technical*.
+
+### The Overview
+
+The *Overview* shows the finder, then every feature with one line on what it does, whether it uses the AI and what is
+already made in the project (codes by document, a glossary, a set of themes, answers), and the AI in use with anything
+left to set up. *Quick look at one document* is here too ([Explore](explore.md#quick-look)).
+
+### Where your text goes
+
+The line at the foot of the sidebar always says it:
 
 | The line says | Meaning |
 | --- | --- |
@@ -108,9 +145,15 @@ is signed in to (*Signed in to Claude Code as you@university.nl*, and on a Team 
 where the text goes and where to change it. <kbd>Esc</kbd> closes it. *Settings → AI* and `enlens claude-setup` name
 the account too; ENLENS reads it from Claude Code (`claude auth status`).
 
-**Every page looks alike.** A title and one short line under it; a longer explanation behind a small **(?)** that
-opens on hover or click; downloads as one quiet line of links (*Download Excel (.xlsx) · CSV*). Model names and
-other technical facts sit under *Technical details* and *Settings → Technical*, never on a working screen.
+### Every page looks alike
+
+A title with the AI mark and one short line under it, the views as tabs, a longer explanation behind a small **(?)**
+that opens on hover or click, and downloads as one quiet line of links (*Download Excel (.xlsx) · CSV*). Model names
+and other technical facts sit under *Technical details* and *Settings → Technical*, never on a working screen.
+
+The **Research log** button at the top right of every page opens a panel on the right: write an entry that is kept
+with the page you are on, and see that page's entries (*This page*) or all of them (*All*)
+([The research log](notes-and-log.md#the-research-log)).
 
 ---
 

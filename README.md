@@ -36,7 +36,7 @@ No Claude plan? Choose *A model on this computer* on the first screen. Used ENLE
 
 1. Type `enlens update` in Terminal or PowerShell, or run the install line or file again (on Windows, quit ENLENS
    and close Claude Code first).
-2. Quit ENLENS (*Quit ENLENS* at the bottom of the sidebar) and open it again from its icon.
+2. Quit ENLENS (*Quit* at the bottom of the sidebar, or *Settings* › *Technical*) and open it again from its icon.
 
 ENLENS also tells you when a new version is ready; *Update and restart* in its pop-up does both steps for you (on
 Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your home folder) are never touched.
@@ -59,7 +59,7 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 ## New in 0.16: notes, a research log and your own codebook
 
 - **Notes and highlights** on the exact words of a document: select words, then *Highlight* or *Note*. Search them
-  all on the *Notes* page, and use a note as evidence in a check. Cannot change results.
+  all under *Documents* › *Notes*, and use a note as evidence in a check. Cannot change results.
 - **A research log** that ENLENS keeps as you work (documents added, checks dropped and why, themes removed, codebook
   changes), with your own entries and reasons, to download for an appendix or an audit. Cannot change results.
 - **Compare and restore** earlier versions of a set of themes, your judgements in a check, or a codebook. A restore

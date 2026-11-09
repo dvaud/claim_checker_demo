@@ -116,8 +116,8 @@ def test_a_failed_request_is_never_no_documents():
 # ------------------------------------------------------------------ sidebar, keyboard, contrast
 def test_the_queue_panel_scrolls_into_view_and_the_skip_link_works():
     app = _js("app.js")
-    # 0.16.2: the foot of the sidebar stays in the window, so an open panel is always in view: keepInView went
-    # (tests/test_0_16_2_sidebar.py)
+    # 0.17.0: the foot of the sidebar stays in the window, so an open panel is always in view: keepInView went
+    # (tests/test_0_17_0_sidebar.py)
     assert "keepInView(" not in app and "sidebarScrollInit();" in app
     assert 'querySelector(".skip-link")' in app and "e.preventDefault()" in app
     assert "main.inert = open" in app and "main.inert = false" in app
@@ -136,7 +136,7 @@ def test_text_colours_pass_contrast():
 
 # ------------------------------------------------------------------ batch, settings, explore pages
 def test_check_several_leaves_out_lines_the_check_would_refuse():
-    js = _js("views/batch.js")
+    js = _js("views/hypotheses.js")   # 0.17.0: Check several is the list mode of the Hypotheses page
     assert "MIN_CHARS = 10" in js and "it.text.length >= MIN_CHARS" in js
     assert "(e.index ?? 0) + 1" not in js                               # the back end counts from 1
     pr = _js("views/progress.js")

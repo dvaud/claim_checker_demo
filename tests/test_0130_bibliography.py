@@ -437,10 +437,12 @@ def test_the_page_shell_and_documents():
     assert re.search(r'bibliography: \{\s*section: "project", title: "Bibliography", icon: "library", '
                      r'href: "#/bibliography", ai: "none"', features)
     index = (STATIC / "index.html").read_text()
-    assert 'data-route="bibliography"' in index and "/static/v013.css" in index
-    assert index.index('data-route="sources"') < index.index('data-route="bibliography"') < index.index('data-route="search"')
+    assert "/static/v013.css" in index
+    # 0.17.0: the bibliography is a view of Documents (a tab on its pages), right after its notes
+    assert re.search(r'\["bibliography", "Bibliography", "#/bibliography", "library"\]', features)
+    assert features.index('["annotations", "Notes"') < features.index('["bibliography", "Bibliography"')
     app = (STATIC / "app.js").read_text()
-    assert 'renderBibliography } from "./views/bibliography.js"' in app and '"bibliography", renderBibliography]' in app
+    assert 'renderBibliography } from "./views/bibliography.js"' in app and '"documents", renderBibliography]' in app
     reg = (STATIC / "registry.js").read_text()  # 0.13.6: the sidebar's job kinds moved to registry.js
     assert 'bibliography: { icon: "library", text: "Bringing in the bibliography", link: "#/bibliography" }' in reg
     assert "library:" in (STATIC / "icons.js").read_text()

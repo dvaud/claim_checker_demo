@@ -12,7 +12,7 @@ const LINES = 50;      // concordance lines per page
 const cap = (s) => (s && /^[a-z]/.test(s) && !/[A-Z]/.test(s) ? s[0].toUpperCase() + s.slice(1) : s || "");
 const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}&mode=phrase`;
 const conceptHref = (tid) => `#/concepts/${encodeURIComponent(tid)}`;
-const checkHref = (text) => `#/check?text=${encodeURIComponent(text)}`;
+const checkHref = (text) => `#/hypotheses?text=${encodeURIComponent(text)}`;
 
 // A glossary job in a card (progress.js): a stopped build changes nothing.
 const jobCard = (box, jobId, title, labelFn, onEnd) => jobCardOf(box, jobId, title, labelFn, onEnd, { stoppedText: "Stopped. Nothing was changed." });

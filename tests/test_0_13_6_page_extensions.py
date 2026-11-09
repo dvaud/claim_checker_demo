@@ -60,24 +60,23 @@ out.batch = [reg.originLink({ batch_id: "b1" }), reg.originLink({ origin: "batch
              reg.originLink({}), reg.originLink({ origin: "unknown", origin_id: "x" })];
 """, tmp_path)
     assert out["local"] == {"sections": [], "features": [], "routes": 0, "jobKinds": [], "welcome": 0, "origins": []}
-    # the Overview as 0.13.5 drew it: explore (four cards and "Read one document"), then check (compact); 0.16 adds
-    # "Your own codebook" after Profile and a compact section of your notes and the research log
+    # the Overview: explore (four places and "Read one document"), then check (compact). 0.17.0: a card per place; a
+    # place's views (codebooks, notes, the research log, the answers) are named on its card, not cards of their own
     assert [(s["key"], s["features"], s["compact"]) for s in out["sections"]] == [
-        ("explore", ["search", "profile", "codebooks", "concepts", "themes", "sources"], False),
-        ("check", ["check", "batch", "history"], True),
-        ("record", ["annotations", "researchlog"], True)]
+        ("explore", ["search", "profile", "concepts", "themes", "sources"], False),
+        ("check", ["check"], True)]
     assert out["sections"][0]["sub"] == "Start here: no hypothesis needed."
     check, second, ingest, prepare, unknown, reread = out["rows"]
-    assert check == {"href": "#/check?job=j1", "icon": "flask", "text": "Water use rises", "tooltip": "Water use rises"}
-    assert second["text"] == "Second opinion (3 hypotheses)" and second["href"] == "#/history?job=j2"
+    assert check == {"href": "#/hypotheses?job=j1", "icon": "flask", "text": "Water use rises", "tooltip": "Water use rises"}
+    assert second["text"] == "Second opinion (3 hypotheses)" and second["href"] == "#/hypotheses?job=j2"
     assert ingest == {"href": "#/sources", "icon": "upload", "text": "Adding documents", "tooltip": "Adding documents"}
-    assert prepare["text"] == "Look before checking (Water)" and prepare["href"] == "#/check"
+    assert prepare["text"] == "Look before checking (Water)" and prepare["href"] == "#/hypotheses"
     # 0.15.6: every row's tooltip is its whole name, which the sidebar may cut short
     assert prepare["tooltip"] == "Look before checking (Water)" and second["tooltip"] == second["text"]
     assert reread["tooltip"] == "Reading an excerpt again" and unknown["tooltip"] == "Something an add-on runs"
     assert unknown["text"] == "Something an add-on runs" and unknown["icon"] == "circle"
     b_old, b_new, none, unknown_origin = out["batch"]
-    assert b_old == {"eyebrow": None, "meta": "part of a set", "href": "#/history?batch=b1"} == {**b_new, "href": "#/history?batch=b1"}
+    assert b_old == {"eyebrow": None, "meta": "part of a set", "href": "#/hypotheses?batch=b1"} == {**b_new, "href": "#/hypotheses?batch=b1"}
     assert none is None and unknown_origin is None
 
 
@@ -100,10 +99,10 @@ out.scoped = reg.jobRow({ id: "j8", kind: "per-note", scope: "n2" });
     assert out["added"]["routes"] == 1 and out["added"]["jobKinds"] == ["fake-labels"]
     assert out["added"]["welcome"] == 1 and out["added"]["origins"] == ["fake-note"]
     assert out["again"]["features"] == [] and out["again"]["sections"] == []
-    assert out["check"] == "Check a hypothesis"  # ENLENS's own entry is never replaced
+    assert out["check"] == "Hypotheses"  # ENLENS's own entry is never replaced
     # the Overview gains the add-on's section, after ENLENS's, with its card and its own state line
     assert out["sections"][-1] == ["notes", ["notes"], "Your notes", "What you wrote down in the field."]
-    assert [s[0] for s in out["sections"]] == ["explore", "check", "record", "notes"]  # 0.16: ENLENS's "record"
+    assert [s[0] for s in out["sections"]] == ["explore", "check", "notes"]  # 0.17.0: no "record" cards (views now)
     assert out["notes"]["state"] == [True, "4 notes"] and out["notes"]["nav"] is True and out["notes"]["ai"] == "optional"
     assert out["route"][0][1:] == ["notes", True]
     assert out["job"] == {"href": "#/fake/notes?job=j9", "icon": "tag", "text": "Stand-in labels", "tooltip": "Stand-in labels"}

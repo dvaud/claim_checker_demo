@@ -3,7 +3,7 @@
 // seconds, a provisional profile) and, optionally, the AI reading the passages with a candidate code. Every label
 // says why it is there; a person can agree, change or reject it (in the document viewer, Codes panel).
 // The pieces shared with the document viewer (the AI-labelling card, the keyword pass, wording) are exported from here.
-import { featureEyebrow } from "../features.js";
+import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps } from "../lib.js";
 import { jobCard } from "./progress.js";
 
@@ -248,7 +248,7 @@ export async function renderProfile(view, params, query) {
   }
   docs = await docsReq;   // both arrive before the page is drawn: one draw, not two
   if (docs && !docs.length) {   // 0.14.3: no documents: the same "Add documents first" as Check
-    view.append(pageHead("Profile", { eyebrow: featureEyebrow("profile"), sub: "Which codes of a codebook the documents address, how much and where." }), addDocumentsFirst("The profile"));
+    view.append(pageHead("Codes", { eyebrow: featureEyebrow("profile"), sub: "Which codes of a codebook each document addresses, how much and where." }), viewTabs("codes", "profile"), addDocumentsFirst("The profile"));
     return;
   }
 
@@ -260,7 +260,7 @@ export async function renderProfile(view, params, query) {
   const topBox = h("div");
   const gridBox = h("section", { class: "section", "aria-labelledby": "pf-grid-h" });
   const calBox = h("div");
-  view.append(head, controls, jobBox, statusBox, aiBox, topBox, gridBox, calBox);
+  view.append(head, viewTabs("codes", "profile"), controls, jobBox, statusBox, aiBox, topBox, gridBox, calBox);   // 0.17.0: Codes › By document
   let ai = null;
 
   const fwInfo = () => (prof.frameworks || []).find((f) => f.name === framework) || { name: framework, title: framework, label: "code" };
@@ -286,8 +286,8 @@ export async function renderProfile(view, params, query) {
     // 0.13.3: the download is a quiet link, shown once there is a profile to download (it was a disabled button)
     const xlsx = prof.pass1.done ? downloadLinks([{ text: "Excel (.xlsx)",
       onClick: (e) => { const b = e.currentTarget; b.disabled = true; download(`${base}/profile.xlsx?framework=${encodeURIComponent(framework)}&level=${level}`).catch(showError).finally(() => { b.disabled = false; }); } }]) : null;
-    replace(head, pageHead("Profile", { eyebrow: featureEyebrow("profile"),
-      sub: "Which codes of a codebook the documents address, how much and where.",
+    replace(head, pageHead("Codes", { eyebrow: featureEyebrow("profile"),
+      sub: "Which codes of a codebook each document addresses, how much and where.",
       actions: xlsx,
     }));
     drawControls();

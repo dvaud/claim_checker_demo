@@ -1,4 +1,4 @@
-"""0.16.2: the sidebar is one window-high column. The brand and the project stay at the top, the foot (work running,
+"""0.17.0: the sidebar is one window-high column. The brand and the project stay at the top, the foot (work running,
 the AI line, Settings, Update, Quit) stays at the bottom, and only the list of features scrolls between them; a wheel
 over the sidebar never scrolls the page behind it. Checked as the browser files they are, like the other page tests."""
 from __future__ import annotations

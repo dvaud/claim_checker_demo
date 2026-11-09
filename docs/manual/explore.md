@@ -3,15 +3,15 @@
 # Explore your documents
 
 > **In short**
-> - Before or beside checking, the pages under **Explore the documents** show what your documents say and where.
-> - Search, key terms, the keyword profile, the glossary and themes by words need **no AI**. The AI only adds
+> - Before or beside checking, the places in the sidebar's **Explore** group show what your documents say and where.
+> - Search, key terms, the keyword codes, the glossary and themes by words need **no AI**. The AI only adds
 >   readings on top, and each one quotes the text and is checked against it.
 > - Every line, code and theme opens the document at its place.
 
-| Page | What it gives | AI? |
+| Place | What it gives | AI? |
 | --- | --- | --- |
 | [Search](#search) | Every place words occur, with the words around them; phrases, near, other forms, words nearby; Excel/CSV | no |
-| [Profile](#profile) | The codes each document addresses, how much and where, with the words or quote and reason behind each | keywords first; the AI confirms |
+| [Codes](#codes) | The codes each document addresses, how much and where, with the words or quote and reason behind each | keywords first; the AI confirms |
 | [Concepts](#concepts) | A glossary of terms grouped into concepts (abbreviations, wordings, your links), and where each appears | optional |
 | [Themes](#themes) | Themes across the documents, by document and by code; rename, merge, move, remove | optional (names) |
 | [A document](#in-a-document) | Its codes, key terms, references ("it", "they"), search, a highlighted copy, how it was read | references only |
@@ -37,15 +37,16 @@ Every line opens the document at its words. A *passage* is the stretch of text t
 paragraph, up to about 1,100 characters ([How documents are read](reading.md)). The place shown (page, paragraph) is
 that of the original.
 
-## Profile
+## Codes
 
-<img src="../images/manual/profile.png" alt="Profile: codes by document" width="800">
+<img src="../images/manual/profile.png" alt="Codes, By document: codes by document" width="800">
 
-Which codes of a codebook each document addresses, how much and where. The codebook is the 169 SDG targets by
-default, the 17 goals, or a codebook of your own ([Make your own codebook](codebooks.md)).
+*Codes* has two views, under the title: *By document* and *Codebooks* ([Make your own codebook](codebooks.md)).
+*By document* shows which codes of a codebook each document addresses, how much and where. The codebook is the 169 SDG targets
+by default, the 17 goals, or a codebook of your own ([Make your own codebook](codebooks.md)).
 
 1. **Keywords first.** When documents are added, the app finds candidate codes in seconds by their keywords (and by
-   meaning, with an embedding model): a *provisional* profile.
+   meaning, with an embedding model): *provisional* codes.
 2. **The AI confirms.** *Let the AI label the passages* has the AI read each passage with a candidate code and say
    which codes really apply (main topic or mentioned; for the SDGs, whether the passage says it helps or hinders the
    aim), with a quote and a reason. Afterwards it says how many keyword codes it confirmed, did not confirm, and
@@ -115,7 +116,7 @@ it:
 
 | Panel | What it does |
 | --- | --- |
-| **Codes** | Every code with its passages ([Profile](#profile)). |
+| **Codes** | Every code with its passages ([Codes](#codes)). |
 | **Key terms** | The terms that set the document apart; point at one to underline it in the text. |
 | **References** | *Follow the references*: the AI reads the document three passages at a time and links "it", "they" or "the study" to the name they stand for. Select a name in the text to see every later mention. |
 | **Search** | Search within the document. |
@@ -128,7 +129,7 @@ listing any quote it could not place. Other documents come as an HTML copy.
 
 ## Quick look
 
-*Quick look at one document* (on the Overview, *Check a hypothesis* and *Manage projects*) reads one file into a
+*Quick look at one document* (on the Overview and *Manage projects*) reads one file into a
 temporary project and opens it at its key terms: search it, see its codes and references at once. A banner offers
 *Keep as a project* or *Discard now*; otherwise it goes to the trash after 7 days.
 
@@ -146,7 +147,7 @@ The explore pages replace the Cross-Doc SDG Explorer, one of the two tools ENLEN
 | Cross-Doc | ENLENS |
 | --- | --- |
 | Single-document concordance (AND / OR), token strip | Search (any / all / phrase / near), across all documents or one |
-| SDG classifier, dual consensus | Profile: keywords and meaning first, the AI confirms with a quote and a reason |
+| SDG classifier, dual consensus | Codes: keywords and meaning first, the AI confirms with a quote and a reason |
 | Explainability (integrated gradients, span masking, keyphrases) | Key terms per document and passage; the words and reason behind every label |
 | Coreference (fastcoref, LingMess) | References in a document (the AI follows "it" and "they"); checks say what a quote's "it" is |
 | Global coreference (trie) across documents | Concepts: one concept followed across every document, with its wordings |

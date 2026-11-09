@@ -1,7 +1,7 @@
 // 0.16 (roadmap F2): notes and highlights on exact words of the documents. This page lists them all, searchable; the
 // document page is where they are made (select words in its text) and shown in place. A note can be evidence in a
 // check: the passage holding its words becomes an excerpt you judged, with the note's words as your sentence.
-import { featureEyebrow } from "../features.js";
+import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
   downloadLinks, debounce, dialog, shortTitle, GRADE_TEXT } from "../lib.js";
 
@@ -111,10 +111,11 @@ export async function useAsEvidence(note) {
 export async function renderNotes(view, _params, query) {
   const project = App.project;
   const base = `/api/projects/${P(project)}/notes`;
-  view.appendChild(pageHead("Notes", {
+  view.appendChild(pageHead("Documents", {
     eyebrow: featureEyebrow("annotations"),
     sub: "Your highlights and notes on the documents' own words. To add one, open a document and select words in its text.",
   }));
+  view.appendChild(viewTabs("documents", "annotations"));   // 0.17.0: Notes is a view of Documents
   let q = (query && query.q) || "", doc = (query && query.doc) || "", colour = "";
   const search = h("input", { class: "input", type: "search", value: q, placeholder: "Search your notes and the words they mark", "aria-label": "Search notes" });
   search.addEventListener("input", debounce(() => { q = search.value.trim(); load(); }, 250));

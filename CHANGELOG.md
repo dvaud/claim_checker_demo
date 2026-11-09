@@ -1,7 +1,47 @@
 # Changelog
 
-## Unreleased
+## 0.17.0rc1 (November 2026): a sidebar of seven places
 
+The first release candidate of 0.17: the app is reached in a new way. The sidebar had grown to fifteen entries and a
+foot that needed scrolling; scrolling it scrolled the page behind it, and it was less and less clear what each entry
+was for. Now the sidebar has seven places, each page's other views are tabs under its title, everything a page can do
+says in the same words whether it uses the AI, and the sidebar's top and foot always stay in the window. **Nothing
+changes for results**: no check, reading or code is made differently; only where things are.
+
+It is a release candidate: only copies with *Try new versions early* (Settings) get it. The design guide's styling
+(one look for each kind of button, link and tag) comes in the next candidates.
+
+### Changed
+
+- **Seven places.** The sidebar lists *Overview* and *Documents*, then **Explore**: *Search*, *Codes*, *Concepts*,
+  *Themes*, then **Check**: *Hypotheses*. No counts and no tagline. Each place's other views are tabs under its title:
+  - *Overview* | *Research log*
+  - *Documents* | *Notes* | *Bibliography*
+  - *Codes*: *By document* (the old *Profile*) | *Codebooks*
+  - *Hypotheses*: *Answers* | *Evidence map*
+
+  Every old address (a bookmark, a link in a note, `#/check`, `#/batch`, `#/history`) still opens its new home.
+- **Hypotheses.** *Check a hypothesis*, *Check several* and *Results* are one page. One box takes one hypothesis or a
+  list, one per line, and the button counts them (*Check 3*). The answers are listed under it, the running checks at
+  the top.
+- **One AI mark.** The chip icon with *Uses the AI*, *AI on request* or *No AI* stands on the sidebar's groups, on each
+  page's top line and beside actions. *AI on request* replaces "Works without AI; the AI can add to it": it says what
+  happens by default. The cloud icon is kept only where it says which AI reads your text.
+- **The sidebar's foot stays in the window, at a fixed size.** Work that runs takes the AI line's place and keeps the
+  AI's name; work that waits with nothing answering turns the box amber with a *Start* button. *Update*, when there is
+  one, takes Quit's place; *Quit* is also in Settings › Technical. The queue panel's controls moved to Settings › AI ›
+  *Work waiting for Claude Code*. Everything fits a window 640 px high, even while work runs.
+- **The sidebar scrolls on its own.** The brand and the project stay at the top and the foot at the bottom; only the
+  list of places scrolls when the window is short, with a soft shadow at an edge while there is more beyond it. A
+  wheel or touchpad turn over the sidebar never scrolls the page behind it.
+
+### New
+
+- **Find.** A button under the project switch, Ctrl+K (⌘K on a Mac), and a box on the Overview find any page, view or
+  setting by name, without AI, and cope with typos (*bibliografy* finds *Bibliography*). The old names (*Profile*,
+  *Results*, *Check several*) find their new homes.
+- **The research log beside every page.** A button on every page opens the log in a panel on the right, with *This
+  page* and *All*.
 - **Update gets the new version when GitHub's download links are busy.** On 9 November 2026 *Update* from 0.15.6 to
   0.15.7 stopped with *Something went wrong inside the app* and *HTTP Error 504: Gateway Time-out*: GitHub's download
   links timed out for everyone, while GitHub's API still handed out the same files. Now each file is fetched from the
@@ -9,7 +49,18 @@
   downloaded, the app says so in plain words (*could not be downloaded from GitHub … Nothing was changed … try again
   in a few minutes*) instead of an unexpected problem. The checksum is checked as before. This works from the
   version that has it on: the update *to* that version still downloads the old way.
-- Tests: `test_0_16_2_update_download.py`.
+
+### Not yet done
+
+- The design guide's styling: one look for each kind of button, link, tag and card, and the fixes it lists (headings
+  turn teal while the log panel is open).
+- The manual's pictures still show the old screens; its text is updated.
+
+### Tests
+
+- `test_0_17_0_navigation.py`, `test_0_17_0_hypotheses.py`, `test_0_17_0_finder.py`, `test_0_17_0_log_drawer.py`,
+  `test_0_17_0_sidebar.py`, `test_0_17_0_update_download.py`. Fourteen older tests follow the new places on purpose;
+  each says why in a comment.
 
 ## 0.16.1 (November 2026): short code names from the themes
 

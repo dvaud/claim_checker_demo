@@ -14,7 +14,7 @@ every judgement.
 ```mermaid
 flowchart LR
     A["Add documents<br/>PDF, Word, web pages, text"] --> B["Explore<br/>search, codes, concepts, themes"]
-    A --> C["Check a hypothesis<br/>the AI judges passages,<br/>every quote is verified"]
+    A --> C["Check hypotheses<br/>the AI judges passages,<br/>every quote is verified"]
     B -- "a line worth testing" --> C
     C --> D["Review<br/>agree, overrule, comment"]
     D --> E["Share and export<br/>Excel, highlighted PDFs,<br/>project files"]
@@ -36,8 +36,8 @@ Three things hold everywhere:
 2. **Set up Claude**: press *Set up Claude* on the first screen; it installs Claude Code and signs you in. No Claude
    plan? Choose a model on your computer. → [First steps](manual/first-steps.md)
 3. **Add documents**: name a project, choose files or a folder, and say who may read them with AI.
-4. **Check a hypothesis**: type one sentence that could be true or false and press *Check*. With Claude Code, press
-   *Start Claude Code* when the page asks. → [Check a hypothesis](manual/check.md)
+4. **Check a hypothesis**: in *Hypotheses*, type one sentence that could be true or false and press *Check*. With
+   Claude Code, press *Start Claude Code* when the page asks. → [Check a hypothesis](manual/check.md)
 5. **Review**: *Next to review* takes you through the judgements that matter first: *Agree*, *Not about this* or
    *Judge differently…* → [Read and review a result](manual/review.md)
 
@@ -46,10 +46,10 @@ Three things hold everywhere:
 | | Page | What it covers |
 | --- | --- | --- |
 | **Get going** | [Install and update](manual/install.md) | The one-line install, the files to double-click, scanned PDFs, updating, the icon |
-| | [First steps](manual/first-steps.md) | The first screen, adding documents, finding your way in the app |
-| **Your work** | [Check a hypothesis](manual/check.md) | What a check does, the answers, hypotheses in parts, checking many at once |
-| | [Read and review a result](manual/review.md) | The result page, excerpt cards, second opinions, downloads, the evidence map |
-| | [Explore your documents](manual/explore.md) | Search, Profile, Concepts, Themes, a document's panels, Quick look |
+| | [First steps](manual/first-steps.md) | The first screen, adding documents, the sidebar, the finder, the AI mark |
+| **Your work** | [Check a hypothesis](manual/check.md) | The *Hypotheses* place: what a check does, the answers, hypotheses in parts, checking many at once |
+| | [Read and review a result](manual/review.md) | The result page, excerpt cards, second opinions, downloads, the list of answers, the evidence map |
+| | [Explore your documents](manual/explore.md) | Search, Codes, Concepts, Themes, a document's panels, Quick look |
 | | [Make your own codebook](manual/codebooks.md) | Codes of your own: from the themes, a copy or a CSV file; try them, change them, labels follow |
 | | [How documents are read](manual/reading.md) | What is read and what is left out, the reading view, moving to a new reader |
 | | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find |
@@ -70,7 +70,7 @@ Three things hold everywhere:
 | I want to… | Go to |
 | --- | --- |
 | find every place a word occurs | [Search](manual/explore.md#search) |
-| see which SDG targets (or codes of my own) a document addresses | [Profile](manual/explore.md#profile) |
+| see which SDG targets (or codes of my own) a document addresses | [Codes](manual/explore.md#codes) |
 | test whether my documents back a statement | [Check a hypothesis](manual/check.md) |
 | make my own codebook | [Make your own codebook](manual/codebooks.md) |
 | highlight or note words of a document | [Highlights and notes](manual/notes-and-log.md#highlights-and-notes) |
@@ -80,6 +80,7 @@ Three things hold everywhere:
 | use ENLENS with no cloud at all | [A model on your own computer](manual/local-models.md), [For whoever installs ENLENS](manual/settings.md#for-whoever-installs-enlens) |
 | fix a document that reads badly | [The reading view](manual/reading.md#the-reading-view) |
 | see which works of my Zotero library I still need to find | [Your bibliography](manual/bibliography.md#the-four-lists) |
+| find a feature or page without hunting for it | [The finder](manual/first-steps.md#the-finder) |
 | see what was decided in a project, and when | [The research log](manual/notes-and-log.md#the-research-log) |
 | go back to an earlier version of my themes, judgements or codebook | [Earlier versions](manual/notes-and-log.md#earlier-versions) |
 | share a project with a colleague | [Work together](manual/together.md) |

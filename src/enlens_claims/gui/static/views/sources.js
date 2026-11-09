@@ -1,6 +1,6 @@
 // Documents: a big add area first, the document table, smart search in plain words, a document viewer, and the
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
-import { featureEyebrow } from "../features.js";
+import { featureEyebrow, viewTabs } from "../features.js";
 import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
   dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
@@ -19,6 +19,7 @@ export async function renderSources(view) {
   let info;
   try { info = await api("GET", `/api/projects/${P(project)}`); } catch (e) { showError(e); info = { search: null, passages: 0 }; }
   view.appendChild(pageHead("Documents", { eyebrow: featureEyebrow("sources"), sub: "The reports, papers and web pages you explore and check hypotheses against. Open one to read it." }));
+  view.appendChild(viewTabs("documents", "sources"));   // 0.17.0: Documents | Notes | Bibliography
 
   const watchers = [];
 
@@ -127,7 +128,7 @@ export async function renderSources(view) {
     const added = st.added || 0;
     bits.push(h("div", { class: `notice ${added ? "notice-ok" : "notice-warn"}` }, icon(added ? "circle-check" : "alert-triangle"),
       h("div", {}, h("p", {}, added ? `${added} ${added === 1 ? "document" : "documents"} added.` : "No new document was added.", st.duplicates ? ` ${st.duplicates} ${st.duplicates === 1 ? "was" : "were"} already in the project.` : ""),
-        added ? h("a", { class: "btn btn-primary btn-sm", href: "#/check", style: { marginTop: "8px" } }, icon("flask", { size: 13 }), "Check a hypothesis") : null)));
+        added ? h("a", { class: "btn btn-primary btn-sm", href: "#/hypotheses", style: { marginTop: "8px" } }, icon("flask", { size: 13 }), "Check a hypothesis") : null)));
     const noText = new Set(st.scanned_no_text || []);
     if (st.ocr && st.ocr.length) bits.push(h("div", { class: "notice notice-info" }, icon("eye"), h("p", {}, `Scanned pages were read with text recognition (OCR) in ${st.ocr.length === 1 ? "1 document" : `${st.ocr.length} documents`}: ${st.ocr.join(", ")}. The recognised text can contain mistakes; the quotes are checked against it.`)));
     const notAdded = [...noText].filter((f) => (st.empty_files || []).includes(f));
@@ -156,7 +157,7 @@ export async function renderSources(view) {
     if (added) api("GET", `/api/projects/${P(project)}/hypotheses`).then((r) => {
       const n = (r.hypotheses || []).filter((x) => x.docs_added_since > 0).length;
       if (!n) return;
-      replace(newDocsLine, h("p", { class: "it" }, icon("history", { size: 14 }), h("span", {}, `${n} ${n === 1 ? "result was checked before these documents were added and can read them now" : "results were checked before these documents were added and can read them now"}: `, h("a", { href: "#/history" }, "go to Results"), " and press “Read the new documents”. Your reviews are kept.")));
+      replace(newDocsLine, h("p", { class: "it" }, icon("history", { size: 14 }), h("span", {}, `${n} ${n === 1 ? "result was checked before these documents were added and can read them now" : "results were checked before these documents were added and can read them now"}: `, h("a", { href: "#/hypotheses" }, "go to Hypotheses"), " and press “Read the new documents”. Your reviews are kept.")));
     }).catch(() => {});
   }
 

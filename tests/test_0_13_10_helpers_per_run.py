@@ -242,8 +242,8 @@ def test_the_page_offers_the_speed_and_the_helpers_for_one_run():
     assert "/queue/claude-code`, body)" in lib and "RUN_CHOICE.delete(project)" in lib
     settings = (STATIC / "views" / "settings.js").read_text(encoding="utf-8")
     assert "speedPicker(" in settings and 'speed: "model"' in settings
-    app = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'el.matches(".sc-helpers select")' in app and "queueDefers < 6" in app   # waits, a while, for an open list
+    queue = (STATIC / "views" / "queue.js").read_text(encoding="utf-8")   # 0.17.0: the queue moved to Settings › AI
+    assert 'el.matches(".sc-helpers select")' in queue and "defers < 6" in queue   # waits, a while, for an open list
     assert "choiceChanged(project, box)" in lib and "FOLD_SEQ" in lib   # two folds of one project agree, ids apart
     assert "opts.custom && opts.custom()" in lib   # the speed shown, picked again, undoes a choice of helpers
     css = (STATIC / "app.css").read_text(encoding="utf-8")   # no stylesheet of its own (since 0.13.6)

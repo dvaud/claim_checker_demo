@@ -2,7 +2,8 @@
 // Themes, one document), checking hypotheses second. Each feature says in one line what it does, whether it uses the
 // AI, and what is already made in this project.
 import { App, api, h, icon, P, pageHead, plural, claudeStatus } from "../lib.js";
-import { FEATURES, SECTIONS, aiTag } from "../features.js";
+import { FEATURES, SECTIONS, aiTag, viewTabs } from "../features.js";
+import { finderBox } from "../finder.js";
 import { overviewSections } from "../registry.js";
 import { quickLookButton } from "./quicklook.js";
 
@@ -18,6 +19,9 @@ export async function renderOverview(view) {
       : "Add documents first: everything below works on them.",
     actions: [quickLookButton({ class: "btn btn-sm" }), h("a", { class: "btn btn-sm", href: "#/sources" }, icon("upload", { size: 14 }), "Add documents")],
   }));
+  view.appendChild(viewTabs("overview", "overview"));   // 0.17.0: Overview | Research log
+  // 0.17.0: "What do you want to do?": the feature finder (finder.js, no AI), so a newcomer finds a feature by its words
+  view.appendChild(h("div", { class: "ov-finder" }, finderBox()));
 
   view.appendChild(aiLine(o));
 
@@ -36,7 +40,7 @@ export async function renderOverview(view) {
     concepts: cs.terms ? [true, `${plural(cs.terms, "term", "terms")}${cs.concepts ? `, ${plural(cs.concepts, "concept", "concepts")}` : ""}`] : [false, "Not made yet · takes seconds"],
     themes: th.themes ? [true, `${plural(th.themes, "theme", "themes")} found`] : [false, "Not made yet · takes seconds"],
     sources: [!!o.references, o.references ? `References followed in ${plural(o.references, "document", "documents")}` : `${plural(nDocs, "document", "documents")}`],
-    history: o.hypotheses ? [true, `${plural(o.hypotheses, "result", "results")}`] : [false, "None yet"],
+    check: o.hypotheses ? [true, `${plural(o.hypotheses, "answer", "answers")} so far`] : [false, "None yet · one hypothesis or a list"],
     // 0.16
     codebooks: o.codebooks ? [true, `${plural(o.codebooks, "codebook", "codebooks")} of your own`] : [false, "None yet · start from the themes"],
     annotations: o.notes ? [true, plural(o.notes, "note", "notes")] : [false, "None yet · select words in a document"],

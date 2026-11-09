@@ -20,7 +20,7 @@ flowchart LR
     V --> R["The result appears in ENLENS"]
 ```
 
-Claude Code answers every kind of AI task: profile labels, concept links, theme names, references, checks, reading an
+Claude Code answers every kind of AI task: labels of codes, concept links, theme names, references, checks, reading an
 excerpt again, second opinions, the model tests, and the [SDG pack](sdg-pack.md)'s tasks. ENLENS never sees your
 Claude login (Claude Code uses its own) and never runs on anyone else's plan.
 
@@ -49,7 +49,7 @@ checklist then shows three ticks.
 Press an AI button in ENLENS. The page says what waits, for example *Waiting for Claude Code: 120 passages to label ·
 about 25 minutes*, with **Start Claude Code**. ENLENS then starts Claude Code in the background for that project,
 allowed only the ENLENS queue tools and its helpers, so a passage that tries to give it instructions can do nothing
-else. The page and the sidebar's queue panel say *Claude Code is working on it*, with *Stop Claude Code*. It stops by
+else. The page and the foot of the sidebar say *Claude Code is working on it*, with *Stop Claude Code*. It stops by
 itself when nothing waits.
 
 > [!NOTE]
@@ -58,12 +58,13 @@ itself when nothing waits.
 > your computer's settings, it has a still ring instead). The pulse stops once you press it, or once Claude Code
 > started some other way takes the work.
 
-The button is wherever work waits: a check's progress, a result that waits, the sidebar's queue panel, and the line
+The button is wherever work waits: a check's progress, an answer that waits, the status area at the foot of the sidebar
+(*Start*), and the line
 of a follow-up on a result (reading an excerpt again, reading new documents, a second opinion, a stronger model).
 
 - *Stop Claude Code* returns the batches it had taken to the queue at once.
 - Pressing *Start* twice (or in two tabs) starts one run, and each project's run works in a folder of its own.
-- *Quit ENLENS* and *Update and restart* stop the runs first. A run still working when ENLENS was closed some other
+- *Quit* and *Update and restart* stop the runs first. A run still working when ENLENS was closed some other
   way is recognised when ENLENS opens again: the page shows it as working, *Stop Claude Code* stops it, and *Start*
   does not start a second one beside it.
 - If a run ends with a problem (a usage limit, say), the page shows the end of its report.
@@ -71,7 +72,8 @@ of a follow-up on a result (reading an excerpt again, reading new documents, a s
 
 ### How fast it works
 
-Under *Start Claude Code* is **Speed: Slower · Normal · Faster**: how many helpers work at once.
+**Speed: Slower · Normal · Faster** is how many helpers work at once. It is in *Settings → AI → Work waiting for
+Claude Code*.
 
 | Speed | Helpers at once | Trade-off |
 | --- | --- | --- |
@@ -79,11 +81,10 @@ Under *Start Claude Code* is **Speed: Slower · Normal · Faster**: how many hel
 | Normal | 2 | The default. |
 | Faster | 4 | Done sooner; uses your plan's limits faster. |
 
-The choice is kept, is the same beside every *Start Claude Code*, and is also in *Settings → AI → Speed of Claude
-Code*. A run already working keeps the speed it started with; the line *Claude Code is working on it* says how many
+The choice is kept and is the same for every run. A run already working keeps the speed it started with; the line *Claude Code is working on it* says how many
 helpers it has (*· 4 helpers at once*).
 
-**Choose the helpers for this run**, folded under the speed, lists each helper that has work waiting, with its model,
+**Choose the helpers for this run**, folded under the speed in the same place, lists each helper that has work waiting, with its model,
 what it would answer and how much waits (*Labeller haiku · Codebook labels · 7,868 waiting*). Set how many of each
 work at once (0 leaves that work for a later run) and **Helpers at once, in all** (1 to 8). The fold then says
 *changed* and the speed greys out; *Use the speed again*, or picking a speed, undoes it. Work that comes in during the
@@ -115,16 +116,19 @@ twice, goes once to a stronger model.
 
 ## Following the work
 
-You follow the progress in ENLENS: on the page that waits, and in the **queue panel** under the jobs in the sidebar
-(per kind: waiting, being answered, done, the model and helper, the estimate; *Do first*, *Hold*, *Remove*).
+You follow the progress in ENLENS: on the page that waits, and at the foot of the sidebar, where the work takes the
+place of the line that says where your text goes: what runs, for how long, how many tasks wait and the AI's name.
+*Settings → AI → Work waiting for Claude Code* lists what waits, per kind (waiting, being answered, done, the model
+and helper, the estimate), and lets you put a task first (*Do first*), keep it back (*Hold*) or take it out
+(*Remove*).
 
-| The jobs line says | Meaning |
+| The foot of the sidebar says | Meaning |
 | --- | --- |
 | *1 task running*, with a pulsing dot | Claude Code is taking or answering the work. |
-| *1 task not running · Waiting for Claude Code to start*, in amber with a pause mark | Work waits but nothing answers it (Claude Code not started, no `/enlens-run` working, no answer in the last two minutes). *Start Claude Code* is in its panel. |
+| *1 task not running · Waiting for Claude Code to start*, in the warning colour, with a *Start* button | Work waits but nothing answers it (Claude Code not started, no `/enlens-run` working, no answer in the last two minutes). |
 | *Paused at 340 of 7,868 labels. To go on, type /enlens-run Pilot in Claude Code.* | Answers stopped arriving. |
 
-A check waits under *Results* as *Waiting for Claude Code*: its search runs in ENLENS at once, and only its search
+A check waits under *Hypotheses* as *Waiting for Claude Code*: its search runs in ENLENS at once, and only its search
 words, parts and judging wait. It finishes when the answers arrive, even if the app was closed meanwhile.
 
 **Stopping.** A run can stop at any moment (a usage limit, a closed laptop, <kbd>Ctrl</kbd>+<kbd>C</kbd>). A batch
@@ -132,7 +136,7 @@ taken and not answered returns to the queue after 30 minutes, and the next `/enl
 nothing is lost. *Stop* on a waiting page takes its tasks that no session has taken yet out of the queue (a waiting
 check is removed whole).
 
-**Model tests with Claude Code.** *Compare a sample* (profile labels) and the *Model test* (Settings) put their tasks
+**Model tests with Claude Code.** *Compare a sample* (labels of codes) and the *Model test* (Settings) put their tasks
 in the queue of a temporary copy of the project, named on the waiting page (type `/enlens-run "<that name>"`). The
 copy is removed when the test ends, so nothing is stored. The labels are read by the label model, and the model test
 answers each kind on its own model. *Test: repeatable answers?* says that Claude Code takes no seed.

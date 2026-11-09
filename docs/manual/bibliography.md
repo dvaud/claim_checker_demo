@@ -3,7 +3,7 @@
 # Your bibliography (Zotero)
 
 > **In short**
-> - *Bibliography* (in the sidebar, under *Documents*) puts your Zotero library, one collection, or works you choose
+> - *Bibliography* (a view of *Documents*, a tab under the page title) puts your Zotero library, one collection, or works you choose
 >   next to the project's documents.
 > - It answers three questions: which works do I have, which do I still need to find, and which documents are not in
 >   my bibliography?

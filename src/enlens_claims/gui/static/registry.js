@@ -7,14 +7,15 @@
 // the page follows that job. `label(j, text)`: the row's words when they are more than the kind's name; `tooltip`:
 // the row's tooltip adds the job's own title when the row's words leave it out.
 // 0.15.6: every row has a tooltip, its whole name: the sidebar cuts a long name short ("Reading an ex…").
+// 0.17.0: checks, sets of checks and the answers' own jobs link to Hypotheses (their old pages are part of it).
 export const JOB_KINDS = {
-  check: { icon: "flask", text: "Check", link: "#/check", withJob: true, tooltip: true, label: (j) => j.title || "Check" },
-  prepare: { icon: "eye", text: "Look before checking", link: "#/check", tooltip: true, label: (j, t) => `${t}${j.title ? ` (${j.title})` : ""}` },
-  batch: { icon: "list-checks", text: "Several hypotheses", link: "#/batch", withJob: true, tooltip: true, label: (j, t) => `${t}${j.title ? ` (${j.title})` : ""}` },
-  more: { icon: "search", text: "More evidence", link: "#/history", withJob: true },
-  reread: { icon: "refresh", text: "Reading an excerpt again", link: "#/history" },
-  "read-new": { icon: "book-open", text: "Reading the new documents", link: "#/history", withJob: true, label: (j, t) => j.title || t },
-  "second-opinion": { icon: "cpu", text: "Second opinion", link: "#/history", withJob: true,
+  check: { icon: "flask", text: "Check", link: "#/hypotheses", withJob: true, tooltip: true, label: (j) => j.title || "Check" },
+  prepare: { icon: "eye", text: "Look before checking", link: "#/hypotheses", tooltip: true, label: (j, t) => `${t}${j.title ? ` (${j.title})` : ""}` },
+  batch: { icon: "list-checks", text: "Several hypotheses", link: "#/hypotheses", withJob: true, tooltip: true, label: (j, t) => `${t}${j.title ? ` (${j.title})` : ""}` },
+  more: { icon: "search", text: "More evidence", link: "#/hypotheses", withJob: true },
+  reread: { icon: "refresh", text: "Reading an excerpt again", link: "#/hypotheses" },
+  "read-new": { icon: "book-open", text: "Reading the new documents", link: "#/hypotheses", withJob: true, label: (j, t) => j.title || t },
+  "second-opinion": { icon: "cpu", text: "Second opinion", link: "#/hypotheses", withJob: true,
     label: (j, t) => `${t}${/ on (\d+ hypothes\w+)$/.test(j.title || "") ? ` (${/ on (\d+ hypothes\w+)$/.exec(j.title)[1]})` : ""}` },
   ingest: { icon: "upload", text: "Adding documents", link: "#/sources" },
   index: { icon: "sparkles", text: "Search by meaning set-up", link: "#/sources" },
@@ -56,7 +57,7 @@ export const WELCOME_CARDS = [];
 // Where a hypothesis comes from (its `origin`): the result page links back to it. `eyebrow`: the link above the
 // hypothesis (in place of "All results"); `meta`: the words in the line under it; `href(id)`.
 export const ORIGINS = {
-  batch: { meta: "part of a set", href: (id) => `#/history?batch=${encodeURIComponent(id)}` },
+  batch: { meta: "part of a set", href: (id) => `#/hypotheses?batch=${encodeURIComponent(id)}` },   // 0.17.0: the answers are on Hypotheses
 };
 
 // The back-link of a result: {eyebrow, meta, href} or null. A batch from before 0.13.6 has a batch id and no origin.

@@ -4,7 +4,7 @@
 // remove codes. *Try it* counts what the keyword pass would pick, without AI. Saving keeps the codebook as it was
 // (History) and writes the changes in the research log; labels follow renames and merges, and wait under *Removed
 // codes* when a code is removed. An edit changes no result by itself.
-import { featureEyebrow } from "../features.js";
+import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
   dialog, field, switchControl, watchJob, emptyState, shortTitle, session } from "../lib.js";
 import { forgetFrameworks } from "./options.js";
@@ -33,11 +33,12 @@ export async function renderCodebooks(view) {
   const project = App.project;
   const base = `/api/projects/${P(project)}/codebooks`;
   const newBtn = h("button", { class: "btn btn-primary", type: "button", onClick: () => newCodebook() }, icon("plus", { size: 14 }), "New codebook");
-  view.appendChild(pageHead("Codebooks", {
+  view.appendChild(pageHead("Codes", {
     eyebrow: featureEyebrow("codebooks"),
-    sub: "The codes Profile and the Codes panel look for, and that a hypothesis can be tagged with. A codebook stays a CSV file, so it still opens in a spreadsheet.",
+    sub: "Your codebooks: the codes looked for in the documents (By document, and a document’s Codes panel), and that a hypothesis can be tagged with. A codebook stays a CSV file, so it still opens in a spreadsheet.",
     actions: newBtn,
   }));
+  view.appendChild(viewTabs("codes", "codebooks"));   // 0.17.0: Codebooks is a view of Codes
   const box = h("div", { class: "cb-list" });
   view.appendChild(box);
   let data;

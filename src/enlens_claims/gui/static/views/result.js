@@ -233,7 +233,7 @@ export async function renderResult(view, [hypId], query) {
       inProject ? [h("h3", {}, `This result is in the project “${inProject}”`), h("p", {}, `Another window switched the project. Switch to “${inProject}” to see it.`),
         h("button", { class: "btn btn-primary", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { project: inProject }); location.reload(); } catch (e) { showError(e); } } }, `Switch to “${inProject}”`)]
       : [h("h3", {}, "This result no longer exists"), h("p", {}, "It was deleted, or it belongs to another project.")],
-      h("a", { class: "btn", href: "#/history" }, "Back to results")));
+      h("a", { class: "btn", href: "#/hypotheses" }, "All hypotheses")));
   }
 
   function setThreshold(t) {
@@ -290,7 +290,7 @@ export async function renderResult(view, [hypId], query) {
     box.appendChild(h("header", { class: "page-head result-head" },
       h("div", { class: "page-head-main" },
         h("p", { class: "eyebrow" }, from && from.eyebrow ? h("a", { href: from.href, class: "it" }, icon("arrow-left", { size: 12 }), from.eyebrow)
-          : h("a", { href: "#/history", class: "it" }, icon("arrow-left", { size: 12 }), "All results")),
+          : h("a", { href: "#/hypotheses", class: "it" }, icon("arrow-left", { size: 12 }), "All hypotheses")),
         h("h1", { id: "page-title", tabindex: "-1", class: "result-hyp" }, r.text),
         r.code ? h("div", { style: { margin: "0 0 8px" } }, codeChip(r.framework, r.code, r.code_description, r.code_label)) : null,
         h("p", { class: "result-meta" },
@@ -1645,9 +1645,9 @@ export async function renderResult(view, [hypId], query) {
   async function deleteHyp(r) {
     // 0.16 (F4): why the claim was dropped goes into the research log
     const ok = await askWhy({ title: "Delete this result?", confirmText: "Delete", placeholder: "For example: the claim was reworded, outside the scope, a duplicate",
-      message: h("div", {}, h("p", {}, "The hypothesis, the judgements and your notes are removed from the results. The documents stay; the research log keeps a line about it."), h("p", { class: "serif" }, r.text)) });
+      message: h("div", {}, h("p", {}, "The hypothesis, the judgements and your notes are removed from the hypotheses of this project. The documents stay; the research log keeps a line about it."), h("p", { class: "serif" }, r.text)) });
     if (!ok) return;
-    try { await api("DELETE", `/api/projects/${P(project)}/hypotheses/${P(hypId)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast("Result deleted.", "ok"); navigate("#/history"); }
+    try { await api("DELETE", `/api/projects/${P(project)}/hypotheses/${P(hypId)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast("Result deleted.", "ok"); navigate(r.batch_id ? `#/hypotheses?batch=${encodeURIComponent(r.batch_id)}` : "#/hypotheses"); }
     catch (e) { showError(e); }
   }
 

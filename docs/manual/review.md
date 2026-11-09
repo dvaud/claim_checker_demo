@@ -138,9 +138,9 @@ search looked for and the AI's note on what it read.
 A check still **waiting for Claude Code** shows only the waiting card (with *Start Claude Code*), any excerpts
 already read, and your notes; the rest appears when the answer is in.
 
-## All your results
+## The list of answers
 
-**Results** lists every hypothesis with its answer, the excerpts that count (and how many were too uncertain), and
+Under the box of *Hypotheses* is the list of every hypothesis with its answer, the excerpts that count (and how many were too uncertain), and
 tags: *part of a set*, *checked in 2 parts*, *N to review*, *N changed by you*, *has notes*, *N documents added
 since*, *second opinion differs on N*, and the date. An answer a stronger model changed carries a small mark (*was
 partly supported*). Search, filter by answer, open one, or download them all (*Download all: Excel (.xlsx)*, with a
@@ -149,7 +149,10 @@ partly supported*). Search, filter by answer, open one, or download them all (*D
 - *Read the new documents for all N* brings every result with documents added since up to date in one go.
 - *Get a second opinion for all results* does the same for second opinions (for comparison only).
 
-**Show as a map** shows all results, or one set, as a grid: one row per hypothesis, one column per document.
+### The evidence map
+
+The *Evidence map* tab of *Hypotheses* shows all answers, or one set, as a grid: one row per hypothesis, one column per
+document.
 
 <img src="../images/manual/map.png" alt="The evidence map: hypotheses by documents" width="800">
 

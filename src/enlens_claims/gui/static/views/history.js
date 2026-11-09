@@ -1,26 +1,27 @@
-// Results: every hypothesis checked in the project. Counts come from the API at the current strictness.
-import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, failedLoad, toast, fmt, statusBadge, pageHead, P, debounce, download, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark, helpMark, downloadLinks } from "../lib.js";
+// The answers: every hypothesis checked in the project, newest first, with the checks still running or waiting their
+// turn at the top. 0.17.0: no page of its own any more (it was Results): the Hypotheses page shows it under the box
+// where hypotheses are written. Counts come from the API at the current strictness.
+import { App, api, h, icon, replace, clear, showError, failedLoad, toast, fmt, statusBadge, P, debounce, emptyState, watchJob, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark, helpMark, onJobsChanged, spinner } from "../lib.js";
 import { ProgressPanel } from "./progress.js";
 
 const ORDER = ["supported", "partially_supported", "contested", "contradicted", "uncertain", "unsupported", "no_passages", "not_checked", "failed", "waiting"];
 const STATUS_ICON = { supported: "circle-check", partially_supported: "circle-half", contested: "arrows-opposed", contradicted: "circle-x", uncertain: "help", unsupported: "circle-dashed", no_passages: "search-x", not_checked: "clock", failed: "alert-triangle", waiting: "inbox" };
 const ONE_MODEL_NOTE = "Only one AI model is kept in memory at a time, so this takes a while.";
+const CHECK_KINDS = ["check", "batch"];   // the jobs shown as rows at the top: a check, and a list being checked
+const LOOK_AGAIN = 3000;                  // how often the running checks are looked at while there are any (ms)
+const UNFINISHED = new Set(["not_checked", "waiting"]);   // a check being made has its answer row from the start
+const norm = (t) => String(t || "").split(/\s+/).filter(Boolean).join(" ");
 
-export async function renderHistory(view, params, query) {
+// Draws the answers into `box` and returns { refresh, showBatch(id), stop }.
+// `query`: the page's own (q, status, batch, job). `opts.following()`: the id of the check the page follows above the
+// answers (its progress is shown there, so it is not a row here); `opts.onBatch(batch)`: the set shown changed (the
+// page's Evidence map tab keeps it); `opts.write()`: puts the cursor where a hypothesis is written.
+export async function answersList(box, query, opts = {}) {
   const project = App.project;
   let q = query.q || "", status = query.status || "", batch = query.batch || "";
   const threshold = App.settings().threshold ?? 0.6;
   const watchers = [];
-  let rowsNow = [];
-
-  // 0.13.3: the downloads are one quiet line of links, as on the result page; the map is the page's one button
-  const downloads = downloadLinks([
-    { text: "Excel (.xlsx)", title: "Three sheets: a summary, every excerpt read, and the evidence map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) },
-    { text: "CSV", note: "(for programmers)", title: "Technical CSV: ids, raw judgement words, UTC times", onClick: () => download(`/api/projects/${P(project)}/export.csv?threshold=${threshold}`).catch(showError) },
-  ], { label: "Download all:" });
-  const mapLink = h("a", { class: "btn btn-sm", href: "#/map" }, icon("layers", { size: 14 }), "Show as a map");
-  view.appendChild(pageHead("Results", { eyebrow: featureEyebrow("history"), sub: "Every hypothesis checked in this project, newest first.", actions: [mapLink, downloads] }));
+  let rowsNow = [], countsNow = {}, running = [], drawn = false, stopped = false, timer = null;
 
   const search = h("input", { class: "input", type: "search", placeholder: "Find a hypothesis…", value: q, "aria-label": "Find a hypothesis" });
   const chips = h("div", { class: "chips", role: "group", "aria-label": "Show only" });
@@ -28,12 +29,13 @@ export async function renderHistory(view, params, query) {
   const strictLine = h("p", { class: "muted small", style: { margin: "0" } }, icon("sliders", { size: 12 }), ` Counting judgements the AI was at least ${Math.round(threshold * 100)}% sure of (${strictness(threshold)}), and every judgement of your own. `, h("a", { href: "#/settings/basics" }, "Change in Settings"));
   const actionsBox = h("div", { class: "hist-actions", hidden: true });
   const jobBox = h("div", { class: "section", hidden: true, "aria-label": "Progress" });
-  view.appendChild(h("div", { class: "filters" }, h("div", { class: "filters-top" }, h("div", { class: "search" }, icon("search", { size: 15 }), search)), chips, batchBanner, strictLine, actionsBox));
-  view.appendChild(jobBox);
   const tableBox = h("div", { "aria-live": "polite", "aria-busy": "false" });
-  view.appendChild(tableBox);
+  replace(box,
+    h("div", { class: "section-title" }, h("h2", { id: "answers-title" }, "Answers"), h("span", { class: "muted" }, "newest first")),
+    h("div", { class: "filters" }, h("div", { class: "filters-top" }, h("div", { class: "search" }, icon("search", { size: 15 }), search)), chips, batchBanner, strictLine, actionsBox),
+    jobBox, tableBox);
 
-  // Actions on the set shown: read the new documents, ask the second model, see the map.
+  // Actions on the set shown: read the new documents, ask the second model.
   function drawActions(rows) {
     clear(actionsBox);
     const withNew = rows.filter((x) => x.docs_added_since > 0);
@@ -41,9 +43,8 @@ export async function renderHistory(view, params, query) {
     const auditor = auditorName(st);
     const secondSet = auditor || (st.second_model || "").trim();
     const main = auditor ? "" : (st.ollama_model || st.openai_model || "").trim();
-    const shown = batch ? "the set shown" : (q || status) ? "the results shown" : "all results";
+    const shown = batch ? "the set shown" : (q || status) ? "the answers shown" : "all answers";
     const n = rows.length;
-    mapLink.href = batch ? `#/map?batch=${encodeURIComponent(batch)}` : "#/map";
     const bits = [];
     if (withNew.length) {
       const btn = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("book-open", { size: 13 }), `Read the new documents for ${withNew.length === n ? `all ${n}` : `${withNew.length} of these ${n}`}`);
@@ -88,36 +89,71 @@ export async function renderHistory(view, params, query) {
         if (job.kind === "read-new") {
           const hs = r.hypotheses || [];
           const n = r.passages || 0;
-          toast(`The new documents were read for ${hs.length} ${hs.length === 1 ? "result" : "results"}: ${n} more ${n === 1 ? "excerpt" : "excerpts"} read. Reviews are kept.`, "ok", { ttl: 6000 });
+          toast(`The new documents were read for ${hs.length} ${hs.length === 1 ? "answer" : "answers"}: ${n} more ${n === 1 ? "excerpt" : "excerpts"} read. Reviews are kept.`, "ok", { ttl: 6000 });
         } else if (job.kind === "second-opinion") {
-          toast(r.graded ? `The second opinion is in for ${r.hypotheses || 0} ${r.hypotheses === 1 ? "result" : "results"}. Where it differs from the first AI, the result is tagged below; the answers are unchanged.` : "Every excerpt of these results already has a second opinion: nothing new to read.", "ok", { ttl: 6000 });
+          toast(r.graded ? `The second opinion is in for ${r.hypotheses || 0} ${r.hypotheses === 1 ? "answer" : "answers"}. Where it differs from the first AI, the answer is tagged below; the answers are unchanged.` : "Every excerpt of these answers already has a second opinion: nothing new to read.", "ok", { ttl: 6000 });
+        } else if (job.kind === "more" && r.hyp_id) {
+          const n = r.passages || 0;
+          toast(`${n} more ${n === 1 ? "excerpt was" : "excerpts were"} read for this answer.`, "ok", { ttl: 6000, action: { href: `#/h/${encodeURIComponent(r.hyp_id)}`, text: "Open the answer" } });
         }
       } else if (job.state === "error") showError({ message: job.error, kind: job.error_kind });
       await refresh();
     }).catch(showError);
   }
 
+  // 0.17.0: the page is Hypotheses; the filters are kept in its address (a reload or a link shows the same answers)
   const syncHash = () => {
     const qs = new URLSearchParams();
     if (q) qs.set("q", q); if (status) qs.set("status", status); if (batch) qs.set("batch", batch);
     const s = qs.toString();
-    history.replaceState(null, "", "#/history" + (s ? "?" + s : ""));
+    history.replaceState(null, "", "#/hypotheses" + (s ? "?" + s : ""));
   };
+
+  // The checks of this project still running or waiting their turn (the one the page follows above too: its answer
+  // row is left out while its progress is shown there).
+  async function runningChecks() {
+    try {
+      const jobs = (await api("GET", "/api/jobs")).jobs || [];
+      return jobs.filter((j) => j.project === project && CHECK_KINDS.includes(j.kind) && !TERMINAL.has(j.state));
+    } catch (_) { return running; }
+  }
 
   async function refresh() {
     syncHash();
+    if (opts.onBatch) opts.onBatch(batch);
     tableBox.setAttribute("aria-busy", "true");
     const qs = new URLSearchParams({ threshold: String(threshold) });
     if (q) qs.set("q", q); if (status) qs.set("status", status); if (batch) qs.set("batch", batch);
     let r;
-    try { r = await api("GET", `/api/projects/${P(project)}/hypotheses?${qs}`); } catch (e) { failedLoad(tableBox, e); tableBox.setAttribute("aria-busy", "false"); return; }
+    try { [r, running] = await Promise.all([api("GET", `/api/projects/${P(project)}/hypotheses?${qs}`), runningChecks()]); } catch (e) { failedLoad(tableBox, e); tableBox.setAttribute("aria-busy", "false"); return; }
+    if (stopped) return;
     rowsNow = r.hypotheses || [];
-    drawChips(r.counts || {});
+    countsNow = r.counts || {};
+    drawChips(countsNow);
     drawBatch(rowsNow);
     drawActions(rowsNow);
-    drawTable(rowsNow, r.counts || {});
+    drawTable();
     tableBox.setAttribute("aria-busy", "false");
+    lookLater();
   }
+
+  // While checks run, look again now and then: a row that is gone has become an answer.
+  async function lookAtRunning() {
+    if (stopped || !drawn) return;
+    const before = running.map((j) => `${j.id}:${j.state}:${j.on_hold}`).join(",");
+    const now = await runningChecks();
+    if (stopped) return;
+    const ended = running.some((j) => !now.find((x) => x.id === j.id));
+    running = now;
+    if (ended) { await refresh(); return; }
+    if (now.map((j) => `${j.id}:${j.state}:${j.on_hold}`).join(",") !== before) drawTable();
+    lookLater();
+  }
+  function lookLater() {
+    if (timer) clearTimeout(timer);
+    timer = running.length && !stopped ? setTimeout(lookAtRunning, LOOK_AGAIN) : null;
+  }
+  const offJobs = onJobsChanged(() => { lookAtRunning(); });
 
   function drawChips(counts) {
     clear(chips);
@@ -131,20 +167,44 @@ export async function renderHistory(view, params, query) {
 
   function drawBatch(rows) {
     batchBanner.hidden = !batch;
-    if (batch) replace(batchBanner, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${rows.length} ${rows.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { batch = ""; refresh(); } }, "Show all results"));
+    if (batch) replace(batchBanner, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${rows.length} ${rows.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { batch = ""; refresh(); } }, "Show all answers"));
   }
 
-  function drawTable(rows, counts) {
+  // A check still running, or waiting for the one before it: a row that opens its progress.
+  function jobRow(j) {
+    const href = `#/hypotheses?job=${encodeURIComponent(j.id)}`;
+    const waiting = j.state === "queued" || j.on_hold;
+    const many = j.kind === "batch";
+    const badge = waiting
+      ? h("span", { class: "badge badge-job job-waiting", title: j.on_hold ? "Its tasks wait in the queue for Claude Code." : "Another check is using the AI: this one starts when it is done." }, icon("clock", { size: 14 }), h("span", {}, "Waiting its turn"))
+      : h("span", { class: "badge badge-job job-running" }, spinner("Checking"), h("span", {}, "Checking…"));
+    return h("tr", { class: "row-link hyp-job-row", onClick: (e) => { if (e.target.closest("a")) return; location.hash = href; } },
+      h("td", { class: "hyp-cell" }, h("a", { href }, many ? `A list of ${j.title}` : j.title),
+        many ? h("div", { class: "hyp-meta" }, h("span", { class: "it" }, icon("list-checks", { size: 11 }), "checked one after the other")) : null),
+      h("td", { "data-label": "Answer", class: "verdict-cell" }, badge),
+      h("td", { "data-label": "Excerpts that count" }, h("span", { class: "muted small" }, "not read yet")),
+      h("td", { "data-label": "Checked", class: "small muted nowrap" }, waiting ? "" : `for ${fmt.secs(j.seconds)}`));
+  }
+
+  function drawTable() {
+    drawn = true;
     clear(tableBox);
-    if (!rows.length) {
-      const any = Object.values(counts).some((n) => n);
-      tableBox.appendChild(any ? emptyState("search-x", "Nothing matches", "Try other words, or show all results.", h("button", { class: "btn", type: "button", onClick: () => { q = ""; status = ""; batch = ""; search.value = ""; refresh(); } }, "Show all results"))
-        : emptyState("history", "No results yet", "Check a hypothesis and its result appears here.", h("a", { class: "btn btn-primary", href: "#/check" }, "Check a hypothesis")));
+    // a check being made already has its answer row ("Not finished yet", or waiting for Claude Code): while it runs,
+    // its row up here (or its progress above) stands for it, so it is not shown twice. A job's title is the start of
+    // its hypothesis.
+    const checking = running.filter((j) => j.kind === "check").map((j) => norm(j.title)).filter(Boolean);
+    const rows = rowsNow.filter((x) => !(UNFINISHED.has(x.status) && checking.some((t) => norm(x.text || x.claim).startsWith(t))));
+    const skip = opts.following ? opts.following() : null;
+    const jobs = batch || status || q ? [] : running.filter((j) => j.id !== skip);   // the rows of running checks belong to the whole list
+    if (!rows.length && !jobs.length) {
+      const any = Object.values(countsNow).some((n) => n);
+      tableBox.appendChild(any ? emptyState("search-x", "Nothing matches", "Try other words, or show all answers.", h("button", { class: "btn", type: "button", onClick: () => { q = ""; status = ""; batch = ""; search.value = ""; refresh(); } }, "Show all answers"))
+        : emptyState("history", "No answers yet", "Write a hypothesis above and check it: its answer appears here, with the quotes.", opts.write ? h("button", { class: "btn", type: "button", onClick: () => opts.write() }, icon("flask", { size: 14 }), "Write a hypothesis") : null));
       return;
     }
     const table = h("table", { class: "table hist-table table-responsive" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Hypothesis"), h("th", { scope: "col" }, "Answer"), h("th", { scope: "col" }, "Excerpts that count"), h("th", { scope: "col" }, "Checked"))),
-      h("tbody", {}, rows.map((x) => {
+      h("tbody", {}, jobs.map(jobRow), rows.map((x) => {
         const href = `#/h/${encodeURIComponent(x.hyp_id)}`;
         return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a")) return; location.hash = href; } },
           h("td", { class: "hyp-cell" }, h("a", { href }, x.text || x.claim),
@@ -154,8 +214,8 @@ export async function renderHistory(view, params, query) {
               x.clash ? h("span", { class: "it tag-clash", title: "You both changed this check: this version came in beside the other one, so nothing was lost. Open it to compare." }, icon("copy", { size: 11 }), `sync clash · ${x.clash.name === "you" ? "your" : `${x.clash.name}’s`} version`) : null,
               x.to_review ? h("span", { class: "it to-review" }, icon("eye", { size: 11 }), `${x.to_review} to review`) : null,
               x.corrected ? h("span", { class: "it corrected" }, icon("note", { size: 11 }), `${x.corrected} changed by you`) : null,
-              x.docs_added_since ? h("span", { class: "it tag-new-docs", title: `${x.docs_added_since} ${x.docs_added_since === 1 ? "document was" : "documents were"} added to the project after this check; open the result to have the AI read them` }, icon("upload", { size: 11 }), `${x.docs_added_since} ${x.docs_added_since === 1 ? "document" : "documents"} added since`) : null,
-              x.disagreements ? h("span", { class: "it tag-disagree", title: "A second opinion (another AI model, for comparison only) judged these excerpts differently from the first AI. The answer is unchanged: open the result and read them yourself." }, icon("arrows-opposed", { size: 11 }), `second opinion differs on ${x.disagreements}`) : null,
+              x.docs_added_since ? h("span", { class: "it tag-new-docs", title: `${x.docs_added_since} ${x.docs_added_since === 1 ? "document was" : "documents were"} added to the project after this check; open the answer to have the AI read them` }, icon("upload", { size: 11 }), `${x.docs_added_since} ${x.docs_added_since === 1 ? "document" : "documents"} added since`) : null,
+              x.disagreements ? h("span", { class: "it tag-disagree", title: "A second opinion (another AI model, for comparison only) judged these excerpts differently from the first AI. The answer is unchanged: open it and read them yourself." }, icon("arrows-opposed", { size: 11 }), `second opinion differs on ${x.disagreements}`) : null,
               x.note ? h("span", { class: "it", title: x.note }, icon("note", { size: 11 }), "has notes") : null)),
           h("td", { "data-label": "Answer", class: "verdict-cell" }, statusBadge(x.status, { short: true, text: x.status_text || undefined }), " ", strongerMark(x.status_before_stronger, {}, { compact: true, plain: true }),
             x.status_any && x.status_any !== x.status ? h("div", { class: "muted small", style: { marginTop: "3px" } }, "If the uncertain judgements counted too: ", STATUS_SHORT[x.status_any] || x.status_any) : null),
@@ -163,23 +223,30 @@ export async function renderHistory(view, params, query) {
           h("td", { "data-label": "Checked", class: "small muted nowrap", title: fmt.date(x.created_at) }, fmt.dateShort(x.created_at)));
       })));
     tableBox.appendChild(h("div", { class: "table-wrap" }, table));
-    tableBox.appendChild(h("p", { class: "muted small", style: { marginTop: "8px" } }, `${rows.length} ${rows.length === 1 ? "result" : "results"}`));
+    tableBox.appendChild(h("p", { class: "muted small", style: { marginTop: "8px" } }, `${rows.length} ${rows.length === 1 ? "answer" : "answers"}${jobs.length ? `; ${jobs.length} still being checked` : ""}`));
   }
 
   search.addEventListener("input", debounce(() => { q = search.value.trim(); refresh(); }, 250));
   await refresh();
-  // a job started here earlier (or from the jobs list) and still running: follow it
+  // a job started here earlier (or from the jobs list) and still running: follow it. Looking for more evidence is
+  // started on a result page and followed there; here only when the jobs list sends it (?job=)
   try {
-    const titles = { "read-new": "Reading the new documents", "second-opinion": "A second opinion: another model reads the excerpts" };
+    const titles = { "read-new": "Reading the new documents", "second-opinion": "A second opinion: another model reads the excerpts", more: "Looking for more evidence" };
     const jobs = (await api("GET", "/api/jobs")).jobs || [];
     const mine = query.job ? jobs.find((j) => j.id === query.job) : null;
-    const running = mine && titles[mine.kind] ? mine : jobs.find((j) => j.project === project && titles[j.kind] && !TERMINAL.has(j.state));
-    if (running) {
-      if (TERMINAL.has(running.state)) { if (query.job) { const full = await api("GET", `/api/jobs/${P(running.id)}`); const panel = new ProgressPanel({ title: titles[full.kind], steps: full.kind === "second-opinion" ? ["grade"] : null }); replace(jobBox, h("div", { class: "section-title" }, h("h2", {}, full.state === "done" ? "Done" : "Stopped"), h("span", { class: "muted" }, titles[full.kind])), panel.el); panel.update(full); jobBox.hidden = false; } }
-      else followJob(running.id, titles[running.kind], running.kind);
+    const runningJob = mine && titles[mine.kind] ? mine : jobs.find((j) => j.project === project && titles[j.kind] && j.kind !== "more" && !TERMINAL.has(j.state));
+    if (runningJob) {
+      if (TERMINAL.has(runningJob.state)) { if (query.job) { const full = await api("GET", `/api/jobs/${P(runningJob.id)}`); const panel = new ProgressPanel({ title: titles[full.kind], steps: full.kind === "second-opinion" ? ["grade"] : null }); replace(jobBox, h("div", { class: "section-title" }, h("h2", {}, full.state === "done" ? "Done" : "Stopped"), h("span", { class: "muted" }, titles[full.kind])), panel.el); panel.update(full); jobBox.hidden = false; } }
+      else followJob(runningJob.id, titles[runningJob.kind], runningJob.kind);
     }
   } catch (_) { /* ignore */ }
-  return () => watchers.forEach((w) => w.stop());
+
+  return {
+    refresh,
+    // the answers of one list checked together (the summary of a list just checked links here)
+    showBatch(id) { batch = id || ""; q = ""; status = ""; search.value = ""; return refresh(); },
+    stop() { stopped = true; if (timer) clearTimeout(timer); offJobs(); watchers.forEach((w) => w.stop()); },
+  };
 }
 
 function evidenceCell(x) {

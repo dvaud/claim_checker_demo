@@ -310,7 +310,7 @@ Fetch = Callable[[str], bytes]
 def _fetch(url: str) -> bytes:
     from urllib.request import Request, urlopen
 
-    # 0.16.2: the API's route to a release file (…/releases/assets/<id>) hands over the file itself only when asked
+    # 0.17.0: the API's route to a release file (…/releases/assets/<id>) hands over the file itself only when asked
     # for it; asked for JSON, it describes the file
     accept = "application/octet-stream" if "/releases/assets/" in url else "application/vnd.github+json"
     req = Request(url, headers={"User-Agent": "enlens-update", "Accept": accept})
@@ -318,13 +318,13 @@ def _fetch(url: str) -> bytes:
         return r.read()
 
 
-# 0.16.2: how often each route to a release file is tried, and the pause between rounds (seconds)
+# 0.17.0: how often each route to a release file is tried, and the pause between rounds (seconds)
 DOWNLOAD_ROUNDS = 2
 DOWNLOAD_PAUSE = 3.0
 
 
 def download(fetch: Fetch, urls: list[str]) -> bytes:
-    """0.16.2: a release file from the first of `urls` (its routes) that hands it over: GitHub's download link, then
+    """0.17.0: a release file from the first of `urls` (its routes) that hands it over: GitHub's download link, then
     the API's own route to the same file. On 2026-11-09 the download links answered 504 Gateway Time-out for everyone
     while the API's route worked, and the error showed as "Something went wrong inside the app". Every route is tried
     DOWNLOAD_ROUNDS times, DOWNLOAD_PAUSE seconds apart; when none works, the last route's error is raised."""
@@ -344,7 +344,7 @@ def download(fetch: Fetch, urls: list[str]) -> bytes:
 
 
 def download_problem(e: Exception) -> str:
-    """0.16.2: what went wrong with a download, in a few words ("HTTP 504 Gateway Time-out")."""
+    """0.17.0: what went wrong with a download, in a few words ("HTTP 504 Gateway Time-out")."""
     from urllib.error import HTTPError
 
     if isinstance(e, HTTPError):
@@ -429,7 +429,7 @@ def latest_release(fetch: Fetch = _fetch, repo: str | None = None, channel: str 
     if early:
         data = highest_release(data)
     assets = {a.get("name", ""): a.get("browser_download_url", "") for a in data.get("assets") or []}
-    # 0.16.2: each file's second route, through the API (download())
+    # 0.17.0: each file's second route, through the API (download())
     api = {a.get("name", ""): a.get("url", "") for a in data.get("assets") or []}
     wheel = next((n for n in assets if n.startswith("enlens_claims-") and n.endswith(".whl")), "")
     tag = str(data.get("tag_name") or "")
@@ -606,7 +606,7 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
     handed = False
     try:
         wheel = tmp / rel["wheel"]
-        try:  # 0.16.2: a second route and a second try; a failure in plain words, not an "unexpected problem"
+        try:  # 0.17.0: a second route and a second try; a failure in plain words, not an "unexpected problem"
             wheel.write_bytes(download(fetch, [rel["wheel_url"], rel.get("wheel_api", "")]))
             sums = download(fetch, [rel["sums_url"], rel.get("sums_api", "")]).decode("utf-8", errors="replace")
         except Exception as e:  # noqa: BLE001 - GitHub busy or offline: nothing was installed

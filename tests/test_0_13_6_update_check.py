@@ -216,7 +216,8 @@ def test_page_files():
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     init = app[app.index("function updateInit()"):app.index("function updatePopup(")]
     assert "btn.hidden = false" not in init.split("function showUpdate(")[0]  # never shown before a look
-    assert "if (!info || !info.available) { btn.hidden = true; return; }" in init
+    # 0.17.0: no update: no button, and Quit back in its place
+    assert "if (!info || !info.available) { btn.hidden = true; if (quit && App.state && App.state.can_quit) quit.hidden = false; return; }" in init
     assert "setInterval(look, UPDATE_EVERY)" in init and "visibilitychange" in init
     assert 'store("update-later", key)' in app and "Updates.install()" in app
     assert "checkUpdate()" in app[app.index("async function updateApp("):]  # the kept answer: no second look

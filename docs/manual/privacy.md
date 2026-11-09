@@ -36,7 +36,7 @@ interview transcript.
 | --- | --- |
 | *Claude may read it* | The AI you chose: Claude Code, the Claude API, or a local model. |
 | *Only a local AI* | A model server on this computer, or you. |
-| *No AI* | You only. Search, the keyword Profile, Concepts and Themes without AI still work. |
+| *No AI* | You only. Search, the keyword codes, Concepts and Themes without AI still work. |
 
 > [!IMPORTANT]
 > Documents you mark as local stay on this computer. ENLENS never sends their text to Claude, in any feature, and
@@ -78,7 +78,7 @@ flowchart LR
   search's AI judgements count anywhere (Excel marks them *Not counted: the check did not work*).
 - **The AI's written note** speaks only for the excerpts it read, and is told how many others there are. The check's
   summary is always the main model's, never the local model's.
-- **Every other AI task** (a second opinion, reading an excerpt again, the Profile's AI pass, theme names, concept
+- **Every other AI task** (a second opinion, reading an excerpt again, the AI pass of *Codes*, theme names, concept
   links, references) takes the setting of the most restricted document it touches. A theme whose passages are all
   restricted is named by the local model or keeps its key terms; two concepts found only in restricted documents are
   linked by the local model or not at all.

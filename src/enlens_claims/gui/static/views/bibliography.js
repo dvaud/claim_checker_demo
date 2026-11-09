@@ -2,7 +2,7 @@
 // exported from a reference manager, next to the project's documents. Four lists: works linked to their document,
 // probable pairs to confirm, works still to find (with Zotero's files to add in one go), documents not in the
 // bibliography.
-import { featureEyebrow } from "../features.js";
+import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, confirmDialog, emptyState, TERMINAL,
   dialog, session, download, plural, spinner } from "../lib.js";
 import { simpleProgress, jobError } from "./progress.js";
@@ -20,10 +20,11 @@ const PAGE_ROWS = 150;
 export async function renderBibliography(view) {
   const project = App.project;
   const base = `/api/projects/${P(project)}`;
-  view.appendChild(pageHead("Bibliography", {
+  view.appendChild(pageHead("Documents", {
     eyebrow: featureEyebrow("bibliography"),
     sub: "Your Zotero library next to this project’s documents: which works you have and which you still need to find.",
   }));
+  view.appendChild(viewTabs("documents", "bibliography"));   // 0.17.0: Bibliography is a view of Documents
   const watchers = [];
   const top = h("div", { class: "bib-top" });
   const jobBox = h("div", { class: "section", hidden: true, "aria-live": "polite" });

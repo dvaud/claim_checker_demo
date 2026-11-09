@@ -1,0 +1,203 @@
+/* 0.17.0: the navigation: the sidebar of places, the Find button, the status area at the foot, Update in Quit's place,
+   and a place's view tabs. New rules only, in the app's colour tokens; the design guide decides their final form. */
+
+/* ---- Find a feature or page (finder.js): a field-like button under the name, the same family as the app's inputs */
+.sidebar-inner > .find-btn { flex: none; }
+.find-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--muted); font: inherit; font-size: .88rem; text-align: left;
+  cursor: pointer;
+}
+.find-btn:hover { border-color: var(--border-strong); color: var(--text-2); }
+.find-btn .nav-icon { width: 16px; height: 16px; }
+.find-btn .find-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.find-btn .find-key { font-size: .7rem; color: var(--muted); }
+
+/* ---- the groups of places say once whether they use the AI (features.js aiTag) */
+.nav-group[data-section] { display: flex; align-items: center; gap: 8px; }
+.nav-group .ai-tag { font-size: .72rem; text-transform: none; letter-spacing: 0; font-weight: 500; }
+
+/* ---- the status area: one fixed size, whatever it shows (the AI line, or the work in its place) */
+.status-area { height: 66px; display: flex; flex-direction: column; }
+.status-area > :not([hidden]) { flex: 1; min-height: 0; }
+.status-area #privacy-indicator .privacy-wrap, .status-area #privacy-indicator .privacy { height: 100%; }
+.status-area .privacy > div { min-width: 0; }
+.status-area .privacy span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.work-box {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border: 1px solid var(--accent);
+  border-radius: 8px; background: var(--surface);
+}
+.work-box .work-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; color: inherit; text-decoration: none; }
+.work-box .work-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.work-box .work-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .86rem; font-weight: 600; color: var(--accent-text); }
+.work-box .work-time { margin-left: auto; flex: none; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.work-box .work-sub { font-size: .78rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-box .work-act { flex: none; }
+.work-box.work-stalled { border-color: var(--warn); background: var(--warn-soft); }
+.work-box.work-stalled .work-text, .work-box.work-stalled .work-line .icon { color: var(--warn); }
+@media (max-height: 759px) { .status-area { height: 58px; } }
+
+/* ---- the last row: Settings, then Quit or (when there is one) Update in the same place and size, then the theme */
+.sidebar-app-row #quit-btn, .sidebar-app-row #update-btn { width: auto; flex: none; padding: 6px 8px; gap: 6px; }
+
+/* ---- a place's views: the tabs under its page title (features.js viewTabs; the same component as Settings' tabs) */
+.view-tabs { margin-top: -6px; }
+
+/* ---- the Overview: the feature finder under the tabs */
+.ov-finder { margin: 0 0 22px; max-width: 640px; }
+.work-box .work-sub { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.work-box .work-sub-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-box .work-who { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+
+/* ---- windows under 760px high (most laptops with a browser bar): the "Project" caption goes, the rows tighten,
+   so the seven places fit with the status area at its fixed size */
+@media (max-height: 759px) {
+  .sidebar-inner { gap: 10px; padding-top: 12px; }
+  .project-switch .ps-label { display: none; }
+  .project-switch summary { padding: 6px 10px; }
+  .find-btn { padding: 5px 10px; }
+  #nav a { padding-top: 6px; padding-bottom: 6px; }
+  #nav .nav-group { margin: 8px 10px 2px; }
+}
+.sidebar-app-row { gap: 2px; }
+.sidebar-app-row #update-btn { padding: 6px 6px; }
+
+/* ==== the Hypotheses page (views/hypotheses.js) ==== */
+/* 0.17.0: the Hypotheses page (views/hypotheses.js): one box for one hypothesis or a list, the line saying which AI
+   reads, and the checks still running at the top of the answers. */
+
+/* ---- the box grows with its text (the page sets its height), up to most of the window; then it scrolls */
+.hyp-compose .textarea-hyp { overflow-y: auto; max-height: 60vh; }
+/* a list reads better a little smaller than one hypothesis */
+.hyp-compose.is-list .textarea-hyp { font-size: 1.05rem; line-height: 1.5; }
+.hyp-hint-main, .hyp-hint-side { display: inline-flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; }
+.hyp-hint-side { margin-left: auto; }
+.hyp-counter:empty { display: none; }
+.hyp-file { font-weight: 500; }
+.hyp-list-line { color: var(--text-2); display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.hyp-list-warn { color: var(--partly); }
+.hyp-list-fold { margin-top: 6px; }
+.hyp-list-fold > summary { font-size: .9rem; }
+.hyp-list-body { margin-top: 6px; }
+
+/* ---- the buttons, each with its AI mark, and the line under them */
+.hyp-actions { margin: 6px 0 4px; gap: 10px 20px; }
+.hyp-btn-group { display: inline-flex; align-items: center; gap: 8px; }
+.hyp-reads { display: flex; align-items: center; gap: 6px; margin: 4px 0 14px; }
+.hyp-reads .icon { flex: none; }
+
+/* ---- a check still running, or waiting its turn, as a row of the answers */
+.badge-job.job-running { color: var(--accent-text); background: var(--accent-soft); border-color: transparent; }
+.badge-job .spinner { display: inline-flex; }
+.hyp-job-row .hyp-cell a { font-style: italic; }
+
+/* a phone has no Ctrl+Enter to press */
+@media (hover: none) and (pointer: coarse) { .hyp-kbd { display: none; } }
+
+@media (max-width: 600px) {
+  .hyp-hint-side { margin-left: 0; }
+  .hyp-actions .hyp-btn-group { flex-wrap: wrap; }
+}
+
+/* ==== the feature finder (finder.js) ==== */
+.finder-dialog { width: min(600px, calc(100vw - 32px)); margin-top: 12vh; padding: 12px; }
+.finder-dialog[open] { display: block; }
+.finder-input { width: 100%; box-sizing: border-box; }
+.finder-list { margin-top: 8px; max-height: min(52vh, 440px); overflow-y: auto; overscroll-behavior: contain; }
+.finder-group + .finder-group { margin-top: 4px; }
+.finder-group-label { padding: 6px 10px 2px; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.finder-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; color: var(--text); }
+.finder-row.is-active { background: var(--accent-soft); }
+.finder-icon { display: inline-flex; flex: none; color: var(--muted); }
+.finder-row.is-active .finder-icon { color: var(--accent); }
+.finder-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.finder-where { flex: none; max-width: 40%; font-size: .85rem; color: var(--muted); text-align: right; }
+.finder-row-search { border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; margin-top: 4px; }
+.finder-hint { margin: 8px 4px 0; font-size: .8rem; color: var(--muted); }
+.finder-hint kbd { font: inherit; font-size: .75rem; padding: 0 5px; margin-right: 3px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
+.finder-box { position: relative; max-width: 640px; }
+.finder-box-icon { position: absolute; left: 11px; top: 11px; color: var(--muted); display: inline-flex; pointer-events: none; }
+.finder-box .finder-input { padding-left: 34px; }
+.finder-box .finder-list { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 4px; max-height: 340px; }
+@media (max-width: 600px) {
+  .finder-dialog { margin-top: 8vh; padding: 10px; }
+  .finder-row { flex-wrap: wrap; row-gap: 0; }
+  .finder-where { max-width: none; flex-basis: 100%; text-align: left; padding-left: 26px; }
+  .finder-hint { display: none; }
+}
+
+/* ==== the research log drawer (views/logdrawer.js) ==== */
+body { --logdrawer-w: 340px; }   /* the drawer's width, where it is a column beside the page */
+
+/* the button: the same spot on every page, never part of a page head */
+.logdrawer-btn {
+  position: fixed; top: 12px; right: 20px; z-index: 35; display: inline-flex; align-items: center; gap: 7px;
+  height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  color: var(--text-2); font: inherit; font-size: .88rem; font-weight: 550; cursor: pointer; box-shadow: var(--shadow);
+}
+.logdrawer-btn:hover, .logdrawer-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-text); }
+.logdrawer-btn[aria-expanded="true"] { background: var(--accent-soft); }
+.logdrawer-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (min-width: 861px) {
+  .main { padding-top: 38px; }   /* room for the button, so it never covers a page's head */
+}
+@media (min-width: 1200px) {
+  body.logdrawer-open .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--logdrawer-w, 340px); }
+  body.logdrawer-open .logdrawer-btn { right: calc(var(--logdrawer-w, 340px) + 20px); }
+}
+
+/* the drawer */
+.logdrawer {
+  display: flex; flex-direction: column; min-height: 0; background: var(--surface); color: var(--text);
+  border-left: 1px solid var(--border); z-index: 45;
+}
+.logdrawer[hidden] { display: none; }
+@media (min-width: 1200px) {
+  .logdrawer { grid-column: 3; grid-row: 1; position: sticky; top: 0; height: 100vh; height: 100dvh; align-self: start; }
+}
+@media (min-width: 861px) and (max-width: 1199px) {
+  .logdrawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 92vw); box-shadow: var(--shadow-lg); z-index: 55; }
+}
+@media (max-width: 860px) {
+  .logdrawer { position: fixed; left: 0; right: 0; bottom: 0; height: 72vh; height: 72dvh; border-left: 0; border-top: 1px solid var(--border-strong);
+    border-radius: 14px 14px 0 0; box-shadow: var(--shadow-lg); z-index: 55; }
+  .logdrawer-btn { position: static; width: 32px; padding: 0; justify-content: center; box-shadow: none; margin-left: 8px; }
+  .logdrawer-btn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .topbar-project { margin-left: auto; }
+}
+
+.logdrawer-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.logdrawer-title { margin: 0; font-size: 1rem; flex: 1; }
+.logdrawer-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+.logdrawer-seg-btn { border: 0; background: var(--surface); color: var(--text-2); font: inherit; font-size: .84rem; padding: 4px 10px; cursor: pointer; }
+.logdrawer-seg-btn + .logdrawer-seg-btn { border-left: 1px solid var(--border-strong); }
+.logdrawer-seg-btn:hover:not(:disabled) { background: var(--surface-3); }
+.logdrawer-seg-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.logdrawer-seg-btn:disabled { color: var(--faint); cursor: default; }
+.logdrawer-seg-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+.logdrawer-write { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.logdrawer-text { width: 100%; resize: vertical; min-height: 4.6em; }
+.logdrawer-write-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.logdrawer-kept { margin: 0; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.logdrawer-write-foot .btn { flex: none; }
+.logdrawer-note { margin: 0; padding: 8px 14px 0; font-size: .82rem; }
+
+.logdrawer-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 14px 12px; }
+.logdrawer-entries { list-style: none; margin: 0; padding: 0; }
+.logdrawer-entry { display: flex; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.logdrawer-entry:last-child { border-bottom: 0; }
+.logdrawer-icon { flex: none; color: var(--muted); padding-top: 2px; }
+.logdrawer-own .logdrawer-icon { color: var(--accent-text); }
+.logdrawer-entry-body { min-width: 0; flex: 1; }
+.logdrawer-meta { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.logdrawer-entry-text { font-size: .9rem; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.logdrawer-why { font-size: .84rem; margin-top: 2px; }
+.logdrawer-open { display: inline-block; margin-top: 3px; font-size: .84rem; color: var(--accent-text); }
+.logdrawer-empty { font-size: .9rem; margin: 10px 0; }
+.logdrawer-more { text-align: center; padding-top: 8px; }
+
+.logdrawer-foot { padding: 10px 14px; border-top: 1px solid var(--border); font-size: .88rem; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.logdrawer-whole { color: var(--accent-text); }
+
+@media print { .logdrawer, .logdrawer-btn { display: none !important; } }

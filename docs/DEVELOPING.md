@@ -249,10 +249,10 @@ can stop reading once they have their answer.
 | Page | Covers |
 | --- | --- |
 | `install.md` | The one-line install, the files to double-click, Tesseract, a git copy, updating, the icon |
-| `first-steps.md` | The first screen (*Set up Claude*, a project, documents), the sidebar and the rest of the app's frame |
-| `check.md` | Writing and checking a hypothesis, what a check does, the answers, parts, *Check several* |
-| `review.md` | The result page, excerpt cards and their actions, other AI models, downloads, *Results*, the map |
-| `explore.md` | Search, Profile, Concepts, Themes, a document's panels, Quick look, FlexiConc |
+| `first-steps.md` | The first screen (*Set up Claude*, a project, documents), the sidebar (places and views, the finder, the AI mark, the status area) and the rest of the app's frame |
+| `check.md` | *Hypotheses*: writing and checking one hypothesis or several, what a check does, the answers, parts |
+| `review.md` | The result page, excerpt cards and their actions, other AI models, downloads, the list of answers, the evidence map |
+| `explore.md` | Search, Codes (by document), Concepts, Themes, a document's panels, Quick look, FlexiConc |
 | `reading.md` | The readers, the reading view, *Read with the new reader*, `enlens measure` |
 | `bibliography.md` | Zotero and exported bibliographies, the four lists, matching |
 | `together.md` | Shared projects, sync clashes, project zips, moving to another computer |

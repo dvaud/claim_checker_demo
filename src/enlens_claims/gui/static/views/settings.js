@@ -3,13 +3,14 @@ import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, wat
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
 import { localModelHelp } from "./local-model.js";
+import { queueSection } from "./queue.js";
 
 const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 
 // 0.9: Settings as five flat tabs (no section folded inside another). Old links to a section (#/settings/second,
 // #/settings/calibration…) open its tab and scroll to it.
 const TABS = [["model", "AI", "cpu"], ["basics", "Checking", "flask"], ["explore", "Exploring", "network"], ["documents", "Documents", "book-open"], ["advanced", "Technical", "sliders"]];
-const TAB_OF = { model: "model", ai: "model", speed: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
+const TAB_OF = { model: "model", ai: "model", speed: "model", queue: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
   advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", updates: "advanced", data: "advanced" };
 
 export async function renderSettings(view, [section]) {
@@ -36,6 +37,7 @@ export async function renderSettings(view, [section]) {
     // 0.11: who reads the documents marked Only a local AI, and what happens to the text Claude reads
     if (!(App.state && App.state.local_only)) main.append(restrictedModelCard(s, servers, save, info));
     if (s.backend === "anthropic") main.append(sectionCard("terms", "Your Claude account and your documents", "", termsPanel({ account: "commercial" })));
+    main.append(queueSection());   // 0.17.0: what waits for Claude Code (the sidebar's status area links here)
   }
   else if (tab === "basics") main.append(basicsSection(s));
   else if (tab === "explore") main.append(exploreSection(s), frameworksSection());
@@ -560,7 +562,7 @@ function secondModelSection(s, servers) {
   } }, icon("check", { size: 13 }), "Save");
   return sectionCard("second", "Model for second opinions", "For “Get a second opinion” on a result: another chat model on the same server reads the same excerpts, and its judgements are shown beside the main model's, for comparison only. Where the two differ, the excerpt deserves a careful read. A second opinion never changes an answer (a stronger model, asked for with “Ask a stronger model”, does).",
     h("div", { class: "fields-2" }, field("Model for second opinions", sel, { help: models.length ? `Chat models on the server now, apart from the main one (${main || "none chosen"}).` : "No server answered just now, so the installed models could not be listed." }), field("Not listed?", txt, { help: "Type its name as the server knows it, e.g. llama3.1:8b." })),
-    h("p", { class: "muted small" }, icon("info", { size: 13 }), " Only one model is kept in memory at a time: the main model is unloaded before the second one reads, and the second one is unloaded when it is done. So a second opinion takes a while, and is best asked for several results at once (under Results)."),
+    h("p", { class: "muted small" }, icon("info", { size: 13 }), " Only one model is kept in memory at a time: the main model is unloaded before the second one reads, and the second one is unloaded when it is done. So a second opinion takes a while, and is best asked for several results at once (on the Hypotheses page, under its answers)."),
     h("div", { class: "save-row" }, saveBtn, state));
 }
 
@@ -796,7 +798,10 @@ function updatesSection() {
   return sectionCard("updates", "Updates", st.can_restart
     ? `${name} looks for a new version when it opens and every two minutes after. When there is one, it says so in a pop-up, and an Update button appears at the bottom of the sidebar until you install it. Your projects and results are kept.`
     : `Look for a new version of ${name}. Your projects and results are kept when you update.`,
-    channelField(st), h("div", { class: "save-row" }, btn), out, problemRow());
+    channelField(st), h("div", { class: "save-row" }, btn), out, problemRow(),
+    // 0.17.0: while an update waits, its button takes Quit's place at the foot of the sidebar: Quit is here too
+    st.can_quit && Updates.quit ? h("div", { class: "save-row" }, h("button", { class: "btn", type: "button", onClick: () => Updates.quit() }, icon("power", { size: 14 }), `Quit ${name}`),
+      h("span", { class: "muted small" }, "Stops the app on this computer; your projects and results are kept.")) : null);
 }
 
 // 0.15: which versions the update check offers. A git copy follows main and has no choice.

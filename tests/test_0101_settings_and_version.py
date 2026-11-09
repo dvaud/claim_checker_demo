@@ -27,14 +27,14 @@ def test_settings_is_at_the_foot_with_theme_and_quit():
     nav = html[html.index('<nav class="nav" aria-label="Main" id="nav">'):]
     nav = nav[:nav.index("</nav>")]
     assert 'data-route="settings"' not in nav and "nav-sep" not in nav
-    assert 'data-route="history"' in nav  # the features are all still there
+    assert 'data-route="hypotheses"' in nav  # 0.17.0: the places are all still there (checking and answers are Hypotheses)
     foot = html[html.index('<div class="sidebar-foot">'):]
     foot = foot[:foot.index("</aside>")]
     app = foot[foot.index('<div class="sidebar-app">'):]
-    # Settings, then Theme, then Quit, in one group, below the privacy line
+    # Settings, then Quit (or, 0.17.0, Update in its place), then the theme icon, in one row, below the status area
     assert foot.index('id="privacy-indicator"') < foot.index('<div class="sidebar-app">')
-    s, t, q = app.index('href="#/settings" data-route="settings"'), app.index('id="theme-btn"'), app.index('id="quit-btn"')
-    assert s < t < q
+    s, q, t = app.index('href="#/settings" data-route="settings"'), app.index('id="quit-btn"'), app.index('id="theme-btn"')
+    assert s < q < t
     assert html.count('data-route="settings"') == 1
 
 

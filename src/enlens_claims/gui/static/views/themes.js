@@ -553,7 +553,7 @@ export async function renderTheme(view, [runId, themeId], query) {
           h("span", {}, `${plural(t.size, "passage")} from ${plural(docs.length, "document")}`), h("span", { class: "sep" }, "·"),
           h("span", {}, NAMED_BY[t.name_source] || ""))),
       h("div", { class: "page-head-actions" },
-        h("a", { class: "btn btn-primary btn-sm", href: `#/check?text=${encodeURIComponent(starter(t))}` }, icon("flask", { size: 13 }), "Check a hypothesis about this theme"),
+        h("a", { class: "btn btn-primary btn-sm", href: `#/hypotheses?text=${encodeURIComponent(starter(t))}` }, icon("flask", { size: 13 }), "Check a hypothesis about this theme"),
         renameBtn, mergeBtn, removeBtn)));
 
     clear(body);

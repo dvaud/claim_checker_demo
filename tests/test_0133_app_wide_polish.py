@@ -73,10 +73,11 @@ def test_colour_only_where_it_means_something():
 
 def test_downloads_are_a_quiet_line_of_links():
     assert "export function downloadLinks(" in LIB and 'class: "dl-links"' in LIB
-    hist = view("history")
-    head = hist[hist.index("const downloads = downloadLinks(["):hist.index("const search = h(")]
+    # 0.17.0: the downloads of every answer are in the head of the Hypotheses page; the map is its tab, not a button
+    hyp = view("hypotheses")
+    head = hyp[hyp.index("const downloads = downloadLinks(["):hyp.index("const tabs = viewTabs(")]
     assert '"Excel (.xlsx)"' in head and '"CSV"' in head and "(for programmers)" in head
-    assert "btn-primary" not in head and "actions: [mapLink, downloads]" in head
+    assert "btn-primary" not in head and "actions: downloads" in head and "Show as a map" not in hyp
     search = view("search")
     assert "downloadLinks([" in search and '"Excel (.xlsx)"), ' not in search
     # Profile: the link appears once there is a profile; there is no disabled button before that
@@ -105,14 +106,15 @@ def test_longer_explanations_sit_in_help_marks():
 
 def test_page_subtitles_are_one_short_line():
     subs = {}
-    for name in ("sources", "bibliography", "search", "profile", "concepts", "themes", "check", "batch", "history", "map"):
+    # 0.17.0: Check a hypothesis, Check several and Results are one page, Hypotheses
+    for name in ("sources", "bibliography", "search", "profile", "concepts", "themes", "hypotheses", "map"):
         js = view(name)
         for m in re.finditer(r"pageHead\(\"[^\"]+\", \{[^\n]*?\bsub: (\"[^\"]*\"|`[^`]*`)", js):
             subs.setdefault(name, []).append(m.group(1))
         m = re.search(r"\n\s+sub: (\"[^\"]*\"|`[^`]*`),", js)
         if m:
             subs.setdefault(name, []).append(m.group(1))
-    assert set(subs) >= {"sources", "bibliography", "search", "profile", "concepts", "themes", "check", "batch", "history", "map"}
+    assert set(subs) >= {"sources", "bibliography", "search", "profile", "concepts", "themes", "hypotheses", "map"}
     for name, found in subs.items():
         for s in found:
             # the project's name is in the sidebar and the top bar; a subtitle no longer repeats it

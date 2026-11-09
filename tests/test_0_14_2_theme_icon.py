@@ -29,9 +29,8 @@ def test_the_theme_is_an_icon_on_the_settings_row():
     assert row.index('data-route="settings"') < row.index('id="theme-btn"')  # the icon at the end of the row
     btn = re.search(r'<button [^>]*id="theme-btn"[^>]*>', row).group(0)
     assert 'class="icon-btn theme-btn"' in btn and "btn-sm" not in btn and 'aria-live="polite"' in btn
-    # Update and Quit stay full rows below it
-    assert 'id="update-btn"' not in row and 'id="quit-btn"' not in row
-    assert app.index('id="theme-btn"') < app.index('id="update-btn"') < app.index('id="quit-btn"')
+    # 0.17.0: Quit sits in the row before the icon, and an update takes Quit's place (the owner's call)
+    assert row.index('data-route="settings"') < row.index('id="update-btn"') < row.index('id="quit-btn"') < row.index('id="theme-btn"')
 
 
 def test_the_icon_says_what_it_does():

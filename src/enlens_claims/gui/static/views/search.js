@@ -168,7 +168,7 @@ export async function renderSearch(view, params, query) {
       const node = h("mark", {}, ...wordSpans(x.node, addWord));
       const docHref = `#/doc/${encodeURIComponent(x.doc_id)}?q=${x.start}-${x.end}`;
       const check = h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "Check a hypothesis about what this line says",
-        onClick: () => navigate(`#/check?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`) }, icon("flask", { size: 13 }), h("span", { class: "visually-hidden" }, "Check a hypothesis about this"));
+        onClick: () => navigate(`#/hypotheses?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`) }, icon("flask", { size: 13 }), h("span", { class: "visually-hidden" }, "Check a hypothesis about this"));
       return h("tr", {},
         h("td", { class: "kw-where" }, h("a", { href: docHref, title: `${x.title} · ${x.location}` }, (x.title || "untitled").slice(0, 28)), h("div", {}, x.location)),
         h("td", { class: "kw-left" }, h("span", {}, ...wordSpans(x.left, addWord))),

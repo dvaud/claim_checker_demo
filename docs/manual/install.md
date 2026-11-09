@@ -112,15 +112,15 @@ The programs are `enlens-gui` (the app), `enlens` (the [command line](command-li
 flowchart LR
     A["ENLENS looks for a new version<br/>when a page opens, every 2 minutes,<br/>and when you come back to its tab"] --> B["A pop-up in the corner:<br/>ENLENS 0.x.y is available"]
     B -- "Update and restart" --> C["Download and check it"]
-    B -- "Later" --> D["The button stays in the sidebar:<br/>Update to 0.x.y"]
+    B -- "Later" --> D["The button stays in the sidebar:<br/>Update"]
     D --> C
     C --> E["Install, restart,<br/>the page reloads by itself"]
 ```
 
 **In the app.** ENLENS looks for the latest release (or, for a git copy, new commits) when a page opens, every two
 minutes after, and when you come back to its tab. When there is a new version, a pop-up in the corner names it (*ENLENS
-0.15.5 is available*), with *Update and restart* and *Later*, and a button *Update to 0.15.5* appears at the bottom of
-the sidebar. *Later* puts the pop-up away for that version; the button stays until you update.
+0.15.5 is available*), with *Update and restart* and *Later*, and an *Update* button takes the place of *Quit* at the
+foot of the sidebar. *Later* puts the pop-up away for that version; the button stays until you update.
 
 *Update and restart* installs the new version and restarts ENLENS on the same address. The open page shows
 *Starting ENLENS …* and opens the new version by itself; started from the icon, ENLENS restarts the same way without
@@ -168,8 +168,8 @@ applications menu (Linux). On Linux desktops that ask for it, right-click the ic
   check or documents being added still run in it: then every page says *ENLENS X is installed, but Y is still
   running*, with *Restart now*.
 - If your AI is Ollama on this computer and Ollama is not running, the icon starts it too.
-- **Quit ENLENS** at the bottom of the sidebar stops it (it asks first when a check is still running). What ENLENS
-  would print goes to `logs/enlens.log` in the data folder.
+- **Quit** at the foot of the sidebar (with an update ready, in *Settings → Technical*) stops it (it asks first when
+  a check is still running). What ENLENS would print goes to `logs/enlens.log` in the data folder.
 
 The icon calls the Python ENLENS was installed in, so another `enlens-gui` earlier on the PATH (an old one in
 Anaconda, say) cannot get in the way.
