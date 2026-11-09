@@ -349,12 +349,12 @@ def for_run(ws: Workspace, run_id: str, themes: list[dict]) -> dict[int, dict]:
     # the theme a name fits best keeps it: first pass without others, then in order of how well the pick fits
     first = {tid: _ladder(cs, set(), kept[tid]) for tid, cs in cands.items()}
 
-    def strength(tid):
+    def strength(tid):  # a name a person gave keeps it first, then the names the documents showed specific
         f = first[tid]
         if not f:
-            return (0, 0.0)
+            return (0, 0, 0.0)
         c = next(c for c in cands[tid] if c["key"] == f["key"])
-        return (1 if f["sure"] else 0, c["score"])
+        return (1 if kept[tid] and f["sure"] else 0, 1 if f["sure"] else 0, c["score"])
 
     out: dict[int, dict] = {}
     taken: set[str] = set()

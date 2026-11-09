@@ -19,29 +19,73 @@ import pytest
 from enlens_claims import codebooks, codenames, ingest, themes
 from enlens_claims.store import Workspace
 
-DEMO = Path(__file__).resolve().parents[1] / "tools" / "demo_corpus"
+# A small corpus whose numbers are clear by design (the demo corpus is too small: its themes have five passages, and
+# k-means groups them differently on Windows). Each document is one theme. "remote work" and "bus services" are in
+# every paragraph of every document; "young employees" in one document (and once in another, so the glossary knows it);
+# "night bus services" and "office days" in one each.
+_FILLER = ["The report lists the figures for each district and year.",
+           "Several respondents described the same pattern in their own words.",
+           "The authors compare the findings with earlier surveys of the region.",
+           "Most of the changes were small but consistent over time.",
+           "A later section discusses the limits of the data and the sample.",
+           "The numbers are rounded and the method is described in an annex.",
+           "Readers can find the questionnaire in the appendix of the report."]
+_CORES = {
+    "interviews": "Young employees said that remote work left them lonely, and young employees in their first job "
+                  "missed the office.",
+    "transport": "Night bus services ran again, and remote work changed when people travelled; the night bus services "
+                 "were full most evenings.",
+    "offices": "Office days were set by employers, with remote work on the other days; office days had to be booked "
+               "a week ahead.",
+    "wellbeing": "Wellbeing and loneliness were measured each year, and remote work and wellbeing were linked in the "
+                 "panel.",
+}
+LAYOUT = list(_CORES)
+
+
+def _write_corpus(folder: Path) -> Path:
+    folder.mkdir(parents=True)
+    seasons = ["spring", "summer", "autumn", "winter"]
+    for d, (stem, core) in enumerate(_CORES.items()):
+        paras = []
+        for i in range(8):
+            extra = " Young employees were not asked." if stem == "wellbeing" and i == 0 else ""
+            filler = " ".join(_FILLER[(i + d + k) % len(_FILLER)] for k in range(7))
+            paras.append(f"Part {i + 1} of the {stem} file. {core} Bus services were mentioned too.{extra} {filler} "
+                         f"Case {i * 7 + d * 3 + 3} is described here, with notes on {seasons[i % 4]} {2019 + i}.")
+        (folder / f"{stem}.txt").write_text("\n\n".join(paras) + "\n", encoding="utf-8")
+    return folder
 
 
 @pytest.fixture
 def run(tmp_path):
     ws = Workspace.create(tmp_path / "ws")
-    ingest.ingest(ws, [DEMO])
+    ingest.ingest(ws, [_write_corpus(tmp_path / "corpus")])
     rid = themes.run(ws, k=4)
+    tids = sorted(r[0] for r in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (rid,)))
+    assert len(tids) == len(LAYOUT)
+    docs = {Path(r[1]).stem: r[0] for r in ws.query("SELECT doc_id, path FROM documents")}
+    with ws.connect() as cx:   # each document is one theme, in LAYOUT's order
+        for tid, stem in zip(tids, LAYOUT):
+            cx.execute("UPDATE theme_members SET theme_id=? WHERE run_id=? AND passage_id IN "
+                       "(SELECT passage_id FROM passages WHERE doc_id=?)", (tid, rid, docs[stem]))
     return ws, rid
 
 
 def _name(ws, rid, names, source="model"):
-    """Give the run's themes these names, in the order the Themes page shows them."""
-    tids = [t["theme_id"] for t in themes.view(ws, rid)["themes"]]
+    """Give the themes these names, in LAYOUT's order (interviews, transport, offices, wellbeing)."""
+    tids = sorted(r[0] for r in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (rid,)))
     with ws.connect() as cx:
         for tid, nm in zip(tids, names):
             cx.execute("UPDATE themes SET name=?, name_source=? WHERE run_id=? AND theme_id=?", (nm, source, rid, tid))
     v = themes.view(ws, rid)["themes"]
+    order = {tid: i for i, tid in enumerate(tids)}
+    v.sort(key=lambda t: order[t["theme_id"]])
     return v, codenames.for_run(ws, rid, v)
 
 
-NAMES = ["Remote work and young employees", "Remote work commuting and train travel",
-         "Office days and employer recommendations", "Rivermouth office workers and public transport"]
+NAMES = ["Remote work and young employees", "Night bus services", "Office days and employer recommendations",
+         "Remote work, loneliness and wellbeing"]
 
 
 def _words(text):
@@ -52,14 +96,17 @@ def test_short_names_climb_past_a_generic_one(run):
     ws, rid = run
     v, got = _name(ws, rid, NAMES)
     picks = {t["name"]: got[t["theme_id"]]["names"][got[t["theme_id"]]["pick"]] for t in v}
-    # "Remote work" is in most of the demo's passages, in every theme: too generic for one theme
+    # "Remote work" is in every document, a quarter of its passages in each theme: too generic for any of them
     assert picks["Remote work and young employees"] == "Young employees"
     assert picks["Office days and employer recommendations"] == "Office days"
-    assert picks["Rivermouth office workers and public transport"] == "Office workers"
+    assert picks["Remote work, loneliness and wellbeing"] != "Remote work"
+    # "Bus services" is everywhere too, "services" is written inside it: only three words single out the theme
+    bus = got[v[1]["theme_id"]]
+    assert bus["names"] == ["Bus services", "Night bus services"] and bus["pick"] == 1 and bus["sure"]
     assert all(got[t["theme_id"]]["sure"] for t in v)
     for t in v:
         g = got[t["theme_id"]]
-        assert len(g["names"][g["pick"]].split()) <= 2
+        assert len(g["names"][g["pick"]].split()) <= 3
         assert all(len(n) <= 40 for n in g["names"])
         # each name is words of the theme's name, from less to more specific, each holding the one before it
         assert all(_words(n) <= _words(t["name"]) for n in g["names"])
@@ -74,10 +121,10 @@ def test_two_themes_never_share_a_code_and_a_persons_name_is_kept(run):
     v, got = _name(ws, rid, ["Office days and employer recommendations"] * 2 + NAMES[2:])
     codes = [codenames.key(got[t["theme_id"]]["names"][got[t["theme_id"]]["pick"]]) for t in v]
     assert len(set(codes)) == len(codes)
-    v, got = _name(ws, rid, ["Commuting by train"], source="person")
-    mine = next(t for t in v if t["name"] == "Commuting by train")
+    v, got = _name(ws, rid, ["Commuting by night bus"], source="person")
+    mine = next(t for t in v if t["name"] == "Commuting by night bus")
     g = got[mine["theme_id"]]
-    assert g["names"][g["pick"]] == "Commuting by train" and g["sure"]
+    assert g["names"][g["pick"]] == "Commuting by night bus" and g["sure"]
 
 
 def test_no_evidence_is_marked_unsure_and_key_terms_stay_whole(run):
@@ -157,8 +204,8 @@ def test_a_persons_name_keeps_its_articles_and_longer_names_too(run):
     for mine in ("Life in the city", "The role of the state", "The young employees"):
         (name, g), *_ = _picks(ws, rid, [mine], source="person")
         assert g["names"][g["pick"]] == mine and g["sure"]
-    (name, g), *_ = _picks(ws, rid, ["Sustainable use of the commute"])
-    assert "Sustainable use of the commute" in g["names"]
+    (name, g), *_ = _picks(ws, rid, ["Loneliness of the young employees"])
+    assert "Loneliness of the young employees" in g["names"]
 
 
 def test_a_moved_passage_counts_where_it_was_moved(run):

@@ -39,12 +39,15 @@ read as a word and could become the code; a numbered duplicate name could be 41 
 *Make the codebook*; two themes could get the same code when all their names were taken; a name you gave a theme with
 "the" or "a" in it was not kept; passages moved to another theme were counted in the old one; joining words of other
 languages could start a code ("Van verpleeghuizen"); a name of only spaces or marks came back as the code; and listing
-the themes of all projects could push this project's search index out of memory.
+the themes of all projects could push this project's search index out of memory. The first Windows test run found one
+more: another theme could take a name you gave a theme yourself before your theme got it; your name now comes first.
 
 ### Tests
 
-`tests/test_0_16_1_code_names.py`: names climb past a generic one ("Remote work and young employees" gives "Young
-employees"), each within 40 characters, made of the theme's words, in a ladder where each name holds the one before;
+`tests/test_0_16_1_code_names.py`, on a small corpus written for the test (one document per theme, so the result does
+not depend on how k-means groups passages on each system): names climb past a generic one ("Remote work and young
+employees" gives "Young employees") and to three words when two are not enough ("Night bus services"), each within 40
+characters, made of the theme's words, in a ladder where each name holds the one before;
 no two themes share a code, even four themes with the same name; a person's name is kept, articles and all; a name with
 no evidence is marked unsure; key terms stay whole; odd names (marks, brackets, dashes, other languages, Russian) give
 clean codes; a moved passage counts where it was moved; the codebook draft uses the chosen name; the last-resort cut
