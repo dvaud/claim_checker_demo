@@ -34,7 +34,7 @@ python -m pytest -q -rs
 ```
 
 `.github/workflows/tests.yml` runs the suite on every push to `main` and every pull request, on Linux (Python 3.10
-and 3.13), macOS and Windows (0.15; the macOS and Windows jobs are advisory until the suite passes there), with the extras `dev,connector,fast,pdfminer` and a quick `ruff` check for syntax
+and 3.13), macOS and Windows (0.15; required since 0.15.7, when the suite first passed on all three), with the extras `dev,connector,fast,pdfminer` and a quick `ruff` check for syntax
 errors and undefined names; the release workflow runs it again on the tag. Neither installs `anthropic` or the OCR
 extra, so the tests that need them are skipped there: run the whole suite on your own computer before a release. Tests never touch a real Claude Code, uv or
 the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere and gives every test its own `ENLENS_HOME`;

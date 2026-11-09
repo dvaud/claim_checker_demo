@@ -32,10 +32,9 @@ jobs:
         include:
           - {os: ubuntu-latest, python: "3.10", label: "Linux, Python 3.10", lint: false, advisory: false}
           - {os: ubuntu-latest, python: "3.13", label: "Linux, Python 3.13", lint: true, advisory: false}
-          # 0.15: advisory until the suite passes there (its first runs on macOS and Windows, see CHANGELOG 0.15.0):
-          # a red result shows, but does not make the run fail
-          - {os: macos-latest, python: "3.12", label: "macOS, Python 3.12, advisory", lint: false, advisory: true}
-          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, advisory", lint: false, advisory: true}
+          # 0.15: advisory until the suite passed there; 0.15.7: it does, so a failure on macOS or Windows fails the run
+          - {os: macos-latest, python: "3.12", label: "macOS, Python 3.12", lint: false, advisory: false}
+          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12", lint: false, advisory: false}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

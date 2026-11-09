@@ -643,6 +643,22 @@ def open_project(name: str) -> Workspace:
     return ws
 
 
+def close_project(path: str | Path) -> None:
+    """0.15.7: forget the project at `path` that open_project keeps, closing its connections in every thread, before
+    its folder is moved or removed (Windows refuses while its database is open)."""
+    hit = _OPEN.pop(str(Path(path).resolve()), None)
+    if hit:
+        hit[1].close_all()
+
+
+def release_open_projects() -> None:
+    """0.15.7: close this thread's connections to every project open_project keeps (they reopen on the next use).
+    The connector does this after each call on Windows, so a project it read can still be removed in the app while
+    Claude Code runs."""
+    for _stamp, ws in list(_OPEN.values()):
+        ws.close()
+
+
 def link_existing(path: str, name: str | None = None) -> str:
     """Make an existing workspace folder (for example the pilot) appear as a project, without copying it."""
     src = Path(path).expanduser().resolve()
@@ -671,12 +687,41 @@ def remove_project(name: str) -> str:
         return "unlinked"
     if not (p / "enlens.sqlite").exists():
         raise KeyError(name)
-    _OPEN.pop(str(p.resolve()), None)
+    close_project(p)  # 0.15.7: Windows cannot move a folder whose database is still open
     trash = home() / "trash"
     trash.mkdir(exist_ok=True)
     dest = trash / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}"
-    shutil.move(str(p), str(dest))
+    move_folder(p, dest)
     return f"moved to {dest}"
+
+
+class FolderInUse(OSError):
+    """0.15.7: a folder could not be moved because a program still has a file in it open (Windows)."""
+
+
+def move_folder(src: Path, dest: Path, tries: int = 6) -> None:
+    """0.15.7: move a project's folder whole. On the same disk a rename, which moves everything or nothing (shutil.move
+    copied the folder and then deleted the original, so a file held open on Windows left half a project behind).
+    Windows refuses while a program has a file in it open: a connection nobody uses any more is freed and it is tried
+    again for a few seconds, then FolderInUse says so in words. Another disk (a data folder moved elsewhere): copied."""
+    import gc
+
+    for attempt in range(tries):
+        try:
+            os.rename(src, dest)
+            return
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            if attempt == tries - 1:
+                raise FolderInUse(f"{src.name} could not be moved: a file in it is still open, in ENLENS or another "
+                                  "program (a search index, a sync tool, an antivirus check). Wait a moment and try "
+                                  "again.") from None
+            gc.collect()
+            time.sleep(0.25 * (attempt + 1))
+        except OSError:
+            shutil.move(str(src), str(dest))
+            return
 
 
 def upload_folder(ws: Workspace, batch: str | None = None) -> Path:
@@ -782,6 +827,8 @@ def cleanup_quicklooks(now_: float | None = None) -> list[str]:
             if name in list_projects():
                 remove_project(name)
             moved.append(name)
+        except FolderInUse:
+            continue  # 0.15.7: tried again later, not forgotten (it stayed a project for good)
         except (KeyError, OSError):
             pass
         data.pop(name, None)

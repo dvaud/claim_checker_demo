@@ -433,7 +433,8 @@ def _windows_shortcut(folder: Path, python: str, args: list[str]) -> Path:
     # was misread; the file is UTF-8, and its second line switches cmd.exe to UTF-8 for the rest
     cmd.write_text("@echo off\r\nchcp 65001 >nul\r\n"
                    "rem Starts ENLENS and opens it in the browser (made by enlens-gui --make-launcher).\r\n"
-                   f'start "" {subprocess.list2cmdline([str(target)])} {arg_line}\r\n', encoding="utf-8")
+                   f'start "" {subprocess.list2cmdline([str(target)])} {arg_line}\r\n', encoding="utf-8",
+                   newline="")  # 0.15.7: the line ends as written (Windows turned "\r\n" into "\r\r\n")
     return cmd
 
 

@@ -9,6 +9,7 @@
 - the page has the button, and docs/API.md the new routes.
 """
 import http.client
+import json
 import os
 import socket
 import subprocess
@@ -183,7 +184,18 @@ def test_a_launched_copy_restarts_in_place(home, tmp_path):  # noqa: F811
     env = {**os.environ, "ENLENS_HOME": str(home.home())}
     cmd = [sys.executable, "-m", "enlens_claims.gui.launch", "--launcher", "--headless", "--no-start-ollama",
            "--port", str(port)]
-    proc = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    out = open(tmp_path / "app.out", "wb")  # 0.15.7: what it wrote before its log file took over, for a failure
+    proc = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
+
+    def why() -> str:  # 0.15.7: the restart failed only on GitHub's macOS machine, with nothing to go on
+        def tail(f):
+            try:
+                return f.read_text(encoding="utf-8", errors="replace")[-1500:]
+            except OSError:
+                return "(none)"
+        return (f"process: {'running' if proc.poll() is None else f'ended with {proc.returncode}'}; app.json: "
+                f"{tail(home.home() / 'app.json')}\n--- output:\n{tail(tmp_path / 'app.out')}\n--- log:\n"
+                f"{tail(home.home() / 'logs' / 'enlens.log')}")
 
     def token_now():
         live = launcher.running(timeout=0.5)
@@ -196,23 +208,33 @@ def test_a_launched_copy_restarts_in_place(home, tmp_path):  # noqa: F811
             return None  # 0.13.5: a restart began between the two: "not answering yet", not an error
 
     try:
-        assert _wait(lambda: token_now() is not None, timeout=60), "ENLENS did not start"
+        assert _wait(lambda: token_now() is not None, timeout=60), "ENLENS did not start: " + why()
         url, token = token_now()
         assert url == f"http://127.0.0.1:{port}"
         assert Api(url, token)("POST", "/api/restart", {})[1]["restarting"] is True
-        assert _wait(lambda: (t := token_now()) is not None and t[1] != token, timeout=30), "ENLENS did not come back"
+        assert _wait(lambda: (t := token_now()) is not None and t[1] != token, timeout=60), \
+            "ENLENS did not come back: " + why()
         url2, token2 = token_now()
         assert url2 == url  # the open page finds it where it was
-        assert proc.poll() is None  # macOS and Linux: the same process became the new copy
+        if os.name != "nt":
+            assert proc.poll() is None  # macOS and Linux: the same process became the new copy
         a = Api(url2, token2)
         assert a("GET", "/api/state")[1]["version"] == __version__
         assert a("POST", "/api/quit", {})[1]["stopping"] is True
-        assert proc.wait(timeout=15) == 0
+        assert proc.wait(timeout=15) == 0  # 0.15.7: on Windows it ended already, when it started the new copy
+        assert _wait(lambda: launcher.running(timeout=0.5) is None, timeout=15), "the new copy did not quit"
         log = (home.home() / "logs" / "enlens.log").read_text()
         assert "Restarting ENLENS with the version now installed" in log
     finally:
         if proc.poll() is None:
             proc.kill()
+        if os.name == "nt":  # 0.15.7: the new copy, started beside it, when the test stopped half way
+            try:
+                info = json.loads((home.home() / "app.json").read_text(encoding="utf-8"))
+                subprocess.run(["taskkill", "/PID", str(int(info["pid"])), "/T", "/F"], capture_output=True, timeout=30)
+            except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+                pass
+        out.close()
 
 
 def test_page_files():

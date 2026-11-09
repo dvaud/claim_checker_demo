@@ -275,6 +275,9 @@ def _friendly(fn):
             raise ToolError(f"Not found: {e.args[0] if e.args else e}") from e
         except (ValueError, FileNotFoundError, BackendError) as e:
             raise ToolError(str(e)) from e
+        finally:
+            if os.name == "nt":  # 0.15.7: no project's database stays open between calls (Windows cannot move or
+                core.release_open_projects()  # remove a folder with an open file: removing one in the app failed)
     return inner
 
 

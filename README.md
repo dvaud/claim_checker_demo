@@ -63,10 +63,10 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   the same for text copied out of a PDF and for books (contents, notes, index). **Can change results** for documents
   you add from now on; those already in a project keep their reading.
 - **See how each document was read**: its text as the reader found it, what was left out, the PDF page beside it,
-  and a warning when a document read badly. *Restore* or *Leave out* any part, every running head at once with *All
-  like this*, or mark where the text starts and ends (**can change results**).
-- **Read with the new reader**, one document at a time: a preview first, then each quote, judgement and code moves
-  to the same words in the new text. **Can change results** for that document.
+  and a warning when a document read badly, which you can mark as checked. *Restore* or *Leave out* any part, every
+  running head at once with *All like this*, or mark where the text starts and ends (**can change results**).
+- **Read with the new reader**: one document after a preview, or several at once from the Documents page. Each quote,
+  judgement and code moves to the same words in the new text. **Can change results** for the documents moved.
 - **Results say which version made them**, and the Overview says which came from an earlier one. *Try new versions
   early* in Settings gets you release candidates. Neither can change results.
 - **Ollama with one button** (0.15.6): *Install Ollama* says the size of the download first, then installs and starts

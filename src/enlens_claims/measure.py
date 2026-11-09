@@ -717,10 +717,13 @@ def measure_project(project: str | Path, readers: list[int], timings: bool = Fal
         raise FileNotFoundError(f"No project at {project}.")
     with tempfile.TemporaryDirectory(prefix="enlens-measure-") as tmp:
         copy = Workspace.open(copy_project(project, Path(tmp)))
-        out = {"project": str(project), **measure_quotes(copy, readers)}
-        if timings:
-            out["timings"] = measure_timings(copy)
-        return out
+        try:
+            out = {"project": str(project), **measure_quotes(copy, readers)}
+            if timings:
+                out["timings"] = measure_timings(copy)
+            return out
+        finally:
+            copy.close_all()  # 0.15.7: Windows cannot remove the copy while its database is open
 
 
 # =============================================================================================

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from helpers_0110 import Cloud, Local, mixed_project
@@ -143,7 +144,7 @@ def test_the_manifest_sets_the_setting_per_file(tmp_path, monkeypatch):
                                          "licence\ninterviews.txt,Interviews,nope,\n")
     ws = Workspace.create(tmp_path / "ws")
     stats = ingest.ingest(ws, [folder], ai_access="cloud")
-    view = {r["path"].rsplit("/", 1)[-1]: r for r in ws.query("SELECT path, ai_access, ai_note FROM documents")}
+    view = {re.split(r"[/\\]", r["path"])[-1]: r for r in ws.query("SELECT path, ai_access, ai_note FROM documents")}
     assert view["licensed_study.txt"]["ai_access"] == "local" and view["licensed_study.txt"]["ai_note"] == "publisher licence"
     assert view["open_report.txt"]["ai_access"] is None  # the answer for all, which is the default
     assert "interviews.txt" in stats["manifest_problems"][0]

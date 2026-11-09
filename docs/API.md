@@ -460,6 +460,22 @@ transaction (all or nothing), then the document's search by meaning, the glossar
 a document; the job's result is `{"report": {… "moved": true}, "glossary", "codes", …}`. 409 with the reason when it
 cannot be done, or while another job of the project runs.
 
+`POST /api/projects/<p>/new-reader` `{"doc_ids"?: [doc_id]}` (0.15.7) → `{"job"}` (kind `new_reader`): the documents an
+earlier reader read (only those of `doc_ids`, when given; others are ignored) moved one after the other, each as `POST
+…/reread` does, but only when every result finds its place (`reread.move(keep_all=True)`); then, once, search by
+meaning, the glossary and the keyword pass. The job's result is `{"moved": [{"doc_id", "title", "results",
+"left_out"}], "kept": [{"doc_id", "title", "reason", "not_placed"?}], "stopped", "glossary", "codes", …}`: `kept` are
+left as they were, `not_placed` (how many results would have had no place) when that is the reason. Stopping it keeps
+the documents moved so far. 400 for `doc_ids` that is not a list; 409 when none is left to move, or while another job
+of the project runs. The list of documents (`GET …/documents`) gives `new_reader` (`ingest.READER`) beside each
+document's `reader`.
+
+`PUT /api/projects/<p>/documents/<doc_id>/reading-checked` `{"checked": bool}` (0.15.7) → `{"checked": {"by", "name",
+"at"} | null}`: the person marks the reading as checked (or takes it back). It is kept in the reading report, so a new
+reading asks again; the list of documents gives `reading_checked` beside `reading_quality`. 400 for a `checked` that is
+not true or false; 404 for no such document; 409 for one read before 0.15 (it has no reading report). The document's
+`reading` also has `places` (0.15.7, not stored): for each warning, `"page"`, `"left_out"` or null, where to look.
+
 `DELETE /api/projects/<p>/documents/<doc_id>` → `{"removed": {...counts}}` (past checks keep their evidence).
 `DELETE /api/projects/<p>/documents` `{"confirm": true}` → removes every document **and every check**.
 

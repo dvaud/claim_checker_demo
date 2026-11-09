@@ -240,7 +240,9 @@ def test_edits_follow_their_themes_when_documents_are_added(tmp_path, monkeypatc
     c.mkdir()
     for t in TOPICS:
         for i in range(2):
-            (c / f"{t}{i}.txt").write_text(_topic_doc(rng, t))
+            # 0.15.7: "\n" on every system, as in test_0_13_9's corpus: Windows' "\r\n" would give other document
+            # ids (a file's sha1), so another passage order, and k-means would group this corpus another way
+            (c / f"{t}{i}.txt").write_text(_topic_doc(rng, t), newline="\n")
     ws = Workspace.create(tmp_path / "ws")
     ingest.ingest(ws, [c])
     r1 = themes.run(ws, k=4, seed=2, mode="words")
@@ -252,7 +254,7 @@ def test_edits_follow_their_themes_when_documents_are_added(tmp_path, monkeypatc
     c2 = tmp_path / "c2"
     c2.mkdir()
     for i in range(8):        # birds become the biggest topic: the themes are numbered again
-        (c2 / f"birds_more{i}.txt").write_text(_topic_doc(rng, "birds"))
+        (c2 / f"birds_more{i}.txt").write_text(_topic_doc(rng, "birds"), newline="\n")
     ingest.ingest(ws, [c2])
     r2 = themes.run(ws, k=4, seed=2, mode="words")
     v2 = themes.view(ws, r2)["themes"]

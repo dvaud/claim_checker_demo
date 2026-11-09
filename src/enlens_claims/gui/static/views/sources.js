@@ -230,6 +230,10 @@ export async function renderSources(view) {
   const docsBox = h("section", { class: "section", "aria-label": "Documents in this project" });
   view.appendChild(docsBox);
   const picked = new Set();   // the documents ticked for a change of several at once (kept across re-draws)
+  // 0.15.7: documents read by an earlier reader, moved to the new one from here (several at once): the box keeps
+  // its job's progress, or what the last move did, across re-draws of the list
+  const nrBox = h("div", { class: "nr-box", role: "region", "aria-label": "Documents read by an earlier reader" });
+  const nr = { running: false, done: null, older: [] };
   let pa = {};                // the project's AI-access info, as last drawn
   let countsEl = null, shieldNote = null, tbody = null;
   const rows = new Map();     // doc_id -> its row
@@ -255,17 +259,21 @@ export async function renderSources(view) {
     countsEl = countsNode();
     docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `In this project (${docs.length})`), docs.length ? countsEl : null));
     if (!docs.length) { docsBox.appendChild(emptyState("book-open", "No documents yet", "Add the reports, papers and web pages you want to check hypotheses against. PDFs keep their page numbers.")); return; }
-    const warned = docs.filter((d) => d.check || d.reading_quality === "poor").length;
+    newReader = r.new_reader || newReader;
+    const warned = docs.filter((d) => d.check || (d.reading_quality === "poor" && !d.reading_checked)).length;
     if (warned) docsBox.appendChild(h("p", { class: "muted small" }, icon("alert-triangle", { size: 12 }), ` ${warned} ${warned === 1 ? "document needs" : "documents need"} a look: see the note next to ${warned === 1 ? "it" : "them"}.`));
     shieldNote = shieldNode();
     docsBox.appendChild(shieldNote);
+    nr.older = docs.filter((d) => (d.reader || 1) < newReader);
+    docsBox.appendChild(nrBox);
+    drawNr();
     // 0.11: the AI setting of each document (a dropdown), several at once, and how much Claude has read
     const bulkSel = h("select", { class: "select select-sm", "aria-label": "Who may read the selected documents with AI" }, accessLevels().map((lv) => h("option", { value: lv }, LEVEL[lv].title)));
     const bulkCount = h("span", { class: "small" });
     const bulk = h("div", { class: "bulk-bar", hidden: true, role: "region", "aria-label": "Change the selected documents" }, bulkCount, bulkSel,
       h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => setAccess([...picked], bulkSel.value) }, icon("check", { size: 13 }), "Apply"),
       h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { picked.clear(); for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = false; drawBulk(); } }, "Clear"));
-    const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected: who may read them with AI?`; };
+    const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected: who may read them with AI?`; drawNr(); };
     const pickAll = h("input", { type: "checkbox", class: "doc-pick-all", "aria-label": "Select every document" });
     pickAll.addEventListener("change", () => { for (const c of docsBox.querySelectorAll(".doc-pick")) { c.checked = pickAll.checked; if (pickAll.checked) picked.add(c.value); else picked.delete(c.value); } drawBulk(); });
     const sentCell = (d) => {
@@ -345,6 +353,71 @@ export async function renderSources(view) {
       tbody)));
   }
 
+  // 0.15.7: the documents an earlier reader read, offered to the new one; the job's progress; what it did
+  function drawNr() {
+    if (nr.running) return;  // the job's card is in the box
+    // while the note of the last move is shown, the documents it left as they were are listed there, not offered again
+    const kept = new Set(((nr.done && nr.done.kept) || []).map((k) => k.doc_id));
+    const older = nr.older.filter((d) => !kept.has(d.doc_id));
+    const sel = older.filter((d) => picked.has(d.doc_id));
+    const parts = [];
+    if (nr.done) parts.push(nrSummary(nr.done));
+    if (older.length) {
+      const n = older.length;
+      parts.push(h("div", { class: "notice notice-info" }, icon("layers"), h("div", { class: "grow" },
+        h("p", {}, h("strong", {}, `${fmt.num(n)} ${n === 1 ? "document was" : "documents were"} read by an earlier reader of ENLENS.`),
+          ` ${n === 1 ? "It keeps" : "They keep"} that reading, so your quotes and judgements stay where they are. The new reader reads two columns in the right order, sets running heads, page numbers and the like aside, keeps tables as tables and repairs words broken over lines.`),
+        h("div", { class: "btn-row", style: { marginTop: "8px" } },
+          h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => startNr(sel.length ? sel : older, !!sel.length) }, icon("layers", { size: 13 }),
+            sel.length ? `Read the ${sel.length === 1 ? "selected one" : `${fmt.num(sel.length)} selected`} with the new reader` : n === 1 ? "Read it with the new reader" : `Read all ${fmt.num(n)} with the new reader`),
+          sel.length ? null : h("span", { class: "muted small" }, "or tick some in the list to read only those")))));
+    }
+    nrBox.hidden = !parts.length;
+    replace(nrBox, parts);
+  }
+  async function startNr(list, chosen) {
+    const n = list.length;
+    const ok = await confirmDialog({
+      title: n === 1 ? "Read this document with the new reader?" : `Read ${fmt.num(n)} documents with the new reader?`,
+      message: h("div", {},
+        h("p", {}, `${n === 1 ? "It is" : "Each is"} read again from ${n === 1 ? "its" : "their"} original file, and your results (quotes, judgements, codes, themes) move with ${n === 1 ? "it" : "each"} to the same words.`),
+        h("p", {}, "A document where any result would not find its place is left as it is. The list afterwards says which, and you can look at each one on its own page before you move it."),
+        h("p", { class: "muted small" }, "You can go on working meanwhile, or stop it: documents already moved stay moved.")),
+      confirmText: n === 1 ? "Read it" : "Read them" });
+    if (!ok) return;
+    let job;
+    try { job = (await api("POST", `/api/projects/${P(project)}/new-reader`, chosen ? { doc_ids: list.map((d) => d.doc_id) } : {})).job; }
+    catch (e) { showError(e); return; }
+    followNr(job.id);
+  }
+  function followNr(jobId) {
+    nr.running = true;
+    nr.done = null;
+    const w = jobCard(nrBox, jobId, "Reading with the new reader",
+      (p) => p.phase === "reading" ? (p.total ? `${fmt.num(p.done)} of ${fmt.num(p.total)}${p.file ? ` · ${p.file}` : ""}` : "Starting…")
+        : p.phase === "embedding" ? "Updating search by meaning…" : "Updating key terms and codes…",
+      async (job) => {
+        nr.running = false;
+        if (job.state === "done") nr.done = job.result || {};
+        if (job.state === "done" || job.state === "cancelled") await reloadDocs();
+      }, { small: true, plain: true, stoppedText: "Stopped. The documents already moved stay moved." });
+    watchers.push(w);
+  }
+  function nrSummary(res) {
+    const moved = res.moved || [], kept = res.kept || [];
+    const results = moved.reduce((a, m) => a + (m.results || 0), 0);
+    const aside = moved.reduce((a, m) => a + (m.left_out || 0), 0);
+    const ok = moved.length && !kept.length;
+    return h("div", { class: `notice ${ok ? "notice-ok" : "notice-warn"}`, role: "status" }, icon(ok ? "circle-check" : "alert-triangle"), h("div", { class: "grow" },
+      h("p", {}, h("strong", {}, `${res.stopped ? "Stopped. " : ""}${moved.length ? `Read with the new reader: ${plural(moved.length, "document")}` : "No document was moved"}`),
+        moved.length ? `, ${plural(results, "result")} moved with ${moved.length === 1 ? "it" : "them"}.` : "."),
+      aside ? h("p", { class: "small" }, `${plural(aside, "result")} now ${aside === 1 ? "sits" : "sit"} in text the new reader leaves out of searches (a running head, say): see each document’s Reading.`) : null,
+      kept.length ? [h("p", { class: "small", style: { margin: "6px 0 2px" } }, h("strong", {}, `Left as ${kept.length === 1 ? "it was" : "they were"}: ${fmt.num(kept.length)}`)),
+        h("ul", { class: "nr-kept small" }, kept.slice(0, 20).map((k) => h("li", {}, h("a", { href: `#/doc/${encodeURIComponent(k.doc_id)}?tab=reading&preview=1` }, k.title || "a document"), h("span", { class: "muted" }, ` · ${k.reason}`)))),
+        kept.length > 20 ? h("p", { class: "muted small" }, `and ${fmt.num(kept.length - 20)} more.`) : null] : null),
+      h("button", { class: "icon-btn", type: "button", "aria-label": "Close this note", onClick: () => { nr.done = null; drawNr(); } }, icon("x", { size: 14 })));
+  }
+
   async function removeDoc(d) {
     const ok = await confirmDialog({ title: "Remove this document?", message: h("div", {}, h("p", {}, h("strong", {}, d.title || d.file)), h("p", {}, "It is no longer searched. Results you already have keep their quotes, marked as coming from a removed document.")), confirmText: "Remove" });
     if (!ok) return;
@@ -373,6 +446,8 @@ export async function renderSources(view) {
     const jobs = (await api("GET", "/api/jobs")).jobs || [];
     const running = jobs.find((j) => j.project === project && (j.kind === "ingest") && !TERMINAL.has(j.state));
     if (running) followIngest(running.id, "Adding documents");
+    const moving = jobs.find((j) => j.project === project && j.kind === "new_reader" && !TERMINAL.has(j.state));  // 0.15.7
+    if (moving) followNr(moving.id);
     const indexing = jobs.find((j) => j.project === project && j.kind === "index" && !TERMINAL.has(j.state));
     if (indexing) {
       const pb = h("div", { style: { marginTop: "10px" } });
@@ -385,15 +460,18 @@ export async function renderSources(view) {
   return () => watchers.forEach((w) => w.stop());
 }
 
-// 0.15: how a document was read, in the list: one that read badly or has something to check, or one read by the
-// reader before 0.15 (to move to the new reader from its page)
+// 0.15: how a document was read, in the list: one that read badly or has something to check (0.15.7: until the
+// person marks the reading as checked), or one read by an earlier reader (0.15.7: also 0.15.0's; its link opens the
+// preview of the move)
+let newReader = 3;  // ingest.READER, as the list of documents says it
 function readingNote(d) {
   const href = `#/doc/${encodeURIComponent(d.doc_id)}?tab=reading`;
-  if (d.reading_quality === "poor" || d.reading_quality === "fair") {
-    return h("a", { class: d.reading_quality === "poor" ? "warn-chip it" : "it muted small", href, title: (d.reading_warnings || []).join(" ") || "See how it was read" },
+  if ((d.reading_quality === "poor" || d.reading_quality === "fair") && !d.reading_checked) {
+    return h("a", { class: d.reading_quality === "poor" ? "warn-chip it" : "it muted small", href, title: `${(d.reading_warnings || []).join(" ")} Open it to see where to look, then mark the reading as checked.`.trim() },
       icon(d.reading_quality === "poor" ? "alert-triangle" : "info", { size: 12 }), d.reading_quality === "poor" ? "read badly" : "something to check in its reading");
   }
-  if (!d.reading_quality && (d.reader || 1) < 2) return h("a", { class: "it muted small", href, title: "Read by the reader of ENLENS before 0.15. Open it and choose Reading to read it with the new reader." }, icon("layers", { size: 12 }), "read before 0.15");
+  if ((d.reader || 1) < newReader) return h("a", { class: "it muted small", href: `${href}&preview=1`, title: "Read by an earlier reader of ENLENS. Open it to see what the new reader would change, or read several at once with the button above the list." },
+    icon("layers", { size: 12 }), (d.reader || 1) < 2 ? "read before 0.15" : "read by an earlier reader");
   return null;
 }
 
@@ -810,7 +888,7 @@ export async function renderDocument(view, [docId], query) {
   }
   function keepUrl() {
     const s = new URLSearchParams();
-    for (const [k, v] of Object.entries(query)) if (!["tab", "code", "find", "framework"].includes(k)) s.set(k, v);
+    for (const [k, v] of Object.entries(query)) if (!["tab", "code", "find", "framework", "preview"].includes(k)) s.set(k, v);
     if (tab) s.set("tab", tab);
     if (framework !== (App.settings().profile_framework || "sdg")) s.set("framework", framework);
     if (tab === "search" && panels.search && panels.search.query()) s.set("find", panels.search.query());
@@ -841,22 +919,60 @@ export async function renderDocument(view, [docId], query) {
       if (rep.engine === "pypdf") fig("Read from:", "the text layer only (with the pdfminer extra, columns and tables are found too)");
     }
     const outKinds = Object.entries(d.left_out || {});
-    const toggle = outKinds.length ? h("label", { class: "dv-check" }, h("input", { type: "checkbox", checked: showLeftOut, onChange: (e) => {
-      showLeftOut = e.currentTarget.checked; session(`leftout:${docId}`, showLeftOut || null);
+    const setLeftOut = (on) => {
+      showLeftOut = on; session(`leftout:${docId}`, showLeftOut || null);
       for (const f of list.querySelectorAll("details.dv-fold")) f.open = showLeftOut;
-    } }), h("span", {}, "Show what was left out in the text")) : null;
+    };
+    const outBox = outKinds.length ? h("input", { type: "checkbox", checked: showLeftOut, onChange: (e) => setLeftOut(e.currentTarget.checked) }) : null;
+    const toggle = outKinds.length ? h("label", { class: "dv-check" }, outBox, h("span", {}, "Show what was left out in the text")) : null;
+    // 0.15.7: a warning's way to what it is about: the pages of the original, or what the reader set aside
+    const showOut = () => {
+      if (outBox) outBox.checked = true;
+      setLeftOut(true);
+      const f = list.querySelector("details.dv-fold");
+      if (f) f.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+    const placeBtn = (place) => place === "page" && d.page_images ? h("button", { class: "link-btn small", type: "button", onClick: () => openTab("page") }, icon("file-text", { size: 12 }), "Look at the pages")
+      : place === "left_out" && outKinds.length ? h("button", { class: "link-btn small", type: "button", onClick: showOut }, icon("eye", { size: 12 }), "Show what was left out") : null;
     el.append(...[h("h2", { id: "dv-read-h", class: "dv-panel-title", tabindex: "-1" }, "How this document was read"),
       older ? h("div", { class: "notice notice-info" }, icon("info"), h("div", {},
         h("p", {}, before15 ? `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`
           : `Read by the reader of ENLENS 0.15.0. The reader of ENLENS ${App.state.version || ""} also sets running heads, page numbers, contents pages and indexes aside in text files and books, finds their headings and paragraphs, and puts apart words that ran together.`),
         h("p", { class: "small" }, "Documents already in a project keep their reading, so every quote and judgement in them stays where it is, until you move one over."))) : null,
       !before15 && qual ? h("p", { class: `dv-quality dv-q-${rep.quality}` }, icon(qual[0], { size: 14 }), qual[1]) : null,
-      (rep.warnings || []).length ? h("ul", { class: "dv-warn" }, rep.warnings.map((w) => h("li", {}, w))) : null,
+      (rep.warnings || []).length ? h("ul", { class: "dv-warn" }, rep.warnings.map((w, i) => h("li", {}, w, " ", placeBtn((rep.places || [])[i])))) : null,
+      !before15 && (rep.quality === "fair" || rep.quality === "poor") ? checkedBox(rep) : null,
       figs.length ? h("ul", { class: "dv-figs" }, figs) : null,
       outKinds.length ? h("div", { class: "dv-outkinds" }, h("p", { class: "small", style: { margin: "8px 0 4px" } }, h("strong", {}, "Left out of the text: "), outKinds.map(([k, n]) => kindCount(k, n)).join(", "), "."),
         h("p", { class: "muted small", style: { margin: "0 0 6px" } }, "They stay in the document and in a search of all its text, but searches, codes, themes and checks do not read them. Restore any that should count; leave out any that should not."), toggle) : null,
       older ? rereadBox() : null].filter(Boolean));  // append(null) would write "null"
     return { el };
+  }
+
+  // 0.15.7: the person looked at what the reading report names and marks the reading as checked (or takes it
+  // back): the note in the list of documents goes away; a new reading of the document asks again
+  function checkedBox(rep) {
+    const box = h("div", { class: "dv-checked" });
+    function draw() {
+      const c = rep.checked;
+      replace(box, c ? h("p", { class: "small", style: { margin: "4px 0 8px" } }, icon("circle-check", { size: 13 }),
+        ` Checked by ${c.name || "you"}${c.at ? ` on ${fmt.dateShort(c.at)}` : ""}: the list of documents no longer asks for a look. `,
+        h("button", { class: "link-btn small", type: "button", onClick: (e) => mark(false, e.currentTarget) }, "Undo"))
+        : [h("p", { class: "muted small", style: { margin: "4px 0 6px" } }, "Look at what each point names. If the text is good enough for your work, mark the reading as checked: the note in the list of documents goes away. A new reading of this document asks again."),
+          h("button", { class: "btn btn-sm", type: "button", onClick: (e) => mark(true, e.currentTarget) }, icon("check", { size: 13 }), "Checked: it reads well enough")]);
+    }
+    async function mark(on, btn) {
+      btn.disabled = true;
+      try {
+        rep.checked = (await api("PUT", `${docBase}/reading-checked`, { checked: on })).checked;
+        draw();
+        const f = box.querySelector("button");
+        if (f) f.focus();
+        toast(on ? "Marked as checked." : "No longer marked as checked.", "ok", { ttl: 2500 });
+      } catch (e) { btn.disabled = false; showError(e); }
+    }
+    draw();
+    return box;
   }
 
   // 0.15 (A0): move a document read by an earlier reader to the new one, its results with it, after a preview
@@ -866,6 +982,7 @@ export async function renderDocument(view, [docId], query) {
       const start = h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: (e) => preview(e.currentTarget) }, icon("layers", { size: 13 }), "Read with the new reader");
       replace(box, h("p", { class: "small", style: { margin: "10px 0 6px" } }, "See first what would change: how many of your results find their place in the new reading, and which do not. Nothing changes until you confirm."), start);
       if (focusIt) start.focus();
+      return start;
     }
     async function preview(start) {
       start.disabled = true;
@@ -908,7 +1025,8 @@ export async function renderDocument(view, [docId], query) {
       keepPlace = { doc: docId, y: 0, tab: "reading", focus: "dv-read-h" };
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     }
-    drawStart(false);
+    const first = drawStart(false);
+    if (query.preview === "1") setTimeout(() => preview(first), 0);  // 0.15.7: from the list of documents
     return box;
   }
 

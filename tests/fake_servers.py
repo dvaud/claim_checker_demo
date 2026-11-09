@@ -403,7 +403,7 @@ class _Ollama(BaseHTTPRequestHandler):
                 self.server.installed.append(listed)
             self.server.pulled.append(name)
             send({"status": "success"})
-        except (BrokenPipeError, ConnectionResetError):  # the app stopped the download
+        except ConnectionError:  # the app stopped the download (0.15.7: Windows says ConnectionAbortedError)
             self.server.disconnects += 1
 
     def _stream(self, model, answer, prompt_tokens, cap, think):
@@ -444,7 +444,7 @@ class _Ollama(BaseHTTPRequestHandler):
             send({"model": model, "done": True, "done_reason": reason, "message": {"role": "assistant", "content": ""},
                   "prompt_eval_count": prompt_tokens, "eval_count": n, "load_duration": 2_000_000_000,
                   "prompt_eval_duration": 1_500_000_000, "eval_duration": 3_000_000_000})
-        except (BrokenPipeError, ConnectionResetError):  # the client stopped reading, as it should when it gives up
+        except ConnectionError:  # the client stopped reading, as it should when it gives up (Windows: aborted)
             self.server.disconnects += 1
 
 

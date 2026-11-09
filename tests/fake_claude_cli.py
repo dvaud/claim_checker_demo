@@ -57,6 +57,7 @@ def main(argv: list[str]) -> int:
         # 0.14.6: the options ENLENS looks for before it closes Claude Code in (claude_setup.box_args);
         # FAKE_CLAUDE_OPTIONS replaces the list ("" plays an older Claude Code that knows none of them)
         known = os.environ.get("FAKE_CLAUDE_OPTIONS", "--allowedTools --disallowedTools --tools --restricted --plugin-dir")
+        known = "" if known == "none" else known  # 0.15.7: Windows drops a variable set to ""
         print("Usage: claude [options] [command] [prompt]\n\nOptions:")
         for o in known.split():
             print(f"  {o} <value>    (stand-in)")

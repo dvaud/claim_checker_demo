@@ -842,11 +842,15 @@ def answer_on_copy(ws: Workspace, items: list[tuple[str, str, dict, str]], backe
                                     [(r[0], r[1], r[2], None, r[4], f"{r[5]} ({purpose})") for r in sent])
         except Exception:  # noqa: BLE001 - the ledger must not stop the clean-up below
             pass
-        copy.close()
+        # 0.15.7: every connection to the copy, in every thread (also the ones open_project keeps), or Windows
+        # keeps the copy: its database is open
+        copy.close_all()
+        home.close_project(copy.root)
         shutil.rmtree(copy.root, ignore_errors=True)
-        try:
-            q = home._quicklooks()
-            q.pop(name, None)
-            home._save_quicklooks(q)
-        except Exception:  # noqa: BLE001
-            pass
+        if not copy.root.exists():  # 0.15.7: still there (a file held): moved to the trash later, as a quick look
+            try:
+                q = home._quicklooks()
+                q.pop(name, None)
+                home._save_quicklooks(q)
+            except Exception:  # noqa: BLE001
+                pass

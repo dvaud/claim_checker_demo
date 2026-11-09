@@ -1,5 +1,96 @@
 # Changelog
 
+## 0.15.7 (November 2026): documents moved to the new reader from the Documents page
+
+Two things from using 0.15 on a real project. A document read by an earlier reader could only be moved to the new
+reader one at a time, from its own page. And a document marked *something to check in its reading* kept that mark for
+good, with no way to see what to check or to say it was fine. Now the Documents page moves several documents at once,
+and each warning shows where to look and can be marked as checked. On Windows, removing a project failed once the app
+had opened it, and a Claude Code run left going was recognised by its process number alone. Both are fixed, and the
+whole test suite now runs to the end on Windows, which is how the first was found. Results change only for the
+documents you move, as with 0.15's move of one document.
+
+### New
+
+- **Read several documents with the new reader, from the Documents page.** Above the list, a note says how many
+  documents an earlier reader read, with **Read all with the new reader** (or *Read the selected with the new
+  reader*, when you tick some). They are moved one after the other, each as *Read with the new reader* does on its
+  own page. A document moves only when every result in it finds its place; one where any would not, or one that
+  cannot be read again now (its file missing or changed, Claude Code working on it), is left as it was. The note
+  afterwards says how many moved and lists those left, with the reason, each linked to its page, where the preview
+  shows what would be lost. You can work on meanwhile, or stop it: documents already moved stay moved. **Can change
+  results** for the documents moved, as moving one does.
+- **The mark in the list opens the preview.** *read before 0.15*, and now *read by an earlier reader* for documents of
+  0.15.0's reader, opens the document's *Reading* panel with the preview of the move already started.
+- **Something to check, then checked.** In the *Reading* panel each warning takes you to what it is about: *Look at
+  the pages* opens the page of the original beside the text, *Show what was left out* unfolds the text set aside.
+  **Checked: it reads well enough** takes the mark off the list of documents; the panel says who checked it and when,
+  and *Undo* takes it back. A new reading of the document asks again.
+
+### Fixed
+
+- **Windows: removing a project.** *Remove this project* answered with an error once the project had been opened in
+  the app: Windows does not let a folder be moved while a file in it is open, and the project's database stayed open.
+  Each of the app's threads opened its own connection to it, and one whose thread had ended was closed only later, by
+  Python's garbage collector. Now every connection is closed first, and the folder is moved in one step (before, a
+  failed move could copy part of it and leave the rest). The same fault kept quick looks past their week, left the
+  scratch copies of *Compare with another model* and of the model tests in the list of projects, and stopped `enlens
+  measure --ws` with "being used by another process". If a file stays held (a sync tool, an antivirus check), ENLENS
+  says so in words, and a quick look is tried again later instead of staying a project for good.
+- **Windows: Claude Code's ENLENS connector no longer holds projects open** between its calls, so a project it read
+  can be removed in the app while Claude Code runs.
+- **Windows: a Claude Code run left going is recognised by its command line**, as on macOS and Linux. It was
+  recognised by its process number alone, so a record of a run that had ended, whose number Windows had since given
+  to another program, counted as a run: the app showed Claude Code working, and *Stop* could end that other program.
+- **Windows: each line of two files ENLENS writes ends once.** The command file the ENLENS icon falls back to without
+  PowerShell (`ENLENS.cmd`) and the file that signs in to Claude Code had every line ending doubled.
+
+### For developers
+
+- `store.Workspace.close_all()` closes every connection to a project, in every thread: connections are `_Cx` (a
+  subclass that can be weakly referenced), kept in a `WeakSet`, opened with `check_same_thread=False` only so another
+  thread can close them; a thread that uses the project afterwards opens a new one (a generation counter).
+  `home.close_project(path)` does it for the copy `open_project` keeps; `home.release_open_projects()` closes this
+  thread's connections to all of them (the connector, after each call, on Windows). `home.move_folder()` renames (all
+  or nothing), tries again on Windows for a few seconds, then raises `home.FolderInUse` (409 from `DELETE
+  /api/projects/<p>`). Used by `remove_project`, `taskqueue.answer_on_copy` and `measure.measure_project`.
+- `procs.windows_command_line(pid)` (`NtQueryInformationProcess`, `ProcessCommandLineInformation`) for
+  `claude_setup._pid_runs_enlens`: None when the process has ended (a handle still held keeps its number) or is
+  another user's.
+- `reread.move(..., keep_all=True)` raises `reread.WouldLose` (with the report) before anything is written;
+  `App.start_new_reader_many` (job kind `new_reader`), `POST /api/projects/<p>/new-reader` `{"doc_ids"?}`; `PUT
+  …/documents/<id>/reading-checked` `{"checked"}`, kept in `reading_json` as `checked`; `reader.warning_place()` and
+  the document's `reading.places`; the list of documents gives `new_reader` and each document's `reading_checked`
+  (`docs/API.md`).
+
+### Tests
+
+- `tests/test_0_15_7_documents_reading.py`: a move with `keep_all` that would lose a result changes nothing; several
+  documents moved from the API (the one with a result that would be lost kept, with the reason; a second run reads
+  only it), only the chosen ones, a bad `doc_ids`; a reading marked as checked and unmarked (the list and the
+  document say so; 409 before 0.15; 404); each warning's place; the page's wiring; `close_all` closing another
+  thread's connection; a project used by another thread moved to the trash; the connector's release; on Windows, the
+  command line of a process, a folder with a file held open left whole, and the `.cmd` file's line endings.
+- **The test suite on Windows.** Its run used to stop part way (a test recording its own process number as a run had
+  pytest ended); now it runs to the end, and the 20 failures that showed were fixed: the project folders above, the
+  line endings, and tests that assumed macOS or Linux (paths with `/`, an empty environment variable, which Windows
+  drops, a restart that is a new process on Windows, theme tests whose corpus Windows wrote with `\r\n`, so with other
+  document ids and another passage order). The stand-in model server counts a dropped connection however the system
+  reports it (Windows: `ConnectionAbortedError`). The macOS run passes too (the restart test now says why when it
+  fails, and waits a minute). So the macOS and Windows jobs of `tests.yml` are no longer advisory: a failure there
+  fails the run, as on Linux.
+- The new parts were tried in Chromium on the dev server's *Reading* project: a document whose result would be lost
+  is kept and listed, the preview opens from the list, a reading is marked as checked and the list mark goes away.
+
+### Not yet done
+
+- Moving many documents at once was tried on the dev server's documents and in tests, not on a large real project:
+  it reads one original file after another, a few seconds per PDF.
+- The Windows fixes were tried on GitHub's Windows machine, not on your PC, and not with a real Claude Code window.
+- Themes by words can still differ between Windows and macOS in a rare near tie: Windows' `log` differs in the last
+  digit for a few numbers. Not seen to change a theme.
+- Still open from 0.15.0: in a shared project, a colleague's older reading of a document comes in as a second copy.
+
 ## 0.15.6 (November 2026): Ollama installed from the app
 
 The card for a model on this computer promised "no terminal", but its first step sent people to ollama.com, whose

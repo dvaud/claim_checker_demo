@@ -1040,3 +1040,8 @@ span.passage-broken > span.passage-heading { font-weight: 650; }
 @keyframes release-note-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .release-note { animation: none; } }
 @media (max-width: 480px) { .release-note { left: 16px; right: 16px; width: auto; } }
+/* 0.15.7: documents read by an earlier reader, moved from the Documents page */
+.nr-box { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.nr-box[hidden] { display: none; }
+.nr-kept { margin: 0; padding-left: 1.1em; }
+.nr-kept li + li { margin-top: 2px; }

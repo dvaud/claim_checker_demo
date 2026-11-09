@@ -1327,10 +1327,23 @@ def _empty(new_doc) -> str | None:
     return None
 
 
-def move(ws: Workspace, doc_id: str, person_id: str | None = None, ocr=None, should_stop=None) -> dict:
+class WouldLose(ValueError):
+    """0.15.7: `move(..., keep_all=True)` left the document as it was, because some of its results would find no place
+    in the new reading; `report` is what the move would have done (as `preview` gives it)."""
+
+    def __init__(self, report: dict):
+        n = len(report.get("not_placed") or [])
+        super().__init__(f"{n} of its results would not find their place in the new reading. See which on the "
+                         "document's page (Reading), then move it from there.")
+        self.report = report
+
+
+def move(ws: Workspace, doc_id: str, person_id: str | None = None, ocr=None, should_stop=None,
+         keep_all: bool = False) -> dict:
     """Read the document with the new reader and move every result to the same words in the new text, in one
     transaction: on any error nothing changes. Raises ValueError (in words for a researcher) when it cannot be done
-    now (see `check`). Returns the report:
+    now (see `check`); with `keep_all` (0.15.7, moving several documents at once), WouldLose when any result would
+    find no place, and nothing changes. Returns the report:
 
     {"doc_id", "title", "reader" (before), "new_reader", "ok": True, "reason": None, "moved": True,
      "counts": {kind: {"moved": n, "not_placed": n, "left_out": n (of the moved)}} for the kinds of result found
@@ -1365,6 +1378,8 @@ def move(ws: Workspace, doc_id: str, person_id: str | None = None, ocr=None, sho
         if new_doc.raw.sha1 != want:  # the file changed between its check and its reading
             raise ValueError("The original file changed while it was being read. Nothing was changed; try again.")
         plan, info = _plan(ws, cx, doc_id, new_doc)
+        if keep_all and info["report"].get("not_placed"):
+            raise WouldLose(info["report"])  # before anything is written: the transaction has nothing to undo
         _apply(ws, cx, doc_id, plan, info, new_doc, who)
     report = info["report"]
     report["moved"] = True

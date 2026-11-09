@@ -177,7 +177,8 @@ def test_exported_files_of_each_format():
 
     fmt, works = b.parse_file("export.txt", RIS)
     assert fmt == "ris" and [w["year"] for w in works] == ["2025", "2024"]
-    assert works[0]["files"][0]["path"] == "/Users/me/Zotero/storage/ABCD1234/paper.pdf" and works[0]["key"] == "ris:7"
+    # a file:// address becomes a path of this computer (on Windows with backslashes)
+    assert works[0]["files"][0]["path"] == str(Path("/Users/me/Zotero/storage/ABCD1234/paper.pdf")) and works[0]["key"] == "ris:7"
     assert works[0]["container"] == "Journal of Work and Society"
     assert works[1]["title"] == "Commuting less, emitting less? A survey of 4,000 workers"  # a line continued
     assert works[1]["doi"] == "10.5555/rmi.2024.12" and works[1]["creators"][0]["name"] == "Rivermouth Mobility Institute"

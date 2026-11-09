@@ -494,7 +494,7 @@ class App:
             d.update(acc.get(d["doc_id"], {}))
             d["bib"] = cites.get(d["doc_id"])
             d["clash"] = clash.get(d["doc_id"])
-        return {"documents": docs, "ai_access": access.project_info(ws),
+        return {"documents": docs, "ai_access": access.project_info(ws), "new_reader": ingest.READER,  # 0.15.7
                 "restricted_model": home.restricted_choice(s),
                 "search": embed.status(ws, s.get("embed_model"),
                                        home.make_embedder(s))}
@@ -1332,6 +1332,83 @@ class App:
 
         return self.jobs.start("reread", f"Reading “{title[:60]}” with the new reader", name, run, uses_model=False)
 
+    def start_new_reader_many(self, name: str, doc_ids: list[str], person: str) -> Job:
+        """0.15.7: several documents moved to the new reader in one job, from the Documents page, each all or nothing
+        (reread.move). A document where any result would find no place is left as it is (`keep_all`), and so is one
+        that cannot be read again now; both are listed with the reason, to be moved from their own page after its
+        preview. Then, once for all of them, what adding documents does (search by meaning, glossary, codes)."""
+        from .. import reread
+
+        ws = self.ws(name)
+        s = self.settings()
+        titles = {r["doc_id"]: r["title"] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
+
+        def run(job: Job):
+            moved, kept = [], []
+            for i, doc_id in enumerate(doc_ids):
+                if job.cancel.is_set():
+                    break
+                title = titles.get(doc_id, "")
+                job.progress = {"done": i, "total": len(doc_ids), "file": title, "phase": "reading"}
+                try:
+                    r = reread.move(ws, doc_id, person, keep_all=True)
+                except reread.WouldLose as e:
+                    kept.append({"doc_id": doc_id, "title": title, "reason": str(e),
+                                 "not_placed": len(e.report.get("not_placed") or [])})
+                    continue
+                except ValueError as e:  # it cannot be read again now: in words for a researcher
+                    kept.append({"doc_id": doc_id, "title": title, "reason": str(e)})
+                    continue
+                except Exception as e:  # noqa: BLE001 - one document's fault does not stop the others; nothing changed
+                    traceback.print_exc()
+                    kept.append({"doc_id": doc_id, "title": title, "reason": f"It could not be read again ({e}). "
+                                 "Nothing was changed."})
+                    continue
+                moved.append({"doc_id": doc_id, "title": title,
+                              "results": sum(c.get("moved", 0) for c in (r.get("counts") or {}).values()),
+                              "left_out": len(r.get("left_out") or [])})
+            job.progress = {"done": len(moved) + len(kept), "total": len(doc_ids), "file": "", "phase": "reading"}
+            stats = {"moved": moved, "kept": kept, "stopped": job.cancel.is_set()}
+            if moved:  # the moves are kept even when the job is stopped: each was complete on its own
+                emb = home.make_embedder(s)
+                if emb is not None and not job.cancel.is_set():
+                    job.progress = {"done": 0, "total": 0, "file": "", "phase": "embedding"}
+                    try:
+                        stats["semantic_index"] = embed.build(ws, emb, progress=lambda d, n: job.progress.update(
+                            done=d, total=n), should_stop=job.cancel.is_set)
+                    except BackendError as e:
+                        stats["semantic_index_error"] = str(e)
+                if not job.cancel.is_set():
+                    self._after_adding(ws, job, stats, [m["doc_id"] for m in moved], s)
+            return stats
+
+        n = len(doc_ids)
+        return self.jobs.start("new_reader", f"Reading {n} {'document' if n == 1 else 'documents'} with the new reader",
+                               name, run, uses_model=False)
+
+    def set_reading_checked(self, name: str, doc_id: str, checked: bool) -> dict:
+        """0.15.7: the person looked at what a document's reading report asks them to check and found the reading good
+        enough (or takes that back). Kept in the reading report itself, so a new reading of the document asks again."""
+        from .. import people
+
+        ws = self.ws(name)
+        with ws.connect() as cx:
+            row = cx.execute("SELECT reading_json FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
+            if row is None:
+                raise ApiError(404, "No such document.")
+            try:
+                rep = json.loads(row[0]) if row[0] else {}
+            except ValueError:
+                rep = {}
+            if not rep:
+                raise ApiError(409, "This document has no reading report to mark: it was read before 0.15.")
+            if checked:
+                rep["checked"] = {"by": people.me(), "name": people.my_name(), "at": _now()}
+            else:
+                rep.pop("checked", None)
+            cx.execute("UPDATE documents SET reading_json=? WHERE doc_id=?", (json.dumps(rep, ensure_ascii=False), doc_id))
+        return {"checked": rep.get("checked")}
+
     def start_index(self, name: str) -> Job:
         ws = self.ws(name)
         emb = home.make_embedder(self.settings())
@@ -1939,6 +2016,9 @@ def reading_report(ws, doc_id: str, raw: str | None, reader: int) -> dict:
     except ValueError:
         rep = {}
     if rep:
+        from .. import reader as reader2
+
+        rep["places"] = [reader2.warning_place(w) for w in rep.get("warnings") or []]  # 0.15.7: not stored
         return rep
     n = ws.query("SELECT n_pages, ocr_pages, scanned_pages FROM documents WHERE doc_id=?", (doc_id,))[0]
     sec = {r[0]: r[1] for r in ws.query("SELECT section, COUNT(*) FROM passages WHERE doc_id=? GROUP BY section",
@@ -2149,6 +2229,8 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("PUT", rf"/api/projects/{P}/documents/{P}/bounds", "put_bounds"),
     ("GET", rf"/api/projects/{P}/documents/{P}/reread", "get_reread"),
     ("POST", rf"/api/projects/{P}/documents/{P}/reread", "post_reread_document"),
+    ("POST", rf"/api/projects/{P}/new-reader", "post_new_reader_many"),
+    ("PUT", rf"/api/projects/{P}/documents/{P}/reading-checked", "put_reading_checked"),
     ("GET", rf"/api/projects/{P}/documents/{P}/pages/{P}\.png", "get_page_image"),
     ("GET", rf"/api/projects/{P}/documents/{P}/tables/{P}\.xlsx", "get_table_export"),
     ("POST", rf"/api/projects/{P}/uploads", "post_upload"),
@@ -2726,7 +2808,10 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "Confirm by sending the project's name as 'confirm'.")
         if name not in home.list_projects():
             raise ApiError(404, f"No project called {name!r}.")
-        return {"result": home.remove_project(name)}
+        try:
+            return {"result": home.remove_project(name)}
+        except home.FolderInUse as e:  # 0.15.7 (Windows): said in words, not "something went wrong"
+            raise ApiError(409, str(e)) from None
 
     def get_documents(self, name, q):
         return self.app.documents(name)
@@ -2878,6 +2963,37 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(409, f"Wait until “{busy[0].title}” has finished in this project, then read the document "
                                 "with the new reader.")
         return {"job": self.app.start_new_reader(name, doc_id, people.me()).view()}
+
+    def post_new_reader_many(self, name, q):
+        """0.15.7: read several documents with the new reader at once (the Documents page): `doc_ids`, or every
+        document an earlier reader read. Each moves only when all its results find their place."""
+        from .. import people
+
+        ws = self.app.ws(name)
+        body = self._body()
+        older = [r["doc_id"] for r in ws.query("SELECT doc_id FROM documents WHERE COALESCE(reader, 1) < ? "
+                                               "ORDER BY title", (ingest.READER,))]
+        ids = body.get("doc_ids")
+        if ids is not None:
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                raise ApiError(400, "doc_ids must be a list of document ids.")
+            ids = [i for i in older if i in set(ids)]
+        else:
+            ids = older
+        if not ids:
+            raise ApiError(409, "Every document here was read by the current reader already: there is nothing to do.")
+        busy = [j for j in self.app.jobs.jobs.values() if j.project == name and j.state in ("queued", "running")]
+        if busy:
+            raise ApiError(409, f"Wait until “{busy[0].title}” has finished in this project, then read the documents "
+                                "with the new reader.")
+        return {"job": self.app.start_new_reader_many(name, ids, people.me()).view()}
+
+    def put_reading_checked(self, name, doc_id, q):
+        """0.15.7: mark a document's reading as checked by the person (`checked`: true), or take that back."""
+        body = self._body()
+        if not isinstance(body.get("checked"), bool):
+            raise ApiError(400, "checked must be true or false.")
+        return self.app.set_reading_checked(name, doc_id, body["checked"])
 
     def get_page_image(self, name, doc_id, n, q):
         """The page of the original PDF as a picture (pypdfium2, from the OCR extra), to set beside the text."""

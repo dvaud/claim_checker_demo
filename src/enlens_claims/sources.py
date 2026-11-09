@@ -184,7 +184,9 @@ def _reading_summary(raw: str | None) -> dict:
         rep = json.loads(raw) if raw else {}
     except ValueError:
         rep = {}
-    return {"reading_quality": rep.get("quality"), "reading_warnings": rep.get("warnings") or []}
+    # 0.15.7: a reading the person looked at and found good enough no longer asks for a look in the list
+    return {"reading_quality": rep.get("quality"), "reading_warnings": rep.get("warnings") or [],
+            "reading_checked": bool(rep.get("checked"))}
 
 
 _SHA1S: dict[tuple, str] = {}  # checksums of original files, by (path, modified, size)

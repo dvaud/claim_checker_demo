@@ -1344,6 +1344,20 @@ def finish_report(report: dict, blocks: list[Block], passages, text: str, raw_ki
     return out
 
 
+# 0.15.7: where to look for each warning of a reading report, so the Reading panel can take the person there
+# ("page": the pages of the original, beside the text; "left_out": what the reader set aside, shown in the text).
+# Matched on the words finish_report and reader3.report_warnings write, which reports already stored use too.
+WARNING_PLACES = (("look scanned", "page"), ("recognised from their image", "page"),
+                  ("text layer is garbled", "page"), ("counts as the document's own text", "left_out"),
+                  ("No passage of this document is used", "left_out"))
+
+
+def warning_place(warning: str) -> str | None:
+    """Where the person can see what a reading report's warning is about ("page", "left_out"), or None when the
+    warning is advice with nothing to look at (add the PDF instead of a copied text, say)."""
+    return next((place for words, place in WARNING_PLACES if words in warning), None)
+
+
 # ------------------------------------------------------------------------------------------------------------------
 # a person's corrections (A4: Restore, Leave out)
 # ------------------------------------------------------------------------------------------------------------------

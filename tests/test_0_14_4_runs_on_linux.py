@@ -5,10 +5,10 @@ Code run of ENLENS (its command line holds the slash command). On Linux, `ps` cu
 writes to a pipe, and Claude Code's command line starts with a long path, so the slash command was cut off and a run
 left going was not recognised: the reopened app could not stop it and would start a second one. 0.14.3's own test
 caught it on the release's Linux machine; this test does the same with a command line longer than 80 characters.
+Since 0.15.7 Windows checks the command line too (it checked the process number alone).
 """
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 
@@ -16,7 +16,7 @@ import pytest
 
 from enlens_claims import claude_setup
 
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="Windows reads the process list with tasklist")
+# 0.15.7: also on Windows, where the command line is read with NtQueryInformationProcess (procs.py)
 
 
 def test_a_run_with_a_long_command_line_is_recognised(tmp_path):

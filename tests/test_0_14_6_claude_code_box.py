@@ -17,7 +17,7 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -52,7 +52,7 @@ def test_the_options_are_read_from_claude_codes_help_once(cs, monkeypatch):
     assert cs.known_options(FAKE) == ALL and len(calls) == 1   # read once for this program file
     assert cs.known_options("/no/such/claude") == set()
     monkeypatch.setattr(cs, "_OPTIONS", {})
-    monkeypatch.setenv("FAKE_CLAUDE_OPTIONS", "")
+    monkeypatch.setenv("FAKE_CLAUDE_OPTIONS", "none")  # 0.15.7: not "": Windows drops a variable set to nothing
     assert cs.known_options(FAKE) == set()                      # an older Claude Code
 
 
@@ -160,7 +160,7 @@ def test_the_windows_sign_in_script_goes_to_the_empty_folder_first(cs, monkeypat
 
 
 def test_the_line_to_type_goes_to_the_empty_folder_first(cs):
-    assert cs.sign_in_line(Path("/Users/a b/enlens/claude-runs/sign-in"), windows=False) == \
+    assert cs.sign_in_line(PurePosixPath("/Users/a b/enlens/claude-runs/sign-in"), windows=False) == \
         "cd '/Users/a b/enlens/claude-runs/sign-in' && claude"
     assert cs.sign_in_line(Path(r"C:\Users\O'Brien\enlens\claude-runs\sign-in"), windows=True) == \
         r"cd 'C:\Users\O''Brien\enlens\claude-runs\sign-in'; claude"

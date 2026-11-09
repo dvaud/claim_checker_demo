@@ -485,13 +485,14 @@ def _pid_runs_enlens(pid: int) -> bool:
     since)."""
     if pid <= 0:
         return False
-    if os.name == "nt":
+    if os.name == "nt":  # 0.15.7: by its command line, as below (it was the number alone, from tasklist)
+        from .procs import windows_command_line
+
         try:
-            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True,
-                               errors="replace", timeout=15, **no_window())
-        except (OSError, subprocess.SubprocessError):
+            cmd = windows_command_line(pid)
+        except (OSError, AttributeError, ValueError):
             return False
-        return str(pid) in (r.stdout or "")
+        return cmd is not None and SLASH in cmd
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -841,7 +842,8 @@ def _sign_in_script(claude: str, work: Path | None = None, options: set[str] | N
                      "Write-Host 'It runs in an empty folder of ENLENS and cannot open your files.'\r\n"
                      f"Set-Location -LiteralPath {q(work)}\r\n"
                      f"& {' '.join(q(x) for x in [claude, *box])}\r\n",
-                     encoding="utf-8-sig")  # 0.14.3: Windows PowerShell 5.1 reads a file without a BOM as ANSI
+                     encoding="utf-8-sig", newline="")  # 0.14.3: Windows PowerShell 5.1 reads a file without a BOM
+        # as ANSI; 0.15.7: newline="" keeps "\r\n" as written (Windows made it "\r\r\n")
         return p
     import shlex
 

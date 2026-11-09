@@ -267,3 +267,6 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .dv-pbox { position: absolute; padding: 0; margin: 0; background: transparent; border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); border-radius: 2px; cursor: pointer; }
 .dv-pbox-out { border-style: dashed; border-color: color-mix(in srgb, #8a8a8a 80%, transparent); }
 .dv-pbox:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* 0.15.7: a reading marked as checked by the person */
+.dv-checked { margin: 0 0 10px; }
+.dv-warn .link-btn { white-space: nowrap; }

@@ -707,7 +707,9 @@ def test_the_icon_starts_one_copy_without_a_terminal_and_quit_stops_it(home, tmp
     assert "--launcher" in script and "--local-only" in script and str(tmp_path / "data") in script and "&" in script
     lin = launcher.make_launcher(None, False, [tmp_path / "lin"], python=sys.executable, platform="linux")[0]
     entry = lin.read_text()
-    assert "Terminal=false" in entry and "enlens_claims.gui.launch --launcher" in entry and sys.executable in entry
+    # (a menu entry doubles backslashes: a Windows path, when this runs on Windows)
+    assert "Terminal=false" in entry and "enlens_claims.gui.launch --launcher" in entry and \
+        (sys.executable in entry or sys.executable.replace("\\", "\\\\") in entry)
     win = launcher.make_launcher(None, False, [tmp_path / "win"], python=sys.executable, platform="win32")[0]
     assert win.suffix in (".lnk", ".cmd") and (win.suffix == ".lnk" or "--launcher" in win.read_text())
     assert launcher.draw_icon(64) is None or launcher.draw_icon(64).size == (64, 64)

@@ -5,6 +5,7 @@ import datetime as _dt
 import json
 import sqlite3
 import threading
+import weakref
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -330,6 +331,10 @@ def now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
 
 
+class _Cx(sqlite3.Connection):
+    """0.15.7: a connection a workspace can keep track of (a plain sqlite3.Connection cannot be weakly referenced)."""
+
+
 class Workspace:
     """One project folder. Connections are kept per thread and reused; `connect()` is one transaction.
 
@@ -342,6 +347,13 @@ class Workspace:
         self.config_path = self.root / "config.json"
         self._local = threading.local()
         self._config_cache: tuple[tuple, dict] | None = None
+        # 0.15.7: every connection opened to this project, in any thread, so `close_all` can close them before the
+        # folder is moved or removed. A thread's connection is not closed when the thread ends (a connection holds
+        # a reference to itself, so only the garbage collector frees it), and on Windows an open database file cannot
+        # be moved or deleted: removing a project, a quick look or a scratch copy failed there.
+        self._all: weakref.WeakSet = weakref.WeakSet()
+        self._all_lock = threading.Lock()
+        self._gen = 0
 
     # ---- lifecycle -------------------------------------------------------------------------
     @classmethod
@@ -383,11 +395,17 @@ class Workspace:
 
     def _conn(self) -> sqlite3.Connection:
         cx = getattr(self._local, "cx", None)
+        if cx is not None and getattr(self._local, "gen", 0) != self._gen:
+            cx = None  # 0.15.7: closed by close_all; a new one if this thread goes on using the project
         if cx is None:
-            cx = sqlite3.connect(self.db_path, timeout=60, isolation_level=None)  # transactions are ours, see connect()
+            # transactions are ours, see connect(); check_same_thread=False only lets close_all close it from another
+            # thread: each connection is still used by the thread that opened it alone
+            cx = sqlite3.connect(self.db_path, timeout=60, isolation_level=None, factory=_Cx, check_same_thread=False)
             cx.row_factory = sqlite3.Row
             cx.execute("PRAGMA synchronous=NORMAL")  # safe with WAL; much faster commits
-            self._local.cx, self._local.depth = cx, 0
+            self._local.cx, self._local.depth, self._local.gen = cx, 0, self._gen
+            with self._all_lock:
+                self._all.add(cx)
         return cx
 
     def close(self) -> None:
@@ -396,6 +414,18 @@ class Workspace:
         if cx is not None:
             cx.close()
             self._local.cx = None
+
+    def close_all(self) -> None:
+        """0.15.7: close every connection to this project, in every thread, before its folder is moved or removed (on
+        Windows an open database file cannot be). A thread that uses the project afterwards opens a new one."""
+        with self._all_lock:
+            cxs = list(self._all)
+            self._gen += 1
+        for cx in cxs:
+            try:
+                cx.close()
+            except sqlite3.Error:
+                pass
 
     @property
     def config(self) -> dict[str, Any]:

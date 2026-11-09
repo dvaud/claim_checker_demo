@@ -86,8 +86,13 @@ Changing what counts makes keyword codes, key terms and themes out of date, as a
 **Reading** (a panel beside the text) says how well the document was read: *Read well*, *Read, with something to
 check* or *Read badly*, with the reasons (pages without text, text recognised from scanned pages, a garbled text
 layer, most of the text set aside), how many pages had columns, what was repaired, the tables found, and how many of
-its passages the features read. *Show what was left out in the text* unfolds everything set aside. The list of
-documents marks the ones that need a look.
+its passages the features read. *Show what was left out in the text* unfolds everything set aside.
+
+The list of documents marks the ones that need a look (*something to check in its reading*, *read badly*). Each reason
+in the *Reading* panel takes you to what it is about: **Look at the pages** opens the *Page* panel, **Show what was
+left out** unfolds the text set aside. When you have looked and the text is good enough for your work, choose
+**Checked: it reads well enough**: the mark in the list goes away, and the panel says who checked it and when (*Undo*
+takes it back). A new reading of the document asks again.
 
 **Page** (beside the text, for PDFs, with the OCR extra the one-line install has) shows the page of the original PDF
 with every block the reader found outlined: solid for what counts, dashed for what was left out. It follows the text
@@ -95,7 +100,9 @@ as you scroll; click an outline to go to that block.
 
 ## Read with the new reader
 
-A document read by an older reader keeps that reading. Its *Reading* panel offers **Read with the new reader**:
+A document read by an older reader keeps that reading, and the list of documents marks it (*read before 0.15*, or
+*read by an earlier reader*). Its *Reading* panel offers **Read with the new reader** (the mark in the list opens it
+with the preview already started):
 
 ```mermaid
 flowchart LR
@@ -118,6 +125,12 @@ step, or not at all:
 
 It needs the original file, unchanged, and no task of the document out with Claude Code. In a project shared with
 colleagues, move a document on both copies: until then, a colleague's older reading comes in as a second copy of it.
+
+**Several at once.** Above the list of documents, **Read all with the new reader** (or *Read the selected with the new
+reader*, when you tick some) moves them one after the other. A document moves only when every one of its results finds
+its place; one where any would not, and one that cannot be read again now (its file is missing or changed, or Claude
+Code is working on it), is left as it was. The note afterwards lists them with the reason, each linked to its page,
+where the preview shows what would be lost. You can work on meanwhile, or stop it: documents already moved stay moved.
 
 ## Measuring how well ENLENS reads
 
