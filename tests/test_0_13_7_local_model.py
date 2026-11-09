@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import fake_servers
+from helpers import manual_text
 from enlens_claims import llm
 from enlens_claims.llm import BackendError, OllamaBackend
 from test_app import Api, api, home  # noqa: F401  (fixtures)
@@ -245,7 +246,7 @@ def test_page_files():
 def test_the_docs_say_so():
     api_md = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
     assert "POST /api/servers/pull" in api_md
-    manual = (ROOT / "docs" / "MANUAL.md").read_text(encoding="utf-8")
+    manual = manual_text()  # the hub and its pages
     assert "Download qwen3:8b" in manual
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")  # 0.14.0: the README keeps only the newest series
     assert "**A model on this computer, without a terminal.**" in changelog

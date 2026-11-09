@@ -20,7 +20,8 @@ statement, with every quote checked against the source, on their own computer an
    [Install-ENLENS-Windows.cmd](https://github.com/dvaud/claim_checker_demo/releases/latest/download/Install-ENLENS-Windows.cmd)
    on Windows,
    [Install-ENLENS-macOS.zip](https://github.com/dvaud/claim_checker_demo/releases/latest/download/Install-ENLENS-macOS.zip)
-   on a Mac. Windows and macOS ask you to allow it the first time: [how](docs/MANUAL.md#1-install).
+   on a Mac. Windows and macOS ask you to allow it the first time:
+   [how](docs/manual/install.md#or-download-a-file-and-double-click-it).
 2. **Press *Set up Claude*** on the first screen. It installs Claude Code if it is missing (it shows you the command
    first), opens a window where you sign in once with your Claude plan, and connects ENLENS to it.
 3. **Name a project and add your documents** (PDF, Word, web pages, text, or a zip of them). ENLENS asks who may read
@@ -29,7 +30,7 @@ statement, with every quote checked against the source, on their own computer an
 
 No Claude plan? Choose *A model on this computer* on the first screen. Used ENLENS on another computer? Choose
 *Import from another computer*. Installing it for someone else, and every option:
-[section 1 of the manual](docs/MANUAL.md#1-install).
+[Install and update](docs/manual/install.md) in the manual.
 
 ## Update
 
@@ -42,17 +43,17 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 
 ## What ENLENS does
 
-- **[Explore your documents](docs/MANUAL.md#exploring-the-documents-07)** before you claim anything: every place a word
+- **[Explore your documents](docs/manual/explore.md)** before you claim anything: every place a word
   occurs, the codes each document addresses (the SDG targets or your own codebook), a glossary, themes, references.
-- **[Check a statement against them](docs/MANUAL.md#checking-a-hypothesis)**: supported, partly supported,
+- **[Check a statement against them](docs/manual/check.md)**: supported, partly supported,
   contradicted or mixed evidence, with the words of each source and every quote checked against the source text.
-- **[Review the AI's judgements](docs/MANUAL.md#reading-and-reviewing-a-result)** as you would a co-coder's: your
+- **[Review the AI's judgements](docs/manual/review.md)** as you would a co-coder's: your
   judgements count, and the Excel download keeps them next to the AI's.
-- **[Keep your bibliography beside your documents](docs/MANUAL.md#the-bibliography-zotero-013)**: bring in a Zotero
+- **[Keep your bibliography beside your documents](docs/manual/bibliography.md)**: bring in a Zotero
   collection or a reference file, and see which works you have and which you still need to find.
-- **[Use a model on your own computer](docs/MANUAL.md#5-local-models)**, or no AI for some documents; whoever installs
+- **[Use a model on your own computer](docs/manual/local-models.md)**, or no AI for some documents; whoever installs
   ENLENS can remove every cloud option for good (`--local-only`).
-- **[The SDG and value chain pack](docs/MANUAL.md#9-the-sdg-pack-impact-claims-and-the-value-chain-assessment)**:
+- **[The SDG and value chain pack](docs/manual/sdg-pack.md)**:
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 ## New in 0.15: text you can check, and results you can trace
@@ -69,7 +70,7 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **Results say which version made them**, and the Overview says which came from an earlier one. *Try new versions
   early* in Settings gets you release candidates. Neither can change results.
 
-How it works: [how documents are read](docs/MANUAL.md#how-documents-are-read-015) in the manual. Every release, with
+How it works: [how documents are read](docs/manual/reading.md) in the manual. Every release, with
 what was not tested: [CHANGELOG.md](CHANGELOG.md).
 
 ## How to cite ENLENS
@@ -90,15 +91,15 @@ shared installation switched it on), and only from documents marked *Claude may 
 it sends (*Sent to Claude* on the *Documents* page). Claude Code, as ENLENS starts it, has no tool that can open your
 files, so those passages are all it sees. To keep a document from Claude, mark it *Only a local AI* or *No
 AI*. To keep everything on the computer, choose *A model on this computer* in *Settings → AI*, or put
-`ENLENS_LOCAL_ONLY=1` before the install line, which removes every cloud option for good. Apart from the AI you chose
+`ENLENS_LOCAL_ONLY=1` before `sh` in the install line, which removes every cloud option for good. Apart from the AI you chose
 and looking for a new version on GitHub, ENLENS sends nothing anywhere and has no telemetry; bringing in a colleague's
 work only reads the file they sent you. The details, and what Anthropic's terms say for each plan, are in
-[section 8 of the manual](docs/MANUAL.md#8-privacy-and-copyright).
+[Privacy](docs/manual/privacy.md) in the manual.
 
 ## Documentation
 
-- [The manual](docs/MANUAL.md): the app, the command line, the connector for the Claude app, local models, privacy
-  and the SDG pack.
+- [The manual](docs/MANUAL.md): a one-page start, then a short page per task: the app, Claude Code, local models,
+  privacy, the command line and the SDG pack.
 - [Which model each task needs](docs/MODEL_CHOICE.md): how the models are chosen, and (once made) the runs on the pilot.
 - [The app's HTTP API](docs/API.md), for scripts and other programs.
 - Add-ons: [building an app on ENLENS](docs/EXTENDING.md), with an add-on's own [manual](docs/ADDON_MANUAL.md) and

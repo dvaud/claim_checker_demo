@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from test_app import api, home  # noqa: F401  (fixtures)
+from helpers import manual_text
 
 from enlens_claims import access, claimcheck, prompts, store
 from enlens_claims.store import Workspace
@@ -70,9 +71,9 @@ def test_check_citations_is_gone():
     # the Overview's compact row is as in 0.13.6 (three cards)
     assert ".ov-grid-small { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }" in \
         (STATIC / "v09.css").read_text(encoding="utf-8")
-    for doc in ("docs/API.md", "docs/MANUAL.md"):
-        assert "/citations" not in (ROOT / doc).read_text(encoding="utf-8")
-        assert "Checking citations" not in (ROOT / doc).read_text(encoding="utf-8")
+    for text in ((ROOT / "docs" / "API.md").read_text(encoding="utf-8"), manual_text()):
+        assert "/citations" not in text
+        assert "Checking citations" not in text
 
 
 def test_a_project_that_used_check_citations_keeps_its_data(api, home, corpus):  # noqa: F811

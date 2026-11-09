@@ -20,7 +20,7 @@ Because the install is editable (`-e`), the app runs the code in that folder: `e
 and reinstalls only when its requirements changed. Then open ENLENS from its icon: an older version still running is
 quit and the new one started (0.10.2), and if something still runs in it, the page says to quit and reopen. Run it as
 `~/enlens-app/.venv/bin/enlens update` if the venv is not active. The optional extras (`fast`, `anthropic`, `ocr`,
-`pdfminer`, `dev`) are in [section 1 of the manual](MANUAL.md#1-install).
+`pdfminer`, `dev`) are in [the manual](manual/install.md#from-a-git-copy-developers).
 
 ENLENS is installed in three ways (`installation.py`): a git copy, the one-line install (`install/install.sh` and
 `install/install.ps1`: uv and the release's wheel) and, later, packages. A release has to work for all three: a normal
@@ -105,7 +105,8 @@ Outside `src/enlens_claims/`: `install/install.sh` and `install/install.ps1` are
 `.github/workflows/release.yml` turns a tag `vX.Y.Z` into a draft GitHub Release with `tools/release.py` (below);
 `tools/pdf_to_text.py` turns a folder of PDFs into page-preserving text files; `tools/arxiv_truth.py` downloads a fixed
 list of open-access arXiv papers with the text of their LaTeX source, for `enlens measure --folder`; `tools/eval_second_pass.py` measures the
-second sorting pass on the pilot; `tools/make_icons.py` draws the icon files. The green hydrogen pilot (workspace,
+second sorting pass on the pilot; `tools/make_icons.py` draws the icon files; `tools/manual_screenshots.py` takes the
+manual's pictures (*The manual*, below). The green hydrogen pilot (workspace,
 report, run notes) is in `pilot/`. The app's HTTP API is in [API.md](API.md); building an app on ENLENS without
 editing its files is in [EXTENDING.md](EXTENDING.md).
 
@@ -119,10 +120,10 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   draft GitHub Release. Publish
   the draft by hand; never make a release by hand, which would lack the files the install line needs.
 - The `CHANGELOG.md` entry (what changed and why, the defects fixed, the tests added, and *Not yet done*) becomes the
-  release notes. Update `docs/MANUAL.md` where behaviour changed and `docs/API.md` for new routes.
+  release notes. Update the manual where behaviour changed (*The manual*, below) and `docs/API.md` for new routes.
 - Each release updates `gui/static/whats-new.md` (`# X.Y.Z: Title`, `*subtitle*`, then a few extremely short points,
   one `-` line each). The app shows it once, after an update, when its version matches the running one.
-- Update the README as the next section says.
+- Update the README and the manual as the last two sections say.
 - **Release candidates (0.15).** The roadmap gives every minor release a release candidate, in use for at least a
   week: `0.15.0rc1` in `pyproject.toml`, `__init__.py` and a `## 0.15.0rc1` changelog entry, tagged `v0.15.0rc1`.
   The workflow drafts it as a GitHub pre-release, which the install line and the app's *Update* never take (GitHub's
@@ -215,5 +216,98 @@ sync (`tools/sync_enlens.py` in Margin) keeps Margin's README and leaves ENLENS'
   (Once J1 is built, `release.py prepare` writes this section from the changelog.)
 - Touch the other sections only when the release changed what they describe. Take a new screenshot when the Overview
   looks different (`tools/dev_server.py --corpus social --claude-code`, Playwright at 1280 × 800).
-- Before committing, check that every link resolves (files and headings), that each *New in* bullet matches its
-  changelog entry, and that the README is still about 100 lines. (J2 item 6 makes CI check this later.)
+- Before committing, check that every link resolves (files and headings: `tests/test_manual.py` checks the README's
+  relative links), that each *New in* bullet matches its changelog entry, and that the README is still about 100
+  lines. (J2 item 6 makes CI check the rest later.)
+
+## The manual
+
+**Who it is for.** The researchers who use ENLENS, most of whom do not program; then whoever installs it for others;
+last, people who use the command line or the SDG pack. A reader comes with one question ("how do I check this?",
+"does Claude read my interviews?") and has a few minutes, not an hour: the manual is built so they find the page and
+can stop reading once they have their answer.
+
+**Its shape.** A hub and short pages, not one long file:
+
+- **`docs/MANUAL.md`, the hub.** What ENLENS is, a diagram of how it fits together, a five-minute start, the table of
+  pages (grouped: *Get going*, *Your work*, *The AI and your privacy*, *Reference*, *SDG pack*) and *I want to…* (a
+  task, and the page and heading that answers it). It holds no fact of its own beyond the five-minute start, and stays
+  under 1,200 words.
+- **`docs/manual/<topic>.md`, one page per task or question.** Each stays under 5,000 words (a test holds both
+  limits); a page that grows past it is split, and the new page goes into the hub's table. Every fact lives on one
+  page; other pages link to it rather than repeat it.
+
+| Page | Covers |
+| --- | --- |
+| `install.md` | The one-line install, the files to double-click, Tesseract, a git copy, updating, the icon |
+| `first-steps.md` | The first screen (*Set up Claude*, a project, documents), the sidebar and the rest of the app's frame |
+| `check.md` | Writing and checking a hypothesis, what a check does, the answers, parts, *Check several* |
+| `review.md` | The result page, excerpt cards and their actions, other AI models, downloads, *Results*, the map |
+| `explore.md` | Search, Profile, Concepts, Themes, a document's panels, Quick look, FlexiConc |
+| `reading.md` | The readers, the reading view, *Read with the new reader*, `enlens measure` |
+| `bibliography.md` | Zotero and exported bibliographies, the four lists, matching |
+| `together.md` | Shared projects, sync clashes, project zips, moving to another computer |
+| `privacy.md` | What leaves the computer, who may read each document with AI, enforcement, what Claude read |
+| `claude-code.md` | Setting up and starting Claude Code, speed and helpers, the queue; the connector for a Claude chat |
+| `local-models.md` | Getting, tuning and testing a model on this computer |
+| `models.md` | The model of each kind of task and of each Claude plan; what every answer records; results across versions |
+| `settings.md` | The five tabs, release candidates, reporting a problem, installing for others |
+| `glossary.md`, `troubleshooting.md` | Look-up pages: the words of the app; problems by topic, and the limits |
+| `command-line.md` | `enlens-gui`, `enlens` and the project's database |
+| `sdg-pack.md` | The SDG pack: its pipeline, report, configuration and tables |
+
+**The current version only.** The manual says what ENLENS does now; the changelog is the history. No version after a
+feature ("Themes (0.7)") and no "before, it …": when behaviour changes, the page is rewritten, not annotated. A
+version stays only where the reader's next step depends on it: a fix that needs a given version ("installers before
+0.15.2 misread …"), what happens to documents or results made before a version, or a promise ("from 0.16 on").
+
+**How a page is built**, in this order (the test checks the first three):
+
+1. The way back to the hub: `[Manual](../MANUAL.md) › <title>` on the first line.
+2. One `# Title`, in plain words.
+3. `> **In short**` with three bullets: what the page lets you do, and the one or two things a reader must not miss.
+   (The look-up pages, `glossary.md` and `troubleshooting.md`, have none.)
+4. Sections in the order a reader does things. Headings are plain words without versions: they are the anchors that
+   the hub, the README and other pages link to, so renaming one means updating its links (the test finds them).
+5. On the pages of the main path, a last line `Next: [<page> →](<page>.md)`, in the order of the hub's table.
+
+**Writing it.** Plain words that say what a thing does for the researcher, in UK spelling. Labels of the app in
+italics, exactly as the app writes them (*Set up Claude*); a word being defined in bold. Paragraphs of at most about
+five lines, wrapped at 120 characters. Then pick the form that fits what is said:
+
+| What is said | Form |
+| --- | --- |
+| A procedure | Numbered steps |
+| Things a reader compares or looks up (buttons and what they do, settings, options, problems and fixes) | A table |
+| A flow with branches, or between people or programs | A Mermaid diagram: at most about seven boxes, no colours of its own (GitHub draws it in the light and dark themes) |
+| Something a reader must not miss (privacy, losing work) | A callout, `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]`: at most two a page |
+| Exact rules, technical options, lists for specialists | Folded: `<details><summary>…</summary>` with a blank line after `<summary>` (never a step a reader needs) |
+| Reasons and context | Short prose |
+
+**Pictures.** The pictures are in `docs/images/manual/` and are made by `tools/manual_screenshots.py` from the dev
+server, never by hand, so they can always be made again. Each is embedded as
+`<img src="../images/manual/NAME.png" alt="what it shows" width="800">`. The hub's picture is the README's
+(`docs/images/overview.png`). When a release changes a screen that a picture shows, run the script and look at every
+picture it made:
+
+```bash
+~/.local/share/uv/tools/playwright/bin/python -I tools/manual_screenshots.py [--only result map]
+```
+
+(Any Python with Playwright and Chromium will do; the dev server itself runs in the project's `.venv`.) A new picture
+is a line in the script's `SHOTS` and a function `shot_<name>`. `result.png` carries numbered marks, and the table
+under it in `review.md` follows their order. The test fails for a picture that is missing, one that no page shows, or
+one over 300 KB. Margin's sync brings the pages and pictures across; run the script there too, so its pictures show
+its own name.
+
+**At each release:**
+
+- Find the page in the table above (or `grep -rn` in `docs/manual`), and change it where behaviour changed. A new
+  feature goes on the page of its task, as a section; a new page only for a new task, added to the hub's table (and to
+  *I want to…* when readers will look for it).
+- Delete what no longer holds; the changelog keeps it.
+- Retake the pictures of screens the release changed.
+- `python -m pytest tests/test_manual.py`: every page reached from the hub, every link and anchor of the manual, the
+  README and this file, the pictures, the shape and length of each page.
+- A change to the manual alone is not a release: commit it on `main`, and the next release names it in its changelog
+  entry (under *Documentation*).

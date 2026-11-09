@@ -23,6 +23,7 @@ from test_app import Api, home  # noqa: F401  (fixtures)
 from test_0131_update_button import served  # noqa: F401  (fixture)
 from test_0100_setup_and_moving import NEXT, Runs, _releases
 from _static import release_sheets
+from helpers import manual_text
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -229,5 +230,5 @@ def test_page_files():
 def test_the_docs_say_so():
     api_md = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
     assert "?fresh=1" in api_md
-    manual = (ROOT / "docs" / "MANUAL.md").read_text(encoding="utf-8")
+    manual = manual_text()  # the hub and its pages
     assert "Check for updates" in manual

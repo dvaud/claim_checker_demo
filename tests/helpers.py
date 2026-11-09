@@ -115,3 +115,9 @@ def api_docs() -> str:
     """0.13.5: the API as documented: docs/API.md and every other docs/*API*.md (an add-on's own, ADDON_API.md)."""
     docs = Path(__file__).resolve().parent.parent / "docs"
     return "\n".join(f.read_text(encoding="utf-8") for f in sorted(docs.glob("*API*.md")))
+
+
+def manual_text() -> str:
+    """The manual as documented: the hub docs/MANUAL.md and its pages in docs/manual/ (one file until 0.15.4)."""
+    docs = Path(__file__).resolve().parent.parent / "docs"
+    return "\n".join(f.read_text(encoding="utf-8") for f in [docs / "MANUAL.md", *sorted((docs / "manual").glob("*.md"))])
