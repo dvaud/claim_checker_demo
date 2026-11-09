@@ -65,7 +65,8 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **Compare and restore** earlier versions of a set of themes, your judgements in a check, or a codebook. A restore
   puts back what you had before, and can be undone the same way.
 - **Your own codebook**, made in the app fresh or from the themes found: definitions, when to use each code and when
-  not, the words it is matched by, checked examples, and *Try it* without AI. Labels follow renames and merges.
+  not, the words it is matched by, checked examples, and *Try it* without AI. Made from the themes, each code gets a
+  short name from the theme's words, as specific as your documents need (0.16.1). Labels follow renames and merges.
   **Can change results** for codebooks you change: the AI reads when to use a code, and a removed code's labels stop
   counting until it comes back.
 - **Quicker on large projects**: several documents read at once, a glossary and search that keep what they read.

@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.16.1 (November 2026): short code names from the themes
+
+### Changed
+
+- **Short code names from the themes, without AI.** A codebook made *From the themes* cut each theme's name at 40
+  characters ("National green hydrogen strategies and d"). Now each code gets a short name made of words of the
+  theme's name, one or two words when the documents allow it, like an SDG goal's: "Hydrogen strategies", "Carbon
+  capture", "Clean cooking", "Net zero". A shorter name is used only when it is not too generic for your documents:
+  when most of the passages that use it are in other themes ("Green hydrogen" is everywhere in a hydrogen corpus), the
+  next, more specific name is tried. The glossary tells real terms ("critical minerals") from loose word pairs, and a
+  word the documents nearly always write inside a longer term is not used alone ("cell" of "fuel cell"). Two themes
+  never get the same code, and a name you gave a theme yourself is kept when it fits.
+- **Less or more specific, before you edit.** In *Start from the themes* each theme shows its name with − and +
+  (*Hydrogen strategies* − *Strategies*, + *Green hydrogen strategies*, *National green hydrogen strategies*), and
+  *Shorter* and *Longer* move every ticked theme at once. The theme's full name is shown beside it. A name marked
+  *check it* had no evidence either way in the documents (its words are rare there, or the documents are in another
+  language than the theme names).
+
+Nothing here changes a result, a label or a codebook you already have: it only changes the draft names of a new
+codebook made from the themes.
+
+### How the names are chosen
+
+Only words of the theme's name are used (`codenames.py`). The name is split into phrases at its joining words ("and",
+"of", "for"; also the commonest of Dutch, German, French, Spanish, Italian, Hungarian and Russian) and commas. The
+candidates are the parts of a phrase that end in its last word, the word pairs the glossary knows as terms, and a
+phrase with the phrases after it. A candidate is too generic when fewer than 40% of the run's passages that use it are
+in the theme (50% for a single word, which must also be in a fifth of the theme's passages), counted with the keyword
+index and, for a glossary term, the places it is written. The best good-enough candidate of the shortest level wins (a
+glossary term, a phrase's last word, the name's first phrase, most of its passages in the theme); passages a person
+moved count in the theme they were moved to. Nothing is stored and no AI is asked.
+
+### Defects found and fixed before release
+
+An independent review of the new code found eight problems, all fixed with tests: a dash after a bracket or colon was
+read as a word and could become the code; a numbered duplicate name could be 41 characters long, which stopped
+*Make the codebook*; two themes could get the same code when all their names were taken; a name you gave a theme with
+"the" or "a" in it was not kept; passages moved to another theme were counted in the old one; joining words of other
+languages could start a code ("Van verpleeghuizen"); a name of only spaces or marks came back as the code; and listing
+the themes of all projects could push this project's search index out of memory.
+
+### Tests
+
+`tests/test_0_16_1_code_names.py`: names climb past a generic one ("Remote work and young employees" gives "Young
+employees"), each within 40 characters, made of the theme's words, in a ladder where each name holds the one before;
+no two themes share a code, even four themes with the same name; a person's name is kept, articles and all; a name with
+no evidence is marked unsure; key terms stay whole; odd names (marks, brackets, dashes, other languages, Russian) give
+clean codes; a moved passage counts where it was moved; the codebook draft uses the chosen name; the last-resort cut
+is before a word. `tests/test_0_13_6_version_numbers.py` no longer takes 0.16.0 for a later version than the one
+running.
+
+### Not yet done
+
+- The names were judged on three projects (Green hydrogen, Tovertafel, Ethnographies). Where the documents are in
+  another language than the theme names (Tovertafel's Dutch interviews), every name is chosen by its form alone and
+  marked *check it*.
+- A few names come out passable rather than good ("Jobs" for "Renewable energy jobs and skills"; a verb kept in "Work
+  depends"): + and − or an edit fix them.
+- The dialog was tried in Chromium; not in Safari (WebKit) or on Windows.
+
 ## 0.16.0 (November 2026): notes, a research log, history and your own codebook
 
 0.16 is about working with the text and keeping a record of the work. You can now highlight and annotate the exact

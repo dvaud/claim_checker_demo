@@ -1159,6 +1159,12 @@ mark.hl:hover, mark.hl:focus-visible { outline: 1px solid var(--border-strong); 
 .cb-theme { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; cursor: pointer; }
 .cb-theme input { margin-top: 4px; }
 .cb-theme-desc { display: block; color: var(--text-2); font-size: .84rem; }
+.cb-theme-name { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
+.cb-steps { display: inline-flex; gap: 2px; }
+.cb-step { padding: 2px 5px; min-height: 0; line-height: 1; border: 1px solid var(--border); }
+.cb-step:disabled { opacity: .35; cursor: default; }
+.cb-unsure { font-size: .72rem; color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.cb-step-help .btn { padding: 1px 8px; min-height: 0; }
 
 /* codebooks: the editor */
 .cb-more { position: relative; }

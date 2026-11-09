@@ -87,7 +87,7 @@ export async function newCodebook(start = "fresh", opts = {}) {
   }
   const startSel = h("div", { class: "cb-start-pick", role: "radiogroup", "aria-label": "Start" });
   const STARTS = [["fresh", "Start fresh", "An empty codebook: add codes and groups yourself.", "plus"],
-    ["themes", "From the themes", "The themes found in the documents become draft codes: their names, descriptions, key terms and best passages. Tick the ones to keep.", "shapes"],
+    ["themes", "From the themes", "The themes found in the documents become draft codes: short names made of their names, their descriptions, key terms and best passages. Tick the ones to keep.", "shapes"],
     ["copy", "A copy of a codebook", "The SDG targets or one of yours, to change.", "copy"],
     ["csv", "From a CSV file", "Columns code and description (and group, group_name, when_to_use, when_not_to_use, keywords, examples).", "upload"]];
   let fws = [];
@@ -139,7 +139,9 @@ export async function newCodebook(start = "fresh", opts = {}) {
   } catch (e) { showError(e); }
 }
 
-// The themes found (this project's, and with `all` every project's) to start from: tick the ones to keep.
+// The themes found (this project's, and with `all` every project's) to start from: tick the ones to keep. 0.16.1:
+// each code name is words of the theme's name, as short as the documents allow (codenames.py); − and + make it less
+// or more specific before you edit it.
 async function pickThemes(all) {
   const base = `/api/projects/${P(App.project)}/codebooks/sources`;
   let runs;
@@ -156,27 +158,67 @@ async function pickThemes(all) {
       h("span", { class: "muted small" }, ` · ${plural(run.themes.length, "theme")}`)));
     for (const t of run.themes) {
       const cb = h("input", { type: "checkbox", checked: i === 0 });
-      boxes.push([cb, t]);
-      fs.appendChild(h("label", { class: "cb-theme" }, cb, h("span", {}, h("strong", {}, t.name), h("span", { class: "muted small" }, ` · ${plural(t.size, "passage")}`),
+      const names = t.names && t.names.length ? t.names : [t.code.code];
+      let at = Math.min(Math.max(t.pick || 0, 0), names.length - 1);
+      const strong = h("strong", { class: "cb-theme-code" });
+      const less = h("button", { class: "btn btn-ghost btn-sm cb-step", type: "button" }, icon("minus", { size: 12 }));
+      const more = h("button", { class: "btn btn-ghost btn-sm cb-step", type: "button" }, icon("plus", { size: 12 }));
+      const from = h("span", { class: "muted small" });
+      const show = () => {
+        t.code.code = names[at];
+        strong.textContent = names[at];
+        less.disabled = at === 0;
+        more.disabled = at === names.length - 1;
+        less.title = at ? `Less specific: ${names[at - 1]}` : "No shorter name";
+        more.title = at < names.length - 1 ? `More specific: ${names[at + 1]}` : "No longer name";
+        from.textContent = names[at] === t.name ? "" : ` · from “${t.name}”`;
+      };
+      const move = (d) => { at = Math.min(Math.max(at + d, 0), names.length - 1); show(); };
+      // a button inside the label must not tick or untick the theme
+      less.addEventListener("click", (e) => { e.preventDefault(); move(-1); });
+      more.addEventListener("click", (e) => { e.preventDefault(); move(1); });
+      less.setAttribute("aria-label", `${t.name}: less specific name`);
+      more.setAttribute("aria-label", `${t.name}: more specific name`);
+      show();
+      boxes.push([cb, t, move]);
+      const unsure = t.sure === false ? h("span", { class: "badge cb-unsure", title: "The documents could not show whether this name is specific enough: its words are rare in them, or in another language. Check it." }, "check it") : null;
+      fs.appendChild(h("label", { class: "cb-theme" }, cb, h("span", {},
+        h("span", { class: "cb-theme-name" }, strong, h("span", { class: "cb-steps" }, less, more), unsure,
+          h("span", { class: "muted small" }, ` · ${plural(t.size, "passage")}`), from),
         h("span", { class: "cb-theme-desc" }, t.code.described ? t.code.description : `Key terms: ${t.code.keywords.join(", ") || "none"}`))));
     }
     list.appendChild(fs);
   });
+  const everyTicked = (d) => { for (const [cb, , move] of boxes) if (cb.checked) move(d); };
   const r = await dialog({ title: "Start from the themes", wide: true,
-    body: h("div", {}, h("p", {}, "Each theme you tick becomes a draft code: its name, its description (where the AI named it), its key terms as the words it is matched by, and its best passages as examples. Removed themes are left out. You edit them next."), list),
+    body: h("div", {}, h("p", {}, "Each theme you tick becomes a draft code: a short name made of words of its name, its description (where the AI named it), its key terms as the words it is matched by, and its best passages as examples. Removed themes are left out. You edit them next."),
+      h("p", { class: "muted small cb-step-help" }, "Each name is as short as the documents allow: a shorter one is used too often outside its theme. ",
+        icon("minus", { size: 12 }), " and ", icon("plus", { size: 12 }), " make a name less or more specific. Every ticked theme: ",
+        h("button", { class: "btn btn-sm", type: "button", onClick: () => everyTicked(-1) }, icon("minus", { size: 12 }), "Shorter"),
+        " ", h("button", { class: "btn btn-sm", type: "button", onClick: () => everyTicked(1) }, icon("plus", { size: 12 }), "Longer")),
+      list),
     actions: [{ text: "Cancel", value: null }, { text: "Make the codebook", value: true, primary: true }] });
   if (!r) return null;
   const picked = boxes.filter(([cb]) => cb.checked).map(([, t]) => t.code);
   if (!picked.length) { toast("Tick at least one theme.", "info"); return null; }
-  // two themes with the same name become two codes: the second gets a number
+  // two themes with the same name become two codes: the second gets a number (the name cut before a word to fit)
   const seen = new Map();
   for (const c of picked) {
     const k = c.code.toLowerCase();
     const n = (seen.get(k) || 0) + 1;
     seen.set(k, n);
-    if (n > 1) c.code = `${c.code.slice(0, 36)} (${n})`;
+    if (n > 1) c.code = `${cutAtWord(c.code, 40 - ` (${n})`.length)} (${n})`;
   }
   return picked;
+}
+
+// `text` in at most `n` characters, cut before a word (only a single word longer than `n` is cut inside)
+function cutAtWord(text, n) {
+  if (text.length <= n) return text;
+  const head = text.slice(0, n + 1);
+  if (!/\s/.test(head)) return text.slice(0, n);
+  const cut = head.replace(/\s+\S*$/, "").replace(/[\s,;:&-]+$/, "");
+  return cut || text.slice(0, n);
 }
 
 // ---------------------------------------------------------------------------------------------

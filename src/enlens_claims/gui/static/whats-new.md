@@ -1,7 +1,5 @@
-# 0.16.0: Notes, a research log and your own codebook
-*Keep a record of the work, and code with your own categories.*
-- Highlight or annotate words in a document; use a note as evidence
-- The research log writes down what was decided, with your reasons
-- History: compare and restore themes, your judgements and codebooks
-- Codebooks: make your own, fresh or from the themes; try it without AI
-- Large projects are quicker
+# 0.16.1: Short code names from the themes
+*A codebook made from the themes gets names as short as an SDG goal's.*
+- One or two words from each theme's name, without AI
+- A longer name only when a shorter one is too generic for your documents
+- Make each name less or more specific before you edit it

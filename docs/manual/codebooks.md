@@ -32,10 +32,20 @@ above them, with the reason.
 | *A copy of a codebook* | The SDG targets, or one of yours, to change. |
 | *From a CSV file* | A spreadsheet saved as CSV (see below). |
 
-**From the themes.** Each theme you tick becomes a draft code with the theme's name, its description where the AI named
+**From the themes.** Each theme you tick becomes a draft code with a short name, its description where the AI named
 the theme, its key terms as *Words it is matched by* and its best passages as examples. Removed themes are left out.
 When the codebook is kept with all projects, the themes of every project are offered. Find the themes first (*Themes*
 in the sidebar): it takes seconds and needs no AI.
+
+**The short names (0.16.1).** A code's name is one or two words of the theme's name when your documents allow it, as
+short as an SDG goal's: "National green hydrogen strategies and markets" becomes *Hydrogen strategies*. ENLENS tries
+the shortest names first and takes a longer one only when the shorter ones are too generic: when most of the passages
+that use them are in other themes ("Green hydrogen" is everywhere in a hydrogen corpus). No AI is asked. Beside each
+name, − and + make it less or more specific (*Strategies*, *Hydrogen strategies*, *Green hydrogen strategies*, …), and
+*Shorter* and *Longer* move every ticked theme at once; the theme's full name is shown beside it. Two themes never get
+the same code, and a name you gave a theme yourself is kept when it fits in 40 characters. A name marked *check it*
+had no evidence either way: its words are rare in the documents, or the documents are in another language than the
+theme names. You can still rename every code in the editor.
 
 **From a CSV file.** The columns are in this table; `code` and `description` are required. A semicolon or tab may separate
 the columns, and a file saved in a Windows code page (a spreadsheet saved in Hungarian, say) is read correctly.

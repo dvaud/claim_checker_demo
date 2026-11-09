@@ -843,9 +843,11 @@ def _sentence(text: str, n: int = 260) -> str:
 
 def theme_sources(ws: Workspace, all_projects: bool = False) -> list[dict]:
     """The sets of themes a codebook can start from: this project's (and, with `all_projects`, every project's), each
-    theme shown (not removed, merges applied) as a draft code: its name, its description (where the AI named it), its
-    key terms as the words it is matched by, and its best passages as examples."""
-    from . import home, themes
+    theme shown (not removed, merges applied) as a draft code: a short name made of words of its name (0.16.1,
+    codenames.py: `names` from the shortest to the longest, `pick` the one chosen, `sure` whether the documents showed
+    it specific enough), its description (where the AI named it), its key terms as the words it is matched by, and its
+    best passages as examples."""
+    from . import codenames, home, themes
 
     out = []
     projects = [(None, ws)]
@@ -864,8 +866,14 @@ def theme_sources(ws: Workspace, all_projects: bool = False) -> list[dict]:
                 v = themes.view(w, run["run_id"])
             except Exception:  # noqa: BLE001
                 continue
+            try:
+                short = codenames.for_run(w, run["run_id"], v["themes"])
+            except Exception:  # noqa: BLE001 - names by cutting at a word, as a last resort
+                short = {}
             drafts = []
             for t in v["themes"]:
+                nm = short.get(t["theme_id"]) or {"names": [codenames.cut(t["name"]) or f"Theme {t['theme_id']}"],
+                                                  "pick": 0, "sure": False}
                 examples = []
                 for rep in (t.get("representatives") or [])[:3]:
                     pid = rep.get("passage_id") if isinstance(rep, dict) else rep
@@ -878,13 +886,21 @@ def theme_sources(ws: Workspace, all_projects: bool = False) -> list[dict]:
                                          "start": r[0]["start"] + a, "end": r[0]["start"] + z})
                 desc = (t.get("description") or "").strip()
                 drafts.append({"theme_id": t["theme_id"], "name": t["name"], "size": t["size"],
-                               "named_by": t.get("name_source"),
-                               "code": {"code": t["name"][:40], "description": desc or f"Passages about {t['name']}.",
+                               "named_by": t.get("name_source"), "names": nm["names"], "pick": nm["pick"],
+                               "sure": nm["sure"],
+                               "code": {"code": nm["names"][nm["pick"]],
+                                        "description": desc or f"Passages about {t['name']}.",
                                         "described": bool(desc), "group": "", "keywords": list(t.get("terms") or [])[:8],
                                         "include": "", "exclude": "", "examples": examples}})
             if drafts:
                 out.append({"project": pname, "here": pname is None, "run_id": run["run_id"],
                             "created_at": run["created_at"], "mode": run["mode"], "themes": drafts})
+    if all_projects and len(projects) > 1:
+        try:  # this project's keyword index stays the most recent in memory: other projects' were loaded to name codes
+            from .search import passage_index
+            passage_index(ws)
+        except Exception:  # noqa: BLE001
+            pass
     return out
 
 
