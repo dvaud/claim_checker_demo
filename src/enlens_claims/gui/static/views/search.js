@@ -27,15 +27,36 @@ export function starterSentence(left, node, right) {
   return (before + node + after).replace(/\s+/g, " ").trim();
 }
 
-// Clickable words: a click adds the word to the query, Shift-click extends the last phrase with it.
-function wordSpans(text, onWord) {
+// 0.17: the words the search found, marked in a text. `marks` are [start, end] offsets the server gives (the same
+// words and stemmer as the search, so exactly what it found is marked); this only draws them. `shift` is where
+// `text` begins in the longer text the offsets refer to.
+export function markedText(text, marks, shift = 0) {
+  const out = [];
+  const rel = (marks || []).map(([a, b]) => [a - shift, b - shift]).filter(([a, b]) => b > 0 && a < text.length).sort((x, y) => x[0] - y[0]);
+  let last = 0;
+  for (const [a0, b0] of rel) {
+    const a = Math.max(a0, last), b = Math.min(b0, text.length);
+    if (b <= a) continue;
+    if (a > last) out.push(text.slice(last, a));
+    out.push(h("mark", { class: "kw-also" }, text.slice(a, b)));
+    last = b;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+// Clickable words: a click adds the word to the query, Shift-click extends the last phrase with it. A word on a
+// mark (another searched word of the line, 0.17) is drawn marked and stays clickable.
+function wordSpans(text, onWord, marks = [], shift = 0) {
   const out = [];
   const rx = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
   let last = 0, m;
   while ((m = rx.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const w = m[0];
-    out.push(h("span", { class: "kw-word", title: "Click: add to the search. Shift-click: make a phrase with the words before.", onClick: (e) => onWord(w, e.shiftKey) }, w));
+    const a = m.index + shift, b = a + w.length;
+    const span = h("span", { class: "kw-word", title: "Click: add to the search. Shift-click: make a phrase with the words before.", onClick: (e) => onWord(w, e.shiftKey) }, w);
+    out.push((marks || []).some(([ma, mb]) => ma < b && a < mb) ? h("mark", { class: "kw-also" }, span) : span);
     last = m.index + w.length;
   }
   if (last < text.length) out.push(text.slice(last));
@@ -169,11 +190,14 @@ export async function renderSearch(view, params, query) {
       const docHref = `#/doc/${encodeURIComponent(x.doc_id)}?q=${x.start}-${x.end}`;
       const check = h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "Check a hypothesis about what this line says",
         onClick: () => navigate(`#/hypotheses?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`) }, icon("flask", { size: 13 }), h("span", { class: "visually-hidden" }, "Check a hypothesis about this"));
-      return h("tr", {},
-        h("td", { class: "kw-where" }, h("a", { href: docHref, title: `${x.title} · ${x.location}` }, (x.title || "untitled").slice(0, 28)), h("div", {}, x.location)),
-        h("td", { class: "kw-left" }, h("span", {}, ...wordSpans(x.left, addWord))),
+      // 0.17: the title is what a person looks for; "paragraph N of M" sits in the tooltip and the accessible name
+      const title = x.title || "untitled";
+      const where = x.location ? `${title} · ${x.location}` : title;
+      return h("tr", { title: where },
+        h("td", { class: "kw-where kw-where-title" }, h("a", { href: docHref, class: "kw-title", title: where, "aria-label": where }, title)),
+        h("td", { class: "kw-left" }, h("span", {}, ...wordSpans(x.left, addWord, x.marks))),
         h("td", { class: "kw-node" }, node),
-        h("td", { class: "kw-right" }, ...wordSpans(x.right, addWord)),
+        h("td", { class: "kw-right" }, ...wordSpans(x.right, addWord, x.marks, x.left.length + x.node.length)),
         h("td", { class: "kw-act" }, h("a", { class: "btn btn-sm btn-ghost", href: docHref, title: "Open the document at these words" }, icon("book-open", { size: 13 }), h("span", { class: "visually-hidden" }, "Open the document")), check));
     });
     out.appendChild(h("div", { class: "kwic-wrap" }, h("table", { class: "kwic" }, h("caption", { class: "visually-hidden" }, "Concordance: the words found, with the words before and after"), h("tbody", {}, rows))));
@@ -221,7 +245,7 @@ export async function renderSearch(view, params, query) {
       h("div", { class: "row", style: { justifyContent: "space-between" } },
         h("a", { href: `#/doc/${encodeURIComponent(p.doc_id)}?q=${p.start}-${(p.start || 0) + p.text.length}&whole=1` }, h("strong", { class: "serif" }, p.title || "untitled")),
         h("span", { class: "muted small" }, p.location)),
-      h("p", { class: "passage serif" }, p.text),
+      h("p", { class: "passage serif" }, ...markedText(p.text, p.marks)),
       h("div", { class: "found-words" }, p.found_by === "meaning" ? "Found by meaning: it shares none of the words." : ["Found by the words: ", h("b", {}, (p.matched || []).join(", "))])))));
   }
 

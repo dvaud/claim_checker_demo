@@ -133,7 +133,8 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
 - Each release updates `gui/static/whats-new.md` (`# X.Y.Z: Title`, `*subtitle*`, then a few extremely short points,
   one `-` line each). The app shows it once, after an update, when its version matches the running one.
 - Update the README and the manual as the last two sections say.
-- **Release candidates (0.15).** The roadmap gives every minor release a release candidate, in use for at least a
+- **Release candidates (0.15).** The roadmap ([`docs/ROADMAP.md`](ROADMAP.md): what each release builds, and what
+  waits; Margin keeps its own plans in its own repository) gives every minor release a release candidate, in use for at least a
   week: `0.15.0rc1` in `pyproject.toml`, `__init__.py` and a `## 0.15.0rc1` changelog entry, tagged `v0.15.0rc1`.
   The workflow drafts it as a GitHub pre-release, which the install line and the app's *Update* never take (GitHub's
   *latest* is the latest full release); its notes give install lines with its own files. A copy of a candidate is

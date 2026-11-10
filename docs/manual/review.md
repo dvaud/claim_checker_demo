@@ -164,8 +164,8 @@ document.
 | ± | both |
 
 Each cell gives the number of excerpts that count. The map flags answers that rest on one document, and documents
-that **decide** answers (leaving them out would change those answers): read those most carefully. *highlighted* under
-each document gives it with the quotes marked.
+that **decide** answers (leaving them out would change those answers): read those most carefully. The download arrow under
+each document's title gives it with the quotes marked.
 
 ---
 

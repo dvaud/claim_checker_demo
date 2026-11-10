@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.17.0rc3 (November 2026): small fixes from use, and a roadmap
+
+The third release candidate of 0.17. Using rc2 turned up small things that got in the way: a Search for "fight
+dementia" marked only "fight", although "dementia" stood right beside it; the Overview's cards had three heights and
+two kinds of footer; pressing *Set up search by meaning* again after a reload started a second job on the same
+passages. This candidate fixes those, and ENLENS gets a roadmap of its own, in public: [`docs/ROADMAP.md`](https://github.com/dvaud/claim_checker_demo/blob/main/docs/ROADMAP.md).
+Nothing here changes results.
+
+It is a release candidate: only copies with *Try new versions early* (Settings) get it.
+
+### Changed
+
+- **Search marks every word you searched for.** With *all the words, in one passage*, each line marked only the
+  rarest word; now the others are marked too (in a lighter tint), exactly where the search found them, endings
+  included unless *exact words only* is on. Passages found by *search by meaning* mark their matching words as well
+  (every form and every occurrence); a passage found by meaning alone has nothing to mark and keeps its note.
+- **Search lines show the document's title**, in full on up to two lines instead of cut at 28 characters; the place
+  (*paragraph 832 of 1407*) is in the line's tooltip.
+- **The Overview, tidied.** Every card has the same height and the same footer: the AI mark on the left, the state
+  on the right on one line (*Not made yet*; how long it takes is in its tooltip). A section's subtitle sits under
+  its heading. The AI box at the top is gone: the sidebar's line at its foot already says which AI is in use, and
+  now also *Set up Claude Code* or *Finish the set-up* when Claude Code is not ready.
+- **Hypotheses:** *Check* and *Look before checking* sit side by side with one *Uses the AI* mark after them.
+- **The evidence map's download** under each document is a small download arrow (*Download this PDF with the quotes
+  highlighted*), not a button as big as the title that said "highlighted".
+- The *Research log* button is as tall as the page's other buttons, and a running check's progress no longer touches
+  the buttons above it.
+
+### Fixed
+
+- **Search by meaning was set up twice.** After a reload during *Set up search by meaning*, the button came back,
+  the count under it was out of date, and pressing it started a second job on the same passages. Now the card says
+  *Setting up search by meaning…* with the job's own count, the button waits, and the app gives a second press the
+  job already running (building the glossary too). The sidebar shows this job as running on this computer, not as
+  Claude.
+
+### New
+
+- **`docs/ROADMAP.md`:** what each release builds and what waits, with the small fixes still to do (M) and ideas for
+  later (N). It was kept with Margin's plans until now; Margin keeps only its own.
+
+### Not yet done
+
+- Setting up search by meaning while the new reader runs is not stopped yet (roadmap M6), and the rest of the small
+  fixes (roadmap M1 to M7): the research log panel at other zoom levels, a quick look's codebooks, one way to open a
+  document from Search.
+- The running-check spacing and the set-up card's waiting state were checked in the code and with markup put in the
+  page by hand; a real long check and a real set-up of search by meaning were not watched in the app.
+- From rc1 and rc2: the design guide's styling, and the manual's pictures of the old screens.
+
+### Tests
+
+`tests/test_0_17_0_search_marks.py` (4 tests): the other word and its other ending marked for "fight dementia", not
+with exact words; marks in *near* mode stay in the line; meaning results mark every form and occurrence, and nothing
+when no word matched; the page uses the marks. `tests/test_0_17_0_index_job_once.py` (3 tests): a second set-up
+gives the same job and prepares the passages once, another project gets its own, a press after the end starts anew;
+the card follows the running job; the sidebar's mark. New checks in `tests/test_0_17_0_navigation.py` (the
+Overview's layout, the short state) and `tests/test_0_17_0_hypotheses.py` (one AI mark, the map's arrow, the room
+above a running check). 1,099 passed, 17 skipped.
+
 ## 0.17.0rc2 (November 2026): key terms without each language's common words
 
 The second release candidate of 0.17. In a project with Dutch interviews beside English papers, the most frequent

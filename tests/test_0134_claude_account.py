@@ -142,7 +142,7 @@ def test_the_sidebar_card_and_the_settings_checklist():
     for name in ("claudeStatus", "claudeSeenNow", "rememberClaude", "claudeAccount"):
         assert f"export function {name}(" in lib, name
     assert "rememberClaude(info.status" in settings and "rememberClaude(r.status" in settings
-    assert "claudeStatus()" in overview and "/api/claude-setup" not in overview
+    assert "/api/claude-setup" not in overview   # 0.17.0: the Overview AI box is gone; the sidebar line asks
     # Settings → AI: "Signed in with your Claude plan" names the account
     assert "accountText(st)" in settings and '"Pro, Max, Team or Enterprise"' in settings
 

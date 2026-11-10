@@ -233,7 +233,7 @@ class QueueMixin:
             return terms.build(ws, progress=lambda d, n: job.progress.update(done=d, total=n),
                                should_stop=job.cancel.is_set, embedder=emb)
 
-        return self.jobs.start("terms", "Building the glossary", name, run, uses_model=False)
+        return self.jobs.start("terms", "Building the glossary", name, run, uses_model=False, unique=True)
 
     def start_judge_links(self, name: str, body: dict) -> Job:
         from .. import terms

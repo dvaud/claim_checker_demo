@@ -211,7 +211,8 @@ class LibraryMixin:
             return embed.build(ws, emb, progress=lambda d, n: job.progress.update(done=d, total=n),
                                should_stop=job.cancel.is_set)
 
-        return self.jobs.start("index", f"Semantic index with {emb.model}", name, run, uses_model=False)
+        return self.jobs.start("index", f"Semantic index with {emb.model}", name, run, uses_model=False,
+                               unique=True)  # 0.17: a second press attaches to the running job
 
 
     # -- 0.7: search, profiles, concepts, themes, references, highlights, quick look -----------------

@@ -81,8 +81,7 @@
 .hyp-list-body { margin-top: 6px; }
 
 /* ---- the buttons, each with its AI mark, and the line under them */
-.hyp-actions { margin: 6px 0 4px; gap: 10px 20px; }
-.hyp-btn-group { display: inline-flex; align-items: center; gap: 8px; }
+.hyp-actions { margin: 6px 0 4px; gap: 10px; align-items: center; }
 .hyp-reads { display: flex; align-items: center; gap: 6px; margin: 4px 0 14px; }
 .hyp-reads .icon { flex: none; }
 
@@ -96,7 +95,6 @@
 
 @media (max-width: 600px) {
   .hyp-hint-side { margin-left: 0; }
-  .hyp-actions .hyp-btn-group { flex-wrap: wrap; }
 }
 
 /* ==== the feature finder (finder.js) ==== */
@@ -132,8 +130,8 @@ body { --logdrawer-w: 340px; }   /* the drawer's width, where it is a column bes
 /* the button: the same spot on every page, never part of a page head */
 .logdrawer-btn {
   position: fixed; top: 12px; right: 20px; z-index: 35; display: inline-flex; align-items: center; gap: 7px;
-  height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
-  color: var(--text-2); font: inherit; font-size: .88rem; font-weight: 550; cursor: pointer; box-shadow: var(--shadow);
+  padding: .32rem .65rem; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface);
+  color: var(--text-2); font: inherit; font-size: .875rem; font-weight: 400; line-height: 1.2; cursor: pointer;
 }
 .logdrawer-btn:hover, .logdrawer-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-text); }
 .logdrawer-btn[aria-expanded="true"] { background: var(--accent-soft); }
@@ -161,7 +159,7 @@ body { --logdrawer-w: 340px; }   /* the drawer's width, where it is a column bes
 @media (max-width: 860px) {
   .logdrawer { position: fixed; left: 0; right: 0; bottom: 0; height: 72vh; height: 72dvh; border-left: 0; border-top: 1px solid var(--border-strong);
     border-radius: 14px 14px 0 0; box-shadow: var(--shadow-lg); z-index: 55; }
-  .logdrawer-btn { position: static; width: 32px; padding: 0; justify-content: center; box-shadow: none; margin-left: 8px; }
+  .logdrawer-btn { position: static; width: 32px; padding: .32rem 0; justify-content: center; margin-left: 8px; }
   .logdrawer-btn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .topbar-project { margin-left: auto; }
 }

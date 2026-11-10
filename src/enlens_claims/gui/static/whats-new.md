@@ -1,5 +1,6 @@
-# 0.17.0rc2: Key terms in each passage's language
-*A release candidate: the glossary and themes leave out each language's common words.*
-- No more "dan", "wel" or "maar" as key terms: 58 languages are known
-- Concepts › *Words the glossary leaves out*: switch a language off, add your own words
-- Update the glossary, then find your themes again
+# 0.17.0rc3: Small fixes from use
+*A release candidate: tidier pages, every searched word marked, and a roadmap.*
+- Search marks every word you searched for, in search by meaning too
+- The Overview's cards line up; the AI in use is in the sidebar
+- Search by meaning is set up once, even after a reload
+- What comes next: docs/ROADMAP.md

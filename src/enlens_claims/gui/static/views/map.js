@@ -65,9 +65,9 @@ export async function renderMap(view, params, query) {
         h("span", { class: "map-doc-title" }, short(d.title)),
         d.key ? h("span", { class: "map-flag" }, icon("star", { size: 11 }), ` decides ${d.decides} ${d.decides === 1 ? "answer" : "answers"}`) : d.decides ? h("span", { class: "map-flag muted" }, `decides ${d.decides}`) : null,
         d.in_project === false ? h("span", { class: "map-flag muted" }, "removed since") : null),
-      d.in_project === false ? null : h("button", { class: "btn btn-sm btn-ghost map-doc-dl", type: "button", title: `Download ${d.title || "the document"} with the quotes of these answers highlighted`, "aria-label": `Highlighted copy of ${short(d.title)}`,
+      d.in_project === false ? null : h("button", { class: "icon-btn map-doc-dl", type: "button", title: "Download this PDF with the quotes highlighted", "aria-label": `Download ${short(d.title)} as a PDF with the quotes highlighted`,
         onClick: (e) => { e.stopPropagation(); download(`/api/projects/${P(project)}/documents/${P(d.doc_id)}/annotated.pdf?${new URLSearchParams({ hyp: hyps.map((x) => x.hyp_id).join(","), threshold: String(threshold) })}`).catch(showError); } },
-        icon("download", { size: 11 }), "highlighted")))));
+        icon("download", { size: 13 }))))));
   const tbody = h("tbody", {}, hyps.map((x) => {
     const href = `#/h/${encodeURIComponent(x.hyp_id)}`;
     const row = cells[x.hyp_id] || {};
@@ -89,5 +89,5 @@ export async function renderMap(view, params, query) {
   table.append(h("caption", { class: "visually-hidden" }, "Evidence map: hypotheses by documents"), thead, tbody);
   view.appendChild(h("p", { class: "muted small map-scroll-hint", style: { margin: "0 0 6px" } }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every document."));
   view.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": "Evidence map grid (scrolls sideways)" }, table));
-  view.appendChild(h("p", { class: "muted small", style: { marginTop: "10px" } }, "Click a hypothesis to open its result, or a document title to open the document; “highlighted” downloads it with the quotes marked. The Excel download of all answers has this map as a sheet called “Map”."));
+  view.appendChild(h("p", { class: "muted small", style: { marginTop: "10px" } }, "Click a hypothesis to open its result, or a document title to open the document; the download arrow under a document title gives its PDF with the quotes marked. The Excel download of all answers has this map as a sheet called “Map”."));
 }

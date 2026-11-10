@@ -131,10 +131,13 @@ export async function renderHypotheses(view, params, query) {
   const options = checkOptions({ docs, search: info.search });
   const runBtn = h("button", { type: "submit", class: "btn btn-primary btn-lg" });
   const lookBtn = h("button", { type: "button", class: "btn btn-lg", title: "See how the AI would split the hypothesis and which extra words it would search for, and change them, before the check runs" }, icon("eye", { size: 16 }), "Look before checking");
-  // "Look before checking" uses the AI only to split the hypothesis and to find other words: its mark follows them
-  const lookTag = h("span", { class: "hyp-look-tag" });
-  const lookWrap = h("span", { class: "hyp-btn-group" }, lookBtn, lookTag);
-  const drawLookTag = () => { const o = options.values(); replace(lookTag, aiTag(o.decompose || o.expand ? "uses" : "none")); };
+  // one AI mark for the row (the 0.17 rule): Check always reads with the AI; "Look before checking" is part of the same
+  // check and says in its tooltip when it needs the AI
+  const lookWrap = lookBtn;
+  const drawLookTag = () => {
+    const o = options.values();
+    lookBtn.title = `See how the AI would split the hypothesis and which extra words it would search for, and change them, before the check runs. ${o.decompose || o.expand ? "Uses the AI." : "Needs no AI while both options below are off."}`;
+  };
   const prepBox = h("section", { class: "section prep-box", "aria-label": "Parts and search words", hidden: true });
 
   // a hypothesis with several claims in one sentence: offer to check each part separately, right here
@@ -156,7 +159,7 @@ export async function renderHypotheses(view, params, query) {
 
   const form = h("form", { class: "hyp-form hyp-compose card" },
     h("div", { class: "field" }, label, ta, hint, listFold, splitHint),
-    h("div", { class: "btn-row hyp-actions" }, h("span", { class: "hyp-btn-group" }, runBtn, aiTag("uses")), lookWrap),
+    h("div", { class: "btn-row hyp-actions" }, runBtn, lookWrap, aiTag("uses")),
     readsLine(),
     prepBox,
     tagRow,

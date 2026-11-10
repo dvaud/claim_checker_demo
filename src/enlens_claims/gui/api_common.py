@@ -82,9 +82,17 @@ class Jobs:
         self.lock = threading.Lock()
         self.model_lock = threading.Lock()
 
-    def start(self, kind: str, title: str, project: str | None, fn: Callable[[Job], Any], uses_model: bool) -> Job:
+    def start(self, kind: str, title: str, project: str | None, fn: Callable[[Job], Any], uses_model: bool,
+              unique: bool = False) -> Job:
+        """`unique`: when a job of this kind is already queued or running for the project, that one is returned and
+        nothing starts (a second press of a button, or a second tab, must not do the same work twice)."""
         job = Job(kind, title, project)
         with self.lock:
+            if unique:
+                same = [j for j in self.jobs.values() if j.kind == kind and j.project == project
+                        and j.state in ("queued", "running")]
+                if same:
+                    return same[0]
             self.jobs[job.id] = job
             done = [j for j in self.jobs.values() if j.state in ("done", "error", "cancelled")]
             for j in sorted(done, key=lambda j: j.created)[:-self.KEEP or None] if len(done) > self.KEEP else []:

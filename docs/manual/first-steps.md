@@ -127,8 +127,8 @@ Click it for the next one; hover it to see which is in use. When an update is re
 ### The Overview
 
 The *Overview* shows the finder, then every feature with one line on what it does, whether it uses the AI and what is
-already made in the project (codes by document, a glossary, a set of themes, answers), and the AI in use with anything
-left to set up. *Quick look at one document* is here too ([Explore](explore.md#quick-look)).
+already made in the project (codes by document, a glossary, a set of themes, answers). The AI in use, and anything
+left to set up, is at the foot of the sidebar (below). *Quick look at one document* is here too ([Explore](explore.md#quick-look)).
 
 ### Where your text goes
 
@@ -137,6 +137,7 @@ The line at the foot of the sidebar always says it:
 | The line says | Meaning |
 | --- | --- |
 | *Claude, on your plan · Only the passages of AI tasks leave this computer* | The default: Claude Code on your plan. |
+| *Claude, on your plan · Set up Claude Code* (or *Finish the set-up*) | Claude Code is chosen but not ready yet: click it to set it up. |
 | *Private · The AI runs on this computer* | A local model. |
 | Excerpts are sent to the Claude API | A shared installation that allowed the Claude API. |
 

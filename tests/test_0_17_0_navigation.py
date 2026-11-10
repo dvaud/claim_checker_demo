@@ -107,3 +107,28 @@ def test_find_opens_the_feature_finder():
     assert 'btn.addEventListener("click", () => openFinder());' in app
     assert '(e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k"' in app
     assert "finderBox()" in _read("views/overview.js")
+
+
+def test_overview_layout_fixes():
+    js = _read("views/overview.js")
+    css = _read("v09.css")
+    nav = _read("navigation.css")
+    # the AI box is gone (the sidebar's foot card says it); the set-up hint lives in the sidebar line
+    assert "aiLine" not in js and "ov-ai" not in css
+    assert "Set up Claude Code" in _read("app.js") and "Finish the set-up" in _read("app.js")
+    # one footer layout: no wrapping, a long state shortens with an ellipsis and says all of it in a tooltip
+    foot = re.search(r"\.ov-card-foot \{[^}]*\}", css).group(0)
+    assert "flex-wrap" not in foot and "justify-content: space-between" not in foot
+    assert "text-overflow: ellipsis" in css and 'title: text' in js
+    # section subtitles sit under the heading; every card has one height, padding and icon size
+    assert "flex-direction: column" in re.search(r"\.ov-section-head \{[^}]*\}", css).group(0)
+    assert "min-height: 212px" in css and ".welcome-cards .ov-card { min-height: 0" in css
+    assert ".ov-grid-small .ov-card" not in css and "opts.compact ? 15" not in js
+    # the Research log button is a btn-sm in size
+    btn = re.search(r"\.logdrawer-btn \{[^}]*\}", nav).group(0)
+    assert "padding: .32rem .65rem" in btn and "height: 32px" not in btn and "box-shadow" not in btn
+
+
+def test_overview_card_state_shows_the_short_part_only():
+    js = _read("views/overview.js")
+    assert 'text.split(" · ")[0]' in js and '"aria-label": text' in js and "title: text" in js

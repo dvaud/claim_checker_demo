@@ -192,7 +192,7 @@ function renderPrivacy() {
   const card = h("div", { class: "privacy-card", id: "privacy-card", role: "tooltip" });
   const a = h("a", { class: `privacy privacy-${p.where}${plan ? " privacy-plan" : ""}`, href: "#/settings", "aria-describedby": "privacy-card" },
     icon(p.icon, { size: 16 }),
-    h("div", {}, h("strong", {}, p.label), h("span", {}, p.short || p.plain)));
+    h("div", {}, h("strong", {}, p.label), h("span", { class: "privacy-sub" }, p.short || p.plain)));
   const wrap = h("div", { class: "privacy-wrap" }, a, card);
   const fill = () => replace(card,
     plan ? accountPart(claudeSeenNow()) : null,
@@ -201,7 +201,12 @@ function renderPrivacy() {
     h("p", { class: "privacy-card-muted" }, "Change it in Settings."));
   fill();
   if (plan) {
-    const ask = () => claudeStatus().then(() => { if (card.isConnected) fill(); }).catch(() => {
+    // 0.17.0: not ready yet (the Overview's AI box said so, with a button): the line itself says what to do
+    const sub = a.querySelector(".privacy-sub");
+    const ask = () => claudeStatus().then((st) => {
+      if (st && st.ready === false && !st.unknown) { sub.textContent = st.found ? "Finish the set-up" : "Set up Claude Code"; a.href = "#/settings/model"; a.classList.add("privacy-setup"); }
+      if (card.isConnected) fill();
+    }).catch(() => {
       if (!claudeSeenNow()) { rememberClaude({ unknown: true }); fill(); }
     });
     ask();  // the card is ready before the first hover; a hover a minute later asks again
@@ -269,6 +274,7 @@ async function renderStatus() {
   try { await drawStatus(); } finally { statusBusy = false; }
   if (statusAgain) { statusAgain = false; renderStatus(); }
 }
+const LOCAL_JOB_KINDS = new Set(["index"]);   // jobs that never use the chat model: search by meaning runs on the embedding model here
 const tasksWord = (n) => `${n.toLocaleString()} ${n === 1 ? "task" : "tasks"}`;
 async function drawStatus() {
   const box = document.getElementById("work-indicator");
@@ -299,7 +305,7 @@ async function drawStatus() {
   } else if (going.length) {
     const j = going[0], v = jobRow(j);
     const more = going.length - 1;
-    w = { kind: "running", main: v.text, time: j.state === "running" ? fmt.secs(j.seconds) : "", href: v.href, tip: v.tooltip,
+    w = { kind: "running", local: LOCAL_JOB_KINDS.has(j.kind), main: v.text, time: j.state === "running" ? fmt.secs(j.seconds) : "", href: v.href, tip: v.tooltip,
       sub: j.state === "queued" ? "waiting its turn" : more ? `and ${more} more running` : waiting + answering ? `${(waiting + answering).toLocaleString()} for Claude Code` : "running" };
   } else if (runner) {
     w = { kind: "running", main: "Claude Code is working", sub: `${(waiting + answering).toLocaleString()} to go`, href: "#/settings/queue", tip: "Claude Code answers the work waiting for it, on your Claude plan." };
@@ -311,14 +317,16 @@ async function drawStatus() {
   document.getElementById("status-area").classList.toggle("status-busy", !!w);
   if (!w) { replace(box); statusKey = ""; }
   else {
-    const key = JSON.stringify([App.project, w.kind, w.main, w.sub, w.href, w.act]);
+    const key = JSON.stringify([App.project, w.kind, w.local, w.main, w.sub, w.href, w.act]);
     if (key === statusKey && box.firstChild) {
       const t = box.querySelector(".work-time"); if (t && w.time) t.textContent = w.time;   // only the seconds changed
     } else {
       statusKey = key;
       // where text goes stays in view while work runs (it took the AI line's place): the AI's name, with its icon
       const p = App.privacy();
-      const who = w.kind === "running" ? h("span", { class: "work-who", title: p.plain }, icon(p.icon, { size: 12 }), (p.label || "").split(",")[0]) : null;   // nothing is sent while it waits
+      const who = w.kind === "running" ? (w.local   // 0.17: work that runs on this computer says so, not "Claude"
+        ? h("span", { class: "work-who", title: "This runs on this computer; nothing is sent to Anthropic." }, icon("house", { size: 12 }), "This computer")
+        : h("span", { class: "work-who", title: p.plain }, icon(p.icon, { size: 12 }), (p.label || "").split(",")[0])) : null;   // nothing is sent while it waits
       const main = h("a", { class: "work-main", href: w.href, title: w.tip },
         h("span", { class: "work-line" }, w.kind === "running" ? h("span", { class: "running-dot", "aria-hidden": "true" }) : icon(w.icon, { size: 14 }),
           h("strong", { class: "work-text" }, w.main), w.time ? h("span", { class: "work-time" }, w.time) : null),

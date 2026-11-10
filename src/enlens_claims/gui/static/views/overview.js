@@ -1,7 +1,7 @@
 // 0.9: the Overview: the start page of a project. Exploring the documents comes first (Search, Profile, Concepts,
 // Themes, one document), checking hypotheses second. Each feature says in one line what it does, whether it uses the
 // AI, and what is already made in this project.
-import { App, api, h, icon, P, pageHead, plural, claudeStatus } from "../lib.js";
+import { App, api, h, icon, P, pageHead, plural } from "../lib.js";
 import { FEATURES, SECTIONS, aiTag, viewTabs } from "../features.js";
 import { finderBox } from "../finder.js";
 import { overviewSections } from "../registry.js";
@@ -22,8 +22,6 @@ export async function renderOverview(view) {
   view.appendChild(viewTabs("overview", "overview"));   // 0.17.0: Overview | Research log
   // 0.17.0: "What do you want to do?": the feature finder (finder.js, no AI), so a newcomer finds a feature by its words
   view.appendChild(h("div", { class: "ov-finder" }, finderBox()));
-
-  view.appendChild(aiLine(o));
 
   if (!nDocs) {
     view.appendChild(h("div", { class: "notice notice-info ov-empty-docs" }, icon("info"),
@@ -84,31 +82,12 @@ function madeWith(m) {
       docs ? [results ? " " : "", `To read ${docs === 1 ? "it" : "one"} with the new reader, open it in `, h("a", { href: "#/sources" }, "Documents"), " and choose ", h("em", {}, "Reading"), "."] : null));
 }
 
+// the card shows the short state ("Not made yet"); what follows " · " ("takes seconds") is in the tooltip and aria-label
 function card(key, [made, text], href, opts = {}) {
   const f = FEATURES[key];
   return h("a", { class: "ov-card", href, title: !opts.compact && f.use ? f.use : null },
-    h("div", { class: "ov-card-head" }, h("span", { class: "ov-card-icon" }, icon(f.icon, { size: opts.compact ? 15 : 18 })), h("h3", {}, opts.title || f.title)),
+    h("div", { class: "ov-card-head" }, h("span", { class: "ov-card-icon" }, icon(f.icon, { size: 18 })), h("h3", {}, opts.title || f.title)),
     h("p", {}, opts.what || f.what),
     // 0.13.3: what it is for is the card's tooltip, so a card says one thing (it was a second, grey paragraph)
-    h("div", { class: "ov-card-foot" }, aiTag(f.ai), text ? h("span", { class: `ov-state ${made ? "ov-made" : ""}` }, made ? icon("circle-check", { size: 13 }) : null, text) : null));
-}
-
-// Which AI answers, in one line, with what to do when it is not ready.
-function aiLine(o) {
-  const s = App.settings();
-  const p = App.privacy();
-  const box = h("div", { class: "ov-ai" }, icon(p.icon, { size: 18 }),
-    h("div", { class: "grow" }, h("strong", {}, s.backend === "claude_code" ? "AI: Claude Code, on your Claude plan" : `AI: ${p.label}`),
-      h("div", { class: "muted small" }, s.backend === "claude_code" ? "Only the passages inside its tasks are sent to Anthropic." : p.plain)),
-    h("a", { class: "btn btn-sm btn-ghost", href: "#/settings/model" }, "Change"));
-  if (s.backend === "claude_code") {
-    claudeStatus().then((st) => {  // 0.13.4: the answer the sidebar asked for too
-      if (st.ready) {
-        box.querySelector(".grow .muted").append(o.waiting ? ` ${plural(o.waiting, "task waits", "tasks wait")} for it now.` : " Ready.");
-        return;
-      }
-      box.insertBefore(h("a", { class: "btn btn-sm btn-primary", href: "#/settings/model" }, icon("zap", { size: 13 }), st.found ? "Finish the set-up" : "Set up Claude Code"), box.lastChild);
-    }).catch(() => {});
-  }
-  return box;
+    h("div", { class: "ov-card-foot" }, aiTag(f.ai), text ? h("span", { class: `ov-state ${made ? "ov-made" : ""}`, title: text, "aria-label": text }, made ? icon("circle-check", { size: 13 }) : null, h("span", { class: "ov-state-text" }, text.split(" · ")[0])) : null));
 }

@@ -249,6 +249,8 @@
 .result .also-read { margin-top: 14px; }
 .result .more-row { margin-top: 16px; display: block; }
 .result .more-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* the running-check box under the buttons: room between them (not while it is empty) */
+.result .more-status:not(:empty) { margin-top: 12px; }
 .result .more-line { margin: 6px 0 0; font-size: var(--r-small); color: var(--text-2); }
 .result .more-terms:not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 10px; }
 

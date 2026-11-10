@@ -28,17 +28,13 @@
 .ai-tag.ai-uses { color: var(--mixed); border-color: var(--mixed-line); background: var(--mixed-soft); }
 
 /* ---------------------------------------------------------------- overview */
-.ov-ai {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 20px;
-  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
-}
-.ov-ai .grow { flex: 1 1 260px; }
-.ov-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 26px 0 10px; flex-wrap: wrap; }
+/* 0.17: the subtitle sits under its heading, on every section (on the right it floated over empty space) */
+.ov-section-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 26px 0 10px; }
 .ov-section-head h2 { margin: 0; font-size: 1.15rem; }
 .ov-section-head p { margin: 0; color: var(--muted); font-size: .9rem; }
 .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
 .ov-card {
-  display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; text-decoration: none; color: inherit;
+  display: flex; flex-direction: column; gap: 8px; min-height: 212px; padding: 16px 18px; text-decoration: none; color: inherit;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
   transition: border-color .12s, transform .12s;
 }
@@ -49,12 +45,16 @@
 .ov-card h3 { margin: 0; font-size: 1.02rem; }
 .ov-card p { margin: 0; color: var(--text-2); font-size: .9rem; line-height: 1.45; }
 .ov-card .ov-use { color: var(--muted); font-size: .84rem; }
-.ov-card-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-top: 6px; }
-.ov-state { font-size: .82rem; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.ov-card-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding-top: 6px; }
+.ov-card-foot > .ai-tag { flex: none; }
+.ov-state { font-size: .82rem; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; margin-left: auto; min-width: 0; }
+.ov-state > svg { flex: none; }
+.ov-state-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-state.ov-made { color: var(--ok); }
 .ov-grid-small { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-.ov-grid-small .ov-card { padding: 12px 14px; box-shadow: none; }
-.ov-grid-small .ov-card-icon { width: 28px; height: 28px; }
+/* an add-on's welcome cards (setup.js) stay small: the Overview's one card height is for the Overview only */
+.welcome-cards .ov-card { min-height: 0; padding: 12px 14px; box-shadow: none; }
+.welcome-cards .ov-card-icon { width: 28px; height: 28px; }
 .ov-empty-docs { margin-bottom: 18px; }
 /* 0.15: results an earlier ENLENS made (J4.2), one quiet line under the cards */
 .ov-made-with { display: flex; align-items: flex-start; gap: 7px; margin: 24px 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }

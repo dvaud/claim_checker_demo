@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from .search import passage_index
 from .store import Workspace
-from .textutil import is_stop, token_spans
+from .textutil import is_stop, token_spans, tokens
 
 MODES = ("any", "all", "phrase", "near")
 SORTS = ("doc", "left", "right")
@@ -410,9 +410,16 @@ def meaning(ws: Workspace, q: str, embedder, k: int = 20, docs: list[str] | None
     picked = rank_passages(ws, q, k=max(1, min(int(k), 100)), per_doc=max(1, min(int(k), 100)), doc_ids=docs,
                            embedder=embedder)
     where = locate(ws, [(p["passage_id"], p["passage_id"], None) for p in picked])
+    stems = set(tokens(q))  # the same words and stemmer as `rank_passages` and its `matched`
+
+    def marks(text: str) -> list[list[int]]:
+        """Every word of the passage that the keywords found it by (all its forms), as [start, end] offsets."""
+        return [[a, b] for a, b, st, _w in token_spans(text) if st in stems]
+
     return {"query": q, "mode": "meaning", "passages": [
         {"n": n, "passage_id": p["passage_id"], "doc_id": p["doc_id"], "title": p["title"] or "", "page": p["page"],
          "text": p["text"], "found_by": p["found_by"], "matched": p.get("matched") or [],
+         "marks": marks(p["text"]) if p.get("matched") else [],
          "location": (where.get(p["passage_id"]) or {}).get("span") or "", "start": p.get("start")}
         for n, p in enumerate(picked, 1)]}
 

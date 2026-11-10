@@ -195,14 +195,32 @@ export async function renderSources(view) {
   // ----------------------------------------------------------------- smart search
   const indexCard = h("section", { class: "card", "aria-label": "Search by meaning" });
   view.appendChild(indexCard);
+  // 0.17: the index job of this project while it is queued or running (started here, or found after a reload): the card
+  // shows it in place of the button, with the counts of the job's own progress, until it ends and the counts are read again
+  let indexJob = null, lastSearch = null;
+  const indexLabel = (p) => (p.total ? `Preparing ${fmt.num(p.done || 0)} of ${fmt.num(p.total)} excerpts` : "Starting…");
+  function followIndex(jobId) {
+    const w = watchJob(jobId, (job) => { if (TERMINAL.has(job.state)) return; indexJob = job; drawIndex(lastSearch); });
+    watchers.push(w);
+    return w.promise.then(async (job) => { indexJob = null; await reloadDocs(); return job; },
+      (e) => { indexJob = null; drawIndex(lastSearch); throw e; });
+  }
   function drawIndex(search) {
     clear(indexCard);
+    lastSearch = search;
     const s = search || {};
     const body = h("div", { class: "grow" });
     const head = h("div", { class: "index-card" }, h("span", { class: "icon-big" }, icon("sparkles", { size: 26 })), body);
     if (!s.model) {
       body.append(h("h2", {}, "Search by meaning is off"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, "Documents are searched by their words only. With search by meaning, excerpts are found even when they use other words than your hypothesis. It can be turned on under Settings → Documents."));
       indexCard.appendChild(head); return;
+    }
+    if (indexJob) {
+      const p = indexJob.progress || {};
+      body.append(h("h2", {}, "Setting up search by meaning…"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, p.total ? `${fmt.num(p.done || 0)} of ${fmt.num(p.total)} excerpts are covered. Until it is set up, the rest are found by their words only.` : "Getting ready…"));
+      head.appendChild(h("button", { class: "btn btn-primary", type: "button", disabled: true }, icon("sparkles", { size: 14 }), "Setting up…"));
+      indexCard.append(head, h("div", { style: { marginTop: "10px" } }, simpleProgress(indexJob, indexLabel)));
+      return;
     }
     if (!s.passages) {
       body.append(h("h2", {}, "Search by meaning is on"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, "Finds excerpts even when they use other words than your hypothesis. It is set up automatically for every document you add."));
@@ -215,13 +233,9 @@ export async function renderSources(view) {
     if (!complete) btn.addEventListener("click", async () => {
       btn.disabled = true;
       try {
-        const r = await api("POST", `/api/projects/${P(project)}/index`);
-        const pb = h("div", { style: { marginTop: "10px" } });
-        indexCard.appendChild(pb);
-        const w = watchJob(r.job.id, (job) => replace(pb, simpleProgress(job, (p) => p.total ? `Preparing ${p.done} of ${p.total} excerpts` : "Starting…")));
-        watchers.push(w);
-        const job = await w.promise;
-        await reloadDocs();
+        const r = await api("POST", `/api/projects/${P(project)}/index`);   // a job already running comes back as it is
+        indexJob = r.job; drawIndex(lastSearch);
+        const job = await followIndex(r.job.id);
         if (job.state === "error") showError({ message: job.error, kind: job.error_kind }); else if (job.state === "done") toast("Search by meaning is ready.", "ok");
       } catch (e) { showError(e); btn.disabled = false; }
     });
@@ -460,11 +474,8 @@ export async function renderSources(view) {
     if (moving) followNr(moving.id);
     const indexing = jobs.find((j) => j.project === project && j.kind === "index" && !TERMINAL.has(j.state));
     if (indexing) {
-      const pb = h("div", { style: { marginTop: "10px" } });
-      indexCard.appendChild(pb);
-      const w = watchJob(indexing.id, (job) => replace(pb, simpleProgress(job, (p) => p.total ? `Preparing ${p.done} of ${p.total} excerpts` : "Starting…")));
-      watchers.push(w);
-      w.promise.then(() => reloadDocs()).catch(showError);
+      indexJob = indexing; drawIndex(lastSearch);   // the card says it runs, with the button off
+      followIndex(indexing.id).catch(showError);
     }
   } catch (_) { /* ignore */ }
   return () => watchers.forEach((w) => w.stop());

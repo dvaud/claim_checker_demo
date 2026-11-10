@@ -33,9 +33,11 @@ document first.
 | To test what a line says | Its flask button starts a check of it. |
 | A list for later | Download every line for Excel or as CSV. |
 
-Every line opens the document at its words. A *passage* is the stretch of text the app reads as one unit: a
+Every searched word is marked in the lines, and in the passages that search by meaning finds. A line shows its
+document's title; point at it for the place (page, paragraph). Every line opens the document at its words. A *passage* is the stretch of text the app reads as one unit: a
 paragraph, up to about 1,100 characters ([How documents are read](reading.md)). The place shown (page, paragraph) is
-that of the original.
+that of the original. Setting up search by meaning runs once per project: a second press, or a reload while it
+runs, follows the same job.
 
 ## Codes
 

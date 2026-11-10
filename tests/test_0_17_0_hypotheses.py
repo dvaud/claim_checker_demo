@@ -85,10 +85,11 @@ def test_one_box_for_one_hypothesis_or_a_list():
 
 def test_the_ai_marks_and_the_line_on_who_reads():
     hyp = _js("views/hypotheses.js")
-    assert 'h("span", { class: "hyp-btn-group" }, runBtn, aiTag("uses"))' in hyp
-    # "Look before checking" uses the AI only to split the hypothesis and find other words: its mark follows them
-    assert 'aiTag(o.decompose || o.expand ? "uses" : "none")' in hyp
-    assert 'aiTag("none")' not in hyp
+    # one AI mark for the row of buttons (the 0.17 rule), after both of them, not one beside each
+    assert 'h("div", { class: "btn-row hyp-actions" }, runBtn, lookWrap, aiTag("uses"))' in hyp
+    assert hyp.count("aiTag(") == 1 and "hyp-btn-group" not in hyp
+    # "Look before checking" uses the AI only to split the hypothesis and find other words: its tooltip follows them
+    assert 'o.decompose || o.expand ? "Uses the AI."' in hyp
     assert "options.addEventListener(\"change\", () => {\n    drawLookTag();" in hyp
     # which AI reads, from the settings, with the icon of the sidebar's AI line
     reads = _fn(hyp, "export function readsLine()", "\n}\n")
@@ -207,3 +208,16 @@ def test_the_old_addresses_still_lead_here():
     for path in ("hypotheses", "check", "batch", "history"):
         assert re.search(r"\[/\^\\/" + path + r"\$/, \"[a-z]+\", renderHypotheses\]", app), path
     assert re.search(r"\[/\^\\/map\$/, \"[a-z]+\", renderMap\]", app)
+
+
+def test_the_map_download_is_a_small_icon_and_the_running_box_has_room():
+    mp = _js("views/map.js")
+    line = mp[mp.index('class: "icon-btn map-doc-dl"'):]
+    line = line[:line.index("))))));") + 1]
+    assert 'title: "Download this PDF with the quotes highlighted"' in line and '"aria-label": `Download ${short(d.title)}' in line
+    assert 'icon("download", { size: 13 })' in line and '"highlighted")' not in line
+    assert "btn-ghost map-doc-dl" not in mp
+    # the box of a running "read more" has air above it, whatever it shows (running, done, failed)
+    assert 'class: "grow more-status"' in _js("views/result.js")
+    css = (Path(__file__).resolve().parents[1] / "src/enlens_claims/gui/static/v012.css").read_text(encoding="utf-8")
+    assert ".result .more-status:not(:empty) { margin-top: 12px; }" in css

@@ -1496,7 +1496,7 @@ export async function renderResult(view, [hypId], query) {
   function moreRow(part, r) {
     const k = (r.options && r.options.k) || App.settings().k || 8;
     const row = h("div", { class: "more-row" });
-    const status = h("div", { class: "grow", style: { flexBasis: "100%" } });
+    const status = h("div", { class: "grow more-status", style: { flexBasis: "100%" } });
     const none = part.more_available === false;
     const readN = (part.passages || []).length;
     const moreBtn = h("button", { class: "btn btn-sm", type: "button", disabled: none }, "Read more excerpts");

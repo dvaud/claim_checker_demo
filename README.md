@@ -107,7 +107,7 @@ work only reads the file they sent you. The details, and what Anthropic's terms 
 - [The app's HTTP API](docs/API.md), for scripts and other programs.
 - Add-ons: [building an app on ENLENS](docs/EXTENDING.md), with an add-on's own [manual](docs/ADDON_MANUAL.md) and
   [API](docs/ADDON_API.md).
-- [What changed in each release](CHANGELOG.md), with the defects fixed.
+- [What changed in each release](CHANGELOG.md), with the defects fixed, and [what comes next](docs/ROADMAP.md).
 
 ## For developers
 
