@@ -1,8 +1,8 @@
 // 0.17.0: the research log beside any page. A button fixed at the top right of the window opens a panel on the right:
 // write an entry while looking at anything, and see the entries kept with the page you are on (or all of them).
 // The whole log, with search, export and the rest, stays on its own page (#/log).
-import { App, api, h, icon, clear, session, fmt, toast, showError, P } from "../lib.js";
-import { subjectHref } from "./log.js";
+import { App, api, h, icon, clear, session, fmt, toast, showError, P, button, link, textarea, choice, drawer, drawerButton, setDrawerOpen } from "../lib.js";
+import { subjectHref, entryText, entrySubject, entryWho } from "./log.js";
 
 const PAGE = 30;
 const GROUP_ICON = { entries: "note", documents: "book-open", checks: "flask", themes: "shapes", codebooks: "book-marked",
@@ -48,10 +48,9 @@ export function initLogDrawer() {
   let docTitles = null;        // {doc_id: title} of this project, fetched when a document page is the context
   let docTitlesFor = null;
 
-  // ---- the button
-  const btn = h("button", { class: "logdrawer-btn", id: "logdrawer-btn", type: "button", "aria-expanded": "false",
-    "aria-controls": "logdrawer", title: "The research log, beside this page", onClick: () => (open ? close(true) : openIt(true)) },
-    icon("notebook", { size: 16 }), h("span", { class: "logdrawer-btn-text" }, "Research log"));
+  // ---- the button (the drawer component's, docs/DESIGN.md: the drawer)
+  const btn = drawerButton({ id: "logdrawer-btn", controls: "logdrawer", label: "Research log", icon: "notebook",
+    title: "The research log, beside this page", onClick: () => (open ? close(true) : openIt(true)) });
   const placeBtn = () => {
     const phone = window.matchMedia("(max-width: 860px)").matches;
     const bar = document.getElementById("topbar");
@@ -62,27 +61,22 @@ export function initLogDrawer() {
     }
   };
 
-  // ---- the drawer
-  const switchBtn = (text, value) => h("button", { class: "logdrawer-seg-btn", type: "button", "aria-pressed": "false",
-    onClick: () => { mode = value; session("logdrawer-mode", mode); shown = PAGE; refresh(); } }, text);
-  const pageBtn = switchBtn("This page", "page");
-  const allBtn = switchBtn("All", "all");
-  const closeBtn = h("button", { class: "icon-btn logdrawer-close", type: "button", "aria-label": "Close the research log", onClick: () => close(true) }, icon("x"));
-  const ta = h("textarea", { class: "input logdrawer-text", rows: 3, maxlength: 10000, "aria-label": "A new research-log entry", placeholder: "A decision and why…" });
-  const keptWith = h("p", { class: "logdrawer-kept muted" });
-  const addBtn = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: add }, "Add to the log");
+  // ---- the drawer: its frame is the drawer component; its parts are the Research log page's own (the write box and
+  // the list of entries, .log-new and .log-entries), so an entry looks the same on the page and here
+  const which = choice({ label: "Show entries of", filter: true, sm: true, value: mode, options: [["page", "This page"], ["all", "All"]],
+    onPick: (v) => { mode = v; session("logdrawer-mode", mode); shown = PAGE; refresh(); } });
+  const pageBtn = which.querySelector('[data-value="page"]');
+  const ta = textarea({ class: "logdrawer-text", rows: 3, maxlength: 10000, "aria-label": "A new research-log entry", placeholder: "A decision and why…" });
+  const keptWith = h("p", { class: "muted small logdrawer-kept" });
+  const addBtn = button({ kind: "main", sm: true, onClick: add }, "Add to the log");
   ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add(); } });
-  const note = h("p", { class: "logdrawer-note muted", hidden: true });
+  const note = h("p", { class: "muted small", hidden: true });
   const list = h("div", { class: "logdrawer-list", "aria-live": "polite" });
-  const wholeLink = h("a", { class: "logdrawer-whole", href: "#/log" }, "The whole research log");
-  const wholeNote = h("span", { class: "muted" }, "on the Overview");
-  const aside = h("aside", { class: "logdrawer", id: "logdrawer", "aria-label": "Research log", hidden: true },
-    h("div", { class: "logdrawer-head" }, h("h2", { class: "logdrawer-title" }, "Research log"),
-      h("div", { class: "logdrawer-seg", role: "group", "aria-label": "Show entries of" }, pageBtn, allBtn), closeBtn),
-    h("div", { class: "logdrawer-write" }, ta, h("div", { class: "logdrawer-write-foot" }, keptWith, addBtn)),
-    note,
-    list,
-    h("div", { class: "logdrawer-foot" }, wholeLink, wholeNote));
+  const aside = drawer({ id: "logdrawer", title: "Research log", icon: "notebook", control: which, onClose: () => close(true),
+    closeLabel: "Close the research log",
+    sections: [h("div", { class: "log-new" }, ta, h("div", { class: "log-new-foot" }, keptWith, addBtn)), note, list],
+    foot: [link({ href: "#/log" }, "The whole research log"), h("span", { class: "muted" }, " on the Overview")] });
+  const closeBtn = aside.closeButton;
   shell.appendChild(aside);
   placeBtn();
   window.matchMedia("(max-width: 860px)").addEventListener("change", placeBtn);
@@ -93,8 +87,7 @@ export function initLogDrawer() {
     open = true;
     session("logdrawer-open", true);
     aside.hidden = false;
-    body.classList.add("logdrawer-open");
-    btn.setAttribute("aria-expanded", "true");
+    setDrawerOpen(true, btn);
     refresh();
     if (byUser) (window.matchMedia("(max-width: 860px)").matches ? closeBtn : ta).focus();
   }
@@ -103,8 +96,7 @@ export function initLogDrawer() {
     open = false;
     session("logdrawer-open", false);
     aside.hidden = true;
-    body.classList.remove("logdrawer-open");
-    btn.setAttribute("aria-expanded", "false");
+    setDrawerOpen(false, btn);
     if (returnFocus || hadFocus) btn.focus();
   }
 
@@ -151,13 +143,12 @@ export function initLogDrawer() {
     } catch (e) {
       if (mine !== token) return;
       clear(list);
-      list.appendChild(h("p", { class: "logdrawer-empty muted" }, "The log could not be read. ", h("button", { class: "link-btn", type: "button", onClick: refresh }, "Try again")));
+      list.appendChild(h("p", { class: "muted small" }, "The log could not be read. ", button({ kind: "quiet", sm: true, onClick: refresh }, "Try again")));
       return;
     }
     if (mine !== token) return;
     const showingAll = mode === "all" || fellBack;
-    pageBtn.setAttribute("aria-pressed", String(!showingAll));
-    allBtn.setAttribute("aria-pressed", String(showingAll));
+    which.set(showingAll ? "all" : "page");
     pageBtn.disabled = !ctx;
     note.hidden = !fellBack;
     note.textContent = fellBack ? NOTHING_HERE : "";
@@ -167,26 +158,25 @@ export function initLogDrawer() {
   function draw(data, ctx, showingAll) {
     clear(list);
     if (!data.entries.length) {
-      list.appendChild(h("p", { class: "logdrawer-empty muted" }, "Nothing in the log yet. Write the first entry above."));
+      list.appendChild(h("p", { class: "muted small" }, "Nothing in the log yet. Write the first entry above."));
       return;
     }
     const here = location.hash.split("?")[0];
-    const ol = h("ol", { class: "logdrawer-entries" });
+    const ol = h("ol", { class: "log-entries" });
     for (const e of data.entries) {
       const href = subjectHref(e);
-      const link = href && href !== here && !(ctx && ctx.subject_id && !showingAll) ? href : null;
-      ol.appendChild(h("li", { class: "logdrawer-entry" + (e.kind === "entry" ? " logdrawer-own" : "") },
-        h("span", { class: "logdrawer-icon", "aria-hidden": "true" }, icon(GROUP_ICON[e.group] || "circle", { size: 14 })),
-        h("div", { class: "logdrawer-entry-body" },
-          h("div", { class: "logdrawer-meta" }, h("time", { datetime: e.at, title: fmt.date(e.at) }, whenText(e.at)),
-            e.mine ? null : h("span", {}, ` · ${e.who}`)),
-          h("div", { class: "logdrawer-entry-text" }, e.text),
-          e.why ? h("div", { class: "logdrawer-why muted" }, `Why: ${e.why}`) : null,
-          link ? h("a", { class: "logdrawer-entry-link", href: link }, "Open") : null)));
+      const to = href && href !== here && !(ctx && ctx.subject_id && !showingAll) ? href : null;
+      ol.appendChild(h("li", { class: "log-entry" + (e.kind === "entry" ? " log-own" : "") },
+        h("span", { class: "log-icon", "aria-hidden": "true" }, icon(GROUP_ICON[e.group] || "circle", { size: 14 })),
+        h("div", { class: "log-body" },
+          h("div", { class: "log-meta" }, h("time", { class: "log-time", datetime: e.at, title: fmt.date(e.at) }, whenText(e.at)), entryWho(e)),
+          entryText(e, to),
+          e.why ? h("div", { class: "log-why" }, `Why: ${e.why}`) : null,
+          entrySubject(e, to) ? h("div", { class: "log-meta" }, entrySubject(e, to)) : null)));
     }
     list.appendChild(ol);
     if (data.total > data.entries.length) {
-      list.appendChild(h("div", { class: "logdrawer-more" }, h("button", { class: "btn btn-ghost btn-sm", type: "button",
+      list.appendChild(h("div", { class: "logdrawer-more" }, button({ kind: "quiet", sm: true,
         onClick: () => { shown += PAGE; refresh(); } }, `Show more (${fmt.num(data.total - data.entries.length)} older)`)));
     }
   }

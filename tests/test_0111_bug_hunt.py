@@ -611,7 +611,9 @@ def test_an_unclosed_front_matter_is_no_front_matter(tmp_path):
 def test_the_page_files():
     static = Path(__file__).parent.parent / "src" / "enlens_claims" / "gui" / "static"
     index = (static / "index.html").read_text()
-    assert "/static/v0111.css" in index and (static / "v0111.css").exists()
+    from _static import rule  # 0.17.0: the release's rules are in the cascade, not in a sheet of its own
+
+    assert rule(".progress-notes") and rule(".progress-notes li")
     assert "progress-notes" in (static / "views" / "progress.js").read_text()
     assert "local_failed" in (static / "views" / "result.js").read_text()
     feats = (static / "features.js").read_text()

@@ -39,22 +39,27 @@ ENLENS releases **never edit** these files. ENLENS ships each one empty, or hold
 
 ## The look: `site.css` and the theme tokens
 
-`index.html` links ENLENS's stylesheets in release order, then a fixed comment, then `site.css`:
+`index.html` links ENLENS's four stylesheets, then a fixed comment, then `site.css`:
 
 ```html
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/app.css">
-…
-<link rel="stylesheet" href="/static/v0134.css">
+<link rel="stylesheet" href="/static/components.css">
+<link rel="stylesheet" href="/static/views.css">
 <!-- release stylesheets end -->
 <link rel="stylesheet" href="/static/site.css">
 ```
 
-Each release adds its own stylesheet just above the comment, so `site.css` always loads last.
+`tokens.css` holds the tokens, `app.css` the base and the shell, `components.css` every component (one section each,
+numbered as in [DESIGN.md](DESIGN.md)), `views.css` each page's own pieces. Releases change these four and add no sheet
+of their own, so `site.css` always loads last.
 
 The colours, faces, shadows and sizes are **tokens** (CSS custom properties) in `tokens.css`, for the light theme,
 the dark theme chosen by the system, and the dark theme chosen in the app. A different look overrides them in
-`site.css`; nobody edits `app.css` or `tokens.css` for it:
+`site.css`; nobody edits ENLENS's sheets for it. Releases add tokens and never rename or remove one; a changed value is
+named in `CHANGELOG.md` (0.17.0 added `--attention*`, `--danger*`, the type, spacing and corner scales, `--drawer-w`
+and others, and changed the light `--muted` and `--sidebar-w`). `site.css` may also restyle a component (a class of
+`components.css`) for the whole installation; a class ENLENS removes is named in `CHANGELOG.md`:
 
 ```css
 :root { --accent: #8a3b12; --accent-strong: #6d2e0e; --font-ui: "Inter", system-ui, sans-serif; }
@@ -93,6 +98,11 @@ BRAND = {"name": "Fieldnotes", "tagline": "notes from the field", "logo": "/stat
 ```
 
 Page code names the app with `appName()` (or `brand()`) from `lib.js`, never with a fixed "ENLENS".
+
+An add-on's pages build with the same helpers as ENLENS's (`button()`, `link()`, `card()`, `notice()`, `tag()`,
+`choice()`, `field()` and the rest of [DESIGN.md](DESIGN.md), section 9.3) from `/static/lib.js`, never by spelling
+ENLENS's classes, so they look native and follow every change of a component. `#/design` shows each one as it renders
+in this installation.
 
 ## Routes, downloads and extra keys (0.13.6)
 
@@ -298,8 +308,10 @@ Every extension point is tried with a stand-in add-on, `tests/fake_extension/`, 
 stands in for Claude Code. The `addon` fixture turns it on through its entry point, as if it were installed; the
 `local_addon` fixture fills in `gui/extensions.py` as a fork would (`tests/addon_fixtures.py`).
 
-Tests of a release's stylesheet say which sheets it follows, not that it is linked last: `assert_sheet_after(sheet,
-earlier)` in `tests/_static.py`. The routes-are-documented tests read every `docs/*API*.md`.
+A test that checks a rule reads the cascade, not a sheet by name (`all_css()` and `rule()` in `tests/_static.py`), so it
+holds when a rule moves into its component's section; `assert_sheet_after(sheet, earlier)` checks the order of sheets.
+A test that reads the names in a script reads it through `js_code()` (the same file): comments, strings and regular
+expressions blanked, so only code is read. The routes-are-documented tests read every `docs/*API*.md`.
 
 ## Keeping it small, and stable
 

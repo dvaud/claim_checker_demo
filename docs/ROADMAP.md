@@ -37,7 +37,7 @@ share (`ingest.py`, `terms.py`, `routing.py`, `llm.py`, the task queue), is buil
 | --- | --- |
 | **0.15** | Released as 0.15.0 (8 November 2026), with patches up to 0.15.7: A0 to A5, H1, CI on three systems and the beta channel (J1 items 1 and 6), the rollback runbook (J1 item 10), versions on results (J4.2), issue forms and `SECURITY.md` (J4.5), and the half of the validation report that needs no AI (J4.3). J4.1 is dropped: ENLENS gives no citation file or DOI, by choice. |
 | **0.16** | Released as 0.16.0 (9 November 2026) and 0.16.1: H3, H2, H6 for `gui/server.py`, F4, F2, F5 and K1. Not built yet, and waiting for a later release: A6, D1 to D4, B5, G5, the AI mix (I5, H4, I1, I2, I4), H5, and `docs/METHODS.md` and `docs/PRIVACY.md` (J4.4). |
-| **0.17** | Release candidates: 0.17.0rc1, the sidebar of seven places; 0.17.0rc2, key terms without each language's common words; 0.17.0rc3 and rc4, small fixes from use (M). The design guide's styling follows. |
+| **0.17** | Release candidates: 0.17.0rc1, the sidebar of seven places; 0.17.0rc2, key terms without each language's common words; 0.17.0rc3 and rc4, small fixes from use (M); 0.17.0rc5, the design guide (`docs/DESIGN.md`) and one look on every page, a first version. 0.17.0 follows. |
 | **0.18** | Proposed: working together, live (L). |
 
 ## Releases 0.15 to 0.18
@@ -100,7 +100,7 @@ too long, the AI mix can become a release of its own. H6 is ongoing: each releas
 The owner's call (9 November 2026): the navigation redesign (the sidebar of seven places, the Hypotheses page, the
 right-hand panel, the feature finder, the design guide) reworks how the whole app is reached, so it is 0.17.0. Its
 first release candidate, `0.17.0rc1`, went out on 9 November 2026 to try the navigation; the design guide's styling
-follows in later candidates.
+came in `0.17.0rc5` (11 November 2026), as a first version that 0.17.0 refines.
 
 ### 0.18 (proposed 9 November 2026): working together, live
 

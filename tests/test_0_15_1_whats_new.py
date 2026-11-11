@@ -102,7 +102,8 @@ def test_the_note_of_this_release():
 def test_the_route_and_the_page():
     assert any(m == "GET" and rx.pattern == "^/api/whats-new$" for m, rx, _ in server.ROUTES)
     js = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert '"/api/whats-new"' in js and 'aria-label": "Close"' in js and '"Escape"' in js
+    # 0.17.0 (design guide): the close button is an icon button (iconButton({ label: "Close" }): its aria-label)
+    assert '"/api/whats-new"' in js and 'label: "Close"' in js and '"Escape"' in js
 
 
 def test_the_md_file_is_packaged():

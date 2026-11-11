@@ -5,7 +5,8 @@
      :root[data-theme="dark"] { --accent: #f0a46c; }
      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --accent: #f0a46c; } }
 
-   Releases may add tokens here; they do not rename or remove one without a note in CHANGELOG.md. */
+   Releases may add tokens here; they do not rename or remove one without a note in CHANGELOG.md. What each colour may
+   mean, and the scale of sizes, is in docs/DESIGN.md (section 3). No other stylesheet sets a token or names a theme. */
 
 :root {
   --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
@@ -21,7 +22,7 @@
   --border-strong: #c9c3b6;
   --text: #1d1b17;
   --text-2: #4d4a43;
-  --muted: #736e64;
+  --muted: #6b665c;   /* 0.17.0: 4.5:1 on the sidebar's --bg-2 and on --surface-3 (was #736e64) */
   --faint: #8a8478;
 
   --accent: #0f6e6a;
@@ -49,8 +50,27 @@
   --shadow-lg: 0 20px 50px -20px rgba(30, 25, 10, .35);
   --radius: 10px;
   --radius-sm: 6px;
-  --sidebar-w: 248px;
+  --sidebar-w: 264px;
   --content-w: 980px;
+  /* 0.17.0 (docs/DESIGN.md): needs you and goes wrong, apart from the judgements that share their hue (a fork can
+     colour them apart); the quote's tint in an excerpt card, by its grade; the corners, type and spacing scales; the
+     width of the drawer on the right. */
+  --attention: var(--warn); --attention-soft: var(--warn-soft); --attention-line: #e8b46a;
+  --danger: var(--bad);     --danger-soft: var(--bad-soft);     --danger-line: var(--bad-line); --on-danger: #ffffff;
+  --quote-ok: color-mix(in srgb, var(--ok-line) 45%, transparent);
+  --quote-partly: color-mix(in srgb, var(--partly-line) 45%, transparent);
+  --quote-bad: color-mix(in srgb, var(--bad-line) 45%, transparent);
+  --quote-none: color-mix(in srgb, var(--none-line) 45%, transparent);
+  --radius-xs: 4px; --radius-ctl: 8px; --radius-lg: 14px; --radius-pill: 999px;
+  --fs-display: 1.65rem; --fs-title: 1.55rem; --fs-section: 1.05rem; --fs-body: 15px; --fs-small: .875rem; --fs-label: .72rem;
+  /* the rest of the type scale: the serif lead (a hypothesis box, a part's claim), the documents' text, fine print,
+     and the Title and Display under 861 px */
+  --fs-lead: 1.2rem; --fs-doc: 1rem; --fs-xs: .8rem; --fs-title-sm: 1.35rem;
+  --fw-regular: 400; --fw-strong: 600;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+  --drawer-w: 300px;
+  --paper: #ffffff;   /* behind a picture of a document's page, in both themes: the page itself is white */
+  --logdrawer-w: var(--drawer-w);   /* 0.17.0rc1's name, kept for forks */
   color-scheme: light;
 }
 
@@ -88,6 +108,12 @@
     --focus: #7fd6ce;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -10px rgba(0, 0, 0, .6);
     --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, .7);
+    --attention-line: #7a5a24;
+    --on-danger: #2a0e0c;
+    --quote-ok: color-mix(in srgb, var(--ok) 30%, transparent);
+    --quote-partly: color-mix(in srgb, var(--partly) 24%, transparent);
+    --quote-bad: color-mix(in srgb, var(--bad) 30%, transparent);
+    --quote-none: color-mix(in srgb, var(--none) 30%, transparent);
     color-scheme: dark;
   }
 }
@@ -124,5 +150,16 @@
   --focus: #7fd6ce;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -10px rgba(0, 0, 0, .6);
   --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, .7);
+  --attention-line: #7a5a24;
+  --on-danger: #2a0e0c;
+  --quote-ok: color-mix(in srgb, var(--ok) 30%, transparent);
+  --quote-partly: color-mix(in srgb, var(--partly) 24%, transparent);
+  --quote-bad: color-mix(in srgb, var(--bad) 30%, transparent);
+  --quote-none: color-mix(in srgb, var(--none) 30%, transparent);
   color-scheme: dark;
+}
+
+/* the drawer is wider in a wide window */
+@media (min-width: 1200px) {
+  :root { --drawer-w: 340px; }
 }

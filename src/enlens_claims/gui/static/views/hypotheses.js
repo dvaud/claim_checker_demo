@@ -6,7 +6,7 @@
 // after the other. The progress of the check the page follows is under the box, then every answer (history.js), with
 // the checks still running or waiting their turn at the top. The evidence map is the place's other view (map.js).
 import { featureEyebrow, aiTag, viewTabs } from "../features.js";
-import { App, api, h, icon, replace, clear, append, toast, showError, fmt, pageHead, navigate, watchJob, P, debounce, session, emptyState, statusBadge, download, downloadLinks } from "../lib.js";
+import { App, api, h, icon, replace, clear, append, toast, showError, fmt, pageHead, navigate, watchJob, P, debounce, session, emptyState, statusBadge, download, downloadLinks, button, iconButton, link, notice, tag, card, fold, fileButton, select, textarea, input as fieldInput, choice } from "../lib.js";
 import { checkOptions, pickCode } from "./options.js";
 import { ProgressPanel } from "./progress.js";
 import { answersList } from "./history.js";
@@ -62,18 +62,18 @@ export async function renderHypotheses(view, params, query) {
   const mapTab = tabs ? tabs.querySelector('a[href="#/map"]') : null;
   const setMapTab = (batch) => { if (mapTab) mapTab.setAttribute("href", batch ? `#/map?batch=${encodeURIComponent(batch)}` : "#/map"); };
 
-  if (query.text) view.appendChild(h("p", { class: "muted small", style: { margin: "0 0 12px" } }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check."));
+  if (query.text) view.appendChild(h("p", { class: "muted small hyp-chosen-note" }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check."));
   if (!App.modelConfigured()) {
-    view.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "16px" } }, icon("alert-triangle"),
-      h("div", {}, h("p", {}, "No AI model is set up yet, so checks cannot run."), h("a", { href: "#/settings/model" }, "Set up the AI model"))));
+    view.appendChild(notice({ kind: "attention", class: "hyp-setup-notice" },
+      h("p", {}, "No AI model is set up yet, so checks cannot run."), link({ kind: "next", href: "#/settings/model" }, "Set up the AI model")));
   }
   if (!info.passages) {
-    view.appendChild(h("div", { class: "notice notice-info", style: { marginBottom: "16px" } }, icon("info"),
-      h("div", {}, h("p", {}, h("strong", {}, "Add documents first."), " A hypothesis is checked against the reports and papers in this project, and there are none yet."), h("a", { class: "btn btn-primary btn-sm", href: "#/sources", style: { marginTop: "6px" } }, icon("upload", { size: 13 }), "Add documents"))));
+    view.appendChild(notice({ kind: "info", class: "hyp-setup-notice" },
+      h("p", {}, h("strong", {}, "Add documents first."), " A hypothesis is checked against the reports and papers in this project, and there are none yet."), h("p", {}, link({ kind: "next", href: "#/sources" }, "Add documents on the Documents page"))));
   }
 
   // ---- the box: one hypothesis or many
-  const ta = h("textarea", { class: "textarea textarea-hyp", rows: 3, placeholder: "A hypothesis, or several: one per line", "aria-describedby": "hyp-hint", id: "hyp", spellcheck: "true" });
+  const ta = textarea({ hyp: true, rows: 3, placeholder: "A hypothesis, or several: one per line", "aria-describedby": "hyp-hint", id: "hyp", spellcheck: "true" });
   ta.value = draft.text || "";
   const label = h("label", { class: "field-label", for: "hyp" }, "Your hypothesis");
   const kbd = h("span", { class: "faint hyp-kbd" }, h("kbd", {}, MAC ? "⌘" : "Ctrl"), "+", h("kbd", {}, "Enter"), " checks.");
@@ -81,18 +81,18 @@ export async function renderHypotheses(view, params, query) {
   const listLine = h("span", { class: "hyp-list-line", role: "status", hidden: true });
   const counter = h("span", { class: "hyp-counter", role: "status" });
   const fileInput = h("input", { type: "file", accept: ".csv,.txt,.md,text/csv,text/plain", class: "visually-hidden", id: "hyp-file" });
-  const fileBtn = h("label", { class: "btn btn-sm btn-ghost hyp-file", for: "hyp-file", tabindex: "0", title: "A list, one hypothesis per line, or a spreadsheet saved as CSV with a column called “hypothesis” (and, if you like, a column “code” for a codebook tag)",
-    onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } } }, icon("upload", { size: 13 }), "Load a spreadsheet (CSV) or text file", fileInput);
+  const fileBtn = fileButton({ kind: "quiet", icon: "upload", class: "hyp-file", for: "hyp-file", tabindex: "0", title: "A list, one hypothesis per line, or a spreadsheet saved as CSV with a column called “hypothesis” (and, if you like, a column “code” for a codebook tag)",
+    onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } } }, fileInput, "Load a spreadsheet (CSV) or text file");
   const hint = h("div", { class: "hint-row", id: "hyp-hint" }, h("span", { class: "hyp-hint-main" }, singleHint, listLine), h("span", { class: "hyp-hint-side" }, counter, fileBtn));
   // the list as it will be checked, folded away: the count above says enough most of the time
   const listBody = h("div", { class: "hyp-list-body" });
-  const listFold = h("details", { class: "fold hyp-list-fold", hidden: true }, h("summary", {}, "Show the list"), listBody);
+  const listFold = fold({ class: "hyp-list-fold", hidden: true }, "Show the list", listBody);
 
   // codebook tag (one hypothesis only: a list carries its codes in a CSV column)
-  const fwSelect = h("select", { class: "select input-sm", "aria-label": "Codebook" }, h("option", { value: "" }, "No codebook"), frameworks.map((f) => h("option", { value: f.name, selected: f.name === (draft.framework ?? "sdg") }, f.title || f.name)));
+  const fwSelect = select({ sm: true, "aria-label": "Codebook" }, h("option", { value: "" }, "No codebook"), frameworks.map((f) => h("option", { value: f.name, selected: f.name === (draft.framework ?? "sdg") }, f.title || f.name)));
   let code = draft.code || "", codeDesc = draft.codeDesc || "";
-  const codeBtn = h("button", { type: "button", class: "btn btn-sm code-btn", "aria-haspopup": "dialog" });
-  const codeClear = h("button", { type: "button", class: "icon-btn", "aria-label": "Remove the code", hidden: !code, onClick: () => setCode("", "") }, icon("x", { size: 14 }));
+  const codeBtn = button({ sm: true, class: "code-btn", "aria-haspopup": "dialog" });
+  const codeClear = iconButton({ icon: "x", size: 14, label: "Remove the code", hidden: !code, onClick: () => setCode("", "") });
   const suggestBox = h("div", { class: "suggest", "aria-live": "polite" });
   let suggestions = [];
   const fwLabel = () => (frameworks.find((f) => f.name === fwSelect.value) || {}).label || "code";
@@ -113,8 +113,11 @@ export async function renderHypotheses(view, params, query) {
       const r = await api("GET", `/api/projects/${P(project)}/suggest?text=${encodeURIComponent(text)}&framework=${P(fwName)}&n=5`);
       suggestions = r.codes || [];
     } catch (_) { suggestions = []; }
-    replace(suggestBox, suggestions.length ? [icon("star", { size: 12 }), h("span", {}, "Suggested:"),
-      suggestions.map((c) => h("button", { type: "button", class: "chip chip-btn", "aria-pressed": c.code === code ? "true" : "false", title: c.description, onClick: () => setCode(c.code, c.description) }, c.code))] : []);
+    // the suggested codes: a choice; the code chosen shows as chosen
+    replace(suggestBox, suggestions.length ? [h("span", { id: "hyp-suggest-l" }, "Suggested:"),
+      choice({ filter: true, sm: true, "aria-labelledby": "hyp-suggest-l", value: code || null,
+        options: suggestions.map((c) => [c.code, c.code, null, c.description]),
+        onPick: (v) => { const c = suggestions.find((x) => x.code === v); if (c) setCode(c.code, c.description); } })] : []);
   }, 350);
   codeBtn.addEventListener("click", async () => {
     const r = await pickCode({ project, framework: fwSelect.value, suggested: suggestions, current: code });
@@ -124,13 +127,13 @@ export async function renderHypotheses(view, params, query) {
   });
   fwSelect.addEventListener("change", () => { setCode("", ""); fetchSuggestions(); });
   setCode(code, codeDesc);
-  const tagRow = frameworks.length ? h("details", { class: "fold tag-row", open: !!code }, h("summary", {}, "Tag with a code from a codebook (optional)"),
-    h("div", { class: "tag-body" }, h("p", { class: "muted small", style: { margin: "4px 0 8px" } }, "Like coding in NVivo or Atlas.ti: the hypothesis is filed under a code, and the AI reads the code's description alongside it."),
+  const tagRow = frameworks.length ? fold({ class: "tag-row", open: !!code }, "Tag with a code from a codebook (optional)",
+    h("div", { class: "tag-body" }, h("p", { class: "muted small hyp-code-note" }, "Like coding in NVivo or Atlas.ti: the hypothesis is filed under a code, and the AI reads the code's description alongside it."),
       h("div", { class: "row" }, fwSelect, codeBtn, codeClear), suggestBox)) : null;
 
   const options = checkOptions({ docs, search: info.search });
-  const runBtn = h("button", { type: "submit", class: "btn btn-primary btn-lg" });
-  const lookBtn = h("button", { type: "button", class: "btn btn-lg", title: "See how the AI would split the hypothesis and which extra words it would search for, and change them, before the check runs" }, icon("eye", { size: 16 }), "Look before checking");
+  const runBtn = button({ kind: "main", type: "submit" });
+  const lookBtn = button({ title: "See how the AI would split the hypothesis and which extra words it would search for, and change them, before the check runs" }, icon("eye", { size: 16 }), "Look before checking");
   // one AI mark for the row (the 0.17 rule): Check always reads with the AI; "Look before checking" is part of the same
   // check and says in its tooltip when it needs the AI
   const lookWrap = lookBtn;
@@ -142,8 +145,8 @@ export async function renderHypotheses(view, params, query) {
 
   // a hypothesis with several claims in one sentence: offer to check each part separately, right here
   const splitQ = h("p", {}, "This hypothesis may have more than one part. Check each part separately?");
-  const splitHint = h("div", { class: "notice notice-info split-hint", hidden: true }, icon("split", { size: 14 }),
-    h("div", {}, splitQ, h("div", { class: "split-hint-ctl" })));
+  const splitHint = notice({ kind: "info", icon: "split", class: "split-hint", hidden: true },
+    splitQ, h("div", { class: "split-hint-ctl" }));
   const decomposeSwitch = options.querySelector(".options-grid .switch-field");
   const hintSwitch = decomposeSwitch ? decomposeSwitch.cloneNode(true) : null;
   if (hintSwitch) {
@@ -157,7 +160,7 @@ export async function renderHypotheses(view, params, query) {
     splitQ.addEventListener("click", () => { b.checked = !b.checked; b.dispatchEvent(new Event("change", { bubbles: true })); });
   }
 
-  const form = h("form", { class: "hyp-form hyp-compose card" },
+  const form = card({ as: "form", class: "hyp-form hyp-compose" },
     h("div", { class: "field" }, label, ta, hint, listFold, splitHint),
     h("div", { class: "btn-row hyp-actions" }, runBtn, lookWrap, aiTag("uses")),
     readsLine(),
@@ -255,9 +258,9 @@ export async function renderHypotheses(view, params, query) {
       h("div", { class: "table-wrap batch-preview" }, h("table", { class: "table" },
         h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "#"), h("th", { scope: "col" }, "Hypothesis"), coded ? [h("th", { scope: "col" }, "Codebook"), h("th", { scope: "col" }, "Code")] : null)),
         h("tbody", {}, items.map((it, i) => h("tr", { class: tooShort(it) ? "batch-short" : null }, h("td", { class: "num muted" }, String(i + 1)),
-          h("td", { class: "serif" }, it.text, tooShort(it) ? h("div", { class: "warn-chip small" }, icon("alert-triangle", { size: 12 }), `Too short: write it as a sentence (at least ${MIN_CHARS} characters). It will be skipped.`) : null),
+          h("td", { class: "serif" }, it.text, tooShort(it) ? h("div", {}, tag({ kind: "attention", class: "small" }, `Too short: write it as a sentence (at least ${MIN_CHARS} characters). It will be skipped.`)) : null),
           coded ? [h("td", { class: "muted" }, it.framework || ""), h("td", { class: "mono" }, it.code || "")] : null))))),
-      h("p", { class: "muted small", style: { margin: "6px 0 0" } }, "Up to 500. A spreadsheet saved as CSV needs a column called “hypothesis” and may have a column “code” for a codebook tag."));
+      h("p", { class: "muted small hyp-csv-note" }, "Up to 500. A spreadsheet saved as CSV needs a column called “hypothesis” and may have a column “code” for a codebook tag."));
   }
 
   function onText() {
@@ -286,7 +289,7 @@ export async function renderHypotheses(view, params, query) {
   function discardPrepared(why) {
     prepared = null;
     if (prepareWatcher) { prepareWatcher.stop(); prepareWatcher = null; looking = false; }
-    if (why) { replace(prepBox, h("div", { class: "notice notice-info" }, icon("info"), h("p", {}, why))); prepBox.hidden = false; }
+    if (why) { replace(prepBox, notice({ kind: "info" }, h("p", {}, why))); prepBox.hidden = false; }
     else { clear(prepBox); prepBox.hidden = true; }
     drawButtons();
   }
@@ -298,9 +301,9 @@ export async function renderHypotheses(view, params, query) {
     const o = options.values();
     if (o.decompose === prepared.decompose && o.expand === prepared.expand) return;
     const changed = o.decompose !== prepared.decompose ? (o.decompose ? "“Check each part separately” is now on" : "“Check each part separately” is now off") : (o.expand ? "“Also search for other words” is now on" : "“Also search for other words” is now off");
-    const again = h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => lookBtn.click() }, icon("eye", { size: 13 }), "Look again");
+    const again = button({ kind: "main", sm: true, onClick: () => lookBtn.click() }, icon("eye", { size: 13 }), "Look again");
     prepared = null;
-    replace(prepBox, h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, `${changed}, so the parts and words you looked at no longer apply. Look again to see the new ones, or check it as usual with the new options.`), h("div", { style: { marginTop: "8px" } }, again))));
+    replace(prepBox, notice({ kind: "attention" }, h("p", {}, `${changed}, so the parts and words you looked at no longer apply. Look again to see the new ones, or check it as usual with the new options.`), h("div", { class: "hyp-prepared-again" }, again)));
     prepBox.hidden = false;
     drawButtons();
   });
@@ -335,38 +338,38 @@ export async function renderHypotheses(view, params, query) {
   function drawPrepared() {
     const pr = prepared;
     const many = pr.parts.length > 1;
-    const box = h("div", { class: "card card-plain prep-card" });
-    const lead = h("p", { class: "muted small", style: { margin: "0 0 10px" } }, many
+    const box = card({ as: "div", class: "prep-card" });
+    const lead = h("p", { class: "muted small hyp-prepared-lead" }, many
       ? `The AI would check this hypothesis as ${pr.parts.length} parts that must all hold. Change a part, remove one, or add one; each part is checked exactly as written here.`
       : (pr.split ? "The AI would check this hypothesis as one part." : "The hypothesis is checked as one sentence, as written here.") + (pr.expand ? " Below it are the extra words the AI would search for, besides the words of the hypothesis itself: remove any that do not fit, or add words your documents use." : ""));
     const listEl = h("ol", { class: "prep-parts" });
     const partRow = (i) => {
       const part = pr.parts[i];
-      const input = h("textarea", { class: "textarea prep-part-input serif", rows: 1, "aria-label": many ? `Part ${i + 1}` : "The sentence to check", maxlength: 500 });
+      const input = textarea({ class: "prep-part-input serif", rows: 1, "aria-label": many ? `Part ${i + 1}` : "The sentence to check", maxlength: 500 });
       input.value = part.text;
       const growPart = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight + 2}px`; };
       input.addEventListener("input", () => { part.text = input.value.replace(/\s*\n\s*/g, " "); pr.editedParts = true; growPart(); });
       input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) e.preventDefault(); });   // one sentence per part; Enter must not start the check
       requestAnimationFrame(growPart);
-      const remove = h("button", { class: "icon-btn", type: "button", "aria-label": `Remove part ${i + 1}`, hidden: pr.parts.length < 2, onClick: () => { pr.parts.splice(i, 1); pr.terms.splice(i, 1); pr.editedParts = true; pr.editedTerms = true; drawPrepared(); } }, icon("x", { size: 14 }));
+      const remove = iconButton({ icon: "x", size: 14, label: `Remove part ${i + 1}`, hidden: pr.parts.length < 2, onClick: () => { pr.parts.splice(i, 1); pr.terms.splice(i, 1); pr.editedParts = true; pr.editedTerms = true; drawPrepared(); } });
       const chips = h("div", { class: "chips term-chips", role: "group", "aria-label": `Extra search words for ${many ? `part ${i + 1}` : "the hypothesis"}` });
       const drawChips = () => {
-        replace(chips, pr.terms[i].map((t, j) => h("span", { class: "chip chip-term" }, h("span", {}, t),
+        replace(chips, pr.terms[i].map((t, j) => tag({ class: "chip-term" }, h("span", {}, t),
           h("button", { class: "chip-x", type: "button", "aria-label": `Remove the word ${t}`, onClick: () => { pr.terms[i].splice(j, 1); pr.editedTerms = true; drawChips(); } }, icon("x", { size: 11 })))),
         pr.terms[i].length ? null : h("span", { class: "muted small" }, "No extra words: only the words of the sentence itself are searched for."));
       };
       drawChips();
-      const add = h("input", { class: "input input-sm prep-add", type: "text", placeholder: "add a word…", "aria-label": `Add a search word for ${many ? `part ${i + 1}` : "the hypothesis"}`, maxlength: 60 });
-      const addBtn = h("button", { class: "btn btn-sm", type: "button", onClick: () => { const w = add.value.trim(); if (!w) { add.focus(); return; } if (!pr.terms[i].some((x) => x.toLowerCase() === w.toLowerCase())) pr.terms[i].push(w); pr.editedTerms = true; add.value = ""; drawChips(); add.focus(); } }, icon("plus", { size: 12 }), "Add");
+      const add = fieldInput({ sm: true, class: "prep-add", placeholder: "add a word…", "aria-label": `Add a search word for ${many ? `part ${i + 1}` : "the hypothesis"}`, maxlength: 60 });
+      const addBtn = button({ sm: true, onClick: () => { const w = add.value.trim(); if (!w) { add.focus(); return; } if (!pr.terms[i].some((x) => x.toLowerCase() === w.toLowerCase())) pr.terms[i].push(w); pr.editedTerms = true; add.value = ""; drawChips(); add.focus(); } }, icon("plus", { size: 12 }), "Add");
       add.addEventListener("keydown", (e) => { if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) { e.preventDefault(); addBtn.click(); } });
       return h("li", { class: "prep-part" },
         h("div", { class: "prep-part-row" }, input, remove),
         pr.expand ? h("div", { class: "prep-terms" }, h("span", { class: "muted small prep-terms-label" }, "Also search for:"), chips, h("div", { class: "prep-add-row" }, add, addBtn)) : null);
     };
     pr.parts.forEach((_, i) => listEl.appendChild(partRow(i)));
-    const addPart = h("button", { class: "btn btn-sm", type: "button", disabled: pr.parts.length >= 6, onClick: () => { pr.parts.push({ text: "", role: null }); pr.terms.push([]); pr.editedParts = true; drawPrepared(); const inputs = prepBox.querySelectorAll(".prep-part-input"); const last = inputs[inputs.length - 1]; if (last) last.focus(); } }, icon("plus", { size: 13 }), "Add a part");
-    const cancel = h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => discardPrepared() }, "Forget this and check as usual");
-    append(box, [lead, listEl, h("div", { class: "btn-row", style: { marginTop: "8px" } }, addPart, cancel, h("span", { class: "muted small" }, "Then press “Check” above: it checks exactly these parts and words. Nothing is saved until then."))]);
+    const addPart = button({ sm: true, disabled: pr.parts.length >= 6, onClick: () => { pr.parts.push({ text: "", role: null }); pr.terms.push([]); pr.editedParts = true; drawPrepared(); const inputs = prepBox.querySelectorAll(".prep-part-input"); const last = inputs[inputs.length - 1]; if (last) last.focus(); } }, icon("plus", { size: 13 }), "Add a part");
+    const cancel = button({ kind: "quiet", sm: true, onClick: () => discardPrepared() }, "Forget this and check as usual");
+    append(box, [lead, listEl, h("div", { class: "btn-row hyp-part-actions" }, addPart, cancel, h("span", { class: "muted small" }, "Then press “Check” above: it checks exactly these parts and words. Nothing is saved until then."))]);
     replace(prepBox, h("div", { class: "section-title" }, h("h2", {}, many ? `Checked as ${pr.parts.length} parts` : "Checked as one sentence"), h("span", { class: "muted" }, "change anything before the check runs")), box);
     prepBox.hidden = false;
     drawButtons();
@@ -460,19 +463,19 @@ export async function renderHypotheses(view, params, query) {
     const checked = r.checked || [];
     let rows = [];
     if (r.batch_id) { try { rows = (await api("GET", `/api/projects/${P(project)}/hypotheses?batch=${encodeURIComponent(r.batch_id)}`)).hypotheses || []; } catch (_) { rows = []; } }
-    const show = r.batch_id ? h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => { if (answers) await answers.showBatch(r.batch_id); answersBox.scrollIntoView({ block: "start", behavior: "smooth" }); } }, icon("history", { size: 14 }), "Show only these answers") : null;
-    const card = h("div", { class: "card", style: { marginTop: "14px" } },
+    const show = r.batch_id ? button({ kind: "main", sm: true, onClick: async () => { if (answers) await answers.showBatch(r.batch_id); answersBox.scrollIntoView({ block: "start", behavior: "smooth" }); } }, icon("history", { size: 14 }), "Show only these answers") : null;
+    const sumCard = card({ as: "div", class: "hyp-summary-card" },
       h("div", { class: "card-head" }, h("h2", {}, job.state === "done" ? "All done" : job.state === "cancelled" ? "Stopped" : "Something went wrong"), show),
       h("div", { class: "kv-grid" },
         h("div", { class: "kv" }, h("dt", {}, "Checked"), h("dd", {}, `${checked.length} of ${r.total ?? "?"}`)),
         errors.length ? h("div", { class: "kv" }, h("dt", {}, "Could not be checked"), h("dd", {}, String(errors.length))) : null,
         h("div", { class: "kv" }, h("dt", {}, "Time"), h("dd", {}, fmt.secs(job.seconds)))),
-      rows.length ? h("ul", { class: "batch-answers" }, rows.map((x) => h("li", {}, h("a", { href: `#/h/${encodeURIComponent(x.hyp_id)}`, class: "serif" }, x.text || x.claim), " ", statusBadge(x.status, { short: true })))) : null,
-      r.stopped ? h("div", { class: "notice notice-warn", style: { marginTop: "10px" } }, icon("alert-triangle"), h("p", {}, r.stopped)) : null,
-      job.state === "error" ? h("div", { class: "notice notice-error", style: { marginTop: "10px" } }, icon("alert-circle"), h("div", {}, h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : "The checks could not continue."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)) : null,
-      errors.length ? h("details", { class: "fold", open: true, style: { marginTop: "10px" } }, h("summary", {}, `Hypotheses that could not be checked (${errors.length})`),
-        h("ul", { class: "batch-errors" }, errors.map((e) => h("li", {}, h("span", { class: "muted" }, `#${e.index ?? "?"} `), h("span", { class: "serif" }, e.text), " — ", h("span", { class: "bad", style: { color: "var(--bad)" } }, e.error))))) : null);
-    progressBox.appendChild(card);
+      rows.length ? h("ul", { class: "batch-answers" }, rows.map((x) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(x.hyp_id)}` }, x.text || x.claim), " ", statusBadge(x.status, { short: true })))) : null,
+      r.stopped ? notice({ kind: "attention", class: "hyp-summary-notice" }, h("p", {}, r.stopped)) : null,
+      job.state === "error" ? notice({ kind: "error", class: "hyp-summary-notice" }, h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : "The checks could not continue."), fold({}, "Technical details", h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? link({ href: "#/settings" }, "Check the AI model in Settings") : null) : null,
+      errors.length ? fold({ open: true, class: "hyp-errors-fold" }, `Hypotheses that could not be checked (${errors.length})`,
+        h("ul", { class: "batch-errors" }, errors.map((e) => h("li", {}, h("span", { class: "muted" }, `#${e.index ?? "?"} `), h("span", { class: "serif" }, e.text), " — ", h("span", { class: "batch-error" }, e.error))))) : null);
+    progressBox.appendChild(sumCard);
     progressBox.hidden = false;
     if (job.state === "done") toast(`All done: ${checked.length} checked${errors.length ? `, ${errors.length} could not be checked` : ""}.`, errors.length ? "warn" : "ok");
   }
@@ -576,8 +579,8 @@ export async function renderHypotheses(view, params, query) {
     break;
   }
 
-  view.appendChild(h("details", { class: "fold section", style: { marginTop: "20px" } }, h("summary", {}, "What happens when you check"),
-    h("div", { class: "card card-plain", style: { marginTop: "8px" } },
+  view.appendChild(fold({ class: "section hyp-how-fold" }, "What happens when you check",
+    card({ as: "div", class: "hyp-how-card" },
       h("ol", { class: "plain-steps" },
         h("li", {}, h("strong", {}, "Search. "), "The app finds the excerpts of your documents that match the hypothesis (and, with search by meaning, excerpts that use other words for the same thing)."),
         h("li", {}, h("strong", {}, "Read. "), "The AI reads them and says for each one whether it supports, partly supports or contradicts the hypothesis, quoting the exact words."),

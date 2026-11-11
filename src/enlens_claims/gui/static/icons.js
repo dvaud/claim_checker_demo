@@ -21,6 +21,7 @@ const ICONS = {
   help: [["circle", { cx: 12, cy: 12, r: 10 }], ["path", { d: "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" }]],
   search: [["circle", { cx: 11, cy: 11, r: 8 }], ["path", { d: "m21 21-4.3-4.3" }]],
   "search-x": [["circle", { cx: 11, cy: 11, r: 8 }], ["path", { d: "m21 21-4.3-4.3M13.5 8.5l-5 5M8.5 8.5l5 5" }]],
+  "file-x": [["path", { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M14.5 12.5l-5 5M9.5 12.5l5 5" }]],
   "file-text": [["path", { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8" }]],
   folder: [["path", { d: "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" }]],
   library: [["path", { d: "m16 6 4 14M12 6v14M8 8v12M4 4v16" }]],
@@ -76,6 +77,7 @@ const ICONS = {
   network: [["circle", { cx: 18, cy: 5, r: 3 }], ["circle", { cx: 6, cy: 12, r: 3 }], ["circle", { cx: 18, cy: 19, r: 3 }], ["path", { d: "m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98" }]],
   shapes: [["path", { d: "M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z" }], ["rect", { x: 3, y: 14, width: 7, height: 7, rx: 1 }], ["circle", { cx: 17.5, cy: 17.5, r: 3.5 }]],
   "text-search": [["path", { d: "M21 6H3M10 12H3M10 18H3" }], ["circle", { cx: 17, cy: 15, r: 3 }], ["path", { d: "m21 19-1.9-1.9" }]],
+  user: [["circle", { cx: 12, cy: 8, r: 4 }], ["path", { d: "M5 21a7 7 0 0 1 14 0" }]],
   users: [["path", { d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" }], ["circle", { cx: 9, cy: 7, r: 4 }]],
   copy: [["rect", { x: 9, y: 9, width: 13, height: 13, rx: 2 }], ["path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" }]],
   inbox: [["path", { d: "M22 12h-6l-2 3h-4l-2-3H2" }], ["path", { d: "M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" }]],
@@ -125,6 +127,6 @@ export const STATUS_ICON = {
   no_passages: "search-x",
   not_checked: "clock",
   failed: "alert-triangle",
-  uncertain: "help",
+  uncertain: "circle-dot",
   waiting: "inbox",
 };

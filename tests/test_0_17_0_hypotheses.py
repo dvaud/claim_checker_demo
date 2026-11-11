@@ -18,8 +18,10 @@ def _js(name):
 
 
 def _css():
-    """Every stylesheet of the page: the page's own rules may move into the navigation stylesheet."""
-    return "\n".join(p.read_text(encoding="utf-8") for p in sorted(STATIC.glob("*.css")))
+    """Every ENLENS stylesheet of the page, in link order (0.17.0: tests/_static.py all_css; site.css is left out)."""
+    from _static import all_css
+
+    return all_css()
 
 
 def _fn(src, start, end="\n  }\n"):
@@ -63,7 +65,8 @@ def test_the_head_and_the_tabs():
 # ------------------------------------------------------------------ the box
 def test_one_box_for_one_hypothesis_or_a_list():
     hyp = _js("views/hypotheses.js")
-    box = hyp[hyp.index('const ta = h("textarea"'):hyp.index("\n", hyp.index('const ta = h("textarea"'))]
+    # 0.17.0 (design guide): the box is made by the textarea() helper (hyp: true), not a hand-spelled textarea
+    box = hyp[hyp.index("const ta = textarea({"):hyp.index("\n", hyp.index("const ta = textarea({"))]
     assert 'placeholder: "A hypothesis, or several: one per line"' in box and "maxlength" not in box
     assert "ta.style.height = `${ta.scrollHeight + 2}px`" in hyp   # it grows with its text
     # the mode follows the text: two non-empty lines or more (a CSV has its header and a row) are a list
@@ -72,7 +75,8 @@ def test_one_box_for_one_hypothesis_or_a_list():
     # a list: the server reads it as the check will, a moment after the typing stops
     assert "/batches/preview" in hyp and "const previewSoon = debounce(preview, 400);" in hyp
     assert "checked one after the other" in hyp and "too short and will be skipped" in hyp
-    assert 'h("summary", {}, "Show the list")' in hyp
+    # 0.17.0 (design guide): the fold helper makes the summary
+    assert 'fold({ class: "hyp-list-fold", hidden: true }, "Show the list"' in hyp
     # a list hides what belongs to one hypothesis: the split hint, Look before checking, the codebook tag
     apply = _fn(hyp, "function applyMode()")
     assert "lookWrap.hidden = many;" in apply and "if (tagRow) tagRow.hidden = many;" in apply and "splitHint.hidden = true;" in apply
@@ -139,13 +143,16 @@ def test_running_checks_are_rows_at_the_top_of_the_answers():
     # the other jobs the answers follow when sent to them
     assert '"read-new": "Reading the new documents"' in hist and '"second-opinion":' in hist and 'more: "Looking for more evidence"' in hist
     css = _css()
-    assert ".hyp-job-row" in css and ".badge-job.job-running" in css and ".hyp-compose .textarea-hyp" in css
+    # 0.17.0 (design guide): the state of a running check is a workState(), no .badge-job pill any more
+    assert 'workState("running", "Checking…")' in hist
+    assert ".hyp-job-row" in css and ".hyp-compose .textarea-hyp" in css
 
 
 def test_the_result_page_says_all_hypotheses():
     res = _js("views/result.js")
     assert "All results" not in res and "Back to results" not in res and "#/history" not in res
-    assert '"#/hypotheses", class: "it" }, icon("arrow-left", { size: 12 }), "All hypotheses")' in res
+    # 0.17.0 (design guide, changed on purpose): the way back is a back link (link({ kind: "back" })), not a hand-made one
+    assert 'link({ kind: "back", href: "#/hypotheses" }, "All hypotheses")' in res
     assert "`#/hypotheses?batch=${encodeURIComponent(r.batch_id)}`" in res   # after deleting one of a set
 
 
@@ -212,12 +219,15 @@ def test_the_old_addresses_still_lead_here():
 
 def test_the_map_download_is_a_small_icon_and_the_running_box_has_room():
     mp = _js("views/map.js")
-    line = mp[mp.index('class: "icon-btn map-doc-dl"'):]
-    line = line[:line.index("))))));") + 1]
-    assert 'title: "Download this PDF with the quotes highlighted"' in line and '"aria-label": `Download ${short(d.title)}' in line
-    assert 'icon("download", { size: 13 })' in line and '"highlighted")' not in line
+    # 0.17.0 (design guide): an iconButton({ icon, size, label, title }) now draws it
+    line = mp[mp.index('class: "map-doc-dl"'):]
+    line = line[:line.index("})))));") + 1]
+    assert 'title: "Download this PDF with the quotes highlighted"' in line and "label: `Download ${short(d.title)}" in line
+    # (changed on purpose: the small icon button, 24 px, the guide's smallest control)
+    assert 'icon: "download", sm: true, size: 13' in mp and '"highlighted")' not in line
     assert "btn-ghost map-doc-dl" not in mp
     # the box of a running "read more" has air above it, whatever it shows (running, done, failed)
     assert 'class: "grow more-status"' in _js("views/result.js")
-    css = (Path(__file__).resolve().parents[1] / "src/enlens_claims/gui/static/v012.css").read_text(encoding="utf-8")
-    assert ".result .more-status:not(:empty) { margin-top: 12px; }" in css
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rule moves
+
+    assert rule(".result .more-status:not(:empty)")["margin-top"] == "12px"

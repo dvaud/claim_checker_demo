@@ -1,5 +1,5 @@
 // Shared plumbing: API client, DOM helpers, formatting, toasts, dialogs, job polling and app state.
-import { icon } from "./icons.js";
+import { icon, STATUS_ICON } from "./icons.js";
 
 // ---------------------------------------------------------------------------------------------
 // API
@@ -343,15 +343,15 @@ export function partsSentence(parts, status) {
 export function toast(message, kind = "info", opts = {}) {
   const box = document.getElementById("toasts");
   if (!box) return;
-  const names = { info: "info", ok: "circle-check", warn: "alert-triangle", error: "alert-circle" };
+  const names = { info: "info", ok: "check", warn: "alert-triangle", error: "alert-circle" };   // a tick for done: the circle-tick is "Supported"
   if (opts.group) for (const old of box.querySelectorAll(`.toast[data-group="${opts.group}"]`)) old.remove();
   const t = h("div", { class: `toast toast-${kind}${opts.small ? " toast-small" : ""}`, role: kind === "error" ? "alert" : "status", dataset: opts.group ? { group: opts.group } : null },
     icon(names[kind] || "info"),
     h("div", { class: "toast-body" }, h("div", {}, message),
-      opts.detail ? h("details", { class: "toast-detail" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, opts.detail)) : null,
+      opts.detail ? fold({ sm: true, class: "toast-detail" }, "Technical details", h("div", { class: "mono small" }, opts.detail)) : null,
       opts.action ? h("a", { href: opts.action.href, class: "toast-link" }, opts.action.text) : null,
-      opts.button ? h("button", { class: "btn btn-sm toast-btn", type: "button", onClick: () => { t.remove(); opts.button.onClick(); } }, opts.button.text) : null),
-    h("button", { class: "icon-btn", type: "button", "aria-label": "Dismiss", onClick: () => t.remove() }, icon("x")));
+      opts.button ? button({ sm: true, class: "toast-btn", onClick: () => { t.remove(); opts.button.onClick(); } }, opts.button.text) : null),
+    iconButton({ icon: "x", label: "Dismiss", onClick: () => t.remove() }));
   box.appendChild(t);
   const ttl = opts.ttl || (kind === "error" ? 15000 : opts.button ? 9000 : 5000);
   setTimeout(() => { t.classList.add("toast-out"); setTimeout(() => t.remove(), 300); }, ttl);
@@ -389,9 +389,8 @@ export function dialog({ title, body, actions, danger, onOpen, wide, lock }) {
     const dlg = h("dialog", { class: "dialog" + (wide ? " dialog-wide" : ""), "aria-labelledby": "dlg-title" });
     const close = (value) => { if (lock && lock.on) return; dlg.close(); dlg.remove(); resolve(value); };
     const btns = (actions || [{ text: "Close", value: null }]).map((a) =>
-      h("button", {
-        type: "button",
-        class: "btn " + (a.primary ? (danger ? "btn-danger" : "btn-primary") : "btn-ghost"),
+      button({
+        kind: a.primary ? (danger ? "confirm" : "main") : "quiet",
         id: a.id,
         disabled: a.disabled,
         onClick: async () => {
@@ -401,7 +400,7 @@ export function dialog({ title, body, actions, danger, onOpen, wide, lock }) {
       }, a.text));
     append(dlg, [
       h("div", { class: "dialog-head" }, h("h2", { id: "dlg-title" }, title),
-        h("button", { class: "icon-btn", type: "button", "aria-label": "Close", onClick: () => close(null) }, icon("x"))),
+        iconButton({ icon: "x", label: "Close", onClick: () => close(null) })),
       h("div", { class: "dialog-body" }, body),
       h("div", { class: "dialog-actions" }, btns),
     ]);
@@ -418,7 +417,7 @@ export function confirmDialog({ title, message, confirmText = "Confirm", typeToC
   const body = h("div", {}, typeof message === "string" ? h("p", {}, message) : message);
   const actions = [{ text: "Cancel", value: false }, { text: confirmText, value: true, primary: true, id: "dlg-confirm", disabled: !!typeToConfirm }];
   if (typeToConfirm) {
-    input = h("input", { class: "input", type: "text", autocomplete: "off", "aria-label": `Type ${typeToConfirm} to confirm` });
+    input = h("input", withClass(UI.input, { type: "text", autocomplete: "off", "aria-label": `Type ${typeToConfirm} to confirm` }));
     append(body, [h("label", { class: "field" }, h("span", { class: "field-label" }, "Type ", h("code", {}, typeToConfirm), " to confirm"), input)]);
   }
   return dialog({
@@ -547,12 +546,12 @@ export const App = {
   privacy() {
     const s = App.settings();
     const b = s.backend || "auto";
-    if (b === "anthropic") return { where: "cloud", label: "Cloud AI", plain: "Excerpts of your documents are sent to the Claude API (cloud)", detail: `Claude API · ${s.anthropic_model || ""}`, icon: "cloud" };
+    if (b === "anthropic") return { where: "cloud", label: "Claude, through an API key", plain: "Excerpts of your documents are sent to the Claude API (cloud)", detail: `Claude API · ${s.anthropic_model || ""}`, icon: "cloud" };
     if (b === "claude_code") return { where: "cloud", label: "Claude, on your plan", sent: "Claude Code reads the passages on your Claude plan (sent to Anthropic).", short: "Only the passages of AI tasks leave this computer", plain: "Your documents stay here; only the passages inside the AI's tasks go to Anthropic.", detail: "Claude Code (your subscription) · a helper and model per task", icon: "cloud" };
-    if (b === "baseline") return { where: "none", label: "Demo mode", plain: "No AI model: a simple word-overlap stand-in. Results are not findings.", detail: "offline demo", icon: "cpu" };
+    if (b === "baseline") return { where: "none", label: "Demo mode", short: "A stand-in, not an AI: results are not findings", plain: "No AI model: a simple word-overlap stand-in. Results are not findings.", detail: "offline demo", icon: "alert-triangle" };
     const labels = (App.state && App.state.backend_labels) || {};
     const model = b === "ollama" ? (s.ollama_model || "no model chosen") : b === "openai" ? (s.openai_model || "first model listed") : (s.ollama_model || s.openai_model || "first model found");
-    return { where: "local", label: "Private", short: "The AI runs on this computer", plain: "The AI runs on this computer. Your documents never leave it.", detail: `${labels[b] || b} · ${model}`, icon: "house" };
+    return { where: "local", label: "A model on this computer", short: "The AI runs on this computer", plain: "The AI runs on this computer. Your documents never leave it.", detail: `${labels[b] || b} · ${model}`, icon: "house" };
   },
   modelConfigured() {
     const s = App.settings();
@@ -649,6 +648,377 @@ export function batchId() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The components (docs/DESIGN.md, section 4): one helper per kind of element, so a page names what it wants and never
+// spells a component's classes. `UI` is the one table of those classes: a variant is named once, here and in its
+// section of components.css. Every helper takes the attributes of h() besides its own options (a page's own class for
+// placement, ids, aria-*, on*), and its children after them, like h().
+// ---------------------------------------------------------------------------------------------
+export const UI = {
+  button: { main: "btn btn-primary", standard: "btn", quiet: "btn btn-ghost", danger: "btn btn-outline-danger", confirm: "btn btn-danger" },
+  sm: "btn-sm",
+  iconButton: "icon-btn", iconButtonSm: "icon-btn icon-btn-sm",
+  link: { plain: "", title: "link-title", back: "link-back", next: "link-next", external: "link-external", jump: "link-jump" },
+  tag: { neutral: "chip", code: "chip chip-code", attention: "warn-chip", count: "chip chip-count" },
+  notice: { info: "notice notice-info", done: "notice notice-ok", attention: "notice notice-warn", error: "notice notice-error" },
+  noticeIcon: { info: "info", done: "check", attention: "alert-triangle", error: "alert-circle" },
+  card: "card", cardSm: "card-sm", fold: "fold", foldSm: "fold-sm", choice: "seg", choiceButton: "seg-btn", option: "option-card",
+  input: "input", select: "select", textarea: "textarea", search: "search-field",
+  menu: "menu-list", menuItem: "menu-item", menuSep: "menu-sep",
+  workState: "work-state",
+};
+
+// h()'s attributes with the component's classes in front of the page's own
+function withClass(cls, attrs = {}) {
+  const own = attrs.class ? ` ${attrs.class}` : "";
+  return { ...attrs, class: `${cls}${own}`.trim() };
+}
+function split(opts, keys) {
+  const own = {}, rest = {};
+  for (const [k, v] of Object.entries(opts || {})) (keys.includes(k) ? own : rest)[k] = v;
+  return [own, rest];
+}
+
+// A button: something that does. kind: "standard" (default) | "main" (the one main action of a page, card or dialog)
+// | "quiet" (lesser actions in rows) | "danger" (removes; opens the dialog that confirms) | "confirm" (only the confirming
+// button of a dangerous dialog). sm: the small size. icon: an icon name before the words. busy: the loader turns and
+// the button waits. toggle: a chevron that turns with aria-expanded (shows or hides a panel right under it).
+export function button(opts = {}, ...children) {
+  const [o, attrs] = split(opts, ["kind", "sm", "icon", "busy", "toggle", "opens", "wrap"]);
+  const cls = [UI.button[o.kind || "standard"], o.sm ? UI.sm : "", o.toggle ? "btn-toggle" : "", o.opens ? "btn-opens" : "", o.wrap ? "btn-wrap" : ""].filter(Boolean).join(" ");
+  const b = h("button", withClass(cls, { type: "button", ...attrs }),
+    o.icon ? icon(o.icon, { size: o.sm ? 13 : 15 }) : null, children,
+    o.toggle ? icon("chevron-down", { size: 13, class: "btn-chevron" }) : null);
+  if (o.toggle && !b.hasAttribute("aria-expanded")) b.setAttribute("aria-expanded", "false");
+  if (o.busy) setBusy(b, true);
+  return b;
+}
+
+// A button at work: the loader turns in place of its icon, the words stay, it is disabled and keeps its width.
+export function setBusy(b, busy) {
+  b.disabled = !!busy;
+  if (busy) b.setAttribute("aria-busy", "true"); else b.removeAttribute("aria-busy");
+}
+
+// A download: it makes a file, so it looks like a (quiet, small) button, though it may be an <a download>.
+// opts.href: a file the browser fetches itself; otherwise onClick makes it.
+export function downloadButton(opts = {}, ...children) {
+  const [o, attrs] = split(opts, ["href", "kind"]);
+  const cls = `${UI.button[o.kind || "quiet"]} ${UI.sm}`;
+  if (o.href) return h("a", withClass(cls, { href: o.href, download: "", ...attrs }), icon("download", { size: 13 }), children);
+  return h("button", withClass(cls, { type: "button", ...attrs }), icon("download", { size: 13 }), children);
+}
+
+// A file chooser drawn as a button (a <label> that holds the hidden input): choosing a file is an action.
+export function fileButton(opts = {}, input, ...children) {
+  const [o, attrs] = split(opts, ["kind", "sm", "icon"]);
+  const cls = [UI.button[o.kind || "quiet"], o.sm === false ? "" : UI.sm].filter(Boolean).join(" ");
+  input.classList.add("visually-hidden");
+  return h("label", withClass(cls, attrs), o.icon ? icon(o.icon, { size: 13 }) : null, children, input);
+}
+
+// An icon button: an action shown by its icon alone (close, copy, theme, remove a word). label is its accessible name
+// and tooltip. sm: 24 px, for dense rows and the help mark only.
+export function iconButton(opts = {}) {
+  const [o, attrs] = split(opts, ["icon", "label", "sm", "size"]);
+  return h("button", withClass(o.sm ? UI.iconButtonSm : UI.iconButton, { type: "button", "aria-label": o.label, title: o.label, ...attrs }),
+    icon(o.icon, { size: o.size || (o.sm ? 14 : 16) }));
+}
+
+// A link: it takes you somewhere. kind: "plain" (default; underlined accent words) | "title" (the name of an item in a
+// list: accent words, underlined on hover; serif when serif: true, for the research's own words) | "back" (← and the
+// place's name, above a page title) | "next" (the one way on from an empty state or a notice, to the page where the
+// work is done: an arrow after) | "external" (opens outside the app: an icon after) | "jump" (a move to another place
+// on this page that has no address of its own: a <button> drawn as a link, because it moves and changes nothing).
+export function link(opts = {}, ...children) {
+  const [o, attrs] = split(opts, ["kind", "serif"]);
+  const kind = o.kind || "plain";
+  const cls = [UI.link[kind], o.serif ? "serif" : ""].filter(Boolean).join(" ");
+  if (kind === "jump") return h("button", withClass(cls, { type: "button", ...attrs }), children);
+  const a = h("a", withClass(cls, attrs),
+    kind === "back" ? icon("arrow-left", { size: 13 }) : null,
+    children,
+    kind === "next" ? icon("arrow-right", { size: 14 }) : null,
+    kind === "external" ? icon("external-link", { size: 13 }) : null);
+  if (kind === "external" && !a.target) { a.target = "_blank"; a.rel = "noopener"; }
+  return a;
+}
+
+// A tag: a fact about an item, never pressed. kind: "neutral" (default) | "code" (a code, its code in 600) |
+// "attention" (a fact that needs you: amber, with the triangle) | "count" (a small count beside a name).
+export function tag(opts = {}, ...children) {
+  const [o, attrs] = split(opts, ["kind", "icon"]);
+  const kind = o.kind || "neutral";
+  const ic = o.icon || (kind === "attention" ? "alert-triangle" : null);
+  return h("span", withClass(UI.tag[kind], attrs), ic ? icon(ic, { size: 12 }) : null, children);
+}
+
+// A notice: something to know before going on, that stays while it is true. kind: "info" (default) | "done" (a state
+// the page is about that stays true: set up, passed) | "attention" (needs you) | "error" (did not work). Its icon comes
+// with its kind; icon: another icon name (the cloud, the house) or false. At most one action or one link after its
+// words.
+export function notice(opts = {}, ...children) {
+  const [o, attrs] = split(opts, ["kind", "icon"]);
+  const kind = o.kind || "info";
+  const ic = o.icon === false ? null : (o.icon || UI.noticeIcon[kind]);
+  const role = kind === "error" || kind === "attention" ? "alert" : null;
+  return h("div", withClass(UI.notice[kind], { role, ...attrs }), ic ? icon(ic, { size: 16 }) : null, h("div", { class: "notice-body" }, children));
+}
+
+// A card: one thing, or one task, held together. opts.as: the element (default "section"); title, help (a helpMark)
+// and action (one button) make its head.
+// sm: the small card, one of many in a list (a note). as: "details" makes a card that folds: its first child is the
+// <summary>, drawn as its title line with the fold's chevron.
+export function card(opts = {}, ...children) {
+  const [o, attrs] = split(opts, ["as", "title", "help", "action", "level", "sm"]);
+  const head = o.title || o.action ? h("div", { class: "card-head" },
+    o.title ? h(o.level || "h2", { class: "card-title-h" }, o.title, o.help || null) : null, o.action || null) : null;
+  return h(o.as || "section", withClass(o.sm ? `${UI.card} ${UI.cardSm}` : UI.card, attrs), head, children);
+}
+
+// A fold: more here, folded away (More options, Technical details). open: open at first. sm: the small kind, for
+// dense places (a card's foot, an excerpt's list, a toast).
+export function fold(opts = {}, summary, ...children) {
+  const [o, attrs] = split(opts, ["open", "sm"]);
+  return h("details", withClass(o.sm ? `${UI.fold} ${UI.foldSm}` : UI.fold, { open: !!o.open, ...attrs }), h("summary", {}, summary), children);
+}
+
+// A choice: one of a few values, shown in place; the content follows it. options: [[value, words, count?]];
+// filter: true for a filter of a list (each option shows the rows it would show, aria-pressed); otherwise a radio group.
+// onPick(value) after the chosen value changes. Arrow keys move between the options.
+export function choice(opts = {}) {
+  const [o, attrs] = split(opts, ["label", "options", "value", "onPick", "filter", "sm"]);
+  let value = o.value;
+  const btns = [];
+  const group = h("div", withClass(UI.choice + (o.sm ? " seg-sm" : ""), { role: o.filter ? "group" : "radiogroup", "aria-label": o.label, ...attrs }));
+  const paint = () => btns.forEach((b) => {
+    const on = b.dataset.value === String(value);
+    if (o.filter) b.setAttribute("aria-pressed", on ? "true" : "false");
+    else { b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1; }
+  });
+  for (const [v, words, count, title] of o.options || []) {
+    const b = h("button", { class: UI.choiceButton, type: "button", role: o.filter ? null : "radio", "data-value": String(v), title: title || null,
+      onClick: () => { value = v; paint(); if (o.onPick) o.onPick(v); } },
+      words, count !== undefined && count !== null ? h("span", { class: "count" }, String(count)) : null);
+    btns.push(b);
+  }
+  group.addEventListener("keydown", (e) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+    const i = btns.indexOf(document.activeElement);
+    if (i < 0) return;
+    const j = (i + (e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 1) + btns.length) % btns.length;
+    btns[j].focus();
+    if (!o.filter) btns[j].click();
+    e.preventDefault();
+  });
+  append(group, btns);
+  paint();
+  group.set = (v) => { value = v; paint(); };
+  return group;
+}
+
+// Option cards: a choice whose options each need a sentence (which AI reads the documents, how to start a codebook).
+// options: [{ value, title, text, icon, tag, foot, disabled }]: tag a few words at the head's right (Recommended), foot
+// a line under the text (where text goes). A radio group whose chosen card is marked by aria-checked; with `name`, the
+// cards are labels holding real radio inputs of that name (a form's question, changed with the arrow keys). onPick(value)
+// after a pick; .set(value) chooses one without calling it.
+export function optionCards(opts = {}) {
+  const [o, attrs] = split(opts, ["label", "options", "value", "onPick", "name"]);
+  const cards = [];
+  const group = h("div", withClass("option-cards", { role: "radiogroup", "aria-label": o.label, ...attrs }));
+  const paint = (v) => cards.forEach((c) => {
+    const on = c.dataset.value === String(v);
+    if (o.name) c.querySelector("input").checked = on;
+    else { c.setAttribute("aria-checked", on ? "true" : "false"); c.tabIndex = on ? 0 : -1; }
+  });
+  for (const op of o.options || []) {
+    const inner = [h("span", { class: "option-card-head" }, op.icon ? icon(op.icon, { size: 16 }) : null, h("span", { class: "option-card-title" }, op.title),
+      op.tag ? tag({}, op.tag) : null),
+      op.text ? h("span", { class: "option-card-sub" }, op.text) : null,
+      op.foot ? h("span", { class: "option-card-foot" }, op.foot) : null];
+    let c;
+    if (o.name) {
+      const radio = h("input", { type: "radio", name: o.name, value: String(op.value), checked: String(op.value) === String(o.value), disabled: !!op.disabled });
+      radio.addEventListener("change", () => { if (radio.checked && o.onPick) o.onPick(op.value); });
+      c = h("label", { class: UI.option, "data-value": String(op.value), "aria-disabled": op.disabled ? "true" : null }, radio, inner);
+    } else {
+      c = h("button", { class: UI.option, type: "button", role: "radio", "data-value": String(op.value), disabled: !!op.disabled,
+        onClick: () => { paint(op.value); if (o.onPick) o.onPick(op.value); } }, inner);
+    }
+    cards.push(c);
+  }
+  append(group, cards);
+  paint(o.value);
+  group.set = paint;
+  return group;
+}
+
+// Form controls (put them in field()): a text input, a select (children: its <option>s), a multi-line box. mono: for
+// codes and commands. hyp: the box a hypothesis is written in (serif).
+export function input(opts = {}) {
+  const [o, attrs] = split(opts, ["mono", "sm"]);
+  return h("input", withClass([UI.input, o.mono ? "input-mono" : "", o.sm ? "input-sm" : ""].filter(Boolean).join(" "), { type: "text", ...attrs }));
+}
+export function select(opts = {}, ...options) {
+  const [o, attrs] = split(opts, ["sm"]);
+  return h("select", withClass(UI.select + (o.sm ? " input-sm" : ""), attrs), options);
+}
+export function textarea(opts = {}) {
+  const [o, attrs] = split(opts, ["hyp", "mono"]);
+  return h("textarea", withClass([UI.textarea, o.hyp ? "textarea-hyp" : "", o.mono ? "input-mono" : ""].filter(Boolean).join(" "), attrs));
+}
+// A search box: the magnifier inside the field. Returns the <label>; its .input is the <input>.
+export function searchField(opts = {}) {
+  const inp = h("input", withClass(UI.input, { type: "search", ...opts, class: opts.class || null }));
+  const lab = h("label", { class: UI.search }, icon("search", { size: 15 }), inp);
+  lab.input = inp;
+  return lab;
+}
+
+// A menu: more actions for one thing, under its button. items: [{ text, icon, onClick, danger, current }] or "sep".
+// The button is a small quiet button: the words (default "More") and the more icon; Escape and a click outside close.
+export function menu(opts = {}) {
+  const [o, attrs] = split(opts, ["items", "text", "label"]);
+  const list = h("div", { class: UI.menu, role: "menu" });
+  const trigger = h("summary", { class: `${UI.button.quiet} ${UI.sm}`, "aria-haspopup": "menu", "aria-label": o.label || null },
+    icon("more-horizontal", { size: 14 }), o.text || "More");
+  const det = h("details", withClass("menu", attrs), trigger, list);
+  const close = () => { det.open = false; };
+  for (const it of o.items || []) {
+    if (it === "sep") { list.appendChild(h("div", { class: UI.menuSep, role: "separator" })); continue; }
+    list.appendChild(h("button", { class: UI.menuItem + (it.danger ? " menu-item-danger" : ""), type: "button", role: "menuitem",
+      "aria-current": it.current ? "true" : null, disabled: !!it.disabled,
+      onClick: (e) => { close(); if (it.onClick) it.onClick(e); } }, it.icon ? icon(it.icon, { size: 14 }) : null, it.text));
+  }
+  det.addEventListener("keydown", (e) => { if (e.key === "Escape" && det.open) { close(); trigger.focus(); e.stopPropagation(); } });
+  document.addEventListener("click", (e) => { if (det.open && !det.contains(e.target)) close(); });
+  return det;
+}
+
+// A person mark: who did something, beside an item, a judgement, a log entry or a review. The person icon, then "You"
+// or a colleague's initials (several people: each, "You" first), and a role when it matters (Owner, Collaborator).
+// The full names and the role are its tooltip and its accessible name. note: a word after the role's dot instead of a
+// role ("partly", while only part is reviewed).
+export function personMark(people, opts = {}) {
+  const list = (people || []).filter(Boolean);
+  if (!list.length) return null;
+  const names = list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
+  const words = `${opts.prefix ? `${opts.prefix} ` : ""}${names}${opts.role ? ` (${opts.role})` : ""}`;
+  const short = list.map((p) => (p === "you" ? "You" : p.split(/\s+/).map((w) => w[0] || "").join("").slice(0, 2).toUpperCase()));
+  const after = opts.role || opts.note;
+  return h("span", { class: `${UI.tag.neutral} person-mark`, title: cap(words), "aria-label": cap(words), role: "img" },
+    icon(list.length > 1 ? "users" : "user", { size: 12 }), h("span", { "aria-hidden": "true" }, short.join(" · ")),
+    after ? h("span", { class: "person-mark-role", "aria-hidden": "true" }, after) : null);
+}
+// Reviewed: who judged the excerpts an answer rests on (the person mark's first use); "You · partly" while only part is.
+export function reviewedMark(people, partly) {
+  return personMark(people, { prefix: partly ? "Partly reviewed by" : "Reviewed by", note: partly ? "partly" : null });
+}
+
+// A severity (of a proposed change): low, medium or high, as a tag; never a judgement colour. High needs you: the
+// attention tag.
+export function severityTag(level) {
+  const words = { low: "Low", medium: "Medium", high: "High" }[level] || level;
+  return level === "high" ? tag({ kind: "attention", title: "Severity: high" }, words)
+    : tag({ class: `severity-${level}`, title: `Severity: ${words.toLowerCase()}` }, words);
+}
+
+// An item's sharing state (working together): Private (only on this computer), Shared (in the shared folder),
+// Withdrawn (no longer shared). A tag with its icon; its tooltip says what it means.
+export function shareState(state) {
+  const [ic, words, title] = { private: ["house", "Private", "Only on this computer"], shared: ["users", "Shared", "In the shared folder: colleagues see it"],
+    withdrawn: ["undo", "Withdrawn", "No longer shared; colleagues keep what they had"] }[state] || ["house", state, null];
+  return tag({ icon: ic, title, class: "share-state" }, words);
+}
+
+// A document this copy does not hold (a colleague's check or note names it): its title as plain words (nothing to
+// open), the tag "not on this computer" and, when it can be added, the small quiet button "Add its file".
+export function absentDocument(title, opts = {}) {
+  return h("span", { class: "doc-absent" }, h("span", { class: "doc-absent-title" }, title),
+    tag({ icon: "file-x", title: "A colleague's work names this document; its file is not in this copy of the project" }, "not on this computer"),
+    opts.onAdd ? button({ kind: "quiet", sm: true, icon: "upload", onClick: opts.onAdd }, "Add its file") : null);
+}
+
+// A row of a list (in the drawer or on a page): who (a person mark), the item's name as its title link, when, and one
+// or two small actions at the row's end. sub: a quiet second line under the name (a colleague's ENLENS version);
+// warn: true when that line needs you (it becomes an attention tag). Rows are grouped under a small heading by
+// listGroup(heading, …rows), by person or by day.
+export function listRow({ person, title, href, time, sub, warn, actions = [] }) {
+  return h("li", { class: "list-row" }, person || null,
+    h("div", { class: "list-row-main" }, href ? link({ kind: "title", href }, title) : h("span", {}, title),
+      sub ? (warn ? tag({ kind: "attention" }, sub) : h("span", { class: "list-row-sub" }, sub)) : null),
+    time ? h("time", { class: "list-row-time" }, time) : null,
+    actions.length ? h("span", { class: "list-row-actions" }, ...actions) : null);
+}
+export function listGroup(heading, ...rows) {
+  return h("section", { class: "list-group" }, h("h3", { class: "list-head" }, heading), h("ul", { class: "list-rows" }, ...rows));
+}
+
+// A list of problems, one notice each (the shared folder: one per colleague or per kind): items [{ kind, person, text,
+// action }]; kind as notice()'s (attention: needs you, error: did not work, info: wait and it passes).
+export function noticeList(items) {
+  return h("ul", { class: "notice-list" }, items.filter(Boolean).map((it) =>
+    h("li", {}, notice({ kind: it.kind || "attention" }, h("p", {}, it.person || null, it.person ? " " : null, it.text), it.action || null))));
+}
+
+// A side-by-side comparison of two versions of one thing (yours and a colleague's, before and after): two columns,
+// each with its heading (a person mark, a time), the actions under them (Keep mine, Keep theirs, Keep both).
+export function compare({ left, right, actions, label }) {
+  const side = (s) => h("div", { class: "compare-side" }, h("div", { class: "compare-head" }, s.title, s.meta || null), h("div", { class: "compare-body" }, s.body));
+  return h("div", { class: "compare", role: "group", "aria-label": label || "Two versions side by side" },
+    h("div", { class: "compare-sides" }, side(left), side(right)), actions ? h("div", { class: "compare-actions btn-row" }, actions) : null);
+}
+
+// A work state: work under way, waiting, not running, done or did not work, in words and an icon (never a pill).
+// state: "running" | "waiting" (queued: starts when … has finished) | "stopped" (not running) | "done" (synced, finished)
+// | "failed" | "attention" (needs you: a folder not reachable, a newer ENLENS needed); time: seconds for a running state.
+export function workState(state, words, time) {
+  const ic = { waiting: "clock", stopped: "pause", done: "check", failed: "alert-circle", attention: "alert-triangle" }[state];
+  return h("span", { class: `${UI.workState} work-${state}` },
+    state === "running" ? h("span", { class: "running-dot", "aria-hidden": "true" }) : icon(ic || "circle", { size: 13 }),
+    h("span", {}, words), time !== undefined && time !== null ? h("span", { class: "work-state-time" }, fmt.secs(time)) : null);
+}
+
+// The drawer: your own working space beside any page (the research log; in 0.18 also working together). One panel on
+// the right, opened by one button in the same place on every page (drawerButton()). Its head shows the title, or, when
+// it holds two or more tabs, the tabs (tabs: [{ key, label, icon }], current, onTab(key): the head's view tabs); then at
+// most one control (a choice) and the close button. `sections` are its body's parts, top to bottom, each drawn by its
+// content's own components (a write box, a list); the last may grow and scroll. `foot`: one link to the whole view.
+// A new tab is a new entry in `tabs` whose onTab draws its own sections (setSections()); a new section is one more
+// element in `sections`. Opening and closing: body[data-drawer="open"], set by setDrawerOpen().
+export function drawer({ id, title, icon: ic, tabs, current, onTab, control, sections = [], foot, onClose, closeLabel }) {
+  const close = iconButton({ icon: "x", label: closeLabel || `Close ${title.toLowerCase()}`, onClick: () => onClose && onClose() });
+  const tabList = tabs && tabs.length > 1 ? h("div", { class: "drawer-tabs settings-tabs", role: "tablist", "aria-label": title },
+    tabs.map((t) => h("button", { type: "button", role: "tab", "aria-selected": t.key === current ? "true" : "false",
+      "aria-current": t.key === current ? "page" : null, onClick: () => onTab && onTab(t.key) }, t.icon ? icon(t.icon, { size: 14 }) : null, t.label))) : null;
+  const body = h("div", { class: "drawer-body" });
+  const aside = h("aside", { class: "drawer", id, "aria-label": title, hidden: true },
+    h("div", { class: "drawer-head" }, tabList || [ic ? icon(ic, { size: 16 }) : null, h("h2", { class: "drawer-title" }, title)], control || null, close),
+    body,
+    foot ? h("div", { class: "drawer-foot" }, foot) : null);
+  aside.setSections = (parts) => replace(body, ...parts.filter(Boolean).map((el) => { el.classList.add("drawer-section"); return el; }));
+  aside.setSections(sections);
+  aside.closeButton = close;
+  return aside;
+}
+// The drawer's button: a small button that stays in the same spot on every page, soft teal while its drawer is open.
+export function drawerButton({ id, controls, label, icon: ic, onClick, title }) {
+  return h("button", { class: `${UI.button.standard} ${UI.sm} btn-opens drawer-btn`, id, type: "button", "aria-expanded": "false",
+    "aria-controls": controls, title: title || null, onClick }, icon(ic, { size: 15 }), h("span", { class: "drawer-btn-text" }, label));
+}
+export function setDrawerOpen(open, btn) {
+  if (open) document.body.dataset.drawer = "open"; else delete document.body.dataset.drawer;
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+// Where text goes, and which AI reads it (the AI line): the cloud (Claude), the house (this computer) or the folder (a
+// folder shared with colleagues) and one sentence. One per card that holds such actions, at its foot; never in the
+// row of a button. "attention": no AI can run yet.
+export function aiWhere(text, where = "cloud") {
+  const ic = { local: "house", attention: "alert-triangle", folder: "folder" }[where] || "cloud";
+  return h("p", { class: where === "attention" ? "ai-where ai-where-attention" : "ai-where" }, icon(ic, { size: 13 }), h("span", {}, text));
+}
+
+// ---------------------------------------------------------------------------------------------
 // small widgets
 // ---------------------------------------------------------------------------------------------
 export function field(label, control, opts = {}) {
@@ -712,14 +1082,25 @@ export function noDocuments() {
   return !!p && p.ok !== false && p.documents === 0;
 }
 export function addDocumentsFirst(what) {
-  return h("div", { class: "notice notice-info" }, icon("info"),
-    h("div", {}, h("p", {}, h("strong", {}, "Add documents first. "), `${what} works on the documents of this project, and there are none yet.`),
-      h("a", { class: "btn btn-primary btn-sm", href: "#/sources", style: { marginTop: "6px" } }, icon("upload", { size: 13 }), "Add documents")));
+  // a step done on another page: the one way on is a next-step link, not a button (docs/DESIGN.md, Links)
+  return notice({ kind: "info" }, h("p", {}, h("strong", {}, "Add documents first. "), `${what} works on the documents of this project, and there are none yet.`),
+    h("p", {}, link({ kind: "next", href: "#/sources" }, "Add documents on the Documents page")));
 }
 
+// The answer of a check as a judgement badge (a pill: the only pills in the app). "Not finished", "Did not work" and
+// "Waiting for Claude Code" are states of work, not judgements: they are drawn as a work state (words and an icon).
+const WORK_STATUS = { not_checked: "stopped", failed: "failed", waiting: "waiting" };
 export function statusBadge(status, opts = {}) {
-  const iconName = { supported: "circle-check", partially_supported: "circle-half", contested: "arrows-opposed", contradicted: "circle-x", uncertain: "circle-dot", unsupported: "circle-dashed", no_passages: "search-x", not_checked: "clock", failed: "alert-triangle", waiting: "inbox" }[status] || "circle";
+  const iconName = STATUS_ICON[status] || "circle";
   const text = opts.text || (opts.short ? STATUS_SHORT[status] : null) || App.statusText(status) || status;
+  const title = opts.title || (opts.short ? `${App.statusText(status)}. ` : "") + (App.statusHelp(status) || "") || null;
+  if (WORK_STATUS[status]) {
+    const w = workState(WORK_STATUS[status], text);
+    w.classList.add(`status-${status}`);
+    if (opts.class) w.classList.add(...opts.class.split(" ").filter(Boolean));
+    if (title) w.title = title;
+    return w;
+  }
   return h("span", { class: `badge status-${status} ${opts.size === "lg" ? "badge-lg" : ""} ${opts.class || ""}`, title: opts.title || (opts.short ? `${App.statusText(status)}. ` : "") + (App.statusHelp(status) || "") || null },
     icon(iconName, { size: opts.size === "lg" ? 20 : 14 }), opts.prefix ? h("span", { class: "badge-prefix" }, opts.prefix, " ") : null, h("span", {}, text));
 }
@@ -734,8 +1115,8 @@ export function strongerMark(before, info = {}, opts = {}) {
   const n = info.changed || 0;
   const story = `The first AI model (${first}) found this ${was.toLowerCase()}. A stronger model (${strong}) read the excerpts again${n ? ` and changed ${n} ${n === 1 ? "judgement" : "judgements"}` : ""}; its reading counts, so this is the answer now. Each excerpt it changed shows both readings.`;
   const label = opts.compact ? `was ${was.toLowerCase()}` : `at first: ${was.toLowerCase()}`;
-  if (opts.plain) return h("span", { class: "was-mark was-plain", title: story }, icon("layers", { size: 11 }), h("span", {}, label));
-  const btn = h("button", { class: "was-mark", type: "button", "aria-label": `Changed by a stronger model; at first ${was.toLowerCase()}` }, icon("layers", { size: 11 }), h("span", {}, label));
+  if (opts.plain) return tag({ class: "was-mark", title: story, icon: "layers" }, h("span", {}, label));
+  const btn = h("button", { class: `${UI.tag.neutral} was-mark`, type: "button", "aria-label": `Changed by a stronger model; at first ${was.toLowerCase()}` }, icon("layers", { size: 12 }), h("span", {}, label));
   const wrap = popNote(btn, story, { wide: true });
   wrap.classList.add("was-wrap");
   return wrap;
@@ -760,11 +1141,11 @@ export function kv(label, value, cls) {
 }
 
 // A heat cell of a documents × codes (or themes × documents) grid, on a log scale so one very large cell does not
-// leave the others pale: classes `<prefix>-cell <prefix>-l0..4` (profile-viewer.css, concepts-themes.css).
+// leave the others pale: classes `<prefix>-cell <prefix>-l0..4` (components.css, 4.25 The heat grid).
 export function heatCell(n, max, label, prefix, onClick) {
   const level = n ? Math.max(1, Math.min(4, Math.ceil((4 * Math.log1p(n)) / Math.log1p(max)))) : 0;
   // 0.14.3: a cell with passages holds a button (Tab and Enter reach it); the cell's own click still works for the mouse
-  return h("td", { class: `map-cell ${prefix}-cell ${prefix}-l${level}`, title: `${label}: ${plural(n, "passage")}`, onClick: n ? onClick : null },
+  return h("td", { class: `map-cell heat-l${level} ${prefix}-cell ${prefix}-l${level}`, title: `${label}: ${plural(n, "passage")}`, onClick: n ? onClick : null },
     n && onClick ? h("button", { class: "heat-btn", type: "button", "aria-label": `${label}: ${plural(n, "passage")}` }, String(n))
       : [h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·")]);
 }
@@ -775,7 +1156,7 @@ export function heatCell(n, max, label, prefix, onClick) {
 // that stands at the end (a table row for a table body); `render` may return null for an item to leave out.
 export function drawInSteps(parent, items, render, { first = 60, step = 120, more } = {}) {
   let done = 0, observer = null;
-  const button = (left, onClick) => h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick }, icon("chevron-down", { size: 13 }), `Show more (${left} more)`);
+  const button = (left, onClick) => h("button", { class: `${UI.button.quiet} ${UI.sm}`, type: "button", onClick }, icon("chevron-down", { size: 13 }), `Show more (${left} more)`);
   const tail = more || ((left, onClick) => h("div", { class: "draw-more" }, button(left, onClick)));
   let end = null;
   const next = (n, byHand) => {
@@ -810,20 +1191,19 @@ export function drawInSteps(parent, items, render, { first = 60, step = 120, mor
 // 0.13.3: the result page's help mark, for every page: a small (?) whose explanation opens on hover, focus or click,
 // so a page says one short line and keeps the longer explanation one step away.
 export function helpMark(label, text, opts = {}) {
-  return popNote(h("button", { class: "link-btn help-mark", type: "button", "aria-label": label }, icon("help", { size: opts.size || 13 })),
+  return popNote(iconButton({ icon: "help", label, sm: true, size: opts.size || 13, class: "help-mark", title: null }),
     text, { wide: opts.wide !== false });
 }
 
-// 0.13.3: downloads as one quiet line of links, as on the result page (Download: Excel (.xlsx) · CSV), instead of a
-// row of buttons that compete with the page's main action. items: [{ text, title, onClick, note }]
+// Downloads, quiet: "Download" and one small quiet button per file (a download makes a file: an action, so a
+// button, never a link), so they never compete with the page's main action. items: [{ text, title, onClick, note }]
 export function downloadLinks(items, opts = {}) {
   const parts = [];
-  items.filter(Boolean).forEach((it, i) => {
-    if (i) parts.push(h("span", { class: "dl-sep", "aria-hidden": "true" }, "·"));
-    parts.push(h("button", { class: "link-btn", type: "button", title: it.title || null, onClick: it.onClick }, it.text));
-    if (it.note) parts.push(h("span", { class: "muted" }, it.note));
+  items.filter(Boolean).forEach((it) => {
+    parts.push(downloadButton({ title: it.title || null, onClick: it.onClick }, it.text));
+    if (it.note) parts.push(h("span", { class: "muted small" }, it.note));
   });
-  return h("span", { class: "dl-links" }, icon("download", { size: 13 }), h("span", { class: "dl-label" }, opts.label || "Download"), parts);
+  return h("span", { class: "dl-links" }, h("span", { class: "dl-label" }, opts.label || "Download"), parts);
 }
 
 export function pageHead(title, opts = {}) {
@@ -841,7 +1221,7 @@ export function pageHead(title, opts = {}) {
 // A command to type, with a button that copies it.
 // `where`: where it is pasted, for the confirmation ("Claude Code", or "a terminal" for a command line).
 export function copyLine(text, label = "Copy", where = "Claude Code") {
-  const btn = h("button", { class: "btn btn-sm btn-ghost copy-btn", type: "button", "aria-label": `${label}: ${text}` }, icon("copy", { size: 13 }), label);
+  const btn = button({ kind: "quiet", sm: true, class: "copy-btn", "aria-label": `${label}: ${text}` }, icon("copy", { size: 13 }), label);
   btn.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(text); toast(`Copied. Paste it in ${where}.`, "ok", { ttl: 2000 }); }
     catch (_) { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Selected: copy it with Ctrl+C (or Cmd+C).", "info"); }
@@ -855,13 +1235,14 @@ export function copyLine(text, label = "Copy", where = "Claude Code") {
 export function queueNotice(q, opts = {}) {
   if (!q) return null;
   const est = q.estimate || "";
-  return h("div", { class: `queue-notice ${q.paused ? "queue-paused" : ""}`, role: "status" },
-    h("div", { class: "qn-head" }, icon(q.paused ? "pause" : "inbox", { size: 15 }), h("strong", {}, q.text || "Waiting for Claude Code"),
+  // a notice (attention while nothing answers it), its one action Start Claude Code, and the AI line once, at its foot
+  return notice({ kind: q.paused ? "attention" : "info", icon: q.paused ? "pause" : "inbox", class: `queue-notice${q.paused ? " queue-paused" : ""}`, role: "status" },
+    h("p", { class: "qn-head" }, h("strong", {}, q.text || "Waiting for Claude Code"),
       q.being_answered ? h("span", { class: "muted small qn-answered" }, ` · ${q.being_answered} being answered now`) : null),
-    est && !q.paused ? h("div", { class: "muted small" }, est.charAt(0).toUpperCase() + est.slice(1) + ".") : null,
-    q.paused && q.paused_text ? h("p", { class: "small", style: { margin: "4px 0" } }, q.paused_text) : null,
+    est && !q.paused ? h("p", { class: "muted small" }, est.charAt(0).toUpperCase() + est.slice(1) + ".") : null,
+    q.paused && q.paused_text ? h("p", { class: "small" }, q.paused_text) : null,
     App.project ? startClaude(App.project, { command: q.command, foldType: opts.foldType }) : null,
-    opts.privacy === false || opts.foldType ? null : h("div", { class: "muted small", style: { marginTop: "4px" } }, icon("cloud", { size: 12 }), " ", q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic."));
+    opts.privacy === false || opts.foldType ? null : aiWhere(q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic."));
 }
 
 // 0.9: "Start Claude Code": ENLENS starts Claude Code (signed in with its own login, on the researcher's plan) for
@@ -912,7 +1293,7 @@ export function startClaude(project, opts = {}) {
     const typeIt = h("div", { class: "sc-type" }, h("span", { class: "muted small" }, q.can_start ? "Or type this in Claude Code yourself:" : "In Claude Code (opened in any folder), type:"), copyLine(cmd));
     // 0.12, opts.foldType (the result page's waiting card): one line under the button; how it works, the command to
     // type and what is sent sit in a fold
-    const typeBlock = opts.foldType && q.can_start ? h("details", { class: "fold sc-type-fold" }, h("summary", {}, "How it works"),
+    const typeBlock = opts.foldType && q.can_start ? fold({ sm: true, class: "sc-type-fold" }, "How it works",
       h("p", { class: "small" }, "It works on your Claude plan, in the background, and stops by itself when nothing waits."),
       h("div", { class: "sc-type" }, h("span", { class: "muted small" }, "Or type this in Claude Code yourself:"), copyLine(cmd)),
       h("p", { class: "muted small" }, icon("cloud", { size: 12 }), " ", q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic.")) : typeIt;
@@ -967,7 +1348,7 @@ export function startClaude(project, opts = {}) {
         }));
       }
       if (r.exit_code !== undefined && r.exit_code !== null && r.exit_code !== 0 && !r.stopped) {
-        parts.push(h("details", { class: "fold small" }, h("summary", {}, icon("alert-triangle", { size: 12 }), " The last run stopped with a problem"), h("pre", { class: "mono small sc-report" }, r.report || "(no report)")));
+        parts.push(fold({ sm: true }, [icon("alert-circle", { size: 12 }), " The last run stopped with a problem"], h("pre", { class: "mono small sc-report" }, r.report || "(no report)")));
       }
     } else if (!q.can_start && q.claude && !q.claude.found) {
       parts.push(h("p", { class: "small sc-missing" }, icon("info", { size: 12 }), " Claude Code was not found on this computer. ", h("a", { href: "#/settings/model" }, "Set it up"), " to start it from here."));
@@ -1015,13 +1396,13 @@ export async function saveSpeed(speed) {
 export function speedPicker(chosen, options = { slower: 1, normal: 2, faster: 4 }, onPick = saveSpeed, opts = {}) {
   let current = chosen || "normal";
   const line = h("span", { class: "muted small sc-speed-line" });
-  const group = h("div", { class: "sc-speed-btns", role: "group", "aria-label": "Speed of Claude Code" });
+  const group = h("div", { class: `${UI.choice} seg-sm sc-speed-btns`, role: "group", "aria-label": "Speed of Claude Code" });
   const show = (v) => {
-    for (const b of group.children) { const on = b.dataset.speed === v; b.classList.toggle("seg-on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); }
+    for (const b of group.children) { const on = b.dataset.speed === v; b.setAttribute("aria-pressed", on ? "true" : "false"); }
     line.textContent = `${helpersText(options[v] || 2)} at a time${SPEED_NOTE[v] || ""}.`;
   };
   for (const [v, label] of SPEED_CHOICES) {
-    group.appendChild(h("button", { class: "btn btn-sm seg-btn", type: "button", dataset: { speed: v }, onClick: async () => {
+    group.appendChild(h("button", { class: UI.choiceButton, type: "button", dataset: { speed: v }, onClick: async () => {
       if (v === current && !(opts.custom && opts.custom())) return;  // the speed shown, picked again, undoes a choice of helpers
       const before = current;
       current = v; show(v);
@@ -1071,12 +1452,12 @@ function helpersFold(project, q, onChange) {
   const dflt = (r) => Math.min(total(), maxOne, Math.max(1, r.batches || 1));
   const value = (r) => C().counts[r.helper] ?? dflt(r);
   const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
-  const fold = h("details", { class: "fold small sc-helpers", open: C().open });
-  const refocus = (id) => { const el = fold.querySelector(`[id="${id}"]`); if (el) el.focus(); };  // the list drawn again
-  const summary = h("summary", {});
+  const helpers = fold({ sm: true, class: "sc-helpers", open: C().open }, null);
+  const refocus = (id) => { const el = helpers.querySelector(`[id="${id}"]`); if (el) el.focus(); };  // the list drawn again
+  const summary = helpers.firstElementChild;
   const body = h("div", { class: "sc-helpers-body" });
-  fold.append(summary, body);
-  fold.addEventListener("toggle", () => { C().open = fold.open; });
+  helpers.append(body);
+  helpers.addEventListener("toggle", () => { C().open = helpers.open; });
   function draw() {
     replace(summary, "Choose the helpers for this run", customRun(C()) ? h("span", { class: "chip" }, "changed") : null);
     const totalSel = h("select", { class: "select select-sm", id: `${uid}-total` },
@@ -1104,12 +1485,12 @@ function helpersFold(project, q, onChange) {
       back);
   }
   draw();
-  return fold;
+  return helpers;
 }
 // 0.11.3, the Start Claude Code nudge: when a project's work first waited with nothing answering it (kept per project, as
 // the sidebar draws its button again every 5 s and the progress panel whenever the queue's line changes).
 const NUDGE_AFTER = 5000;
-const NUDGE_PULSE = 1600;  // the length of one pulse in v0113.css (sc-nudge)
+const NUDGE_PULSE = 1600;  // the length of one pulse of .btn.sc-nudge (components.css, 4.1)
 const WAIT_SINCE = new Map();
 const idleQueue = (q) => !!(q && q.route === "claude_code" && q.can_start && !(q.runner || {}).running && q.waiting && !q.being_answered);
 // one request at a time per project; the answer is kept for the next element that draws
@@ -1142,5 +1523,5 @@ export function tesseractHelp(ocr) {
     how.command ? copyLine(how.command, "Copy", "a terminal") : null,
     h("p", { class: "small" }, how.link ? h("a", { href: how.link, target: "_blank", rel: "noopener" }, how.link_text || "How to install it") : null,
       how.link ? " · " : null, `${appName()} notices it within a minute; then add the document again.`),
-    py.length ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("p", { class: "small" }, `Also missing in ENLENS's Python: ${py.join(", ")}. Install them with `, h("code", {}, "pip install 'enlens-claims[ocr]'"), " (the one-line install brings them).")) : null);
+    py.length ? fold({}, "Technical details", h("p", { class: "small" }, `Also missing in ENLENS's Python: ${py.join(", ")}. Install them with `, h("code", {}, "pip install 'enlens-claims[ocr]'"), " (the one-line install brings them).")) : null);
 }

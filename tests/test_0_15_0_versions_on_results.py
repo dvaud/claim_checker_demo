@@ -142,4 +142,6 @@ def test_the_overview_says_which_results_an_earlier_version_made(api):
     assert st == 200 and o["made_with"]["version"] == __version__ and o["made_with"]["older"] is False
     js = (STATIC / "views" / "overview.js").read_text()
     assert "madeWith(o.made_with)" in js and "Made with an earlier version of ENLENS" in js
-    assert ".ov-made-with" in (STATIC / "v09.css").read_text()
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rule moves
+
+    assert rule(".ov-made-with")

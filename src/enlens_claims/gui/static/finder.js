@@ -39,7 +39,7 @@ function finderParts({ placeholder, onPick, onEscape, label }) {
   function setActive(i, scroll = true) {
     if (!rows.length) { active = -1; input.removeAttribute("aria-activedescendant"); return; }
     active = (i + rows.length) % rows.length;
-    rows.forEach((r, k) => { r.el.classList.toggle("is-active", k === active); r.el.setAttribute("aria-selected", k === active ? "true" : "false"); });
+    rows.forEach((r, k) => { r.el.setAttribute("aria-selected", k === active ? "true" : "false"); });
     input.setAttribute("aria-activedescendant", rows[active].el.id);
     if (scroll && rows[active].el.scrollIntoView) rows[active].el.scrollIntoView({ block: "nearest" });
   }

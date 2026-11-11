@@ -171,7 +171,8 @@ def test_the_app_shows_the_works_title_and_the_files(api, zotero, tmp_path):  # 
 
 def test_the_pages_show_the_files_own_title():
     sources = (STATIC / "views" / "sources.js").read_text()
-    assert 'd.file_title ? h("p", { class: "muted small dv-file-title", style: { margin: "4px 0 0" } }, "Title in the file: "' \
+    # 0.17.0 (design guide, changed on purpose): the spacing is a class of the page's block in views.css
+    assert 'd.file_title ? h("p", { class: "muted small dv-file-title" }, "Title in the file: "' \
         in sources
     # the work's title is not repeated next to the heading that already shows it
     assert "d.bib.title && d.bib.title !== d.title" in sources

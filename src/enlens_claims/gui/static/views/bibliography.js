@@ -4,7 +4,7 @@
 // bibliography.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, confirmDialog, emptyState, TERMINAL,
-  dialog, session, download, plural, spinner } from "../lib.js";
+  dialog, session, download, plural, spinner, button, downloadButton, fileButton, link, notice, card, input, select, fold } from "../lib.js";
 import { simpleProgress, jobError } from "./progress.js";
 import { accessChoice } from "./ai-access.js";
 
@@ -59,11 +59,11 @@ export async function renderBibliography(view) {
 
   function summaryCard(bib, c) {
     const update = bib.kind === "zotero"
-      ? h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: () => start({ update: true }, "Updating from Zotero") }, icon("refresh", { size: 13 }), "Update from Zotero")
+      ? button({ kind: "main", sm: true, onClick: () => start({ update: true }, "Updating from Zotero") }, icon("refresh", { size: 13 }), "Update from Zotero")
       : null;
-    const change = h("button", { class: "btn btn-sm", type: "button", "aria-expanded": picking ? "true" : "false", onClick: () => { picking = !picking; draw(); if (picking) top.lastChild.scrollIntoView({ block: "nearest" }); } },
+    const change = button({ sm: true, "aria-expanded": picking ? "true" : "false", onClick: () => { picking = !picking; draw(); if (picking) top.lastChild.scrollIntoView({ block: "nearest" }); } },
       icon(picking ? "x" : "folder-open", { size: 13 }), picking ? "Close" : changeText(bib));
-    return h("section", { class: "card bib-summary", "aria-label": "Your bibliography" },
+    return card({ class: "bib-summary", "aria-label": "Your bibliography" },
       h("div", { class: "bib-source" }, h("span", { class: "bib-source-icon" }, icon("library", { size: 20 })),
         h("div", { class: "grow" }, h("p", { class: "bib-source-line" }, sourceLine(bib)),
           h("p", { class: "muted small" }, `${plural(c.works, "work", "works")} · brought in on ${fmt.dateShort(bib.pulled_at)}`)),
@@ -86,22 +86,22 @@ export async function renderBibliography(view) {
   }
 
   function sourceCard(replacing) {
-    const card = h("section", { class: "card bib-pick", "aria-label": "Bring in a bibliography" },
+    const sect = card({ class: "bib-pick", "aria-label": "Bring in a bibliography" },
       h("div", { class: "card-head" }, h("h2", {}, replacing ? changeText(data.bibliography) : "Bring in your bibliography")),
-      h("p", { class: "muted", style: { margin: "0 0 12px" } }, replacing
+      h("p", { class: "muted bib-replace-note" }, replacing
         ? "It replaces the bibliography above. Your confirmations are kept for every work that is in the new one too."
         : "Pick a Zotero collection, your whole library, or just the works you choose. ENLENS links each work to the document you already have, lists the works you still need to find, and the documents Zotero does not have."));
     const zbox = h("div", { class: "bib-zotero", "aria-live": "polite" }, h("p", { class: "it muted" }, spinner("Looking for Zotero"), "Looking for Zotero on this computer…"));
-    const fileFold = h("details", { class: "fold bib-file" }, h("summary", {}, "Use an exported file instead"), fileForm());
-    card.append(zbox, fileFold, h("p", { class: "muted small bib-privacy" }, icon("shield", { size: 12 }), " Read on this computer: nothing goes over the internet, and your Zotero is not changed."));
+    const fileFold = fold({ class: "bib-file" }, "Use an exported file instead", fileForm());
+    sect.append(zbox, fileFold, h("p", { class: "muted small bib-privacy" }, icon("house", { size: 12 }), " Read on this computer: nothing goes over the internet, and your Zotero is not changed."));
     zoteroForm(zbox, fileFold);
-    return card;
+    return sect;
   }
 
   async function zoteroForm(box, fileFold) {
     let st;
-    try { st = await api("GET", "/api/zotero"); } catch (e) { replace(box, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
-    const again = () => h("button", { class: "btn btn-sm", type: "button", onClick: () => { replace(box, h("p", { class: "it muted" }, spinner("Looking for Zotero"), "Looking again…")); zoteroForm(box, fileFold); } }, icon("refresh", { size: 13 }), "Look again");
+    try { st = await api("GET", "/api/zotero"); } catch (e) { replace(box, notice({ kind: "error" }, h("p", {}, e.message))); return; }
+    const again = () => button({ sm: true, onClick: () => { replace(box, h("p", { class: "it muted" }, spinner("Looking for Zotero"), "Looking again…")); zoteroForm(box, fileFold); } }, icon("refresh", { size: 13 }), "Look again");
     if (st.state !== "ready") {
       fileFold.open = true;
       const text = {
@@ -110,16 +110,16 @@ export async function renderBibliography(view) {
         too_old: [h("strong", {}, "This Zotero cannot be read directly. "), "Zotero 7 or later can: update Zotero, or use a file exported from it (below)."],
         failed: [h("strong", {}, "Zotero answered, but not as expected. "), "Try again, or use a file exported from it (below)."],
       }[st.state] || [st.detail || "Zotero could not be read."];
-      replace(box, h("div", { class: `notice ${st.state === "api_off" ? "notice-warn" : "notice-info"}` }, icon(st.state === "api_off" ? "key" : "info"),
-        h("div", {}, h("p", {}, text), st.state === "failed" && st.detail ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, st.detail)) : null,
-          h("div", { style: { marginTop: "8px" } }, again()))));
+      replace(box, notice({ kind: st.state === "api_off" ? "attention" : "info", icon: st.state === "api_off" ? "key" : undefined },
+        h("div", {}, h("p", {}, text), st.state === "failed" && st.detail ? fold({}, "Technical details", h("div", { class: "mono small" }, st.detail)) : null,
+          h("div", { class: "bib-again" }, again()))));
       return;
     }
     const libs = st.libraries || [{ id: "user", name: "My Library" }];
     const curBib = data && data.bibliography && data.bibliography.kind === "zotero" ? data.bibliography : null;
     const curLib = curBib ? curBib.library : null;
-    const libSel = h("select", { class: "select", id: "bib-library" }, libs.map((l) => h("option", { value: l.id, selected: l.id === curLib }, l.name)));
-    const colSel = h("select", { class: "select", id: "bib-collection" }, h("option", { value: "" }, "Loading the collections…"));
+    const libSel = select({ id: "bib-library" }, libs.map((l) => h("option", { value: l.id, selected: l.id === curLib }, l.name)));
+    const colSel = select({ id: "bib-collection" }, h("option", { value: "" }, "Loading the collections…"));
     const subs = h("input", { type: "checkbox", id: "bib-subs", checked: true });
     const subsRow = h("label", { class: "bib-subs", for: "bib-subs", hidden: true }, subs, h("span", {}, "Include its subcollections"));
     // 0.13.9: or only the works ticked in a list of the library (or of the collection above), found by Zotero's search
@@ -133,12 +133,12 @@ export async function renderBibliography(view) {
         if (w) chosen.set(k, { title: w.title, sub: [w.cite, w.type].filter(Boolean).join(" · ") });
       }
     }
-    const find = h("input", { class: "input input-sm bib-filter", type: "search", placeholder: "Search title, author or year", "aria-label": "Search the works in Zotero" });
+    const find = input({ sm: true, class: "bib-filter", type: "search", placeholder: "Search title, author or year", "aria-label": "Search the works in Zotero" });
     const chips = h("div", { class: "bib-chosen", "aria-live": "polite" });
     const listBox = h("div", { class: "bib-pick-list", role: "group", "aria-label": "Works in Zotero" });
     const more = h("p", { class: "muted small bib-pick-more", hidden: true }, "Only the first 100 are shown: search to find the others.");
     const pickBox = h("div", { class: "bib-one", hidden: true }, h("div", { class: "bib-list-head" }, find), chips, listBox, more);
-    const go = h("button", { class: "btn btn-primary", type: "button", disabled: true }, icon("download", { size: 14 }), h("span", {}, "Bring in the bibliography"));
+    const go = button({ kind: "main", disabled: true }, icon("download", { size: 14 }), h("span", {}, "Bring in the bibliography"));
     let cols = [];
     let ask = 0;   // the newest list asked for (answers to older searches are dropped)
     const drawSubs = () => {
@@ -150,7 +150,7 @@ export async function renderBibliography(view) {
       go.disabled = colSel.disabled || (one.checked && !chosen.size);
     };
     const drawChips = () => {
-      replace(chips, [...chosen].map(([k, w]) => h("button", { class: "chip chip-btn bib-chosen-chip", type: "button", title: `${w.title}: click to leave it out`, "aria-label": `Leave out “${w.title}”`,
+      replace(chips, [...chosen].map(([k, w]) => button({ kind: "quiet", sm: true, class: "bib-chosen-chip", title: `${w.title}: click to leave it out`, "aria-label": `Leave out “${w.title}”`,
         onClick: () => { chosen.delete(k); const box = listBox.querySelector(`input[value="${k}"]`); if (box) box.checked = false; drawChips(); drawGo(); } },
         h("span", { class: "bib-chosen-title" }, w.title), icon("x", { size: 11 }))));
       drawGo();
@@ -219,25 +219,25 @@ export async function renderBibliography(view) {
         h("div", { class: "field grow" }, h("label", { class: "field-label", for: "bib-collection" }, "Collection"), colSel)),
       h("div", { class: "bib-checks" }, subsRow, oneRow),
       pickBox,
-      h("div", { class: "btn-row", style: { marginTop: "12px" } }, go)));
+      h("div", { class: "btn-row bib-go-actions" }, go)));
     loadCols();
   }
 
   function fileForm() {
-    const input = h("input", { type: "file", accept: ".bib,.bibtex,.biblatex,.ris,.json,.csv,.txt", class: "visually-hidden", id: "bib-file" });
-    input.addEventListener("change", async () => {
-      const f = input.files && input.files[0];
-      input.value = "";
+    const fileInput = h("input", { type: "file", accept: ".bib,.bibtex,.biblatex,.ris,.json,.csv,.txt", class: "visually-hidden", id: "bib-file" });
+    fileInput.addEventListener("change", async () => {
+      const f = fileInput.files && fileInput.files[0];
+      fileInput.value = "";
       if (!f) return;
       if (f.size > 18 * 1024 * 1024) { toast("This file is too large (over 18 MB). Export one collection at a time.", "warn"); return; }
       let text;
       try { text = await f.text(); } catch (e) { showError(e); return; }
       start({ file: { name: f.name, text } }, `Reading ${f.name}`);
     });
-    return h("div", { class: "card card-plain", style: { marginTop: "8px" } },
-      h("p", { style: { marginTop: 0 } }, "In Zotero, right-click a collection, choose ", h("em", {}, "Export Collection…"), " and pick ", h("strong", {}, "BibTeX"), ", ", h("strong", {}, "RIS"), ", ", h("strong", {}, "CSL JSON"), " or ", h("strong", {}, "CSV"), ". Mendeley, EndNote and other reference managers export BibTeX or RIS too."),
+    return card({ as: "div", class: "bib-zotero-help" },
+      h("p", { class: "bib-zotero-lead" }, "In Zotero, right-click a collection, choose ", h("em", {}, "Export Collection…"), " and pick ", h("strong", {}, "BibTeX"), ", ", h("strong", {}, "RIS"), ", ", h("strong", {}, "CSL JSON"), " or ", h("strong", {}, "CSV"), ". Mendeley, EndNote and other reference managers export BibTeX or RIS too."),
       h("p", { class: "muted small" }, "With CSV and BibTeX, the files Zotero keeps for each work come along, so they can be added in one go."),
-      h("label", { for: "bib-file", class: "btn", tabindex: "0", onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } } }, icon("upload", { size: 14 }), "Choose the exported file"), input);
+      fileButton({ kind: "standard", sm: false, for: "bib-file", tabindex: "0", onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } } }, fileInput, icon("upload", { size: 14 }), "Choose the exported file"));
   }
 
   async function start(bodyIn, label) {
@@ -249,9 +249,9 @@ export async function renderBibliography(view) {
   function follow(jobId, label) {
     jobBox.hidden = false;
     const head = h("h2", {}, label || "Bringing in the bibliography");
-    const stop = h("button", { class: "btn btn-sm btn-outline-danger", type: "button", onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop");
+    const stop = button({ kind: "danger", sm: true, onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop");
     const pb = h("div", {});
-    replace(jobBox, h("div", { class: "card" }, h("div", { class: "card-head" }, head, stop), pb));
+    replace(jobBox, card({ as: "div" }, h("div", { class: "card-head" }, head, stop), pb));
     const w = watchJob(jobId, (job) => {
       replace(pb, simpleProgress(job, (p) => p.phase === "files" ? `Finding the files Zotero keeps: ${p.done} of ${p.total}`
         : p.phase === "attachments" ? `Reading the attachments: ${p.done} of ${p.total} works`
@@ -271,7 +271,7 @@ export async function renderBibliography(view) {
         await load();
         App.refresh().catch(() => {});
       } else if (job.state === "error") { head.textContent = "It did not work"; replace(pb, jobError(job)); draw(); }
-      else { head.textContent = "Stopped"; replace(pb, h("p", { class: "muted", style: { margin: 0 } }, "Stopped. The bibliography was not changed.")); draw(); }
+      else { head.textContent = "Stopped"; replace(pb, h("p", { class: "muted bib-stopped" }, "Stopped. The bibliography was not changed.")); draw(); }
     }).catch(showError);
   }
 
@@ -281,11 +281,11 @@ export async function renderBibliography(view) {
     const box = h("section", { class: "bib-list", id: "bib-list", role: "tabpanel", "aria-label": TABS.find((t) => t[0] === k)[1] });
     body.appendChild(box);
     ({ confirm: drawConfirm, to_find: drawToFind, linked: drawLinked, not_in: drawNotIn })[k](box);
-    body.appendChild(h("details", { class: "fold section bib-remove" }, h("summary", {}, "Remove the bibliography"),
-      h("div", { class: "card card-plain danger-zone", style: { marginTop: "8px" } },
-        h("div", { class: "row", style: { justifyContent: "space-between" } },
-          h("p", { class: "grow", style: { margin: 0 } }, "Takes the works and their links out of this project. Your documents and Zotero stay as they are."),
-          h("button", { class: "btn btn-outline-danger btn-sm", type: "button", onClick: async () => {
+    body.appendChild(fold({ class: "section bib-remove" }, "Remove the bibliography",
+      card({ as: "div", class: "danger-zone bib-remove-card" },
+        h("div", { class: "row bib-remove-row" },
+          h("p", { class: "grow bib-remove-text" }, "Takes the works and their links out of this project. Your documents and Zotero stay as they are."),
+          button({ kind: "danger", sm: true, onClick: async () => {
             if (!(await confirmDialog({ title: "Remove the bibliography?", message: "The works and your confirmations are taken out of this project. Your documents and your Zotero library are not touched.", confirmText: "Remove" }))) return;
             try { data = await api("DELETE", `${base}/bibliography`, {}); toast("The bibliography was removed.", "ok"); draw(); } catch (e) { showError(e); }
           } }, icon("trash", { size: 13 }), "Remove")))));
@@ -296,12 +296,12 @@ export async function renderBibliography(view) {
     h("div", { class: "bib-meta" }, [w.cite || null, w.type || null, w.container || null].filter(Boolean).map((x, i) => [i ? h("span", { class: "sep" }, "·") : null, h("span", {}, x)]),
       opts.links === false ? null : findLinks(w)));
   const findLinks = (w) => [
-    w.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${w.doi}`, target: "_blank", rel: "noopener noreferrer", class: "it", title: `Open doi.org/${w.doi} in your browser` }, "DOI", icon("external-link", { size: 11 }))] : null,
+    w.doi ? [h("span", { class: "sep" }, "·"), link({ kind: "external", href: `https://doi.org/${w.doi}`, target: "_blank", rel: "noopener noreferrer", class: "it", title: `Open doi.org/${w.doi} in your browser` }, "DOI")] : null,
     // 0.14.3: only a web address (http or https) becomes a link: a bibliography file can carry any text as its "url"
-    w.url && !w.doi && /^https?:\/\//i.test(String(w.url).trim()) ? [h("span", { class: "sep" }, "·"), h("a", { href: w.url, target: "_blank", rel: "noopener noreferrer", class: "it", title: w.url }, "Web page", icon("external-link", { size: 11 }))] : null,
-    w.link ? [h("span", { class: "sep" }, "·"), h("a", { href: w.link, class: "it", title: "Shows this work in Zotero" }, "Open in Zotero")] : null];
+    w.url && !w.doi && /^https?:\/\//i.test(String(w.url).trim()) ? [h("span", { class: "sep" }, "·"), link({ kind: "external", href: w.url, target: "_blank", rel: "noopener noreferrer", class: "it", title: w.url }, "Web page")] : null,
+    w.link ? [h("span", { class: "sep" }, "·"), link({ href: w.link, class: "it", title: "Shows this work in Zotero" }, "Open in Zotero")] : null];
   // 0.13.3: a linked document is called by its work's title; the title read from the file is under its file name
-  const docCell = (d) => h("div", { class: "bib-doc" }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}`, class: "bib-doc-title" }, d.title || d.file), h("div", { class: "doc-file" }, d.file),
+  const docCell = (d) => h("div", { class: "bib-doc" }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}`, class: "bib-doc-title" }, d.title || d.file), h("div", { class: "doc-file" }, d.file),
     d.file_title ? h("div", { class: "muted small bib-own-title" }, "Title in the file: ", d.file_title) : null);
 
   async function decide(item_key, doc_id, decision, msg, undo) {
@@ -317,7 +317,7 @@ export async function renderBibliography(view) {
     if (!rows.length) { box.appendChild(emptyState("circle-check", "Nothing to confirm", "When a work’s title, and an author or the year (or a long title, whole, on the title page), are found on the first pages of a document, the pair waits here for you.")); return; }
     box.appendChild(h("div", { class: "bib-list-head" },
       h("p", { class: "grow" }, `ENLENS found ${rows.length === 1 ? "this work’s title" : "these works’ titles"} on the first pages of a document. Is it the same work?`),
-      rows.length > 1 ? h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+      rows.length > 1 ? button({ sm: true, onClick: async () => {
         if (!(await confirmDialog({ title: `Confirm all ${rows.length} pairs?`, message: "Each work is linked to the document shown next to it. You can unlink any of them later, under Linked.", confirmText: "Confirm all", danger: false }))) return;
         try { data = await api("POST", `${base}/bibliography/confirm-all`, {}); toast(`${plural(data.confirmed || 0, "pair", "pairs")} confirmed.`, "ok"); tab = "linked"; draw(); } catch (e) { showError(e); }
       } }, icon("check", { size: 13 }), `Confirm all ${rows.length}`) : null));
@@ -329,20 +329,20 @@ export async function renderBibliography(view) {
         ev.title === "doi" ? "the work’s DOI, somewhere on the first pages (the document may only cite it)" : ev.title === "whole" ? "the whole title" : ev.title === "main" ? "the title without its subtitle" : "nearly all the words of the title",
         ev.author ? `the author ${titleCase(ev.author)}` : null,
         ev.year ? `the year ${ev.year}` : null].filter(Boolean);
-      box.appendChild(h("article", { class: "card bib-pair" },
+      box.appendChild(card({ as: "article", class: "bib-pair" },
         h("div", { class: "bib-pair-cols" },
           h("div", {}, h("p", { class: "bib-label" }, icon("library", { size: 12 }), "In your bibliography"), workCell(r.work)),
           h("div", {}, h("p", { class: "bib-label" }, icon("file-text", { size: 12 }), "Document in this project"), docCell(r.doc))),
         h("p", { class: "bib-why small" }, `Found ${ev.page ? `on page ${ev.page}` : "at the start"}: ${found.join(", ")}.`),
         ex,
         h("div", { class: "btn-row" },
-          h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: () => decide(r.work.key, r.doc.doc_id, "same", "Linked.", "clear") }, icon("check", { size: 13 }), "Same work"),
-          h("button", { class: "btn btn-ghost btn-sm", type: "button", onClick: () => decide(r.work.key, r.doc.doc_id, "different", "Not proposed again.", "clear") }, icon("x", { size: 13 }), "Not the same"))));
+          button({ kind: "main", sm: true, onClick: () => decide(r.work.key, r.doc.doc_id, "same", "Linked.", "clear") }, icon("check", { size: 13 }), "Same work"),
+          button({ kind: "quiet", sm: true, onClick: () => decide(r.work.key, r.doc.doc_id, "different", "Not proposed again.", "clear") }, icon("x", { size: 13 }), "Not the same"))));
     }
   }
 
   function filterBox(placeholder, onInput) {
-    const inp = h("input", { class: "input input-sm bib-filter", type: "search", placeholder, "aria-label": placeholder });
+    const inp = input({ sm: true, class: "bib-filter", type: "search", placeholder, "aria-label": placeholder });
     inp.addEventListener("input", () => onInput(inp.value.trim().toLowerCase()));
     return inp;
   }
@@ -362,14 +362,14 @@ export async function renderBibliography(view) {
         h("td", {}, workCell(w)),
         h("td", { "data-label": "Year", class: "num nowrap" }, w.year || "—"),
         h("td", { "data-label": fileHead(), class: "small" + (w.file ? "" : " bib-nofile") }, w.file ? h("span", { class: "it bib-has-file", title: w.file }, icon("file-text", { size: 12 }), "Has a file") : h("span", { class: "muted" }, "—")),
-        h("td", { class: "actions" }, h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "The document is in the project already: say which one", onClick: () => linkDialog(w) }, icon("link", { size: 13 }), "Link a document")))));
-      replace(more, all.length > shown ? h("button", { class: "btn btn-sm", type: "button", onClick: () => { shown = all.length; drawRows(); } }, `Show all ${fmt.num(all.length)}`) : null,
+        h("td", { class: "actions" }, button({ kind: "quiet", sm: true, title: "The document is in the project already: say which one", onClick: () => linkDialog(w) }, icon("link", { size: 13 }), "Link a document")))));
+      replace(more, all.length > shown ? button({ sm: true, onClick: () => { shown = all.length; drawRows(); } }, `Show all ${fmt.num(all.length)}`) : null,
         filter ? h("span", { class: "muted small" }, `${plural(all.length, "work", "works")} match`) : null);
     };
     box.appendChild(h("div", { class: "bib-list-head" },
       h("p", { class: "grow" }, `${plural(rows.length, "work has", "works have")} no document in this project yet.`),
       filterBox("Filter by title, author or year", (v) => { filter = v; shown = PAGE_ROWS; drawRows(); }),
-      h("button", { class: "btn btn-sm", type: "button", title: "The list as a spreadsheet: title, authors, year, DOI, web address and Zotero link", onClick: () => download(`${base}/bibliography/to-find.xlsx`).catch(showError) }, icon("download", { size: 13 }), "Download the list")));
+      downloadButton({ title: "The list as a spreadsheet: title, authors, year, DOI, web address and Zotero link", onClick: () => download(`${base}/bibliography/to-find.xlsx`).catch(showError) }, "Download the list")));
     box.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive bib-table" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Work"), h("th", { scope: "col", class: "num" }, "Year"), h("th", { scope: "col" }, fileHead()), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Actions")))),
       tbody)));
@@ -385,7 +385,7 @@ export async function renderBibliography(view) {
   function filesCard(n) {
     const acc = data.ai_access || {};
     let level = acc.chosen ? acc.default : null;
-    const btn = h("button", { class: "btn btn-primary btn-sm", type: "button", disabled: !level }, icon("upload", { size: 13 }), `Add ${n === 1 ? "this file" : `these ${n} files`} to the project`);
+    const btn = button({ kind: "main", sm: true, disabled: !level }, icon("upload", { size: 13 }), `Add ${n === 1 ? "this file" : `these ${n} files`} to the project`);
     const pick = accessChoice({ value: level, name: "bib-access", onChange: (v) => { level = v; btn.disabled = false; } });
     const pb = h("div", { "aria-live": "polite" });
     btn.addEventListener("click", async () => {
@@ -404,15 +404,15 @@ export async function renderBibliography(view) {
       } else if (job.state === "error") { replace(pb, jobError(job)); btn.disabled = false; }
       else { replace(pb, h("p", { class: "muted small" }, "Stopped. The files read so far were added.")); await load(); }
     });
-    return h("section", { class: "card bib-files", "aria-label": "Files Zotero has" },
+    return card({ class: "bib-files", "aria-label": "Files Zotero has" },
       h("div", { class: "bib-files-head" }, h("span", { class: "bib-source-icon" }, icon("file-text", { size: 18 })),
         h("div", { class: "grow" }, h("h3", {}, fromZotero() ? `Zotero has a file for ${n === 1 ? "1 of these works" : `${n} of these works`}`
           : `Your exported file names a file on this computer for ${n === 1 ? "1 of these works" : `${n} of these works`}`),
-          h("p", { class: "muted small", style: { margin: "2px 0 0" } }, n === 1 ? `Add it: it is read where ${fromZotero() ? "Zotero keeps it" : "it is"}, nothing is copied, and it is linked to its work.`
+          h("p", { class: "muted small bib-add-note" }, n === 1 ? `Add it: it is read where ${fromZotero() ? "Zotero keeps it" : "it is"}, nothing is copied, and it is linked to its work.`
             : `Add them in one go: they are read where ${fromZotero() ? "Zotero keeps them" : "they are"}, nothing is copied, and each is linked to its work.`))),
-      acc.chosen ? h("p", { class: "small", style: { margin: "10px 0" } }, "Who may read them with AI: ", h("strong", {}, ({ cloud: "Claude may read them", local: "only a local AI", none: "no AI" })[acc.default] || acc.default), h("span", { class: "muted" }, " (this project’s choice). "),
-        h("button", { class: "link-btn small", type: "button", onClick: (e) => { e.currentTarget.parentNode.replaceWith(pick); } }, "Change for these")) : pick,
-      h("div", { class: "btn-row", style: { marginTop: "10px" } }, btn), pb);
+      acc.chosen ? h("p", { class: "small bib-access-note" }, "Who may read them with AI: ", h("strong", {}, ({ cloud: "Claude may read them", local: "only a local AI", none: "no AI" })[acc.default] || acc.default), h("span", { class: "muted" }, " (this project’s choice). "),
+        button({ kind: "quiet", sm: true, onClick: (e) => { e.currentTarget.parentNode.replaceWith(pick); } }, "Change for these")) : pick,
+      h("div", { class: "btn-row bib-add-actions" }, btn), pb);
   }
 
   function drawLinked(box) {
@@ -424,7 +424,7 @@ export async function renderBibliography(view) {
       h("td", {}, workCell(r.work)),
       h("td", { "data-label": "Document" }, docCell(r.doc)),
       h("td", { "data-label": "How", class: "small nowrap" }, r.status === "confirmed" ? (r.method === "person" ? HOW.person : HOW.title) : HOW[r.method] || r.method),
-      h("td", { class: "actions" }, h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Unlink ${r.work.title} from ${r.doc.title || r.doc.file}`, onClick: () => decide(r.work.key, r.doc.doc_id, "different", "Unlinked.", "same") }, icon("x", { size: 13 }), "Unlink")))));
+      h("td", { class: "actions" }, button({ kind: "quiet", sm: true, "aria-label": `Unlink ${r.work.title} from ${r.doc.title || r.doc.file}`, onClick: () => decide(r.work.key, r.doc.doc_id, "different", "Unlinked.", "same") }, icon("x", { size: 13 }), "Unlink")))));
     box.appendChild(h("div", { class: "bib-list-head" },
       h("p", { class: "grow" }, `${plural(rows.length, "work is", "works are")} linked to ${rows.length === 1 ? "its document" : "their documents"}. Each document shows its reference in the list of documents.`),
       rows.length > 8 ? filterBox("Filter", (v) => { filter = v; drawRows(); }) : null));
@@ -444,7 +444,7 @@ export async function renderBibliography(view) {
       h("tbody", {}, rows.map((d) => h("tr", {},
         h("td", {}, docCell(d)),
         h("td", { "data-label": "Added", class: "small muted nowrap" }, fmt.dateShort(d.added_at || "")),
-        h("td", { class: "actions" }, h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => linkDialog(null, d) }, icon("link", { size: 13 }), "Link to a work"))))))));
+        h("td", { class: "actions" }, button({ kind: "quiet", sm: true, onClick: () => linkDialog(null, d) }, icon("link", { size: 13 }), "Link to a work"))))))));
   }
 
   // Link a work and a document by hand: pick the other side from a list that can be filtered
@@ -459,13 +459,13 @@ export async function renderBibliography(view) {
       r.addEventListener("change", () => { chosen = o.id; });
       return h("label", { class: "bib-pick-opt" }, r, h("span", {}, h("span", { class: "bib-pick-title" }, o.title), o.sub ? h("span", { class: "muted small" }, o.sub) : null));
     }));
-    const filt = h("input", { class: "input input-sm", type: "search", placeholder: "Filter", "aria-label": "Filter" });
+    const filt = input({ sm: true, type: "search", placeholder: "Filter", "aria-label": "Filter" });
     filt.addEventListener("input", () => drawOpts(filt.value.trim().toLowerCase()));
     drawOpts("");
     const ok = await dialog({
       title: work ? "Which document is this work?" : "Which work is this document?",
       wide: true,
-      body: h("div", { class: "stack" }, h("p", { style: { margin: 0 } }, h("strong", {}, work ? work.title : doc.title || doc.file)), filt, listBox),
+      body: h("div", { class: "stack" }, h("p", { class: "bib-work-title" }, h("strong", {}, work ? work.title : doc.title || doc.file)), filt, listBox),
       actions: [{ text: "Cancel", value: false }, { text: "Link", primary: true, value: true, onClick: () => { if (!chosen) { toast("Choose one first.", "warn", { ttl: 2500 }); return false; } return true; } }],
       onOpen: () => filt.focus(),
     });

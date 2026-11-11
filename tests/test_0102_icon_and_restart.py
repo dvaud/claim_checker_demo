@@ -23,7 +23,7 @@ from pathlib import Path
 from enlens_claims import __version__
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
-from _static import defined_tokens
+from _static import all_css, defined_tokens_all, rule
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -210,18 +210,19 @@ def test_the_state_says_which_version_is_installed(api, monkeypatch):  # noqa: F
 
 def test_page_files_of_the_release():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert '<link rel="stylesheet" href="/static/v0102.css">' in html
     assert html.index('id="update-banner"') < html.index('id="quicklook-banner"') < html.index('id="view"')
-    css = (STATIC / "v0102.css").read_text(encoding="utf-8")
-    defined = defined_tokens()  # 0.13.5: the tokens are in tokens.css
-    used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
+    # 0.17.0: the release's rules are in the cascade (tests/_static.py rule()), not in a sheet of its own
+    assert rule(".update-banner") and rule("#update-banner:not(:empty)")
+    defined = defined_tokens_all()
+    used = set(re.findall(r"var\((--[a-z0-9-]+)", all_css()))
     assert used and used <= defined, used - defined
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "function renderUpdateBanner()" in app and "renderUpdateBanner(); });" in app
-    assert "st.installed_version" in app and 'onclick: () => quitApp(' in app
+    assert "st.installed_version" in app and 'onClick: () => quitApp(' in app  # 0.17.0 (design guide): made by button()
     assert 'btn.addEventListener("click", () => quitApp());' in app
     settings = (STATIC / "views" / "settings.js").read_text(encoding="utf-8")
-    assert "version-tag-stale" in settings and "installed_version" in settings
+    # 0.17.0 (design guide): a newer version installed is an attention tag beside the version, not a pill of its own colour
+    assert "installed: restart to use it" in settings and "installed_version" in settings
     server_py = (ROOT / "src" / "enlens_claims" / "gui" / "server.py").read_text(encoding="utf-8")
     serve = server_py[server_py.index("def serve("):]
     assert 'target=_repair_icons' in serve  # an icon without a picture is repaired when ENLENS starts

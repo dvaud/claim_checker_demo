@@ -13,7 +13,8 @@ import json
 import re
 from pathlib import Path
 
-from _static import MARKER, SITE, STATIC, assert_sheet_after, defined_tokens, index_html, release_sheets
+from _static import (MARKER, SITE, STATIC, all_css, assert_sheet_after, css_blocks, defined_tokens, defined_tokens_all,
+                     index_html, release_sheets)
 from test_app import api, home  # noqa: F401  (fixtures)
 
 from enlens_claims import addons
@@ -31,7 +32,8 @@ def test_the_marker_and_site_css_last():
     ours = release_sheets(index)
     assert ours[:2] == ["/static/tokens.css", "/static/app.css"]
     assert SITE not in ours
-    assert_sheet_after("/static/v0134.css", "/static/v0133.css", index)
+    # 0.17.0: the release sheets are going; tokens.css and app.css stay, and site.css is the only sheet after the marker
+    assert_sheet_after("/static/app.css", "/static/tokens.css", index)
     for f in ours:  # every sheet named is shipped
         assert (STATIC / f.removeprefix("/static/")).is_file(), f
 
@@ -39,12 +41,18 @@ def test_the_marker_and_site_css_last():
 def test_the_helper_catches_a_sheet_after_site_css():
     import pytest
 
-    bad = index_html().replace(f'<link rel="stylesheet" href="{SITE}">',
-                               f'<link rel="stylesheet" href="{SITE}">\n<link rel="stylesheet" href="/static/v9.css">')
+    # 0.17.0: a made-up index (the release sheets named here are not linked any more), so the helper's own behaviour is
+    # still tested whatever ENLENS's real sheets are
+    def link(href):
+        return f'<link rel="stylesheet" href="{href}">\n'
+
+    good = link("/static/v0133.css") + link("/static/v0134.css") + MARKER + "\n" + link(SITE)
+    assert_sheet_after("/static/v0134.css", "/static/v0133.css", good)
+    bad = good + link("/static/v9.css")
     with pytest.raises(AssertionError, match="only site.css may follow"):
         assert_sheet_after("/static/v0134.css", "/static/v0133.css", bad)
     with pytest.raises(AssertionError, match="must come after"):
-        assert_sheet_after("/static/v0133.css", "/static/v0134.css")
+        assert_sheet_after("/static/v0133.css", "/static/v0134.css", good)
 
 
 def test_site_css_ships_empty():
@@ -55,21 +63,21 @@ def test_site_css_ships_empty():
 
 def test_the_tokens_are_in_tokens_css():
     tokens = (STATIC / "tokens.css").read_text(encoding="utf-8")
-    app = (STATIC / "app.css").read_text(encoding="utf-8")
-    assert not re.findall(r"^\s*--[a-z0-9-]+\s*:", app, flags=re.M)  # app.css defines none any more
+    # 0.17.0: no other sheet sets a colour, type or shadow token on :root (tests/_static.py css_blocks), as rules move
+    # between sheets (a size such as --sidebar-w may be set elsewhere)
+    rest = "\n".join((STATIC / s.removeprefix("/static/")).read_text(encoding="utf-8") for s in release_sheets()
+                     if s != "/static/tokens.css")
+    assert not [1 for _m, sels, d in css_blocks(rest) if any(":root" in x for x in sels) and any(re.match(r"--(font|bg|surface|border|text|muted|faint|accent|on-accent|ok|partly|bad|mixed|none|warn|mark|hl|focus|shadow|heat)", k) for k in d)]
     for block in (":root {", '@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {',
                   ':root[data-theme="dark"] {'):
         assert block in tokens, block
     defined = defined_tokens()
     for t in ("--accent", "--font-ui", "--font-serif", "--bg", "--surface", "--ok", "--bad", "--heat-4", "--radius"):
         assert t in defined, t
-    used, scoped = set(), set()
-    for f in STATIC.glob("*.css"):
-        css = f.read_text(encoding="utf-8")
-        used |= set(re.findall(r"var\((--[a-z0-9-]+)", css))
-        if f.name not in ("tokens.css", "app.css"):
-            scoped |= set(re.findall(r"(--[a-z0-9-]+)\s*:", css))  # set on one part of the page (.result's sizes)
-    assert used <= defined | scoped, used - defined - scoped
+    # every var() names a token some ENLENS sheet defines (0.17.0: the cascade, tests/_static.py; a few are set on one
+    # part of the page, like .result's sizes)
+    used = set(re.findall(r"var\((--[a-z0-9-]+)", all_css()))
+    assert used <= defined_tokens_all(), used - defined_tokens_all()
 
 
 def test_brand_json_and_the_state(api):  # noqa: F811

@@ -284,7 +284,10 @@ def test_the_page_offers_it():
         assert s in js, s
     reg = (STATIC / "registry.js").read_text(encoding="utf-8")
     assert '"theme-new": { icon: "shapes", text: "Finding a new theme"' in reg
-    sheet = (STATIC / "concepts-themes.css").read_text(encoding="utf-8")  # the Themes page's own stylesheet
-    css = sheet[sheet.index("themes: remove one, and find a new one"):]
-    assert ".th-removed" in css and ".th-new" in css
-    assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", css)  # colour tokens only: light and dark both work
+    # 0.17.0: reads the cascade (tests/_static.py), not the Themes page's own sheet: the rules of the classes this
+    # release added (.th-removed*, .th-new*) are in it, and they use colour tokens only (light and dark both work)
+    from _static import all_css, css_blocks
+
+    mine = [d for _m, sels, d in css_blocks(all_css()) if any(re.match(r"\.th-(removed|new)", s) for s in sels)]
+    assert mine
+    assert not any(re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", v) for d in mine for v in d.values())

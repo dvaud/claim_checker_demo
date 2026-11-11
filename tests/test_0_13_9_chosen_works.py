@@ -123,5 +123,6 @@ def test_the_page_offers_the_works_one_by_one():
                   "Only the first 100 are shown: search to find the others."):
         assert words in page, words
     assert re.search(r"Bring in \$\{plural\(chosen\.size, \"work\", \"works\"\)\}", page)
-    css = (STATIC / "v013.css").read_text()
-    assert ".bib-chosen-chip" in css and ".bib-one" in css
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    assert rule(".bib-chosen-chip") and rule(".bib-one")

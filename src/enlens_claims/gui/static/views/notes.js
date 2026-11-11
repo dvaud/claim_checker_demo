@@ -3,7 +3,7 @@
 // check: the passage holding its words becomes an excerpt you judged, with the note's words as your sentence.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
-  downloadLinks, debounce, dialog, shortTitle, GRADE_TEXT } from "../lib.js";
+  downloadLinks, debounce, dialog, shortTitle, GRADE_TEXT, button, link, choice, input, select, textarea, card, optionCards, emptyState } from "../lib.js";
 
 export const COLOUR_NAME = { yellow: "Yellow", green: "Green", blue: "Blue", pink: "Pink" };
 const COLOURS = ["yellow", "green", "blue", "pink"];
@@ -29,7 +29,8 @@ export function colourPicker(current, onPick) {
 // Edit a note's words and colour. Returns the saved note, or null.
 export async function editNote(note) {
   let colour = note.colour || "yellow";
-  const ta = h("textarea", { class: "input", rows: 5, maxlength: 10000, placeholder: "Your note (leave empty for a highlight)" }, note.text || "");
+  const ta = textarea({ rows: 5, maxlength: 10000, placeholder: "Your note (leave empty for a highlight)" });
+  ta.value = note.text || "";
   const body = h("div", {}, h("blockquote", { class: "note-quote" }, note.quote),
     h("label", { class: "field" }, h("span", { class: "field-label" }, "Note"), ta),
     h("div", { class: "field" }, h("span", { class: "field-label" }, "Colour"), colourPicker(colour, (c) => { colour = c; })));
@@ -56,21 +57,15 @@ export async function useAsEvidence(note) {
     await dialog({ title: "Use as evidence", body: h("p", {}, "There is no check in this project yet. Check a hypothesis first, then add this note to it as evidence.") });
     return null;
   }
-  const sel = h("select", { class: "input", "aria-label": "Check" }, h("option", { value: "" }, "Choose a check…"),
+  const sel = select({ "aria-label": "Check" }, h("option", { value: "" }, "Choose a check…"),
     list.map((x) => h("option", { value: x.hyp_id }, shortTitle(x.text, 110))));
   const partBox = h("div", { class: "field", hidden: true });
-  const partSel = h("select", { class: "input", "aria-label": "Part of the hypothesis" });
+  const partSel = select({ "aria-label": "Part of the hypothesis" });
   partBox.append(h("label", { class: "field-label" }, "Part of the hypothesis"), partSel);
   let verdict = "supports";
-  const verdicts = h("div", { class: "seg", role: "radiogroup", "aria-label": "Your judgement" });
-  for (const [v, t] of [["supports", GRADE_TEXT.supports], ["partially_supports", GRADE_TEXT.partially_supports], ["refutes", GRADE_TEXT.refutes], ["not_relevant", "Not about it"]]) {
-    const b = h("button", { type: "button", role: "radio", class: "seg-btn", "aria-checked": v === verdict ? "true" : "false", onClick: () => {
-      verdict = v;
-      for (const x of verdicts.children) x.setAttribute("aria-checked", x === b ? "true" : "false");
-    } }, t);
-    verdicts.appendChild(b);
-  }
-  const comment = h("textarea", { class: "input", rows: 2, maxlength: 2000, placeholder: "Optional: a comment with your judgement" });
+  const verdicts = choice({ label: "Your judgement", value: verdict, onPick: (v) => { verdict = v; },
+    options: [["supports", GRADE_TEXT.supports], ["partially_supports", GRADE_TEXT.partially_supports], ["refutes", GRADE_TEXT.refutes], ["not_relevant", "Not about it"]] });
+  const comment = textarea({ rows: 2, maxlength: 2000, placeholder: "Optional: a comment with your judgement" });
   let parts = [];
   sel.addEventListener("change", async () => {
     clear(partSel);
@@ -117,25 +112,18 @@ export async function renderNotes(view, _params, query) {
   }));
   view.appendChild(viewTabs("documents", "annotations"));   // 0.17.0: Notes is a view of Documents
   let q = (query && query.q) || "", doc = (query && query.doc) || "", colour = "";
-  const search = h("input", { class: "input", type: "search", value: q, placeholder: "Search your notes and the words they mark", "aria-label": "Search notes" });
+  const search = input({ type: "search", value: q, placeholder: "Search your notes and the words they mark", "aria-label": "Search notes" });
   search.addEventListener("input", debounce(() => { q = search.value.trim(); load(); }, 250));
-  const docSel = h("select", { class: "input notes-doc", "aria-label": "Document" });
+  const docSel = select({ class: "notes-doc", "aria-label": "Document" });
   docSel.addEventListener("change", () => { doc = docSel.value; load(); });
-  const colourChips = h("div", { class: "chips", role: "group", "aria-label": "Colour" });
+  const colourChips = choice({ filter: true, label: "Colour", value: colour, onPick: (c) => { colour = c; load(); },
+    options: ["", ...COLOURS].map((c) => [c, [c ? colourDot(c) : null, c ? COLOUR_NAME[c] : "All colours"]]) });
   const dl = downloadLinks([
     { text: "Markdown (.md)", onClick: () => download(`${base}.md`).catch(showError) },
     { text: "Excel (.xlsx)", onClick: () => download(`${base}.xlsx`).catch(showError) },
   ]);
   const listBox = h("div", { class: "notes-list", "aria-live": "polite" });
   view.append(h("div", { class: "notes-tools" }, search, docSel, colourChips, dl), listBox);
-
-  function drawColours() {
-    clear(colourChips);
-    for (const c of ["", ...COLOURS]) {
-      colourChips.appendChild(h("button", { class: "chip chip-btn", type: "button", "aria-pressed": c === colour ? "true" : "false",
-        onClick: () => { colour = c; drawColours(); load(); } }, c ? colourDot(c) : null, c ? COLOUR_NAME[c] : "All colours"));
-    }
-  }
 
   async function load() {
     let data;
@@ -153,10 +141,9 @@ export async function renderNotes(view, _params, query) {
   function draw(data) {
     clear(listBox);
     if (!data.notes.length) {
-      listBox.appendChild(h("div", { class: "empty" }, icon("highlighter", { size: 28 }),
-        h("h3", {}, q || doc || colour ? "No note matches" : "No notes yet"),
-        h("p", {}, q || doc || colour ? "Try other words or show every note." : "Open a document, select a few words in its text and choose Highlight or Note."),
-        q || doc || colour ? null : h("a", { class: "btn btn-sm", href: "#/sources" }, icon("book-open", { size: 14 }), "Open a document")));
+      listBox.appendChild(emptyState("highlighter", q || doc || colour ? "No note matches" : "No notes yet",
+        q || doc || colour ? "Try other words or show every note." : "Open a document, select a few words in its text and choose Highlight or Note.",
+        q || doc || colour ? null : link({ kind: "next", href: "#/sources" }, "Open a document on the Documents page")));
       return;
     }
     listBox.appendChild(h("p", { class: "muted notes-count" }, data.total > data.notes.length ? `${fmt.num(data.notes.length)} of ${fmt.num(data.total)} notes` : plural(data.total, "note", "notes")));
@@ -168,31 +155,31 @@ export async function renderNotes(view, _params, query) {
     for (const [did, ns] of byDoc) {
       ns.sort((a, b) => a.start - b.start);
       const first = ns[0];
-      listBox.appendChild(h("h2", { class: "notes-doc-title" }, first.present ? h("a", { href: `#/doc/${encodeURIComponent(did)}?tab=notes` }, first.title || did) : h("span", {}, first.title || did, h("span", { class: "muted" }, " · removed from the project"))));
+      listBox.appendChild(h("h2", { class: "notes-doc-title" }, first.present ? link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(did)}?tab=notes` }, first.title || did) : h("span", {}, first.title || did, h("span", { class: "muted" }, " · removed from the project"))));
       const ul = h("ul", { class: "notes-cards" });
       for (const n of ns) ul.appendChild(noteCard(n, load));
       listBox.appendChild(ul);
     }
   }
 
-  drawColours();
   await load();
 }
 
 // One note as a card: its words, the note, where it is, and what can be done with it. `onChange()` after a change.
 export function noteCard(n, onChange, opts = {}) {
-  const li = h("li", { class: `note-card hl-border-${n.colour || "yellow"}` + (n.lost ? " note-lost" : "") });
+  // a note: a small card in a list of many (docs/DESIGN.md 4.11)
+  const li = card({ as: "li", sm: true, class: "note-card" + (n.lost ? " note-lost" : "") });
   const where = [n.page !== null && n.page !== undefined ? `p. ${n.page}` : null, n.mine ? null : n.who, fmt.dateShort(n.edited_at || n.created_at)].filter(Boolean).join(" · ");
   const actions = h("div", { class: "note-actions" });
   if (n.present && !n.lost && !opts.inDocument) {
-    actions.appendChild(h("a", { class: "link-btn", href: `#/doc/${encodeURIComponent(n.doc_id)}?at=${n.start}&tab=notes` }, icon("book-open", { size: 12 }), "In the document"));
+    actions.appendChild(link({ href: `#/doc/${encodeURIComponent(n.doc_id)}?at=${n.start}&tab=notes` }, icon("book-open", { size: 12 }), "In the document"));
   } else if (opts.inDocument && opts.onJump && !n.lost) {
-    actions.appendChild(h("button", { class: "link-btn", type: "button", onClick: () => opts.onJump(n) }, icon("arrow-right", { size: 12 }), "Show in the text"));
+    actions.appendChild(link({ kind: "jump", onClick: () => opts.onJump(n) }, icon("arrow-right", { size: 12 }), "Show in the text"));
   }
-  if (n.present && !n.lost) actions.appendChild(h("button", { class: "link-btn", type: "button", onClick: () => useAsEvidence(n).then((r) => { if (r && onChange) onChange(); }) }, icon("flask", { size: 12 }), "Use as evidence"));
+  if (n.present && !n.lost) actions.appendChild(button({ kind: "quiet", sm: true, onClick: () => useAsEvidence(n).then((r) => { if (r && onChange) onChange(); }) }, icon("flask", { size: 12 }), "Use as evidence"));
   if (n.mine) {
-    actions.appendChild(h("button", { class: "link-btn", type: "button", onClick: async () => { if (await editNote(n) && onChange) onChange(); } }, "Edit"));
-    actions.appendChild(h("button", { class: "link-btn danger-link", type: "button", onClick: async () => { if (await removeNote(n) && onChange) onChange(); } }, "Remove"));
+    actions.appendChild(button({ kind: "quiet", sm: true, onClick: async () => { if (await editNote(n) && onChange) onChange(); } }, "Edit"));
+    actions.appendChild(button({ kind: "danger", sm: true, onClick: async () => { if (await removeNote(n) && onChange) onChange(); } }, "Remove"));
   }
   li.append(...[h("blockquote", { class: `note-quote hl-${n.colour || "yellow"}` }, n.quote),
     n.text ? h("p", { class: "note-text" }, n.text) : null,
@@ -209,34 +196,27 @@ export async function addNoteToPart(claimId, partText) {
   try { all = (await api("GET", `${base}/notes?limit=500`)).notes.filter((n) => n.present && !n.lost); } catch (e) { showError(e); return null; }
   if (!all.length) {
     await dialog({ title: "Add one of your notes", body: h("div", {}, h("p", {}, "You have no notes yet. Open a document, select the words that bear on the hypothesis and choose Note or Highlight; then add it here."),
-      h("a", { class: "btn btn-sm", href: "#/sources" }, icon("book-open", { size: 14 }), "Open a document")) });
+      link({ kind: "next", href: "#/sources" }, "Open a document on the Documents page")) });
     return null;
   }
   let chosen = null, verdict = "supports";
-  const search = h("input", { class: "input", type: "search", placeholder: "Search your notes", "aria-label": "Search your notes" });
-  const list = h("div", { class: "note-pick", role: "radiogroup", "aria-label": "Your notes" });
+  const search = input({ type: "search", placeholder: "Search your notes", "aria-label": "Search your notes" });
+  const list = h("div", { class: "note-pick" });
+  // which note: option cards (docs/DESIGN.md 4.7), each headed by its document and page, then its words in serif
   const draw = () => {
     clear(list);
     const q = search.value.trim().toLowerCase();
     const shown = all.filter((n) => !q || `${n.quote} ${n.text || ""} ${n.title || ""}`.toLowerCase().includes(q)).slice(0, 80);
-    if (!shown.length) list.appendChild(h("p", { class: "muted small" }, "No note matches."));
-    for (const n of shown) {
-      const b = h("button", { type: "button", role: "radio", class: "note-pick-item", "aria-checked": chosen === n ? "true" : "false", onClick: () => { chosen = n; draw(); } },
-        h("span", { class: "serif" }, `“${shortTitle(n.quote, 160)}”`),
-        n.text ? h("span", { class: "small" }, shortTitle(n.text, 120)) : null,
-        h("span", { class: "muted small" }, `${shortTitle(n.title || n.doc_id, 60)}${n.page !== null && n.page !== undefined ? `, p. ${n.page}` : ""}`));
-      list.appendChild(b);
-    }
+    if (!shown.length) { list.appendChild(h("p", { class: "muted small" }, "No note matches.")); return; }
+    list.appendChild(optionCards({ label: "Your notes", value: shown.indexOf(chosen), onPick: (i) => { chosen = shown[i]; },
+      options: shown.map((n, i) => ({ value: i, icon: "note",
+        title: `${shortTitle(n.title || n.doc_id, 60)}${n.page !== null && n.page !== undefined ? `, p. ${n.page}` : ""}`,
+        text: [h("span", { class: "serif" }, `“${shortTitle(n.quote, 160)}”`), n.text ? [" ", shortTitle(n.text, 120)] : null] })) }));
   };
   search.addEventListener("input", draw);
   draw();
-  const verdicts = h("div", { class: "seg", role: "radiogroup", "aria-label": "Your judgement" });
-  for (const [v, t] of [["supports", GRADE_TEXT.supports], ["partially_supports", GRADE_TEXT.partially_supports], ["refutes", GRADE_TEXT.refutes], ["not_relevant", "Not about it"]]) {
-    const b = h("button", { type: "button", role: "radio", class: "seg-btn", "aria-checked": v === verdict ? "true" : "false", onClick: () => {
-      verdict = v; for (const x of verdicts.children) x.setAttribute("aria-checked", x === b ? "true" : "false");
-    } }, t);
-    verdicts.appendChild(b);
-  }
+  const verdicts = choice({ label: "Your judgement", value: verdict, onPick: (v) => { verdict = v; },
+    options: [["supports", GRADE_TEXT.supports], ["partially_supports", GRADE_TEXT.partially_supports], ["refutes", GRADE_TEXT.refutes], ["not_relevant", "Not about it"]] });
   const r = await dialog({ title: "Add one of your notes as evidence", wide: true,
     body: h("div", { class: "evidence-dlg" }, partText ? h("p", { class: "serif" }, partText) : null,
       h("p", { class: "muted small" }, "The passage that holds the note's words becomes an excerpt of this check, judged by you, with the note's words as your sentence."),

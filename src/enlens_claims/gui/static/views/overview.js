@@ -1,7 +1,7 @@
 // 0.9: the Overview: the start page of a project. Exploring the documents comes first (Search, Profile, Concepts,
 // Themes, one document), checking hypotheses second. Each feature says in one line what it does, whether it uses the
 // AI, and what is already made in this project.
-import { App, api, h, icon, P, pageHead, plural } from "../lib.js";
+import { App, api, h, icon, P, pageHead, plural, link, notice } from "../lib.js";
 import { FEATURES, SECTIONS, aiTag, viewTabs } from "../features.js";
 import { finderBox } from "../finder.js";
 import { overviewSections } from "../registry.js";
@@ -15,18 +15,21 @@ export async function renderOverview(view) {
 
   view.appendChild(pageHead(project, {
     eyebrow: "Project overview",
-    sub: nDocs ? `${plural(nDocs, "document", "documents")} · ${plural(o.passages || 0, "passage", "passages")}. Explore what the documents say, then check your hypotheses against them.`
+    // 0.17.0 (design guide): the page head holds one action (Quick look); the way to add documents is a link in the
+    // line under the title, where a place belongs
+    sub: nDocs ? [`${plural(nDocs, "document", "documents")} · ${plural(o.passages || 0, "passage", "passages")}. Explore what the documents say, then check your hypotheses against them. `,
+      link({ href: "#/sources" }, "Add more on the Documents page"), "."]
       : "Add documents first: everything below works on them.",
-    actions: [quickLookButton({ class: "btn btn-sm" }), h("a", { class: "btn btn-sm", href: "#/sources" }, icon("upload", { size: 14 }), "Add documents")],
+    actions: quickLookButton({ sm: true }),
   }));
   view.appendChild(viewTabs("overview", "overview"));   // 0.17.0: Overview | Research log
   // 0.17.0: "What do you want to do?": the feature finder (finder.js, no AI), so a newcomer finds a feature by its words
   view.appendChild(h("div", { class: "ov-finder" }, finderBox()));
 
   if (!nDocs) {
-    view.appendChild(h("div", { class: "notice notice-info ov-empty-docs" }, icon("info"),
-      h("div", {}, h("p", {}, h("strong", {}, "This project has no documents yet. "), "Add PDFs, Word files, text or saved web pages; they stay on this computer."),
-        h("a", { class: "btn btn-primary btn-sm", href: "#/sources", style: { marginTop: "6px" } }, icon("upload", { size: 14 }), "Add documents"))));
+    view.appendChild(notice({ kind: "info", class: "ov-empty-docs" },
+      h("p", {}, h("strong", {}, "This project has no documents yet. "), "Add PDFs, Word files, text or saved web pages; they stay on this computer."),
+      h("p", {}, link({ kind: "next", href: "#/sources" }, "Add documents on the Documents page"))));
   }
 
   // 0.13.6: the sections and their cards come from FEATURES and SECTIONS (registry.js), so an add-on's section or
@@ -89,5 +92,5 @@ function card(key, [made, text], href, opts = {}) {
     h("div", { class: "ov-card-head" }, h("span", { class: "ov-card-icon" }, icon(f.icon, { size: 18 })), h("h3", {}, opts.title || f.title)),
     h("p", {}, opts.what || f.what),
     // 0.13.3: what it is for is the card's tooltip, so a card says one thing (it was a second, grey paragraph)
-    h("div", { class: "ov-card-foot" }, aiTag(f.ai), text ? h("span", { class: `ov-state ${made ? "ov-made" : ""}`, title: text, "aria-label": text }, made ? icon("circle-check", { size: 13 }) : null, h("span", { class: "ov-state-text" }, text.split(" · ")[0])) : null));
+    h("div", { class: "ov-card-foot" }, aiTag(f.ai), text ? h("span", { class: `ov-state ${made ? "ov-made" : ""}`, title: text, "aria-label": text }, made ? icon("check", { size: 13 }) : null, h("span", { class: "ov-state-text" }, text.split(" · ")[0])) : null));
 }

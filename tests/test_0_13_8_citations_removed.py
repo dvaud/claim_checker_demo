@@ -67,10 +67,13 @@ def test_check_citations_is_gone():
     for name in ("index.html", "app.js", "features.js", "registry.js", "views/overview.js", "views/result.js"):
         text = (STATIC / name).read_text(encoding="utf-8")
         assert not re.search(r"citation", text, re.I), name
-    assert ".cite-" not in (STATIC / "app.css").read_text(encoding="utf-8")
+    from _static import all_css  # 0.17.0: the cascade, so it holds when rules move between sheets
+
+    assert ".cite-" not in all_css()
     # the Overview's compact row is as in 0.13.6 (three cards)
-    assert ".ov-grid-small { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }" in \
-        (STATIC / "v09.css").read_text(encoding="utf-8")
+    from _static import rule
+
+    assert rule(".ov-grid-small")["grid-template-columns"] == "repeat(auto-fill, minmax(220px, 1fr))"
     for text in ((ROOT / "docs" / "API.md").read_text(encoding="utf-8"), manual_text()):
         assert "/citations" not in text
         assert "Checking citations" not in text

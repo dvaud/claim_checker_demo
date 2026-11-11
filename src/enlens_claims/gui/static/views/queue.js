@@ -2,11 +2,11 @@
 // this project, kind by kind: do first, hold or go on, remove; Start Claude Code with its speed and helpers; or answer
 // it with the AI model of Settings. (Until 0.16.1 this was the queue panel at the foot of the sidebar; the sidebar now
 // shows only the work's essentials, in its status area, and links here.)
-import { App, api, h, icon, replace, toast, showError, confirmDialog, P, watchJob, startClaude } from "../lib.js";
+import { App, api, h, icon, replace, toast, showError, confirmDialog, P, watchJob, startClaude, button, card, tag } from "../lib.js";
 
 export function queueSection() {
   const body = h("div", { class: "queue-section", "aria-live": "polite" });
-  const section = h("section", { class: "card settings-section", id: "s-queue", "aria-labelledby": "s-queue-h" },
+  const section = card({ class: "settings-section", id: "s-queue", "aria-labelledby": "s-queue-h" },
     h("h2", { id: "s-queue-h", tabindex: "-1" }, "Work waiting for Claude Code"),
     h("p", { class: "lead" }, "What the AI buttons of this project prepared for Claude Code, kind by kind. Claude Code answers it on your Claude plan; you choose what comes first, hold a kind, or take it out."),
     body);
@@ -42,17 +42,17 @@ export function queueSection() {
     if (!kinds.length) parts.push(h("p", { class: "muted small" }, "Press an AI button (a check, Label with the AI, Name the themes…): its work waits here for Claude Code."));
     for (const k of kinds) {
       parts.push(h("div", { class: "qp-row" + (k.held ? " qp-held" : "") },
-        h("div", { class: "qp-title" }, h("strong", {}, k.title), k.held ? h("span", { class: "chip" }, "held") : null),
+        h("div", { class: "qp-title" }, h("strong", {}, k.title), k.held ? tag({}, "held") : null),
         h("div", { class: "muted small" }, `${k.waiting.toLocaleString()} waiting${k.being_answered ? ` · ${k.being_answered} being answered` : ""}${k.done ? ` · ${k.done.toLocaleString()} done` : ""}${k.stronger_model ? ` · ${k.stronger_model} for a stronger model` : ""}`),
         h("div", { class: "muted small" }, [k.helper ? `${k.helper} on ${k.model}` : k.model ? `on ${k.model}` : "", k.estimate ? ` · ${k.estimate}` : ""].join("")),
         h("div", { class: "qp-actions" },
-          (q.order || [])[0] !== k.kind ? h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => act(k.kind, "first") }, icon("arrow-up", { size: 12 }), "Do first") : null,
-          h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => act(k.kind, k.held ? "go" : "hold") }, icon(k.held ? "play" : "pause", { size: 12 }), k.held ? "Go on" : "Hold"),
-          h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => remove(k) }, icon("trash", { size: 12 }), "Remove"))));
+          (q.order || [])[0] !== k.kind ? button({ kind: "quiet", sm: true, onClick: () => act(k.kind, "first") }, icon("arrow-up", { size: 12 }), "Do first") : null,
+          button({ kind: "quiet", sm: true, onClick: () => act(k.kind, k.held ? "go" : "hold") }, icon(k.held ? "play" : "pause", { size: 12 }), k.held ? "Go on" : "Hold"),
+          button({ kind: "danger", sm: true, onClick: () => remove(k) }, icon("trash", { size: 12 }), "Remove"))));
     }
     if (kinds.length || s.backend === "claude_code") parts.push(h("div", { class: "qp-start" }, startClaude(App.project, { command: q.command })));
     if (kinds.length && s.backend !== "claude_code") {
-      parts.push(h("div", { class: "qp-here" }, h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+      parts.push(h("div", { class: "qp-here" }, button({ sm: true, onClick: async () => {
         try { const r = await api("POST", `/api/projects/${P(App.project)}/queue/run`, {}); toast("The AI model of Settings answers the queue now.", "ok"); watchJob(r.job.id, () => {}).promise.then(() => draw()); } catch (e) { showError(e); }
       } }, icon("play", { size: 13 }), "Answer them here instead"), h("span", { class: "muted small" }, ` with ${App.state.backend_label}`)));
     }

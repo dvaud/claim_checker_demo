@@ -91,6 +91,7 @@ themes and at 390 px wide.
 | `handover.py` | The update on Windows (0.15.4): run outside ENLENS's own folder with the Python uv installed, it waits for the app to quit, installs the new version, starts the app again and leaves what happened in `updates/result.json`. Standard library only (a test holds it to that); `ENLENS_RELEASE_API` points the update at a stand-in for GitHub (the release's Windows test) |
 | `procs.py` | `no_window()`: every program the package starts gets no console window on Windows (0.15.3; a test holds every `subprocess` call to it, or to a `# console: …` reason) |
 | `home.py` | Settings, projects, the optional cloud key |
+| `gui/static/` (the look) | `tokens.css` (the tokens, light and dark), `app.css` (base elements, the shell, layout utilities), `components.css` (every component, one section each, numbered as in [DESIGN.md](DESIGN.md)), `views.css` (each page's own pieces and their placement), `site.css` (an installation's own look, last); `lib.js` makes each component (`button()`, `link()`, `card()`…), `views/design.js` is the live reference at `#/design`. New CSS goes into its component's section, or into its page's block of `views.css` when only that page has the piece; never a new sheet, never an inline style. [DESIGN.md](DESIGN.md) says which element to use; `tests/test_0_17_0_design.py` keeps its rules |
 | `gui/` | The local app: `server.py` (the server, `App`, `Handler`, the routes), `api_documents.py`, `api_explore.py`, `api_checks.py`, `api_setup.py` and `api_record.py` (the endpoints of `Handler`: documents and reading, search and profiles, checks and the queue, settings and setup, the research log, notes, history and codebooks), `app_library.py` and `app_queue.py` (bibliography and search, the task queue: parts of `App`), `api_common.py` (errors, jobs, shared helpers), `static/` (the page; `features.js` describes each feature once), `progress.py`, `launcher.py` (the ENLENS icon), `icons/` (its picture, drawn by `tools/make_icons.py`) |
 | `concordance.py` | Search (0.7): concordance lines, modes, other forms, collocates |
 | `profile.py` | Codebook profiles: the keyword and meaning pass, the AI's labels, grids, a person's labels |
@@ -106,6 +107,19 @@ themes and at 390 px wide.
 | `evaluation.py` | The acceptance runs per kind and model through the queue, and their scores (0.8, G6) |
 | `addons.py` | The local layer for apps built on ENLENS (0.13.5): see [EXTENDING.md](EXTENDING.md) |
 | `vca.py`, `sources.py`, `analysis.py`, `review.py`, `report.py`, `benchmark.py` | The SDG / value chain assessment pack |
+
+**Where new CSS goes** (the rules are [DESIGN.md](DESIGN.md), section 9; `tests/test_0_17_0_design.py` holds them):
+
+| What you are adding | Where it goes |
+| --- | --- |
+| A new look for an existing element (a size, a kind, a state) | A variant of its component: in its section of `components.css`, as an option of its helper in `lib.js` (its class in the `UI` table), on `#/design` (`views/design.js`) and in DESIGN.md's entry, in the same commit |
+| A new kind of element no entry fits | A new numbered section in DESIGN.md, the same section in `components.css`, a helper in `lib.js`, a section on `#/design` |
+| How one page arranges its pieces (spacing, columns, order) | Its page's block of `views.css` (`/* ==== Search */`), under the page's own class names, which may only place a component: margins, sizes, grid and flex placement, never its colour, font, edge or padding |
+| A piece only one page has (the concordance's columns, a result's answer) | The page's block of `views.css`, under the page's own class; when a second page needs it, it moves into `components.css` as a component |
+| A colour | A token in `tokens.css`, light and dark, named for its meaning; never a hex value or a theme rule anywhere else |
+| A size or weight of type | One of the type scale's tokens (`--fs-*`, `--fw-*`); a new step is a new token |
+
+No release adds a stylesheet, and no page sets a style inline except a value computed at run time (a bar's width).
 
 Outside `src/enlens_claims/`: `install/install.sh` and `install/install.ps1` are the one-line install (keep
 `install.sh` plain ASCII: macOS's `sh`, bash 3.2, misreads a non-ASCII letter right after a `$NAME`, a test checks it);

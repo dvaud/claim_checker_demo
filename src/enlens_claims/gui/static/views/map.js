@@ -2,7 +2,7 @@
 // (judgements that count at the strictness; a person's always count), with symbols as well as colours. 0.17.0: a view
 // of the Hypotheses page (its tab beside Answers), with the page's head.
 import { featureEyebrow, viewTabs } from "../features.js";
-import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks } from "../lib.js";
+import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks, link, iconButton, tag } from "../lib.js";
 
 const SIDE = {
   supports: { symbol: "+", word: "supports", cls: "m-sup", icon: "circle-check" },
@@ -34,10 +34,10 @@ export async function renderMap(view, params, query) {
     if (answersTab && batch) answersTab.setAttribute("href", `#/hypotheses?batch=${encodeURIComponent(batch)}`);
     view.appendChild(tabs);
   }
-  if (batch) view.appendChild(h("div", { class: "batch-banner", style: { marginBottom: "12px" } }, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${hyps.length} ${hyps.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), h("a", { class: "btn btn-sm btn-ghost", href: "#/map" }, "Show all hypotheses")));
+  if (batch) view.appendChild(h("div", { class: "batch-banner map-batch-banner" }, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${hyps.length} ${hyps.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), link({ kind: "back", href: "#/map" }, "Show all hypotheses")));
 
   if (!hyps.length) {
-    view.appendChild(emptyState("layers", "Nothing to map yet", "Check a hypothesis and it appears here with the documents behind its answer.", h("a", { class: "btn btn-primary", href: "#/hypotheses" }, icon("flask", { size: 14 }), "Check a hypothesis")));
+    view.appendChild(emptyState("layers", "Nothing to map yet", "Check a hypothesis and it appears here with the documents behind its answer.", link({ kind: "next", href: "#/hypotheses" }, "Check a hypothesis")));
     return;
   }
 
@@ -50,7 +50,7 @@ export async function renderMap(view, params, query) {
   const single = hyps.filter((x) => x.single_document).length;
   const key = docs.filter((d) => d.key);
   const notes = [];
-  if (single) notes.push(h("p", {}, icon("alert-triangle", { size: 13 }), ` ${single === 1 ? "1 answer rests" : `${single} answers rest`} on one document only (marked “rests on one document”): a second source would make ${single === 1 ? "it" : "them"} more solid.`));
+  if (single) notes.push(h("p", {}, icon("alert-triangle", { size: 13, class: "map-note-attention" }), ` ${single === 1 ? "1 answer rests" : `${single} answers rest`} on one document only (marked “rests on one document”): a second source would make ${single === 1 ? "it" : "them"} more solid.`));
   if (key.length) notes.push(h("p", {}, icon("star", { size: 13 }), ` ${key.length === 1 ? "1 document is a key document" : `${key.length} documents are key documents`} (marked “decides N answers”): leaving it out would change those answers, so it deserves a careful read.`));
   if (m.documents_without_evidence) notes.push(h("p", { class: "muted" }, `${m.documents_without_evidence} ${m.documents_without_evidence === 1 ? "document has" : "documents have"} no excerpt that counts in any answer, so ${m.documents_without_evidence === 1 ? "it is" : "they are"} not shown as a column.`));
   if (notes.length) view.appendChild(h("div", { class: "map-notes" }, notes));
@@ -60,22 +60,22 @@ export async function renderMap(view, params, query) {
   const table = h("table", { class: "map-table" });
   const thead = h("thead", {}, h("tr", {},
     h("th", { scope: "col", class: "map-hyp-head" }, "Hypothesis"),
-    docs.map((d) => h("th", { scope: "col", class: "map-doc-head" + (d.key ? " map-key-doc" : "") },
-      h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}`, title: `${d.title || "untitled"} · ${d.answers} ${d.answers === 1 ? "answer rests" : "answers rest"} on it${d.decides ? ` · decides ${d.decides}` : ""}${d.in_project === false ? " · removed from the project since" : ""}` },
+    docs.map((d) => h("th", { scope: "col", class: "map-doc-head" },
+      link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}`, title: `${d.title || "untitled"} · ${d.answers} ${d.answers === 1 ? "answer rests" : "answers rest"} on it${d.decides ? ` · decides ${d.decides}` : ""}${d.in_project === false ? " · removed from the project since" : ""}` },
         h("span", { class: "map-doc-title" }, short(d.title)),
-        d.key ? h("span", { class: "map-flag" }, icon("star", { size: 11 }), ` decides ${d.decides} ${d.decides === 1 ? "answer" : "answers"}`) : d.decides ? h("span", { class: "map-flag muted" }, `decides ${d.decides}`) : null,
-        d.in_project === false ? h("span", { class: "map-flag muted" }, "removed since") : null),
-      d.in_project === false ? null : h("button", { class: "icon-btn map-doc-dl", type: "button", title: "Download this PDF with the quotes highlighted", "aria-label": `Download ${short(d.title)} as a PDF with the quotes highlighted`,
-        onClick: (e) => { e.stopPropagation(); download(`/api/projects/${P(project)}/documents/${P(d.doc_id)}/annotated.pdf?${new URLSearchParams({ hyp: hyps.map((x) => x.hyp_id).join(","), threshold: String(threshold) })}`).catch(showError); } },
-        icon("download", { size: 13 }))))));
+        // a key document: a fact about it (a tag with the star), not something that needs you
+        d.key ? tag({ icon: "star", class: "map-flag" }, `decides ${d.decides} ${d.decides === 1 ? "answer" : "answers"}`) : d.decides ? h("span", { class: "map-flag-text" }, `decides ${d.decides} ${d.decides === 1 ? "answer" : "answers"}`) : null,
+        d.in_project === false ? h("span", { class: "map-flag-text" }, "removed since") : null),
+      d.in_project === false ? null : iconButton({ icon: "download", sm: true, size: 13, class: "map-doc-dl", label: `Download ${short(d.title)} as a PDF with the quotes highlighted`, title: "Download this PDF with the quotes highlighted",
+        onClick: (e) => { e.stopPropagation(); download(`/api/projects/${P(project)}/documents/${P(d.doc_id)}/annotated.pdf?${new URLSearchParams({ hyp: hyps.map((x) => x.hyp_id).join(","), threshold: String(threshold) })}`).catch(showError); } })))));
   const tbody = h("tbody", {}, hyps.map((x) => {
     const href = `#/h/${encodeURIComponent(x.hyp_id)}`;
     const row = cells[x.hyp_id] || {};
     return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a")) return; location.hash = href; } },
       h("th", { scope: "row", class: "map-hyp" },
-        h("a", { href, class: "serif" }, x.text),
+        link({ kind: "title", href, serif: true }, x.text),
         h("div", { class: "map-hyp-meta" }, statusBadge(x.status, { short: true, text: x.status_text }),
-          x.single_document ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 11 }), "rests on one document") : null,
+          x.single_document ? tag({ kind: "attention" }, "rests on one document") : null,
           x.docs_counted ? h("span", { class: "muted small" }, `${x.docs_counted} ${x.docs_counted === 1 ? "document" : "documents"}`) : h("span", { class: "muted small" }, "no document counts"))),
       docs.map((d) => {
         const c = row[d.doc_id];
@@ -87,7 +87,7 @@ export async function renderMap(view, params, query) {
       }));
   }));
   table.append(h("caption", { class: "visually-hidden" }, "Evidence map: hypotheses by documents"), thead, tbody);
-  view.appendChild(h("p", { class: "muted small map-scroll-hint", style: { margin: "0 0 6px" } }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every document."));
+  view.appendChild(h("p", { class: "muted small map-scroll-hint" }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every document."));
   view.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": "Evidence map grid (scrolls sideways)" }, table));
-  view.appendChild(h("p", { class: "muted small", style: { marginTop: "10px" } }, "Click a hypothesis to open its result, or a document title to open the document; the download arrow under a document title gives its PDF with the quotes marked. The Excel download of all answers has this map as a sheet called “Map”."));
+  view.appendChild(h("p", { class: "muted small map-help" }, "Click a hypothesis to open its result, or a document title to open the document; the download arrow under a document title gives its PDF with the quotes marked. The Excel download of all answers has this map as a sheet called “Map”."));
 }

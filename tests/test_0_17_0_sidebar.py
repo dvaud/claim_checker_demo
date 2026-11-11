@@ -6,6 +6,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _static import all_css, rule
+
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"
 
 
@@ -13,34 +15,36 @@ def _read(name):
     return (STATIC / name).read_text(encoding="utf-8")
 
 
-def _rule(css, selector):
-    m = re.search(r"(?m)^" + re.escape(selector) + r" \{([^}]*)\}", css)
-    assert m, f"no rule for {selector}"
-    return " ".join(m.group(1).split())
+def _rule(selector):
+    """0.17.0: the cascade's declarations for `selector` as "prop: value; ..." (tests/_static.py rule()), so the checks
+    hold when the design guide moves or reformats the rule."""
+    decls = rule(selector)
+    assert decls, f"no rule for {selector}"
+    return "; ".join(f"{k}: {v}" for k, v in decls.items())
 
 
 def test_only_the_list_of_features_scrolls():
-    css = _read("app.css")
-    sidebar = _rule(css, ".sidebar")
+    sidebar = _rule(".sidebar")
     assert "height: 100dvh" in sidebar and "overflow: hidden" in sidebar and "overflow: auto" not in sidebar
-    nav = _rule(css, "#nav")
+    nav = _rule("#nav")
     assert "flex: 1 1 auto" in nav and "min-height: 0" in nav and "overflow-y: auto" in nav
     assert "overscroll-behavior: contain" in nav
     # the shadows that say more features are beyond an edge use the colour tokens (they work in both themes)
     assert "var(--bg-2)" in nav and "var(--text)" in nav and "rgba(" not in nav
-    assert ".sidebar-inner > .brand, .sidebar-inner > .project-switch { flex: none; }" in css
+    assert rule(".sidebar-inner > .brand")["flex"] == "none" and rule(".sidebar-inner > .project-switch")["flex"] == "none"
 
 
 def test_the_foot_stays_and_an_open_panel_scrolls_inside_itself():
-    css = _read("app.css")
-    foot = _rule(css, ".sidebar-foot")
+    foot = _rule(".sidebar-foot")
     assert "flex: none" in foot and "margin-top: auto" in foot
     # the foot is no scrolling box: the AI line's card opens upwards out of it and would be cut off
     assert "overflow" not in foot
-    panel = _rule(css, ".sidebar-foot .jobs > .ps-menu")
-    assert "max-height: max(120px, calc(100vh - 480px))" in panel and "overflow-y: auto" in panel
+    # 0.17.0 (design guide): the old jobs panel that opened in the foot is gone (work shows in the status area, the
+    # queue in Settings); its rule went with the dead rules
+    assert ".jobs" not in all_css()
     # the phone menu is as high as the visible window, not the window behind the browser's bars
-    assert "height: 100vh; height: 100dvh; z-index: 60;" in css
+    assert re.search(r"height:\s*100vh;\s*height:\s*100dvh;", all_css())  # the fallback, then the dynamic unit
+    assert rule(".sidebar", media="(max-width: 860px)")["z-index"] == "60"
 
 
 def test_a_wheel_over_the_sidebar_never_scrolls_the_page():

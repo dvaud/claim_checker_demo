@@ -15,17 +15,25 @@ from pathlib import Path
 import pytest
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
+from _static import all_css, css_blocks, rule
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "enlens_claims" / "gui" / "static"
 JS = (STATIC / "views" / "logdrawer.js").read_text(encoding="utf-8")
-_NAV_CSS = (STATIC / "navigation.css").read_text(encoding="utf-8")
-CSS = _NAV_CSS[_NAV_CSS.index("/* ==== the research log drawer"):]  # the drawer's rules, merged into navigation.css
+# 0.17.0: the drawer's rules are collected from the cascade (tests/_static.py css_blocks) by what they name, not read from
+# a stylesheet's tail, so they are found wherever the design guide puts them
+# 0.17.0 (design guide): the frame is the general drawer component (.drawer*, body[data-drawer]); the log fills it
+_BLOCKS = [(m, s, d) for m, s, d in css_blocks(all_css())
+           if any(".drawer" in x or "data-drawer" in x for x in s) and "print" not in m and ".dz-" not in " ".join(s)]
+CSS = "\n".join(f"{m} {{ {', '.join(s)} {{ " + "; ".join(f"{k}: {v}" for k, v in d.items()) + " } }" for m, s, d in _BLOCKS)
+SELECTORS = [x for _m, s, _d in _BLOCKS for x in s]
 
 
 def test_the_module_keeps_its_exports_and_reuses_the_log_page():
     assert re.search(r"export function initLogDrawer\(", JS)
     assert re.search(r"export function pageContext\(", JS)
-    assert 'import { subjectHref } from "./log.js"' in JS
+    # 0.17.0 (design guide, changed on purpose): an entry's words, its item and its author come from the log page too,
+    # so one entry looks the same on the page and in the drawer
+    assert 'import { subjectHref, entryText, entrySubject, entryWho } from "./log.js"' in JS
     assert "initLogDrawer" in (STATIC / "app.js").read_text(encoding="utf-8")
 
 
@@ -45,17 +53,25 @@ def test_the_post_carries_the_subject_and_the_words_match_the_brief():
 
 
 def test_button_drawer_and_layout_are_wired():
-    assert '"aria-expanded"' in JS and '"aria-label": "Research log"' in JS and 'h("aside"' in JS
+    # 0.17.0 (design guide): the frame and its button are the drawer component's (lib.js drawer(), drawerButton())
+    lib = (STATIC / "lib.js").read_text(encoding="utf-8")
+    assert 'drawer({ id: "logdrawer", title: "Research log"' in JS and "drawerButton({" in JS and "setDrawerOpen(" in JS
+    assert '"aria-expanded"' in lib and '"aria-label": title' in lib and 'h("aside"' in lib
     assert "Escape" in JS and "session(" in JS and "hashchange" in JS and "App.onChange" in JS
     assert "metaKey || e.ctrlKey" in JS
     # the drawer is a column beside the page (reserving its width) from 1000px, floats over it from 861px to 999px
-    assert re.search(r"@media \(min-width: 1000px\) \{\s*body\.logdrawer-open \.shell \{ grid-template-columns:", CSS)
+    # 0.17.0 (design guide): the open state is an attribute, body[data-drawer="open"], not a class
+    assert "grid-template-columns" in rule('body[data-drawer="open"] .shell', media="(min-width: 1000px)")
     assert "(min-width: 861px) and (max-width: 999px)" in CSS and "(max-width: 999px)" in JS
-    assert "1200px" in CSS and "860px" in CSS and "72vh" in CSS and "position: fixed" in CSS
+    # 0.17.0 (design guide): the wider drawer from 1,200 px is a token's value (--drawer-w in tokens.css)
+    assert "--drawer-w: 340px" in rule(":root", media="(min-width: 1200px)").get("--drawer-w", "") or \
+        rule(":root", media="(min-width: 1200px)").get("--drawer-w") == "340px"
+    assert "860px" in CSS and "position: fixed" in CSS
+    assert re.search(r"height:\s*72vh", all_css())  # (a fallback before 72dvh, which the parsed declarations collapse)
     # only the app's colour tokens, only logdrawer- class names
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b", CSS)
-    for sel in re.findall(r"\.([a-z][\w-]*)", re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)):
-        assert sel.startswith("logdrawer") or sel in {"main", "shell", "topbar-project", "icon-btn", "btn", "link-btn"} or sel[0].isdigit(), sel
+    for sel in re.findall(r"\.([a-z][\w-]*)", " ".join(SELECTORS)):
+        assert sel.startswith(("drawer", "log-")) or sel in {"main", "shell", "topbar-project", "icon-btn", "icon", "btn", "muted", "chip", "settings-tabs", "seg"} or sel[0].isdigit(), sel
 
 
 def test_no_rule_styles_the_body_class_alone():
@@ -63,10 +79,12 @@ def test_no_rule_styles_the_body_class_alone():
     "Open" link (`.logdrawer-open { display: inline-block; margin-top: 3px }`), which made the whole page shrink-to-fit
     and 3px lower whenever the drawer was open: the page ran under the panel and its button was cut off. The entry's
     link has its own class, and the body class is used only after `body.`."""
-    css = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
-    assert not re.search(r"(?<!body)\.logdrawer-open\b", css)
-    assert 'class: "logdrawer-open"' not in JS and 'class: "logdrawer-entry-link"' in JS
-    assert re.search(r"\.logdrawer-entry-link \{", css)
+    every = " ".join(x for _m, s, _d in css_blocks(all_css()) for x in s)  # the whole cascade, not only the drawer's rules
+    assert not re.search(r"(?<!body)\.logdrawer-open\b", every)
+    assert 'class: "logdrawer-open"' not in JS
+    # 0.17.0 (design guide, changed on purpose): an entry has no separate "Open": its item's name is the title link
+    # (entryText()/entrySubject() in views/log.js, shared by the page and the drawer), so there is no Open link left
+    assert "logdrawer-entry-link" not in JS and '"Open")' not in JS and "entryText(e, to)" in JS
 
 
 NODE_CASES = {
@@ -88,9 +106,12 @@ def test_page_context_in_node(tmp_path):
     (tmp_path / "views").mkdir()
     (tmp_path / "package.json").write_text('{"type": "module"}')
     (tmp_path / "views" / "logdrawer.js").write_text(JS)
-    (tmp_path / "views" / "log.js").write_text("export const subjectHref = () => null;")
+    (tmp_path / "views" / "log.js").write_text("export const subjectHref = () => null, entryText = () => null, entrySubject = () => null,"
+                                               " entryWho = () => null;")
+    # 0.17.0 (design guide): the drawer is built with the components' helpers of lib.js
     (tmp_path / "lib.js").write_text("const n = () => {}; export const App = {}, api = n, h = n, icon = n, clear = n, session = n,"
-                                     " fmt = {}, toast = n, showError = n, P = (x) => x;")
+                                     " fmt = {}, toast = n, showError = n, P = (x) => x, button = n, link = n, textarea = n,"
+                                     " choice = n, drawer = n, drawerButton = n, setDrawerOpen = n;")
     (tmp_path / "run.mjs").write_text(
         'import { pageContext, whenText } from "./views/logdrawer.js";\n'
         f"const cases = {json.dumps(list(NODE_CASES))};\n"

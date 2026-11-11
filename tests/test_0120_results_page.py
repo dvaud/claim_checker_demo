@@ -103,9 +103,11 @@ def test_the_sidebar_says_not_running_in_its_own_colour():
     assert 'w.kind === "running" ? h("span", { class: "running-dot"' in draw
     # it offers to start Claude Code for the current project's work on hold, in one button
     assert "startClaudeNow(App.project)" in draw and '"Start"' in draw
-    css = (STATIC / "navigation.css").read_text()
-    stalled = css[css.index(".work-box.work-stalled"):]
-    assert "var(--warn)" in stalled[:200] and "running-dot" not in stalled[:200]  # no pulse for work on hold
+    from _static import all_css, rule  # 0.17.0: reads the cascade, so it holds when the rule moves
+
+    stalled = rule(".work-box.work-stalled")
+    # 0.17.0 (design guide): "needs you" is the attention token (its value is --warn's)
+    assert "var(--attention-soft)" in stalled.values() and ".work-box.work-stalled .running-dot" not in all_css()  # no pulse for work on hold
 
 
 # ---------------------------------------------------------------------------------------------
@@ -159,7 +161,9 @@ def test_an_excerpt_card_is_compact_and_can_be_dismissed():
     # once with Undo (no confirmation for one and not the other)
     assert judge.count('}, "Take back"));') == 3 and "confirmDialog" not in judge
     # the other judgements are buttons (arrowing through radios saved at every key press)
-    assert 'type: "radio"' not in judge and 'class: "btn btn-sm judge-opt"' in judge
+    # 0.17.0 (design guide, changed on purpose): they are a choice in its filter form (choice({ filter: true })): the
+    # one in force shows as chosen, and the arrow keys only move between them (nothing is saved until one is picked)
+    assert 'type: "radio"' not in judge and "choice({ filter: true, label: \"Your judgement (saved when you pick one)\"" in judge
     # the first slot reads the same on every card ("Agree"); its title says when agreeing makes a judgement count
     assert '"Agree"),' in judge and "(it does not count now)" in judge
     # an uncounted judgement says so on the card; what agreeing does is in its tooltip and the strictness help
@@ -174,16 +178,20 @@ def test_an_excerpt_card_is_compact_and_can_be_dismissed():
     # document); the actions in one row that never moves: the judge and More panels open under it
     assert "excerptWindow(p.text, hs, he, p.breaks, { after:" in card and '"Show the whole excerpt"' not in card and "function contextView" not in js
     assert 'whole ? "Less context" : "In context"' in card and '"Open the whole document at this place"' in card
-    assert "judgeControl(p, part, passageEl, extras)" in card and 'panelToggle(`tech:${p.passage_id}`, "Details", morePanel, false, false)' in card
+    assert "judgeControl(p, part, passageEl, extras)" in card and 'panelToggle(`tech:${p.passage_id}`, "Details", morePanel, false)' in card
     # five actions in the row; reading again is under Details, the original file with the whole excerpt (In context);
     # one panel open at a time
     assert "rereadBtn ? h(\"div\", { class: \"ev-more-actions\" }, rereadBtn) : null," in card and '"the original file"' in card
     assert "if (other !== btn) other.click();" in js
     assert 'wrap.append(judgePanel, ...(extras.panels || []));' in judge
     assert "Sentence highlighted by the AI" not in js  # the section head says it once
-    css = (STATIC / "v012.css").read_text()
-    # no new faces: only the font tokens of app.css
-    assert ".result .part-card" in css and all(f.strip().startswith("var(--font-") for f in re.findall(r"font-family:([^;]+);", css))
+    from _static import all_css, css_blocks, rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    # no new faces: only the font tokens of tokens.css, in every rule of the result page
+    assert rule(".result .part-card")
+    fonts = [d["font-family"] for _m, sels, d in css_blocks(all_css()) if "font-family" in d
+             and any(s.startswith(".result ") for s in sels)]
+    assert fonts and all(f.strip().startswith("var(--font-") for f in fonts), fonts
 
 
 NODE = shutil.which("node")

@@ -1,6 +1,6 @@
 // Quick look (F8): drop one document and read it at once (search, key terms, codes), in a temporary project that is
 // moved to the trash after a week unless it is kept.
-import { App, api, h, icon, replace, toast, showError, dialog, confirmDialog, watchJob, P, navigate, fmt } from "../lib.js";
+import { App, api, h, icon, replace, toast, showError, dialog, confirmDialog, watchJob, P, navigate, fmt, button } from "../lib.js";
 import { simpleProgress } from "./progress.js";
 
 const OK = /\.(pdf|docx|html?|txt|md)$/i;   // 0.14.3: Word too (the app reads it, and the file chooser offers it)
@@ -12,13 +12,13 @@ export function quickLookBanner(box) {
   const t = p && p.temporary;
   if (!t) { replace(box); return; }
   const until = new Date((t.expires_at || 0) * 1000);
-  const keep = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("pin", { size: 13 }), "Keep as a project");
+  const keep = button({ kind: "main", sm: true }, icon("pin", { size: 13 }), "Keep as a project");
   keep.addEventListener("click", async () => {
     keep.disabled = true;
     try { await api("POST", `/api/projects/${P(p.name)}/keep`, {}); await App.refresh(); toast(`“${p.name}” is kept as a project.`, "ok"); replace(box); }
     catch (e) { showError(e); keep.disabled = false; }
   });
-  const discard = h("button", { class: "btn btn-sm btn-ghost", type: "button" }, icon("trash", { size: 13 }), "Discard now");
+  const discard = button({ kind: "quiet", sm: true }, icon("trash", { size: 13 }), "Discard now");
   discard.addEventListener("click", async () => {
     const ok = await confirmDialog({ title: "Discard this quick look?", message: `“${p.name}” is moved to the trash folder inside the data folder now, instead of on ${fmt.dateShort(until.toISOString())}.`, confirmText: "Discard" });
     if (!ok) return;
@@ -41,7 +41,7 @@ export function quickLookBanner(box) {
 // "Quick look at one document": choose a file, it is read into a temporary project and opened.
 export function quickLookButton(opts = {}) {
   const input = h("input", { type: "file", accept: ".pdf,.docx,.html,.htm,.txt,.md", class: "visually-hidden" });
-  const btn = h("button", { class: opts.class || "btn", type: "button", title: "Read one document at once: search it, see its key terms and the codes it addresses, without setting up a project" },
+  const btn = button({ sm: !!opts.sm, title: "Read one document at once: search it, see its key terms and the codes it addresses, without setting up a project" },
     icon("eye", { size: 15 }), opts.text || "Quick look at one document");
   btn.addEventListener("click", () => input.click());
   input.addEventListener("change", () => { const f = input.files && input.files[0]; input.value = ""; if (f) startQuickLook(f); });

@@ -9,7 +9,7 @@
 import re
 from pathlib import Path
 
-from _static import defined_tokens
+from _static import all_css, css_blocks, defined_tokens_all, rule
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -45,12 +45,14 @@ def test_the_icon_says_what_it_does():
 
 
 def test_css_of_the_row():
-    css = (STATIC / "app.css").read_text(encoding="utf-8")
-    assert ".sidebar-app .btn[hidden] { display: none; }" in css  # the hidden Quit stays hidden
-    assert ".sidebar-app-row { display: flex;" in css
-    assert ".sidebar-app-row .nav-foot { flex: 1; min-width: 0; }" in css
-    assert ".sidebar-app .theme-btn {" in css
-    foot = css[css.index("sidebar foot: Settings"):css.index(".sidebar-app .btn.update-ready {")]
-    used = set(re.findall(r"var\((--[a-z0-9-]+)", foot))
-    assert used and used <= defined_tokens(), used - defined_tokens()
-    assert ".sidebar-app" not in (STATIC / "v0101.css").read_text(encoding="utf-8")  # moved, not copied
+    # 0.17.0: reads the cascade (tests/_static.py rule()), so it holds when the design guide moves the rules; the
+    # old "moved, not copied" check of which sheet holds them is gone with the sheets
+    assert rule(".sidebar-app .btn[hidden]")["display"] == "none"  # the hidden Quit stays hidden
+    row = rule(".sidebar-app-row")
+    assert row["display"] == "flex"
+    nav = rule(".sidebar-app-row .nav-foot")
+    assert nav["flex"] == "1" and nav["min-width"] == "0"
+    assert rule(".sidebar-app .theme-btn")
+    foot = [d for _m, sels, d in css_blocks(all_css()) if any(s.startswith(".sidebar-app") for s in sels)]
+    used = set(re.findall(r"var\((--[a-z0-9-]+)", " ".join(v for d in foot for v in d.values())))
+    assert used and used <= defined_tokens_all(), used - defined_tokens_all()

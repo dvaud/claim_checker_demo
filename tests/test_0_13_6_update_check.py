@@ -212,7 +212,7 @@ console.log(JSON.stringify(out));
 def test_page_files():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     assert '<button class="btn btn-ghost btn-sm" id="update-btn" type="button" hidden></button>' in html
-    assert "/static/v0136.css" not in release_sheets()  # its rules are in app.css (shared stylesheets)
+    assert "/static/v0136.css" not in release_sheets()  # its rules are in the shared stylesheets
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     init = app[app.index("function updateInit()"):app.index("function updatePopup(")]
     assert "btn.hidden = false" not in init.split("function showUpdate(")[0]  # never shown before a look
@@ -224,8 +224,11 @@ def test_page_files():
     settings = (STATIC / "views" / "settings.js").read_text(encoding="utf-8")
     assert '"Check for updates"' in settings and "checkUpdate(true)" in settings and "updatesSection()" in settings
     assert 'href: "#/settings/updates"' in settings and 'updates: "advanced"' in settings
-    css = (STATIC / "app.css").read_text(encoding="utf-8")
-    assert ".update-ready" in css and ".update-popup" in css
+    from _static import all_css  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    css = all_css()
+    # 0.17.0 (design guide): Update is a small main button (app.js), so .update-ready is a hook with no look of its own
+    assert 'btn.className = "btn btn-primary btn-sm update-ready"' in (STATIC / "app.js").read_text(encoding="utf-8") and ".update-popup" in css
 
 
 def test_the_docs_say_so():

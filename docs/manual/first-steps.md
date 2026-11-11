@@ -138,8 +138,10 @@ The line at the foot of the sidebar always says it:
 | --- | --- |
 | *Claude, on your plan · Only the passages of AI tasks leave this computer* | The default: Claude Code on your plan. |
 | *Claude, on your plan · Set up Claude Code* (or *Finish the set-up*) | Claude Code is chosen but not ready yet: click it to set it up. |
-| *Private · The AI runs on this computer* | A local model. |
-| Excerpts are sent to the Claude API | A shared installation that allowed the Claude API. |
+| *A model on this computer · The AI runs on this computer* | A local model. |
+| *No AI model set up yet · Exploring works; checking needs one* | A model on this computer, or the Claude API, is chosen but cannot run yet (no model downloaded, no key): click it to set it up. |
+| *Claude, through an API key* | A shared installation that allowed the Claude API. |
+| *Demo mode · A stand-in, not an AI* | The word-overlap stand-in: its results are not findings. |
 
 Hover the line (or reach it with <kbd>Tab</kbd>) for a short card: with Claude Code it names the account Claude Code
 is signed in to (*Signed in to Claude Code as you@university.nl*, and on a Team or Enterprise plan the organisation),

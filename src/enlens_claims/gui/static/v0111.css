@@ -1,5 +1,0 @@
-/* ENLENS 0.11.1: the bug and clean-up release. Colour tokens of app.css only, so light and dark both work. */
-
-/* the progress panel's remarks about a round (excerpts of restricted documents read here, or waiting for you) */
-.progress-notes { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); }
-.progress-notes li { margin: 2px 0; }

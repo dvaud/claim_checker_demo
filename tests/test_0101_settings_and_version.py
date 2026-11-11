@@ -4,7 +4,7 @@
   at the foot of the sidebar, and still shows as the current page when a Settings tab is open;
 - every Settings tab shows the version in its title row, linking to Technical → Where your data is (how ENLENS was
   installed and how to update it);
-- the release's CSS uses only colour tokens defined in app.css (light and dark themes).
+- the release's CSS uses only colour tokens defined in tokens.css (light and dark themes).
 """
 import re
 from pathlib import Path
@@ -12,7 +12,7 @@ from pathlib import Path
 from enlens_claims import __version__
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
-from _static import defined_tokens
+from _static import all_css, defined_tokens_all, rule
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "enlens_claims" / "gui" / "static"
@@ -46,11 +46,13 @@ def test_settings_still_shows_as_the_current_page():
 
 def test_the_settings_page_shows_the_version():
     js = (STATIC / "views" / "settings.js").read_text(encoding="utf-8")
-    assert 'pageHead("Settings", { actions: versionTag(),' in js
+    # 0.17.0 (design guide, changed on purpose): the version is a link, so it sits in the line under the title, not at
+    # the head's right (which holds only actions)
+    assert 'pageHead("Settings", { sub: [' in js and '[tab], " ", versionTag()] }' in js
     tag = js[js.index("function versionTag()"):]
     tag = tag[:tag.index("\n}\n")]
     # 0.13.6: it opens Technical → Updates (Check for updates), just above Where your data is
-    assert "st.version || VERSION" in tag and 'href: "#/settings/updates"' in tag and 'class: `version-tag' in tag
+    assert "st.version || VERSION" in tag and 'href: "#/settings/updates"' in tag and 'class: "version-tag"' in tag  # 0.17.0 (design guide): words with a link, not a pill
 
 
 def test_the_version_reaches_the_page(api):  # noqa: F811
@@ -63,12 +65,15 @@ def test_the_version_reaches_the_page(api):  # noqa: F811
 
 def test_page_files_of_the_release():
     html = _html()
-    assert '<link rel="stylesheet" href="/static/v0101.css">' in html
-    assert html.index("/static/v010.css") < html.index("/static/v0101.css")
-    css = (STATIC / "v0101.css").read_text(encoding="utf-8")
-    defined = defined_tokens()  # 0.13.5: the tokens are in tokens.css
+    # 0.17.0: the release's rules are in the cascade (tests/_static.py rule()), not in a sheet of its own
+    # 0.17.0 (design guide): the version is words with a link (and an attention tag when a newer one waits), drawn by
+    # the Links and Tags components, not a pill of its own
+    settings = (STATIC / "views" / "settings.js").read_text(encoding="utf-8")
+    assert 'h("span", { class: "version-tag" }' in settings and 'link({ href: "#/settings/updates"' in settings
+    css = all_css()
+    defined = defined_tokens_all()
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
     assert used and used <= defined, used - defined
-    # the hidden Quit button stays hidden although the foot's buttons are flex items (0.14.2: the rule is in app.css)
-    assert ".sidebar-app .btn[hidden] { display: none; }" in (STATIC / "app.css").read_text(encoding="utf-8")
-    assert "a.version-tag:hover" in css  # a link styled as a pill keeps its own hover colours
+    # the hidden Quit button stays hidden although the foot's buttons are flex items
+    assert rule(".sidebar-app .btn[hidden]")["display"] == "none"
+    assert "a.version-tag:hover" not in css  # 0.17.0 (design guide): the version is a plain link now, not a pill with hover colours of its own

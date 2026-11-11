@@ -1,5 +1,5 @@
 // The options of a check (shared by the Check and Batch pages) and the framework code picker.
-import { App, api, h, icon, replace, switchControl, rangeControl, field, dialog, P, debounce } from "../lib.js";
+import { App, api, h, icon, replace, switchControl, rangeControl, field, dialog, P, debounce, input as inputField, fold } from "../lib.js";
 
 export function checkOptions({ docs = [], search = null, compact = false } = {}) {
   const s = App.settings();
@@ -17,7 +17,7 @@ export function checkOptions({ docs = [], search = null, compact = false } = {})
 
   // only these documents
   const pick = h("div", { class: "doc-pick", role: "group", "aria-label": "Only these documents" });
-  const filter = h("input", { class: "input input-sm", type: "search", placeholder: "Find a document…", "aria-label": "Find a document" });
+  const filter = inputField({ sm: true, type: "search", placeholder: "Find a document…", "aria-label": "Find a document" });
   const boxes = [];
   const drawDocs = (q) => {
     replace(pick);
@@ -30,16 +30,16 @@ export function checkOptions({ docs = [], search = null, compact = false } = {})
       if (!cb) { cb = h("input", { type: "checkbox", value: d.doc_id }); boxes.push(cb); }
       pick.appendChild(h("label", {}, cb, h("span", {}, d.title || d.file, d.check ? h("span", { class: "muted" }, ` · ${d.check}`) : null)));
     }
-    if (!n) pick.appendChild(h("div", { class: "muted small", style: { padding: "6px" } }, docs.length ? "No document matches." : "No documents in this project yet."));
+    if (!n) pick.appendChild(h("p", { class: "muted small picker-note" }, docs.length ? "No document matches." : "No documents in this project yet."));
   };
   drawDocs("");
   filter.addEventListener("input", debounce(() => drawDocs(filter.value), 120));
-  const docsField = h("div", { class: "field", style: { gridColumn: "1 / -1" } },
-    h("div", { class: "row", style: { justifyContent: "space-between" } }, h("span", { class: "field-label" }, "Search only in these documents"), h("span", { class: "muted small" }, "nothing ticked = all documents")),
+  const docsField = h("div", { class: "field opt-docs-field" },
+    h("div", { class: "row opt-docs-head" }, h("span", { class: "field-label" }, "Search only in these documents"), h("span", { class: "muted small" }, "nothing ticked = all documents")),
     docs.length > 6 ? filter : null, pick);
 
-  const summary = h("summary", {}, h("span", { class: "opt-summary" }, h("strong", {}, "More options"), h("span", { class: "muted", id: "opt-sum" })));
-  const details = h("details", { class: "fold" }, summary,
+  const summary = h("span", { class: "opt-summary" }, h("span", {}, "More options"), h("span", { class: "muted", id: "opt-sum" }));
+  const details = fold({}, summary,
     h("div", { class: "options-grid" }, decompose, expand, semantic, k, perDoc, docsField));
   const el = h("div", { class: "options" }, details);
 
@@ -87,7 +87,7 @@ export function pickCode({ project, framework, suggested = [], current = "" }) {
     try { fw = await loadFramework(project, framework); } catch (e) { resolve(undefined); throw e; }
     const items = fw.items || [];
     const byCode = new Map(items.map((i) => [i.code, i]));
-    const input = h("input", { class: "input", type: "search", placeholder: `Search ${items.length} codes by number or words…`, "aria-label": "Search codes", autocomplete: "off" });
+    const input = inputField({ type: "search", placeholder: `Search ${items.length} codes by number or words…`, "aria-label": "Search codes", autocomplete: "off" });
     const list = h("div", { class: "picker-list", role: "listbox", "aria-label": fw.label || "Codes" });
     let picked;
     let dlgRef = null;
@@ -114,9 +114,9 @@ export function pickCode({ project, framework, suggested = [], current = "" }) {
         const g = i.group_name ? `${i.group ? i.group + " · " : ""}${i.group_name}` : (i.group || "");
         if (g !== group) { group = g; if (g) list.appendChild(h("div", { class: "picker-group" }, g)); }
         list.appendChild(row(i, suggSet.has(i.code)));
-        if (n > 400) { list.appendChild(h("div", { class: "muted small", style: { padding: "8px 10px" } }, "More codes: narrow the search.")); break; }
+        if (n > 400) { list.appendChild(h("p", { class: "muted small picker-note" }, "More codes: narrow the search.")); break; }
       }
-      if (!n) list.appendChild(h("div", { class: "muted small", style: { padding: "8px 10px" } }, "No code matches."));
+      if (!n) list.appendChild(h("p", { class: "muted small picker-note" }, "No code matches."));
     };
     input.addEventListener("input", debounce(draw, 80));
     const keyNav = (e) => {

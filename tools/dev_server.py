@@ -391,8 +391,10 @@ def stand_in_update(mode: str) -> None:
     from enlens_claims import __version__, update
     from enlens_claims.gui import server
 
-    nums = [int(x) for x in __version__.split(".")]
-    newer = ".".join(map(str, nums[:-1] + [nums[-1] + 1]))
+    # a release candidate (0.17.0rc4) is followed by the next candidate (0.17.0rc5), a release by the next patch
+    import re as _re
+    m = _re.match(r"^(.*?)(\d+)$", __version__)
+    newer = f"{m.group(1)}{int(m.group(2)) + 1}" if m else __version__ + ".1"
     if mode == "on-disk":
         server._installed_version = lambda: newer
         return

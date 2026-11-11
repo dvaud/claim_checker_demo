@@ -173,6 +173,9 @@ def test_the_page_puts_exploring_first_and_marks_the_ai():
 def test_a_link_button_keeps_its_colours_on_hover():
     """The general `a:hover` colour outranked `.btn-primary`: a primary button made from a link (Overview's *Set up
     Claude Code*, *Add documents*…) turned its text the colour of its own hover background, so it read as empty."""
-    css = (ROOT / "src" / "enlens_claims" / "gui" / "static" / "app.css").read_text(encoding="utf-8")
-    assert "a:hover { color: var(--accent-strong); }" in css
-    assert "a.btn-primary:hover { color: var(--on-accent); }" in css and "a.btn:hover { color: var(--text); }" in css
+    from _static import rule  # 0.17.0: reads the cascade (tests/_static.py rule()), so it holds when the rules move
+
+    assert rule("a:hover")["color"] == "var(--accent-strong)"
+    # 0.17.0 (design guide): every button's hover sets its own words' colour (.btn:hover outranks a:hover), so an <a>
+    # drawn as a button (a download) needs no rule of its own
+    assert rule(".btn-primary:hover")["color"] == "var(--on-accent)" and rule(".btn:hover")["color"] == "var(--text)"

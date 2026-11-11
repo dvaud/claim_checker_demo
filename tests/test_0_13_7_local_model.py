@@ -233,14 +233,18 @@ def test_page_files():
     assert "if (opts.test) testBtn.click();" in setup   # a model just downloaded is tested at once
     assert 'api("POST", "/api/servers/pull", { models: names(), url: ollama.url, use: opts.use || "" })' in helper
     assert 'use: "ai"' in setup and 'use: "ai"' in settings and 'use: "embed"' in settings and 'use: "restricted"' in access
-    assert "https://ollama.com/download" in helper and 'target: "_blank", rel: "noopener"' in helper
+    # 0.17.0 (design guide): the outside link is the link component (kind "external" opens a new tab with rel noopener)
+    assert "https://ollama.com/download" in helper and 'link({ kind: "external"' in helper
     assert "none of your documents are sent" in helper and "/cancel" in helper
     assert 'x.kind === "model-pull"' in helper   # a download already running is shown again
     assert "el.isConnected" in helper and "LOOK_EVERY = 3000" in helper   # looks again only while on the page
     registry = (STATIC / "registry.js").read_text(encoding="utf-8")
     assert '"model-pull": { icon: "download", text: "Downloading a model", link: "#/settings/model" }' in registry
-    css = (STATIC / "app.css").read_text(encoding="utf-8")
-    assert ".local-help {" in css and ".local-help .guide { margin: 0; padding: 0; list-style: none; }" in css
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    assert rule(".local-help")
+    guide = rule(".local-help .guide")
+    assert guide["margin"] == "0" and guide["padding"] == "0" and guide["list-style"] == "none"
 
 
 def test_the_docs_say_so():

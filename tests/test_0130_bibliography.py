@@ -16,7 +16,7 @@ import pytest
 from fake_zotero import FakeZotero
 from helpers import make_pdf
 from test_app import api, home  # noqa: F401  (fixtures)
-from _static import defined_tokens
+from _static import all_css, css_blocks, defined_tokens_all, rule
 from helpers import api_docs
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -437,7 +437,7 @@ def test_the_page_shell_and_documents():
     assert re.search(r'bibliography: \{\s*section: "project", title: "Bibliography", icon: "library", '
                      r'href: "#/bibliography", ai: "none"', features)
     index = (STATIC / "index.html").read_text()
-    assert "/static/v013.css" in index
+    assert rule(".bib-source") and rule(".bib-tiles")  # 0.17.0: the page's rules are in the cascade
     # 0.17.0: the bibliography is a view of Documents (a tab on its pages), right after its notes
     assert re.search(r'\["bibliography", "Bibliography", "#/bibliography", "library"\]', features)
     assert features.index('["annotations", "Notes"') < features.index('["bibliography", "Bibliography"')
@@ -454,11 +454,13 @@ def test_the_page_shell_and_documents():
         assert words in page, words
     sources = (STATIC / "views" / "sources.js").read_text()
     assert 'class: "doc-cite it"' in sources and 'class: "dv-bib"' in sources and "see Bibliography" in sources
-    css = (STATIC / "v013.css").read_text()
-    defined = defined_tokens()  # 0.13.5: the tokens are in tokens.css
-    used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
+    defined = defined_tokens_all()
+    used = set(re.findall(r"var\((--[a-z0-9-]+)", all_css()))
     assert used and used <= defined, used - defined
-    assert not re.search(r"#[0-9a-fA-F]{3,6}\b", css)  # colours only through the tokens (light and dark)
+    # colours only through the tokens (light and dark): the rules of the bibliography's own classes
+    mine = [d for _m, sels, d in css_blocks(all_css()) if any(re.match(r"\.(bib-|doc-cite|dv-bib)", s) for s in sels)]
+    assert len(mine) > 10
+    assert not any(re.search(r"#[0-9a-fA-F]{3,6}\b", v) for d in mine for v in d.values())
     api_md = api_docs()  # 0.13.5: every docs/*API*.md
     from enlens_claims.gui.server import ROUTES
 

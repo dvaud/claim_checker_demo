@@ -1,5 +1,6 @@
-# 0.17.0rc4: More small fixes from use
-*A release candidate: the research log beside the page, a quick look's codebooks, one way to open from Search.*
-- The research log panel keeps its own column, at any zoom
-- A quick look uses the codebooks of the project it was opened from
-- On Search, a line's title opens the document
+# 0.17.0rc5: One look on every page
+*A release candidate: the design guide, built into every page.*
+- One look for each kind of button, link, tag and card, light and dark
+- On a check's result, Next to review is the main button
+- The research log's entries open their item; its filters show which is on
+- Search fits a phone's width

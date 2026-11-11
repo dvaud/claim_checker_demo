@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards } from "../lib.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
 import { localModelHelp } from "./local-model.js";
@@ -21,16 +21,18 @@ export async function renderSettings(view, [section]) {
   if (tab === "model" || tab === "advanced" || tab === "documents") {
     try { info = await api("GET", "/api/servers"); servers = info.servers || []; } catch (_) { servers = []; }
   }
-  view.appendChild(pageHead("Settings", { actions: versionTag(), sub: {
+  // the version is a link (to Updates): it sits in the line under the title, since a page head's right holds only
+  // actions (docs/DESIGN.md 4.14)
+  view.appendChild(pageHead("Settings", { sub: [{
     model: "Which AI reads your documents: Claude Code on your own Claude plan, a model on this computer, or none.",
     basics: "How strict a check is, and how new checks start.",
     explore: "The defaults of the Profile and Themes pages, and your codebooks.",
     documents: "Reading scanned PDFs, and search by meaning.",
     advanced: "For whoever installs the app. Most people never change anything here.",
-  }[tab] }));
+  }[tab], " ", versionTag()] }));
   view.appendChild(h("nav", { class: "settings-tabs", "aria-label": "Settings" },
     TABS.map(([id, label, ic]) => h("a", { href: `#/settings/${id}`, "aria-current": id === tab ? "page" : null }, icon(ic, { size: 14 }), label))));
-  const main = h("div", { class: "stack", style: { gap: "20px" } });
+  const main = h("div", { class: "stack set-main" });
   view.appendChild(main);
   if (tab === "model") {
     main.append(modelSection(s, servers, watchers, info));
@@ -67,14 +69,14 @@ function basicsSection(s) {
       const counts = (x) => `${x.supports || 0} support, ${x.partly || 0} partly, ${x.refutes || 0} contradict, ${x.uncounted || 0} too uncertain`;
       const answerDiff = rows.filter((x) => before.get(x.hyp_id).status !== x.status);
       const countDiff = rows.filter((x) => before.get(x.hyp_id).status === x.status && counts(before.get(x.hyp_id)) !== counts(x));
-      const item = (x, withStatus) => h("li", {}, h("a", { href: `#/h/${encodeURIComponent(x.hyp_id)}`, class: "serif" }, x.text || x.claim), " ",
+      const item = (x, withStatus) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(x.hyp_id)}` }, x.text || x.claim), " ",
         withStatus ? [statusBadge(before.get(x.hyp_id).status, { short: true }), " → ", statusBadge(x.status, { short: true }), " "] : null,
         h("span", { class: "muted small" }, `(${counts(before.get(x.hyp_id))} → ${counts(x)})`));
       const bits = [];
       if (answerDiff.length) bits.push(h("p", {}, h("strong", {}, `${answerDiff.length} ${answerDiff.length === 1 ? "answer" : "answers"} changed:`)), h("ul", { class: "changes-list" }, answerDiff.map((x) => item(x, true))));
       else bits.push(h("p", {}, h("strong", {}, "No answer changed"), countDiff.length ? `, but in ${countDiff.length} ${countDiff.length === 1 ? "result" : "results"} a different number of excerpts counts now:` : "."));
-      if (countDiff.length) bits.push(answerDiff.length ? h("p", { style: { marginTop: "6px" } }, `In ${countDiff.length} more ${countDiff.length === 1 ? "result" : "results"} the answer stayed, but a different number of excerpts counts now:`) : null, h("ul", { class: "changes-list" }, countDiff.map((x) => item(x, false))));
-      replace(changes, h("div", { class: `notice ${answerDiff.length ? "notice-info" : "notice-ok"}`, style: { marginTop: "10px" } }, icon(answerDiff.length ? "info" : "circle-check"), h("div", {}, bits)));
+      if (countDiff.length) bits.push(answerDiff.length ? h("p", { class: "set-count-diff" }, `In ${countDiff.length} more ${countDiff.length === 1 ? "result" : "results"} the answer stayed, but a different number of excerpts counts now:`) : null, h("ul", { class: "changes-list" }, countDiff.map((x) => item(x, false))));
+      replace(changes, notice({ kind: answerDiff.length ? "info" : "done", class: "set-changes-notice" }, bits));
     } catch (e) { showError(e); }
   }
   // strictness saves on release and reports what changed
@@ -94,7 +96,7 @@ function basicsSection(s) {
     savingStrict = false;
   }
   thr.input.addEventListener("change", () => saveStrict(thr.input.valueAsNumber));
-  const backBtn = h("button", { class: "btn btn-sm", type: "button", onClick: () => { thr.input.value = 0.6; thr.input.dispatchEvent(new Event("input", { bubbles: true })); saveStrict(0.6); } }, "Back to normal (60%)");
+  const backBtn = button({ sm: true, onClick: () => { thr.input.value = 0.6; thr.input.dispatchEvent(new Event("input", { bubbles: true })); saveStrict(0.6); } }, "Back to normal (60%)");
   const k = rangeControl("How many excerpts the AI reads per check", { min: 1, max: 20, step: 1, value: s.k ?? 8, help: "More finds more evidence but takes longer." });
   const perDoc = rangeControl("At most this many from one document", { min: 1, max: 10, step: 1, value: s.per_doc ?? 2 });
   const expand = switchControl("Also search for other words (synonyms)", !!s.expand, { help: "The AI suggests other words your documents might use." });
@@ -103,7 +105,7 @@ function basicsSection(s) {
   const useSuggestion = (t) => { thr.input.value = t; thr.input.dispatchEvent(new Event("input", { bubbles: true })); saveStrict(t); };
   const strictForm = h("div", {},
     thr,
-    h("p", { class: "notice notice-warn", style: { margin: "0 0 10px" } }, icon("alert-triangle"), h("span", {}, "The AI's certainty is its own estimate, not a check of whether it is right. A stricter setting counts fewer judgements, but can still count wrong ones. Reading the excerpts and judging them yourself is the reliable check.")),
+    notice({ kind: "attention", class: "set-certainty-note" }, "The AI's certainty is its own estimate, not a check of whether it is right. A stricter setting counts fewer judgements, but can still count wrong ones. Reading the excerpts and judging them yourself is the reliable check."),
     h("div", { class: "save-row" }, backBtn, h("span", { class: "muted small" }, "Saved as soon as you let go of the slider."), strictState),
     changes,
     calibration);
@@ -121,9 +123,9 @@ function basicsSection(s) {
     h("div", { class: "fields-2" }, h("div", {}, expand, decompose), h("div", {}, k, perDoc)),
     h("div", { class: "save-row" }, h("span", { class: "muted small" }, "Saved as soon as you change something. New checks start with these; each check can still change them under More options."), state));
   return sectionCard("basics", "Checking hypotheses", "",
-    h("h3", { style: { marginBottom: "6px" } }, "Strictness"),
+    h("h3", { class: "set-strict-title" }, "Strictness"),
     strictForm,
-    h("h3", { style: { margin: "22px 0 6px" } }, "How new checks start"),
+    h("h3", { class: "set-start-title" }, "How new checks start"),
     form);
 }
 
@@ -136,7 +138,7 @@ function calibrationBlock(c, useSuggestion) {
   const box = h("div", { class: "cal-box" });
   box.appendChild(h("h4", { class: "cal-title" }, icon("scale", { size: 14 }), " How often you agreed with the AI, by its certainty"));
   if (!total) {
-    box.appendChild(h("p", { class: "muted small", style: { margin: 0 } }, "Nothing to show yet: when you review excerpts (agree with the AI or judge them differently), this shows how often you agreed, for each level of the AI's certainty, and suggests a strictness. ", c.note || ""));
+    box.appendChild(h("p", { class: "muted small set-calibration-empty" }, "Nothing to show yet: when you review excerpts (agree with the AI or judge them differently), this shows how often you agreed, for each level of the AI's certainty, and suggests a strictness. ", c.note || ""));
     return box;
   }
   // the chart: one column per band, height = agreement rate; an empty band is drawn as a dashed outline
@@ -148,7 +150,7 @@ function calibrationBlock(c, useSuggestion) {
     const col = h("div", { class: "cal-col" + (counted ? " cal-counted" : "") },
       h("span", { class: "cal-val" }, rate === null ? "–" : pct(rate)),
       h("div", { class: "cal-bar-wrap" },
-        rate === null ? h("div", { class: "cal-bar cal-empty", style: { height: "100%" } }) : h("div", { class: "cal-bar", style: { height: `${Math.max(3, Math.round(rate * 100))}%` } })),
+        rate === null ? h("div", { class: "cal-bar cal-empty" }) : h("div", { class: "cal-bar", style: { height: `${Math.max(3, Math.round(rate * 100))}%` } })),
       h("div", { class: "cal-lab" }, `${pct(b.from)}–${pct(b.to)}`),
       h("div", { class: "cal-n" }, b.judged ? `${b.agreed} of ${b.judged}` : "none"));
     chart.appendChild(col);
@@ -156,17 +158,16 @@ function calibrationBlock(c, useSuggestion) {
   box.appendChild(chart);
   box.appendChild(h("p", { class: "muted small cal-foot" }, `From the ${total} AI judgements for or against that you reviewed: you agreed with ${c.agreed || 0} (${pct(total ? (c.agreed || 0) / total : 0)}). Bands at or above your strictness (${pct(current)}) are shaded; the number under each bar is how many you agreed with of those you judged.`));
   // text equivalent for screen readers and for anyone who prefers a table
-  box.appendChild(h("details", { class: "fold" }, h("summary", {}, "As a table"),
+  box.appendChild(fold({}, "As a table",
     h("table", { class: "table cal-table" }, h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "AI certainty"), h("th", { scope: "col", class: "num" }, "You judged"), h("th", { scope: "col", class: "num" }, "You agreed"), h("th", { scope: "col", class: "num" }, "Agreement"))),
       h("tbody", {}, bins.map((b) => h("tr", {}, h("td", {}, `${pct(b.from)} to ${pct(b.to)}`), h("td", { class: "num" }, String(b.judged)), h("td", { class: "num" }, String(b.agreed)), h("td", { class: "num" }, b.judged ? pct(b.rate ?? b.agreed / b.judged) : "–")))))));
   if (c.suggestion && c.suggestion.threshold !== undefined) {
     const t = Number(c.suggestion.threshold);
     const same = Math.abs(t - current) < 1e-9;
-    box.appendChild(h("div", { class: `notice ${same ? "notice-ok" : "notice-info"}`, style: { marginTop: "10px" } }, icon(same ? "circle-check" : "info"),
-      h("div", {}, h("p", {}, h("strong", {}, same ? `Your strictness (${pct(t)}) fits your reviews. ` : `Suggested strictness: ${pct(t)}. `), c.suggestion.reason || ""),
-        same ? null : h("button", { class: "btn btn-sm btn-primary", type: "button", style: { marginTop: "8px" }, onClick: () => useSuggestion(t) }, `Use ${pct(t)}`))));
+    box.appendChild(notice({ kind: same ? "done" : "info", class: "set-suggest-notice" }, h("p", {}, h("strong", {}, same ? `Your strictness (${pct(t)}) fits your reviews. ` : `Suggested strictness: ${pct(t)}. `), c.suggestion.reason || ""),
+      same ? null : button({ kind: "main", sm: true, class: "set-suggest-btn", onClick: () => useSuggestion(t) }, `Use ${pct(t)}`)));
   } else if (c.note) {
-    box.appendChild(h("p", { class: "muted small", style: { margin: "8px 0 0" } }, icon("info", { size: 12 }), " ", c.note));
+    box.appendChild(h("p", { class: "muted small set-calibration-note" }, icon("info", { size: 12 }), " ", c.note));
   }
   return box;
 }
@@ -176,7 +177,7 @@ function ocrBlock(s) {
   const st = (App.state && App.state.ocr) || {};
   const state = h("span", { class: "save-state", "aria-live": "polite" });
   const on = switchControl("Read scanned PDF pages (text recognition)", (s.ocr || "auto") !== "off", { help: "A scanned PDF is a picture of the pages. With text recognition (OCR) the app reads the text on them, on this computer, slowly and with some errors; the Documents page says which documents were read this way." });
-  const lang = h("input", { class: "input input-sm", type: "text", value: s.ocr_lang || "eng", placeholder: "eng", maxlength: 60, style: { maxWidth: "16em" } });
+  const lang = fieldInput({ sm: true, type: "text", value: s.ocr_lang || "eng", placeholder: "eng", maxlength: 60, class: "set-lang" });
   const installed = st.languages && st.languages.length ? st.languages : [];
   const langField = field("Languages of the scanned documents", lang, { help: `Three-letter codes, joined with +, for example eng+nld for English and Dutch.${installed.length ? ` Installed on this computer: ${installed.join(", ")}.` : ""}` });
   const saveOcr = async () => { try { await save({ ocr: on.input.checked ? "auto" : "off", ocr_lang: lang.value.trim() || "eng" }, state); } catch (_) { /* shown */ } };
@@ -184,10 +185,10 @@ function ocrBlock(s) {
   lang.addEventListener("change", saveOcr);
   const box = h("div", {});
   if (st.available === false) {
-    box.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "To read scanned PDFs, install Tesseract."), " Until then, scanned pages stay without text and a wholly scanned PDF cannot be added."),
-      st.install ? tesseractHelp(st) : h("p", { class: "small" }, "What is missing is listed under Settings → Technical."))));
+    box.appendChild(notice({ kind: "attention", class: "set-ocr-notice" }, h("p", {}, h("strong", {}, "To read scanned PDFs, install Tesseract."), " Until then, scanned pages stay without text and a wholly scanned PDF cannot be added."),
+      st.install ? tesseractHelp(st) : h("p", { class: "small" }, "What is missing is listed under Settings → Technical.")));
   } else if (st.available) {
-    box.appendChild(h("p", { class: "muted small", style: { margin: "0 0 8px" } }, icon("circle-check", { size: 13 }), " Text recognition is installed on this computer."));
+    box.appendChild(h("p", { class: "muted small set-ocr-ok" }, icon("circle-check", { size: 13 }), " Text recognition is installed on this computer."));
   }
   box.append(on, langField, h("div", { class: "save-row" }, h("span", { class: "muted small" }, "Saved as soon as you change something. Applies to documents added from now on."), state));
   return box;
@@ -197,16 +198,15 @@ function ocrBlock(s) {
 export function plainTestResult(r) {
   const ok = r.ok && r.model_available;
   const emb = r.embedding;
-  return h("div", { class: "stack", style: { gap: "8px" } },
-    h("div", { class: `notice ${ok ? "notice-ok" : "notice-warn"}` }, icon(ok ? "circle-check" : "alert-triangle"),
-      h("div", {}, h("p", {}, h("strong", {}, ok ? "Working. " : "Not quite. "), ok ? "The AI model answered. Checks can run." : (r.model_available === false ? "The service runs, but the chosen model is not installed on it." : "The AI model did not answer as expected.")),
-        emb ? h("p", { class: "small" }, emb.ok ? "Search by meaning is working too." : "Search by meaning is not working: documents are searched by their words only.") : null,
-        r.warning ? h("p", { class: "small" }, r.warning) : null,
-        h("details", { class: "fold" }, h("summary", {}, "Technical details"), testResult(r)))));
+  return h("div", { class: "stack set-test-result" },
+    notice({ kind: ok ? "done" : "attention" }, h("p", {}, h("strong", {}, ok ? "Working. " : "Not quite. "), ok ? "The AI model answered. Checks can run." : (r.model_available === false ? "The service runs, but the chosen model is not installed on it." : "The AI model did not answer as expected.")),
+      emb ? h("p", { class: "small" }, emb.ok ? "Search by meaning is working too." : "Search by meaning is not working: documents are searched by their words only.") : null,
+      r.warning ? h("p", { class: "small" }, r.warning) : null,
+      fold({}, "Technical details", testResult(r))));
 }
 
 function sectionCard(id, title, lead, ...children) {
-  return h("section", { class: "card settings-section", id: `s-${id}`, "aria-labelledby": `s-${id}-h` },
+  return card({ class: "settings-section", id: `s-${id}`, "aria-labelledby": `s-${id}-h` },
     h("h2", { id: `s-${id}-h`, tabindex: "-1" }, title), lead ? h("p", { class: "lead" }, lead) : null, ...children);
 }
 
@@ -245,46 +245,44 @@ function modelSection(s, servers, watchers, info = { servers }) {
     ["anthropic", "Claude API (team key)", "key", "", "For a shared installation: the Claude API with the team's key, billed per use.", "The excerpts read go to Anthropic"],
   ];
   const routeOf = (b) => (isLocal(b) ? "local" : b);
-  const radiosWrap = h("div", { class: "route-cards", role: "radiogroup", "aria-label": "Which AI reads the documents" });
-  const select = (key) => { for (const inp of radiosWrap.querySelectorAll("input")) inp.checked = inp.value === key; };
-  for (const [key, title, ic, badge, sub, where] of ROUTES) {
-    if (localOnly && (key === "claude_code" || key === "anthropic")) continue;
-    const input = h("input", { type: "radio", name: "route", value: key, checked: routeOf(backend) === key });
-    input.addEventListener("change", async () => {
-      const prev = routeOf(backend);
-      if (key === "claude_code" && !allowCC) {
-        const ok = await dialog({
-          title: "Let Claude Code read the excerpts, on your own Claude plan?",
-          body: h("div", {}, h("p", {}, "The AI buttons of ENLENS then prepare tasks; Claude Code answers them, started by ENLENS when you press Start Claude Code, or by you with /enlens-run."),
-            h("p", {}, h("strong", {}, "The passages inside the tasks Claude Code takes are sent to Anthropic."), " Your documents, results and reviews stay on this computer, and every answer is checked here against the text."),
-            h("p", { class: "muted small" }, "ENLENS never sees your Claude login and never runs on anyone else's plan.")),
-          actions: [{ text: "Keep the AI on this computer", value: false, id: "dlg-safe" }, { text: "Use Claude Code", value: true, primary: true }],
-        });
-        if (!ok) { select(prev); return; }
-        allowCC = true;
-      }
-      if (key === "anthropic" && prev !== "anthropic") {
-        const ok = await dialog({
-          title: "Use the Claude API with a team key?",
-          body: h("div", {}, h("p", {}, "With the Claude API, the hypothesis and the excerpts of your documents that the AI reads are sent to Anthropic's servers, and the use is billed to an account key."),
-            h("p", { class: "muted small" }, "For one researcher, Claude Code on your own plan is simpler. Nothing is sent before you also switch on “Allow cloud models”, enter a key and save.")),
-          actions: [{ text: "Back", value: false, primary: true, id: "dlg-safe" }, { text: "Continue with the Claude API", value: true }],
-          onOpen(dlg) { const b = dlg.querySelector("#dlg-safe"); if (b) b.focus(); },
-        });
-        if (!ok) { select(prev); return; }
-      }
-      backend = key === "local" ? (isLocal(s.backend) ? s.backend : "auto") : key;
-      drawDetail();
-    });
-    radiosWrap.appendChild(h("label", { class: "route-card" }, input,
-      h("span", { class: "rc-top" }, icon(ic, { size: 16 }), title, badge ? h("span", { class: "rc-badge" }, badge) : null),
-      h("span", { class: "rc-sub" }, sub),
-      h("span", { class: "rc-where" }, icon(key === "claude_code" || key === "anthropic" ? "cloud" : "house", { size: 12 }), where)));
-  }
-  const lockedLine = localOnly ? h("p", { class: "muted small" }, icon("shield", { size: 13 }), " Cloud models are switched off on this computer by whoever installed ENLENS.") : null;
+  // which AI: option cards holding real radio inputs (docs/DESIGN.md 4.7); a pick that needs a yes first goes back
+  // to the previous card when the answer is no
+  let radiosWrap = null;
+  const select = (key) => radiosWrap.set(key);
+  const onRoute = async (key) => {
+    const prev = routeOf(backend);
+    if (key === "claude_code" && !allowCC) {
+      const ok = await dialog({
+        title: "Let Claude Code read the excerpts, on your own Claude plan?",
+        body: h("div", {}, h("p", {}, "The AI buttons of ENLENS then prepare tasks; Claude Code answers them, started by ENLENS when you press Start Claude Code, or by you with /enlens-run."),
+          h("p", {}, h("strong", {}, "The passages inside the tasks Claude Code takes are sent to Anthropic."), " Your documents, results and reviews stay on this computer, and every answer is checked here against the text."),
+          h("p", { class: "muted small" }, "ENLENS never sees your Claude login and never runs on anyone else's plan.")),
+        actions: [{ text: "Keep the AI on this computer", value: false, id: "dlg-safe" }, { text: "Use Claude Code", value: true, primary: true }],
+      });
+      if (!ok) { select(prev); return; }
+      allowCC = true;
+    }
+    if (key === "anthropic" && prev !== "anthropic") {
+      const ok = await dialog({
+        title: "Use the Claude API with a team key?",
+        body: h("div", {}, h("p", {}, "With the Claude API, the hypothesis and the excerpts of your documents that the AI reads are sent to Anthropic's servers, and the use is billed to an account key."),
+          h("p", { class: "muted small" }, "For one researcher, Claude Code on your own plan is simpler. Nothing is sent before you also switch on “Allow cloud models”, enter a key and save.")),
+        actions: [{ text: "Back", value: false, primary: true, id: "dlg-safe" }, { text: "Continue with the Claude API", value: true }],
+        onOpen(dlg) { const b = dlg.querySelector("#dlg-safe"); if (b) b.focus(); },
+      });
+      if (!ok) { select(prev); return; }
+    }
+    backend = key === "local" ? (isLocal(s.backend) ? s.backend : "auto") : key;
+    drawDetail();
+  };
+  radiosWrap = optionCards({ name: "route", class: "route-cards", label: "Which AI reads the documents", value: routeOf(backend), onPick: onRoute,
+    options: ROUTES.filter(([key]) => !(localOnly && (key === "claude_code" || key === "anthropic"))).map(([key, title, ic, badge, sub, where]) => ({
+      value: key, title, icon: ic, tag: badge || null, text: sub,
+      foot: [icon(key === "claude_code" || key === "anthropic" ? "cloud" : "house", { size: 12 }), where] })) });
+  const lockedLine = localOnly ? h("p", { class: "muted small" }, icon("house", { size: 13 }), " Cloud models are switched off on this computer by whoever installed ENLENS.") : null;
   // which local server (the three local routes of 0.8, as one choice)
   const localKind = () => {
-    const sel = h("select", { class: "select" }, [["auto", "Automatic: the first server found"], ["ollama", "Ollama"], ["openai", "LM Studio, llama.cpp, Jan, vLLM (OpenAI-compatible)"]].map(([v, t]) => h("option", { value: v, selected: backend === v }, t)));
+    const sel = selectField({}, [["auto", "Automatic: the first server found"], ["ollama", "Ollama"], ["openai", "LM Studio, llama.cpp, Jan, vLLM (OpenAI-compatible)"]].map(([v, t]) => h("option", { value: v, selected: backend === v }, t)));
     sel.addEventListener("change", () => { backend = sel.value; drawDetail(); });
     return field("Local model server", sel);
   };
@@ -294,8 +292,8 @@ function modelSection(s, servers, watchers, info = { servers }) {
   const fields = {};
   const modelPicker = (id, current, models, placeholder) => {
     const wrap = h("div", { class: "field" });
-    const sel = h("select", { class: "select", id });
-    const txt = h("input", { class: "input", type: "text", id: id + "-txt", value: current || "", placeholder, "aria-label": "Chat model, typed" });
+    const sel = selectField({ id });
+    const txt = fieldInput({ type: "text", id: id + "-txt", value: current || "", placeholder, "aria-label": "Chat model, typed" });
     if (models && models.length) {
       sel.appendChild(h("option", { value: "" }, "Choose a model…"));
       for (const m of models) sel.appendChild(h("option", { value: m, selected: m === current }, m));
@@ -331,11 +329,11 @@ function modelSection(s, servers, watchers, info = { servers }) {
 
   function drawDetail() {
     clear(detail);
-    fields.ollama_url = h("input", { class: "input input-mono", type: "url", value: s.ollama_url || "", placeholder: "http://localhost:11434" });
-    fields.openai_url = h("input", { class: "input input-mono", type: "url", value: s.openai_url || "", placeholder: "http://localhost:1234/v1" });
-    fields.anthropic_model = h("input", { class: "input input-mono", type: "text", value: s.anthropic_model || "", placeholder: "claude-opus-5-5" });
-    fields.think = h("select", { class: "select" }, [["off", "Off (fastest)"], ["judging", "Only when judging excerpts"], ["on", "On for every step"], ["default", "Model's default"]].map(([v, t]) => h("option", { value: v, selected: (s.think || "default") === v }, t)));
-    fields.think_budget = h("input", { class: "input", type: "number", min: 0, max: 16384, step: 250, value: s.think_budget ?? 1500, "aria-label": "Reasoning budget in tokens" });
+    fields.ollama_url = fieldInput({ mono: true, type: "url", value: s.ollama_url || "", placeholder: "http://localhost:11434" });
+    fields.openai_url = fieldInput({ mono: true, type: "url", value: s.openai_url || "", placeholder: "http://localhost:1234/v1" });
+    fields.anthropic_model = fieldInput({ mono: true, type: "text", value: s.anthropic_model || "", placeholder: "claude-opus-5-5" });
+    fields.think = selectField({}, [["off", "Off (fastest)"], ["judging", "Only when judging excerpts"], ["on", "On for every step"], ["default", "Model's default"]].map(([v, t]) => h("option", { value: v, selected: (s.think || "default") === v }, t)));
+    fields.think_budget = fieldInput({ type: "number", min: 0, max: 16384, step: 250, value: s.think_budget ?? 1500, "aria-label": "Reasoning budget in tokens" });
     const budgetHelp = () => {
       const n = Number(fields.think_budget.value) || 0;
       return n ? `The AI reasons for at most about ${n.toLocaleString()} tokens, then answers from its notes: at 20 tokens a second that is about ${Math.round(n / 20 / 60 * 10) / 10 || "<1"} min of reasoning per call. 0 = no limit (can take very long).` : "No limit: a reasoning model can take many minutes per call.";
@@ -360,7 +358,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
     } else if (backend === "claude_code") {
       detail.append(claudeCodeBox(), fableSwitch());
     } else {
-      detail.append(h("div", { class: "notice notice-info" }, icon("info"), h("p", {}, "The offline demo grades passages by word overlap, without a model. It shows how the app works; its results are not findings.")));
+      detail.append(notice({ kind: "info" }, h("p", {}, "The offline demo grades passages by word overlap, without a model. It shows how the app works; its results are not findings.")));
     }
   }
 
@@ -387,7 +385,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
       st.textContent = "Saving…";
       try { await saveSpeed(v); s.claude_speed = v; st.textContent = "Saved."; } catch (e) { st.textContent = ""; throw e; }
     }, { label: null });
-    return h("div", { class: "stack", style: { gap: "10px" } }, claudeSetupCard({ watchers }),
+    return h("div", { class: "stack set-claude-code-box" }, claudeSetupCard({ watchers }),
       h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Speed of Claude Code"), h("div", { class: "row" }, speed, st),
         h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code (it is beside that button too). Faster is done sooner and uses your plan's limits faster. ",
           helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model (labels on Haiku, checks on Sonnet, second opinions on Opus). Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))));
@@ -396,26 +394,26 @@ function modelSection(s, servers, watchers, info = { servers }) {
   function keyBox() {
     const k = (App.state && App.state.key) || {};
     const have = k.env ? "from the environment variable ANTHROPIC_API_KEY" : k.stored ? "saved on this computer" : k.session ? "for this session" : "";
-    const input = h("input", { class: "input input-mono", type: "password", placeholder: "sk-ant-…", autocomplete: "off", "aria-label": "Claude API key" });
+    const input = fieldInput({ mono: true, type: "password", placeholder: "sk-ant-…", autocomplete: "off", "aria-label": "Claude API key" });
     const remember = h("input", { type: "checkbox", id: "key-remember", checked: !!k.stored });
     const st = h("span", { class: "save-state", "aria-live": "polite" });
-    const setBtn = h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+    const setBtn = button({ sm: true, onClick: async () => {
       if (!input.value.trim()) { input.focus(); return; }
       try { const r = await api("POST", "/api/settings/key", { key: input.value.trim(), remember: remember.checked }); App.state.key = r.key; input.value = ""; st.textContent = remember.checked ? "Key saved on this computer." : "Key kept for this session."; toast("API key set.", "ok"); }
       catch (e) { showError(e); }
     } }, icon("key", { size: 13 }), "Use this key");
-    const forget = h("button", { class: "btn btn-sm btn-ghost", type: "button", hidden: !(k.session || k.stored), onClick: async () => {
+    const forget = button({ kind: "quiet", sm: true, hidden: !(k.session || k.stored), onClick: async () => {
       try { const r = await api("DELETE", "/api/settings/key"); App.state.key = r.key; st.textContent = "Key forgotten."; forget.hidden = true; } catch (e) { showError(e); }
     } }, "Forget the key");
-    return h("div", { class: "card card-plain", style: { padding: "12px 14px" } },
+    return card({ as: "div" },
       h("div", { class: "field-label" }, "API key"),
-      have ? h("div", { class: "notice notice-ok", style: { margin: "6px 0 10px" } }, icon("circle-check"), h("p", {}, `A key is set (${have}).`)) : h("p", { class: "muted small" }, "From console.anthropic.com. Without a key, cloud checks fail."),
+      have ? notice({ kind: "done", class: "set-key-notice" }, h("p", {}, `A key is set (${have}).`)) : h("p", { class: "muted small" }, "From console.anthropic.com. Without a key, cloud checks fail."),
       h("div", { class: "row" }, input),
-      h("div", { class: "row", style: { marginTop: "8px" } }, h("label", { class: "it small", for: "key-remember" }, remember, " Remember on this computer (readable by your user only)"), setBtn, forget, st));
+      h("div", { class: "row set-key-row" }, h("label", { class: "it small", for: "key-remember" }, remember, " Remember on this computer (readable by your user only)"), setBtn, forget, st));
   }
 
-  const saveBtn = h("button", { class: "btn btn-primary", type: "submit" }, icon("check", { size: 14 }), "Save");
-  const testBtn = h("button", { class: "btn", type: "button" }, icon("zap", { size: 14 }), "Save and test");
+  const saveBtn = button({ kind: "main", type: "submit" }, icon("check", { size: 14 }), "Save");
+  const testBtn = button({}, icon("zap", { size: 14 }), "Save and test");
   const testOut = h("div", { class: "test-result", "aria-live": "polite" });
 
   const collect = () => {
@@ -440,14 +438,14 @@ function modelSection(s, servers, watchers, info = { servers }) {
   form.addEventListener("input", (e) => { if (e.target.matches("input[type=text], input[type=url], input[type=number], input:not([type]), select")) state.textContent = "Not saved yet: press Save."; });
   testBtn.addEventListener("click", async () => {
     testBtn.disabled = true;
-    replace(testOut, h("div", { class: "notice" }, h("span", { class: "spinner" }, icon("loader")), h("p", {}, "Testing the model service…")));
+    replace(testOut, notice({ kind: "info", icon: false }, h("span", { class: "spinner" }, icon("loader")), h("p", {}, "Testing the model service…")));
     try {
       await save(collect(), state);
       Object.assign(s, App.settings());
       const r = await api("POST", "/api/servers/test");
       replace(testOut, testResult(r));
     } catch (e) {
-      replace(testOut, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, e.message), e.kind === "backend" ? h("p", { class: "small" }, "Is the server running? For Ollama: open the Ollama app; a model can be downloaded above.") : null)));
+      replace(testOut, notice({ kind: "error" }, h("p", {}, e.message), e.kind === "backend" ? h("p", { class: "small" }, "Is the server running? For Ollama: open the Ollama app; a model can be downloaded above.") : null));
     }
     testBtn.disabled = false;
   });
@@ -458,14 +456,14 @@ function modelSection(s, servers, watchers, info = { servers }) {
 export function testResult(r) {
   const bits = [];
   const d = r.details || {};
-  bits.push(h("div", { class: `notice ${r.model_available ? "notice-ok" : "notice-warn"}` }, icon(r.model_available ? "circle-check" : "alert-triangle"), h("div", {}, h("p", {}, r.message || (r.ok ? "The model answers." : "Problem")),
-    d.trained_context ? h("p", { class: "small" }, `Trained for ${fmt.num(d.trained_context)} tokens of context.`) : null)));
-  if (r.warning) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, r.warning)));
+  bits.push(notice({ kind: r.model_available ? "done" : "attention" }, h("p", {}, r.message || (r.ok ? "The model answers." : "Problem")),
+    d.trained_context ? h("p", { class: "small" }, `Trained for ${fmt.num(d.trained_context)} tokens of context.`) : null));
+  if (r.warning) bits.push(notice({ kind: "attention" }, h("p", {}, r.warning)));
   if (r.embedding) {
-    bits.push(r.embedding.ok ? h("div", { class: "notice notice-ok" }, icon("sparkles"), h("p", {}, `Embedding model ${r.embedding.model} answers (${r.embedding.dimensions} dimensions).`))
-      : h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, `Embedding model ${r.embedding.model}: ${r.embedding.error}`)));
+    bits.push(r.embedding.ok ? notice({ kind: "done" }, h("p", {}, `Embedding model ${r.embedding.model} answers (${r.embedding.dimensions} dimensions).`))
+      : notice({ kind: "attention" }, h("p", {}, `Embedding model ${r.embedding.model}: ${r.embedding.error}`)));
   }
-  return h("div", { class: "stack", style: { gap: "8px" } }, bits);
+  return h("div", { class: "stack set-test-result" }, bits);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -484,20 +482,20 @@ function routingSection(s, servers) {
       let ctl;
       if (row.row === "second" && !claude) ctl = h("span", { class: "muted small" }, "Set under “Model for second opinions” below.");
       else if (claude) {
-        ctl = h("select", { class: "select select-sm", "aria-label": `Model for ${row.title}` }, h("option", { value: "" }, `${row.recommended} (recommended)`),
+        ctl = selectField({ sm: true, "aria-label": `Model for ${row.title}` }, h("option", { value: "" }, `${row.recommended} (recommended)`),
           r.aliases.map((a) => h("option", { value: a, selected: chosen[row.row] === a }, a)));
         selects[row.row] = ctl;
       } else {
-        ctl = h("input", { class: "input input-sm input-mono", type: "text", list: "routing-models", value: chosen[row.row] || "", placeholder: row.recommended === "small" ? "the small model" : "the main model", "aria-label": `Model for ${row.title}` });
+        ctl = fieldInput({ sm: true, mono: true, type: "text", list: "routing-models", value: chosen[row.row] || "", placeholder: row.recommended === "small" ? "the small model" : "the main model", "aria-label": `Model for ${row.title}` });
         selects[row.row] = ctl;
       }
       const up = !row.step_up ? "none" : (r.route === "claude_code" && ["check", "split", "verify"].includes(row.row) ? `${row.step_up} (auditor)` : row.step_up);
       return h("tr", {}, h("td", {}, row.title), h("td", { class: "mono small" }, row.model || "the main model"), h("td", { class: "mono small" }, up),
         r.route === "claude_code" ? h("td", { class: "mono small" }, row.helper || "") : null, h("td", {}, ctl));
     });
-    const small = h("input", { class: "input input-mono", type: "text", list: "routing-models", value: r.local_small_model || "", placeholder: "none: the main model does everything" });
+    const small = fieldInput({ mono: true, type: "text", list: "routing-models", value: r.local_small_model || "", placeholder: "none: the main model does everything" });
     const one = switchControl("Use the model of each task (recommended)", r.routing, { help: "Off: one model for everything, as in ENLENS 0.7." });
-    const saveBtn = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
+    const saveBtn = button({ kind: "main", sm: true, onClick: async () => {
       const mine = {};
       for (const [k, el] of Object.entries(selects)) if (el.value && el.value.trim()) mine[k] = el.value.trim();
       const all = { ...(App.settings().task_models || {}) };
@@ -506,7 +504,7 @@ function routingSection(s, servers) {
       if (!claude) changes.local_small_model = small.value.trim();
       try { await save(changes, state); draw(); } catch (_) { /* shown */ }
     } }, icon("check", { size: 13 }), "Save");
-    const resetBtn = h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+    const resetBtn = button({ sm: true, onClick: async () => {
       const all = { ...(App.settings().task_models || {}) };
       delete all[claude ? "claude" : "local"];
       try { await save({ task_models: all, routing: true }, state); draw(); toast("The recommended models are used again.", "ok"); } catch (_) { /* shown */ }
@@ -528,7 +526,7 @@ function routingSection(s, servers) {
   function planField(plan) {
     const titles = plan.titles || { free: "Free", pro: "Pro", max: "Max, Team or Enterprise" };
     const found = plan.detected ? titles[plan.detected] : "";
-    const sel = h("select", { class: "select select-sm", id: "routing-plan" },
+    const sel = selectField({ sm: true, id: "routing-plan" },
       h("option", { value: "auto", selected: (plan.chosen || "auto") === "auto" }, found ? `Your plan, as Claude Code says: ${found}` : "Your plan, as Claude Code says (not known yet)"),
       ["free", "pro", "max"].map((t) => h("option", { value: t, selected: plan.chosen === t }, titles[t])));
     sel.addEventListener("change", async () => { try { await save({ claude_plan: sel.value }, state); draw(); } catch (_) { /* shown */ } });
@@ -551,11 +549,11 @@ function secondModelSection(s, servers) {
   const main = (s.backend === "openai" ? s.openai_model : s.ollama_model) || "";
   const models = [...new Set(servers.flatMap((x) => x.chat_models || []))].filter((m) => m !== main);
   const current = s.second_model || "";
-  const sel = h("select", { class: "select", id: "second-model" }, h("option", { value: "" }, "None (no second opinions)"),
+  const sel = selectField({ id: "second-model" }, h("option", { value: "" }, "None (no second opinions)"),
     models.map((m) => h("option", { value: m, selected: m === current }, m)),
     current && !models.includes(current) ? h("option", { value: current, selected: true }, `${current} (not installed now)`) : null);
-  const txt = h("input", { class: "input input-mono", type: "text", placeholder: "or type a model name", value: "", "aria-label": "Model for second opinions, typed" });
-  const saveBtn = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
+  const txt = fieldInput({ mono: true, type: "text", placeholder: "or type a model name", value: "", "aria-label": "Model for second opinions, typed" });
+  const saveBtn = button({ kind: "main", sm: true, onClick: async () => {
     const v = txt.value.trim() || sel.value;
     if (v && v === main) { toast("That is the main model. Choose a different one for second opinions.", "warn"); return; }
     try { await save({ second_model: v }, state); txt.value = ""; toast(v ? `Model for second opinions: ${v}` : "Model for second opinions: none", "ok", { ttl: 2500 }); } catch (_) { /* shown */ }
@@ -570,21 +568,20 @@ function secondModelSection(s, servers) {
 function contextSection(s) {
   const st = App.state || {};
   const state = h("span", { class: "save-state", "aria-live": "polite" });
-  const ctxLine = h("div", { class: "notice", style: { marginBottom: "10px" } });
+  const ctxLine = h("div", { class: "set-context-line" });
   const drawCtx = () => {
     const c = (App.state && App.state.context) || {};
     const n = c.num_ctx ? fmt.num(c.num_ctx) : "?";
     const k = App.settings().k ?? 8;
     const auto = String(c.setting ?? App.settings().num_ctx ?? "auto").toLowerCase() === "auto";
-    replace(ctxLine, icon(c.too_small ? "alert-triangle" : "info"), h("div", {},
+    replace(ctxLine, notice({ kind: c.too_small ? "attention" : "done", icon: c.too_small ? undefined : "info" },
       h("p", {}, h("strong", {}, auto ? "Automatic: " : "Fixed: "), `${n} tokens, ${c.too_small ? "which is " : ""}${c.too_small ? "too small for" : "enough for"} ${k} excerpts per check${c.needed ? ` (the largest task needs about ${fmt.num(c.needed)} tokens${c.thinking_allowance ? ", including room for reasoning" : ""})` : ""}.`),
       c.too_small ? h("p", { class: "small" }, "Part of the prompt would be cut off. Choose Automatic, a larger number, or fewer excerpts per check.") : null));
-    ctxLine.className = `notice ${c.too_small ? "notice-warn" : "notice-ok"}`;
   };
   drawCtx();
   const isAuto = String(s.num_ctx ?? "auto").toLowerCase() === "auto";
-  const mode = h("select", { class: "select", id: "ctx-mode" }, h("option", { value: "auto", selected: isAuto }, "Automatic (recommended)"), h("option", { value: "number", selected: !isAuto }, "A fixed number of tokens"));
-  const num = h("input", { class: "input", type: "number", id: "ctx-num", min: 2048, max: 262144, step: 1024, value: isAuto ? 16384 : Number(s.num_ctx), hidden: isAuto });
+  const mode = selectField({ id: "ctx-mode" }, h("option", { value: "auto", selected: isAuto }, "Automatic (recommended)"), h("option", { value: "number", selected: !isAuto }, "A fixed number of tokens"));
+  const num = fieldInput({ type: "number", id: "ctx-num", min: 2048, max: 262144, step: 1024, value: isAuto ? 16384 : Number(s.num_ctx), hidden: isAuto });
   const numLabel = h("label", { class: "field-label", for: "ctx-num", hidden: isAuto }, "Tokens");
   const saveCtx = async () => {
     const v = mode.value === "auto" ? "auto" : Math.max(2048, Number(num.value) || 16384);
@@ -604,11 +601,11 @@ function contextSection(s) {
 // ---------------------------------------------------------------------------------------------
 function embedSection(s, servers, info = { servers }) {
   const state = h("span", { class: "save-state", "aria-live": "polite" });
-  const kind = h("select", { class: "select" }, [["ollama", "Ollama"], ["openai", "OpenAI-compatible server"], ["off", "Off (keywords only)"]].map(([v, t]) => h("option", { value: v, selected: (s.embed_backend || "ollama") === v }, t)));
+  const kind = selectField({}, [["ollama", "Ollama"], ["openai", "OpenAI-compatible server"], ["off", "Off (keywords only)"]].map(([v, t]) => h("option", { value: v, selected: (s.embed_backend || "ollama") === v }, t)));
   const all = [...new Set(servers.flatMap((x) => x.embedding_models || []))];
-  const model = h("input", { class: "input input-mono", type: "text", value: s.embed_model || "", placeholder: "e.g. nomic-embed-text", list: "embed-models" });
+  const model = fieldInput({ mono: true, type: "text", value: s.embed_model || "", placeholder: "e.g. nomic-embed-text", list: "embed-models" });
   const datalist = h("datalist", { id: "embed-models" }, all.map((m) => h("option", { value: m })));
-  const url = h("input", { class: "input input-mono", type: "url", value: s.embed_url || "", placeholder: "optional" });
+  const url = fieldInput({ mono: true, type: "url", value: s.embed_url || "", placeholder: "optional" });
   const row = h("div", { class: "fields-3" }, field("Server kind", kind), field("Embedding model", model, { help: all.length ? `Installed: ${all.join(", ")}` : "None installed yet." }), field("Address (optional)", url, { help: "Leave empty to use the chat server's address." }));
   // 0.13.7: Ollama without an embedding model: one button downloads one, and it is chosen here
   const pull = localModelHelp(info, { only: "embed", use: "embed", onReady: async (r) => {
@@ -619,7 +616,7 @@ function embedSection(s, servers, info = { servers }) {
   const toggle = () => { row.querySelectorAll(".field")[1].hidden = row.querySelectorAll(".field")[2].hidden = kind.value === "off"; };
   kind.addEventListener("change", toggle); toggle();
   const form = h("form", { onSubmit: async (e) => { e.preventDefault(); try { await save({ embed_backend: kind.value, embed_model: model.value.trim(), embed_url: url.value.trim() }, state); toast("Saved. Set up search by meaning under Documents if needed.", "ok"); } catch (_) { /* shown */ } } },
-    row, datalist, pull, h("div", { class: "save-row" }, h("button", { class: "btn btn-primary", type: "submit" }, icon("check", { size: 14 }), "Save"), state));
+    row, datalist, pull, h("div", { class: "save-row" }, button({ kind: "main", type: "submit" }, icon("check", { size: 14 }), "Save"), state));
   return sectionCard("embeddings", "Search by meaning (embeddings)", "With an embedding model, excerpts are found by meaning as well as by shared words. It is set up per project under Documents.", form);
 }
 
@@ -628,7 +625,7 @@ function embedSection(s, servers, info = { servers }) {
 // 0.16 (K1): codebooks have a page of their own (Codebooks, in the sidebar): made, changed, copied and removed there
 function frameworksSection() {
   return sectionCard("frameworks", "Codebooks", "Your own codebooks, and the SDG targets that ship with ENLENS, are on a page of their own: make one fresh or from the themes found, change its codes, try it without AI, and go back to an earlier version.",
-    h("a", { class: "btn", href: "#/codebooks" }, icon("book-marked", { size: 14 }), "Open Codebooks"));
+    link({ kind: "next", href: "#/codebooks" }, "Open Codebooks"));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -636,7 +633,7 @@ function frameworksSection() {
 function exploreSection(s) {
   const state = h("span", { class: "save-state", "aria-live": "polite" });
   const shortFw = (f) => (f.title && /\(\d+ \w+\)/.test(f.title) ? f.title : `${f.title || f.name} (${f.codes} codes)`);
-  const fwSel = h("select", { class: "select", id: "set-profile-fw" }, h("option", { value: s.profile_framework || "sdg", selected: true }, s.profile_framework || "sdg"));
+  const fwSel = selectField({ id: "set-profile-fw" }, h("option", { value: s.profile_framework || "sdg", selected: true }, s.profile_framework || "sdg"));
   (async () => {
     if (!App.project) return;
     try {
@@ -648,7 +645,7 @@ function exploreSection(s) {
   const k = rangeControl("Themes per set", { min: 2, max: 60, step: 1, value: s.themes_k ?? 20 });
   k.input.addEventListener("change", async () => { try { await save({ themes_k: k.input.valueAsNumber }, state); } catch (_) { /* shown */ } });
   return sectionCard("explore", "Exploring the documents", "The defaults of the Profile and Themes pages. You can change both on those pages too.",
-    h("div", { class: "stack", style: { gap: "14px" } },
+    h("div", { class: "stack set-context-form" },
       field("Codebook of the profiles", fwSel, { help: "Which codes the Profile page and the Codes panel of a document look for, and which codes new documents get when they are added." }),
       h("div", {}, k, h("p", { class: "field-help" }, "How many themes a new set looks for. A small project gets fewer: about three passages a theme at least."))),
     h("div", { class: "save-row" }, h("span", { class: "muted small" }, "Saved as soon as you change something."), state));
@@ -657,23 +654,23 @@ function exploreSection(s) {
 // the seed that keeps model answers repeatable, and a test of whether the server honours it
 function reproSection(s) {
   const state = h("span", { class: "save-state", "aria-live": "polite" });
-  const seed = h("input", { class: "input input-mono", type: "number", id: "set-seed", min: 0, max: 2147483647, step: 1, value: s.seed ?? 42 });
+  const seed = fieldInput({ mono: true, type: "number", id: "set-seed", min: 0, max: 2147483647, step: 1, value: s.seed ?? 42 });
   seed.addEventListener("change", async () => {
     const v = Math.round(Number(seed.value));
     if (!Number.isFinite(v) || v < 0 || v > 2147483647) { toast("The seed is a whole number from 0 to 2,147,483,647.", "warn"); return; }
     try { await save({ seed: v }, state); } catch (_) { /* shown */ }
   });
   const out = h("div", { "aria-live": "polite" });
-  const test = h("button", { class: "btn", type: "button" }, icon("play", { size: 14 }), "Test: repeatable answers?");
+  const test = button({}, icon("play", { size: 14 }), "Test: repeatable answers?");
   test.addEventListener("click", async () => {
     test.disabled = true;
     replace(out, h("p", { class: "muted small" }, "Asking the model the same short question twice…"));
     try {
       const r = await api("POST", "/api/servers/repeatable", {});
-      replace(out, h("div", { class: `notice ${r.repeatable ? "notice-ok" : "notice-warn"}` }, icon(r.repeatable ? "check" : "alert-triangle"),
-        h("div", {}, h("p", {}, h("strong", {}, r.repeatable ? "Repeatable" : "Not guaranteed"), r.model ? ` · ${r.model}` : ""),
+      replace(out, notice({ kind: r.repeatable ? "done" : "attention" },
+        h("p", {}, h("strong", {}, r.repeatable ? "Repeatable" : "Not guaranteed"), r.model ? ` · ${r.model}` : ""),
           h("p", { class: "small" }, r.note || ""),
-          h("p", { class: "small muted" }, `Tested: the same request (search words for a short hypothesis) sent twice, with seed ${App.settings().seed ?? 42} and temperature 0.${r.digest ? ` Exact version: ${String(r.digest).slice(0, 19)}…` : ""} It says whether this server repeats itself; the version and settings behind each result are in “How these results were made” in every Excel download and under Technical details on the Profile page.`))));
+          h("p", { class: "small muted" }, `Tested: the same request (search words for a short hypothesis) sent twice, with seed ${App.settings().seed ?? 42} and temperature 0.${r.digest ? ` Exact version: ${String(r.digest).slice(0, 19)}…` : ""} It says whether this server repeats itself; the version and settings behind each result are in “How these results were made” in every Excel download and under Technical details on the Profile page.`)));
     } catch (e) { replace(out); showError(e); }
     test.disabled = false;
   });
@@ -686,13 +683,13 @@ function reproSection(s) {
 
 // ---------------------------------------------------------------------------------------------
 function testSection(s, watchers) {
-  const ref = h("input", { class: "input input-mono", type: "text", value: s.benchmark_reference || "", placeholder: "/path/to/pilot" });
+  const ref = fieldInput({ mono: true, type: "text", value: s.benchmark_reference || "", placeholder: "/path/to/pilot" });
   const n = rangeControl("Tasks per kind", { min: 5, max: 50, step: 5, value: 10 });
   const kVerify = h("input", { type: "checkbox", checked: true, id: "k-verify" });
   const kExtract = h("input", { type: "checkbox", id: "k-extract" });
   const kLabel = h("input", { type: "checkbox", id: "k-label" });
-  const out = h("div", { "aria-live": "polite", style: { marginTop: "10px" } });
-  const run = h("button", { class: "btn btn-primary", type: "button" }, icon("play", { size: 14 }), "Run test");
+  const out = h("div", { "aria-live": "polite", class: "set-test-out" });
+  const run = button({ kind: "main" }, icon("play", { size: 14 }), "Run test");
   run.addEventListener("click", async () => {
     const kinds = [kVerify.checked && "verify_set", kExtract.checked && "extract", kLabel.checked && "label"].filter(Boolean);
     if (!ref.value.trim() || !kinds.length) { toast("Give the reference folder and tick at least one task kind.", "warn"); return; }
@@ -703,19 +700,19 @@ function testSection(s, watchers) {
     } catch (e) { showError(e); run.disabled = false; }
   });
   function follow(jobId) {
-    const holder = h("div", { class: "card card-plain" }, h("div", { class: "card-head" }, h("h3", {}, "Testing"), h("button", { class: "btn btn-sm btn-outline-danger", type: "button", onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
+    const holder = card({ as: "div" }, h("div", { class: "card-head" }, h("h3", {}, "Testing"), button({ kind: "danger", sm: true, onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
     replace(out, holder);
     const watcher = watchJob(jobId, (job) => {
       const p = job.progress || {};
       replace(holder.querySelector(".pb"), simpleProgress(job, () => p.total ? `Task ${Math.min((p.done || 0) + 1, p.total)} of ${p.total}${p.task ? " · " + p.task : ""}` : "Starting…"),
-        p.model && p.model.line ? h("div", { class: "model-line", style: { marginTop: "8px" } }, h("div", { class: "ml-head" }, icon("cpu", { size: 14 }), h("span", {}, p.model.line))) : null);
+        p.model && p.model.line ? h("div", { class: "model-line set-model-line" }, h("div", { class: "ml-head" }, icon("cpu", { size: 14 }), h("span", {}, p.model.line))) : null);
       if (TERMINAL.has(job.state)) { const b = holder.querySelector(".btn-outline-danger"); if (b) b.hidden = true; }
     });
     watchers.push(watcher);
     watcher.promise.then((job) => {
       run.disabled = false;
       if (job.state === "done") drawResult(holder, job.result || {});
-      else if (job.state === "error") replace(holder.querySelector(".pb"), h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, job.error || "The test failed.")));
+      else if (job.state === "error") replace(holder.querySelector(".pb"), notice({ kind: "error" }, h("p", {}, job.error || "The test failed.")));
       else replace(holder.querySelector(".pb"), h("p", { class: "muted" }, "Stopped."));
     }).catch((e) => { run.disabled = false; showError(e); });
   }
@@ -723,13 +720,13 @@ function testSection(s, watchers) {
     const cols = r.table && r.table.length ? Object.keys(r.table[0]).filter((c) => c !== "measure") : [];
     replace(holder.querySelector(".pb"),
       h("p", {}, h("strong", {}, `${r.model || ""}`), h("span", { class: "muted" }, ` (${r.backend || ""})`)),
-      h("ul", { style: { paddingLeft: "1.2em" } }, (r.verdict || []).map((l) => h("li", {}, l))),
+      h("ul", { class: "plain-steps" }, (r.verdict || []).map((l) => h("li", {}, l))),
       cols.length ? h("div", { class: "table-wrap" }, h("table", { class: "table bench-table" }, h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Measure"), cols.map((c) => h("th", { scope: "col", class: "num" }, c)))),
         h("tbody", {}, (r.table || []).map((row) => h("tr", {}, h("td", {}, row.measure), cols.map((c) => h("td", { class: "num" }, String(row[c] ?? "–")))))))) : null,
-      h("div", { class: "btn-row", style: { marginTop: "10px" } }, h("button", { class: "btn btn-sm", type: "button", onClick: () => {
+      h("div", { class: "btn-row set-result-actions" }, downloadButton({ onClick: () => {
         const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob); const a = h("a", { href: url, download: `benchmark_${(r.model || "model").replace(/[^A-Za-z0-9_-]/g, "_")}.json` }); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
-      } }, icon("download", { size: 13 }), "Download the full result")));
+      } }, "Download the full result")));
   }
   return sectionCard("test", "Test a model before trusting it", "For technical users. It compares the chosen local model with reference answers saved in a project (for the pilot, those were made earlier with Claude Opus 5.5). Nothing is sent anywhere and nothing is stored. This measures agreement with the reference, not correctness.",
     field("Reference workspace folder", ref, { help: "For example the pilot folder that ships with the package." }),
@@ -746,9 +743,12 @@ function versionTag() {
   if (!v) return null;
   // 0.10.2: updated while it ran: the newer version waits for a restart (the banner above the page says how)
   const now = st.installed_version && st.installed_version !== v ? st.installed_version : null;
-  return h("a", { class: `version-tag${now ? " version-tag-stale" : ""}`, href: "#/settings/updates",
-    title: now ? `ENLENS ${now} is installed: restart ENLENS to use it` : "Check for updates, and how ENLENS was installed (Technical)" },
-    icon(now ? "alert-circle" : "info", { size: 14 }), h("span", {}, "Version ", h("strong", {}, v)), now ? h("span", {}, ` · ${now} installed`) : null);
+  // 0.17.0 (design guide): the version is words with a link to Updates, not a pill; a newer one installed is a fact that
+  // needs you (an attention tag)
+  return h("span", { class: "version-tag" },
+    link({ href: "#/settings/updates", title: now ? `ENLENS ${now} is installed: restart ENLENS to use it` : "Check for updates, and how ENLENS was installed (Technical)" },
+      "Version ", v),
+    now ? tag({ kind: "attention" }, `${now} installed: restart to use it`) : null);
 }
 
 // 0.10: how this copy was installed, and how it is updated
@@ -756,7 +756,7 @@ function installedWith(inst) {
   if (!inst || !inst.kind) return null;
   const how = { git: ["from a git copy", "Update: enlens update"], script: ["with the one-line install", "Update: run the install line again (or enlens update)"],
     package: ["from the download for this system", "Update: download the newest version"], pip: ["with pip", "Update: pip install --upgrade, or switch to the one-line install"] }[inst.kind];
-  return h("div", { class: "muted small", style: { fontWeight: 400 } }, `Installed ${how[0]}. ${how[1]}.`);
+  return h("div", { class: "muted small" }, `Installed ${how[0]}. ${how[1]}.`);
 }
 
 // 0.13.6: Check for updates. The sidebar's Update button shows only when there is one (the page looks every two
@@ -765,12 +765,12 @@ function updatesSection() {
   const st = App.state || {};
   const name = appName();
   const out = h("div", { "aria-live": "polite" });
-  const btn = h("button", { class: "btn", type: "button" }, icon("refresh", { size: 14 }), "Check for updates");
+  const btn = button({}, icon("refresh", { size: 14 }), "Check for updates");
   const at = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const show = (info, err, when) => {
     if (err) {
-      replace(out, h("div", { class: "notice notice-warn" }, icon("alert-triangle"),
-        h("div", {}, h("p", {}, h("strong", {}, "Could not look for updates.")), h("p", { class: "small" }, err.message || String(err)))));
+      replace(out, notice({ kind: "attention" },
+        h("p", {}, h("strong", {}, "Could not look for updates.")), h("p", { class: "small" }, err.message || String(err))));
       return;
     }
     if (!info) { clear(out); return; }
@@ -782,11 +782,11 @@ function updatesSection() {
     const what = info.on_disk ? `${name} ${info.latest} is installed, but ${info.version} is still running.`
       : info.latest ? `${name} ${info.candidate ? "release candidate " : ""}${info.latest} is available (you have ${info.version}).`
       : `${info.changes} new change${info.changes === 1 ? " is" : "s are"} waiting for this copy of ${name} (version ${info.version}).`;
-    replace(out, h("div", { class: "notice notice-info" }, icon("arrow-up"),
-      h("div", {}, h("p", {}, h("strong", {}, what)),
+    replace(out, notice({ kind: "info", icon: "arrow-up" },
+      h("p", {}, h("strong", {}, what)),
         st.can_restart
-          ? h("p", {}, h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => Updates.install() }, icon("arrow-up", { size: 13 }), info.on_disk ? "Restart now" : "Update and restart"))
-          : h("p", { class: "small" }, "This copy cannot restart itself (it was not started from its icon or with enlens-gui): run ", h("code", {}, "enlens update"), ` in a terminal, then start ${name} again.`))));
+          ? h("p", {}, button({ kind: "main", sm: true, onClick: () => Updates.install() }, icon("arrow-up", { size: 13 }), info.on_disk ? "Restart now" : "Update and restart"))
+          : h("p", { class: "small" }, "This copy cannot restart itself (it was not started from its icon or with enlens-gui): run ", h("code", {}, "enlens update"), ` in a terminal, then start ${name} again.`)));
   };
   btn.addEventListener("click", async () => {
     btn.disabled = true;
@@ -800,7 +800,7 @@ function updatesSection() {
     : `Look for a new version of ${name}. Your projects and results are kept when you update.`,
     channelField(st), h("div", { class: "save-row" }, btn), out, problemRow(),
     // 0.17.0: while an update waits, its button takes Quit's place at the foot of the sidebar: Quit is here too
-    st.can_quit && Updates.quit ? h("div", { class: "save-row" }, h("button", { class: "btn", type: "button", onClick: () => Updates.quit() }, icon("power", { size: 14 }), `Quit ${name}`),
+    st.can_quit && Updates.quit ? h("div", { class: "save-row" }, button({ onClick: () => Updates.quit() }, icon("power", { size: 14 }), `Quit ${name}`),
       h("span", { class: "muted small" }, "Stops the app on this computer; your projects and results are kept.")) : null);
 }
 
@@ -809,7 +809,7 @@ function channelField(st) {
   if (st.installation && st.installation.kind === "git")
     return h("p", { class: "muted small" }, icon("info", { size: 13 }), ` This copy of ${appName()} is a git copy: it follows the main branch, so there is no choice of versions here.`);
   const state = h("span", { class: "save-state", "aria-live": "polite" });
-  const sel = h("select", { class: "select", id: "update-channel" },
+  const sel = selectField({ id: "update-channel" },
     [["stable", "Stable (recommended)"], ["early", "Try new versions early"]].map(([v, t]) => h("option", { value: v, selected: ((st.settings || {}).update_channel || "stable") === v }, t)));
   sel.addEventListener("change", async () => {
     try { await save({ update_channel: sel.value }, state); checkUpdate(true).catch(() => {}); } catch (_) { /* shown */ }
@@ -819,7 +819,7 @@ function channelField(st) {
 
 // 0.15: a problem report without knowing GitHub: the technical details to paste, and the form to paste them in
 function problemRow() {
-  const btn = h("button", { class: "btn", type: "button" }, icon("copy", { size: 14 }), "Copy technical details");
+  const btn = button({}, icon("copy", { size: 14 }), "Copy technical details");
   btn.addEventListener("click", async () => {
     try {
       const r = await api("GET", "/api/technical-details");
@@ -828,16 +828,16 @@ function problemRow() {
     } catch (e) { showError(e); }
   });
   const box = h("div", {});
-  return h("div", {}, h("p", { class: "muted small", style: { marginTop: "12px" } }, "Something does not work? Copy the technical details (the version, the system and the AI route: no file names, project names or keys) and paste them in a report."),
+  return h("div", {}, h("p", { class: "muted small set-problem-help" }, "Something does not work? Copy the technical details (the version, the system and the AI route: no file names, project names or keys) and paste them in a report."),
     h("div", { class: "save-row" }, btn,
-      h("a", { class: "btn btn-ghost", href: "https://github.com/dvaud/claim_checker_demo/issues/new?template=problem.yml", target: "_blank", rel: "noopener" }, icon("external-link", { size: 14 }), "Report a problem (on GitHub)")), box);
+      link({ kind: "external", href: "https://github.com/dvaud/claim_checker_demo/issues/new?template=problem.yml" }, "Report a problem (on GitHub)")), box);
 }
 
 // 0.11: every passage sent to Claude, as a table for records such as a data management plan
 function ledgerSection() {
   const project = App.project;
   return sectionCard("ledger", "What was sent to Claude", "ENLENS writes down every passage it sends to Claude (Claude Code, the Claude API, or a Claude chat through the connector) at the moment it leaves: when, by which route, for which feature. The Documents page shows the share of each document; here is the whole list as a spreadsheet file.",
-    project ? h("button", { class: "btn", type: "button", onClick: () => download(`/api/projects/${P(project)}/ai-sent.csv`).catch(showError) }, icon("download", { size: 14 }), `Download the list for “${project}” (CSV)`)
+    project ? downloadButton({ onClick: () => download(`/api/projects/${P(project)}/ai-sent.csv`).catch(showError) }, `Download the list for “${project}” (CSV)`)
       : h("p", { class: "muted small" }, "Open a project first."));
 }
 
@@ -852,8 +852,8 @@ function dataSection() {
       h("div", { class: "kv" }, h("dt", {}, "Version"), h("dd", {}, `ENLENS ${st.version || VERSION}`, installedWith(st.installation))),
       h("div", { class: "kv" }, h("dt", {}, "Network"), h("dd", {}, "This computer only · nothing is loaded from the internet")),
       h("div", { class: "kv" }, h("dt", {}, "Text recognition (OCR) for scanned PDFs"), h("dd", {}, ocr.available ? `installed (Tesseract${ocr.languages && ocr.languages.length ? `, languages: ${ocr.languages.join(", ")}` : ""})`
-        : ["not available", ocr.missing && ocr.missing.length ? h("div", { class: "muted small", style: { fontWeight: 400 } }, `Missing: ${ocr.missing.map((m) => ({ tesseract: "the Tesseract program (tesseract-ocr)", pypdfium2: "the Python package pypdfium2", pillow: "the Python package pillow" }[m] || m)).join("; ")}.${ocr.missing.includes("tesseract") ? " How to get Tesseract: Settings → Documents." : ""}${ocr.missing.some((m) => m !== "tesseract") ? " The Python parts: pip install 'enlens-claims[ocr]', then restart the app." : ""}`) : null]))),
-    h("p", { class: "muted small", style: { marginTop: "12px" } }, "Each project is a folder with a database, the added files and the settings. Removed projects go to a trash folder inside the data folder."));
+        : ["not available", ocr.missing && ocr.missing.length ? h("div", { class: "muted small" }, `Missing: ${ocr.missing.map((m) => ({ tesseract: "the Tesseract program (tesseract-ocr)", pypdfium2: "the Python package pypdfium2", pillow: "the Python package pillow" }[m] || m)).join("; ")}.${ocr.missing.includes("tesseract") ? " How to get Tesseract: Settings → Documents." : ""}${ocr.missing.some((m) => m !== "tesseract") ? " The Python parts: pip install 'enlens-claims[ocr]', then restart the app." : ""}`) : null]))),
+    h("p", { class: "muted small set-data-note" }, "Each project is a folder with a database, the added files and the settings. Removed projects go to a trash folder inside the data folder."));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -871,12 +871,12 @@ function accountText(st) {
 }
 
 export function claudeSetupCard(opts = {}) {
-  const box = h("div", { class: "card card-plain cc-card", style: { padding: "14px 16px" } }, h("p", { class: "muted small" }, "Looking for Claude Code on this computer…"));
+  const box = card({ as: "div", class: "cc-card" }, h("p", { class: "muted small" }, "Looking for Claude Code on this computer…"));
   const log = h("div", { class: "cc-progress", "aria-live": "polite" });
   let info = { status: {}, commands: [] };
   let busy = false;
   const step = (ok, title, text) => h("li", { class: `cc-step ${ok === true ? "ok" : ok === false ? "bad" : ""}` },
-    h("span", { class: "cc-mark", "aria-hidden": "true" }, ok === true ? icon("check", { size: 12 }) : ok === false ? "!" : "?"),
+    h("span", { class: "cc-mark", "aria-hidden": "true" }, ok === true ? icon("check", { size: 12 }) : ok === false ? icon("alert-triangle", { size: 14 }) : "?"),
     h("div", {}, h("strong", {}, title), text ? h("span", { class: "small" }, text) : null));
   const say = (...children) => replace(log, h("div", { class: "cc-now" }, ...children));
   const working = (text) => say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("span", {}, text));
@@ -887,10 +887,10 @@ export function claudeSetupCard(opts = {}) {
     const line = info.installer || "curl -fsSL https://claude.ai/install.sh | bash";
     const ok = await confirmDialog({
       title: "Install Claude Code?", confirmText: "Install Claude Code", danger: false,
-      message: h("div", { class: "stack", style: { gap: "10px" } },
+      message: h("div", { class: "stack set-install-body" },
         h("p", {}, "Claude Code is the program that lets Claude work on your own Claude plan. ENLENS will run Anthropic's installer for it, which downloads Claude Code from claude.ai and puts it in your user folder. It needs no administrator rights and takes a minute or two."),
         // the place a program is kept does not limit what it can open: the folder it starts in and its permissions do
-        h("p", { class: "small" }, icon("shield", { size: 13 }), " Where the program is kept does not decide what it can read. ENLENS starts Claude Code only in an empty folder of its own, with its tools for reading files, running commands and browsing switched off, so it cannot look through your computer: it sees only the passages in ENLENS's tasks."),
+        h("p", { class: "small" }, icon("house", { size: 13 }), " Where the program is kept does not decide what it can read. ENLENS starts Claude Code only in an empty folder of its own, with its tools for reading files, running commands and browsing switched off, so it cannot look through your computer: it sees only the passages in ENLENS's tasks."),
         h("p", { class: "small muted" }, "The command it runs:"), copyLine(line, "Copy", "a terminal"),
         h("p", { class: "small muted" }, "Prefer to do it yourself? Follow ", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), ", then press Set up Claude again.")),
     });
@@ -903,7 +903,7 @@ export function claudeSetupCard(opts = {}) {
     if (job.state !== "done") {
       say(icon("alert-circle", { size: 14 }), h("div", {}, h("p", {}, "Claude Code could not be installed from here."),
         h("p", { class: "small" }, "Install it with ", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), ", then press Set up Claude again."),
-        job.error ? h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error)) : null));
+        job.error ? fold({}, "Technical details", h("div", { class: "mono small" }, job.error)) : null));
       return false;
     }
     return true;
@@ -917,13 +917,13 @@ export function claudeSetupCard(opts = {}) {
       let timer = null;
       let done = false;
       const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve(v); };
-      const checkNow = h("button", { class: "btn btn-sm", type: "button", onClick: () => poll(true) }, "I have signed in");
-      const cancel = h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { finish(false); replace(log); } }, "Stop waiting");
+      const checkNow = button({ sm: true, onClick: () => poll(true) }, "I have signed in");
+      const cancel = button({ kind: "quiet", sm: true, onClick: () => { finish(false); replace(log); } }, "Stop waiting");
       say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("div", {},
         opened.opened ? h("p", {}, `A ${opened.window} window opened with Claude Code. Sign in there with your Claude plan (it opens a page in your browser), then close that window. ENLENS is waiting and continues by itself.`)
           : h("div", {}, h("p", {}, "Sign in to Claude Code once: open a terminal (Terminal on a Mac, PowerShell on Windows), type the line below, and follow the steps. It starts Claude Code in an empty folder of ENLENS, away from your files."), copyLine(opened.command || "claude", "Copy", "a terminal")),
         h("p", { class: "small muted" }, "ENLENS never sees your login: Claude Code keeps it."),
-        h("div", { class: "btn-row", style: { marginTop: "6px" } }, checkNow, cancel)));
+        h("div", { class: "btn-row set-signin-actions" }, checkNow, cancel)));
       const started = Date.now();
       async function poll(now) {
         clearTimeout(timer);
@@ -948,7 +948,7 @@ export function claudeSetupCard(opts = {}) {
     const bad = (r.steps || []).filter((x) => !x.ok);
     if (bad.length) {
       say(icon("alert-circle", { size: 14 }), h("div", {}, h("p", {}, "The plugin could not be added: ", bad[0].step),
-        h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, bad[0].text))));
+        fold({}, "Technical details", h("div", { class: "mono small" }, bad[0].text))));
       return false;
     }
     return true;
@@ -985,9 +985,9 @@ export function claudeSetupCard(opts = {}) {
     const ready = !!st.ready && st.signed_in !== false;
     if (ready && opts.onReady) opts.onReady();
     if (!keepLog && !busy) replace(log);
-    const btn = h("button", { class: `btn ${ready ? "btn-sm" : "btn-primary"}`, type: "button", disabled: busy, onClick: () => (ready ? fresh().then(() => draw()).catch(showError) : setUp()) },
+    const btn = button({ kind: ready ? "standard" : "main", sm: ready, disabled: busy, onClick: () => (ready ? fresh().then(() => draw()).catch(showError) : setUp()) },
       icon(ready ? "refresh" : "zap", { size: 14 }), ready ? "Check again" : "Set up Claude");
-    const manual = h("details", { class: "fold" }, h("summary", {}, "Set it up yourself instead"),
+    const manual = fold({}, "Set it up yourself instead",
       h("ol", { class: "cc-manual small" },
         h("li", {}, "Install Claude Code (", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), "), in a terminal:", info.installer ? copyLine(info.installer, "Copy", "a terminal") : null),
         h("li", {}, "Sign in once: type ", h("code", {}, "claude"), " in a terminal and follow the steps."),
@@ -1003,7 +1003,7 @@ export function claudeSetupCard(opts = {}) {
       h("div", { class: "btn-row" }, btn),
       log,
       ready || st.signed_in ? termsPanel({ account: st.account || "", detected: st.plan ? `${st.plan[0].toUpperCase()}${st.plan.slice(1)}` : null, kind: st.account }) : null,
-      h("p", { class: "muted small", style: { marginTop: "10px" } }, "Then press ", h("strong", {}, "Start Claude Code"), " wherever work waits (or in the sidebar): ENLENS starts Claude Code in the background on this project's work, and the results appear as they come in. You can also type ", h("code", {}, `/enlens-run ${App.project || "<project>"}`), " in Claude Code yourself."),
+      h("p", { class: "muted small set-claude-code-hint" }, "Then press ", h("strong", {}, "Start Claude Code"), " wherever work waits (or in the sidebar): ENLENS starts Claude Code in the background on this project's work, and the results appear as they come in. You can also type ", h("code", {}, `/enlens-run ${App.project || "<project>"}`), " in Claude Code yourself."),
       manual);
   }
   api("GET", "/api/claude-setup").then((r) => { info = r; rememberClaude(r.status || {}); draw(); }).catch(() => draw());

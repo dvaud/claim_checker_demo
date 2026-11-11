@@ -30,13 +30,16 @@ def _rules(css: str) -> list[tuple[str, str]]:
 
 
 def test_heat_levels_outrank_the_row_hover():
-    css = "\n".join((STATIC / f).read_text("utf-8") for f in ("app.css", "concepts-themes.css", "profile-viewer.css"))
+    from _static import all_css  # 0.17.0: the whole cascade, so it holds when rules move between sheets
+
+    css = all_css()
     rules = _rules(css)
     hovers = [sel for s, body in rules if "background" in body for sel in s.split(",")
-              if ".row-link:hover" in sel and not re.search(r"\.(pf|th)-l0|\.map-hyp", sel)]
+              if ".row-link:hover" in sel and not re.search(r"\.(pf|th|heat)-l0|\.map-hyp|\.m-none", sel)]
     assert hovers, "the row hover rules were not found"
     strongest_hover = max(_specificity(h.strip()) for h in hovers)
-    for p in ("pf", "th"):
+    # 0.17.0 (design guide): the heat grid is one component; its levels are .heat-l1 … .heat-l4 on every grid
+    for p in ("heat",):
         for lv in range(1, 5):
             sels = [sel.strip() for s, body in rules if "background" in body for sel in s.split(",")
                     if f".{p}-l{lv}" in sel and ":hover" not in sel]
@@ -47,8 +50,9 @@ def test_heat_levels_outrank_the_row_hover():
 def test_darkest_cell_has_its_own_token_in_every_theme():
     app = (STATIC / "tokens.css").read_text("utf-8")  # 0.13.5: the tokens moved out of app.css
     assert app.count("--heat-4:") == 3  # light, dark by system setting, dark by choice
-    for f in ("concepts-themes.css", "profile-viewer.css"):
-        assert "var(--heat-4)" in (STATIC / f).read_text("utf-8")
+    from _static import all_css  # 0.17.0: the cascade, not the Themes and Profile sheets
+
+    assert "var(--heat-4)" in all_css()
 
 
 # ---------------------------------------------------------------------------------------------

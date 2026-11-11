@@ -147,7 +147,10 @@ def test_the_page_offers_two_distinct_choices():
 
     static = Path(claimcheck.__file__).parent / "gui" / "static"
     index = (static / "index.html").read_text()
-    assert "/static/v0112.css" in index and (static / "v0112.css").exists()
+    from _static import rule  # 0.17.0: the release's rules are in the cascade, not in a sheet of its own
+
+    # 0.17.0 (design guide): the mark is a tag (.chip) on a button, drawn by the Tags section; only its note's place is its own
+    assert rule("button.chip") and rule(".was-wrap .pop") and 'was-mark' in (static / "lib.js").read_text()
     js = (static / "views" / "result.js").read_text()
     assert "replaces the AI's judgements" in js and "only for comparison" in js
     assert "/hypotheses/${P(hypId)}/stronger" in js and "/tasks/${P(rd.task_id)}/stronger" not in js

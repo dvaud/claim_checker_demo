@@ -2,7 +2,7 @@
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
-  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps } from "../lib.js";
+  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
@@ -29,12 +29,12 @@ export async function renderSources(view) {
   let adding = false;       // 0.14.3: copying or reading is going: "Add" stays off, and picks are kept, not sent
   const fileInput = h("input", { type: "file", multiple: true, accept: ACCEPT, class: "visually-hidden", id: "src-files" });
   const fileList = h("ul", { class: "file-list", hidden: true });
-  const addBtn = h("button", { class: "btn btn-primary btn-lg", type: "button", disabled: true }, icon("upload", { size: 15 }), "Add to the project");
-  const excludeInput = h("input", { class: "input input-sm", type: "text", placeholder: "e.g. draft*  *_old.pdf", id: "exclude" });
+  const addBtn = button({ kind: "main", disabled: true }, icon("upload", { size: 15 }), "Add to the project");
+  const excludeInput = input({ sm: true, placeholder: "e.g. draft*  *_old.pdf", id: "exclude" });
   const drawFiles = () => {
     fileList.hidden = !files.length;
-    replace(fileList, files.map((f, i) => h("li", {}, icon("file-text", { size: 13 }), h("span", { class: "grow", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, f.name), h("span", { class: "fs" }, fmt.bytes(f.size)),
-      h("button", { class: "icon-btn", type: "button", "aria-label": `Remove ${f.name} from the list`, style: { width: "24px", height: "24px" }, onClick: () => { files.splice(i, 1); drawFiles(); } }, icon("x", { size: 12 })))));
+    replace(fileList, files.map((f, i) => h("li", {}, icon("file-text", { size: 13 }), h("span", { class: "grow docs-file-name" }, f.name), h("span", { class: "fs" }, fmt.bytes(f.size)),
+      iconButton({ icon: "x", size: 12, label: `Remove ${f.name} from the list`, title: null, sm: true, onClick: () => { files.splice(i, 1); drawFiles(); } }))));
     addBtn.disabled = !files.length || needLevel() || adding;
     replace(addBtn, icon("upload", { size: 15 }), files.length ? `Add ${files.length === 1 ? "this document" : `these ${files.length} documents`} to the project` : "Add to the project");
   };
@@ -54,7 +54,7 @@ export async function renderSources(view) {
   fileInput.addEventListener("change", () => { takeFiles(fileInput.files || []); fileInput.value = ""; });
   const drop = h("div", { class: "dropzone", role: "group", "aria-label": "Add documents", title: "Click to choose files, or drop them here" },
     icon("upload", { size: 28 }),
-    h("p", { class: "drop-title" }, h("strong", {}, "Drop your documents here"), " or ", h("label", { for: "src-files", class: "btn", tabindex: "0", onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } } }, "choose files"), fileInput),
+    h("p", { class: "drop-title" }, h("strong", {}, "Drop your documents here")), h("p", { class: "drop-choose" }, fileButton({ kind: "standard", sm: false, for: "src-files", tabindex: "0", onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } } }, fileInput, "Choose files")),
     h("p", { class: "muted small" }, "PDF, Word (.docx), text, Markdown and saved web pages (HTML), or a zip folder of them. ",
       ocrState().available === false ? ["Scanned PDFs cannot be read on this computer yet: they need Tesseract (", h("a", { href: "#/settings/ocr" }, "how to get it"), ")."] : ocrState().available && (App.settings().ocr || "auto") === "off" ? "Reading scanned PDFs is switched off in Settings." : ocrState().available ? "Scanned PDFs are read with text recognition (OCR), which is slow and can make mistakes." : ""),
     fileList);
@@ -71,21 +71,21 @@ export async function renderSources(view) {
   const needLevel = () => !chosenLevel;
   let ingesting = false;   // an ingest is being followed: the folder button stays off until it ends
   const accessPick = accessChoice({ value: chosenLevel, name: "add-access", onChange: (v) => { chosenLevel = v; drawFiles(); if (!ingesting) pathBtn.disabled = false; } });
-  const pathInput = h("input", { class: "input", type: "text", placeholder: "e.g. C:\\Users\\me\\Documents\\Literature  or  /Users/me/Documents/Literature", id: "src-path" });
-  const pathBtn = h("button", { class: "btn", type: "button" }, icon("folder-open", { size: 14 }), "Add this folder");
+  const pathInput = input({ placeholder: "e.g. C:\\Users\\me\\Documents\\Literature  or  /Users/me/Documents/Literature", id: "src-path" });
+  const pathBtn = button({}, icon("folder-open", { size: 14 }), "Add this folder");
   const progressBox = h("div", { class: "section", hidden: true, "aria-live": "polite" });
 
-  const addCard = h("section", { class: "card", "aria-label": "Add documents" },
+  const addCard = card({ "aria-label": "Add documents" },
     drop,
-    h("div", { class: "add-access" }, accessPick, acc.chosen ? null : h("p", { class: "muted small", style: { margin: "6px 0 0" } }, "Choose once for this project; it becomes the default, and you can change single documents in the list below.")),
-    h("div", { class: "btn-row", style: { marginTop: "12px" } }, addBtn),
-    h("details", { class: "fold", style: { marginTop: "12px" } }, h("summary", {}, "More ways to add"),
-      h("div", { class: "card card-plain", style: { marginTop: "8px" } },
-        h("div", { class: "field" }, h("label", { class: "field-label", for: "src-path" }, "Add a whole folder on this computer"), h("div", { class: "row", style: { flexWrap: "nowrap" } }, pathInput, pathBtn),
+    h("div", { class: "add-access" }, accessPick, acc.chosen ? null : h("p", { class: "muted small docs-access-note" }, "Choose once for this project; it becomes the default, and you can change single documents in the list below.")),
+    h("div", { class: "btn-row docs-add-actions" }, addBtn),
+    fold({ class: "docs-more-fold" }, "More ways to add",
+      card({ as: "div", class: "docs-more-card" },
+        h("div", { class: "field" }, h("label", { class: "field-label", for: "src-path" }, "Add a whole folder on this computer"), h("div", { class: "row docs-folder-row" }, pathInput, pathBtn),
           h("div", { class: "field-help" }, "Type or paste the full path of a folder (or of a zip file). The files are read where they are, nothing is copied.")),
         field("Leave out files whose name matches", excludeInput, { help: "Patterns separated by spaces; * stands for anything. Applies to everything you add." }),
-        h("p", { class: "small", style: { margin: "0 0 10px" } }, icon("library", { size: 13 }), " From Zotero: on the ", h("a", { href: "#/bibliography" }, "Bibliography"), " page, bring in a collection; the PDFs Zotero keeps are added in one go, and each document is linked to its work."),
-        h("p", { class: "muted small", style: { margin: 0 } }, "For technical users: a zip may contain a manifest.csv (columns file, reference, doi) naming the work each file is; an ai_access column (cloud, local or none) and an ai_note column set each file's AI setting."))));
+        h("p", { class: "small docs-zotero-note" }, icon("library", { size: 13 }), " From Zotero: on the ", h("a", { href: "#/bibliography" }, "Bibliography"), " page, bring in a collection; the PDFs Zotero keeps are added in one go, and each document is linked to its work."),
+        h("p", { class: "muted small docs-manifest-note" }, "For technical users: a zip may contain a manifest.csv (columns file, reference, doi) naming the work each file is; an ai_access column (cloud, local or none) and an ai_note column set each file's AI setting."))));
   view.appendChild(addCard);
   view.appendChild(progressBox);
 
@@ -99,7 +99,7 @@ export async function renderSources(view) {
   function followIngest(jobId, label) {
     ingesting = true;
     progressBox.hidden = false;
-    const holder = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, label || "Adding documents"), h("button", { class: "btn btn-sm btn-outline-danger", type: "button", onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
+    const holder = card({ as: "div" }, h("div", { class: "card-head" }, h("h2", {}, label || "Adding documents"), button({ kind: "danger", sm: true, onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
     replace(progressBox, holder);
     const w = watchJob(jobId, (job) => {
       replace(holder.querySelector(".pb"), simpleProgress(job, (p) => p.phase === "embedding" ? `Setting up search by meaning for the new documents · ${p.done || 0} of ${p.total || "?"} excerpts` : p.phase === "glossary" ? "Updating the glossary of terms (Concepts)…" : p.phase === "codes" ? "Finding the codebook's codes by keywords (Profile)…" : p.file ? `Reading ${p.file} (${(p.done || 0) + 1} of ${p.total})` : p.total ? `${p.done} of ${p.total} files` : "Reading the files…"));
@@ -109,7 +109,7 @@ export async function renderSources(view) {
     w.promise.then(async (job) => {
       const hd = holder.querySelector(".card-head h2"); if (hd) hd.textContent = job.state === "done" ? "Documents added" : job.state === "cancelled" ? "Stopped" : "Could not add the documents";
       if (job.state === "done") ingestSummary(holder, job.result || {});
-      else if (job.state === "error") replace(holder.querySelector(".pb"), h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, "The documents could not be added."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)));
+      else if (job.state === "error") replace(holder.querySelector(".pb"), notice({ kind: "error" }, h("div", {}, h("p", {}, "The documents could not be added."), fold({}, "Technical details", h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)));
       else replace(holder.querySelector(".pb"), h("p", { class: "muted" }, "Stopped. The files read so far were kept."));
       ingesting = false;
       // only the files that were sent leave the list; what was picked during the run stays for the next one
@@ -126,24 +126,24 @@ export async function renderSources(view) {
   function ingestSummary(holder, st) {
     const bits = [];
     const added = st.added || 0;
-    bits.push(h("div", { class: `notice ${added ? "notice-ok" : "notice-warn"}` }, icon(added ? "circle-check" : "alert-triangle"),
+    bits.push(notice({ kind: added ? "done" : "attention" },
       h("div", {}, h("p", {}, added ? `${added} ${added === 1 ? "document" : "documents"} added.` : "No new document was added.", st.duplicates ? ` ${st.duplicates} ${st.duplicates === 1 ? "was" : "were"} already in the project.` : ""),
-        added ? h("a", { class: "btn btn-primary btn-sm", href: "#/hypotheses", style: { marginTop: "8px" } }, icon("flask", { size: 13 }), "Check a hypothesis") : null)));
+        added ? link({ kind: "next", href: "#/hypotheses", class: "docs-check-link" }, "Check a hypothesis") : null)));
     const noText = new Set(st.scanned_no_text || []);
-    if (st.ocr && st.ocr.length) bits.push(h("div", { class: "notice notice-info" }, icon("eye"), h("p", {}, `Scanned pages were read with text recognition (OCR) in ${st.ocr.length === 1 ? "1 document" : `${st.ocr.length} documents`}: ${st.ocr.join(", ")}. The recognised text can contain mistakes; the quotes are checked against it.`)));
+    if (st.ocr && st.ocr.length) bits.push(notice({ kind: "info", icon: "eye" }, h("p", {}, `Scanned pages were read with text recognition (OCR) in ${st.ocr.length === 1 ? "1 document" : `${st.ocr.length} documents`}: ${st.ocr.join(", ")}. The recognised text can contain mistakes; the quotes are checked against it.`)));
     const notAdded = [...noText].filter((f) => (st.empty_files || []).includes(f));
-    if (noText.size) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, h("strong", {}, "Scanned: no text. "), `${noText.size === 1 ? "This document has" : "These documents have"} scanned pages that stayed without text: ${[...noText].join(", ")}. `,
+    if (noText.size) bits.push(notice({ kind: "attention" }, h("div", {}, h("p", {}, h("strong", {}, "Scanned: no text. "), `${noText.size === 1 ? "This document has" : "These documents have"} scanned pages that stayed without text: ${[...noText].join(", ")}. `,
       notAdded.length ? `${notAdded.length === 1 ? `${notAdded[0]} was not added, because none of its pages has text. ` : `${notAdded.length} of them were not added, because none of their pages has text. `}` : "",
       ocrState().available === false ? (ocrState().install ? "" : "Tesseract (text recognition) is needed to read them.") : (App.settings().ocr || "auto") === "off" ? ["Reading scanned PDFs is switched off: turn it on in ", h("a", { href: "#/settings/ocr" }, "Settings → Documents"), " and add the document again."] : "Text recognition could not read these pages."),
       ocrState().available === false ? tesseractHelp(ocrState()) : null)));
     const emptyOther = (st.empty_files || []).filter((f) => !noText.has(f));
-    if (emptyOther.length) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, `${emptyOther.length} ${emptyOther.length === 1 ? "file has" : "files have"} no readable text: ${emptyOther.join(", ")}`)));
-    if (st.mostly_unreadable && st.mostly_unreadable.length) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, "The text of these could mostly not be read: " + st.mostly_unreadable.join(", ") + ". Try another copy (for example from the publisher), or run OCR.")));
-    if (st.failed && st.failed.length) bits.push(h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, "These could not be read:"), h("ul", { class: "errors-list" }, st.failed.map((f) => h("li", {}, f))))));
+    if (emptyOther.length) bits.push(notice({ kind: "attention" }, h("p", {}, `${emptyOther.length} ${emptyOther.length === 1 ? "file has" : "files have"} no readable text: ${emptyOther.join(", ")}`)));
+    if (st.mostly_unreadable && st.mostly_unreadable.length) bits.push(notice({ kind: "attention" }, h("p", {}, "The text of these could mostly not be read: " + st.mostly_unreadable.join(", ") + ". Try another copy (for example from the publisher), or run OCR.")));
+    if (st.failed && st.failed.length) bits.push(notice({ kind: "error" }, h("div", {}, h("p", {}, "These could not be read:"), h("ul", { class: "errors-list" }, st.failed.map((f) => h("li", {}, f))))));
     if (st.excluded && st.excluded.length) bits.push(h("p", { class: "muted small" }, `Left out: ${st.excluded.join(", ")}`));
     if (st.not_in_manifest && st.not_in_manifest.length) bits.push(h("p", { class: "muted small" }, `Not named in the manifest: ${st.not_in_manifest.slice(0, 10).join(", ")}${st.not_in_manifest.length > 10 ? "…" : ""}`));
-    if (st.glossary_error || st.codes_error) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, "The documents were added, but " + (st.glossary_error ? "the glossary of terms" : "the codes found by keywords") + " could not be updated. Update them from the Concepts or Profile page."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, st.glossary_error || st.codes_error)))));
-    if (st.semantic_index_error) bits.push(h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("div", {}, h("p", {}, "The documents were added, but search by meaning could not be set up for them, so they are searched by their words only."), h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("div", { class: "mono small" }, st.semantic_index_error)))));
+    if (st.glossary_error || st.codes_error) bits.push(notice({ kind: "attention" }, h("div", {}, h("p", {}, "The documents were added, but " + (st.glossary_error ? "the glossary of terms" : "the codes found by keywords") + " could not be updated. Update them from the Concepts or Profile page."), fold({}, "Technical details", h("div", { class: "mono small" }, st.glossary_error || st.codes_error)))));
+    if (st.semantic_index_error) bits.push(notice({ kind: "attention" }, h("div", {}, h("p", {}, "The documents were added, but search by meaning could not be set up for them, so they are searched by their words only."), fold({}, "Technical details", h("div", { class: "mono small" }, st.semantic_index_error)))));
     // 0.13: the works of the bibliography the new documents are
     const bib = st.bibliography;
     if (bib && (bib.linked || bib.confirm)) bits.push(h("p", { class: "it" }, icon("library", { size: 14 }), h("span", {},
@@ -167,7 +167,7 @@ export async function renderSources(view) {
     addBtn.disabled = true;
     const batch = batchId();
     progressBox.hidden = false;
-    const holder = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Copying the files into the project")), h("div", { class: "pb" }));
+    const holder = card({ as: "div" }, h("div", { class: "card-head" }, h("h2", {}, "Copying the files into the project")), h("div", { class: "pb" }));
     replace(progressBox, holder);
     let n = 0;
     try {
@@ -193,7 +193,7 @@ export async function renderSources(view) {
   pathInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); pathBtn.click(); } });
 
   // ----------------------------------------------------------------- smart search
-  const indexCard = h("section", { class: "card", "aria-label": "Search by meaning" });
+  const indexCard = card({ "aria-label": "Search by meaning" });
   view.appendChild(indexCard);
   // 0.17: the index job of this project while it is queued or running (started here, or found after a reload): the card
   // shows it in place of the button, with the counts of the job's own progress, until it ends and the counts are read again
@@ -210,26 +210,26 @@ export async function renderSources(view) {
     lastSearch = search;
     const s = search || {};
     const body = h("div", { class: "grow" });
-    const head = h("div", { class: "index-card" }, h("span", { class: "icon-big" }, icon("sparkles", { size: 26 })), body);
+    const head = h("div", { class: "index-card" }, h("span", { class: "icon-big" }, icon("network", { size: 26 })), body);
     if (!s.model) {
-      body.append(h("h2", {}, "Search by meaning is off"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, "Documents are searched by their words only. With search by meaning, excerpts are found even when they use other words than your hypothesis. It can be turned on under Settings → Documents."));
+      body.append(h("h2", {}, "Search by meaning is off"), h("p", { class: "muted docs-index-sub" }, "Documents are searched by their words only. With search by meaning, excerpts are found even when they use other words than your hypothesis. It can be turned on under Settings → Documents."));
       indexCard.appendChild(head); return;
     }
     if (indexJob) {
       const p = indexJob.progress || {};
-      body.append(h("h2", {}, "Setting up search by meaning…"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, p.total ? `${fmt.num(p.done || 0)} of ${fmt.num(p.total)} excerpts are covered. Until it is set up, the rest are found by their words only.` : "Getting ready…"));
-      head.appendChild(h("button", { class: "btn btn-primary", type: "button", disabled: true }, icon("sparkles", { size: 14 }), "Setting up…"));
-      indexCard.append(head, h("div", { style: { marginTop: "10px" } }, simpleProgress(indexJob, indexLabel)));
+      body.append(h("h2", {}, "Setting up search by meaning…"), h("p", { class: "muted docs-index-sub" }, p.total ? `${fmt.num(p.done || 0)} of ${fmt.num(p.total)} excerpts are covered. Until it is set up, the rest are found by their words only.` : "Getting ready…"));
+      head.appendChild(button({ kind: "main", disabled: true }, icon("network", { size: 14 }), "Setting up…"));
+      indexCard.append(head, h("div", { class: "docs-index-progress" }, simpleProgress(indexJob, indexLabel)));
       return;
     }
     if (!s.passages) {
-      body.append(h("h2", {}, "Search by meaning is on"), h("p", { class: "muted", style: { margin: "4px 0 0" } }, "Finds excerpts even when they use other words than your hypothesis. It is set up automatically for every document you add."));
+      body.append(h("h2", {}, "Search by meaning is on"), h("p", { class: "muted docs-index-sub" }, "Finds excerpts even when they use other words than your hypothesis. It is set up automatically for every document you add."));
       indexCard.appendChild(head); return;
     }
     const complete = s.complete || (s.passages > 0 && s.embedded >= s.passages);
     body.append(h("h2", {}, complete ? "Search by meaning is on" : s.embedded ? "Search by meaning is set up for part of the documents" : "Search by meaning is not set up yet"),
-      h("p", { class: "muted", style: { margin: "4px 0 0" } }, complete ? "Finds excerpts even when they use other words than your hypothesis." : `${fmt.num(s.embedded || 0)} of ${fmt.num(s.passages || 0)} excerpts are covered. Until it is set up, the rest are found by their words only.`));
-    const btn = complete ? null : h("button", { class: "btn btn-primary", type: "button" }, icon("sparkles", { size: 14 }), "Set up search by meaning");
+      h("p", { class: "muted docs-index-sub" }, complete ? "Finds excerpts even when they use other words than your hypothesis." : `${fmt.num(s.embedded || 0)} of ${fmt.num(s.passages || 0)} excerpts are covered. Until it is set up, the rest are found by their words only.`));
+    const btn = complete ? null : button({ kind: "main" }, icon("network", { size: 14 }), "Set up search by meaning");
     if (!complete) btn.addEventListener("click", async () => {
       btn.disabled = true;
       try {
@@ -261,9 +261,9 @@ export async function renderSources(view) {
   }
   const countsNode = () => {
     const docs = (pa.counts && Object.values(pa.counts).reduce((a, b) => a + b, 0)) || 0;
-    return docs ? h("span", { class: "muted small access-counts" }, accessLevels().filter((lv) => (pa.counts || {})[lv]).map((lv) => [accessBadge(lv), ` ${pa.counts[lv]} `])) : h("span", { class: "muted small access-counts" });
+    return docs ? h("span", { class: "muted small access-counts" }, accessLevels().filter((lv) => (pa.counts || {})[lv]).map((lv) => accessBadge(lv, { count: pa.counts[lv] }))) : h("span", { class: "muted small access-counts" });
   };
-  const shieldNode = () => h("p", { class: "muted small", hidden: !(pa.counts && (pa.counts.local || pa.counts.none)) }, icon("shield", { size: 12 }), " Documents marked Only a local AI or No AI are never sent to Claude, in any feature.");
+  const shieldNode = () => h("p", { class: "muted small", hidden: !(pa.counts && (pa.counts.local || pa.counts.none)) }, icon("house", { size: 12 }), " Documents marked Only a local AI or No AI are never sent to Claude, in any feature.");
   // the whole list: after adding or removing documents (a change of one document's AI setting patches its row)
   function drawDocs(r) {
     drawIndex(r.search);
@@ -274,7 +274,7 @@ export async function renderSources(view) {
     if (pa.ask) docsBox.appendChild(accessAskCard(project, pa, reloadDocs));
     else if (pa.banner && docs.length) { const b = accessBanner(project, () => b.remove()); docsBox.appendChild(b); }
     countsEl = countsNode();
-    docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `In this project (${docs.length})`), docs.length ? countsEl : null));
+    docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `${docs.length} ${docs.length === 1 ? "document" : "documents"} in this project`), docs.length ? countsEl : null));
     if (!docs.length) { docsBox.appendChild(emptyState("book-open", "No documents yet", "Add the reports, papers and web pages you want to check hypotheses against. PDFs keep their page numbers.")); return; }
     newReader = r.new_reader || newReader;
     const warned = docs.filter((d) => d.check || (d.reading_quality === "poor" && !d.reading_checked)).length;
@@ -285,11 +285,11 @@ export async function renderSources(view) {
     docsBox.appendChild(nrBox);
     drawNr();
     // 0.11: the AI setting of each document (a dropdown), several at once, and how much Claude has read
-    const bulkSel = h("select", { class: "select select-sm", "aria-label": "Who may read the selected documents with AI" }, accessLevels().map((lv) => h("option", { value: lv }, LEVEL[lv].title)));
+    const bulkSel = select({ sm: true, "aria-label": "Who may read the selected documents with AI" }, accessLevels().map((lv) => h("option", { value: lv }, LEVEL[lv].title)));
     const bulkCount = h("span", { class: "small" });
     const bulk = h("div", { class: "bulk-bar", hidden: true, role: "region", "aria-label": "Change the selected documents" }, bulkCount, bulkSel,
-      h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => setAccess([...picked], bulkSel.value) }, icon("check", { size: 13 }), "Apply"),
-      h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { picked.clear(); for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = false; drawBulk(); } }, "Clear"));
+      button({ kind: "main", sm: true, onClick: () => setAccess([...picked], bulkSel.value) }, icon("check", { size: 13 }), "Apply"),
+      button({ kind: "quiet", sm: true, onClick: () => { picked.clear(); for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = false; drawBulk(); } }, "Clear"));
     const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected: who may read them with AI?`; drawNr(); };
     const pickAll = h("input", { type: "checkbox", class: "doc-pick-all", "aria-label": "Select every document" });
     // 0.16: every document of the list, drawn yet or not (the rows are drawn as the list scrolls into view)
@@ -297,31 +297,30 @@ export async function renderSources(view) {
     const sentCell = (d) => {
       const pct = Math.round((d.sent || 0) * 1000) / 10;
       const label = d.ai_access !== "cloud" && !pct ? "never" : pct ? `${pct < 1 ? "<1" : Math.round(pct)}%` : "0%";
-      return h("button", { class: "link-btn small", type: "button", title: "What Claude has read of this document", onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null);
+      return button({ kind: "quiet", sm: true, title: "What Claude has read of this document", onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null);
     };
     const rowFor = (d) => {
       const c = h("input", { type: "checkbox", class: "doc-pick", value: d.doc_id, "aria-label": `Select ${d.title || d.file}`, checked: picked.has(d.doc_id) });
       c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); });
       const row = h("tr", {},
         h("td", { class: "pick-col" }, c),
-        h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
+        h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
           h("div", { class: "doc-file" }, d.file),
           d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null,
-          // 0.14.3: Open and Remove sit under the title, where they are always in view (the table was wider than the page
+          // 0.14.3: Remove sits under the title, where it is always in view (the table was wider than the page
           // and its last column, with them, was out of sight)
           h("div", { class: "doc-actions" },
-            h("a", { class: "link-btn small", href: `#/doc/${encodeURIComponent(d.doc_id)}`, "aria-label": `Open ${d.title || d.file}` }, icon("eye", { size: 12 }), "Open"),
-            h("button", { class: "link-btn small doc-remove", type: "button", "aria-label": `Remove ${d.title || d.file}`, onClick: () => removeDoc(d) }, icon("trash", { size: 12 }), "Remove"))),
+            button({ kind: "danger", sm: true, class: "doc-remove", "aria-label": `Remove ${d.title || d.file}`, onClick: () => removeDoc(d) }, icon("trash", { size: 13 }), "Remove"))),
         h("td", { "data-label": "Type" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
         h("td", { "data-label": "Added", class: "small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
         h("td", { "data-label": "AI", class: "access-cell" }, accessSelect(d, pa.default, (lv) => setAccess([d.doc_id], lv || pa.default)),
-          d.note ? h("button", { class: "link-btn small access-why", type: "button", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, d.note) : null),
+          d.note ? button({ kind: "quiet", sm: true, class: "access-why", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, d.note) : null),
         h("td", { "data-label": "Sent to Claude", class: "num" }, sentCell(d)),
         h("td", { "data-label": "Note", class: "check-cell" },
           d.clash ? h("span", { class: "it tag-clash", title: `The same file as another document here, read into other text on ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} computer (another ENLENS version, or text recognition on one computer and not the other). Quotes are places in the text, so this reading came in as a document of its own, with the results made from it.` }, icon("copy", { size: 12 }), `sync clash · ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} reading`) : null,
-          d.check ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 12 }), d.check) : null,
-          d.scanned ? h("span", { class: "it scanned-note" + (/no text/i.test(d.scanned) ? " warn-chip" : " muted small") }, icon(/no text/i.test(d.scanned) ? "alert-triangle" : "eye", { size: 12 }), d.scanned) : null,
+          d.check ? tag({ kind: "attention" }, d.check) : null,
+          d.scanned ? (/no text/i.test(d.scanned) ? tag({ kind: "attention", class: "it scanned-note" }, d.scanned) : h("span", { class: "it scanned-note muted small" }, icon("eye", { size: 12 }), d.scanned)) : null,
           readingNote(d),
           !d.check && !d.scanned && !readingNote(d) ? h("span", { class: "it muted small" }, icon("check", { size: 12 }), "readable") : null),
         );
@@ -369,7 +368,7 @@ export async function renderSources(view) {
     // 0.16 (H5): the rows are drawn as the list scrolls into view (hundreds of documents drew thousands of controls
     // before the page showed); ticking, the counts and the AI settings work on every document all the same
     drawInSteps(tbody, docs, rowFor, { first: 60, step: 120, more: (left, onClick) => h("tr", { class: "draw-more-row" },
-      h("td", { colspan: "8" }, h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick }, icon("chevron-down", { size: 13 }), `Show more documents (${left} more)`))) });
+      h("td", { colspan: "8" }, button({ kind: "quiet", sm: true, onClick }, icon("chevron-down", { size: 13 }), `Show more documents (${left} more)`))) });
     docsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"))),
       tbody)));
@@ -386,11 +385,11 @@ export async function renderSources(view) {
     if (nr.done) parts.push(nrSummary(nr.done));
     if (older.length) {
       const n = older.length;
-      parts.push(h("div", { class: "notice notice-info" }, icon("layers"), h("div", { class: "grow" },
+      parts.push(notice({ kind: "info", icon: "layers" }, h("div", { class: "grow" },
         h("p", {}, h("strong", {}, `${fmt.num(n)} ${n === 1 ? "document was" : "documents were"} read by an earlier reader of ENLENS.`),
           ` ${n === 1 ? "It keeps" : "They keep"} that reading, so your quotes and judgements stay where they are. The new reader reads two columns in the right order, sets running heads, page numbers and the like aside, keeps tables as tables and repairs words broken over lines.`),
-        h("div", { class: "btn-row", style: { marginTop: "8px" } },
-          h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => startNr(sel.length ? sel : older, !!sel.length) }, icon("layers", { size: 13 }),
+        h("div", { class: "btn-row docs-nr-actions" },
+          button({ kind: "main", sm: true, onClick: () => startNr(sel.length ? sel : older, !!sel.length) }, icon("layers", { size: 13 }),
             sel.length ? `Read the ${sel.length === 1 ? "selected one" : `${fmt.num(sel.length)} selected`} with the new reader` : n === 1 ? "Read it with the new reader" : `Read all ${fmt.num(n)} with the new reader`),
           sel.length ? null : h("span", { class: "muted small" }, "or tick some in the list to read only those")))));
     }
@@ -430,14 +429,14 @@ export async function renderSources(view) {
     const results = moved.reduce((a, m) => a + (m.results || 0), 0);
     const aside = moved.reduce((a, m) => a + (m.left_out || 0), 0);
     const ok = moved.length && !kept.length;
-    return h("div", { class: `notice ${ok ? "notice-ok" : "notice-warn"}`, role: "status" }, icon(ok ? "circle-check" : "alert-triangle"), h("div", { class: "grow" },
+    return notice({ kind: ok ? "done" : "attention", role: "status" }, h("div", { class: "grow" },
       h("p", {}, h("strong", {}, `${res.stopped ? "Stopped. " : ""}${moved.length ? `Read with the new reader: ${plural(moved.length, "document")}` : "No document was moved"}`),
         moved.length ? `, ${plural(results, "result")} moved with ${moved.length === 1 ? "it" : "them"}.` : "."),
       aside ? h("p", { class: "small" }, `${plural(aside, "result")} now ${aside === 1 ? "sits" : "sit"} in text the new reader leaves out of searches (a running head, say): see each document’s Reading.`) : null,
-      kept.length ? [h("p", { class: "small", style: { margin: "6px 0 2px" } }, h("strong", {}, `Left as ${kept.length === 1 ? "it was" : "they were"}: ${fmt.num(kept.length)}`)),
+      kept.length ? [h("p", { class: "small docs-kept-note" }, h("strong", {}, `Left as ${kept.length === 1 ? "it was" : "they were"}: ${fmt.num(kept.length)}`)),
         h("ul", { class: "nr-kept small" }, kept.slice(0, 20).map((k) => h("li", {}, h("a", { href: `#/doc/${encodeURIComponent(k.doc_id)}?tab=reading&preview=1` }, k.title || "a document"), h("span", { class: "muted" }, ` · ${k.reason}`)))),
         kept.length > 20 ? h("p", { class: "muted small" }, `and ${fmt.num(kept.length - 20)} more.`) : null] : null),
-      h("button", { class: "icon-btn", type: "button", "aria-label": "Close this note", onClick: () => { nr.done = null; drawNr(); } }, icon("x", { size: 14 })));
+      iconButton({ icon: "x", size: 14, label: "Close this note", title: null, onClick: () => { nr.done = null; drawNr(); } }));
   }
 
   async function removeDoc(d) {
@@ -450,19 +449,19 @@ export async function renderSources(view) {
   }
 
   // ----------------------------------------------------------------- start over
-  view.appendChild(h("details", { class: "fold section" }, h("summary", {}, "Start over or remove the project"),
-    h("section", { class: "card danger-zone card-plain", "aria-label": "Start over", style: { marginTop: "8px" } },
-      h("div", { class: "row", style: { justifyContent: "space-between" } },
+  view.appendChild(fold({ class: "section" }, "Start over or remove the project",
+    card({ class: "danger-zone docs-start-over", "aria-label": "Start over" },
+      h("div", { class: "row docs-start-over-row" },
         h("div", { class: "grow" }, h("strong", {}, "Remove all documents and results"), h("div", { class: "muted small" }, "Empties this project. Your settings and other projects stay.")),
-        h("button", { class: "btn btn-outline-danger", type: "button", onClick: async () => {
+        button({ kind: "danger", onClick: async () => {
           const ok = await confirmDialog({ title: "Remove every document and every result?", message: `This empties the project “${project}”. It cannot be undone.`, confirmText: "Remove everything", typeToConfirm: "remove" });
           if (!ok) return;
           try { await api("DELETE", `/api/projects/${P(project)}/documents`, { confirm: true }); toast("All documents and results removed.", "ok"); await reloadDocs(); await App.refresh(); } catch (e) { showError(e); }
         } }, icon("trash", { size: 14 }), "Remove everything")),
       h("hr"),
-      h("div", { class: "row", style: { justifyContent: "space-between" } },
+      h("div", { class: "row docs-delete-row" },
         h("div", { class: "grow" }, h("strong", {}, "Remove this project"), h("div", { class: "muted small" }, info.linked ? "The folder is unlinked and left untouched." : "The project is moved to a trash folder; nothing is deleted outright.")),
-        h("a", { class: "btn btn-ghost", href: "#/projects" }, "Manage projects")))));
+        link({ kind: "next", href: "#/projects" }, "Manage projects")))));
 
   await reloadDocs();
   // an ingest or index job already running for this project (started earlier, or in another tab)
@@ -488,8 +487,9 @@ let newReader = 3;  // ingest.READER, as the list of documents says it
 function readingNote(d) {
   const href = `#/doc/${encodeURIComponent(d.doc_id)}?tab=reading`;
   if ((d.reading_quality === "poor" || d.reading_quality === "fair") && !d.reading_checked) {
-    return h("a", { class: d.reading_quality === "poor" ? "warn-chip it" : "it muted small", href, title: `${(d.reading_warnings || []).join(" ")} Open it to see where to look, then mark the reading as checked.`.trim() },
-      icon(d.reading_quality === "poor" ? "alert-triangle" : "info", { size: 12 }), d.reading_quality === "poor" ? "read badly" : "something to check in its reading");
+    const title = `${(d.reading_warnings || []).join(" ")} Open it to see where to look, then mark the reading as checked.`.trim();
+    if (d.reading_quality === "poor") return tag({ kind: "attention", class: "it" }, link({ href, title }, "read badly"));
+    return h("a", { class: "it muted small", href, title }, icon("info", { size: 12 }), "something to check in its reading");
   }
   if ((d.reader || 1) < newReader) return h("a", { class: "it muted small", href: `${href}&preview=1`, title: "Read by an earlier reader of ENLENS. Open it to see what the new reader would change, or read several at once with the button above the list." },
     icon("layers", { size: 12 }), (d.reader || 1) < 2 ? "read before 0.15" : "read by an earlier reader");
@@ -539,7 +539,7 @@ export async function renderDocument(view, [docId], query) {
   let d;
   try { d = await api("GET", `${docBase}?view=blocks&offset=0&limit=500`); }
   catch (e) {
-    if (e.status === 404) { view.appendChild(emptyState("search-x", "No such document", "It was removed from the project.", h("a", { class: "btn", href: "#/sources" }, "Back to documents"))); return; }
+    if (e.status === 404) { view.appendChild(emptyState("search-x", "No such document", "It was removed from the project.", link({ kind: "back", href: "#/sources" }, "Back to documents"))); return; }
     throw e;
   }
   const blocks = d.blocks || [];
@@ -548,18 +548,18 @@ export async function renderDocument(view, [docId], query) {
   const hit = span ? blocks.findIndex((b) => span.start >= b.start && span.start < b.end) : -1;
   // the quote's text, for opening the original at it (the whole excerpt is too long for that)
   const quoteText = hit >= 0 && !span.whole ? (blocks[hit].text || "").slice(Math.max(0, span.start - blocks[hit].start), Math.max(0, span.end - blocks[hit].start)).trim() || null : null;
-  const back = from ? h("a", { href: `#/h/${encodeURIComponent(from)}${query.card ? `?card=${encodeURIComponent(query.card)}` : ""}`, class: "btn btn-sm" }, icon("arrow-left", { size: 13 }), "Back to the result") : null;
+  const back = from ? link({ kind: "back", href: `#/h/${encodeURIComponent(from)}${query.card ? `?card=${encodeURIComponent(query.card)}` : ""}` }, "Back to the result") : null;
   const watchers = [];
   const cleanups = [];
   let tab = DOC_TABS.some(([k]) => k === query.tab) ? query.tab : null;
   let framework = query.framework || App.settings().profile_framework || "sdg";
 
   // 0.13.3: the original and the highlighted copy are two quiet links on one line, as on the result page
-  const copyBtn = h("button", { class: "link-btn it", type: "button", title: "A copy of the document with its quotes and labels highlighted", onClick: () => highlightedCopy() }, icon("highlighter", { size: 13 }), "Download a highlighted copy");
+  const copyBtn = downloadButton({ title: "A copy of the document with its quotes and labels highlighted", onClick: () => highlightedCopy() }, "Download a highlighted copy");
   view.appendChild(h("header", { class: "page-head" }, h("div", { class: "page-head-main" },
-    h("p", { class: "eyebrow" }, from ? [back, " "] : null, h("a", { href: "#/sources", class: "it" }, icon("book-open", { size: 12 }), "All documents")),
-    h("h1", { id: "page-title", tabindex: "-1", class: "serif", style: { fontWeight: 500 } }, d.title || d.file),
-    h("div", { class: "result-meta", style: { marginTop: "6px" } }, h("span", {}, d.file), h("span", { class: "sep" }, "·"), h("span", {}, KIND_TEXT[d.kind] || d.kind || ""), d.n_pages ? [h("span", { class: "sep" }, "·"), h("span", {}, `${d.n_pages} pages`)] : null,
+    h("p", { class: "eyebrow" }, from ? [back, " "] : null, link({ kind: "back", href: "#/sources", class: "it" }, "All documents")),
+    h("h1", { id: "page-title", tabindex: "-1", class: "title-display" }, d.title || d.file),
+    h("div", { class: "result-meta dv-file-meta" }, h("span", {}, d.file), h("span", { class: "sep" }, "·"), h("span", {}, KIND_TEXT[d.kind] || d.kind || ""), d.n_pages ? [h("span", { class: "sep" }, "·"), h("span", {}, `${d.n_pages} pages`)] : null,
       reading ? (d.paragraphs ? [h("span", { class: "sep" }, "·"), h("span", {}, plural(d.paragraphs, "paragraph"))] : null)
         : d.n_pages && blockUnit(blocks[0]) === "pages" && totalBlocks === d.n_pages ? null : [h("span", { class: "sep" }, "·"), h("span", {}, `${totalBlocks} ${blockUnit(blocks[0])}`)], d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.doi}`, target: "_blank", rel: "noopener noreferrer", title: "Opens the publisher's page in your browser" }, `doi ${d.doi}`)] : null,
       d.scanned ? [h("span", { class: "sep" }, "·"), h("span", { class: "it" }, icon("eye", { size: 12 }), d.scanned)] : null),
@@ -568,17 +568,17 @@ export async function renderDocument(view, [docId], query) {
       d.bib.doi && d.bib.doi !== d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.bib.doi}`, target: "_blank", rel: "noopener noreferrer" }, `doi ${d.bib.doi}`)] : null,
       d.bib.link ? [h("span", { class: "sep" }, "·"), h("a", { href: d.bib.link }, "Open in Zotero")] : null) : null,
     // 0.13.3: the heading is the work's title; the one read from the file stays visible, on a line of its own
-    d.file_title ? h("p", { class: "muted small dv-file-title", style: { margin: "4px 0 0" } }, "Title in the file: ", h("span", { class: "serif" }, d.file_title)) : null,
-    h("div", { class: "row dv-head-row", style: { marginTop: "8px", gap: "8px 14px" } },
+    d.file_title ? h("p", { class: "muted small dv-file-title" }, "Title in the file: ", h("span", { class: "serif" }, d.file_title)) : null,
+    h("div", { class: "row dv-head-row" },
       originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
       copyBtn),
-    span ? h("p", { class: "muted small", style: { marginTop: "6px" } }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null)));
+    span ? h("p", { class: "muted small dv-span-note" }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null)));
 
   // ----------------------------------------------------------------- the text, with layers of highlights
   const nodeAt = new WeakMap();        // text node -> document offset of its first character
   const rows = new Map();              // block n -> {row, b, sig}
   const loaded = [];                   // the blocks shown, in order
-  const list = h("div", { class: "card doc-view dv-text" });
+  const list = card({ as: "div", class: "doc-view dv-text" });
   const moreBox = h("div", { class: "dv-more" });
   const selBar = h("div", { class: "dv-selbar", role: "toolbar", "aria-label": "With the selected text", hidden: true });
   let focus = null;                    // the place jumped to last: {start, end, cls, extra: [decorations]}
@@ -588,7 +588,7 @@ export async function renderDocument(view, [docId], query) {
   // tables look like what they are, a page mark stands where a page begins, and what was left out of the text
   // (running heads, page numbers, front and back matter, footnotes, tables...) is folded under "Left out of the text",
   // each with Restore; every block that counts has Leave out.
-  let fold = null, lastPage = null;
+  let leftFold = null, lastPage = null;
   // the label column: where the block is cited, a mark when a person changed it, and (on hover) its actions
   function labelParts(b) {
     return [b.label ? h("b", {}, b.label) : null,
@@ -615,23 +615,23 @@ export async function renderDocument(view, [docId], query) {
   function place(b, row, openNs) {
     if (reading && b.page != null && b.page !== lastPage) {
       lastPage = b.page;
-      fold = null;
+      leftFold = null;
       list.insertBefore(h("div", { class: "dv-page-mark", id: `page-${b.page}` }, h("span", {}, `Page ${b.page}`)), selBar);
     }
     if (reading && b.included === false && b.kind !== "table") {
-      if (!fold) {
-        fold = { el: h("details", { class: "dv-fold" }), kinds: new Map() };
-        fold.sum = h("summary", {});
-        fold.el.appendChild(fold.sum);
-        if (showLeftOut) fold.el.open = true;
-        list.insertBefore(fold.el, selBar);
+      if (!leftFold) {
+        leftFold = { el: h("details", { class: "dv-fold" }), kinds: new Map() };
+        leftFold.sum = h("summary", {});
+        leftFold.el.appendChild(leftFold.sum);
+        if (showLeftOut) leftFold.el.open = true;
+        list.insertBefore(leftFold.el, selBar);
       }
-      if (openNs.has(b.n)) fold.el.open = true;
-      fold.kinds.set(b.kind, (fold.kinds.get(b.kind) || 0) + 1);
-      replace(fold.sum, icon("chevron-right", { size: 13 }), h("span", {}, "Left out of the text: ", [...fold.kinds].map(([k, n]) => kindCount(k, n)).join(", ")));
-      fold.el.appendChild(row);
+      if (openNs.has(b.n)) leftFold.el.open = true;
+      leftFold.kinds.set(b.kind, (leftFold.kinds.get(b.kind) || 0) + 1);
+      replace(leftFold.sum, icon("chevron-right", { size: 13 }), h("span", {}, "Left out of the text: ", [...leftFold.kinds].map(([k, n]) => kindCount(k, n)).join(", ")));
+      leftFold.el.appendChild(row);
     } else {
-      fold = null;
+      leftFold = null;
       list.insertBefore(row, selBar);
     }
   }
@@ -640,20 +640,20 @@ export async function renderDocument(view, [docId], query) {
     const wrap = h("div", { class: "dv-act" });
     const where = b.label || `${b.kind_text || "text"}${b.page ? `, page ${b.page}` : ""}`;
     const btn = b.included === false
-      ? h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Restore: ${where}`, title: "Count this in searches, codes, themes and checks again", onClick: (e) => setIncluded(b, true, e.currentTarget) }, icon("refresh", { size: 12 }), "Restore")
-      : h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Leave out: ${where}`, title: b.kind === "heading" || b.kind === "title" ? "Leave this heading and the text under it out of searches, codes, themes and checks" : "Leave this out of searches, codes, themes and checks (a heading above it goes with it)", onClick: (e) => setIncluded(b, false, e.currentTarget) }, icon("minus", { size: 12 }), "Leave out");
+      ? button({ kind: "quiet", sm: true, "aria-label": `Restore: ${where}`, title: "Count this in searches, codes, themes and checks again", onClick: (e) => setIncluded(b, true, e.currentTarget) }, icon("refresh", { size: 12 }), "Restore")
+      : button({ kind: "quiet", sm: true, "aria-label": `Leave out: ${where}`, title: b.kind === "heading" || b.kind === "title" ? "Leave this heading and the text under it out of searches, codes, themes and checks" : "Leave this out of searches, codes, themes and checks (a heading above it goes with it)", onClick: (e) => setIncluded(b, false, e.currentTarget) }, icon("minus", { size: 12 }), "Leave out");
     wrap.appendChild(btn);
     // 0.15.1: the same for every block that looks like this one (running heads, page numbers, a repeated label)
-    if (b.alike > 0) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `${b.included === false ? "Restore" : "Leave out"} all ${b.alike + 1} blocks like this: ${where}`,
+    if (b.alike > 0) wrap.appendChild(button({ kind: "quiet", sm: true, "aria-label": `${b.included === false ? "Restore" : "Leave out"} all ${b.alike + 1} blocks like this: ${where}`,
       title: b.included === false ? `Restore this and the ${plural(b.alike, "other block")} that look the same (their numbers aside)` : `Leave out this and the ${plural(b.alike, "other block")} that look the same (their numbers aside), such as a running head on every page`,
       onClick: (e) => setIncluded(b, b.included === false, e.currentTarget, true) }, icon("copy", { size: 12 }), `All like this (${fmt.num(b.alike + 1)})`));
     // 0.15.1: where the document's own text starts and ends (a book's title pages before, its notes and index after)
-    if (b.bound) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Undo: the text ${b.bound === "start" ? "starts" : "ends"} here`, title: "What was left out by this mark counts again, unless it was left out for another reason", onClick: (e) => setBound(b.bound, null, e.currentTarget) }, icon("x", { size: 12 }), b.bound === "start" ? "Undo start" : "Undo end"));
+    if (b.bound) wrap.appendChild(button({ kind: "quiet", sm: true, "aria-label": `Undo: the text ${b.bound === "start" ? "starts" : "ends"} here`, title: "What was left out by this mark counts again, unless it was left out for another reason", onClick: (e) => setBound(b.bound, null, e.currentTarget) }, icon("x", { size: 12 }), b.bound === "start" ? "Undo start" : "Undo end"));
     else if (b.included !== false && b.share != null) {
-      if (b.share <= 0.34) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `The text starts here: ${where}`, title: "Leave out everything before this (title pages, publishing details, contents). Anything you restore there still counts.", onClick: (e) => setBound("start", b.n, e.currentTarget) }, icon("chevron-down", { size: 12 }), "Text starts here"));
-      if (b.share >= 0.66) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `The text ends here: ${where}`, title: "Leave out everything after this (notes, bibliography, index, about the author). Anything you restore there still counts.", onClick: (e) => setBound("end", b.n, e.currentTarget) }, icon("chevron-up", { size: 12 }), "Text ends here"));
+      if (b.share <= 0.34) wrap.appendChild(button({ kind: "quiet", sm: true, "aria-label": `The text starts here: ${where}`, title: "Leave out everything before this (title pages, publishing details, contents). Anything you restore there still counts.", onClick: (e) => setBound("start", b.n, e.currentTarget) }, icon("chevron-down", { size: 12 }), "Text starts here"));
+      if (b.share >= 0.66) wrap.appendChild(button({ kind: "quiet", sm: true, "aria-label": `The text ends here: ${where}`, title: "Leave out everything after this (notes, bibliography, index, about the author). Anything you restore there still counts.", onClick: (e) => setBound("end", b.n, e.currentTarget) }, icon("chevron-up", { size: 12 }), "Text ends here"));
     }
-    if (b.table) wrap.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", "aria-label": `Download table ${b.table.n} for Excel`, title: "The table's rows and cells, for Excel", onClick: () => download(`${docBase}/tables/${b.table.n}.xlsx`).catch(showError) }, icon("download", { size: 12 }), "Excel"));
+    if (b.table) wrap.appendChild(button({ kind: "quiet", sm: true, "aria-label": `Download table ${b.table.n} for Excel`, title: "The table's rows and cells, for Excel", onClick: () => download(`${docBase}/tables/${b.table.n}.xlsx`).catch(showError) }, icon("download", { size: 12 }), "Excel"));
     return wrap;
   }
   // 0.16: Restore, Leave out and where the text starts or ends change the reading where it is. Before, the whole
@@ -792,7 +792,7 @@ export async function renderDocument(view, [docId], query) {
     }
     const openThen = openNow();   // as they are now: a fold opened or closed during the animation stays so
     for (const el of [...list.children]) if (el !== selBar) el.remove();
-    fold = null; lastPage = null;
+    leftFold = null; lastPage = null;
     for (const b of loaded) place(b, rows.get(b.n).row, openThen);
     for (const el of list.querySelectorAll(".dv-leaving, .dv-folding")) { el.classList.remove("dv-leaving", "dv-folding"); el.style.height = ""; }
     if (anchor) {
@@ -823,7 +823,7 @@ export async function renderDocument(view, [docId], query) {
   function drawMore() {
     clear(moreBox);
     if (loaded.length >= totalBlocks) return;
-    moreBox.appendChild(h("button", { class: "btn btn-sm", type: "button", onClick: (e) => { e.currentTarget.disabled = true; loadMore().then(() => paint()); } }, icon("chevron-down", { size: 13 }),
+    moreBox.appendChild(button({ sm: true, onClick: (e) => { e.currentTarget.disabled = true; loadMore().then(() => paint()); } }, icon("chevron-down", { size: 13 }),
       reading ? `Show the rest of the document (${fmt.num(totalBlocks - loaded.length)} more parts)` : `Show the rest of the document (${fmt.num(totalBlocks - loaded.length)} more ${blockUnit(blocks[0])})`));
   }
   async function loadMore() {
@@ -922,8 +922,8 @@ export async function renderDocument(view, [docId], query) {
     const b = blockAt(where.start);
     if (!b) { toast("This place is not in the text shown.", "warn"); return; }
     const r = rows.get(b.n);
-    const fold = r.row.closest("details");
-    if (fold) fold.open = true;  // 0.15: a place in text that was left out
+    const leftFold = r.row.closest("details");
+    if (leftFold) leftFold.open = true;  // 0.15: a place in text that was left out
     const target = r.row.querySelector(".dv-focus, .dv-focus-soft") || r.row;
     target.scrollIntoView({ block: "center", behavior: opts.instant ? "auto" : "smooth" });
     r.row.classList.remove("ev-flash"); void r.row.offsetWidth; r.row.classList.add("ev-flash");
@@ -1002,7 +1002,7 @@ export async function renderDocument(view, [docId], query) {
     if (s.tooLong) { selNow = null; replace(selBar, h("span", { class: "muted small" }, "Select words within one paragraph or page.")); }
     else {
       selNow = s;
-      const act = (ic, label, fn) => h("button", { class: "btn btn-sm btn-ghost", type: "button", onMousedown: (e) => e.preventDefault(), onClick: () => { const x = selNow; selBar.hidden = true; fn(x); } }, icon(ic, { size: 13 }), label);
+      const act = (ic, label, fn) => button({ kind: "quiet", sm: true, onMousedown: (e) => e.preventDefault(), onClick: () => { const x = selNow; selBar.hidden = true; fn(x); } }, icon(ic, { size: 13 }), label);
       replace(selBar,
         // 0.16 (F2): keep the words, plainly or with a note of yours
         act("highlighter", "Highlight", (x) => addNote(x, "", "yellow")),
@@ -1039,7 +1039,7 @@ export async function renderDocument(view, [docId], query) {
   }
   async function noteDialog(x) {
     let colour = "yellow";
-    const ta = h("textarea", { class: "input", rows: 4, maxlength: 10000, placeholder: "What these words mean for your work…" });
+    const ta = textarea({ rows: 4, maxlength: 10000, placeholder: "What these words mean for your work…" });
     const body = h("div", {}, h("blockquote", { class: "note-quote" }, x.text),
       h("label", { class: "field" }, h("span", { class: "field-label" }, "Your note"), ta),
       h("div", { class: "field" }, h("span", { class: "field-label" }, "Colour"), colourPicker(colour, (c) => { colour = c; })));
@@ -1049,13 +1049,13 @@ export async function renderDocument(view, [docId], query) {
   }
   function showNoteBar(n, rect) {
     selNow = null;
-    const act = (ic, label, fn, cls) => h("button", { class: "btn btn-sm btn-ghost" + (cls ? " " + cls : ""), type: "button", onClick: () => { selBar.hidden = true; fn(); } }, icon(ic, { size: 13 }), label);
+    const act = (ic, label, fn, danger) => button({ kind: danger ? "danger" : "quiet", sm: true, onClick: () => { selBar.hidden = true; fn(); } }, icon(ic, { size: 13 }), label);
     replace(selBar,
       h("div", { class: "dv-notebar-text" }, n.text ? n.text : h("span", { class: "muted" }, n.mine ? "A highlight (no note)" : `A highlight by ${n.who}`), n.mine ? null : h("span", { class: "muted small" }, ` · ${n.who}`)),
       h("div", { class: "dv-notebar-actions" },
         n.mine ? act("note", n.text ? "Edit" : "Add a note", async () => { const got = await editNote(n); if (got) { Object.assign(n, got); paint(); if (panels.notes) panels.notes.refresh(); } }) : null,
         act("flask", "Use as evidence", () => useAsEvidence(n)),
-        n.mine ? act("trash", "Remove", async () => { if (await removeNote(n)) { docNotes = docNotes.filter((x) => x.note_id !== n.note_id); paint(); if (panels.notes) panels.notes.refresh(); } }, "danger-link") : null));
+        n.mine ? act("trash", "Remove", async () => { if (await removeNote(n)) { docNotes = docNotes.filter((x) => x.note_id !== n.note_id); paint(); if (panels.notes) panels.notes.refresh(); } }, true) : null));
     const lr = list.getBoundingClientRect();
     selBar.hidden = false;
     const w = selBar.offsetWidth || 300;
@@ -1097,7 +1097,7 @@ export async function renderDocument(view, [docId], query) {
   selBar.addEventListener("keydown", (e) => { if (e.key === "Escape") selBar.hidden = true; });
 
   // ----------------------------------------------------------------- the panels
-  const tabsRow = h("div", { class: "btn-row dv-tabs", role: "group", "aria-label": "Show next to the text" });
+  const tabsRow = h("div", { class: "dv-tabs" });
   const panelBox = h("div", { class: "dv-panel-box" });
   const intro = h("p", { class: "muted small dv-intro" }, "Show next to the text: which codes of a codebook it addresses, its key terms, what “it” and “they” refer to, search inside it, how it was read", d.page_images ? ", or the page of the original beside the text." : ".");
   const side = h("aside", { class: "dv-side", "aria-label": "About this document" }, tabsRow, panelBox);
@@ -1107,8 +1107,10 @@ export async function renderDocument(view, [docId], query) {
   const panels = {};
   const makers = { codes: codesPanel, terms: termsPanel, refs: refsPanel, search: searchPanel, notes: notesPanel, reading: readingPanel, page: pagePanel };
   function drawTabs() {
-    replace(tabsRow, DOC_TABS.filter(([k]) => k !== "page" || d.page_images).map(([k, label, ic]) => h("button", { class: "btn btn-sm seg-btn" + (tab === k ? " seg-on" : ""), type: "button", "aria-pressed": tab === k ? "true" : "false", dataset: { tab: k },
-      onClick: () => { openTab(tab === k ? null : k); const b = tabsRow.querySelector(`[data-tab="${k}"]`); if (b) b.focus(); } }, icon(ic, { size: 13 }), label)));
+    // which panel shows beside the text: a choice (docs/DESIGN.md 4.6); picking the chosen one again closes it
+    replace(tabsRow, choice({ filter: true, label: "Show next to the text", value: tab,
+      options: DOC_TABS.filter(([k]) => k !== "page" || d.page_images).map(([k, label, ic]) => [k, [icon(ic, { size: 13 }), label]]),
+      onPick: (k) => { openTab(tab === k ? null : k); const b = tabsRow.querySelector(`[data-value="${k}"]`); if (b) b.focus(); } }));
   }
   function openTab(k, fromUser = true) {
     if (k === tab && (!k || panels[k])) return;
@@ -1167,8 +1169,8 @@ export async function renderDocument(view, [docId], query) {
       const kinds = outKinds();
       outPart.hidden = !kinds.length;
       outBox = kinds.length ? h("input", { type: "checkbox", checked: showLeftOut, onChange: (e) => setLeftOut(e.currentTarget.checked) }) : null;
-      replace(outPart, kinds.length ? [h("p", { class: "small", style: { margin: "8px 0 4px" } }, h("strong", {}, "Left out of the text: "), kinds.map(([k, n]) => kindCount(k, n)).join(", "), "."),
-        h("p", { class: "muted small", style: { margin: "0 0 6px" } }, "They stay in the document and in a search of all its text, but searches, codes, themes and checks do not read them. Restore any that should count; leave out any that should not."),
+      replace(outPart, kinds.length ? [h("p", { class: "small dv-left-out" }, h("strong", {}, "Left out of the text: "), kinds.map(([k, n]) => kindCount(k, n)).join(", "), "."),
+        h("p", { class: "muted small dv-left-out-note" }, "They stay in the document and in a search of all its text, but searches, codes, themes and checks do not read them. Restore any that should count; leave out any that should not."),
         h("label", { class: "dv-check" }, outBox, h("span", {}, "Show what was left out in the text"))] : []);
     }
     // 0.15.7: a warning's way to what it is about: the pages of the original, or what the reader set aside
@@ -1178,10 +1180,10 @@ export async function renderDocument(view, [docId], query) {
       const f = list.querySelector("details.dv-fold");
       if (f) f.scrollIntoView({ block: "center", behavior: "smooth" });
     };
-    const placeBtn = (place) => place === "page" && d.page_images ? h("button", { class: "link-btn small", type: "button", onClick: () => openTab("page") }, icon("file-text", { size: 12 }), "Look at the pages")
-      : place === "left_out" && outKinds().length ? h("button", { class: "link-btn small", type: "button", onClick: showOut }, icon("eye", { size: 12 }), "Show what was left out") : null;
+    const placeBtn = (place) => place === "page" && d.page_images ? link({ kind: "jump", onClick: () => openTab("page") }, icon("file-text", { size: 12 }), "Look at the pages")
+      : place === "left_out" && outKinds().length ? button({ kind: "quiet", sm: true, onClick: showOut }, icon("eye", { size: 12 }), "Show what was left out") : null;
     el.append(...[h("h2", { id: "dv-read-h", class: "dv-panel-title", tabindex: "-1" }, "How this document was read"),
-      older ? h("div", { class: "notice notice-info" }, icon("info"), h("div", {},
+      older ? notice({ kind: "info" }, h("div", {},
         h("p", {}, before15 ? `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`
           : `Read by the reader of ENLENS 0.15.0. The reader of ENLENS ${App.state.version || ""} also sets running heads, page numbers, contents pages and indexes aside in text files and books, finds their headings and paragraphs, and puts apart words that ran together.`),
         h("p", { class: "small" }, "Documents already in a project keep their reading, so every quote and judgement in them stays where it is, until you move one over."))) : null,
@@ -1201,11 +1203,11 @@ export async function renderDocument(view, [docId], query) {
     const box = h("div", { class: "dv-checked" });
     function draw() {
       const c = rep.checked;
-      replace(box, c ? h("p", { class: "small", style: { margin: "4px 0 8px" } }, icon("circle-check", { size: 13 }),
+      replace(box, c ? h("p", { class: "small dv-read-ok" }, icon("circle-check", { size: 13 }),
         ` Checked by ${c.name || "you"}${c.at ? ` on ${fmt.dateShort(c.at)}` : ""}: the list of documents no longer asks for a look. `,
-        h("button", { class: "link-btn small", type: "button", onClick: (e) => mark(false, e.currentTarget) }, "Undo"))
-        : [h("p", { class: "muted small", style: { margin: "4px 0 6px" } }, "Look at what each point names. If the text is good enough for your work, mark the reading as checked: the note in the list of documents goes away. A new reading of this document asks again."),
-          h("button", { class: "btn btn-sm", type: "button", onClick: (e) => mark(true, e.currentTarget) }, icon("check", { size: 13 }), "Checked: it reads well enough")]);
+        button({ kind: "quiet", sm: true, onClick: (e) => mark(false, e.currentTarget) }, "Undo"))
+        : [h("p", { class: "muted small dv-read-check" }, "Look at what each point names. If the text is good enough for your work, mark the reading as checked: the note in the list of documents goes away. A new reading of this document asks again."),
+          button({ sm: true, onClick: (e) => mark(true, e.currentTarget) }, icon("check", { size: 13 }), "Checked: it reads well enough")]);
     }
     async function mark(on, btn) {
       btn.disabled = true;
@@ -1225,8 +1227,8 @@ export async function renderDocument(view, [docId], query) {
   function rereadBox() {
     const box = h("div", { class: "dv-reread" });
     function drawStart(focusIt) {
-      const start = h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: (e) => preview(e.currentTarget) }, icon("layers", { size: 13 }), "Read with the new reader");
-      replace(box, h("p", { class: "small", style: { margin: "10px 0 6px" } }, "See first what would change: how many of your results find their place in the new reading, and which do not. Nothing changes until you confirm."), start);
+      const start = button({ kind: "main", sm: true, onClick: (e) => preview(e.currentTarget) }, icon("layers", { size: 13 }), "Read with the new reader");
+      replace(box, h("p", { class: "small dv-start-note" }, "See first what would change: how many of your results find their place in the new reading, and which do not. Nothing changes until you confirm."), start);
       if (focusIt) start.focus();
       return start;
     }
@@ -1235,23 +1237,23 @@ export async function renderDocument(view, [docId], query) {
       replace(box, h("p", { class: "muted small", role: "status" }, icon("loader", { size: 13 }), " Reading the original file again (nothing changes yet)…"));
       let r;
       try { r = await api("GET", `${docBase}/reread`); }
-      catch (e) { replace(box, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
-      if (r.ok === false) { replace(box, h("div", { class: "notice notice-warn" }, icon("alert-triangle"), h("p", {}, r.reason || "This document cannot be read again now."))); return; }
+      catch (e) { replace(box, notice({ kind: "error" }, h("p", {}, e.message))); return; }
+      if (r.ok === false) { replace(box, notice({ kind: "attention" }, h("p", {}, r.reason || "This document cannot be read again now."))); return; }
       const lost = r.not_placed || [];
       const moved = movedCount(r);
       const aside = Array.isArray(r.left_out) ? r.left_out : [];  // placed, in text the new reader leaves out
-      const go = h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => move(go) }, icon("check", { size: 13 }), "Move it to the new reader");
+      const go = button({ kind: "main", sm: true, onClick: () => move(go) }, icon("check", { size: 13 }), "Move it to the new reader");
       const summary = h("p", { class: "small", tabindex: "-1" }, moved || lost.length ? [h("strong", {}, plural(moved, "result")), moved === 1 ? " finds its place" : " find their place", " in the new reading", lost.length ? [", ", h("strong", {}, `${fmt.num(lost.length)} ${lost.length === 1 ? "does" : "do"} not`)] : "", "."]
         : "Nothing in your results points into this document yet: it is simply read again.");
       replace(box, h("div", { class: "dv-reread-preview" }, summary,
-        (r.warnings || []).length ? h("ul", { class: "dv-warn", style: { marginTop: "6px" } }, r.warnings.map((w) => h("li", {}, w))) : null,
+        (r.warnings || []).length ? h("ul", { class: "dv-warn dv-preview-warn" }, r.warnings.map((w) => h("li", {}, w))) : null,
         lost.length ? h("ul", { class: "dv-lost" }, lost.slice(0, 12).map((x) => h("li", { class: "small" }, h("span", { class: "muted" }, `${cap(x.kind_text || x.what || "a result")}${x.page ? `, page ${x.page}` : ""}: `),
           x.quote ? `“${x.quote}”` : (x.what || ""), x.why ? h("span", { class: "muted" }, ` ${x.why}`) : null))) : null,
         lost.length > 12 ? h("p", { class: "muted small" }, `and ${fmt.num(lost.length - 12)} more.`) : null,
         aside.length ? h("ul", { class: "dv-lost" }, aside.slice(0, 12).map((x) => h("li", { class: "small" }, h("span", { class: "muted" }, `${cap(x.kind_text || "a result")}${x.page ? `, page ${x.page}` : ""}: `),
           x.quote ? `“${x.quote}”` : (x.what || ""), x.note ? h("span", { class: "muted" }, ` ${x.note}`) : null))) : null,
         r.reading && r.reading.quality ? h("p", { class: "muted small" }, `The new reading: ${plural(r.reading.body_passages, "passage")} that count${(r.reading.warnings || []).length ? `; ${r.reading.warnings.join(" ")}` : ", nothing to warn about."}`) : null,
-        h("div", { class: "btn-row", style: { marginTop: "8px" } }, go, h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => drawStart(true) }, "Not now"))));
+        h("div", { class: "btn-row dv-start-actions" }, go, button({ kind: "quiet", sm: true, onClick: () => drawStart(true) }, "Not now"))));
       summary.focus();
     }
     async function move(btn) {
@@ -1265,7 +1267,7 @@ export async function renderDocument(view, [docId], query) {
       watchers.push(w);
       let done;
       try { done = await w.promise; } catch (e) { showError(e); return; }
-      if (done.state !== "done") { replace(box, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, done.error || "The document could not be moved; nothing was changed."))); return; }
+      if (done.state !== "done") { replace(box, notice({ kind: "error" }, h("p", {}, done.error || "The document could not be moved; nothing was changed."))); return; }
       const r = (done.result || {}).report || {};
       toast(`Read with the new reader: ${plural(movedCount(r), "result")} moved${(r.not_placed || []).length ? `, ${fmt.num(r.not_placed.length)} without a place` : ""}.`, "ok");
       keepPlace = { doc: docId, y: 0, tab: "reading", focus: "dv-read-h" };
@@ -1285,15 +1287,15 @@ export async function renderDocument(view, [docId], query) {
     const boxes = h("div", { class: "dv-page-boxes", "aria-hidden": "true" });
     const frame = h("div", { class: "dv-page-frame" }, img, boxes);
     const nav = h("div", { class: "btn-row dv-page-nav" });
-    const note = h("p", { class: "muted small", style: { margin: "6px 0 0" } }, reading ? "Outlined: what the reader found. Solid: read by searches, codes, themes and checks; dashed: left out. Click one to go to it in the text."
+    const note = h("p", { class: "muted small dv-pagenav-note" }, reading ? "Outlined: what the reader found. Solid: read by searches, codes, themes and checks; dashed: left out. Click one to go to it in the text."
       : "Outlines of what the reader found come with the new reader: see Reading.");
     el.append(h("h2", { id: "dv-page-h", class: "dv-panel-title" }, "The page"), nav, frame, note);
     function draw() {
       const last = d.n_pages || 1;
-      replace(nav, h("button", { class: "btn btn-sm", type: "button", disabled: page <= 1, "aria-label": "Previous page", onClick: () => go(page - 1, true) }, icon("chevron-left", { size: 13 })),
+      replace(nav, button({ sm: true, disabled: page <= 1, "aria-label": "Previous page", onClick: () => go(page - 1, true) }, icon("chevron-left", { size: 13 })),
         h("span", { class: "small" }, `Page ${page} of ${last}`),
-        h("button", { class: "btn btn-sm", type: "button", disabled: page >= last, "aria-label": "Next page", onClick: () => go(page + 1, true) }, icon("chevron-right", { size: 13 })),
-        h("a", { class: "btn btn-sm btn-ghost", href: `${docBase}/file?token=${encodeURIComponent(TOKEN)}#page=${page}`, target: "_blank", rel: "noopener" }, icon("external-link", { size: 12 }), "Open the PDF at this page"));
+        button({ sm: true, disabled: page >= last, "aria-label": "Next page", onClick: () => go(page + 1, true) }, icon("chevron-right", { size: 13 })),
+        link({ kind: "external", href: `${docBase}/file?token=${encodeURIComponent(TOKEN)}#page=${page}` }, "Open the PDF at this page"));
     }
     function drawBoxes() {
       clear(boxes);
@@ -1363,7 +1365,7 @@ export async function renderDocument(view, [docId], query) {
           prof = await api("GET", `${docBase}/profile?framework=sdg`);
         }
       }
-      catch (e) { listBox.setAttribute("aria-busy", "false"); replace(listBox, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
+      catch (e) { listBox.setAttribute("aria-busy", "false"); replace(listBox, notice({ kind: "error" }, h("p", {}, e.message))); return; }
       listBox.setAttribute("aria-busy", "false");
       // a goal from the profile grid (?code=7): open its targets
       for (const c of [...open]) if (!prof.codes.some((x) => x.code === c)) { open.delete(c); for (const x of prof.codes) if (x.group === c) open.add(x.code); }
@@ -1374,31 +1376,31 @@ export async function renderDocument(view, [docId], query) {
     function draw() {
       const fwName = prof.framework_title || framework;
       const label = prof.code_label || "code";
-      const sel = h("select", { class: "select input-sm", id: "dv-fw" }, (fws || [{ name: framework, title: fwName }]).map((f) => h("option", { value: f.name, selected: f.name === framework }, f.title || f.name)));
+      const sel = select({ sm: true, id: "dv-fw" }, (fws || [{ name: framework, title: fwName }]).map((f) => h("option", { value: f.name, selected: f.name === framework }, f.title || f.name)));
       sel.addEventListener("change", async () => { framework = sel.value; missingFw = null; open.clear(); keepUrl(); await load(); const again = document.getElementById("dv-fw"); if (again) again.focus(); });
       replace(head, h("div", { class: "dv-fw" }, h("label", { class: "field-label", for: "dv-fw" }, "Codebook"), sel));
       clear(listBox);
-      if (missingFw) listBox.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"),
+      if (missingFw) listBox.appendChild(notice({ kind: "attention", class: "dv-status-notice" },
         h("p", {}, `The codebook “${missingFw}” is kept in another project, so the SDG targets are shown. Codebooks › move it to all projects makes it available everywhere.`)));
       const p1 = prof.pass1 || {};
       if (!p1.done) {
         clear(aiBox); ai = null;
         if (jobBox.hidden) listBox.appendChild(emptyState("tag", "No codes found yet", `The app first finds the ${label}s of “${fwName}” in every passage of the project by their keywords. It takes seconds and runs on this computer.`,
-          h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: (e) => startKeywordPass(project, framework, jobBox, watchers, (job) => { if (job.state === "done") jobBox.hidden = true; load(); }, e.currentTarget) }, icon("tag", { size: 13 }), "Find the codes by keywords")));
+          button({ kind: "main", sm: true, onClick: (e) => startKeywordPass(project, framework, jobBox, watchers, (job) => { if (job.state === "done") jobBox.hidden = true; load(); }, e.currentTarget) }, icon("tag", { size: 13 }), "Find the codes by keywords")));
         return;
       }
-      if (p1.stale && jobBox.hidden) listBox.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"),
+      if (p1.stale && jobBox.hidden) listBox.appendChild(notice({ kind: "attention", class: "dv-status-notice" },
         h("div", {}, h("p", {}, "Documents were added or removed since the codes were found, so this profile may be out of date."),
-          h("button", { class: "btn btn-sm", type: "button", style: { marginTop: "6px" }, onClick: (e) => startKeywordPass(project, framework, jobBox, watchers, (job) => { if (job.state === "done") jobBox.hidden = true; load(); }, e.currentTarget) }, icon("refresh", { size: 13 }), "Find them again"))));
+          button({ sm: true, class: "dv-find-again-btn", onClick: (e) => startKeywordPass(project, framework, jobBox, watchers, (job) => { if (job.state === "done") jobBox.hidden = true; load(); }, e.currentTarget) }, icon("refresh", { size: 13 }), "Find them again"))));
       const codes = prof.codes || [];
       const labelled = new Set(codes.flatMap((c) => c.items.map((it) => it.passage_id))).size;
       const provisional = codes.some((c) => c.items.some((it) => it.provisional));
       listBox.appendChild(h("p", { class: "dv-sum" }, codes.length
         ? [h("strong", {}, `${plural(codes.length, label)}`), ` in ${plural(labelled, "passage")} of ${fmt.num(prof.passages)} (${Math.round((labelled / Math.max(1, prof.passages)) * 100)}%).`]
         : `No ${label} counts in this document yet.`));
-      listBox.appendChild(h("p", { class: "muted small", style: { margin: "0 0 10px" } },
+      listBox.appendChild(h("p", { class: "muted small dv-codes-help" },
         prof.read_by_model ? `The AI has read ${plural(prof.read_by_model, "passage")} of this document. ` : "The AI has not read this document yet. ",
-        provisional ? [h("span", { class: "chip chip-weak" }, "provisional"), " codes were found by keywords", p1.meaning_model ? " or meaning" : "", " and wait for the AI or you."] : ""));
+        provisional ? [tag({ kind: "attention" }, "provisional"), " codes were found by keywords", p1.meaning_model ? " or meaning" : "", " and wait for the AI or you."] : ""));
       if (codes.length) {
         listBox.appendChild(h("ol", { class: "dv-codes" }, codes.map(codeNode)));
         listBox.appendChild(h("p", { class: "muted small" }, "Ranked by the number of passages. The strip shows where in the document each code occurs. Open a code to see its passages and why each was labelled."));
@@ -1442,27 +1444,27 @@ export async function renderDocument(view, [docId], query) {
         onClick: () => { if (open.has(c.code)) open.delete(c.code); else open.add(c.code); draw(); refreshMarks(); const b = listBox.querySelector(`.dv-code-head[data-code="${CSS.escape(c.code)}"]`); if (b) b.focus(); } },
         h("span", { class: "dv-code-id" }, c.code),
         h("span", { class: "dv-code-main" }, h("span", { class: "dv-code-desc" }, c.description || c.code),
-          h("span", { class: "dv-code-n" }, `${plural(c.passages, "passage")} · ${share} of the document`, c.main ? ` · main topic in ${c.main}` : "", allProv ? " · " : "", allProv ? h("span", { class: "chip chip-weak" }, "provisional") : null)),
+          h("span", { class: "dv-code-n" }, `${plural(c.passages, "passage")} · ${share} of the document`, c.main ? ` · main topic in ${c.main}` : "", allProv ? " · " : "", allProv ? tag({ kind: "attention" }, "provisional") : null)),
         icon(isOpen ? "chevron-up" : "chevron-down", { size: 14 }));
       const li = h("li", { class: "dv-code" + (isOpen ? " dv-open" : "") }, headBtn, strip);
       if (isOpen) {
         const items = all.has(c.code) ? c.items : c.items.slice(0, 12);
         li.appendChild(h("ul", { class: "dv-items" }, items.map((it) => itemNode(c, it))));
-        if (c.items.length > items.length) li.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { all.add(c.code); draw(); } }, icon("chevron-down", { size: 13 }), `Show all ${c.items.length} passages`));
+        if (c.items.length > items.length) li.appendChild(button({ kind: "quiet", sm: true, onClick: () => { all.add(c.code); draw(); } }, icon("chevron-down", { size: 13 }), `Show all ${c.items.length} passages`));
       }
       return li;
     }
 
     function itemNode(c, it) {
-      const chips = [h("span", { class: "chip" + (it.source === "person" ? " chip-yours" : "") }, SOURCE_WORDS[it.source] || it.source)];
-      if (it.provisional) chips.push(h("span", { class: "chip chip-weak", title: "Found without the AI. It counts until the AI has read this passage (or you decide)." }, "provisional"));
+      const chips = [tag({ icon: it.source === "person" ? "user" : null }, SOURCE_WORDS[it.source] || it.source)];
+      if (it.provisional) chips.push(tag({ kind: "attention", title: "Found without the AI. It counts until the AI has read this passage (or you decide)." }, "provisional"));
       if (it.source === "model" || it.source === "person" || it.decision === "change") {
-        if (it.relevance) chips.push(h("span", { class: "chip" }, RELEVANCE_WORDS[it.relevance] || it.relevance));
-        if (prof.directional && it.direction && it.direction !== "not_stated") chips.push(h("span", { class: "chip" }, DIRECTION_WORDS[it.direction] || it.direction));
+        if (it.relevance) chips.push(tag({}, RELEVANCE_WORDS[it.relevance] || it.relevance));
+        if (prof.directional && it.direction && it.direction !== "not_stated") chips.push(tag({}, DIRECTION_WORDS[it.direction] || it.direction));
       }
       if (it.source === "model" && it.confidence !== null && it.confidence !== undefined) { const ce = certainty(it.confidence); chips.push(h("span", { class: `cert cert-${ce.word}`, title: ce.long }, `AI certainty: ${ce.word} (${Math.round(it.confidence * 100)}%)`)); }
-      if (it.decision === "accept") chips.push(h("span", { class: "chip chip-yours" }, icon("check", { size: 12 }), "you agree"));
-      else if (it.decision === "change") chips.push(h("span", { class: "chip chip-yours" }, icon("note", { size: 12 }), "changed by you"));
+      if (it.decision === "accept") chips.push(tag({ icon: "user" }, "you agree"));
+      else if (it.decision === "change") chips.push(tag({ icon: "user" }, "changed by you"));
       const why = [];
       if (it.quote) why.push(h("p", { class: "dv-quote serif" }, h("mark", { class: "dv-code-mark" }, it.quote)));
       if (it.source === "model" && it.reason) why.push(h("p", { class: "dv-why" }, h("span", { class: "muted" }, "The AI's reason: "), it.reason));
@@ -1475,7 +1477,7 @@ export async function renderDocument(view, [docId], query) {
         why.push(h("p", { class: "dv-why found-words" }, it.source === "both" ? h("strong", {}, "Keywords and meaning agree. ") : null, bits));
       }
       if (it.note && it.source !== "person") why.push(h("div", { class: "user-note" }, icon("note", { size: 13 }), h("span", {}, h("span", { class: "muted" }, "Your note: "), it.note)));
-      const where = h("button", { class: "link-btn dv-loc", type: "button", title: "Show it in the text", onClick: () => jumpItem(it) }, icon("eye", { size: 12 }), cap(it.location || (it.page ? `page ${it.page}` : "show in the text")));
+      const where = link({ kind: "jump", class: "dv-loc", title: "Show it in the text", onClick: () => jumpItem(it) }, icon("eye", { size: 12 }), cap(it.location || (it.page ? `page ${it.page}` : "show in the text")));
       return h("li", { class: "dv-item" + (it.provisional ? " dv-prov" : "") + (it.decision ? " ev-yours" : ""), dataset: { lid: it.label_id } },
         h("div", { class: "dv-item-top" }, where, h("span", { class: "chips" }, chips)), why, decideRow(c, it));
     }
@@ -1495,39 +1497,39 @@ export async function renderDocument(view, [docId], query) {
       };
       const row = h("div", { class: "judge-row dv-decide" });
       if (it.source === "person") {
-        row.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => put({ decision: "reject" }, "Your label was removed.") }, icon("trash", { size: 13 }), "Remove my label"));
+        row.appendChild(button({ kind: "quiet", sm: true, onClick: () => put({ decision: "reject" }, "Your label was removed.") }, icon("trash", { size: 13 }), "Remove my label"));
         return row;
       }
       const agreed = it.decision === "accept";
-      row.appendChild(h("button", { class: "btn btn-sm" + (agreed ? " btn-primary" : ""), type: "button", "aria-pressed": agreed ? "true" : "false",
+      row.appendChild(button({ kind: agreed ? "main" : "standard", sm: true, "aria-pressed": agreed ? "true" : "false",
         onClick: () => (agreed ? put({ decision: "clear" }, "Your decision was cleared.") : put({ decision: "accept" }, it.provisional ? "Saved: you agree. The label now counts as yours." : "Saved: you agree with this label.")) },
         icon("check", { size: 13 }), agreed ? "You agree" : "Agree"));
-      row.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => put({ decision: "reject" }, `Rejected: ${c.code} no longer counts for this passage.`) }, icon("x", { size: 13 }), "Reject"));
+      row.appendChild(button({ kind: "quiet", sm: true, onClick: () => put({ decision: "reject" }, `Rejected: ${c.code} no longer counts for this passage.`) }, icon("x", { size: 13 }), "Reject"));
       // change: relevance and direction (where the codebook has one)
       const name = `dv-rel-${it.label_id}`;
       const radios = (nm, choices, current) => h("div", { class: "judge-opts", role: "radiogroup" }, choices.map(([v, t]) => {
-        const input = h("input", { type: "radio", name: nm, value: v });
-        input.checked = current === v;
-        return h("label", { class: "judge-opt" }, input, h("span", {}, t));
+        const radio = h("input", { type: "radio", name: nm, value: v });
+        radio.checked = current === v;
+        return h("label", { class: "judge-opt" }, radio, h("span", {}, t));
       }));
       const rel = radios(name, [["main", "main topic"], ["mentioned", "mentioned"]], it.relevance || "main");
       rel.setAttribute("aria-label", "How much the passage is about this code");
       const dir = prof.directional ? radios(`${name}-d`, [["helps", "helps"], ["hinders", "hinders"], ["mixed", "mixed"], ["not_stated", "not stated"]], it.direction || "not_stated") : null;
       if (dir) dir.setAttribute("aria-label", "Direction");
-      const note = h("input", { class: "input input-sm", type: "text", placeholder: "Optional note", value: it.decision === "change" ? (it.note || "") : "", "aria-label": "Your note on this label" });
-      const save = h("button", { class: "btn btn-sm", type: "button", onClick: () => {
+      const note = input({ sm: true, placeholder: "Optional note", value: it.decision === "change" ? (it.note || "") : "", "aria-label": "Your note on this label" });
+      const save = button({ sm: true, onClick: () => {
         const r = rel.querySelector("input:checked"), dd = dir && dir.querySelector("input:checked");
         put({ decision: "change", relevance: r ? r.value : undefined, direction: dd ? dd.value : undefined, note: note.value.trim() || undefined }, "Saved: your change to this label.");
       } }, "Save the change");
-      const instead = h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "Reject this code here and choose the right one",
+      const instead = button({ kind: "quiet", sm: true, title: "Reject this code here and choose the right one",
         onClick: async () => { await put({ decision: "reject" }, "This code is rejected here: choose the right one."); addForm({ passage_id: it.passage_id, where: it.location }); } },
         icon("plus", { size: 13 }), "Wrong code? Choose another instead");
-      row.appendChild(h("details", { class: "fold judge-diff" }, h("summary", {}, it.decision === "change" ? "Your change · edit" : "Change how it applies"),
+      row.appendChild(fold({ sm: true, class: "judge-diff" }, it.decision === "change" ? "Your change · edit" : "Change how it applies",
         h("div", { class: "judge-body" }, h("div", { class: "small muted" }, "How much is it about this code?"), rel,
-          dir ? [h("div", { class: "small muted", style: { marginTop: "6px" } }, "Does the passage say it helps or hinders the aim?"), dir] : null,
-          h("div", { class: "row", style: { marginTop: "8px", gap: "6px" } }, note, save),
-          h("div", { style: { marginTop: "8px" } }, instead))));
-      row.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => addForm({ passage_id: it.passage_id, where: it.location }) }, icon("plus", { size: 13 }), "Another code here"));
+          dir ? [h("div", { class: "small muted dv-decide-hint" }, "Does the passage say it helps or hinders the aim?"), dir] : null,
+          h("div", { class: "row dv-decide-row" }, note, save),
+          h("div", { class: "dv-decide-instead" }, instead))));
+      row.appendChild(button({ kind: "quiet", sm: true, onClick: () => addForm({ passage_id: it.passage_id, where: it.location }) }, icon("plus", { size: 13 }), "Another code here"));
       return row;
     }
 
@@ -1585,14 +1587,14 @@ export async function renderDocument(view, [docId], query) {
       const label = (prof && prof.code_label) || "code";
       const items = await codesOf();
       const dl = h("datalist", { id: "dv-code-list" }, items.map((x) => h("option", { value: x.code }, `${x.code} · ${shortTitle(x.description, 90)}`)));
-      const code = h("input", { class: "input input-sm", type: "text", list: "dv-code-list", autocomplete: "off", id: "dv-add-code", placeholder: items[0] ? `e.g. ${items[0].code}` : "" });
-      const desc = h("p", { class: "muted small", style: { margin: "4px 0 0" } });
+      const code = input({ sm: true, list: "dv-code-list", autocomplete: "off", id: "dv-add-code", placeholder: items[0] ? `e.g. ${items[0].code}` : "" });
+      const desc = h("p", { class: "muted small dv-add-desc" });
       code.addEventListener("input", () => { const x = items.find((y) => y.code === code.value.trim()); desc.textContent = x ? x.description : ""; });
-      const rel = h("select", { class: "select input-sm", "aria-label": "How much it is about the code" }, h("option", { value: "main" }, "main topic"), h("option", { value: "mentioned" }, "mentioned"));
-      const dir = prof && prof.directional ? h("select", { class: "select input-sm", "aria-label": "Direction" }, ["not_stated", "helps", "hinders", "mixed"].map((v) => h("option", { value: v }, DIRECTION_WORDS[v]))) : null;
-      const note = h("input", { class: "input input-sm", type: "text", placeholder: "Why (optional)", "aria-label": "Why this code (optional)" });
+      const rel = select({ sm: true, "aria-label": "How much it is about the code" }, h("option", { value: "main" }, "main topic"), h("option", { value: "mentioned" }, "mentioned"));
+      const dir = prof && prof.directional ? select({ sm: true, "aria-label": "Direction" }, ["not_stated", "helps", "hinders", "mixed"].map((v) => h("option", { value: v }, DIRECTION_WORDS[v]))) : null;
+      const note = input({ sm: true, placeholder: "Why (optional)", "aria-label": "Why this code (optional)" });
       const msg = h("p", { class: "field-error", role: "alert", hidden: true });
-      const save = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("plus", { size: 13 }), "Add my label");
+      const save = button({ kind: "main", sm: true }, icon("plus", { size: 13 }), "Add my label");
       save.addEventListener("click", async () => {
         msg.hidden = true;
         if (!code.value.trim()) { code.focus(); return; }
@@ -1604,13 +1606,13 @@ export async function renderDocument(view, [docId], query) {
           await load();
         } catch (e) { msg.textContent = e.message; msg.hidden = false; save.disabled = false; }
       });
-      replace(addBox, h("div", { class: "card card-plain dv-add" },
+      replace(addBox, card({ as: "div", class: "dv-add" },
         h("h3", {}, `Add ${/^[aeiouAEIOU]|^SDG/.test(label) ? "an" : "a"} ${label} of your own`),
-        h("p", { class: "muted small", style: { margin: "2px 0 8px" } }, quote ? ["For the selected text: ", h("q", { class: "serif" }, shortTitle(quote, 160))] : `For the passage ${where ? `in ${where}` : ""}.`),
+        h("p", { class: "muted small dv-add-intro" }, quote ? ["For the selected text: ", h("q", { class: "serif" }, shortTitle(quote, 160))] : `For the passage ${where ? `in ${where}` : ""}.`),
         h("label", { class: "field-label", for: "dv-add-code" }, cap(label)), code, dl, desc,
-        h("div", { class: "row", style: { marginTop: "8px", gap: "6px" } }, rel, dir, note),
+        h("div", { class: "row dv-add-fields" }, rel, dir, note),
         msg,
-        h("div", { class: "btn-row", style: { marginTop: "8px" } }, save, h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => clear(addBox) }, "Cancel"))));
+        h("div", { class: "btn-row dv-add-actions" }, save, button({ kind: "quiet", sm: true, onClick: () => clear(addBox) }, "Cancel"))));
       addBox.scrollIntoView({ block: "nearest" });
       code.focus();
     }
@@ -1646,7 +1648,7 @@ export async function renderDocument(view, [docId], query) {
     let data = null, n = 15, pinned = null;
     const cursor = {};
     async function load() {
-      try { data = await api("GET", `${docBase}/terms?n=${n}`); } catch (e) { replace(body, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
+      try { data = await api("GET", `${docBase}/terms?n=${n}`); } catch (e) { replace(body, notice({ kind: "error" }, h("p", {}, e.message))); return; }
       body.setAttribute("aria-busy", "false");
       draw();
       if (tab === "terms") paint();
@@ -1662,15 +1664,15 @@ export async function renderDocument(view, [docId], query) {
       const st = data.status || {};
       if (!st.built) {
         body.appendChild(emptyState("network", "No glossary yet", "Key terms come from the glossary of the project's terms. It is made on this computer in seconds to a minute; nothing is sent anywhere.",
-          jobBox.hidden ? h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: (e) => build(e.currentTarget) }, icon("network", { size: 13 }), "Make the glossary") : null));
+          jobBox.hidden ? button({ kind: "main", sm: true, onClick: (e) => build(e.currentTarget) }, icon("network", { size: 13 }), "Make the glossary") : null));
         return;
       }
-      if (st.stale && jobBox.hidden) body.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"),
+      if (st.stale && jobBox.hidden) body.appendChild(notice({ kind: "attention", class: "dv-status-notice" },
         h("div", {}, h("p", {}, "Documents were added or removed since the glossary was made, so the key terms may be out of date."),
-          h("button", { class: "btn btn-sm", type: "button", style: { marginTop: "6px" }, onClick: (e) => build(e.currentTarget) }, icon("refresh", { size: 13 }), "Update the glossary"))));
+          button({ sm: true, class: "dv-update-btn", onClick: (e) => build(e.currentTarget) }, icon("refresh", { size: 13 }), "Update the glossary"))));
       const terms = data.terms || [];
       if (!terms.length) { body.appendChild(emptyState("network", "No key terms", "No term of the glossary occurs in this document.")); return; }
-      body.appendChild(h("p", { class: "muted small", style: { margin: "0 0 8px" } }, "The terms that set this document apart from the others in the project. Point at a term to underline it in the text; click it to keep it marked and go from one place to the next."));
+      body.appendChild(h("p", { class: "muted small dv-terms-help" }, "The terms that set this document apart from the others in the project. Point at a term to underline it in the text; click it to keep it marked and go from one place to the next."));
       const max = Math.max(...terms.map((t) => t.score || 0), 1);
       const spans = data.spans || [];
       body.appendChild(h("ol", { class: "dv-terms" }, terms.map((t) => {
@@ -1690,15 +1692,15 @@ export async function renderDocument(view, [docId], query) {
             h("span", { class: "muted small" }, isPin && places.length ? `place ${cursor[t.term_id] + 1} of ${places.length}` : plural(t.mentions, "mention"))),
           h("span", { class: "dv-term-bar", "aria-hidden": "true" }, h("span", { style: { width: `${Math.max(4, Math.round(((t.score || 0) / max) * 100))}%` } })),
           h("span", { class: "dv-term-links" },
-            h("a", { href: `#/search?q=${encodeURIComponent(t.label)}&mode=phrase`, class: "btn btn-sm btn-ghost", title: `Search the whole project for “${t.label}”` }, icon("text-search", { size: 13 }), h("span", { class: "visually-hidden" }, `Search the project for ${t.label}`)),
-            h("a", { href: `#/concepts?name=${encodeURIComponent(t.label)}`, class: "btn btn-sm btn-ghost", title: `The concept “${t.label}” across the documents` }, icon("network", { size: 13 }), h("span", { class: "visually-hidden" }, `Open the concept ${t.label}`))));
+            link({ href: `#/search?q=${encodeURIComponent(t.label)}&mode=phrase`, title: `Search the whole project for “${t.label}”` }, icon("text-search", { size: 13 }), h("span", { class: "visually-hidden" }, `Search the project for ${t.label}`)),
+            link({ href: `#/concepts?name=${encodeURIComponent(t.label)}`, title: `The concept “${t.label}” across the documents` }, icon("network", { size: 13 }), h("span", { class: "visually-hidden" }, `Open the concept ${t.label}`))));
         return li;
       })));
       const btns = [];
-      if (pinned) btns.push(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { pinned = null; draw(); paint(); } }, icon("x", { size: 13 }), "Stop marking"));
-      if (terms.length >= n && n < 50) btns.push(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { n = 40; load(); } }, icon("chevron-down", { size: 13 }), "Show more key terms"));
-      if (btns.length) body.appendChild(h("div", { class: "btn-row", style: { marginTop: "8px" } }, btns));
-      body.appendChild(h("details", { class: "fold" }, h("summary", {}, "Technical details"), h("p", { class: "muted small" }, `Ranked by TF-IDF against the ${fmt.num(st.terms || 0)} terms of the project's glossary (made ${fmt.date(st.built_at)}); a term inside a longer key term with as many mentions is left out.`)));
+      if (pinned) btns.push(button({ kind: "quiet", sm: true, onClick: () => { pinned = null; draw(); paint(); } }, icon("x", { size: 13 }), "Stop marking"));
+      if (terms.length >= n && n < 50) btns.push(button({ kind: "quiet", sm: true, onClick: () => { n = 40; load(); } }, icon("chevron-down", { size: 13 }), "Show more key terms"));
+      if (btns.length) body.appendChild(h("div", { class: "btn-row dv-terms-actions" }, btns));
+      body.appendChild(fold({}, "Technical details", h("p", { class: "muted small" }, `Ranked by TF-IDF against the ${fmt.num(st.terms || 0)} terms of the project's glossary (made ${fmt.date(st.built_at)}); a term inside a longer key term with as many mentions is left out.`)));
     }
     load();
     return {
@@ -1717,7 +1719,7 @@ export async function renderDocument(view, [docId], query) {
     el.append(h("h2", { id: "dv-refs-h", class: "dv-panel-title" }, "References"), selBox, jobBox, body);
     let data = null, selected = null, after = null, showAll = false, running = false;
     async function load() {
-      try { data = await api("GET", `${docBase}/references`); } catch (e) { replace(body, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
+      try { data = await api("GET", `${docBase}/references`); } catch (e) { replace(body, notice({ kind: "error" }, h("p", {}, e.message))); return; }
       if (selected !== null && !(data.chains || []).some((c) => c.chain_id === selected)) selected = null;
       draw();
       if (tab === "refs") paint();
@@ -1742,26 +1744,26 @@ export async function renderDocument(view, [docId], query) {
       const st = data.status || {};
       const chains = data.chains || [];
       const where = App.privacy();
-      body.appendChild(h("p", { class: "small", style: { margin: "0 0 6px" } }, "The AI reads the document three passages at a time and links “it”, “they” or “the study” to the name they stand for. Every mention it reports is checked against the text. It is a reading aid: the AI misses some references."));
+      body.appendChild(h("p", { class: "small dv-refs-lead" }, "The AI reads the document three passages at a time and links “it”, “they” or “the study” to the name they stand for. Every mention it reports is checked against the text. It is a reading aid: the AI misses some references."));
       const left = Math.max(0, (st.windows_total || 0) - (st.windows_read || 0));
-      body.appendChild(h("p", { class: "muted small", style: { margin: "0 0 8px" } },
+      body.appendChild(h("p", { class: "muted small dv-refs-note" },
         st.windows_read ? `The AI has read ${fmt.num(st.windows_read)} of ${plural(st.windows_total || 0, "stretch", "stretches")} of this document` : `Not followed yet: ${plural(st.windows_total || 0, "stretch", "stretches")} of three passages to read`,
         st.windows_failed ? `; ${fmt.num(st.windows_failed)} could not be read` : "", ".",
         where.where === "cloud" ? ` ${where.sent || "The passages are sent to the Claude API (cloud)."}` : ""));
       if (!running) {
-        const name = h("input", { class: "input input-sm", type: "text", placeholder: "a name used in the document", "aria-label": "Only for one name" });
-        const nameBtn = h("button", { class: "btn btn-sm", type: "button", onClick: (e) => { const v = name.value.trim(); if (!v) { name.focus(); return; } start(v, e.currentTarget); } }, "Follow this name");
+        const name = input({ sm: true, placeholder: "a name used in the document", "aria-label": "Only for one name" });
+        const nameBtn = button({ sm: true, onClick: (e) => { const v = name.value.trim(); if (!v) { name.focus(); return; } start(v, e.currentTarget); } }, "Follow this name");
         name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nameBtn.click(); } });
         body.appendChild(h("div", { class: "btn-row" },
-          left ? h("button", { class: "btn btn-sm" + (chains.length ? "" : " btn-primary"), type: "button", onClick: (e) => start(null, e.currentTarget) }, icon("link", { size: 13 }),
+          left ? button({ kind: chains.length ? "standard" : "main", sm: true, onClick: (e) => start(null, e.currentTarget) }, icon("link", { size: 13 }),
             st.windows_read ? `Go on where it stopped (${plural(left, "stretch", "stretches")} left)` : "Follow the references in this document") : h("span", { class: "it small" }, icon("circle-check", { size: 13 }), " The AI has read the whole document.")));
-        body.appendChild(h("details", { class: "fold" }, h("summary", {}, "Only for one name"), h("p", { class: "muted small", style: { margin: "4px 0 6px" } }, "Faster: the AI reads only the passages where the name occurs."), h("div", { class: "row dv-name-row" }, name, nameBtn)));
+        body.appendChild(fold({}, "Only for one name", h("p", { class: "muted small dv-names-fast" }, "Faster: the AI reads only the passages where the name occurs."), h("div", { class: "row dv-name-row" }, name, nameBtn)));
       }
       if (!chains.length) {
         if (st.windows_read) body.appendChild(h("p", { class: "muted small" }, left ? "No references found yet in the stretches read." : "The AI found no references to follow in this document."));
         return;
       }
-      body.appendChild(h("p", { class: "muted small", style: { margin: "10px 0 6px" } }, "Select a name in the text to see every later mention of the same thing, or pick a name here."));
+      body.appendChild(h("p", { class: "muted small dv-names-hint" }, "Select a name in the text to see every later mention of the same thing, or pick a name here."));
       const shown = showAll ? chains : chains.slice(0, 25);
       body.appendChild(h("ul", { class: "dv-chains" }, shown.map((ch) => {
         const on = selected === ch.chain_id;
@@ -1772,14 +1774,14 @@ export async function renderDocument(view, [docId], query) {
             h("span", { class: "muted small" }, `${plural(ch.size, "mention")}${ch.unnamed ? ` · ${ch.unnamed} without the name` : ""}`)));
         if (on) {
           const ms = after !== null ? ch.mentions.filter((x) => x.start >= after) : ch.mentions;
-          li.appendChild(h("p", { class: "muted small", style: { margin: "6px 0 2px" } }, after !== null ? `${plural(ms.length, "later mention")} (of ${ch.size}):` : "Its mentions, in order:"));
+          li.appendChild(h("p", { class: "muted small dv-mentions-head" }, after !== null ? `${plural(ms.length, "later mention")} (of ${ch.size}):` : "Its mentions, in order:"));
           li.appendChild(h("ol", { class: "dv-mentions" }, ms.slice(0, 80).map((x) => h("li", {},
-            h("button", { class: "link-btn", type: "button", onClick: () => jumpTo(x) }, x.is_named ? h("strong", {}, x.text) : x.text),
+            link({ kind: "jump", onClick: () => jumpTo(x) }, x.is_named ? h("strong", {}, x.text) : x.text),
             h("span", { class: "muted small" }, ` · ${x.location || ""}`)))));
         }
         return li;
       })));
-      if (chains.length > shown.length) body.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { showAll = true; draw(); } }, icon("chevron-down", { size: 13 }), `Show all ${chains.length} names`));
+      if (chains.length > shown.length) body.appendChild(button({ kind: "quiet", sm: true, onClick: () => { showAll = true; draw(); } }, icon("chevron-down", { size: 13 }), `Show all ${chains.length} names`));
     }
     // a selection in the text: its chain (by offsets, or by the same words), else offer to follow that name
     async function lookup(s) {
@@ -1796,8 +1798,8 @@ export async function renderDocument(view, [docId], query) {
         replace(selBox, h("p", { class: "dv-selnote" }, icon("link", { size: 13 }), ` “${shortTitle(s.text, 60)}” is part of `, h("strong", {}, ch.name), later.length ? `: ${plural(later.length, "later mention")}, marked in the text.` : ": no later mention."));
         return;
       }
-      const btn = h("button", { class: "btn btn-sm", type: "button", disabled: running, onClick: (e) => { clear(selBox); start(s.text, e.currentTarget); } }, icon("link", { size: 13 }), `Follow the references to “${shortTitle(s.text, 40)}”`);
-      replace(selBox, h("div", { class: "notice notice-info dv-selnote" }, icon("info"), h("div", {}, h("p", {}, `No reference found yet for “${shortTitle(s.text, 60)}”.`), h("div", { class: "btn-row", style: { marginTop: "6px" } }, btn))));
+      const btn = button({ sm: true, disabled: running, onClick: (e) => { clear(selBox); start(s.text, e.currentTarget); } }, icon("link", { size: 13 }), `Follow the references to “${shortTitle(s.text, 40)}”`);
+      replace(selBox, notice({ kind: "info", class: "dv-selnote" }, h("div", {}, h("p", {}, `No reference found yet for “${shortTitle(s.text, 60)}”.`), h("div", { class: "btn-row dv-lookup-actions" }, btn))));
     }
     load();
     return {
@@ -1813,18 +1815,18 @@ export async function renderDocument(view, [docId], query) {
   // ---- Search in this document (F1)
   function searchPanel() {
     const el = h("section", { class: "dv-panel", "aria-labelledby": "dv-search-h" });
-    const input = h("input", { class: "input", type: "search", id: "dv-q", placeholder: "Words to find in this document", value: query.find || "", autocomplete: "off" });
-    const mode = h("select", { class: "select input-sm", "aria-label": "How to match the words" }, [["any", "any of the words"], ["all", "all the words, in one passage"], ["phrase", "the exact phrase"]].map(([v, t]) => h("option", { value: v }, t)));
+    const qIn = input({ type: "search", id: "dv-q", placeholder: "Words to find in this document", value: query.find || "", autocomplete: "off" });
+    const mode = select({ sm: true, "aria-label": "How to match the words" }, [["any", "any of the words"], ["all", "all the words, in one passage"], ["phrase", "the exact phrase"]].map(([v, t]) => h("option", { value: v }, t)));
     const form = h("form", { class: "dv-search", role: "search", onSubmit: (e) => { e.preventDefault(); run(); } },
       h("label", { class: "visually-hidden", for: "dv-q" }, "Search in this document"),
-      h("div", { class: "row dv-search-row" }, input, h("button", { class: "btn btn-sm btn-primary", type: "submit" }, icon("search", { size: 13 }), "Search")), mode);
+      h("div", { class: "row dv-search-row" }, qIn, button({ kind: "main", sm: true, type: "submit" }, icon("search", { size: 13 }), "Search")), mode);
     const results = h("div", { "aria-live": "polite" });
     el.append(h("h2", { id: "dv-search-h", class: "dv-panel-title" }, "Search in this document"), form,
-      h("p", { class: "muted small", style: { margin: "6px 0 8px" } }, "Or click a word in the text to add it; Shift-click a later word to make a phrase."), results);
+      h("p", { class: "muted small dv-search-hint" }, "Or click a word in the text to add it; Shift-click a later word to make a phrase."), results);
     let res = null, cur = -1, lastPick = null, seq = 0;
-    mode.addEventListener("change", () => { if (input.value.trim()) run(); });
+    mode.addEventListener("change", () => { if (qIn.value.trim()) run(); });
     async function run(more) {
-      const q = input.value.trim();
+      const q = qIn.value.trim();
       keepUrl();
       if (!q) { res = null; cur = -1; clear(results); if (tab === "search") paint(); return; }
       const my = ++seq;
@@ -1851,9 +1853,9 @@ export async function renderDocument(view, [docId], query) {
       results.appendChild(h("div", { class: "row dv-hitnav" },
         h("strong", {}, `${plural(res.total, "hit")} in ${plural(res.passages, "passage")}`),
         h("span", { class: "grow" }),
-        h("button", { class: "btn btn-sm", type: "button", disabled: !lines.length, "aria-label": "Previous hit", onClick: () => go(cur <= 0 ? lines.length - 1 : cur - 1) }, icon("chevron-left", { size: 13 })),
+        button({ sm: true, disabled: !lines.length, "aria-label": "Previous hit", onClick: () => go(cur <= 0 ? lines.length - 1 : cur - 1) }, icon("chevron-left", { size: 13 })),
         h("span", { class: "small muted" }, cur >= 0 ? `${cur + 1} of ${fmt.num(lines.length)}` : ""),
-        h("button", { class: "btn btn-sm", type: "button", disabled: !lines.length, "aria-label": "Next hit", onClick: () => go(cur >= lines.length - 1 ? 0 : cur + 1) }, icon("chevron-right", { size: 13 }))));
+        button({ sm: true, disabled: !lines.length, "aria-label": "Next hit", onClick: () => go(cur >= lines.length - 1 ? 0 : cur + 1) }, icon("chevron-right", { size: 13 }))));
       results.appendChild(h("div", { class: "kwic-wrap dv-kwic" }, h("table", { class: "kwic" },
         h("caption", { class: "visually-hidden" }, `Hits for ${res.query} in this document`),
         h("tbody", {}, lines.map((l, i) => h("tr", { class: i === cur ? "dv-cur" : "" },
@@ -1861,11 +1863,11 @@ export async function renderDocument(view, [docId], query) {
           h("td", { class: "kw-node" }, h("button", { class: "dv-node", type: "button", title: `Go to ${l.location || "it"}`, onClick: () => go(i) }, h("mark", {}, l.node))),
           h("td", { class: "kw-right" }, l.right),
           h("td", { class: "kw-where" }, l.location || "")))))));
-      if (lines.length < res.total) results.appendChild(h("button", { class: "btn btn-sm btn-ghost", type: "button", style: { marginTop: "6px" }, onClick: () => run(true) }, icon("chevron-down", { size: 13 }), `Show more hits (${fmt.num(res.total - lines.length)} more)`));
-      results.appendChild(h("p", { class: "small", style: { marginTop: "8px" } }, h("a", { href: `#/search?q=${encodeURIComponent(res.query)}${mode.value !== "any" ? `&mode=${mode.value}` : ""}` }, icon("text-search", { size: 12 }), " Search the whole project for it")));
+      if (lines.length < res.total) results.appendChild(button({ kind: "quiet", sm: true, class: "dv-more-hits-btn", onClick: () => run(true) }, icon("chevron-down", { size: 13 }), `Show more hits (${fmt.num(res.total - lines.length)} more)`));
+      results.appendChild(h("p", { class: "small dv-search-note" }, h("a", { href: `#/search?q=${encodeURIComponent(res.query)}${mode.value !== "any" ? `&mode=${mode.value}` : ""}` }, icon("text-search", { size: 12 }), " Search the whole project for it")));
     }
     function addWord(w, shift) {
-      let v = input.value;
+      let v = qIn.value;
       if (shift && lastPick) {
         const s = Math.min(lastPick.start, w.start), e = Math.max(lastPick.end, w.end);
         const phrase = docSlice(s, e);
@@ -1873,22 +1875,22 @@ export async function renderDocument(view, [docId], query) {
           const add = `"${phrase.replace(/\s+/g, " ").replace(/"/g, "").trim()}"`;
           v = v.trimEnd().endsWith(lastPick.inBox) ? v.trimEnd().slice(0, v.trimEnd().length - lastPick.inBox.length) + add : `${v.trim()} ${add}`;
           lastPick = { start: s, end: e, inBox: add };
-          input.value = v.trim();
+          qIn.value = v.trim();
           run();
           return;
         }
       }
       if (!v.toLowerCase().split(/\s+/).includes(w.text.toLowerCase())) v = `${v.trim()} ${w.text}`;
       lastPick = { start: w.start, end: w.end, inBox: w.text };
-      input.value = v.trim();
+      qIn.value = v.trim();
       run();
     }
-    if (input.value.trim()) run();
+    if (qIn.value.trim()) run();
     return {
       el, addWord,
-      query: () => input.value.trim(),
-      searchFor(text) { input.value = text; lastPick = null; run(); },
-      show(fromUser) { if (fromUser) setTimeout(() => input.focus({ preventScroll: true }), 0); },
+      query: () => qIn.value.trim(),
+      searchFor(text) { qIn.value = text; lastPick = null; run(); },
+      show(fromUser) { if (fromUser) setTimeout(() => qIn.focus({ preventScroll: true }), 0); },
       decos: () => (res ? res.lines.map((l, i) => ({ start: l.start, end: l.end, cls: i === cur ? "dv-hit dv-hit-cur" : "dv-hit", mark: true })) : []),
     };
   }

@@ -148,12 +148,20 @@ def test_the_sidebar_card_and_the_settings_checklist():
 
 
 def test_the_card_stylesheet():
-    assert_sheet_after("/static/v0134.css", "/static/v0133.css")  # 0.13.5: tests/_static.py
-    css = (STATIC / "v0134.css").read_text()
+    # 0.17.0: reads the cascade (tests/_static.py), so it holds when the design guide moves the rules
+    from _static import SITE, all_css, css_blocks, index_html, MARKER, rule
+
+    assert index_html().split(MARKER, 1)[1].count('rel="stylesheet"') == 1 and SITE in index_html().split(MARKER, 1)[1]
+    mine = [d for _m, sels, d in css_blocks(all_css()) if any(".privacy-" in s for s in sels)]
+    assert len(mine) > 5
     # light and dark both work: the colour tokens of tokens.css only
-    assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", css)
-    assert ".privacy-wrap:hover .privacy-card" in css and ".privacy-wrap:focus-within .privacy-card" in css
-    assert ".privacy-quiet" in css and "@media (hover: none)" in css and "overflow-wrap: anywhere" in css
+    assert not any(re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", v) for d in mine for v in d.values())
+    css = all_css()
+    assert rule(".privacy-wrap:hover .privacy-card")["visibility"] == "visible"
+    assert rule(".privacy-wrap:focus-within .privacy-card")["opacity"] == "1"
+    assert rule(".privacy-wrap.privacy-quiet .privacy-card")["visibility"] == "hidden"
+    assert rule(".privacy-card", media="(hover: none)")["display"] == "none"
+    assert rule(".privacy-account strong")["overflow-wrap"] == "anywhere"
 
 
 def test_the_stand_in_reports_an_account(tmp_path, monkeypatch):

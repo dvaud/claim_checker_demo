@@ -7,7 +7,7 @@
 // Ollama (after a dialog that says how big the download is on this computer and how much room it needs), with its
 // progress and Stop, or starts the Ollama that is installed but not running. On Linux, Ollama's installer asks for the
 // password, so the button opens a terminal window running Ollama's own line.
-import { api, h, icon, replace, showError, watchJob, TERMINAL, appName, confirmDialog, dialog, copyLine } from "../lib.js";
+import { api, h, icon, replace, showError, watchJob, TERMINAL, appName, confirmDialog, dialog, copyLine, button, link, notice } from "../lib.js";
 
 const OLLAMA_SITE = "https://ollama.com/download";
 const LOOK_EVERY = 3000;
@@ -47,11 +47,11 @@ function getOllama(app) {
   const area = h("div", { class: "local-pull", "aria-live": "polite" });
   const others = "LM Studio, llama.cpp, Jan or vLLM work too: start one with a model loaded.";
   const manual = app.installed ? h("p", { class: "muted small" }, others) : h("p", { class: "muted small" }, "Prefer to do it yourself? ",
-    h("a", { href: app.manual || OLLAMA_SITE, target: "_blank", rel: "noopener" }, app.how === "terminal" ? "Ollama's instructions for Linux" : "Download Ollama's installer"),
+    link({ kind: "external", href: app.manual || OLLAMA_SITE }, app.how === "terminal" ? "Ollama's instructions for Linux" : "Download Ollama's installer"),
     ` and open it. ${others}`);
   let steps;
   if (app.installed) {
-    const btn = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("play", { size: 13 }), "Start Ollama");
+    const btn = button({ kind: "main", sm: true }, icon("play", { size: 13 }), "Start Ollama");
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       try {
@@ -63,7 +63,7 @@ function getOllama(app) {
     steps = [step(1, [h("strong", {}, "Ollama"), " is on this computer, but it is not running. ", btn]),
       step(2, ["Download a model here, with one button. No terminal needed."])];
   } else {
-    const btn = h("button", { class: "btn btn-sm btn-primary", type: "button" }, icon("download", { size: 13 }), "Install Ollama");
+    const btn = button({ kind: "main", sm: true }, icon("download", { size: 13 }), "Install Ollama");
     btn.addEventListener("click", () => installOllama(app, btn, area));
     steps = [step(1, ["Get ", h("strong", {}, "Ollama"), ", a free program that runs AI models on your own computer. ", btn]),
       step(2, app.how === "terminal" ? ["Its installer runs in a terminal window and asks for your password. ", appName(), " notices Ollama by itself."]
@@ -108,28 +108,28 @@ async function installOllama(app, btn, area) {
   const exact = (plan.size || {}).exact;
   const amount = sz ? `${exact ? "" : "about "}${size(sz)}` : "";
   const where = { windows: "Windows", mac: "macOS", linux: "Linux" }[plan.system] || "this computer";
-  const yourself = h("p", { class: "small muted" }, "Prefer to do it yourself? ", h("a", { href: plan.manual || OLLAMA_SITE, target: "_blank", rel: "noopener" }, plan.how === "terminal" ? "Ollama's instructions for Linux" : "Download Ollama's installer"), ` and open it. ${appName()} notices Ollama by itself.`);
+  const yourself = h("p", { class: "small muted" }, "Prefer to do it yourself? ", link({ kind: "external", href: plan.manual || OLLAMA_SITE }, plan.how === "terminal" ? "Ollama's instructions for Linux" : "Download Ollama's installer"), ` and open it. ${appName()} notices Ollama by itself.`);
   if (plan.free && plan.needs && plan.free < plan.needs) {
     await dialog({ title: "Not enough free disk space", actions: [{ text: "OK", value: false, primary: true }],
-      body: h("div", { class: "stack", style: { gap: "10px" } },
+      body: h("div", { class: "stack lm-dialog-body" },
         h("p", {}, `Ollama for ${where} is a download of ${amount}. Installing it needs about ${size(plan.needs)} of free disk space, and this computer has ${size(plan.free)} free.`),
         h("p", {}, "Make room, then press Install Ollama again."), yourself) });
     return;
   }
-  const facts = h("ul", { class: "small", style: { margin: 0, paddingLeft: "18px" } },
+  const facts = h("ul", { class: "small plain-steps" },
     amount ? h("li", {}, h("strong", {}, `Download: ${amount}`), ` (Ollama for ${where}, from ollama.com).`) : null,
     plan.needs ? h("li", {}, `Free disk space needed: about ${size(plan.needs)}${plan.free ? `; this computer has ${size(plan.free)} free` : ""}.`) : null,
     h("li", {}, "On a slow connection it takes a while. ", appName(), " keeps working meanwhile, and Stop ends the download."));
   const ok = await confirmDialog({
     title: "Install Ollama?", danger: false,
     confirmText: plan.how === "terminal" ? "Open the installer" : amount ? `Download ${amount} and install` : "Install Ollama",
-    message: h("div", { class: "stack", style: { gap: "10px" } },
+    message: h("div", { class: "stack lm-dialog-body" },
       plan.how === "terminal"
         ? h("p", {}, "Ollama is a free program that runs AI models on your own computer. On Linux its installer asks for your password, because it installs Ollama for everyone on this computer. ", appName(), " opens a terminal window running Ollama's own installer: type your password there.")
         : h("p", {}, "Ollama is a free program that runs AI models on your own computer. ", appName(), " downloads Ollama's installer from ollama.com, checks that it is signed by Ollama, and installs it ",
           plan.system === "mac" ? "in your Applications folder." : "in your user folder. It needs no administrator rights.", " Then it starts Ollama."),
       facts,
-      h("p", { class: "small" }, icon("shield", { size: 13 }), " None of your documents are sent."),
+      h("p", { class: "small" }, icon("house", { size: 13 }), " None of your documents are sent."),
       plan.how === "terminal" ? h("div", {}, h("p", { class: "small muted" }, "The line it runs:"), copyLine(plan.line, "Copy", "a terminal")) : null,
       yourself),
   });
@@ -152,14 +152,14 @@ function followInstall(job, area, btn) {
   if (btn) btn.hidden = true;
   const look = area.parentElement && area.parentElement.querySelector(".local-looking");
   if (look) look.hidden = true;   // it is being installed: not "looking for" it
-  const stop = h("button", { class: "btn btn-sm btn-ghost", type: "button" }, icon("stop", { size: 13 }), "Stop");
+  const stop = button({ kind: "quiet", sm: true }, icon("stop", { size: 13 }), "Stop");
   stop.addEventListener("click", async () => { stop.disabled = true; try { await api("POST", `/api/jobs/${job.id}/cancel`); } catch (e) { showError(e); stop.disabled = false; } });
   const label = h("strong", {}, "Starting the download…");
   const amount = h("span", { class: "muted small" });
-  const bar = h("span", { style: { width: "2%" } });
+  const bar = h("span", { class: "lm-start-bar" });
   const meter = h("div", { class: "progress-bar indeterminate", role: "progressbar", "aria-label": "Installing Ollama", "aria-valuemin": 0, "aria-valuemax": 100 }, bar);
-  replace(area, h("div", { class: "stack", style: { gap: "6px" } },
-    h("div", { class: "row", style: { justifyContent: "space-between" } }, h("span", { class: "it" }, h("span", { class: "running-dot", "aria-hidden": "true" }), label), stop),
+  replace(area, h("div", { class: "stack lm-progress" },
+    h("div", { class: "row lm-progress-head" }, h("span", { class: "it" }, h("span", { class: "running-dot", "aria-hidden": "true" }), label), stop),
     meter, amount));
   const w = watchJob(job.id, (j) => {
     if (area.isConnected) area.dataset.seen = "1";
@@ -178,15 +178,15 @@ function followInstall(job, area, btn) {
     if (j.state === "done") {
       const r = j.result || {};
       replace(area, r.running
-        ? h("div", { class: "notice notice-ok" }, icon("circle-check"), h("p", {}, "Ollama is installed and running. A moment, and the next step appears here."))
-        : h("div", { class: "notice" }, icon("info"), h("p", {}, "Ollama is installed, but it did not answer yet. Open it from ", r.path && /\.app$/.test(r.path) ? "Applications" : "the Start menu", ", and ", appName(), " notices it by itself.")));
+        ? notice({ kind: "done" }, h("p", {}, "Ollama is installed and running. A moment, and the next step appears here."))
+        : notice({ kind: "info" }, h("p", {}, "Ollama is installed, but it did not answer yet. Open it from ", r.path && /\.app$/.test(r.path) ? "Applications" : "the Start menu", ", and ", appName(), " notices it by itself.")));
       return;
     }
     if (btn) { btn.hidden = false; btn.disabled = false; }
     if (look) look.hidden = false;
     replace(area, j.state === "cancelled"
       ? h("p", { class: "muted small" }, "Stopped. Nothing was installed.")
-      : h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, j.error || "Ollama could not be installed.")));
+      : notice({ kind: "error" }, h("p", {}, j.error || "Ollama could not be installed.")));
   }).catch(showError);
 }
 
@@ -220,7 +220,7 @@ function watchFor(el, done, onFound) {
 function pullBox(ollama, chat, emb, opts) {
   const alsoEmb = chat && emb ? h("input", { type: "checkbox", id: "pull-embed", checked: true }) : null;
   const first = chat || emb;
-  const btn = h("button", { class: `btn ${chat ? "btn-primary" : ""}`, type: "button" }, icon("download", { size: 14 }), `Download ${first.name}`);
+  const btn = button({ kind: chat ? "main" : "standard" }, icon("download", { size: 14 }), `Download ${first.name}`);
   const area = h("div", { class: "local-pull", "aria-live": "polite" });
   const box = h("div", { class: "local-help" },
     chat ? h("p", {}, h("strong", {}, `Ollama ${ollama.version || ""} is running`.replace("  ", " ")), ", but it has no model yet. Download one:")
@@ -233,14 +233,14 @@ function pullBox(ollama, chat, emb, opts) {
   const follow = (job) => {
     btn.hidden = true;
     if (alsoEmb) alsoEmb.disabled = true;
-    const stop = h("button", { class: "btn btn-sm btn-ghost", type: "button" }, icon("stop", { size: 13 }), "Stop");
+    const stop = button({ kind: "quiet", sm: true }, icon("stop", { size: 13 }), "Stop");
     stop.addEventListener("click", async () => { stop.disabled = true; try { await api("POST", `/api/jobs/${job.id}/cancel`); } catch (e) { showError(e); stop.disabled = false; } });
     const label = h("strong", {}, "Starting the download…");
     const amount = h("span", { class: "muted small" });
-    const bar = h("span", { style: { width: "2%" } });
+    const bar = h("span", { class: "lm-start-bar" });
     const meter = h("div", { class: "progress-bar indeterminate", role: "progressbar", "aria-label": "Download", "aria-valuemin": 0, "aria-valuemax": 100 }, bar);
-    replace(area, h("div", { class: "stack", style: { gap: "6px" } },
-      h("div", { class: "row", style: { justifyContent: "space-between" } }, h("span", { class: "it" }, h("span", { class: "running-dot", "aria-hidden": "true" }), label), stop),
+    replace(area, h("div", { class: "stack lm-progress" },
+      h("div", { class: "row lm-progress-head" }, h("span", { class: "it" }, h("span", { class: "running-dot", "aria-hidden": "true" }), label), stop),
       meter, amount));
     const w = watchJob(job.id, (j) => {
       if (area.isConnected) area.dataset.seen = "1";
@@ -259,7 +259,7 @@ function pullBox(ollama, chat, emb, opts) {
       if (j.state === "done") {
         const r = j.result || {};
         const got = r.models || [];
-        replace(area, h("div", { class: "notice notice-ok" }, icon("circle-check"), h("p", {}, `Downloaded: ${got.join(" and ")}.`)));
+        replace(area, notice({ kind: "done" }, h("p", {}, `Downloaded: ${got.join(" and ")}.`)));
         const listed = (m) => (m && got.includes(m.name) ? (r.listed || {})[m.name] || m.name : "");
         if (opts.onReady) opts.onReady({ url: r.url || ollama.url, chat: listed(chat), embed: listed(emb), chosen: r.chosen || null });
         return;
@@ -269,7 +269,7 @@ function pullBox(ollama, chat, emb, opts) {
       btn.lastChild.textContent = `Download ${first.name} again`;
       replace(area, j.state === "cancelled"
         ? h("p", { class: "muted small" }, "Stopped. Ollama keeps what it has; the download goes on from there.")
-        : h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, j.error || "The download did not finish.")));
+        : notice({ kind: "error" }, h("p", {}, j.error || "The download did not finish.")));
     }).catch(showError);
   };
   btn.addEventListener("click", async () => {

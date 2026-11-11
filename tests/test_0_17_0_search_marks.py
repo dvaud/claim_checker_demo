@@ -69,8 +69,9 @@ def test_the_page_draws_the_marks_and_puts_the_title_first():
     assert "markedText(p.text, p.marks)" in js
     assert ".slice(0, 28)" not in js
     assert 'class: "kw-title"' in js and "aria-label" in js
-    css = (STATIC / "v07.css").read_text(encoding="utf-8")
-    assert "mark.kw-also" in css and "-webkit-line-clamp: 2" in css
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    assert rule("mark.kw-also") and rule(".kwic .kw-where .kw-title")["-webkit-line-clamp"] == "2"
 
 
 def test_one_visible_way_to_open_a_document_from_search():
@@ -80,5 +81,9 @@ def test_one_visible_way_to_open_a_document_from_search():
     assert js.count("Open the document at these words") == 2  # the title's tooltip and accessible name
     assert 'icon("flask", { size: 13 }), "Check"' in js
     assert "Open the document at this passage" in js  # search by meaning opens the same way
-    css = (STATIC / "v07.css").read_text(encoding="utf-8")
-    assert ".kw-title:focus-visible" in css and "var(--accent-text)" in css
+    from _static import all_css, rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    # 0.17.0 (design guide): the title is a title link (link({ kind: "title" })), accent at rest, underlined on hover
+    # and focus by that component
+    assert "link-title" in (STATIC / "lib.js").read_text(encoding="utf-8") and ".link-title:focus-visible" in all_css()
+    assert rule(".link-title")["color"] == "var(--accent-text)"

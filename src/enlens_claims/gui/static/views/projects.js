@@ -1,6 +1,6 @@
 // Projects: create, link an existing workspace folder, switch, remove.
 import { quickLookButton } from "./quicklook.js";
-import { App, api, h, icon, replace, append, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download } from "../lib.js";
+import { App, api, h, icon, replace, append, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download, button, downloadButton, card, input, tag, emptyState } from "../lib.js";
 import { projectZipLink } from "./result.js";
 import { FEATURES } from "../features.js";
 
@@ -8,8 +8,8 @@ import { FEATURES } from "../features.js";
 // the zip of "Move ENLENS to another computer" (every project and the settings); its projects keep their names.
 const MOVE_NAME = /^ENLENS - all projects and settings - .*\.zip$/i;
 export function importProjectDialog(opts = {}) {
-  const file = h("input", { type: "file", accept: ".zip,application/zip", class: "input", id: "import-zip" });
-  const name = h("input", { class: "input", type: "text", placeholder: "the name the project had", autocomplete: "off", maxlength: 60 });
+  const file = input({ type: "file", accept: ".zip,application/zip", id: "import-zip" });
+  const name = input({ placeholder: "the name the project had", autocomplete: "off", maxlength: 60 });
   const nameField = field("Project name", name, { help: "Proposed from the file name. If a project of that name exists already, you are asked for another." });
   nameField.hidden = !!opts.move;  // a zip of everything keeps the names its projects had
   const err = h("div", { class: "field-error", role: "alert" });
@@ -78,7 +78,7 @@ export function importProjectDialog(opts = {}) {
 const whose = (name) => (name === "you" ? "your" : `${name}’s`);
 
 export function bringInDialog(project) {
-  const file = h("input", { type: "file", accept: ".zip,application/zip", class: "input", id: "bring-in-zip" });
+  const file = input({ type: "file", accept: ".zip,application/zip", id: "bring-in-zip" });
   const err = h("div", { class: "field-error", role: "alert" });
   const status = h("div", { class: "muted small", "aria-live": "polite" });
   let anyway = false, report = null;
@@ -140,14 +140,14 @@ function reportDialog(r) {
 
 function togetherCard() {
   const s = App.state.settings || {};
-  const name = h("input", { class: "input", type: "text", value: s.your_name || "", placeholder: "e.g. Anna de Vries", maxlength: 60, autocomplete: "name", "aria-label": "Your name" });
-  const save = h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+  const name = input({ value: s.your_name || "", placeholder: "e.g. Anna de Vries", maxlength: 60, autocomplete: "name", "aria-label": "Your name" });
+  const save = button({ sm: true, onClick: async () => {
     try { await api("PUT", "/api/settings", { your_name: name.value }); await App.refresh(); toast(name.value.trim() ? `Colleagues see your work as ${name.value.trim()}’s.` : "Your name is taken away.", "ok", { small: true, ttl: 3500 }); } catch (e) { showError(e); }
   } }, "Save");
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save.click(); } });
   const now = h("div", { class: "tg-now", hidden: true });
-  const card = h("div", { class: "card card-plain together-card" },
-    h("h2", { style: { fontSize: "1.05rem" } }, icon("users", { size: 16 }), ` ${FEATURES.together.title}`),
+  const box = card({ as: "div", class: "together-card" },
+    h("h2", {}, icon("users", { size: 16 }), ` ${FEATURES.together.title}`),
     h("p", { class: "muted small" }, FEATURES.together.what),
     h("div", { class: "tg-name" }, h("label", { class: "small", for: "tg-your-name" }, "Your name"), Object.assign(name, { id: "tg-your-name" }), save,
       h("span", { class: "muted small" }, "Colleagues see your judgements under this name.")),
@@ -158,7 +158,7 @@ function togetherCard() {
     now);
   const project = App.project;
   // what this project has from colleagues; loaded again after a colleague's work is brought in
-  card.reload = () => !project ? null : api("GET", `/api/projects/${P(project)}/together`).then((t) => {
+  box.reload = () => !project ? null : api("GET", `/api/projects/${P(project)}/together`).then((t) => {
       replace(now);
       now.hidden = true;
       const last = (t.history || [])[0];
@@ -176,20 +176,20 @@ function togetherCard() {
           h("ul", {}, agree.map((a) => h("li", { title: "Cohen’s kappa corrects the agreement for what chance alone would give: 1 is perfect, 0 is chance." }, `You and ${a.name}: ${a.agreed} of ${a.both} ${a.both === 1 ? "excerpt" : "excerpts"} you both judged (${Math.round(a.rate * 100)}%)`, a.kappa !== null && a.kappa !== undefined ? `, Cohen’s kappa ${a.kappa.toFixed(2)}` : "")))) : null]);
       now.hidden = false;
     }).catch((e) => console.warn("Work together:", e.message));
-  card.reload();
-  return card;
+  box.reload();
+  return box;
 }
 
 // 0.10: every project and the settings in one zip, for another computer.
 function moveCard() {
-  const btn = h("button", { class: "btn btn-sm", type: "button", onClick: async () => {
+  const btn = downloadButton({ onClick: async () => {
     btn.disabled = true;
     toast("Packing every project… this can take a while for large projects.", "info", { small: true, ttl: 4000 });
     try { await download("/api/move.zip"); } catch (e) { showError(e); }
     btn.disabled = false;
-  } }, icon("download", { size: 13 }), "Download everything (.zip)");
-  return h("div", { class: "card card-plain move-card" },
-    h("h2", { style: { fontSize: "1.05rem" } }, icon("monitor", { size: 16 }), " Move ENLENS to another computer"),
+  } }, "Download everything (.zip)");
+  return card({ as: "div", class: "move-card" },
+    h("h2", {}, icon("monitor", { size: 16 }), " Move ENLENS to another computer"),
     h("p", { class: "muted small" }, "One file with every project (documents, results, your judgements and notes) and your settings. A saved Claude API key is left out: it stays on this computer. Projects used in place from another folder come along as copies."),
     h("ol", { class: "small move-steps" },
       h("li", {}, "Here: ", btn),
@@ -197,17 +197,17 @@ function moveCard() {
 }
 
 export function newProjectDialog() {
-  const input = h("input", { class: "input", type: "text", placeholder: "e.g. Green hydrogen Morocco", autocomplete: "off", maxlength: 60 });
+  const nameInput = input({ placeholder: "e.g. Green hydrogen Morocco", autocomplete: "off", maxlength: 60 });
   const err = h("div", { class: "field-error", role: "alert" });
   return dialog({
     title: "New project",
-    body: h("div", {}, h("p", { class: "muted" }, "A project is one set of documents and the hypotheses you check against them, for example one literature review."), field("Name", input), err),
+    body: h("div", {}, h("p", { class: "muted" }, "A project is one set of documents and the hypotheses you check against them, for example one literature review."), field("Name", nameInput), err),
     actions: [{ text: "Cancel", value: null }, {
       text: "Create", value: true, primary: true, id: "dlg-confirm",
       async onClick() {
         err.textContent = "";
         try {
-          const typed = input.value.trim();
+          const typed = nameInput.value.trim();
           const r = await api("POST", "/api/projects", { name: typed });
           await App.refresh();
           if (r.project.name !== typed) toast(`Saved as “${r.project.name}” (some characters can't be used in a project name). Now add your documents.`, "warn", { ttl: 9000 });
@@ -219,15 +219,15 @@ export function newProjectDialog() {
     }],
     onOpen(dlg) {
       const btn = dlg.querySelector("#dlg-confirm");
-      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); btn.click(); } });
-      input.focus();
+      nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); btn.click(); } });
+      nameInput.focus();
     },
   });
 }
 
 export function linkProjectDialog() {
-  const path = h("input", { class: "input input-mono", type: "text", placeholder: "/path/to/workspace (contains enlens.sqlite)", autocomplete: "off" });
-  const name = h("input", { class: "input", type: "text", placeholder: "defaults to the folder's name", maxlength: 60 });
+  const path = input({ mono: true, placeholder: "/path/to/workspace (contains enlens.sqlite)", autocomplete: "off" });
+  const name = input({ placeholder: "defaults to the folder's name", maxlength: 60 });
   const err = h("div", { class: "field-error", role: "alert" });
   return dialog({
     title: "Open an existing ENLENS project folder",
@@ -255,11 +255,11 @@ export function linkProjectDialog() {
 
 export async function renderProjects(view) {
   view.appendChild(pageHead("Projects", { sub: "Each project keeps its own documents, results and notes.", actions: [
-    h("button", { class: "btn btn-primary", type: "button", onClick: () => newProjectDialog() }, icon("plus", { size: 14 }), "New project"),
-    h("button", { class: "btn", type: "button", onClick: () => importProjectDialog() }, icon("upload", { size: 14 }), "Import a project (.zip)"),
-    h("button", { class: "btn", type: "button", onClick: () => linkProjectDialog() }, icon("link", { size: 14 }), "Open an existing ENLENS project folder"),
+    button({ kind: "main", onClick: () => newProjectDialog() }, icon("plus", { size: 14 }), "New project"),
+    button({ onClick: () => importProjectDialog() }, icon("upload", { size: 14 }), "Import a project (.zip)"),
+    button({ onClick: () => linkProjectDialog() }, icon("link", { size: 14 }), "Open an existing ENLENS project folder"),
     quickLookButton()] }));
-  view.appendChild(h("p", { class: "muted small", style: { margin: "-10px 0 14px" } }, "“Download as a zip” gives a project to a colleague or moves it to another computer: one file with the documents, the results, your judgements and notes. “Import a project” brings such a zip in as a new project; “Bring in a colleague’s work” merges it into the copy you have."));
+  view.appendChild(h("p", { class: "muted small pj-zip-note" }, "“Download as a zip” gives a project to a colleague or moves it to another computer: one file with the documents, the results, your judgements and notes. “Import a project” brings such a zip in as a new project; “Bring in a colleague’s work” merges it into the copy you have."));
   const list = h("div", { class: "stack" });
   view.appendChild(list);
   const together = (App.state.projects || []).some((p) => !p.temporary) ? togetherCard() : null;
@@ -268,23 +268,23 @@ export async function renderProjects(view) {
   const draw = () => {
     replace(list);
     const projects = App.state.projects || [];
-    if (!projects.length) { list.appendChild(h("div", { class: "empty" }, icon("folder", { size: 28 }), h("h3", {}, "No projects yet"), h("p", {}, "Create one to get started."))); return; }
+    if (!projects.length) { list.appendChild(emptyState("folder", "No projects yet", "Create one to get started.")); return; }
     for (const p of projects) {
       const current = p.name === App.project;
-      list.appendChild(h("div", { class: "card card-plain", style: current ? { borderColor: "var(--accent)" } : null },
-        h("div", { class: "row", style: { justifyContent: "space-between" } },
+      list.appendChild(card({ as: "div" },
+        h("div", { class: "row pj-row" },
           h("div", { class: "grow" },
-            h("div", { class: "it" }, icon(p.linked ? "link" : "folder", { size: 16 }), h("h2", { style: { fontSize: "1.05rem" } }, p.name), current ? h("span", { class: "chip chip-code" }, "current") : null, !p.ok ? h("span", { class: "warn-chip" }, icon("alert-triangle", { size: 12 }), "cannot be opened") : null),
-            h("div", { class: "muted small", style: { marginTop: "4px" } }, `${p.documents} ${p.documents === 1 ? "document" : "documents"} · ${p.hypotheses} ${p.hypotheses === 1 ? "result" : "results"}${p.linked ? " · folder used in place" : ""}${p.temporary ? ` · a quick look, moved to the trash on ${fmt.dateShort(new Date(p.temporary.expires_at * 1000).toISOString())} unless kept` : ""}`),
-            h("div", { class: "muted small mono", style: { marginTop: "2px", wordBreak: "break-all" } }, p.path)),
+            h("div", { class: "it" }, icon(p.linked ? "link" : "folder", { size: 16 }), h("h2", {}, p.name), current ? tag({ kind: "code" }, "current") : null, !p.ok ? tag({ kind: "attention" }, "cannot be opened") : null),
+            h("div", { class: "muted small pj-counts" }, `${p.documents} ${p.documents === 1 ? "document" : "documents"} · ${p.hypotheses} ${p.hypotheses === 1 ? "result" : "results"}${p.linked ? " · folder used in place" : ""}${p.temporary ? ` · a quick look, moved to the trash on ${fmt.dateShort(new Date(p.temporary.expires_at * 1000).toISOString())} unless kept` : ""}`),
+            h("div", { class: "muted small mono pj-path" }, p.path)),
           h("div", { class: "btn-row" },
-            !current ? h("button", { class: "btn btn-sm", type: "button", onClick: async () => { try { await api("PUT", "/api/settings", { project: p.name }); await App.refresh(); toast(`Project: ${p.name}`, "ok", { ttl: 2000 }); draw(); } catch (e) { showError(e); } } }, "Switch to") : null,
+            !current ? button({ sm: true, onClick: async () => { try { await api("PUT", "/api/settings", { project: p.name }); await App.refresh(); toast(`Project: ${p.name}`, "ok", { ttl: 2000 }); draw(); } catch (e) { showError(e); } } }, "Switch to") : null,
             p.ok ? projectZipLink(p.name, { text: "Download as a zip" }) : null,
-            p.ok && !p.temporary ? h("button", { class: "btn btn-sm", type: "button", title: "Merge the zip of a colleague’s copy of this project into yours", onClick: () => bringInDialog(p.name).then(() => { draw(); if (together) together.reload(); }) }, icon("users", { size: 13 }), "Bring in a colleague’s work") : null,
-            p.ok && p.documents ? h("button", { class: "btn btn-sm", type: "button", title: "One SQLite file in the FlexiConc layout of the Cross-Doc SDG Explorer: the documents, their sentences with codes, reference chains, themes and (if set up) embeddings",
+            p.ok && !p.temporary ? button({ sm: true, title: "Merge the zip of a colleague’s copy of this project into yours", onClick: () => bringInDialog(p.name).then(() => { draw(); if (together) together.reload(); }) }, icon("users", { size: 13 }), "Bring in a colleague’s work") : null,
+            p.ok && p.documents ? downloadButton({ title: "One SQLite file in the FlexiConc layout of the Cross-Doc SDG Explorer: the documents, their sentences with codes, reference chains, themes and (if set up) embeddings",
               onClick: (e) => { const b = e.currentTarget; b.disabled = true; toast("Preparing the FlexiConc file…", "info", { small: true, ttl: 3000 }); download(`/api/projects/${P(p.name)}/flexiconc.sqlite`).catch(showError).finally(() => { b.disabled = false; }); } },
-              icon("download", { size: 13 }), "For FlexiConc / Cross-Doc") : null,
-            h("button", { class: "btn btn-sm btn-outline-danger", type: "button", onClick: async () => {
+              "For FlexiConc / Cross-Doc") : null,
+            button({ kind: "danger", sm: true, onClick: async () => {
               const ok = await confirmDialog({ title: `Remove project “${p.name}”?`, message: p.linked ? "The folder is no longer used by the app and is left untouched on disk." : "The project (documents, results, notes) is moved to a trash folder inside the app's data folder.", confirmText: "Remove", typeToConfirm: p.name });
               if (!ok) return;
               try { const r = await api("DELETE", `/api/projects/${P(p.name)}`, { confirm: p.name }); await App.refresh(); toast(r.result === "unlinked" ? "Project removed: its folder is left as it was." : "Project removed: it is in the trash folder inside the data folder.", "ok"); if (!App.state.projects.length) navigate("#/setup"); else draw(); } catch (e) { showError(e); }

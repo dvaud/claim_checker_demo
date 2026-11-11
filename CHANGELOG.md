@@ -1,5 +1,130 @@
 # Changelog
 
+## 0.17.0rc5 (November 2026): one look on every page
+
+The fifth release candidate of 0.17 brings the design guide that rc1 promised. ENLENS had grown sixteen stylesheets,
+one per release, and each page drew its buttons, links, tags and cards its own way. A grey button could mean "press
+me" on one page and "chosen" on the next. Amber meant a warning, an AI in the cloud or a key document, and a green
+circle meant both a judgement and a count. Now [`docs/DESIGN.md`](https://github.com/dvaud/claim_checker_demo/blob/main/docs/DESIGN.md)
+says which element to use for what, every page is built from those elements, and a new reference page in the app
+(`#/design`) draws each of them in the guide's order. **Nothing here changes results**: no check, reading or code is
+made differently, only how the pages look.
+
+This is a first version of the guide. An independent review found it clearly better than rc4 but not yet finished,
+and 0.17.0 refines it (see *Not yet done*). It is a release candidate: only copies with *Try new versions early*
+(Settings) get it.
+
+### Changed
+
+- **One look for each kind of element, in light and dark.** Every quiet button has an edge. Names in lists are teal
+  links. Filters, *Cards | Table*, the speed, the judging options, *Count by* and a document's side panels are all one
+  kind of choice, and the chosen one now shows. Before, several of these never showed which was on. View tabs mark
+  the current tab with a line under it.
+- **Colours keep one meaning each.** Amber with the warning triangle means only that something needs you: an
+  unfinished set-up, no AI that can run, or Demo mode. The sidebar's AI line is grey otherwise. Information and done
+  notices are grey. Only a judgement is a coloured pill, so the answers' counts read as grey words (*3 support ·
+  1 contradict*). The evidence map's key document is a grey tag with a star.
+- **A dashed edge means only "not counted, or nothing yet"**: a judgement that does not count, an empty frame, the
+  drop zone, a proposed link, a quote waiting to be confirmed.
+- **A check's result page.** *Next to review* is the page's main button, with an arrow. *In context*, *Details* and
+  *Judge differently…* are toggles with a chevron that turns, and each button is as wide as its words. Counts say what
+  they count (*4 passages*). *Partly reviewed* reads *You · partly*. The notes and download cards take the card's own
+  head.
+- **The research log, on its page and in the panel.** An entry ENLENS wrote is itself the link to its item, so there
+  is no separate *Open*. Your own entry about an item names it after *About:*. The filters show which one is on, and
+  the panel's head has its icon.
+- **One type scale.** Every font size and weight comes from a short scale. Document titles and a concept's title are
+  in the serif.
+- **Labels.** The AI line says *A model on this computer* (was *Private*) and *Claude, through an API key* (was
+  *Cloud AI*). Without any AI it says *No AI model set up yet · Exploring works; checking needs one*. Demo mode says
+  *A stand-in, not an AI: results are not findings*. The Overview's *Add documents* is now *Add more on the Documents
+  page*, under the title. Settings shows its version under the title.
+- **Set-up's steps** are numbers and words, with the current step in teal, instead of boxes that looked pressable.
+  A step still to do shows the triangle.
+
+### Fixed
+
+- *Settings* was cut to *Settin…* in the sidebar while an update waited.
+- Search did not fit a 390-pixel window. It now fits at 390 and 320 pixels.
+- Cards with a box between them touched: the spacing rule meant for them never applied.
+- The new codebook's *Kept* choice had lost its look.
+- *Judge differently…* lost its padding on every excerpt card.
+- A card inside a card drew a second box. The Notes page's note padding pushed the result page's notes card 8 pixels
+  out of line.
+- `tools/dev_server.py --update` failed on a release candidate.
+
+### For developers
+
+- The sixteen per-release stylesheets are folded into `tokens.css`, `app.css`, `components.css` (one numbered section
+  per component, as in `docs/DESIGN.md`) and `views.css` (each page's placement), with `site.css` last. About 160 dead
+  rules are gone. `docs/DEVELOPING.md` gains a table, *Where new CSS goes*.
+- `lib.js` makes each component from one table of classes. New helpers: `listRow()`, `listGroup()`, `shareState()`,
+  `absentDocument()`, `noticeList()` and `optionCards()`, plus small and folding cards and small folds. 0.18 builds its
+  team pages from them.
+- **A fork's `site.css` may need changes** (the promise in `docs/DESIGN.md`, 9.4: changed values and removed
+  classes are named here).
+  - **Tokens added:** `--attention`, `--attention-soft`, `--attention-line`, `--danger`, `--danger-soft`,
+    `--danger-line`, `--on-danger`, `--quote-ok`, `--quote-partly`, `--quote-bad`, `--quote-none`, `--radius-xs`,
+    `--radius-ctl`, `--radius-lg`, `--radius-pill`, `--fs-display`, `--fs-title`, `--fs-title-sm`, `--fs-lead`,
+    `--fs-section`, `--fs-body`, `--fs-doc`, `--fs-small`, `--fs-xs`, `--fs-label`, `--fw-regular`, `--fw-strong`,
+    `--space-1` to `--space-6`, `--drawer-w` and `--paper`. `--logdrawer-w` is now set in `tokens.css` (as
+    `var(--drawer-w)`).
+  - **Values changed:** light `--muted` #736e64 → #6b665c. `--sidebar-w` 248px → 264px, the width everyone already
+    saw. Font sizes moved to the nearest step of the scale, and weights 500 → 400 and 550/650/700 → 600.
+  - **Classes removed:** `.link-btn`, `.danger-link`, `.btn-lg`, `.seg-on`, `.chip-btn`, `.seg-pick`, `.seg-choice`,
+    `.so-seg`, `.nav-ai`, `.nav-ai-uses`, `.nav-ai-optional`, `.nav-legend`, `.badge-accent`, `.badge-warn`,
+    `.badge-provisional`, `.badge-job`, `.status-prefix`, `.chip-weak`, `.chip-counted`, `.chip-yours`, `.chip-scope`,
+    `.chip-second`, `.chip-agrees`, `.chip-disagrees`, `.chip-flag`, `.chip-wait-you`, `.chip-term`, `.cert*`,
+    `.new-badge`, `.term`, `.access-option*`, `.rc-*`, `.cb-start-opt`, `.note-pick-item`, `.card-plain`,
+    `.card-verdict` (and its `.v-*` edges), `.person-mark-partly`, `.basis*`, `.bc-sup`, `.bc-part`, `.bc-ref`,
+    `.ev-words`, `.map-key-doc` and `.option-card-text`.
+  - **Classes renamed:** `.ps-item`, `.ps-sep` → `.menu-item`, `.menu-sep`. `.logdrawer*` → `.drawer`,
+    `.drawer-head`, `.drawer-title`, `.drawer-body`, `.drawer-section`, `.drawer-foot`, `.drawer-btn`.
+    `body.logdrawer-open` → `body[data-drawer="open"]`. `.logdrawer-entry*` → the log's own `.log-entries`.
+    `.th-l*`/`.pf-l*` → `.heat-l1` to `.heat-l4`. `details.fold.small` → `.fold-sm`. The `.note-card` look →
+    `.card.card-sm`. `.log-day` → `.list-head`. `.finder-row.is-active` → `[aria-selected]`. `.jobs*`, `.job-row` →
+    `.work-*`.
+  - **Classes that lost their own look** and now take their component's: `.access-badge`, `.route-card`,
+    `.version-tag`, `.was-mark`, `.cb-more`, `.privacy-local`, `-cloud`, `-none` and `-plan`, `.queue-notice` (now a
+    notice), `.answer`, `.part-card`, `.dl-links` and `.judge-opt(s)`.
+  - **Classes added:** `.link-title`, `.link-back`, `.link-next`, `.link-external`, `.link-jump`, `.btn-toggle`,
+    `.btn-opens`, `.icon-btn-sm`, `.seg-sm`, `.option-card*`, `.search-field`, `.chip-count`, `.person-mark*`,
+    `.notice-body`, `.notice-list`, `.menu`, `.menu-item-danger`, `.work-state`, `.ai-where`, `.with-ai`,
+    `.title-display`, `.compare*`, `.list-row*`, `.list-group`, `.list-rows`, `.share-state`, `.doc-absent*`,
+    `.card-sm`, `details.card`. A new icon: `file-x`.
+- About 230 inline margins moved into `views.css`. The only inline styles left are values computed at run time.
+
+### Not yet done
+
+- The result page's AI actions (*Read more excerpts*, *Get a second opinion*, *Ask a stronger model*) don't carry
+  the *Uses the AI* mark yet.
+- A few icons with a fixed meaning are also used for "done".
+- The sidebar's work box cuts long lines ("2 tasks wait for Clau…").
+- About 220 one-use spacing classes in `views.css` still wait to become fewer.
+- A few sentences in `docs/DESIGN.md` are not yet true on screen.
+- Not seen on screen, only checked in the code:
+  - a concept's page and a theme's page;
+  - the codebook editor's *More* menu;
+  - Bibliography with a Zotero library;
+  - a stalled work box.
+- Hover and keyboard focus were checked on `#/design`, the panel and some pages, not on every page. Some pages'
+  spacing moved by up to 2 pixels when margins snapped to the scale.
+- The manual's pictures still show the older screens.
+- Three choices are left to the owner:
+  - title links in the accent colour alone, or also underlined;
+  - *Next to review* as the main button;
+  - the word *You* on a person's mark.
+
+### Tests
+
+- `tests/test_0_17_0_design.py` (new): guards for the guide. Pages place components and never restyle them. Type
+  comes only from the scale. Removed classes stay gone. Inline styles hold only values computed at run time. Every
+  next-step link has an address. A button's width is never fixed below its words. A helper a script imports is never
+  used as an object.
+- Some 35 older test files read the stylesheet cascade instead of sheets by name, or follow a changed look on
+  purpose. Each says why in a comment.
+- Full suite on macOS with every extra: 1,128 passed, 17 skipped.
+
 ## 0.17.0rc4 (November 2026): more small fixes from use
 
 The fourth release candidate of 0.17, with three more of the small fixes on the roadmap (M1, M2 and M4): the research

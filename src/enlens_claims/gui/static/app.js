@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY } from "./lib.js";
+import { App, api, h, icon, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice } from "./lib.js";
 import { FEATURES, SECTIONS, PLACES, aiTag } from "./features.js";
 import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
 import localExtensions from "./extensions.js";
@@ -21,6 +21,7 @@ import { renderNotes } from "./views/notes.js";
 import { renderCodebooks, renderCodebook } from "./views/codebooks.js";
 import { renderHypotheses } from "./views/hypotheses.js";
 import { openFinder } from "./finder.js";
+import { renderDesign } from "./views/design.js";   // 0.17.0: the design guide's live reference, unlisted
 import { initLogDrawer } from "./views/logdrawer.js";
 
 // [pattern, the sidebar place it lights (features.js PLACES, or an add-on's feature key), render]. 0.17.0: seven places;
@@ -51,6 +52,7 @@ const ROUTES = [
   [/^\/settings(?:\/([^/]+))?$/, "settings", renderSettings],
   [/^\/setup$/, "", renderSetup],
   [/^\/projects$/, "", renderProjects],
+  [/^\/design$/, "", renderDesign],                       // not in the sidebar or Find: docs/DESIGN.md points to it
 ];
 
 // The window's title: the view's own name when the address is one of a place's views, else the place's name.
@@ -61,7 +63,7 @@ function pageTitle(nav, pathPart) {
     const v = place.views.find(([, , href]) => href === `#${pathPart}`);
     return v && v[1] !== place.title ? `${v[1]} · ${place.title}` : place.title;
   }
-  return { "/setup": "Set up", "/projects": "Projects" }[pathPart] || (FEATURES[nav] && FEATURES[nav].title) || "";
+  return { "/setup": "Set up", "/projects": "Projects", "/design": "Design reference" }[pathPart] || (FEATURES[nav] && FEATURES[nav].title) || "";
 }
 
 let cleanup = null;
@@ -74,7 +76,7 @@ async function route() {
   const query = parseQuery(qs);
   const view = document.getElementById("view");
   if (!App.state) {
-    try { await App.refresh(); } catch (e) { replace(view, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
+    try { await App.refresh(); } catch (e) { replace(view, notice({ kind: "error" }, h("p", {}, e.message))); return; }
   }
   // First run: no project yet -> the setup pages.
   const noProject = !App.state.projects.length;
@@ -102,7 +104,7 @@ async function route() {
   replace(view, page);
   view.setAttribute("aria-busy", "true");
   if (!render) {
-    replace(page, h("div", { class: "empty" }, icon("search-x", { size: 28 }), h("h3", {}, "No such page"), h("p", {}, "The address does not match a page of the app."), h("a", { class: "btn", href: "#/overview" }, "Go to the overview")));
+    replace(page, h("div", { class: "empty" }, icon("search-x", { size: 28 }), h("h3", {}, "No such page"), h("p", {}, "The address does not match a page of the app."), link({ kind: "back", href: "#/overview" }, "Go to the overview")));
     view.setAttribute("aria-busy", "false");
     return;
   }
@@ -114,7 +116,7 @@ async function route() {
   } catch (e) {
     if (seq !== renderSeq) return;
     console.error(e);
-    replace(page, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("div", {}, h("p", {}, e.message || String(e)),
+    replace(page, notice({ kind: "error" }, h("div", {}, h("p", {}, e.message || String(e)),
       e.kind === "backend" ? h("a", { href: "#/settings" }, "Open Settings") : null)));
   }
   view.setAttribute("aria-busy", "false");
@@ -148,9 +150,9 @@ function renderProjectSwitch() {
     icon("folder", { size: 16 }),
     h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"), h("span", { class: "ps-name-text" }, current ? current.name : "No project")),
     icon("chevron-down", { size: 14 }));
-  const menu = h("div", { class: "ps-menu", role: "menu" });
+  const menu = h("div", { class: "menu-list ps-menu", role: "menu" });
   for (const p of projects) {
-    const item = h("button", { class: "ps-item", type: "button", role: "menuitem", "aria-current": p.name === App.project ? "true" : null,
+    const item = h("button", { class: "menu-item", type: "button", role: "menuitem", "aria-current": p.name === App.project ? "true" : null,
       onClick: () => switchProject(p.name) },
       icon(p.linked ? "link" : "folder", { size: 14 }),
       h("span", { class: "ps-text" }, p.name),
@@ -158,9 +160,9 @@ function renderProjectSwitch() {
     if (!p.ok) item.title = "This project could not be opened.";
     menu.appendChild(item);
   }
-  if (projects.length) menu.appendChild(h("div", { class: "ps-sep" }));
-  menu.appendChild(h("button", { class: "ps-item", type: "button", role: "menuitem", onClick: () => { details.open = false; newProjectDialog(); } }, icon("plus", { size: 14 }), h("span", { class: "ps-text" }, "New project…")));
-  menu.appendChild(h("a", { class: "ps-item", href: "#/projects", role: "menuitem" }, icon("sliders", { size: 14 }), h("span", { class: "ps-text" }, "Manage projects")));
+  if (projects.length) menu.appendChild(h("div", { class: "menu-sep", role: "separator" }));
+  menu.appendChild(h("button", { class: "menu-item", type: "button", role: "menuitem", onClick: () => { details.open = false; newProjectDialog(); } }, icon("plus", { size: 14 }), h("span", { class: "ps-text" }, "New project…")));
+  menu.appendChild(h("a", { class: "menu-item", href: "#/projects", role: "menuitem" }, icon("sliders", { size: 14 }), h("span", { class: "ps-text" }, "Manage projects")));
   details.append(summary, menu);
   replace(box, details);
   details.addEventListener("keydown", (e) => { if (e.key === "Escape") { details.open = false; summary.focus(); } });
@@ -190,9 +192,12 @@ function renderPrivacy() {
   const p = App.privacy();
   const plan = App.settings().backend === "claude_code";
   const card = h("div", { class: "privacy-card", id: "privacy-card", role: "tooltip" });
-  const a = h("a", { class: `privacy privacy-${p.where}${plan ? " privacy-plan" : ""}`, href: "#/settings", "aria-describedby": "privacy-card" },
-    icon(p.icon, { size: 16 }),
-    h("div", {}, h("strong", {}, p.label), h("span", { class: "privacy-sub" }, p.short || p.plain)));
+  // 0.17.0 (design guide): an AI chosen in Settings that cannot run yet (an Ollama without a model, the Claude API
+  // without a key), and Demo mode, take the attention look: the triangle, amber
+  const unset = p.where !== "none" && !App.modelConfigured();
+  const a = h("a", { class: `privacy privacy-${p.where}${unset || p.where === "none" ? " privacy-setup" : ""}`, href: unset ? "#/settings/model" : "#/settings", "aria-describedby": "privacy-card" },
+    icon(unset || p.where === "none" ? "alert-triangle" : p.icon, { size: 16 }),
+    h("div", {}, h("strong", {}, unset ? "No AI model set up yet" : p.label), h("span", { class: "privacy-sub" }, unset ? "Exploring works; checking needs one" : p.short || p.plain)));
   const wrap = h("div", { class: "privacy-wrap" }, a, card);
   const fill = () => replace(card,
     plan ? accountPart(claudeSeenNow()) : null,
@@ -204,7 +209,11 @@ function renderPrivacy() {
     // 0.17.0: not ready yet (the Overview's AI box said so, with a button): the line itself says what to do
     const sub = a.querySelector(".privacy-sub");
     const ask = () => claudeStatus().then((st) => {
-      if (st && st.ready === false && !st.unknown) { sub.textContent = st.found ? "Finish the set-up" : "Set up Claude Code"; a.href = "#/settings/model"; a.classList.add("privacy-setup"); }
+      if (st && st.ready === false && !st.unknown) {
+        // set-up not finished: the attention look, the triangle in place of the cloud (docs/DESIGN.md 5.2)
+        sub.textContent = st.found ? "Finish the set-up" : "Set up Claude Code"; a.href = "#/settings/model"; a.classList.add("privacy-setup");
+        a.firstElementChild.replaceWith(icon("alert-triangle", { size: 16 }));
+      }
       if (card.isConnected) fill();
     }).catch(() => {
       if (!claudeSeenNow()) { rememberClaude({ unknown: true }); fill(); }
@@ -333,15 +342,13 @@ async function drawStatus() {
         h("span", { class: "work-sub" }, h("span", { class: "work-sub-text" }, w.sub), who));
       let act = null;
       if (w.act === "start") {
-        act = h("button", { class: "btn btn-sm btn-primary work-act", type: "button", onClick: async () => {
+        act = button({ kind: "main", sm: true, class: "work-act", onClick: async () => {
           act.disabled = true;
           try { await startClaudeNow(App.project); toast("Claude Code started. You can keep working; the results appear as they come in.", "ok"); }
           catch (e) { showError(e); }
           act.disabled = false; renderStatus();
         } }, icon("play", { size: 12 }), "Start");
-      } else if (w.act === "open") {
-        act = h("a", { class: "btn btn-sm work-act", href: w.href }, "Open");
-      }
+      }   // 0.17.0 (design guide): no "Open" button: the box's words are the link to where the work shows
       box.className = `work-box work-${w.kind}`;
       replace(box, main, act);
     }
@@ -387,7 +394,7 @@ function findInit() {
 function quitInit() {
   const btn = document.getElementById("quit-btn");
   if (!btn || !App.state || !App.state.can_quit) return;
-  replace(btn, icon("power", { size: 15 }), h("span", {}, "Quit"));
+  replace(btn, icon("power", { size: 13 }), h("span", {}, "Quit"));
   btn.title = `Quit ${appName()} (asks first)`;
   btn.hidden = !!(Updates.info && Updates.info.available);   // 0.17.0: an update takes Quit's place
   btn.addEventListener("click", () => quitApp());
@@ -420,8 +427,8 @@ function showUpdate(btn, info) {
   if (quit) quit.hidden = true;   // 0.17.0: the update takes Quit's place, the same size; Quit is in Settings › Technical
   const to = "Update";
   const rc = info.candidate ? "release candidate " : "";
-  replace(btn, icon("arrow-up", { size: 15 }), h("span", {}, to));
-  btn.classList.add("update-ready");
+  replace(btn, icon("arrow-up", { size: 13 }), h("span", {}, to));
+  btn.className = "btn btn-primary btn-sm update-ready";   // an update waits: the one thing to do here, the main kind
   btn.setAttribute("aria-label", info.latest ? `Update to ${info.latest}` : `Update ${appName()}`);
   btn.title = info.on_disk ? `${appName()} ${info.latest} is installed: restart to use it`
     : info.latest ? `${appName()} ${rc}${info.latest} is ready (you have ${info.version})`
@@ -445,9 +452,9 @@ function updatePopup(info) {
         // 0.15: what a candidate is, said where it is offered
         info.candidate ? ` A release candidate is a try-out of the next version: use it on a project you do not share with colleagues.` : null),
       h("div", { class: "update-popup-actions" },
-        h("button", { class: "btn btn-sm btn-primary", type: "button", onClick: () => { t.remove(); Updates.install(); } }, "Update and restart"),
-        h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: later }, "Later"))),
-    h("button", { class: "icon-btn", type: "button", "aria-label": "Later", onClick: later }, icon("x")));
+        button({ kind: "main", sm: true, onClick: () => { t.remove(); Updates.install(); } }, "Update and restart"),
+        button({ kind: "quiet", sm: true, onClick: later }, "Later"))),
+    iconButton({ icon: "x", label: "Later", onClick: later }));
   box.appendChild(t);
 }
 
@@ -571,10 +578,10 @@ function renderUpdateBanner() {
   const how = st.can_restart ? "Restart it to use the new version."
     : st.can_quit ? `Choose Quit ${appName()}, then open ${appName()} again${st.launcher ? " from its icon" : ""}.`
     : "Stop it and start it again.";
-  replace(box, h("div", { class: "notice notice-info update-banner", role: "status" }, icon("refresh"),
+  replace(box, notice({ kind: "info", icon: "refresh", class: "update-banner", role: "status" },
     h("div", {}, h("p", {}, h("strong", {}, `${appName()} ${now} is installed, but ${st.version} is still running.`), ` ${how}`)),
-    st.can_restart ? h("button", { class: "btn btn-sm", type: "button", onclick: () => restartApp(now) }, icon("refresh", { size: 13 }), "Restart now")
-    : st.can_quit ? h("button", { class: "btn btn-sm", type: "button", onclick: () => quitApp(`${appName()} ${now} starts when you open it again. `) }, icon("power", { size: 13 }), `Quit ${appName()}`) : null));
+    st.can_restart ? button({ sm: true, onClick: () => restartApp(now) }, icon("refresh", { size: 13 }), "Restart now")
+    : st.can_quit ? button({ sm: true, onClick: () => quitApp(`${appName()} ${now} starts when you open it again. `) }, icon("power", { size: 13 }), `Quit ${appName()}`) : null));
 }
 
 function closeDrawer() {
@@ -688,9 +695,9 @@ function connectionInit() {
   const box = document.getElementById("stopped-banner");
   const draw = () => {
     if (!Connection.down) { clear(box); return; }
-    replace(box, h("div", { class: "notice notice-error stopped-banner", role: "alert" }, icon("alert-circle"),
+    replace(box, notice({ kind: "error", class: "stopped-banner" },
       h("div", {}, h("p", {}, h("strong", {}, `${appName()} has stopped answering.`), " Start it again the way you started it before, then reload this page. Nothing you see below is up to date."),
-        h("button", { class: "btn btn-sm", type: "button", onClick: () => location.reload() }, icon("refresh", { size: 13 }), "Reload this page"))));
+        button({ sm: true, onClick: () => location.reload() }, icon("refresh", { size: 13 }), "Reload this page"))));
   };
   window.addEventListener("enlens-connection", draw);
   // a quiet look every few seconds while it is down, so the banner goes by itself when the app is back
@@ -711,7 +718,7 @@ async function whatsNewInit() {
     h("div", { class: "release-note-head" },
       problem ? icon("alert-triangle", { size: 15 }) : null,
       h("p", { class: "release-note-title" }, problem ? note.title : `${note.version}: ${note.title}`),
-      h("button", { class: "icon-btn release-note-close", type: "button", "aria-label": "Close", onClick: close }, icon("x", { size: 14 }))),
+      iconButton({ icon: "x", size: 14, label: "Close", class: "release-note-close", onClick: close })),
     note.subtitle ? h("p", { class: "release-note-sub" }, note.subtitle) : null,
     h("ul", { class: "release-note-list" }, ...note.points.map((t) => h("li", {}, t))));
   document.addEventListener("keydown", onKey);
@@ -732,7 +739,7 @@ async function boot() {
   try {
     await App.refresh();
   } catch (e) {
-    replace(document.getElementById("view"), h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message)));
+    replace(document.getElementById("view"), notice({ kind: "error" }, h("p", {}, e.message)));
     return;
   }
   applyBrand();

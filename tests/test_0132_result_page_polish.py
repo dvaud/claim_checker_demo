@@ -46,8 +46,9 @@ console.log(JSON.stringify(out));""", tmp_path)
     # only where a paragraph starts, never when the line opens with the quote itself, and drawn above its paragraph
     assert "const paraStart = (i) => i > 0 || a === 0" in JS and "t.nodeType !== 3" in JS
     assert 'h("span", { class: "runin" }, m[1])' in JS
-    css = (STATIC / "v012.css").read_text()
-    assert re.search(r"\.result \.ev \.passage \.runin \{ display: block;", css)
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rule moves
+
+    assert rule(".result .ev .passage .runin")["display"] == "block"
 
 
 def test_an_uncounted_card_says_not_counted_then_its_certainty():

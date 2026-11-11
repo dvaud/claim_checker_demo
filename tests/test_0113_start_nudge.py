@@ -67,11 +67,13 @@ def test_the_page_nudges_and_follow_ups_carry_the_button():
     nudge = lib[lib.index("function nudge(b, hint)"):lib.index("function watchIdle")]
     assert 'b.classList.add("sc-nudge")' in nudge and "replace(box" not in nudge
     # its styles: a pulse, and a still ring with reduced motion
-    index = (STATIC / "index.html").read_text()
-    assert "/static/v0113.css" in index
-    css = (STATIC / "v0113.css").read_text()
-    assert "@keyframes sc-nudge" in css and "prefers-reduced-motion" in css and "animation: none" in css
-    assert "1.6s" in css and "NUDGE_PULSE = 1600" in lib  # the pulse and the phase the page keeps in step
+    # 0.17.0: reads the cascade (tests/_static.py rule()), not the release's sheet
+    from _static import all_css, rule
+
+    assert "@keyframes sc-nudge" in all_css()
+    # 0.17.0 (design guide): the nudge is a state of the button component (components.css, 4.1), not of one page
+    assert rule(".btn.sc-nudge", media="(prefers-reduced-motion: reduce)")["animation"] == "none"
+    assert "1.6s" in rule(".btn.sc-nudge")["animation"] and "NUDGE_PULSE = 1600" in lib  # the pulse and the phase the page keeps in step
     # a follow-up on a result (a stronger model, a second opinion, reading again) that waits for Claude Code
     progress = (STATIC / "views" / "progress.js").read_text()
     mini = progress[progress.index("export class MiniJob"):]

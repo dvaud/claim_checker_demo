@@ -1,0 +1,938 @@
+/* ENLENS: the components, one section each, numbered as in docs/DESIGN.md. A component's whole look (every
+   variant, size and state) is in its section and nowhere else; pages only place components (views.css). */
+
+/* ==== 4.1 Buttons */
+/* Something that does. Every button has an edge at rest (the edge of every field), so it never reads as a link.
+   Kinds: standard (.btn) · main (.btn-primary: one per page, card or dialog) · quiet (.btn-ghost: lesser actions in
+   rows) · danger (.btn-outline-danger: removes; opens the dialog that confirms) · confirm (.btn-danger: only the
+   confirming button of that dialog). One size step: .btn-sm. Made by button(), downloadButton(), fileButton(). */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .45em;
+  padding: .5rem .9rem; border: 1px solid var(--border-strong); border-radius: var(--radius-ctl);
+  background: var(--surface); color: var(--text); font: inherit; font-weight: var(--fw-regular); line-height: 1.2;
+  text-decoration: none; white-space: nowrap; cursor: pointer;
+}
+.btn:hover { background: var(--surface-2); border-color: var(--muted); color: var(--text); }
+.btn:active { transform: translateY(.5px); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; transform: none; }
+.btn[aria-busy="true"] { cursor: progress; }
+.btn[aria-busy="true"] > .icon:first-child { animation: spin 1.1s linear infinite; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: var(--fw-strong); }
+.btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
+.btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text-2); }
+.btn-ghost:hover { background: var(--surface-3); border-color: var(--muted); color: var(--text); }
+.btn-outline-danger { background: transparent; border-color: var(--danger-line); color: var(--danger); }
+.btn-outline-danger:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); font-weight: var(--fw-strong); }
+.btn-danger:hover { background: var(--danger); border-color: var(--danger); color: var(--on-danger); filter: brightness(.92); }
+.btn-sm { padding: .32rem .65rem; font-size: var(--fs-small); }
+/* a toggle: a chevron after the words turns while the panel it opens is open */
+.btn-toggle .btn-chevron { transition: transform .15s; }
+.btn-toggle[aria-expanded="true"] .btn-chevron { transform: rotate(180deg); }
+/* opens something beside the page (the drawer's button): soft teal while it is open */
+.btn-opens[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+/* a long label wraps inside its card instead of running out of it */
+.btn-wrap { white-space: normal; text-align: left; max-width: 100%; height: auto; }
+/* a button that waits for you (Start Claude Code with work waiting) pulses; a still ring with reduced motion */
+.btn.sc-nudge { animation: sc-nudge 1.6s ease-out infinite; }
+@keyframes sc-nudge {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 65%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn.sc-nudge { animation: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent); }
+}
+@media (max-width: 420px) {
+  .btn { padding: .45rem .7rem; }
+  .btn-sm { padding: .32rem .6rem; }
+}
+
+/* ==== 4.2 Icon buttons */
+/* An action shown by its icon alone (close, copy, theme, help, remove a word): no edge, its icon makes it a control;
+   its name is its aria-label and its tooltip. 32 px; .icon-btn-sm 24 px, for dense rows and the help mark only.
+   Made by iconButton(). */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--text-2); cursor: pointer;
+}
+.icon-btn:hover { background: var(--surface-3); color: var(--text); }
+.icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+.icon-btn-sm { width: 24px; height: 24px; border-radius: var(--radius-sm); color: var(--muted); }
+.icon-btn-sm:hover, .icon-btn-sm[aria-expanded="true"] { color: var(--accent-text); }
+@media (pointer: coarse) {
+  .icon-btn-sm { width: 32px; height: 32px; }
+}
+
+/* ==== 4.3 Links */
+/* Something that takes you somewhere. The plain link is the base `a` (app.css): accent words, underlined. Made by
+   link(): .link-title (the name of an item in a list: accent words, underlined on hover; .serif for the research's
+   own words) · .link-back (above a page title) · .link-next (the one way on, to the page where the work is done) ·
+   .link-external (opens outside the app) · .link-jump (a move to another place on this page: a button drawn as a
+   link, because it moves and changes nothing). */
+.link-title { color: var(--accent-text); text-decoration: none; overflow-wrap: anywhere; }
+.link-title:hover, .link-title:focus-visible { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+.link-back { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-small); }
+.link-next { display: inline-flex; align-items: center; gap: 6px; font-weight: var(--fw-strong); }
+.link-next .icon, .link-external .icon { flex: none; }
+.link-external { display: inline-flex; align-items: center; gap: 4px; }
+.link-jump {
+  display: inline; padding: 0; border: 0; background: none; font: inherit; color: var(--accent-text); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px; text-align: left;
+}
+.link-jump:hover { color: var(--accent-strong); }
+.link-jump > .icon { margin-right: 4px; }
+a > .icon:first-child { margin-right: 3px; }
+
+/* ==== 4.4 The AI mark and the AI line */
+/* The AI mark (aiTag(), features.js): the chip and one of Uses the AI · AI on request · No AI; grey, no box, never a
+   pill or a judgement colour. In a sidebar group label it takes the label's size. The AI line (aiWhere()): where text
+   goes, the cloud (Claude) or the house (this computer) and one sentence, once per card, at its foot. .with-ai keeps a
+   button and its mark together. */
+.ai-tag { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: var(--fs-small); font-weight: var(--fw-regular); white-space: nowrap; }
+.nav-group .ai-tag { font-size: var(--fs-label); letter-spacing: 0; text-transform: none; }
+.feature-eyebrow { display: inline-flex; flex-wrap: wrap; align-items: center; white-space: nowrap; }
+.fe-section { color: var(--muted); font-size: var(--fs-small); font-weight: var(--fw-regular); }
+/* the separator ends the first part, so a line that wraps on a phone never begins with "·" */
+.feature-eyebrow .fe-section::after { content: "·"; margin: 0 8px; }
+@media (max-width: 600px) {
+  .feature-eyebrow { white-space: normal; }
+}
+.ai-where { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: var(--text-2); font-size: var(--fs-small); line-height: 1.45; }
+.ai-where > .icon { flex: none; margin-top: 3px; color: var(--muted); }
+.ai-where.ai-where-attention, .ai-where.ai-where-attention > .icon { color: var(--attention); }
+.with-ai { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 10px; }
+
+/* ==== 4.5 View tabs */
+/* Other views of this place, each with its address (viewTabs(), features.js; Settings' tabs). Words with an icon on
+   a rule; the current view: accent words and an accent line on the rule (aria-current="page"). No counts. A tab is a
+   link; a drawer's tabs, which have no address, are buttons with the same look. */
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 0 0 20px; padding: 0; border-bottom: 1px solid var(--border); }
+.settings-tabs button { border: 0; background: none; font: inherit; cursor: pointer; }
+.settings-tabs a, .settings-tabs button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px 9px; margin-bottom: -1px;
+  border-bottom: 2px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-2); text-decoration: none;
+}
+.settings-tabs a:hover, .settings-tabs button:hover { color: var(--text); background: var(--surface-3); }
+.settings-tabs a[aria-current="page"], .settings-tabs button[aria-current="page"] { color: var(--accent-text); border-bottom-color: var(--accent); font-weight: var(--fw-strong); background: none; }
+.view-tabs { margin-top: -6px; }
+
+/* ==== 4.6 Choices */
+/* One of a few values shown in place; the content follows it (a filter of a list, Cards | Table, a speed, This page |
+   All). Separate small boxes; the chosen one soft teal with a teal edge (aria-checked in a radiogroup, aria-pressed for
+   a filter), never by a class. A filter's count after its words. Made by choice(). */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius-ctl); background: var(--surface); color: var(--text-2); font: inherit; font-size: var(--fs-small);
+  line-height: 1.3; white-space: nowrap; cursor: pointer;
+}
+.seg-btn:hover { border-color: var(--muted); color: var(--text); }
+.seg-btn[aria-checked="true"], .seg-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: var(--fw-strong); }
+.seg-btn:disabled { opacity: .5; cursor: not-allowed; }
+.seg-btn .count { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: var(--fw-regular); }
+.seg-btn[aria-checked="true"] .count, .seg-btn[aria-pressed="true"] .count { color: inherit; }
+.seg-btn > .icon { flex: none; }
+.seg-sm { gap: 4px; }
+.seg-sm .seg-btn { min-height: 24px; padding: 2px 10px; font-size: var(--fs-xs); }
+
+/* ==== 4.7 Option cards */
+/* A choice whose options each need a sentence (which AI reads the documents, who may read a document, how to start a
+   codebook, which note to use). Cards in a grid: an icon, a title, one line; the chosen card soft teal with a 2 px teal
+   edge. Made by optionCards(); pages whose options hold a real radio input use the same class on the label. */
+.option-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.option-card {
+  position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 10px 12px; text-align: left;
+  border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text);
+  font: inherit; cursor: pointer;
+}
+.option-card:hover { border-color: var(--muted); }
+.option-card[aria-checked="true"], .option-card:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.option-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.option-card:disabled, .option-card[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.option-card > input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+.option-card-head { display: flex; align-items: center; gap: 8px; }
+.option-card-head > .icon { flex: none; color: var(--text-2); }
+.option-card-head > .chip { margin-left: auto; }
+.option-card-title { font-weight: var(--fw-strong); }
+.option-card-sub { color: var(--text-2); font-size: var(--fs-small); line-height: 1.4; }
+.option-card-foot { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--muted); font-size: var(--fs-small); }
+
+/* ==== 4.8 Form fields */
+/* Where you type or pick: the card's white, a strong edge, 8 px corners; the label above (field()), help under it.
+   input(), select(), textarea() (hyp: the serif box a hypothesis is written in), searchField(), switchControl(),
+   rangeControl(). Disabled: grey ground, muted words. Error: aria-invalid and a red line under it. */
+.input, .select, .textarea {
+  width: 100%; padding: .5rem .7rem; border: 1px solid var(--border-strong); border-radius: var(--radius-ctl);
+  background: var(--surface); color: var(--text); font: inherit;
+}
+.input:focus, .select:focus, .textarea:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: var(--focus); }
+.input::placeholder, .textarea::placeholder { color: var(--muted); opacity: 1; }
+.input:disabled, .select:disabled, .textarea:disabled { background: var(--surface-2); border-color: var(--border); color: var(--muted); cursor: not-allowed; }
+.input[aria-invalid="true"], .select[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--danger); }
+.textarea { min-height: 5.2em; line-height: 1.5; resize: vertical; }
+.textarea-hyp { min-height: 4.2em; padding: .8rem 1rem; font-family: var(--font-serif); font-size: var(--fs-lead); line-height: 1.45; }
+/* the same box holding a list, one hypothesis per line: a smaller size */
+.hyp-compose.is-list .textarea-hyp { font-size: var(--fs-section); line-height: 1.5; }
+.select { appearance: auto; }
+/* a small field in a row of controls: as wide as its content, never wider than its place (a select's longest option) */
+.input-sm, .select-sm { width: auto; max-width: 100%; min-width: 0; padding: .32rem .55rem; font-size: var(--fs-small); }
+.input-mono { font-family: var(--font-mono); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.search-field { position: relative; display: block; min-width: 0; }
+.search-field > .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.search-field > .input { padding-left: 32px; }
+.field { display: flex; flex-direction: column; gap: .3rem; margin: 0 0 .9rem; }
+.field-label { font-size: var(--fs-small); font-weight: var(--fw-strong); }
+.field-help { color: var(--muted); font-size: var(--fs-small); line-height: 1.4; }
+.field-inline { display: flex; align-items: center; gap: .5rem; }
+.field-inline .field-label { font-weight: var(--fw-regular); }
+.field-error { color: var(--danger); font-size: var(--fs-small); }
+.switch-field { margin: 0 0 .8rem; }
+.switch { display: inline-flex; align-items: center; gap: .6rem; cursor: pointer; }
+.switch-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.switch-track { position: relative; flex: none; width: 36px; height: 20px; border-radius: var(--radius-pill); background: var(--border-strong); transition: background .15s; }
+.switch-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--surface); box-shadow: var(--shadow); transition: transform .15s;
+}
+.switch-input:checked + .switch-track { background: var(--accent); }
+.switch-input:checked + .switch-track::after { transform: translateX(16px); }
+.switch-input:focus-visible + .switch-track { outline: 2px solid var(--focus); outline-offset: 2px; }
+.switch-input:disabled + .switch-track { opacity: .5; }
+.switch-label { font-weight: var(--fw-regular); }
+.range { width: 100%; accent-color: var(--accent); }
+.range-head { display: flex; justify-content: space-between; align-items: baseline; }
+.range-out { margin-left: 10px; color: var(--text-2); font-family: var(--font-mono); font-size: var(--fs-small); white-space: nowrap; }
+.range-ends { display: flex; justify-content: space-between; margin-top: -2px; color: var(--muted); font-size: var(--fs-xs); }
+@media (max-width: 420px) {
+  .textarea-hyp { font-size: var(--fs-lead); }
+}
+
+/* ==== 4.9 Judgement badges */
+/* What the evidence says: an answer or the grade of one excerpt. A pill (the only pills in the app) in the judgement's
+   soft colour, its words in the strong colour, a circle-family icon (STATUS_ICON, icons.js). "Only uncertain evidence"
+   is grey, so amber keeps one meaning. Not counted: no fill, a dashed edge in its colour. Made by statusBadge(),
+   gradeBadge(); states of work are work states (4.21), never pills. */
+.badge {
+  display: inline-flex; align-items: center; gap: .35em; padding: .14em .6em .14em .45em; border: 1px solid transparent;
+  border-radius: var(--radius-pill); background: var(--none-soft); color: var(--none); font-size: var(--fs-small);
+  font-weight: var(--fw-strong); line-height: 1.4; white-space: nowrap;
+}
+.badge > .icon { flex: none; }
+.badge-lg { align-items: flex-start; padding: .3em .85em .3em .6em; font-size: var(--fs-doc); line-height: 1.3; white-space: normal; }
+.badge-lg > .icon { margin-top: .15em; }
+.status-supported, .grade-supports { background: var(--ok-soft); color: var(--ok); }
+.status-partially_supported, .grade-partially_supports { background: var(--partly-soft); color: var(--partly); }
+.status-contradicted, .grade-refutes { background: var(--bad-soft); color: var(--bad); }
+.status-contested { background: var(--mixed-soft); color: var(--mixed); }
+.status-uncertain { background: var(--surface-3); color: var(--text-2); }
+.status-unsupported, .status-no_passages, .grade-none { background: var(--none-soft); color: var(--none); }
+.badge-weak { background: transparent; border-style: dashed; border-color: currentColor; }
+
+/* ==== 4.10 Tags and counts */
+/* A fact about an item (a code, a kind, new, who judged it, how certain, a document's AI setting): a small grey
+   rectangle, never pressed. .chip-code: a code, its code in 600. .warn-chip: a fact that needs you (amber, the
+   triangle). .chip-count: a count beside a name. A tag that opens its explanation (.was-mark) is a tag on a button.
+   Made by tag(), codeChip(). */
+.chip {
+  display: inline-flex; align-items: center; gap: .35em; max-width: 100%; padding: .1em .55em;
+  border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-2);
+  font-size: var(--fs-small); font-weight: var(--fw-regular); line-height: 1.45;
+}
+.chip > .icon { flex: none; }
+.chip-code strong { font-weight: var(--fw-strong); color: var(--text); }
+.chip-code .chip-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-count { padding: 0 .45em; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.chip.mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.warn-chip {
+  display: inline-flex; align-items: flex-start; gap: 4px; max-width: 100%; padding: .1em .5em; border-radius: var(--radius-sm);
+  background: var(--attention-soft); color: var(--attention); font-size: var(--fs-small); line-height: 1.4;
+}
+.warn-chip > .icon { flex: none; margin-top: 3px; }
+/* a person mark: who did it (personMark(), reviewedMark()): the person icon, "You" or initials, then a role or
+   "partly" after a dot, in the tag's secondary words */
+.person-mark { color: var(--text); }
+.person-mark-role { color: var(--text-2); }
+.person-mark-role::before { content: "·"; margin-right: .35em; }
+/* a tag on a button: it opens its explanation (popNote) */
+button.chip { font: inherit; font-size: var(--fs-small); cursor: help; }
+button.chip:hover, button.chip[aria-expanded="true"] { color: var(--text); border-color: var(--border-strong); }
+.was-wrap { position: relative; }
+.was-wrap .pop { left: auto; right: 0; max-width: min(30em, 86vw); }
+@media (max-width: 720px) {
+  .was-wrap .pop { right: auto; left: 0; max-width: 80vw; }
+}
+
+/* ==== 4.11 Cards */
+/* One thing, or one task, held together: the card's white, a 1 px edge, 10 px corners, flat. Its head: a Section
+   title and at most a help mark and one action. A card holds at most one box (--surface-2), never a card.
+   Made by card(). */
+.card { padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.card-head h2, .card-head h3 { margin: 0; font-size: var(--fs-section); }
+.card-title { margin: 0 0 10px; font-size: var(--fs-section); }
+.card.section { margin: 18px 0; }
+:not(.stack) > .card + .card { margin-top: 16px; }
+/* a card never holds a card: one placed inside another draws no box of its own */
+.card .card { padding: 0; border: 0; background: none; }
+/* a card that folds (card({ as: "details" })): its summary is the card's title line, in 600, with the fold's chevron */
+details.card > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: var(--fw-strong); list-style: none; cursor: pointer; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before {
+  content: ""; flex: none; width: 7px; height: 7px; margin: 0 4px 0 2px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg); transition: transform .15s;
+}
+details.card[open] > summary::before { transform: rotate(45deg); }
+details.card[open] > summary { margin-bottom: 10px; }
+details.card > summary .muted { font-weight: var(--fw-regular); }
+/* the small card: one of many in a list (a note) */
+.card-sm { padding: 10px 12px; border-radius: var(--radius-ctl); }
+@media (max-width: 860px) {
+  .card { padding: 14px; }
+}
+
+/* ==== 4.12 Notices */
+/* Something to know before going on, that stays while it is true. Four tones: info (neutral) · done (neutral, a tick:
+   a state that stays true) · attention (amber, the triangle: needs you) · error (red, the alert circle). Never green:
+   green is "supported". At most one action or one link after its words. Made by notice(). */
+.notice {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-ctl); background: var(--surface-2); color: var(--text); font-size: var(--fs-small);
+}
+.notice > .icon { flex: none; margin-top: 3px; color: var(--text-2); }
+.notice-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.notice p { margin: 0; }
+.notice a:not(.btn) { color: inherit; }
+.notice-ok > .icon { color: var(--text-2); }
+.notice-warn { border-color: var(--attention-line); background: var(--attention-soft); }
+.notice-warn > .icon { color: var(--attention); }
+.notice-error { border-color: var(--danger-line); background: var(--danger-soft); }
+.notice-error > .icon { color: var(--danger); }
+
+/* ==== 4.13 Empty states */
+/* Nothing here yet, and the one step that fills it: a dashed frame, a 28 px icon, a title, a sentence or two, then one
+   main button (the work is done here) or one next-step link (it is done on another page). Made by emptyState(). */
+.empty { padding: 40px 20px; border: 1px dashed var(--border-strong); border-radius: var(--radius); color: var(--muted); text-align: center; }
+.empty h3 { margin: 10px 0 4px; color: var(--text); font-size: var(--fs-section); }
+.empty p { max-width: 42em; margin: 0 auto 12px; }
+
+/* ==== 4.14 Page heads */
+/* Where you are and what the page is for: the eyebrow (the section · the AI mark), the title, one line under it, then
+   the view tabs. At most one action at the right, always an action. Made by pageHead(); a result page's title is its
+   hypothesis in the display serif, with a back link instead of the eyebrow. */
+.page-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
+.page-head-main { flex: 1 1 320px; min-width: 0; }
+.page-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.page-head-actions:has(> .dl-links) { flex-direction: column; align-items: flex-end; }
+.eyebrow { margin: 0 0 .4rem; color: var(--muted); font-size: var(--fs-small); font-weight: var(--fw-regular); }
+.page-sub { max-width: 46em; margin: .35rem 0 0; color: var(--muted); }
+/* the Display style: a page whose title is the research's own words (a hypothesis, a document's title) */
+.title-display { font-family: var(--font-serif); font-size: var(--fs-display); font-weight: var(--fw-regular); line-height: 1.3; letter-spacing: 0; }
+@media (max-width: 860px) {
+  .title-display { font-size: var(--fs-title-sm); }
+}
+/* downloads: the word and one small quiet button per file (downloadLinks()) */
+.dl-links { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-small); }
+.dl-label { margin-right: 2px; }
+@media (max-width: 600px) {
+  .page-head-actions:has(> .dl-links) { align-items: flex-start; }
+}
+
+/* ==== 4.15 Toasts */
+/* Something just happened (saved, copied, could not be done): bottom right, the card's white, the large shadow, an
+   icon in its meaning's colour (a tick for done), a close icon button; at most one link or one small button. Error
+   toasts keep the technical message behind a fold. Made by toast(), showError(). The release note after an update
+   is a quieter toast that waits to be closed. */
+.toasts { position: fixed; right: 16px; bottom: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: min(360px, calc(100vw - 32px)); }
+.toast {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 10px 10px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-lg); font-size: var(--fs-small); animation: toast-in .2s ease-out;
+}
+.toast > .icon { flex: none; margin-top: 3px; }
+.toast-small { padding: 6px 8px 6px 12px; font-size: var(--fs-small); }
+.toast-body { flex: 1; }
+.toast-info > .icon { color: var(--accent); }
+.toast-ok > .icon { color: var(--accent); }
+.toast-warn > .icon { color: var(--attention); }
+.toast-error { border-color: var(--danger-line); }
+.toast-error > .icon { color: var(--danger); }
+.toast-link { display: inline-block; margin-top: 4px; font-weight: var(--fw-strong); }
+.toast-btn { margin-top: 6px; }
+.toast-out { opacity: 0; transition: opacity .3s; }
+.toast-detail { margin-top: 4px; }
+.toast-detail .mono { margin-top: 4px; overflow-wrap: anywhere; }
+/* the Update pop-up: stays until it is answered */
+.update-popup { border-color: var(--accent); }
+.update-popup-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (max-width: 860px) {
+  .toasts { right: 8px; left: 8px; bottom: 8px; max-width: none; }
+}
+/* the note of what is new after an update: small, muted, closed by x or Escape */
+.release-note {
+  position: fixed; right: 16px; bottom: 16px; z-index: 80; width: 300px; max-width: calc(100vw - 32px); padding: 10px 12px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow);
+  color: var(--muted); font-size: var(--fs-xs); line-height: 1.4; animation: release-note-in .4s ease-out;
+}
+.release-note-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.release-note-title { flex: 1; margin: 0; color: var(--text-2); font-size: var(--fs-small); font-weight: var(--fw-strong); }
+.release-note-close { flex: none; margin: -3px -5px 0 0; }
+.release-note-sub { margin: 2px 0 6px; font-style: italic; }
+.release-note-list { display: flex; flex-direction: column; gap: 3px; margin: 0; padding-left: 16px; }
+/* an update on Windows that did not finish */
+.release-note-problem { border-color: var(--attention-line); }
+.release-note-problem .release-note-head > .icon { flex: none; margin-top: 1px; color: var(--attention); }
+@keyframes release-note-in { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 480px) {
+  .release-note { left: 16px; right: 16px; width: auto; }
+}
+
+/* ==== 4.16 Dialogs */
+/* Decide this now: the native <dialog>, 14 px corners, the large shadow, a dimmed page; title and close button, body,
+   actions at the bottom right (Cancel quiet, then the main or the confirming danger button). Made by dialog(),
+   confirmDialog(). */
+.dialog { width: min(520px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); }
+.dialog-wide { width: min(760px, calc(100vw - 32px)); }
+.dialog::backdrop { background: color-mix(in srgb, var(--text) 45%, transparent); backdrop-filter: blur(2px); }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px 8px; }
+.dialog-head h2 { font-size: var(--fs-section); }
+.dialog-body { max-height: 70vh; padding: 4px 20px 12px; overflow: auto; }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 10px 20px 18px; }
+
+/* ==== 4.17 Menus */
+/* More actions for one thing, or a list to pick from (the projects): a floating box under its button, rows of an icon
+   and a verb; the current row soft teal; a dangerous row red, last, after a line. Its button is a small quiet button
+   (More, or the current value and a chevron). Made by menu(); the project switch builds the same rows. */
+.menu { position: relative; display: inline-block; }
+.menu > summary { list-style: none; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-list {
+  display: flex; flex-direction: column; gap: 2px; min-width: 220px; padding: 4px; border: 1px solid var(--border);
+  border-radius: var(--radius-ctl); background: var(--surface); box-shadow: var(--shadow-lg);
+}
+.menu > .menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; }
+.menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text); font: inherit; font-size: var(--fs-small); text-align: left; text-decoration: none; cursor: pointer;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); color: var(--text); }
+.menu-item[aria-current="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.menu-item-danger, .menu-item-danger:hover { color: var(--danger); }
+.menu-item:disabled { opacity: .5; cursor: not-allowed; }
+.menu-sep { margin: 4px 0; border-top: 1px solid var(--border); }
+
+/* ==== 4.18 Help notes and defined terms */
+/* "More about this": a small (?) icon button (helpMark()) whose note opens on hover, focus or click; a defined term
+   (dotted underline, .defined) opens the same note (popNote()). The note: a small card under its trigger. */
+.help-mark { vertical-align: middle; margin-left: 2px; }
+.defined { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.defined[aria-expanded="true"] { text-decoration-style: solid; }
+.defined-wrap { position: relative; display: inline; }
+h2 .defined-wrap { font-size: var(--fs-small); font-weight: var(--fw-regular); }
+.pop {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: max-content; max-width: min(34em, 86vw); padding: 8px 11px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-ctl); background: var(--surface); box-shadow: var(--shadow);
+  color: var(--text); font-size: var(--fs-small); font-weight: var(--fw-regular); line-height: 1.45; white-space: normal;
+}
+.pop-wide { max-width: min(40em, 86vw); }
+
+/* ==== 4.19 The drawer */
+/* Your own working space beside any page (the research log), opened by one button in the same spot on every page
+   (drawer(), drawerButton(), setDrawerOpen()). From 1,000 px wide (at any zoom) it is a column of its own, --drawer-w
+   wide, flush right, and the page keeps its margin beside it; from 861 to 999 px it lies over the page's right side;
+   under 861 px it rises from the bottom as a sheet. Head: the title (or the tabs), one control, the close button;
+   body: sections, the last one scrolls; foot: one link to the whole view. */
+.drawer-btn { position: fixed; top: 12px; right: 20px; z-index: 35; }
+.drawer {
+  z-index: 45; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border);
+  background: var(--surface); color: var(--text);
+}
+.drawer[hidden] { display: none; }
+.drawer-head { display: flex; align-items: center; gap: 6px; padding: 12px 8px 12px 10px; border-bottom: 1px solid var(--border); }
+.drawer-head > .icon { flex: none; color: var(--text-2); }
+.drawer-title { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-body); white-space: nowrap; }
+.drawer-head > .seg { flex: none; flex-wrap: nowrap; }
+.drawer-tabs { flex: 1; margin: -12px 0 -13px; border-bottom: 0; }
+.drawer-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.drawer-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.drawer-section[hidden] { display: none; }
+.drawer-section:last-child { flex: 1; min-height: 0; padding-top: 8px; overflow-y: auto; overscroll-behavior: contain; border-bottom: 0; }
+.drawer-section.log-new { margin: 0; }
+/* in the drawer's narrow column the page an entry is kept with takes its own line, in full; the button goes under it */
+.drawer-section .log-new-foot > .muted { flex: 1 1 100%; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.drawer-section .log-new-foot > .btn { flex: none; margin-left: auto; }
+.drawer-section .log-entry { grid-template-columns: 20px 1fr; gap: 8px; }
+.drawer-foot { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 14px; border-top: 1px solid var(--border); font-size: var(--fs-small); }
+@media (min-width: 1000px) {
+  body[data-drawer="open"] .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--drawer-w); }
+  body[data-drawer="open"] .drawer-btn { right: calc(var(--drawer-w) + 20px); }
+  .drawer { grid-column: 3; grid-row: 1; position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh; }
+}
+@media (min-width: 861px) and (max-width: 999px) {
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 55; width: min(360px, 92vw); box-shadow: var(--shadow-lg); }
+}
+@media (max-width: 860px) {
+  .drawer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 55; height: 72vh; height: 72dvh;
+    border-left: 0; border-top: 1px solid var(--border-strong); border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg);
+  }
+  .drawer-btn { position: static; margin-left: 8px; }
+  .drawer-btn .drawer-btn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* ==== 4.20 Tables, lists and dense places */
+/* A table in its frame (.table-wrap): a small muted header row, rows divided by lines, numbers right-aligned in
+   tabular figures; under 860 px the rows of .table-responsive stack with their labels. In a row the item's name is
+   its title link, and actions are small quiet buttons at the row's end. The research log's entries (.log-entries)
+   are one list, drawn the same on the Research log page and in the drawer. */
+.table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
+.table th { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-strong); text-align: left; }
+.table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tr:last-child td { border-bottom: 0; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table .actions { text-align: right; white-space: nowrap; }
+.row-link { cursor: pointer; }
+.row-link:hover td { background: var(--surface-2); }
+.table-note { display: flex; align-items: center; gap: 4px; margin: 4px 0 10px; }
+.table-responsive { display: block; width: 100%; }
+@media (min-width: 861px) {
+  .table-responsive { display: table; }
+}
+@media (max-width: 860px) {
+  .table-responsive thead { display: none; }
+  .table-responsive tbody { display: block; }
+  .table-responsive tr { display: block; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .table-responsive td { display: block; padding: 2px 0; border: 0; text-align: left !important; }
+  .table-responsive td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); font-family: var(--font-ui); font-size: var(--fs-xs); }
+  .table-responsive td.actions { padding-top: 6px; }
+  .table-responsive td.pick-col { display: inline-block; width: auto; }
+}
+/* a list's rows (listRow(), listGroup()): who, the item's title link and a quiet second line, when, the actions */
+.list-rows { margin: 0; padding: 0; list-style: none; }
+.list-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.list-row:last-child { border-bottom: 0; }
+.list-row-main { display: flex; flex: 1 1 10em; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.list-row-sub { color: var(--muted); font-size: var(--fs-small); }
+.list-row-time { flex: none; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.list-row-actions { display: inline-flex; flex: none; gap: 6px; }
+.list-group + .list-group { margin-top: 12px; }
+.list-group > .list-head { margin-top: 0; }
+/* a list of notices (problems with the shared folder): one under the other */
+.notice-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+/* a document not on this computer: its title as plain words, then the tag and the action */
+.doc-absent { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.doc-absent-title { font-family: var(--font-serif); color: var(--text-2); }
+/* a group of a list (a day, a person): a small muted heading over a line */
+.list-head { margin: 20px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: var(--fs-small); font-weight: var(--fw-strong); }
+/* the research log: the box to write in, and the entries */
+.log-new { margin-bottom: 18px; }
+.log-new-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
+.log-entries { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.log-entry { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.log-entry:last-child { border-bottom: 0; }
+.log-icon { padding-top: 2px; color: var(--muted); }
+.log-body { min-width: 0; }
+.log-line { display: flex; align-items: baseline; gap: 10px; }
+.log-time { flex: none; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.log-text { min-width: 0; overflow-wrap: anywhere; }
+/* an entry in your own words: the research's own words, in serif */
+.log-own-text { color: var(--text); font-family: var(--font-serif); white-space: pre-wrap; }
+.log-why { margin: 4px 0 0; padding: 4px 10px; border-left: 3px solid var(--border-strong); background: var(--surface-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.log-meta, .log-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 4px; font-size: var(--fs-xs); }
+.log-actions { gap: 6px; }
+/* in the drawer: a narrower column, a step smaller */
+.drawer-section .log-text { font-size: var(--fs-small); white-space: pre-wrap; }
+.drawer-section .log-why { font-size: var(--fs-small); }
+.log-meta .log-who, .log-meta .log-subject { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ==== 4.21 Progress and work states */
+/* Work under way, waiting, not running, done, did not work: words and an icon (workState()), never a pill; the running
+   dot pulses (and stands still with reduced motion). A long job shows the progress panel (views/progress.js): steps
+   with icons and times, a bar. A part of a page that loads: spinner() and a sentence. */
+.spinner .icon { animation: spin 1.1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.running-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.work-state { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-small); white-space: nowrap; }
+.work-state > .icon { flex: none; color: var(--muted); }
+.work-running { color: var(--accent-text); }
+.work-stopped, .work-stopped > .icon { color: var(--attention); }
+.work-failed, .work-failed > .icon { color: var(--danger); }
+.work-attention, .work-attention > .icon { color: var(--attention); }
+.work-state .work-state-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.progress { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.progress-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.progress-head .msg { flex: 1 1 200px; min-width: 0; font-weight: var(--fw-strong); }
+.progress-head .elapsed { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-small); }
+.progress-running .progress-head { background: linear-gradient(90deg, var(--accent-soft), var(--surface-2)); }
+.progress-error .progress-head { background: var(--danger-soft); }
+.progress-body { padding: 10px 18px 14px; }
+.progress-notes { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); }
+.progress-notes li { margin: 2px 0; }
+.step-list { margin: 0; padding: 0; list-style: none; }
+.step { display: grid; grid-template-columns: 20px 1fr auto; align-items: baseline; gap: 10px; padding: 5px 0; }
+.step .st-icon { display: inline-flex; align-items: center; justify-content: center; align-self: start; width: 20px; height: 20px; margin-top: 1px; color: var(--faint); }
+.step-running .st-icon { color: var(--accent); }
+.step-running .st-icon .icon { animation: spin 1.2s linear infinite; }
+.step-done .st-icon { color: var(--text-2); }
+.step .st-label { font-weight: var(--fw-strong); }
+.step-pending .st-label { color: var(--muted); font-weight: var(--fw-regular); }
+.step .st-detail { margin-left: .5em; color: var(--muted); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.step .st-time { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: nowrap; }
+.part-block { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.part-block:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.part-title { margin: 2px 0 4px; font-family: var(--font-serif); font-size: var(--fs-doc); }
+.part-title .pn { margin-right: 8px; color: var(--muted); font-family: var(--font-ui); font-size: var(--fs-xs); font-weight: var(--fw-strong); }
+.decomp-parts { margin: 4px 0 0 30px; padding: 0; color: var(--text-2); font-family: var(--font-serif); list-style: decimal; }
+.decomp-parts li { padding: 1px 0; }
+.model-line { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--surface-2); font-size: var(--fs-small); }
+.model-line .ml-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-2); }
+.model-tail { display: flex; align-items: flex-end; max-height: 4.5em; margin-top: 6px; overflow: hidden; color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-tail span { display: block; }
+.model-tail::after { content: "▍"; color: var(--accent); animation: pulse 1s steps(2) infinite; }
+.progress-bar { height: 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-3); }
+.progress-bar > span { display: block; min-width: 2%; height: 100%; border-radius: var(--radius-pill); background: var(--accent); transition: width .3s; }
+.progress-bar.indeterminate > span { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { 0% { margin-left: 0; } 50% { margin-left: 70%; } 100% { margin-left: 0; } }
+/* a small job's line under what started it (reading again, a second opinion): a work state in a neutral box */
+.mini-job { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--surface-2); color: var(--text); font-size: var(--fs-small); }
+.mini-job .mini-msg { flex: 1 1 200px; min-width: 0; font-weight: var(--fw-strong); overflow-wrap: anywhere; }
+.mini-job .mini-time { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+.mini-job.mini-done { color: var(--text-2); }
+.mini-job .start-claude { flex: 1 0 100%; margin-top: 2px; color: var(--text); font-weight: var(--fw-regular); }
+
+/* ==== 4.22 Folds */
+/* More here, folded away (More options, Technical details): a line with a chevron before the words, secondary text;
+   the chevron turns when open. Made by fold(). */
+details.fold > summary { display: flex; align-items: center; gap: 6px; padding: 6px 0; color: var(--text-2); font-weight: var(--fw-regular); list-style: none; cursor: pointer; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before {
+  content: ""; flex: none; width: 7px; height: 7px; margin: 0 6px 0 2px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg); transition: transform .15s;
+}
+details.fold[open] > summary::before { transform: rotate(45deg); }
+details.fold > summary:hover { color: var(--accent-text); }
+details.fold-sm > summary { padding: 2px 0; font-size: var(--fs-small); }
+details.fold-sm > summary::before { width: 6px; height: 6px; }
+
+/* ==== 4.23 Quotes and highlights */
+/* Three meanings in the documents' own words, three looks that never swap: the AI's quote (mark.quote: yellow with a
+   line under it; in an excerpt card, its grade's tint and colour, 4.26), your highlights (mark.hl-*: your colour as a
+   ground, no line), and words found by a search or a code (soft teal, no line; 4.24 and the reading view). */
+/* a passage: the documents' own words, in the serif */
+.passage { font-family: var(--font-serif); line-height: 1.58; }
+mark.quote { padding: .05em .12em; border-radius: 3px; background: var(--mark); color: inherit; box-shadow: inset 0 -2px 0 var(--mark-line); }
+/* in an excerpt card (4.26) the AI's quote takes its grade's tint and colour, so the badge and the quote say the same */
+.ev mark.quote { background: var(--quote-none); box-shadow: inset 0 -2px 0 var(--none); color: var(--text); }
+.ev-supports mark.quote { background: var(--quote-ok); box-shadow: inset 0 -2px 0 var(--ok); }
+.ev-partially_supports mark.quote { background: var(--quote-partly); box-shadow: inset 0 -2px 0 var(--partly); }
+.ev-refutes mark.quote { background: var(--quote-bad); box-shadow: inset 0 -2px 0 var(--bad); }
+mark.hl { padding: 0 1px; border-radius: 2px; color: inherit; cursor: pointer; }
+mark.hl-yellow { background: var(--hl-yellow); }
+mark.hl-green { background: var(--hl-green); }
+mark.hl-blue { background: var(--hl-blue); }
+mark.hl-pink { background: var(--hl-pink); }
+/* a highlight with a note: a small note mark after it (not the dotted underline of a defined word) */
+mark.hl.hl-noted::after { content: "✎"; margin-left: 2px; color: var(--text-2); font-family: var(--font-ui); font-size: .72em; vertical-align: super; line-height: 0; }
+mark.hl:hover, mark.hl:focus-visible { outline: 1px solid var(--border-strong); }
+.hl-dot { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--border-strong); border-radius: 50%; }
+.hl-dot.hl-yellow, .hl-swatch.hl-yellow { background: var(--hl-yellow); border-color: var(--hl-yellow-line); }
+.hl-dot.hl-green, .hl-swatch.hl-green { background: var(--hl-green); border-color: var(--hl-green-line); }
+.hl-dot.hl-blue, .hl-swatch.hl-blue { background: var(--hl-blue); border-color: var(--hl-blue-line); }
+.hl-dot.hl-pink, .hl-swatch.hl-pink { background: var(--hl-pink); border-color: var(--hl-pink-line); }
+.hl-picker { display: flex; gap: 8px; }
+.hl-swatch { width: 28px; height: 28px; padding: 0; border: 2px solid; border-radius: 50%; cursor: pointer; }
+.hl-swatch[aria-checked="true"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* the reading view's marks: words found (a search, a code's words) soft teal, the current one ringed; the places that
+   name the same thing (References) a plain grey ground, the named one in 600 */
+mark.dv-hit, mark.dv-code-mark { padding: 0 .05em; border-radius: 3px; background: var(--accent-soft); color: inherit; }
+mark.dv-ref { border-radius: 3px; background: var(--surface-3); color: inherit; }
+mark.dv-ref-named { font-weight: var(--fw-strong); }
+mark.dv-focus { border-radius: 3px; scroll-margin: 30vh 0; }
+mark.dv-focus:not(.quote):not(.dv-hit):not(.dv-code-mark):not(.dv-ref):not(.kt) { background: var(--accent-soft); color: inherit; }
+mark.dv-hit-cur, mark.dv-focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* a highlight quoted in a note card: its colour as the edge */
+.note-quote { margin: 0 0 10px; padding: 6px 10px; border-left: 3px solid var(--hl-yellow-line); background: var(--surface-2); font-family: var(--font-serif); overflow-wrap: anywhere; }
+.note-quote.hl-green { border-left-color: var(--hl-green-line); }
+.note-quote.hl-blue { border-left-color: var(--hl-blue-line); }
+.note-quote.hl-pink { border-left-color: var(--hl-pink-line); }
+/* the quote a person has still to confirm, and the second model's quote (an attention tag says whose it is) */
+.note-lost .note-quote { opacity: .7; }
+.passage-pending mark.quote { outline: 2px dashed var(--mark-line); }
+
+/* ==== 4.24 Concordance lines */
+/* Every place words occur, one line each, the words found centred (Search, Concepts, a document's Search panel). The
+   words found are soft teal (never the quote's yellow); a line's title is a title link to the document there. */
+.kwic-wrap { position: relative; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.kwic { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
+.kwic td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: baseline; }
+.kwic tr:hover td { background: var(--surface-2); }
+.kwic tr.dv-cur td { background: var(--accent-soft); }
+.kwic .kw-left { width: 40%; max-width: 0; overflow: hidden; color: var(--text-2); font-family: var(--font-serif); text-align: right; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
+.kwic .kw-left > span { direction: ltr; unicode-bidi: plaintext; }
+.kwic .kw-node { padding: 5px 2px; font-family: var(--font-serif); font-weight: var(--fw-strong); white-space: nowrap; }
+.kwic .kw-right { width: 40%; max-width: 0; overflow: hidden; color: var(--text-2); font-family: var(--font-serif); text-overflow: ellipsis; white-space: nowrap; }
+.kwic .kw-node mark, mark.kw-also { padding: 0 2px; border-radius: 3px; background: var(--accent-soft); color: inherit; }
+/* every other word searched for, in a lighter tint than the centre word's */
+mark.kw-also { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.kwic .kw-where { width: 1%; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.kwic .kw-where.kw-where-title { width: 14em; min-width: 14em; max-width: 14em; font-size: var(--fs-small); line-height: 1.3; white-space: normal; vertical-align: middle; }
+.kwic .kw-where .kw-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.kwic .kw-act { width: 1%; text-align: right; white-space: nowrap; }
+.kwic .kw-word { border-radius: 3px; cursor: pointer; }
+.kwic .kw-word:hover { background: var(--accent-soft); color: var(--accent-text); }
+/* a hit that is itself a link (Concepts) or a button (a document's Search panel): ringed in the focus colour */
+.kwic .ct-node, .kwic .dv-node { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: none; cursor: pointer; }
+.kwic .ct-node:hover mark, .kwic .ct-node:focus-visible mark, .kwic .dv-node:hover mark, .kwic .dv-node:focus-visible mark { outline: 2px solid var(--focus); }
+@media (max-width: 760px) {
+  .kwic .kw-left, .kwic .kw-right { width: auto; max-width: 9em; }
+  .kwic .kw-where { display: none; }
+  .kwic .kw-where.kw-where-title { display: table-cell; width: 8em; min-width: 8em; max-width: 8em; font-size: var(--fs-small); }
+}
+
+/* ==== 4.25 The heat grid */
+/* A grid of documents by codes, themes or hypotheses (Codes by document, Themes, the Evidence map): the first column
+   (the row's name, a title link) stays while the grid scrolls sideways. A heat cell (heatCell(), lib.js) is shaded in
+   the accent by its level (.heat-l1 … .heat-l4); a cell with passages is a button. An evidence-map cell holds the
+   judgements as symbols in their colours (.map-sym). */
+.map-wrap { position: relative; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.map-table { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-small); }
+.map-table th, .map-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.map-table tr:last-child td, .map-table tr:last-child th { border-bottom: 0; }
+.map-table thead th { background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-strong); vertical-align: bottom; }
+.map-table .map-hyp-head, .map-table .map-hyp { position: sticky; left: 0; z-index: 2; min-width: 220px; max-width: 320px; border-right: 1px solid var(--border); background: var(--surface); font-weight: var(--fw-regular); text-align: left; }
+.map-table .map-hyp-head { z-index: 3; background: var(--surface-2); }
+.map-hyp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-family: var(--font-ui); }
+.map-doc-head { min-width: 120px; max-width: 170px; }
+.map-cell { position: relative; text-align: center; vertical-align: middle; font-variant-numeric: tabular-nums; }
+.map-cell.m-none, .map-cell.heat-l0 { color: var(--faint); }
+.row-link:hover .map-hyp, .row-link:hover .map-cell.heat-l0, .row-link:hover .map-cell.m-none { background: var(--surface-2); }
+.map-table td.map-cell.heat-l1 { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.map-table td.map-cell.heat-l2 { background: color-mix(in srgb, var(--accent) 30%, var(--surface)); color: var(--text); }
+.map-table td.map-cell.heat-l3 { background: color-mix(in srgb, var(--accent) 48%, var(--surface)); color: var(--text); font-weight: var(--fw-strong); }
+.map-table td.map-cell.heat-l4 { background: var(--heat-4); color: var(--on-accent); font-weight: var(--fw-strong); }
+.map-cell:not(.heat-l0):not(.m-none):hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+.heat-btn { width: 100%; min-height: 1.4em; margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.map-sym { display: inline-flex; align-items: center; justify-content: center; min-width: 1.6em; height: 1.6em; padding: 0 .3em; border: 1px solid var(--none-line); border-radius: var(--radius-sm); background: var(--none-soft); color: var(--none); font-family: var(--font-mono); font-size: var(--fs-small); font-weight: var(--fw-strong); }
+.m-sup .map-sym { border-color: var(--ok-line); background: var(--ok-soft); color: var(--ok); }
+.m-part .map-sym { border-color: var(--partly-line); background: var(--partly-soft); color: var(--partly); }
+.m-ref .map-sym { border-color: var(--bad-line); background: var(--bad-soft); color: var(--bad); }
+.m-both .map-sym { border-color: var(--mixed-line); background: var(--mixed-soft); color: var(--mixed); }
+@media (max-width: 860px) {
+  .map-table .map-hyp-head, .map-table .map-hyp { min-width: 150px; max-width: 170px; padding: 8px; }
+  .map-doc-head { min-width: 84px; max-width: 120px; }
+}
+
+/* ==== 4.26 Excerpt cards */
+/* One excerpt the AI read for a hypothesis (the result page): its grade badge at the top, the document and the place,
+   the passage in serif with the AI's quote in its grade's tint and line, then the row of actions (Agree in the first
+   place, the rest small quiet buttons; In context and Details are toggles). */
+.ev-list { display: flex; flex-direction: column; gap: 14px; }
+.ev { padding: 14px 18px 10px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--surface); }
+/* a reviewed card sits back on the page (no fill: the page's ground), so the ones still to review stand out */
+.ev[data-reviewed="1"] { background: transparent; }
+.ev-flash { animation: ev-flash 1.6s ease-out; }
+@keyframes ev-flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.ev-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 8px; color: var(--text-2); font-size: var(--fs-small); }
+.ev-top .spacer { flex: 1; }
+.ev-src { display: block; margin-bottom: 4px; color: var(--text-2); font-size: var(--fs-small); line-height: 1.35; }
+.ev-src .icon { margin-right: 4px; color: var(--muted); vertical-align: -.2em; }
+.ev-src .title { display: inline; color: var(--text); }
+.ev-src .page { margin-left: .35em; color: var(--text-2); white-space: normal; }
+.ev-src .warn-chip { margin-left: .5em; vertical-align: middle; }
+/* the context grey, the quote in full colour */
+.ev .passage { margin: 4px 0 0; color: var(--text-2); font-family: var(--font-serif); font-size: var(--fs-doc); line-height: 1.58; }
+.ev-weak-note { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--text-2); font-size: var(--fs-small); }
+.ev-others { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 6px; color: var(--text-2); }
+.ev-others svg { flex: none; margin-top: 3px; }
+.ev-other-differs { color: var(--mixed); }
+.judge-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; }
+.judge-row > span[aria-live] { display: inline-block; min-width: 5em; }
+.judge-body { margin: 6px 0 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--surface-2); }
+.judge-body .input { max-width: 420px; }
+.judge-diff[open] { flex-basis: 100%; }
+.context { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+/* Details: the technical facts of a judgement, two columns */
+.ev-tech-list { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin-top: 4px; color: var(--muted); font-size: var(--fs-small); }
+.ev-tech-list > div { display: contents; }
+.ev-tech-list dd { color: var(--text); }
+.passage-broken { display: flex; flex-direction: column; gap: .45em; }
+.passage-broken > .passage-para, .passage-broken > .passage-heading { margin: 0; }
+.passage-broken > .passage-heading, span.passage-broken > span.passage-heading { font-weight: var(--fw-strong); }
+span.passage-broken, span.passage-broken > span { display: block; }
+@media (max-width: 860px) {
+  .ev { padding: 10px 12px; }
+  .judge-body .input { max-width: none; }
+}
+
+/* ==== 4.27 Comparisons */
+/* Two versions of one thing side by side (yours and a colleague's, before and after): two columns, each headed by who
+   and when; the actions under both (Keep mine, Keep theirs, Keep both). Made by compare(). Under 861 px one above the
+   other. */
+.compare-sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.compare-side { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--surface-2); }
+.compare-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 6px; color: var(--text-2); font-size: var(--fs-small); }
+.compare-body { overflow-wrap: anywhere; }
+.compare-actions { margin-top: 10px; }
+@media (max-width: 860px) {
+  .compare-sides { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ==== 5.1 The sidebar */
+/* The places of the app. One window-high column that never scrolls as a whole: the brand, the project switch and Find
+   stay at the top, the status area and the last row at the bottom, and only the list of places scrolls when the window
+   is short (a soft shadow at an edge says there is more). An entry: an 18 px icon and the place's name; the current
+   place soft teal, accent words, 600. A group label: small capitals and its AI mark. No counts, no marks on entries. */
+.sidebar {
+  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow: hidden;
+  border-right: 1px solid var(--border); background: var(--bg-2);
+}
+.sidebar-inner { display: flex; flex-direction: column; gap: 14px; height: 100%; padding: 18px 14px 14px; }
+.sidebar-inner > .brand, .sidebar-inner > .project-switch, .sidebar-inner > .find-btn { flex: none; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px; color: inherit; text-decoration: none; }
+.brand img { border-radius: var(--radius-ctl); }
+.brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+.brand-text strong { font-size: var(--fs-section); letter-spacing: .06em; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+#nav {
+  flex: 1 1 auto; min-height: 0; margin: -4px -6px; padding: 4px 6px;  /* room for the focus ring, which the scrolling box would cut */
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  background:
+    linear-gradient(var(--bg-2) 30%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--bg-2) 70%) bottom / 100% 28px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--text) 16%, transparent), transparent) top / 100% 10px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--text) 16%, transparent), transparent) bottom / 100% 10px no-repeat scroll;
+}
+.nav a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-ctl); color: var(--text-2); text-decoration: none; }
+.nav a:hover { background: var(--surface-3); color: var(--text); }
+.nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); font-weight: var(--fw-strong); }
+.nav a > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-icon { display: inline-flex; flex: none; width: 18px; height: 18px; }
+.nav-group { display: flex; align-items: center; gap: 8px; margin: 12px 10px 4px; color: var(--muted); font-size: var(--fs-label); font-weight: var(--fw-strong); letter-spacing: .04em; text-transform: uppercase; }
+/* the project switch: a field-like box with the project's name and a chevron; its menu is the menu component */
+.project-switch details { position: relative; }
+.project-switch summary {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-ctl);
+  background: var(--surface); list-style: none; cursor: pointer;
+}
+.project-switch summary::-webkit-details-marker { display: none; }
+.project-switch summary:hover { border-color: var(--muted); }
+.project-switch .ps-name { flex: 1; min-width: 0; font-weight: var(--fw-strong); }
+.project-switch .ps-name-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
+.project-switch .ps-label { display: block; color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-regular); }
+.project-switch .ps-menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; max-height: 60vh; overflow: auto; }
+@media (max-height: 759px) {
+  .sidebar-inner { gap: 10px; padding-top: 12px; }
+  .project-switch .ps-label { display: none; }
+  .project-switch summary { padding: 6px 10px; }
+  #nav a { padding-top: 6px; padding-bottom: 6px; }
+  #nav .nav-group { margin: 8px 10px 2px; }
+}
+@media (max-width: 860px) {
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: min(300px, 86vw); height: 100vh; height: 100dvh; transform: translateX(-100%); transition: transform .2s ease; }
+  .sidebar.open { transform: none; box-shadow: var(--shadow-lg); }
+}
+
+/* ==== 5.2 The status area and the last row */
+/* The sidebar's foot. The status area has one fixed size: the AI line's card (which AI, where text goes; its card of
+   details opens upwards on hover or focus), or, while work runs or waits, the work box in exactly that space: a work
+   state, what runs, the AI's name, and one action (Start). The last row: Settings (an entry), Quit (a small quiet
+   button) or Update in its place (a small main button), and the theme's icon button. */
+.sidebar-foot { display: flex; flex-direction: column; gap: 8px; flex: none; margin-top: auto; }
+.status-area { display: flex; flex-direction: column; height: 66px; }
+.status-area > :not([hidden]) { flex: 1; min-height: 0; }
+.status-area #privacy-indicator .privacy-wrap, .status-area #privacy-indicator .privacy { height: 100%; }
+@media (max-height: 759px) {
+  .status-area { height: 58px; }
+}
+.privacy-wrap { position: relative; }
+.privacy {
+  display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-ctl);
+  background: var(--surface); color: inherit; font-size: var(--fs-xs); line-height: 1.3; text-decoration: none;
+}
+.privacy:hover { border-color: var(--border-strong); color: inherit; }
+.privacy > .icon { flex: none; margin-top: 2px; color: var(--text-2); }
+.privacy > div { min-width: 0; }
+.privacy strong { display: block; font-size: var(--fs-xs); }
+.privacy span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-2); word-break: break-word; }
+/* set-up not finished, or no AI model yet: the attention look */
+.privacy.privacy-setup { border-color: var(--attention-line); background: var(--attention-soft); }
+.privacy.privacy-setup > .icon, .privacy.privacy-setup .privacy-sub { color: var(--attention); }
+.privacy-card {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 40; padding: 9px 11px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-ctl); background: var(--surface); box-shadow: var(--shadow);
+  color: var(--text); font-size: var(--fs-small); line-height: 1.45; visibility: hidden; opacity: 0; transition: opacity .12s ease, visibility 0s linear .12s;
+}
+.privacy-card p { margin: 0; }
+.privacy-card > * + * { margin-top: 6px; }
+.privacy-card-muted { color: var(--muted); }
+.privacy-account { display: flex; flex-direction: column; padding-bottom: 7px; border-bottom: 1px solid var(--border); }
+.privacy-account strong { font-weight: var(--fw-strong); overflow-wrap: anywhere; }
+.privacy-wrap:hover .privacy-card, .privacy-wrap:focus-within .privacy-card { visibility: visible; opacity: 1; transition-delay: .15s, 0s; }
+.privacy-wrap.privacy-quiet .privacy-card { visibility: hidden; opacity: 0; transition: none; }
+@media (hover: none) {
+  .privacy-card { display: none; }
+}
+.work-box { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border: 1px solid var(--accent); border-radius: var(--radius-ctl); background: var(--surface); }
+.work-box .work-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; color: inherit; text-decoration: none; }
+.work-box .work-main:hover .work-text { text-decoration: underline; }
+.work-box .work-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.work-box .work-text { min-width: 0; overflow: hidden; color: var(--accent-text); font-size: var(--fs-small); font-weight: var(--fw-strong); text-overflow: ellipsis; white-space: nowrap; }
+.work-box .work-time { flex: none; margin-left: auto; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.work-box .work-sub { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: var(--fs-xs); }
+.work-box .work-sub-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-box .work-who { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: auto; color: var(--muted); }
+.work-box .work-act { flex: none; }
+.work-box.work-stalled { border-color: var(--attention-line); background: var(--attention-soft); }
+.work-box.work-stalled .work-text, .work-box.work-stalled .work-line .icon { color: var(--attention); }
+.sidebar-app { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--border); }
+.sidebar-app-row { display: flex; align-items: center; gap: 4px; }
+.sidebar-app-row .nav-foot { flex: 1; min-width: 0; }
+/* the last row is tight: Settings keeps its whole name beside Update (the wider button) */
+.sidebar-app-row .nav-foot a { padding-right: 6px; }
+.sidebar-app-row .btn { flex: none; }
+.sidebar-app .btn[hidden] { display: none; }
+.sidebar-app .theme-btn { flex: none; }
+
+/* ==== 5.3 Find */
+/* Find a page, a view or a setting by its words, never with the AI. The Find button, under the project switch, looks
+   like the search field it opens (an edge, the search icon, muted words, the key hint). The finder: a dialog with the
+   field and rows grouped under small capitals; the chosen row soft teal; last, Search the documents for "…". On the
+   Overview the same field sits under the tabs. Its rows are menu rows; finder.js places them. */
+.find-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius-ctl); background: var(--surface); color: var(--muted); font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer;
+}
+.find-btn:hover { border-color: var(--muted); color: var(--text-2); }
+.find-btn .nav-icon { width: 16px; height: 16px; }
+.find-btn .find-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.find-btn .find-key { color: var(--muted); font-size: var(--fs-label); }
+.finder-dialog { width: min(600px, calc(100vw - 32px)); margin-top: 12vh; padding: 12px; }
+.finder-dialog[open] { display: block; }
+.finder-input { width: 100%; }
+.finder-list { max-height: min(52vh, 440px); margin-top: 8px; overflow-y: auto; overscroll-behavior: contain; }
+.finder-group + .finder-group { margin-top: 4px; }
+.finder-group-label { padding: 6px 10px 2px; color: var(--muted); font-size: var(--fs-label); font-weight: var(--fw-strong); letter-spacing: .04em; text-transform: uppercase; }
+.finder-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-ctl); color: var(--text); cursor: pointer; }
+.finder-row[aria-selected="true"] { background: var(--accent-soft); }
+.finder-icon { display: inline-flex; flex: none; color: var(--muted); }
+.finder-row[aria-selected="true"] .finder-icon { color: var(--accent); }
+.finder-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.finder-where { flex: none; max-width: 40%; color: var(--muted); font-size: var(--fs-small); text-align: right; }
+.finder-row-search { margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius-ctl) var(--radius-ctl); }
+.finder-hint { margin: 8px 4px 0; color: var(--muted); font-size: var(--fs-xs); }
+.finder-hint kbd { margin-right: 3px; }
+.finder-box { position: relative; max-width: 640px; }
+.finder-box-icon { position: absolute; left: 11px; top: 11px; display: inline-flex; color: var(--muted); pointer-events: none; }
+.finder-box .finder-input { padding-left: 34px; }
+.finder-box .finder-list { max-height: 340px; margin-top: 6px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+@media (max-height: 759px) {
+  .find-btn { padding: 5px 10px; }
+}
+@media (max-width: 600px) {
+  .finder-dialog { margin-top: 8vh; padding: 10px; }
+  .finder-row { flex-wrap: wrap; row-gap: 0; }
+  .finder-where { flex-basis: 100%; max-width: none; padding-left: 26px; text-align: left; }
+  .finder-hint { display: none; }
+}

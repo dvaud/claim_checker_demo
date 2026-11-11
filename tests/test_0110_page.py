@@ -2,15 +2,17 @@
 from pathlib import Path
 
 from test_app import api, home  # noqa: F401  (fixtures)
+from _static import css_blocks, all_css
 
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"
 
 
 def test_the_page_files():
-    index = (STATIC / "index.html").read_text()
-    assert '/static/v011.css' in index
-    css = (STATIC / "v011.css").read_text()
-    assert "#" not in css.split("*/", 1)[1].replace("#ai", "")  # colour tokens only, no fixed colours
+    # 0.17.0: the release's rules are found in the cascade by their selectors (tests/_static.py css_blocks)
+    mine = [(sels, decls) for _m, sels, decls in css_blocks(all_css())
+            if any(s.startswith((".access-", ".terms-", ".read-by", ".sent-", ".wait-local", ".add-access")) for s in sels)]
+    assert len(mine) > 10
+    assert not any("#" in v for _s, decls in mine for v in decls.values())  # colour tokens only, no fixed colours
     acc = (STATIC / "views" / "ai-access.js").read_text()
     for name in ("accessChoice", "accessSelect", "docAccessDialog", "accessAskCard", "accessBanner", "termsPanel",
                  "restrictedModelCard"):
@@ -22,7 +24,7 @@ def test_the_page_files():
 
 
 def test_served(api):  # noqa: F811
-    for f in ("/static/v011.css", "/static/views/ai-access.js"):
+    for f in ("/static/app.css", "/static/views/ai-access.js"):  # 0.17.0: app.css stays; the release's sheet goes
         st, _ = api("GET", f, token=False)
         assert st == 200, f
     st, s = api("GET", "/api/state")

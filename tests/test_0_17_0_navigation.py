@@ -7,6 +7,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _static import all_css, rule
+
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"
 
 
@@ -77,9 +79,9 @@ def test_the_status_area_has_one_fixed_size():
     area = area[:area.index('<div class="sidebar-app">')]
     assert 'id="work-indicator"' in area and 'id="privacy-indicator"' in area
     assert "jobs-indicator" not in html and "queue-indicator" not in html  # the panels are gone
-    css = _read("navigation.css")
-    assert re.search(r"\.status-area \{ height: \d+px;", css)
-    assert "@media (max-height: 759px) { .status-area { height:" in css
+    # 0.17.0: reads the cascade (tests/_static.py rule()), so it holds when the design guide moves the rules
+    assert re.fullmatch(r"\d+px", rule(".status-area")["height"])
+    assert re.fullmatch(r"\d+px", rule(".status-area", media="(max-height: 759px)")["height"])
     app = _read("app.js")
     draw = app[app.index("async function drawStatus()"):app.index("// 0.14.2: the theme is a small icon")]
     assert "privacy.hidden = !!w;" in draw and "box.hidden = !w;" in draw   # the work takes the AI line's place
@@ -111,22 +113,24 @@ def test_find_opens_the_feature_finder():
 
 def test_overview_layout_fixes():
     js = _read("views/overview.js")
-    css = _read("v09.css")
-    nav = _read("navigation.css")
+    css = all_css()  # 0.17.0: the cascade (tests/_static.py), so it holds when the design guide moves the rules
     # the AI box is gone (the sidebar's foot card says it); the set-up hint lives in the sidebar line
     assert "aiLine" not in js and "ov-ai" not in css
     assert "Set up Claude Code" in _read("app.js") and "Finish the set-up" in _read("app.js")
     # one footer layout: no wrapping, a long state shortens with an ellipsis and says all of it in a tooltip
-    foot = re.search(r"\.ov-card-foot \{[^}]*\}", css).group(0)
-    assert "flex-wrap" not in foot and "justify-content: space-between" not in foot
-    assert "text-overflow: ellipsis" in css and 'title: text' in js
+    foot = rule(".ov-card-foot")
+    assert "flex-wrap" not in foot and foot.get("justify-content") != "space-between"
+    assert rule(".ov-state-text")["text-overflow"] == "ellipsis" and 'title: text' in js
     # section subtitles sit under the heading; every card has one height, padding and icon size
-    assert "flex-direction: column" in re.search(r"\.ov-section-head \{[^}]*\}", css).group(0)
-    assert "min-height: 212px" in css and ".welcome-cards .ov-card { min-height: 0" in css
-    assert ".ov-grid-small .ov-card" not in css and "opts.compact ? 15" not in js
+    assert rule(".ov-section-head")["flex-direction"] == "column"
+    assert rule(".ov-card")["min-height"] == "212px" and rule(".welcome-cards .ov-card")["min-height"] == "0"
+    small = rule(".ov-grid-small .ov-card")  # no card of its own size in the compact row (only the shared no-shadow rule)
+    assert "min-height" not in small and "padding" not in small and "opts.compact ? 15" not in js
     # the Research log button is a btn-sm in size
-    btn = re.search(r"\.logdrawer-btn \{[^}]*\}", nav).group(0)
-    assert "padding: .32rem .65rem" in btn and "height: 32px" not in btn and "box-shadow" not in btn
+    # 0.17.0 (design guide): it is a small button of the button component (drawerButton()), placed by the drawer's rule
+    assert "UI.sm} btn-opens drawer-btn" in (STATIC / "lib.js").read_text(encoding="utf-8")
+    btn = rule(".drawer-btn")
+    assert rule(".btn-sm")["padding"] == ".32rem .65rem" and set(btn) <= {"position", "top", "right", "z-index"}
 
 
 def test_overview_card_state_shows_the_short_part_only():

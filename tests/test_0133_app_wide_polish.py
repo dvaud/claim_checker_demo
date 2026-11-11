@@ -8,10 +8,11 @@ import re
 from pathlib import Path
 
 from test_app import api, home  # noqa: F401  (fixtures)
-from _static import assert_sheet_after
+from _static import MARKER, SITE, all_css, css_blocks, index_html, release_sheets, rule
 
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"
-CSS = (STATIC / "v0133.css").read_text()
+# 0.17.0: this release's rules are read from the cascade (tests/_static.py), not from its own sheet, so the checks
+# hold when the design guide moves a rule
 LIB = (STATIC / "lib.js").read_text()
 
 
@@ -20,53 +21,62 @@ def view(name: str) -> str:
 
 
 def rules(selector: str) -> str:
-    """The declarations of every rule of v0133.css whose selector list names `selector` exactly."""
-    out = []
-    for sel, body in re.findall(r"([^{}]+)\{([^}]*)\}", re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)):
-        if selector in [s.strip() for s in sel.split(",")]:
-            out.append(body)
-    return " ".join(out)
+    """The declarations the cascade gives the rules whose selector list names `selector` exactly, as "prop: value; ..."."""
+    return "; ".join(f"{k}: {v}" for k, v in rule(selector).items())
 
 
 def test_the_stylesheet_is_linked_last_and_uses_the_colour_tokens_only(api):  # noqa: F811
-    # after every earlier release's sheet, and before site.css (0.13.5: tests/_static.py)
-    assert_sheet_after("/static/v0133.css", "/static/v013.css")
-    # light and dark both work: no colour of its own, only the tokens of tokens.css
-    assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", CSS)
-    st, body = api("GET", "/static/v0133.css", token=False)
-    assert st == 200 and b".nav-ai-uses" in body
+    # site.css is still the only sheet after the marker (0.17.0: the release's own sheet is no longer linked)
+    assert re.findall(r'<link rel="stylesheet" href="([^"]+)">', index_html().split(MARKER, 1)[1]) == [SITE]
+    # light and dark both work: no colour of its own, only the tokens of tokens.css. 0.17.0: the whole cascade bar
+    # tokens.css, except the few rules that always held a fixed colour (white text on a coloured button, the dialog's
+    # backdrop, a page image's white frame, the dark theme's lightened amber)
+    allowed = {".btn-danger", "a.btn-danger:hover", ".switch-track::after", ".dialog::backdrop", ".setup-step.done .n",
+               ".scrim", ".dv-page-frame", ".dv-pbox-out"}
+    css = "\n".join((STATIC / s.removeprefix("/static/")).read_text() for s in release_sheets() if s != "/static/tokens.css")
+    for _m, sels, decls in css_blocks(css):
+        if re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", " ".join(decls.values())) and not set(sels) & allowed:
+            assert any("grade-partially_supports" in s or "status-partially_supported" in s for s in sels), sels
+    st, body = api("GET", "/static/app.css", token=False)
+    assert st == 200 and b".btn" in body
+    # 0.17.0 (design guide): the sidebar's AI pills (.nav-ai-*) are gone; the groups carry the one AI mark (.ai-tag)
+    assert rule(".nav-group .ai-tag")
 
 
 def test_one_type_scale_and_two_weights():
-    assert "font-weight: 600" in rules("h1") and "font-size: 1.05rem" in rules("h2")
-    # every button in the regular weight; only the main button (and a danger button) is bold
-    assert "font-weight: 400" in rules(".btn")
-    assert "font-weight: 600" in rules(".btn-primary") and "font-weight: 600" in rules(".btn-danger")
-    assert "font-weight: 400" in rules("details.fold > summary")
+    # 0.17.0 (design guide): the sizes and weights are tokens of tokens.css (--fs-*, --fw-*), named by the rules
+    tokens = (STATIC / "tokens.css").read_text()
+    assert "--fw-strong: 600" in tokens and "--fw-regular: 400" in tokens and "--fs-section: 1.05rem" in tokens
+    assert "--fs-small: .875rem" in tokens
+    assert "font-weight: var(--fw-strong)" in rules("h1") and "font-size: var(--fs-section)" in rules("h2")
+    # every button in the regular weight; only the main button (and the confirming danger button) is bold
+    assert "font-weight: var(--fw-regular)" in rules(".btn")
+    assert "font-weight: var(--fw-strong)" in rules(".btn-primary") and "font-weight: var(--fw-strong)" in rules(".btn-danger")
+    assert "font-weight: var(--fw-regular)" in rules("details.fold > summary")
     for small in ("small", ".small", ".field-help", ".btn-sm", ".badge", ".chip"):
-        assert "font-size: .875rem" in rules(small), small
+        assert "font-size: var(--fs-small)" in rules(small), small
     # the line above a title: in sentence case and the regular weight, as on the result page
-    assert "text-transform: none" in rules(".fe-section") and "font-weight: 400" in rules(".eyebrow")
+    assert "text-transform" not in rules(".fe-section") and "font-weight: var(--fw-regular)" in rules(".eyebrow")
 
 
 def test_one_card_style_without_shadows():
+    # 0.17.0 (design guide): cards are flat by their own rule (no shadow at all), and a card placed in a card draws no box
     for sel in (".card", ".ov-card"):
-        assert "box-shadow: none" in rules(sel), sel
-    assert "transform: none" in rules(".ov-card:hover")
-    # Settings → AI: the privacy panel inside the Claude box inside the card is not a third box
-    assert "border: 0" in rules(".cc-card .terms-panel")
+        assert "box-shadow" not in rules(sel) or "box-shadow: none" in rules(sel), sel
+    assert "translate" not in rules(".ov-card:hover")
+    assert "border: 0" in rules(".card .card")
 
 
 def test_colour_only_where_it_means_something():
-    # the AI marks were purple (--mixed), the colour of "Mixed evidence", and "No AI needed" was green
-    for sel in (".nav-ai-uses", ".nav-ai-optional"):
-        assert "--mixed" not in rules(sel) and rules(sel), sel
-    tag = rules(".ai-tag.ai-uses")
-    assert "color: var(--muted)" in tag and "background: none" in tag and "border: 0" in tag
+    # the AI marks were purple (--mixed), the colour of "Mixed evidence", and "No AI needed" was green. 0.17.0 (design
+    # guide): one AI mark (.ai-tag), grey and without a box everywhere; the sidebar's pills are gone
+    tag = rules(".ai-tag")
+    assert "color: var(--muted)" in tag and "background" not in tag and "border" not in tag and "--mixed" not in tag
+    assert not re.search(r"\.nav-ai(?![\w-])|\.nav-ai-", all_css())
     # states and counts are facts: grey, not the colours of the judgements
-    assert "var(--text-2)" in rules(".ov-state.ov-made") and "var(--text-2)" in rules(".to-review")
-    assert "border-color: transparent" in rules(".badge")
-    assert "var(--surface-3)" in rules(".badge.status-uncertain")
+    assert "var(--ok)" not in rules(".ov-state.ov-made") and "var(--partly)" not in rules(".to-review")
+    assert "border: 1px solid transparent" in rules(".badge")
+    assert "var(--surface-3)" in rules(".status-uncertain")
     # the separator of the eyebrow ends its first part, so a wrapped line never begins with "·"
     assert 'content: "·"' in rules(".feature-eyebrow .fe-section::after")
 
@@ -87,8 +97,10 @@ def test_downloads_are_a_quiet_line_of_links():
 
 
 def test_longer_explanations_sit_in_help_marks():
-    assert "export function helpMark(label, text" in LIB and '"link-btn help-mark"' in LIB
-    assert "color: var(--muted)" in rules(".help-mark")   # styled on every page now, not only on .result
+    # 0.17.0 (design guide): the help mark is a small icon button, not an action drawn as a link
+    assert "export function helpMark(label, text" in LIB and 'iconButton({ icon: "help", label, sm: true' in LIB and 'class: "help-mark"' in LIB
+    # 0.17.0 (design guide): the help mark is a small icon button, muted by that component, on every page
+    assert "color: var(--muted)" in rules(".icon-btn-sm") and rule(".help-mark")
     # a note opened near the right edge moves left to stay in the window
     pop = LIB[LIB.index("export function popNote("):LIB.index("// A grade with its certainty")]
     assert "r.right > room ? Math.min(r.right - room, r.left - 8) : 0" in pop and "translateX(" in pop
@@ -125,8 +137,9 @@ def test_page_subtitles_are_one_short_line():
 
 def test_the_document_page_has_two_quiet_links_and_no_extra_lines():
     src = view("sources")
-    btn = src[src.index("const copyBtn = h("):]
-    assert btn.split("\n")[0].count('class: "link-btn it"') == 1
+    btn = src[src.index("const copyBtn = "):]
+    # 0.17.0 (design guide): a download is a quiet small button (downloadButton), no longer a link-btn
+    assert btn.split("\n")[0].count("downloadButton(") == 1 and "link-btn" not in btn.split("\n")[0]
     assert "Opens in a new tab, as the file was when it was added." not in src   # it is in the link's tooltip
     assert '"The text as the app reads it."' not in src
 
@@ -137,12 +150,14 @@ def test_a_table_that_scrolls_in_its_frame_holds_its_hidden_labels():
     assert "position: relative" in rules(".kwic-wrap")
     for sel in (".table-wrap", ".map-wrap", ".dv-kwic"):
         assert "position: relative" in rules(sel), sel
-    assert re.search(r"\.visually-hidden \{ position: absolute", (STATIC / "app.css").read_text())
+    assert rule(".visually-hidden")["position"].startswith("absolute")
 
 
 def test_the_document_pages_bibliography_line_stacks_on_a_phone():
     # wrapped as a row, the library icon could stand alone on a line and a line could begin with "·": on a phone each
     # part (the reference, the work's title, its DOI, Open in Zotero) has a line of its own beside the icon
-    phone = CSS[CSS.index("@media (max-width: 600px) {"):]
-    assert re.search(r"\.dv-bib \{ display: grid; grid-template-columns: auto minmax\(0, 1fr\);", phone)
-    assert ".dv-bib > .sep { display: none; }" in phone and ".dv-bib > :not(.icon):not(.sep) { grid-column: 2; }" in phone
+    phone = "(max-width: 600px)"
+    bib = rule(".dv-bib", media=phone)
+    assert bib["display"] == "grid" and bib["grid-template-columns"] == "auto minmax(0, 1fr)"
+    assert rule(".dv-bib > .sep", media=phone)["display"] == "none"
+    assert rule(".dv-bib > :not(.icon):not(.sep)", media=phone)["grid-column"] == "2"

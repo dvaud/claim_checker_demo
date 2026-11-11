@@ -126,12 +126,16 @@ def test_the_queue_panel_scrolls_into_view_and_the_skip_link_works():
 def test_help_notes_keep_focus_and_heat_cells_have_buttons():
     lib = _js("lib.js")
     assert "pop.contains(e.relatedTarget)" in lib
-    assert '"heat-btn"' in lib and ".heat-btn" in _js("app.css")
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    assert '"heat-btn"' in lib and rule(".heat-btn")
 
 
 def test_text_colours_pass_contrast():
-    assert ".faint { color: var(--muted); }" in _js("app.css")
-    assert "color: var(--muted)" in _js("v07.css").split(".nav-group")[1].split("}")[0]
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
+    assert rule(".faint")["color"] == "var(--muted)"
+    assert rule(".nav-group")["color"] == "var(--muted)"
 
 
 # ------------------------------------------------------------------ batch, settings, explore pages
@@ -155,9 +159,12 @@ def test_explore_pages_of_an_empty_project_say_add_documents_first():
 
 
 def test_small_fixes():
+    from _static import rule  # 0.17.0: reads the cascade, so it holds when the rules move
+
     ql = _js("views/quicklook.js")
     assert "docx" in ql.split("const OK")[1].split("\n")[0]            # the pattern accepts what the chooser offers
-    assert "btn-wrap" in _js("views/setup.js") and ".btn-wrap" in _js("app.css")
+    # 0.17.0 (design guide): the wrapping button is button({ wrap: true }); the helper adds the btn-wrap class
+    assert "wrap: true" in _js("views/setup.js") and rule(".btn-wrap")
     assert "lock.on" in _js("views/projects.js") and "lock && lock.on" in _js("lib.js")
     assert "https?:" in _js("views/bibliography.js")
     assert "per-doc-label" in _js("views/search.js")

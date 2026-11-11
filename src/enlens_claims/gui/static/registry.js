@@ -18,7 +18,7 @@ export const JOB_KINDS = {
   "second-opinion": { icon: "cpu", text: "Second opinion", link: "#/hypotheses", withJob: true,
     label: (j, t) => `${t}${/ on (\d+ hypothes\w+)$/.test(j.title || "") ? ` (${/ on (\d+ hypothes\w+)$/.exec(j.title)[1]})` : ""}` },
   ingest: { icon: "upload", text: "Adding documents", link: "#/sources" },
-  index: { icon: "sparkles", text: "Search by meaning set-up", link: "#/sources" },
+  index: { icon: "network", text: "Search by meaning set-up", link: "#/sources" },
   benchmark: { icon: "cpu", text: "Model test", link: "#/settings/test" },
   keywords: { icon: "tag", text: "Codes by keywords", link: "#/profile" },
   label: { icon: "tag", text: "The AI labels passages", link: "#/profile" },
