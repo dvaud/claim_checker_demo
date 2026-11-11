@@ -48,11 +48,25 @@ def test_button_drawer_and_layout_are_wired():
     assert '"aria-expanded"' in JS and '"aria-label": "Research log"' in JS and 'h("aside"' in JS
     assert "Escape" in JS and "session(" in JS and "hashchange" in JS and "App.onChange" in JS
     assert "metaKey || e.ctrlKey" in JS
+    # the drawer is a column beside the page (reserving its width) from 1000px, floats over it from 861px to 999px
+    assert re.search(r"@media \(min-width: 1000px\) \{\s*body\.logdrawer-open \.shell \{ grid-template-columns:", CSS)
+    assert "(min-width: 861px) and (max-width: 999px)" in CSS and "(max-width: 999px)" in JS
     assert "1200px" in CSS and "860px" in CSS and "72vh" in CSS and "position: fixed" in CSS
     # only the app's colour tokens, only logdrawer- class names
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b", CSS)
     for sel in re.findall(r"\.([a-z][\w-]*)", re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)):
         assert sel.startswith("logdrawer") or sel in {"main", "shell", "topbar-project", "icon-btn", "btn", "link-btn"} or sel[0].isdigit(), sel
+
+
+def test_no_rule_styles_the_body_class_alone():
+    """`logdrawer-open` is the class the open drawer puts on <body>. A rule for the bare class once also hit an entry's
+    "Open" link (`.logdrawer-open { display: inline-block; margin-top: 3px }`), which made the whole page shrink-to-fit
+    and 3px lower whenever the drawer was open: the page ran under the panel and its button was cut off. The entry's
+    link has its own class, and the body class is used only after `body.`."""
+    css = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
+    assert not re.search(r"(?<!body)\.logdrawer-open\b", css)
+    assert 'class: "logdrawer-open"' not in JS and 'class: "logdrawer-entry-link"' in JS
+    assert re.search(r"\.logdrawer-entry-link \{", css)
 
 
 NODE_CASES = {

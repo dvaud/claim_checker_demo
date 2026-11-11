@@ -125,7 +125,10 @@
 }
 
 /* ==== the research log drawer (views/logdrawer.js) ==== */
-body { --logdrawer-w: 340px; }   /* the drawer's width, where it is a column beside the page */
+/* the drawer is a column beside the page (it reserves its width, so the page never runs under it) from 1000px up, at any
+   zoom: browser zoom only changes the window's width in CSS pixels. Under 1000px it floats over the page, as below. */
+body { --logdrawer-w: 300px; }   /* the drawer's width, where it is a column beside the page */
+@media (min-width: 1200px) { body { --logdrawer-w: 340px; } }
 
 /* the button: the same spot on every page, never part of a page head */
 .logdrawer-btn {
@@ -139,7 +142,7 @@ body { --logdrawer-w: 340px; }   /* the drawer's width, where it is a column bes
 @media (min-width: 861px) {
   .main { padding-top: 38px; }   /* room for the button, so it never covers a page's head */
 }
-@media (min-width: 1200px) {
+@media (min-width: 1000px) {
   body.logdrawer-open .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--logdrawer-w, 340px); }
   body.logdrawer-open .logdrawer-btn { right: calc(var(--logdrawer-w, 340px) + 20px); }
 }
@@ -150,10 +153,10 @@ body { --logdrawer-w: 340px; }   /* the drawer's width, where it is a column bes
   border-left: 1px solid var(--border); z-index: 45;
 }
 .logdrawer[hidden] { display: none; }
-@media (min-width: 1200px) {
+@media (min-width: 1000px) {
   .logdrawer { grid-column: 3; grid-row: 1; position: sticky; top: 0; height: 100vh; height: 100dvh; align-self: start; }
 }
-@media (min-width: 861px) and (max-width: 1199px) {
+@media (min-width: 861px) and (max-width: 999px) {
   .logdrawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 92vw); box-shadow: var(--shadow-lg); z-index: 55; }
 }
 @media (max-width: 860px) {
@@ -191,7 +194,7 @@ body { --logdrawer-w: 340px; }   /* the drawer's width, where it is a column bes
 .logdrawer-meta { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .logdrawer-entry-text { font-size: .9rem; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
 .logdrawer-why { font-size: .84rem; margin-top: 2px; }
-.logdrawer-open { display: inline-block; margin-top: 3px; font-size: .84rem; color: var(--accent-text); }
+.logdrawer-entry-link { display: inline-block; margin-top: 3px; font-size: .84rem; color: var(--accent-text); }
 .logdrawer-empty { font-size: .9rem; margin: 10px 0; }
 .logdrawer-more { text-align: center; padding-top: 8px; }
 

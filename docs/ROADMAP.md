@@ -37,7 +37,7 @@ share (`ingest.py`, `terms.py`, `routing.py`, `llm.py`, the task queue), is buil
 | --- | --- |
 | **0.15** | Released as 0.15.0 (8 November 2026), with patches up to 0.15.7: A0 to A5, H1, CI on three systems and the beta channel (J1 items 1 and 6), the rollback runbook (J1 item 10), versions on results (J4.2), issue forms and `SECURITY.md` (J4.5), and the half of the validation report that needs no AI (J4.3). J4.1 is dropped: ENLENS gives no citation file or DOI, by choice. |
 | **0.16** | Released as 0.16.0 (9 November 2026) and 0.16.1: H3, H2, H6 for `gui/server.py`, F4, F2, F5 and K1. Not built yet, and waiting for a later release: A6, D1 to D4, B5, G5, the AI mix (I5, H4, I1, I2, I4), H5, and `docs/METHODS.md` and `docs/PRIVACY.md` (J4.4). |
-| **0.17** | Release candidates: 0.17.0rc1, the sidebar of seven places; 0.17.0rc2, key terms without each language's common words; 0.17.0rc3, small fixes from use (M). The design guide's styling follows. |
+| **0.17** | Release candidates: 0.17.0rc1, the sidebar of seven places; 0.17.0rc2, key terms without each language's common words; 0.17.0rc3 and rc4, small fixes from use (M). The design guide's styling follows. |
 | **0.18** | Proposed: working together, live (L). |
 
 ## Releases 0.15 to 0.18
@@ -588,14 +588,14 @@ those merge rules and makes the exchange continuous and selective.
 Seen while using 0.17.0rc2, and small enough to come before the next feature. Built in 0.17.0rc3: the Overview's
 cards and footers in one layout, without its AI box; one AI mark under the hypothesis box; the Evidence map's download
 as a small icon; a gap above a running check; the Search page's titles, with every searched word marked, in search by
-meaning too; and search by meaning set up only once per project. Still to do:
+meaning too; and search by meaning set up only once per project. Built in 0.17.0rc4: M1, M2 and M4. Still to do:
 
-**M1. The research log panel makes room for the page** · Level 0
+**M1. The research log panel makes room for the page** · Level 0 · built in 0.17.0rc4
 - With the panel open, the page's content runs right up to it, and at 90% zoom the panel covers the page and cuts the
   *Research log* button in half. The open panel should keep its width at any zoom, sit flush right and leave the page
   a margin.
 
-**M2. A quick look uses its project's codebooks** · Level 0
+**M2. A quick look uses its project's codebooks** · Level 0 · built in 0.17.0rc4
 - A quick look opened from a project says "Unknown framework" when the codebook chosen for the whole app is kept in
   that project only. Decided: a quick look started from a project can use that project's codebooks.
 
@@ -603,7 +603,7 @@ meaning too; and search by meaning set up only once per project. Still to do:
 - When a model for search by meaning is chosen in Settings but the open project is not set up for it, the Search page
   offers to set it up there, with its progress, instead of a hint that points elsewhere.
 
-**M4. One clear way to open a document from Search** · Level 0
+**M4. One clear way to open a document from Search** · Level 0 · built in 0.17.0rc4
 - Today the title and a bare book icon both open it, and neither looks like it. One visible way, and the icon actions
   labelled.
 

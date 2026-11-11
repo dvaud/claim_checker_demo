@@ -60,4 +60,9 @@
 mark.kw-also { background: color-mix(in srgb, var(--mark) 60%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; box-shadow: inset 0 -2px 0 var(--mark-line); }
 .kwic mark.kw-also { font-weight: 600; }
 .kwic .kw-where.kw-where-title { white-space: normal; width: 14em; min-width: 14em; max-width: 14em; font-size: .92rem; line-height: 1.3; vertical-align: middle; }
-.kwic .kw-where .kw-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; color: var(--text); font-weight: 600; }
+.kwic .kw-where .kw-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; color: var(--accent-text); font-weight: 600; text-decoration: none; }
+.kwic .kw-where .kw-title:hover, .kwic .kw-where .kw-title:focus-visible { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+/* 0.17.0rc4: the title is the only way to open a Search line, so it stays in narrow windows too, narrower */
+@media (max-width: 760px) {
+  .kwic .kw-where.kw-where-title { display: table-cell; width: 8em; min-width: 8em; max-width: 8em; font-size: .85rem; }
+}

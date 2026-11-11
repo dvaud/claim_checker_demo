@@ -71,3 +71,14 @@ def test_the_page_draws_the_marks_and_puts_the_title_first():
     assert 'class: "kw-title"' in js and "aria-label" in js
     css = (STATIC / "v07.css").read_text(encoding="utf-8")
     assert "mark.kw-also" in css and "-webkit-line-clamp: 2" in css
+
+
+def test_one_visible_way_to_open_a_document_from_search():
+    js = (STATIC / "views" / "search.js").read_text(encoding="utf-8")
+    # the book icon is gone: the title opens the document; the flask action has a visible label
+    assert 'icon("book-open"' not in js
+    assert js.count("Open the document at these words") == 2  # the title's tooltip and accessible name
+    assert 'icon("flask", { size: 13 }), "Check"' in js
+    assert "Open the document at this passage" in js  # search by meaning opens the same way
+    css = (STATIC / "v07.css").read_text(encoding="utf-8")
+    assert ".kw-title:focus-visible" in css and "var(--accent-text)" in css

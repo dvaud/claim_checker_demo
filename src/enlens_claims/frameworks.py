@@ -334,6 +334,16 @@ def _folders(ws=None) -> list[tuple[Path, str]]:
 
     out = [(home() / "frameworks", "home")]
     if ws is not None:
+        # 0.17: a quick look can use the codebooks of the project it was opened from, read-only (its own labels stay
+        # in the quick look); a codebook of the quick look itself comes after and wins
+        from .home import project_path, quicklook_origin
+
+        try:
+            origin = quicklook_origin(Path(ws.root).name)
+        except OSError:
+            origin = None
+        if origin and project_path(origin).resolve() != Path(ws.root).resolve():
+            out.append((project_path(origin) / "frameworks", "origin"))
         out.append((Path(ws.root) / "frameworks", "project"))
     return out
 

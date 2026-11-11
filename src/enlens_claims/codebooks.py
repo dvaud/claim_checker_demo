@@ -213,7 +213,7 @@ def list_all(ws: Workspace) -> dict:
             where = locate(ws, fw.name)[0]
         except KeyError:
             where = fw.source
-        info.update(where=where, editable=where != "bundled", labels=labels.get(fw.name, 0),
+        info.update(where=where, editable=where not in ("bundled", "origin"), labels=labels.get(fw.name, 0),
                     checks=checks.get(fw.name, 0), editor=bool((fw.meta or {}).get("editor")),
                     profile_default=fw.name == default,
                     shadows_home=where == "project" and (_home_folder() / f"{fw.name}.csv").is_file())

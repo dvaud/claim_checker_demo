@@ -803,6 +803,18 @@ def is_temporary(name: str) -> dict | None:
     return {**q, "expires_at": q.get("created_at", 0) + QUICKLOOK_DAYS * 86400}
 
 
+def quicklook_origin(name: str) -> str | None:
+    """The project a quick look was opened from (0.17: its codebooks can be used there), if it is still a project.
+    A quick look opened from another quick look comes from that one's project."""
+    q = _quicklooks().get(name)
+    src = q.get("from") if q else None
+    if src in _quicklooks():  # opened while another quick look was the open project
+        src = _quicklooks()[src].get("from")
+    if not src or src == name or src not in list_projects():
+        return None
+    return src
+
+
 def keep_project(name: str) -> bool:
     data = _quicklooks()
     if name not in data:

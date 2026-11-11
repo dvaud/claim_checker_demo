@@ -1347,7 +1347,7 @@ export async function renderDocument(view, [docId], query) {
     const addBox = h("div");
     const listBox = h("div", { "aria-live": "polite", "aria-busy": "false" });
     el.append(h("h2", { id: "dv-codes-h", class: "dv-panel-title" }, "Codes"), head, jobBox, addBox, listBox, aiBox);
-    let prof = null, fws = null, codeItems = null, ai = null, aiFw = null;
+    let prof = null, fws = null, codeItems = null, ai = null, aiFw = null, missingFw = null;
     const open = new Set(query.code ? [query.code] : []);
     const all = new Set();      // codes whose every passage is shown
     let marks = [];             // the passages of the open codes, marked in the text
@@ -1355,7 +1355,14 @@ export async function renderDocument(view, [docId], query) {
 
     async function load() {
       listBox.setAttribute("aria-busy", "true");
-      try { prof = await api("GET", `${docBase}/profile?framework=${encodeURIComponent(framework)}`); }
+      try {
+        try { prof = await api("GET", `${docBase}/profile?framework=${encodeURIComponent(framework)}`); }
+        catch (e) {   // M2: a codebook kept in another project (or gone): the SDG targets, with a one-line note
+          if (framework === "sdg" || !/^Unknown framework/.test(e.message || "")) throw e;
+          missingFw = framework; framework = "sdg"; open.clear();
+          prof = await api("GET", `${docBase}/profile?framework=sdg`);
+        }
+      }
       catch (e) { listBox.setAttribute("aria-busy", "false"); replace(listBox, h("div", { class: "notice notice-error" }, icon("alert-circle"), h("p", {}, e.message))); return; }
       listBox.setAttribute("aria-busy", "false");
       // a goal from the profile grid (?code=7): open its targets
@@ -1368,9 +1375,11 @@ export async function renderDocument(view, [docId], query) {
       const fwName = prof.framework_title || framework;
       const label = prof.code_label || "code";
       const sel = h("select", { class: "select input-sm", id: "dv-fw" }, (fws || [{ name: framework, title: fwName }]).map((f) => h("option", { value: f.name, selected: f.name === framework }, f.title || f.name)));
-      sel.addEventListener("change", async () => { framework = sel.value; open.clear(); keepUrl(); await load(); const again = document.getElementById("dv-fw"); if (again) again.focus(); });
+      sel.addEventListener("change", async () => { framework = sel.value; missingFw = null; open.clear(); keepUrl(); await load(); const again = document.getElementById("dv-fw"); if (again) again.focus(); });
       replace(head, h("div", { class: "dv-fw" }, h("label", { class: "field-label", for: "dv-fw" }, "Codebook"), sel));
       clear(listBox);
+      if (missingFw) listBox.appendChild(h("div", { class: "notice notice-warn", style: { marginBottom: "10px" } }, icon("alert-triangle"),
+        h("p", {}, `The codebook “${missingFw}” is kept in another project, so the SDG targets are shown. Codebooks › move it to all projects makes it available everywhere.`)));
       const p1 = prof.pass1 || {};
       if (!p1.done) {
         clear(aiBox); ai = null;

@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.17.0rc4 (November 2026): more small fixes from use
+
+The fourth release candidate of 0.17, with three more of the small fixes on the roadmap (M1, M2 and M4): the research
+log panel covered the page at 90% zoom, a quick look said "Unknown framework" for a codebook kept in the project it
+was opened from, and Search had two ways to open a document, neither of which looked like one. Nothing here changes
+results.
+
+It is a release candidate: only copies with *Try new versions early* (Settings) get it.
+
+### Changed
+
+- **One way to open a document from Search.** A line's title is the link, in the accent colour, and opens the
+  document at these words; the bare book icon beside it is gone, and the other action reads *Check*. In narrow
+  windows the title stays, so a line can still be opened there.
+- **A quick look uses its project's codebooks.** A quick look opened while a project is open can use that project's
+  own codebooks, read-only: the labels stay in the quick look, the codebook is not copied or changed.
+
+### Fixed
+
+- **The research log panel makes room for the page.** With the panel open, the page ran right up to it, and at 90%
+  zoom the panel covered the page and cut the *Research log* button in half. The panel only became a column of its
+  own in windows 1,200 pixels wide, and zooming makes a window narrower in the page's own pixels. Now, from 1,000
+  pixels (at any zoom), the open panel is a column of its own, flush right, and the page keeps its margin beside it;
+  only smaller windows still show it over the page. The page also no longer slips down 3 pixels when the panel opens
+  (a style meant for the panel's *Open* links reached the whole page).
+- **"Unknown framework" in a document's Codes tab.** Where the codebook chosen for the whole app is still not there
+  (a quick look opened with no project, or a codebook kept in another project), the tab shows the SDG targets with a
+  one-line note on where the codebook is kept, instead of the error.
+
+### Not yet done
+
+- The rest of the small fixes (roadmap M3, M5, M6, M7): search by meaning set up from the Search page, the marks to
+  try in mockups, jobs that wait their turn, and moving many documents to the new reader.
+- Other pages (Search, Profile) still show "Unknown framework" for a codebook that is not there.
+- Below 1,000 pixels the research log panel still lies over the page, and the page's scrollbar stays at the window's
+  edge, beside the panel.
+- The panel was checked in a browser at the window widths that 80% to 125% zoom give, not by zooming the app itself;
+  the Codes tab's note was checked through the API, not watched in the app.
+- From rc1 and rc2: the design guide's styling, and the manual's pictures of the old screens.
+
+### Tests
+
+`tests/test_0_17_0_quicklook_codebooks.py` (4 tests): a quick look sees its project's codebook, copies nothing and
+changes none of its files, and cannot edit it, while another project still cannot use it; a quick look with no
+project, or whose project is gone, falls back without an error; a quick look opened from another keeps the first
+project; the document's profile with that codebook, and the error the Codes tab falls back on. New checks in
+`tests/test_0_17_0_log_drawer.py` (no style for the panel's open state alone; the column from 1,000 pixels) and
+`tests/test_0_17_0_search_marks.py` (the title is the one way to open a line). 1,105 passed, 17 skipped.
+
 ## 0.17.0rc3 (November 2026): small fixes from use, and a roadmap
 
 The third release candidate of 0.17. Using rc2 turned up small things that got in the way: a Search for "fight

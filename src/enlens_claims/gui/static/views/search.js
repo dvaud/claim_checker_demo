@@ -189,16 +189,18 @@ export async function renderSearch(view, params, query) {
       const node = h("mark", {}, ...wordSpans(x.node, addWord));
       const docHref = `#/doc/${encodeURIComponent(x.doc_id)}?q=${x.start}-${x.end}`;
       const check = h("button", { class: "btn btn-sm btn-ghost", type: "button", title: "Check a hypothesis about what this line says",
-        onClick: () => navigate(`#/hypotheses?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`) }, icon("flask", { size: 13 }), h("span", { class: "visually-hidden" }, "Check a hypothesis about this"));
+        onClick: () => navigate(`#/hypotheses?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`) }, icon("flask", { size: 13 }), "Check");
+      check.setAttribute("aria-label", "Check a hypothesis about this line");
       // 0.17: the title is what a person looks for; "paragraph N of M" sits in the tooltip and the accessible name
+      // 0.17.0rc4: the title is the one way to open the document at these words, so it looks like a link
       const title = x.title || "untitled";
       const where = x.location ? `${title} · ${x.location}` : title;
       return h("tr", { title: where },
-        h("td", { class: "kw-where kw-where-title" }, h("a", { href: docHref, class: "kw-title", title: where, "aria-label": where }, title)),
+        h("td", { class: "kw-where kw-where-title" }, h("a", { href: docHref, class: "kw-title", title: `Open the document at these words: ${where}`, "aria-label": `Open the document at these words: ${where}` }, title)),
         h("td", { class: "kw-left" }, h("span", {}, ...wordSpans(x.left, addWord, x.marks))),
         h("td", { class: "kw-node" }, node),
         h("td", { class: "kw-right" }, ...wordSpans(x.right, addWord, x.marks, x.left.length + x.node.length)),
-        h("td", { class: "kw-act" }, h("a", { class: "btn btn-sm btn-ghost", href: docHref, title: "Open the document at these words" }, icon("book-open", { size: 13 }), h("span", { class: "visually-hidden" }, "Open the document")), check));
+        h("td", { class: "kw-act" }, check));
     });
     out.appendChild(h("div", { class: "kwic-wrap" }, h("table", { class: "kwic" }, h("caption", { class: "visually-hidden" }, "Concordance: the words found, with the words before and after"), h("tbody", {}, rows))));
     const pages = h("div", { class: "pager" },
@@ -206,7 +208,7 @@ export async function renderSearch(view, params, query) {
       h("span", { class: "muted small" }, `Lines ${fmt.num(st.offset + 1)}–${fmt.num(st.offset + r.lines.length)} of ${fmt.num(r.total)}`),
       h("button", { class: "btn btn-sm", type: "button", disabled: st.offset + PAGE >= r.total, onClick: () => { st.offset += PAGE; go_(); window.scrollTo(0, 0); } }, "Next", icon("chevron-right", { size: 13 })));
     out.appendChild(pages);
-    out.appendChild(h("p", { class: "muted small" }, "Click a word in a line to add it to the search; Shift-click to make a phrase with the words you searched for. ", icon("flask", { size: 12 }), " starts a check of what the line says."));
+    out.appendChild(h("p", { class: "muted small" }, "Click a word in a line to add it to the search; Shift-click to make a phrase with the words you searched for. Click the title to open the document at those words. ", icon("flask", { size: 12 }), " Check starts a check of what the line says."));
     // the words around the hits
     const colBox = h("div", { class: "card card-plain", style: { marginTop: "12px" }, hidden: true });
     const colBtn = h("button", { class: "btn btn-sm", type: "button" }, icon("network", { size: 13 }), "Words that often appear nearby");
@@ -243,7 +245,7 @@ export async function renderSearch(view, params, query) {
     if (!r.passages.length) { out.appendChild(emptyState("search-x", "Nothing found", "No passage is close to these words.")); return; }
     out.appendChild(h("div", { class: "meaning-list" }, r.passages.map((p) => h("article", { class: "card card-plain" },
       h("div", { class: "row", style: { justifyContent: "space-between" } },
-        h("a", { href: `#/doc/${encodeURIComponent(p.doc_id)}?q=${p.start}-${(p.start || 0) + p.text.length}&whole=1` }, h("strong", { class: "serif" }, p.title || "untitled")),
+        h("a", { title: `Open the document at this passage: ${p.title || "untitled"}`, "aria-label": `Open the document at this passage: ${p.title || "untitled"}${p.location ? " · " + p.location : ""}`, href: `#/doc/${encodeURIComponent(p.doc_id)}?q=${p.start}-${(p.start || 0) + p.text.length}&whole=1` }, h("strong", { class: "serif" }, p.title || "untitled")),
         h("span", { class: "muted small" }, p.location)),
       h("p", { class: "passage serif" }, ...markedText(p.text, p.marks)),
       h("div", { class: "found-words" }, p.found_by === "meaning" ? "Found by meaning: it shares none of the words." : ["Found by the words: ", h("b", {}, (p.matched || []).join(", "))])))));

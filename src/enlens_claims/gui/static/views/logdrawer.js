@@ -87,7 +87,7 @@ export function initLogDrawer() {
   placeBtn();
   window.matchMedia("(max-width: 860px)").addEventListener("change", placeBtn);
 
-  const overlay = () => window.matchMedia("(max-width: 1199px)").matches;
+  const overlay = () => window.matchMedia("(max-width: 999px)").matches;
 
   function openIt(byUser) {
     open = true;
@@ -182,7 +182,7 @@ export function initLogDrawer() {
             e.mine ? null : h("span", {}, ` · ${e.who}`)),
           h("div", { class: "logdrawer-entry-text" }, e.text),
           e.why ? h("div", { class: "logdrawer-why muted" }, `Why: ${e.why}`) : null,
-          link ? h("a", { class: "logdrawer-open", href: link }, "Open") : null)));
+          link ? h("a", { class: "logdrawer-entry-link", href: link }, "Open") : null)));
     }
     list.appendChild(ol);
     if (data.total > data.entries.length) {

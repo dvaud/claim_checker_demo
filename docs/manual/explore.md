@@ -30,11 +30,11 @@ document first.
 | To grow the search from what you see | Click a word in a line to add it; <kbd>Shift</kbd>-click to make a phrase. |
 | To see patterns | Sort by document, by the words before or by the words after. |
 | The words around your search | *Words that often appear nearby*: the words within 2 to 10 words of the places found, most often or most typical first (point at one for both figures; within one document or code, "typical" is measured against that document's or code's own passages). |
-| To test what a line says | Its flask button starts a check of it. |
+| To test what a line says | Its *Check* button starts a check of it. |
 | A list for later | Download every line for Excel or as CSV. |
 
 Every searched word is marked in the lines, and in the passages that search by meaning finds. A line shows its
-document's title; point at it for the place (page, paragraph). Every line opens the document at its words. A *passage* is the stretch of text the app reads as one unit: a
+document's title; point at it for the place (page, paragraph). Click the title to open the document at its words. A *passage* is the stretch of text the app reads as one unit: a
 paragraph, up to about 1,100 characters ([How documents are read](reading.md)). The place shown (page, paragraph) is
 that of the original. Setting up search by meaning runs once per project: a second press, or a reload while it
 runs, follows the same job.
@@ -152,7 +152,8 @@ listing any quote it could not place. Other documents come as an HTML copy.
 
 *Quick look at one document* (on the Overview and *Manage projects*) reads one file into a
 temporary project and opens it at its key terms: search it, see its codes and references at once. A banner offers
-*Keep as a project* or *Discard now*; otherwise it goes to the trash after 7 days.
+*Keep as a project* or *Discard now*; otherwise it goes to the trash after 7 days. A quick look opened while a project
+is open can use that project's codebooks, without changing them; its own labels stay in the quick look.
 
 ## For FlexiConc and the Cross-Doc SDG Explorer
 
