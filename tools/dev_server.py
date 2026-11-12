@@ -1,6 +1,7 @@
 """Run the app against fake local servers, for developing and testing the interface without real models.
 
     python tools/dev_server.py [--port 8765] [--home /tmp/enlens-dev] [--pilot path/to/pilot] [--delay 0.05]
+                               [--max-minutes 60] [--watch-pid PID]
 
 - starts a fake Ollama (chat model `fake-model:latest`, embedding model `fake-embed:latest`; with `--fresh-user` or
   `--corpus social` it lists them as `qwen3:8b` and `nomic-embed-text:latest`, as a real install would) on a free port,
@@ -43,6 +44,14 @@
   poller, gui/poller.py), so the Team tab's rounds by themselves can be tried: choose a shared folder for a project
   (two dev servers with their own `--home` and one folder make two colleagues). None of the projects made here has
   one, so until then it only looks. `--no-poller` leaves it off (*Sync now* still works).
+
+The dev server stops on its own, so that forgotten ones do not pile up on a laptop:
+- `--max-minutes N` (default 60, or `ENLENS_DEV_MAX_MINUTES`; 0 = no limit) stops it after N minutes, and says so;
+- it stops when the agent that started it ends: at start-up it looks up the chain of processes that started it (POSIX
+  only, by `ps`) for the nearest Claude Code process and watches that one (not its direct parent: an agent often starts
+  the server with `&` in a shell that ends at once). `--watch-pid PID` (or `ENLENS_DEV_WATCH_PID`) watches that process
+  instead (also on Windows). Run by hand from a terminal, with no Claude Code above it, it watches nothing.
+Either way the app, the stand-ins and the poller are stopped cleanly and one line says why.
 """
 from __future__ import annotations
 
@@ -50,6 +59,7 @@ import argparse
 import json
 import os
 import sys
+import subprocess
 import tempfile
 import threading
 import time
@@ -73,6 +83,123 @@ def social_documents(folder: Path, make_pdf) -> Path:
                  "news_article_traffic.html"):
         (folder / name).write_text((src / name).read_text(encoding="utf-8"), encoding="utf-8")
     return folder
+
+# -- stopping on its own (the maximum lifetime, and the agent that started it ending) ---------------------------------
+STOP = threading.Event()             # set once the dev server has been asked to stop
+STOPPING = {"srv": None, "reason": ""}   # the app server now serving, and why it was stopped
+WATCH_INTERVAL = 5.0                 # seconds between looks at the watched process
+
+
+def stop_now(reason: str) -> None:
+    """Print one line saying why, and make the serving loop end (the first reason wins)."""
+    if STOP.is_set():
+        return
+    STOPPING["reason"] = reason
+    STOP.set()
+    print(reason, flush=True)
+    srv = STOPPING["srv"]
+    if srv is not None:
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+
+
+def parse_ps_line(line: str) -> tuple[int, str] | None:
+    """`ps -o ppid=,command=` output ("  123 /usr/bin/claude --x") as (parent pid, command line)."""
+    parts = line.strip().split(None, 1)
+    if not parts or not parts[0].isdigit():
+        return None
+    return int(parts[0]), (parts[1] if len(parts) > 1 else "")
+
+
+def ps_parent(pid: int) -> tuple[int, str] | None:
+    """The parent of `pid` and `pid`'s own command line, or None when it cannot be found (no `ps`, process gone)."""
+    try:
+        out = subprocess.run(["ps", "-o", "ppid=,command=", "-p", str(pid)], capture_output=True, text=True,
+                             timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return parse_ps_line(out.splitlines()[0]) if out.strip() else None
+
+
+def ancestor_chain(pid: int, lookup=ps_parent, limit: int = 40) -> list[tuple[int, str]]:
+    """The processes above `pid`, nearest first, as (pid, command line), up to PID 1. `lookup(pid)` gives
+    (parent pid, command line of pid); it is a parameter so that a test can give a made-up ancestry."""
+    chain: list[tuple[int, str]] = []
+    seen = {pid}
+    found = lookup(pid)
+    while found and len(chain) < limit:
+        parent = found[0]
+        if parent <= 1 or parent in seen:
+            break
+        seen.add(parent)
+        found = lookup(parent)  # (the parent's parent, the parent's own command line)
+        chain.append((parent, found[1] if found else ""))
+    return chain
+
+
+def is_claude_command(command: str) -> bool:
+    """A Claude Code process: the program is `claude`, or `node` running Claude Code's own script. Only the program
+    and its first argument are looked at: a path elsewhere in a shell's command line may contain ".claude"."""
+    words = command.split()
+    if not words:
+        return False
+    first = os.path.basename(words[0]).lower()
+    if first in ("claude", "claude.exe") or first.startswith("claude-code"):
+        return True
+    if first in ("node", "node.exe", "bun", "bun.exe") and len(words) > 1:
+        script = words[1].replace("\\", "/").lower()
+        return os.path.basename(script) == "claude" or "/claude-code/" in script
+    return False
+
+
+def choose_watch_pid(explicit: int | None, chain: list[tuple[int, str]]) -> int | None:
+    """The process whose end stops the dev server: the one named, else the nearest Claude Code above it, else none."""
+    if explicit:
+        return explicit
+    for pid, command in chain:
+        if is_claude_command(command):
+            return pid
+    return None
+
+
+def pid_alive(pid: int) -> bool:
+    if os.name == "nt":  # os.kill(pid, 0) would end the process there
+        import ctypes
+
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def start_watchers(max_minutes: float, watch_pid: int | None, interval: float = WATCH_INTERVAL) -> None:
+    """Start the daemon threads that call stop_now(): after `max_minutes` (0 = never) and when the watched process ends."""
+    if max_minutes > 0:
+        def lifetime():
+            if not STOP.wait(max_minutes * 60):
+                shown = f"{max_minutes:g}"
+                stop_now(f"stopping after {shown} minutes (--max-minutes); start it again if you still need it")
+
+        threading.Thread(target=lifetime, daemon=True).start()
+    if watch_pid:
+        def watch():
+            while not STOP.wait(interval):
+                if not pid_alive(watch_pid):
+                    stop_now(f"stopping: the process that started it (pid {watch_pid}) has ended; "
+                             "start it again if you still need it")
+                    return
+
+        threading.Thread(target=watch, daemon=True).start()
+        print(f"watching process {watch_pid}: the dev server stops when it ends", flush=True)
 
 
 def main() -> int:
@@ -116,6 +243,14 @@ def main() -> int:
                          "folder (sealed as at a service), with one invite waiting; and the Team tab may set one up")
     ap.add_argument("--no-poller", action="store_true",
                     help="0.18: do not look in the projects' shared folders by themselves (Sync now still works)")
+    try:
+        default_minutes = float(os.environ.get("ENLENS_DEV_MAX_MINUTES", "60"))
+    except ValueError:
+        default_minutes = 60.0
+    ap.add_argument("--max-minutes", type=float, default=default_minutes,
+                    help="stop by itself after this many minutes (default 60, or ENLENS_DEV_MAX_MINUTES; 0 = no limit)")
+    ap.add_argument("--watch-pid", type=int, default=int(os.environ.get("ENLENS_DEV_WATCH_PID") or 0) or None,
+                    help="stop when this process ends (default: the nearest Claude Code above this one, if any)")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -138,6 +273,9 @@ def main() -> int:
 
         llm.free_memory = lambda: int(2.7 * (1 << 30))
         OllamaBackend.memory_need = lambda self, model: int(8.1 * (1 << 30))
+    watch = choose_watch_pid(a.watch_pid, [] if os.name == "nt" else ancestor_chain(os.getpid()))
+    start_watchers(a.max_minutes, watch)
+    z = None
     fake, fake_url = fake_servers.start("ollama")
     fake.delay = 0.0  # seeding runs at full speed; the delay applies to checks made in the app
     fake.varied = True
@@ -357,22 +495,27 @@ def main() -> int:
                 app.restart = lambda: (again.set(), app.stop())
                 drop = track_connections(srv)
             port = srv.server_address[1]
+            STOPPING["srv"] = srv
             # 0.17.2: the page carries no token: open the link
             print(f"data folder: {home_dir}\nfake Ollama: {fake_url}\napp: http://127.0.0.1:{port}/\n"
                   f"token: {app.token}\nlink: http://127.0.0.1:{port}/#token={app.token}", flush=True)
             if not a.no_poller:
                 app.poller.start()  # 0.18 (L3): as serve() does (each app of a restart has its own)
             try:
-                srv.serve_forever(poll_interval=0.3)
+                if not STOP.is_set():
+                    srv.serve_forever(poll_interval=0.3)
             except KeyboardInterrupt:
                 break
             finally:
                 app.poller.stop()  # no round starts once this app stops
                 srv.server_close()
+            if STOP.is_set():
+                break
             if HANDOVER["pending"]:  # 0.15.4: the app quit for the Windows hand-over: "install", then come back
                 HANDOVER["pending"] = False
                 drop()
-                time.sleep(6)
+                if STOP.wait(6):
+                    break
                 if a.update == "windows-fails":
                     from enlens_claims import update as _upd
 
@@ -384,10 +527,14 @@ def main() -> int:
             if not again.is_set():
                 break
             drop()
-            time.sleep(1.5)  # as a real restart takes a moment
+            if STOP.wait(1.5):  # as a real restart takes a moment
+                break
             print("restarted (stand-in update)", flush=True)
     finally:
+        STOP.set()  # the watchers end with the server
         fake.shutdown()
+        if z is not None:
+            z.stop()
     return 0
 
 
