@@ -167,7 +167,7 @@ def test_every_ai_button_waits_for_claude_code_and_gets_its_answers(api, corpus)
 def test_stopping_a_waiting_check_withdraws_it(api, corpus):
     _project(api, corpus)
     r = api("POST", "/api/projects/P/checks", {"text": CLAIM, "k": 3})[1]
-    _wait_until(lambda: api("GET", "/api/projects/P/queue")[1]["waiting"] == 1)  # 2026-11-12: was a fixed 1 s
+    _wait_until(lambda: api("GET", "/api/projects/P/queue")[1].get("waiting") == 1)  # 2026-11-12: was a fixed 1 s (an answer without it, as the check starts: asked again)
     q = api("GET", "/api/projects/P/queue")[1]
     assert q["waiting"] == 1 and q["groups"][0]["kind"] == "expand"
     h = api("GET", "/api/projects/P/hypotheses")[1]["hypotheses"]
