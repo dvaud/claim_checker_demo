@@ -780,12 +780,13 @@ def run_here(ws: Workspace, backend, kinds: list[str] | None = None, limit: int 
 # ---------------------------------------------------------------------------------------------
 # 0.8.1: model tests by queue (label compare, the model test): asked on a scratch copy, nothing stored
 # ---------------------------------------------------------------------------------------------
-def remove_copy(copy: Workspace, tries: int = 8, windows: bool | None = None) -> bool:
+def remove_copy(copy: Workspace, tries: int = 12, windows: bool | None = None) -> bool:
     """Remove a scratch copy of a project (answer_on_copy); True when it is gone. 0.15.7: every connection to it is
     closed first, in every thread (also the ones open_project keeps), or Windows keeps the copy: its database is open.
     0.16.0rc2: a helper that reads the copy at that moment (Claude Code's connector in the middle of a call) opens it
     again before it is gone, and Windows keeps it then too: there, closing and removing are tried again for a few
-    seconds."""
+    seconds. 2026-11-12: about 8 seconds (12 tries) instead of 3.6 (8): on a busy Windows computer 3.6 s was not
+    always enough, and the copy was left for the trash."""
     import os
     import shutil
 

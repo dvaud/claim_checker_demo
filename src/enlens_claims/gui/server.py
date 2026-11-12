@@ -1849,11 +1849,24 @@ def _repair_icons() -> None:
         print(f"Could not repair the ENLENS icon: {e}", file=sys.stderr)
 
 
+class QuickServer(ThreadingHTTPServer):
+    """A ThreadingHTTPServer that starts without looking up this computer's full name. Python's own server_bind asks
+    for it (socket.getfqdn), which waits 35 s (70 s for 0.0.0.0) on a Mac whose name the network does not answer for
+    (GitHub's Mac runners, 2026-11-12), and ENLENS never uses that name."""
+
+    def server_bind(self) -> None:
+        import socketserver
+
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name, self.server_port = str(host), port
+
+
 def make_server(host: str = "127.0.0.1", port: int = 8765, app: App | None = None) -> tuple[ThreadingHTTPServer, App]:
     """The server (not started) and its app. Port 0 picks a free port."""
     app = app or App()
     handler = type("BoundHandler", (Handler,), {"app": app})
-    srv = ThreadingHTTPServer((host, port), handler)
+    srv = QuickServer((host, port), handler)
     srv.daemon_threads = True
     real = srv.server_address[1]
     app.port = real

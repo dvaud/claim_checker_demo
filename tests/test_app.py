@@ -365,7 +365,7 @@ def test_progress_tracker_and_model_line():
 
 def test_openai_compatible_server_falls_back_and_streams(loaded):
     """LM Studio rejects json_object; llama.cpp streams SSE. The backend copes with both."""
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from http.server import BaseHTTPRequestHandler
 
     seen = []
 
@@ -399,7 +399,9 @@ def test_openai_compatible_server_falls_back_and_streams(loaded):
                 self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
             self.wfile.write(b"data: [DONE]\n\n")
 
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    from enlens_claims.gui.server import QuickServer  # starts without a 35 s name lookup on Mac runners
+
+    srv = QuickServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         url = f"http://127.0.0.1:{srv.server_address[1]}/v1"

@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 FAKE_MODEL = "fake-model:latest"
 # misbehaving models, for testing the guards: reasons until the output cap, writes blank space, never starts
@@ -493,7 +493,9 @@ class _Anthropic(BaseHTTPRequestHandler):
 
 def start(kind: str = "ollama", port: int = 0, trained_context: int = 32768):
     """Start a fake server in a background thread; returns (server, base_url). Call server.shutdown() to stop."""
-    srv = ThreadingHTTPServer(("127.0.0.1", port), _Ollama if kind == "ollama" else _Anthropic)
+    from enlens_claims.gui.server import QuickServer  # starts without a 35 s name lookup on Mac runners
+
+    srv = QuickServer(("127.0.0.1", port), _Ollama if kind == "ollama" else _Anthropic)
     srv.requests = []
     srv.trained_context = trained_context
     srv.thinking = False

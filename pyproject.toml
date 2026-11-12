@@ -22,7 +22,7 @@ anthropic = ["anthropic>=0.40"]        # the Claude API (cloud, opt-in)
 connector = ["mcp>=2,<3"]
 pdfminer = ["pdfminer.six>=20231228"]
 ocr = ["pypdfium2>=4.20", "pillow>=10"]  # read scanned PDF pages; also needs the program tesseract (see the manual)
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-xdist>=3.5", "pytest-timeout>=2.3"]  # 2026-11-12: tests side by side (-n), a time limit per test
 
 [project.scripts]
 enlens = "enlens_claims.cli:main"

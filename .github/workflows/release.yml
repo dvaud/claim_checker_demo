@@ -61,7 +61,7 @@ jobs:
           fi
       - name: Test (only when Tests has not passed on this commit)
         if: steps.tested.outputs.passed != 'true'
-        run: python -m pytest -q
+        run: python -m pytest -q -n auto --dist worksteal --timeout=600   # side by side, as in tests.yml
       - name: Build the package and the install scripts
         run: |
           pip install build

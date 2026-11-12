@@ -67,3 +67,25 @@ def _read_one_file_at_a_time(monkeypatch):
     them here, one at a time, so what a test changes in this process (a stand-in for OCR, say) is what reading sees;
     tests/test_0_16_0_speed.py reads at once on purpose and compares."""
     monkeypatch.setenv("ENLENS_READ_WORKERS", "1")
+
+
+def pytest_collection_modifyitems(config, items):
+    """2026-11-12, CI (tests.yml): ENLENS_TEST_SHARD=k/n keeps every n-th test from the k-th on, so n machines share the
+    suite evenly (Windows, the slowest system, is split in three). Neighbouring tests (the cases of one parametrised
+    test, the tests of one file) go to different machines, and every machine and every pytest-xdist worker collects
+    the same order, so they agree on the split. Unset (as on this computer): every test runs."""
+    import os
+
+    shard = os.environ.get("ENLENS_TEST_SHARD", "").strip()
+    if not shard:
+        return
+    try:
+        k, n = (int(x) for x in shard.split("/"))
+        assert 1 <= k <= n
+    except (ValueError, AssertionError):
+        raise pytest.UsageError(f"ENLENS_TEST_SHARD={shard!r}: expected k/n with 1 <= k <= n, such as 2/3") from None
+    keep = [item for i, item in enumerate(items) if i % n == k - 1]
+    drop = [item for i, item in enumerate(items) if i % n != k - 1]
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
