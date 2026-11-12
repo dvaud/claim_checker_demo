@@ -1,6 +1,6 @@
 # ENLENS tests (0.14.3; 0.15: on Linux, macOS and Windows): the test suite on every push to main and every pull
 # request, so a defect is caught when it lands rather than when a release is tagged. The release workflow
-# (release.yml) still runs the tests again on the tag.
+# (release.yml) does not run the tests again when this workflow has passed on the tagged commit.
 name: Tests
 
 on:
@@ -36,8 +36,8 @@ jobs:
           - {os: macos-latest, python: "3.12", label: "macOS, Python 3.12", lint: false, advisory: false}
           - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12", lint: false, advisory: false}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: Install

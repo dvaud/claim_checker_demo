@@ -8,6 +8,9 @@
 # Install-ENLENS-macOS.zip), from a removed install, the way a double-click runs them.
 # 0.15: a tag of a release candidate (v0.15.0rc1) drafts a pre-release. The install line and the app's Update take
 # the latest full release (GitHub's "latest" leaves pre-releases out), so only someone who asks gets the candidate.
+# 2026-11-12: the tests run here only when the Tests workflow (tests.yml: Linux, macOS and Windows) has not already
+# passed on this very commit. A release commit is pushed to main and tagged once Tests is green, so re-running the
+# suite here (Linux only, ~6 of the ~8 minutes) only repeated it. A tag pushed before Tests finished still runs them.
 name: Release
 
 on:
@@ -17,16 +20,18 @@ on:
 
 permissions:
   contents: write
+  actions: read   # to look up the Tests runs of this commit
 
 jobs:
   build:
     name: Test and build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Check the version (tag, pyproject.toml, __init__.py, CHANGELOG.md)
@@ -34,11 +39,29 @@ jobs:
         run: |
           python tools/release.py check "${{ github.ref_type == 'tag' && github.ref_name || '' }}"
           echo "prerelease=$(python tools/release.py prerelease)" >> "$GITHUB_OUTPUT"
-      - name: Test
+      - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[dev,connector,fast,pdfminer]'
-          python -m pytest -q
+      - name: Has Tests already passed on this commit?
+        id: tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          found="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=1" \
+            --jq '"\(.total_count) \(.workflow_runs[0].html_url // "")"')" || found=0   # lookup failed: test here
+          read -r count url <<< "$found"
+          case "$count" in ''|*[!0-9]*) count=0 ;; esac
+          if [ "${count:-0}" -gt 0 ]; then
+            echo "Tests passed on $GITHUB_SHA on Linux, macOS and Windows ($url): not running them again here."
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No passed Tests run of $GITHUB_SHA: the tests run here."
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Test (only when Tests has not passed on this commit)
+        if: steps.tested.outputs.passed != 'true'
+        run: python -m pytest -q
       - name: Build the package and the install scripts
         run: |
           pip install build
@@ -49,7 +72,7 @@ jobs:
       # known text, and that reading is the same twice; a file of the release, beside its notes
       - name: Measure how documents are read
         run: python -m enlens_claims.cli measure --report dist/validation-report.md
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: enlens-release
           path: |
@@ -64,10 +87,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     env:
       ENLENS_NO_OPEN: "1"
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: enlens-release
       - name: Install with install.sh (the built package)
@@ -252,7 +276,7 @@ jobs:
     env:
       ENLENS_NO_OPEN: "1"
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: enlens-release
       - name: Install with install.sh (the built package)
@@ -288,7 +312,7 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: enlens-release
       - name: Upload to a draft release
