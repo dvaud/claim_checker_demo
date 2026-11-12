@@ -227,7 +227,12 @@ def test_the_forms_parse_as_yaml():
     assert cfg["contact_links"][0]["url"].endswith("/security/policy")
     wf = yaml.safe_load((ROOT / ".github/workflows/tests.yml").read_text("utf-8"))
     assert wf["jobs"]["test"]["strategy"]["fail-fast"] is False
-    assert len(wf["jobs"]["test"]["strategy"]["matrix"]["include"]) == 4
+    rows = wf["jobs"]["test"]["strategy"]["matrix"]["include"]
+    assert {r["os"] for r in rows} == {"ubuntu-latest", "macos-latest", "windows-latest"}
+    # 2026-11-12: Windows runs in parts (ENLENS_TEST_SHARD, tests/conftest.py); together they are every test once
+    parts = sorted(r["shard"] for r in rows if r["os"] == "windows-latest")
+    assert parts == [f"{k}/{len(parts)}" for k in range(1, len(parts) + 1)]
+    assert all(not r["shard"] for r in rows if r["os"] != "windows-latest")
 
 
 def test_the_tests_run_on_three_systems_and_a_linux_job_lints():
