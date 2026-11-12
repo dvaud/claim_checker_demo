@@ -1,0 +1,38 @@
+# ENLENS long random runs (2026-11-12): the seeded random runs of the 0.18 roles and owner rules (tests marked
+# `random`) with 30 seeds each and longer runs (ENLENS_LONG_RANDOM=1), once a night on main and by hand. tests.yml runs
+# 10 seeds on every push and a laptop 2, so a defect that shows in a rare seed is still found within a day, without
+# making every push or every local run carry ~15 GB of writes. A failure names its seed: rerun it locally with
+# ENLENS_ROLES_FIRST_SEED=<seed> ENLENS_ROLES_SEEDS=1 (or ENLENS_L2_FIRST_SEED / ENLENS_L2_SEEDS) and the test's file.
+name: Long random runs
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  random:
+    name: Random runs, 30 seeds (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
+      ENLENS_LONG_RANDOM: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,connector,fast,pdfminer]"
+      - name: Test
+        run: python -m pytest -q -m random -n auto --dist worksteal --timeout=1800 --durations=10

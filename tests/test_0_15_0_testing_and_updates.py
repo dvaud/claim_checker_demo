@@ -233,12 +233,17 @@ def test_the_forms_parse_as_yaml():
     parts = sorted(r["shard"] for r in rows if r["os"] == "windows-latest")
     assert parts == [f"{k}/{len(parts)}" for k in range(1, len(parts) + 1)]
     assert all(not r["shard"] for r in rows if r["os"] != "windows-latest")
+    # 2026-11-12: one Linux job installs every optional extra, so no test is skipped everywhere for a missing one
+    full = [r for r in rows if r["all"]]
+    assert len(full) == 1 and full[0]["os"] == "ubuntu-latest"
+    assert set(full[0]["extras"].split(",")) >= {"dev", "connector", "fast", "pdfminer", "anthropic", "ocr"}
+    assert all(set(r["extras"].split(",")) >= {"dev", "connector", "fast"} for r in rows)
 
 
 def test_the_tests_run_on_three_systems_and_a_linux_job_lints():
     text = (ROOT / ".github/workflows/tests.yml").read_text("utf-8")
     for needle in ("fail-fast: false", "ubuntu-latest", "macos-latest", "windows-latest", '"3.10"', '"3.13"',
-                   "[dev,connector,fast,pdfminer]", "pip install ruff",
+                   'pip install -e ".[${{ matrix.extras }}]"', "tesseract-ocr", "pip install pyyaml", "pip install ruff",
                    "ruff check --select E9,F63,F7,F82 src tests tools", "workflow_dispatch", "pull_request",
                    "cancel-in-progress", "contents: read"):
         assert needle in text, needle
