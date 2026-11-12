@@ -46,6 +46,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -205,7 +206,14 @@ def _backup(ws: Workspace) -> Path:
         finally:
             dst.close()
             src.close()
-        part.replace(out)
+        for attempt in range(20):
+            try:
+                part.replace(out)
+                break
+            except PermissionError:  # Windows: another backup is put in place, or the file is read, this very moment
+                if attempt == 19:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
     except BaseException:
         part.unlink(missing_ok=True)
         raise
