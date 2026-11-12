@@ -97,7 +97,12 @@ def test_model_names():
 
 
 # ---------------------------------------------------------------------------------------------- the API
-def test_download_from_the_app(ollama, api):  # noqa: F811
+def test_download_from_the_app(ollama, api, monkeypatch):  # noqa: F811
+    from enlens_claims import modeladvice
+
+    # 0.18.0rc2 (M8): the models suggested fit the computer: this test means a 16 GB one (GitHub's Mac runner has 7 GB)
+    monkeypatch.setattr(modeladvice, "computer", lambda *a, **k: {"memory": 16 * 1024 ** 3, "disk_free": 200 * 1024 ** 3,
+                                                                  "system": "mac", "unified": True, "gpu": None})
     srv, url = ollama
     assert api("PUT", "/api/settings", {"backend": "auto", "ollama_url": url, "ollama_model": ""})[0] == 200
     info, row = _ollama_row(api)
