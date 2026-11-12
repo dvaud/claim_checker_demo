@@ -393,7 +393,9 @@ def test_local_run_stops_stalls_and_times_out_in_its_own_words():
 @pytest.fixture
 def version_server():
     import threading
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from http.server import BaseHTTPRequestHandler
+
+    from enlens_claims.gui.server import QuickServer
 
     state = {"code": 200, "body": b'{"version": "0.40.1"}', "wait": 0.0, "paths": []}
 
@@ -413,7 +415,7 @@ def version_server():
             except OSError:
                 pass
 
-    srv = HTTPServer(("127.0.0.1", 0), H)
+    srv = QuickServer(("127.0.0.1", 0), H)   # (no 35-second wait for this computer's name on a Mac)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     state["url"] = f"http://127.0.0.1:{srv.server_address[1]}"
     yield state

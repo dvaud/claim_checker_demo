@@ -419,11 +419,15 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:
-    """Add the columns (table, column, type) a table does not have yet; each only once."""
+    """Add the columns (table, column, type) a table does not have yet; each only once. Each table's columns are read
+    once (2026-11-13: once per column was most of the time a new project took)."""
+    known: dict[str, set] = {}
     for table, col, typ in migrations:
-        cols = {r[1] for r in cx.execute(f"PRAGMA table_info({table})")}
-        if col not in cols:
+        if table not in known:
+            known[table] = {r[1] for r in cx.execute(f"PRAGMA table_info({table})")}
+        if col not in known[table]:
             cx.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            known[table].add(col)
 
 
 def _migrate(cx: sqlite3.Connection) -> None:
@@ -564,6 +568,48 @@ def _setup_addons(cx: sqlite3.Connection) -> None:
             cx.executescript(db["indexes"])
 
 
+_EMPTY: dict[str, sqlite3.Connection] = {}
+_EMPTY_LOCK = threading.Lock()
+
+
+def _copy_empty_database(dest: Path) -> None:
+    """2026-11-13: a new project's database is a copy of an empty one that this process made once, the usual way
+    (`Workspace._setup`), and keeps in memory. Setting one up takes about 17 ms on a Mac and many times that on Windows,
+    most of it the columns added after a table was made (each makes SQLite read the whole layout again); a copy takes
+    about 2. A shared-folder round makes one to three scratch projects, so this is most of the time a round takes on
+    Windows. Nothing is kept on disk: the key holds everything the setup is built from (ENLENS's tables, columns and
+    indexes, and the add-ons'), so a changed layout, here or in a later version, makes a new empty database. An empty
+    one holds no rows of a project's own (its id is made when first asked for)."""
+    from .addons import database
+
+    key = repr((SCHEMA, INDEXES, MIGRATIONS, database()))
+    with _EMPTY_LOCK:
+        empty = _EMPTY.get(key)
+        if empty is None:
+            import shutil
+            import tempfile
+
+            tmp = Path(tempfile.mkdtemp(prefix="enlens-empty-"))
+            try:
+                made = Workspace(tmp)
+                made._setup()
+                empty = sqlite3.connect(":memory:", check_same_thread=False)
+                src = sqlite3.connect(made.db_path)
+                try:
+                    src.backup(empty)
+                finally:
+                    src.close()
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            _EMPTY.clear()  # only the latest layout is wanted
+            _EMPTY[key] = empty
+        dst = sqlite3.connect(dest)
+        try:
+            empty.backup(dst)
+        finally:
+            dst.close()
+
+
 def now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
 
@@ -601,7 +647,9 @@ class Workspace:
             (ws.root / sub).mkdir(exist_ok=True)
         if not ws.config_path.exists():
             ws.config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=2))
-        ws._setup()
+        if not ws.db_path.exists():
+            _copy_empty_database(ws.db_path)
+        ws._setup()  # as for any project: whatever the copy lacks is added here
         return ws
 
     @classmethod
@@ -623,12 +671,18 @@ class Workspace:
             doc_cols = {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
             before_011 = bool(doc_cols) and "ai_access" not in doc_cols  # a project made before 0.11, opened now
             before_018 = not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone()
-            cx.executescript(SCHEMA)
+            # 2026-11-13: a new database (a new project, or one of the scratch projects of every shared-folder round) is
+            # set up in one transaction, saved once instead of once per table, column and index; nothing else has it
+            # open yet. A project already there is set up as before, a statement at a time, so opening it never holds
+            # the database while a job of it writes.
+            new = not cx.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
+            begin = "BEGIN IMMEDIATE;\n" if new else ""
+            cx.executescript(begin + SCHEMA)
             _migrate(cx)
             _ownership_key(cx)
             _roles_upgrade(cx)
             dropped = _drop_old_places(cx)
-            cx.executescript(INDEXES)
+            cx.executescript(begin + INDEXES)  # (executescript saves what came before it)
             _setup_addons(cx)
             if before_018:  # 0.18 (L1): a project exchanged before counts as shared; one never sent starts private
                 from .sharing import upgrade

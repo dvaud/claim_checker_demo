@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **A shared-folder round, and a new project, start faster, most of all on Windows.** Each round brings colleagues'
+  work in through one to three scratch projects, and each scratch project's database was set up table by table, with
+  59 columns added one at a time, each making the database read its whole layout again. ENLENS now sets up an empty
+  database once per start and copies it (about 3 ms instead of 21 on a Mac, and many times more on Windows); the copy is
+  the same database, and a newer layout makes a new one.
+- **For developers:** two test stand-in servers waited 35 s each on GitHub's Mac for its own name; every stand-in
+  server is now a `QuickServer`, and a test sees to it.
+
 ## 0.18.0rc1 (November 2026): Co-owners, and a project no file can take from you
 
 A release candidate. 0.17 let colleagues work through a shared folder, but its files are not signed: someone who could

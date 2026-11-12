@@ -17,7 +17,9 @@ import threading
 import time
 import zipfile
 from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler
+
+from enlens_claims.gui.server import QuickServer
 from pathlib import Path
 
 import pytest
@@ -35,7 +37,7 @@ class _Quiet(SimpleHTTPRequestHandler):
         pass
 
 
-class _Server(ThreadingHTTPServer):
+class _Server(QuickServer):   # (no 35-second wait for this computer's name on a Mac: tests/test_quick_server.py)
     def handle_error(self, request, client_address):
         pass   # a download stopped part way closes the connection mid-file
 

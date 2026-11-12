@@ -22,3 +22,19 @@ def test_the_server_starts_without_looking_up_this_computer_s_name(home, monkeyp
             assert srv.server_port == app.port > 0 and srv.server_name == host
         finally:
             srv.server_close()
+
+
+def test_every_test_server_starts_without_the_lookup_too():
+    """2026-11-13: two stand-in servers written later (test_0_15_6, test_0_17_2) used Python's own again, and each
+    test with one waited 35 s on GitHub's Mac. A stand-in server is a QuickServer (or made from one)."""
+    import re
+    from pathlib import Path
+
+    here = Path(__file__).parent
+    found = []
+    for f in sorted(here.glob("*.py")) + sorted((here.parent / "src").rglob("*.py")):
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if re.search(r"\b(Threading)?HTTPServer\s*[()]", code) and "class QuickServer(" not in code:
+                found.append(f"{f.name}:{n}: {line.strip()}")
+    assert not found, "start these with QuickServer (enlens_claims.gui.server):\n" + "\n".join(found)
