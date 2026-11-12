@@ -574,6 +574,13 @@ def fast_tests() -> bool:
     return os.environ.get("ENLENS_TEST_FAST_SQLITE") == "1"
 
 
+# 2026-11-12: the write-ahead log is cut back to this size when it starts again from its beginning. Without a limit it
+# keeps the size of the largest transaction it ever held (adding many documents, a new glossary: hundreds of MB) for as
+# long as the app has the project open. Twice the size at which SQLite copies the log into the file by itself (1000
+# pages of 4 KB), so everyday writing never cuts and regrows it; only the log of a big write is trimmed.
+JOURNAL_SIZE_LIMIT = 8 * 1024 * 1024
+
+
 def tune(cx: sqlite3.Connection) -> sqlite3.Connection:
     """2026-11-12: the settings of every connection that writes to a project database. NORMAL is safe with WAL and
     saves a flush per commit. In tests (`fast_tests`) nothing is flushed (synchronous=OFF: a test's files are thrown
@@ -586,7 +593,29 @@ def tune(cx: sqlite3.Connection) -> sqlite3.Connection:
         cx.execute("PRAGMA temp_store=MEMORY")
     else:
         cx.execute("PRAGMA synchronous=NORMAL")
+    cx.execute(f"PRAGMA journal_size_limit={JOURNAL_SIZE_LIMIT}")
     return cx
+
+
+def trim_log(cx: sqlite3.Connection, db_path: Path) -> bool:
+    """2026-11-12: after a write, a log grown past JOURNAL_SIZE_LIMIT is copied into the database and emptied at once,
+    not at the next write (which may be hours away while the app idles). Only when nothing else reads an older state
+    of the project right now: it never waits (busy_timeout 0) and, if something does, is left for SQLite's own
+    checkpoints. One look at the log's size per transaction otherwise. Returns whether it emptied the log."""
+    try:
+        if os.stat(f"{db_path}-wal").st_size <= JOURNAL_SIZE_LIMIT:
+            return False
+    except OSError:
+        return False
+    wait = cx.execute("PRAGMA busy_timeout").fetchone()[0]
+    try:
+        cx.execute("PRAGMA busy_timeout=0")
+        busy = cx.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        return bool(busy) and busy[0] == 0
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        cx.execute(f"PRAGMA busy_timeout={int(wait)}")
 
 
 def scratch(cx: sqlite3.Connection) -> sqlite3.Connection:
@@ -830,6 +859,8 @@ class Workspace:
             raise
         self._local.depth = depth
         cx.execute("COMMIT" if depth == 0 else f"RELEASE sp{depth}")
+        if depth == 0 and not self.scratch:
+            trim_log(cx, self.db_path)
 
     # ---- small helpers ---------------------------------------------------------------------
     def query(self, sql: str, args: tuple | list = ()) -> list[sqlite3.Row]:
