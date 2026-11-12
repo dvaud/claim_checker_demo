@@ -8,9 +8,12 @@
 # Install-ENLENS-macOS.zip), from a removed install, the way a double-click runs them.
 # 0.15: a tag of a release candidate (v0.15.0rc1) drafts a pre-release. The install line and the app's Update take
 # the latest full release (GitHub's "latest" leaves pre-releases out), so only someone who asks gets the candidate.
-# 2026-11-12: the tests run here only when the Tests workflow (tests.yml: Linux, macOS and Windows) has not already
-# passed on this very commit. A release commit is pushed to main and tagged once Tests is green, so re-running the
-# suite here (Linux only, ~6 of the ~8 minutes) only repeated it. A tag pushed before Tests finished still runs them.
+# 2026-11-12: the suite is not run again here. The Tests workflow (tests.yml) runs it on Linux, macOS and Windows on
+# every push to main; the "tests" job below takes the result of its run of this very commit, waiting for it when the
+# tag came with the commit (git push --follow-tags starts both at once), while the package is built and the install
+# tried beside it. A failed Tests run stops the draft. Only without a Tests run of this commit (none, or one cancelled
+# by a later push to main) does the job run the suite itself, on Linux. A release takes about as long as Tests
+# (~8 minutes) instead of Tests and then the suite once more.
 name: Release
 
 on:
@@ -23,8 +26,65 @@ permissions:
   actions: read   # to look up the Tests runs of this commit
 
 jobs:
+  tests:
+    name: Tests of this commit (Linux, macOS, Windows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Wait for the Tests run of this commit
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state() {   # "passed <url>", "running <url>", "failed <url>" or "none -"; a pull request's run tests a merge
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?head_sha=$GITHUB_SHA&per_page=50" --jq '
+              [.workflow_runs[] | select(.event != "pull_request")] as $r
+              | ([$r[] | select(.conclusion == "success")][0]) as $ok
+              | ([$r[] | select(.status != "completed")][0]) as $going
+              | ([$r[] | select(.conclusion == "failure" or .conclusion == "timed_out")][0]) as $bad
+              | if $ok then "passed \($ok.html_url)" elif $going then "running \($going.html_url)"
+                elif $bad then "failed \($bad.html_url)" else "none -" end'
+          }
+          start=$(date +%s); said=""
+          while :; do
+            read -r what url <<< "$(state || echo "none -")"
+            waited=$(( $(date +%s) - start ))
+            case "$what" in
+              passed)
+                echo "Tests passed on $GITHUB_SHA on Linux, macOS and Windows ($url): not running them again here."
+                echo "here=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+              failed)
+                echo "::error::Tests failed on $GITHUB_SHA ($url), so no release is drafted. Fix it in a new commit; or, if a test failed only by chance, re-run that run's failed jobs and then this run's."
+                exit 1 ;;
+              running)
+                [ "$said" = "$url" ] || { echo "Waiting for Tests on $GITHUB_SHA ($url)."; said="$url"; }
+                if [ "$waited" -gt 3300 ]; then
+                  echo "::error::Tests has not finished on $GITHUB_SHA after 55 minutes ($url): re-run this job once it has."
+                  exit 1
+                fi ;;
+              *)
+                if [ "$waited" -ge 60 ]; then   # the run of a commit pushed with its tag appears within seconds
+                  echo "No Tests run of $GITHUB_SHA to wait for (none, or cancelled by a later push): the tests run here, on Linux."
+                  echo "here=true" >> "$GITHUB_OUTPUT"; exit 0
+                fi ;;
+            esac
+            sleep 20
+          done
+      - uses: actions/checkout@v7
+        if: steps.wait.outputs.here == 'true'
+      - uses: actions/setup-python@v7
+        if: steps.wait.outputs.here == 'true'
+        with:
+          python-version: "3.12"
+      - name: Run the tests here (only without a Tests run of this commit)
+        if: steps.wait.outputs.here == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,connector,fast,pdfminer]'
+          python -m pytest -q -n auto --dist worksteal --timeout=600   # side by side, as in tests.yml
+
   build:
-    name: Test and build
+    name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -43,25 +103,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[dev,connector,fast,pdfminer]'
-      - name: Has Tests already passed on this commit?
-        id: tested
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          found="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=1" \
-            --jq '"\(.total_count) \(.workflow_runs[0].html_url // "")"')" || found=0   # lookup failed: test here
-          read -r count url <<< "$found"
-          case "$count" in ''|*[!0-9]*) count=0 ;; esac
-          if [ "${count:-0}" -gt 0 ]; then
-            echo "Tests passed on $GITHUB_SHA on Linux, macOS and Windows ($url): not running them again here."
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No passed Tests run of $GITHUB_SHA: the tests run here."
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Test (only when Tests has not passed on this commit)
-        if: steps.tested.outputs.passed != 'true'
-        run: python -m pytest -q -n auto --dist worksteal --timeout=600   # side by side, as in tests.yml
       - name: Build the package and the install scripts
         run: |
           pip install build
@@ -308,7 +349,7 @@ jobs:
 
   release:
     name: Draft the GitHub Release
-    needs: [build, try-install]
+    needs: [build, try-install, tests]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:

@@ -330,8 +330,18 @@ def test_release_workflow_builds_tries_and_drafts():
     wf = (ROOT / ".github" / "workflows" / "release.yml").read_text()
     for needle in ('tags: ["v*"]', "python tools/release.py check", "python -m pytest -q", "tools/release.py assets dist",
                    "ubuntu-latest, windows-latest", "dist/install.sh", "install.ps1", "--draft",
-                   "needs: [build, try-install]", "check_connector()"):
+                   "needs: [build, try-install, tests]", "check_connector()"):
         assert needle in wf, needle
+    # 2026-11-12: the suite is not run twice. The draft waits for the Tests run (tests.yml) of the tagged commit,
+    # which a failed run stops; only without one does the release run the suite itself. The build does not wait.
+    tests = wf.split("\n  tests:", 1)[1].split("\n  build:", 1)[0]
+    for needle in ("actions/workflows/tests.yml/runs?head_sha=$GITHUB_SHA", 'select(.event != "pull_request")',
+                   "failed)", "exit 1", "running)", "sleep 20", "here=true", "if: steps.wait.outputs.here == 'true'",
+                   "python -m pytest -q -n auto"):
+        assert needle in tests, needle
+    build = wf.split("\n  build:", 1)[1].split("\n  try-install:", 1)[0]
+    assert "pytest" not in build and "needs:" not in build
+    assert "actions: read" in wf
     # 0.13.5: macOS is still tried, in its own job that the draft does not wait for
     mac = wf.split("try-install-mac:", 1)[1].split("\n  release:", 1)[0]
     assert "runs-on: macos-latest" in mac and "dist/install.sh" in mac and "check_connector()" in mac

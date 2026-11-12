@@ -30,12 +30,18 @@ commit on `main` that never needs a new venv, and a published GitHub Release wit
 
 ```bash
 pip install -e '.[dev,fast,connector,anthropic,pdfminer,ocr]'   # every extra, so no test is skipped for a missing one
-python -m pytest -q -rs
+python -m pytest -q -rs -n 4   # four side by side (pytest-xdist): about 2 minutes on a Mac; without -n, one at a time
 ```
 
 `.github/workflows/tests.yml` runs the suite on every push to `main` and every pull request, on Linux (Python 3.10
 and 3.13), macOS and Windows (0.15; required since 0.15.7, when the suite first passed on all three), with the extras `dev,connector,fast,pdfminer` and a quick `ruff` check for syntax
-errors and undefined names; the release workflow runs it again on the tag. Neither installs `anthropic` or the OCR
+errors and undefined names. Each machine runs the tests side by side (`-n auto`), each test with a 10-minute limit
+(`--timeout=600`: a test that hangs fails with its stack), and Windows, the slowest, is split over four machines
+(`ENLENS_TEST_SHARD=k/4`, a split made in `tests/conftest.py`), so a run takes about 8 minutes (it took 30 to 35 one
+test at a time). The 25 slowest tests of each machine are listed at the end of its log: read them before guessing why
+a run got slower. Side by side, the heaviest tests take several times longer than alone, so a test that waits for a
+job, a thread or a process to end waits for that end, not for a fixed time. The release workflow does not run the
+suite again: it takes the result of this run on the tagged commit (*Releases*). Neither installs `anthropic` or the OCR
 extra, so the tests that need them are skipped there: run the whole suite on your own computer before a release. Tests never touch a real Claude Code, uv or
 the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere, gives every test its own `ENLENS_HOME` and reads
 added documents one at a time (`ENLENS_READ_WORKERS=1`, so a stand-in a test puts in this process is what reading
@@ -139,11 +145,20 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
 
 - The version stands in `pyproject.toml`, `src/enlens_claims/__init__.py` and the top `## X.Y.Z` entry of
   `CHANGELOG.md`. `python tools/release.py check vX.Y.Z` stops the release unless they and the tag agree.
-- `.github/workflows/release.yml` runs on the tag: the tests, the package, the two install scripts with the version
+- `.github/workflows/release.yml` runs on the tag: the package, the two install scripts with the version
   filled in, the same as files to double-click (`Install-ENLENS-Windows.cmd`, `Install-ENLENS-macOS.zip`; 0.14.5),
   `SHA256SUMS`, a try of the install line on Linux, macOS and Windows and of the files on Windows and macOS, and a
   draft GitHub Release. Publish
   the draft by hand; never make a release by hand, which would lack the files the install line needs.
+- **The order of a release** (2026-11-12): run the whole suite on your own computer (*Tests*: about 2 minutes), push
+  the release commit to `main` (`git push origin <commit>:refs/heads/main`), wait for its Tests run to be green (about
+  8 minutes: `gh run list --workflow tests.yml`, then `gh run watch <id> --exit-status`), and only then push the tag.
+  The release workflow then takes about 2 minutes: it finds that Tests has passed on the tagged commit and does not
+  run the suite again. A red Tests run so costs a commit, not a version number (0.14.3's tag, pushed with a commit
+  that failed on Linux, could never be released). A tag pushed together with its commit (`git push --follow-tags`)
+  also works: the release workflow's *tests* job waits for the Tests run of that commit while the package is built and
+  tried beside it, and a failed run stops the draft. It runs the suite itself, on Linux only, when the commit has no
+  Tests run (none, or one cancelled by a later push to `main`).
 - The `CHANGELOG.md` entry (what changed and why, the defects fixed, the tests added, and *Not yet done*) becomes the
   release notes. Update the manual where behaviour changed (*The manual*, below) and `docs/API.md` for new routes.
 - Each release updates `gui/static/whats-new.md` (`# X.Y.Z: Title`, `*subtitle*`, then a few extremely short points,

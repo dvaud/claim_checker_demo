@@ -14,8 +14,10 @@
   for them, so on a busy computer the run could still show as working just after Stop.
 - **For developers: the test suite runs side by side**, with pytest-xdist and pytest-timeout in the `dev` extra
   (`python -m pytest -n auto`). On GitHub the tests of each system run side by side, Windows on four machines, and
-  a test that hangs fails after 10 minutes with its stack; a release no longer runs the tests again when the Tests
-  run of its commit has passed. The Tests run went from about 35 minutes to about 7 (macOS from 19 to under 5, each Windows part about 6).
+  a test that hangs fails after 10 minutes with its stack. The Tests run went from about 35 minutes to about 8 (macOS
+  from 19 to under 6, each Windows part 6 to 8). A release no longer runs the suite again: it takes the result of the
+  Tests run of its commit, waiting for it when the tag came with the commit, and a failed run stops the draft. On a
+  commit whose Tests run is green, the release takes about 2 minutes instead of 8 to 15.
 
 ## 0.17.0 (November 2026): working together through a shared folder, and one look on every page
 
