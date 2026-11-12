@@ -34,8 +34,16 @@ def _note(ws, words: str, text: str = "") -> str:
 
 
 def _words(ws, n: int = 4) -> str:
-    """A few words of a document, to note."""
+    """A few words of a document, to note: taken from one line of its text, so they stand in it as written. Words
+    across a paragraph break would not (on Windows the test files have CRLF endings, so another document comes first
+    by its id, and its words 10 to 16 crossed a break)."""
     body = ws.scalar("SELECT text FROM documents ORDER BY doc_id LIMIT 1")
+    for line in sorted(body.splitlines(), key=lambda t: -len(t.split())):
+        w = line.split()
+        if len(w) >= n:
+            words = " ".join(w[min(2, len(w) - n):][:n])
+            if words in body:
+                return words
     return " ".join(body.split()[10:10 + n])
 
 
