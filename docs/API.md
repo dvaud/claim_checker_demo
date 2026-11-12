@@ -511,7 +511,11 @@ one project, and never beside adding documents or the new reader (running): then
 queue, and starts at the first look after that job ended. Its own rounds show in the sidebar only when one takes
 longer than 20 s. A round whose problems are all `unreachable` means offline: the
 next try waits 1, 2, 4, 8 … times the interval, at most 30 minutes (or the interval, if longer), and changes do not
-bring it forward; a round that reaches the folder (the poller's or one by hand) brings the interval back. The thread
+bring it forward; a round that reaches the folder (the poller's or one by hand) brings the interval back. Idle
+(2026-11-12): after three of its own rounds in a row that found nothing to write or read, each further idle round
+doubles the wait, up to four intervals and at most 15 minutes (or the interval, if longer): 2, 2, 2, 4, then 8 minutes
+with the default. A change in the project, a round that found something or met a problem, and a round by hand bring
+the interval back. An idle round writes nothing to disk (`tests/test_idle_writes.py`). The thread
 stops when the app quits (no round starts once quitting has begun).
 - `GET /api/projects/<p>/sync-poller` → `{"project", "folder": bool (a shared folder is chosen), "paused": bool (this
   project, on this computer), "paused_all": bool (the whole app), "state", "every_seconds", "next_round_at": ISO UTC |
