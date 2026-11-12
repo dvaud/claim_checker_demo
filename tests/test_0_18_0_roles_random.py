@@ -19,8 +19,9 @@ At the end, after open offers are allowed and rounds until nothing comes (at mos
 (e) no `at` decided anything: the run again, with every copy's clock shifted by its own number of days, ends with the
     same documents.
 
-The default run is 10 seeds (`ENLENS_L2_LONG=1`: 30); `ENLENS_ROLES_SEEDS`, `ENLENS_ROLES_STEPS` and
-`ENLENS_ROLES_FIRST_SEED` set each. A failure names its seed and step and prints the last actions.
+The default run is 2 seeds on this computer, 10 in CI (`CI` set) and 30 in the nightly run (`ENLENS_LONG_RANDOM=1`, or
+`ENLENS_L2_LONG=1`); `ENLENS_ROLES_SEEDS`, `ENLENS_ROLES_STEPS` and `ENLENS_ROLES_FIRST_SEED` set each. Marked `heavy`
+(each seed writes ~600 MB): a local run of the whole suite leaves it out. A failure names its seed and step and prints the last actions.
 """
 from __future__ import annotations
 
@@ -41,8 +42,8 @@ from owner_more_helpers import join_zip, send, small_project
 from roles_helpers import OLD
 from test_0_14_0_shared_projects import Person
 
-LONG = os.environ.get("ENLENS_L2_LONG") == "1"
-SEEDS = int(os.environ.get("ENLENS_ROLES_SEEDS") or (30 if LONG else 10))
+LONG = "1" in (os.environ.get("ENLENS_LONG_RANDOM"), os.environ.get("ENLENS_L2_LONG"))
+SEEDS = int(os.environ.get("ENLENS_ROLES_SEEDS") or (30 if LONG else 10 if os.environ.get("CI") else 2))
 STEPS = int(os.environ.get("ENLENS_ROLES_STEPS") or 60)
 FIRST = int(os.environ.get("ENLENS_ROLES_FIRST_SEED") or 0)
 NAMES = ("Anna", "Ben", "Carol", "Dana", "Eve")
@@ -459,6 +460,8 @@ def _run(tmp: Path, monkeypatch, seed: int, shift: dict[str, int]) -> dict:
         return run.quiesce()
 
 
+@pytest.mark.heavy
+@pytest.mark.random
 @pytest.mark.parametrize("seed", list(range(FIRST, FIRST + SEEDS)))
 def test_a_random_run_of_owner_co_owners_and_members_keeps_the_rules(seed, tmp_path, monkeypatch):
     plain = _run(tmp_path / "a", monkeypatch, seed, {})

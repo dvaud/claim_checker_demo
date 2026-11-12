@@ -23,7 +23,7 @@ anthropic = ["anthropic>=0.40"]        # the Claude API (cloud, opt-in)
 connector = ["mcp>=2,<3"]
 pdfminer = ["pdfminer.six>=20231228"]
 ocr = ["pypdfium2>=4.20", "pillow>=10"]  # read scanned PDF pages; also needs the program tesseract (see the manual)
-dev = ["pytest>=8", "pytest-xdist>=3.5", "pytest-timeout>=2.3"]  # 2026-11-12: tests side by side (-n), a time limit per test
+dev = ["pytest>=8", "pytest-xdist>=3.5", "pytest-timeout>=2.3", "pytest-testmon>=2.1"]  # 2026-11-12: tests side by side (-n), a time limit per test; 2026-11-12: only the tests a change affects (--testmon)
 
 [project.scripts]
 enlens = "enlens_claims.cli:main"
@@ -39,3 +39,10 @@ enlens_claims = ["data/*.csv", "data/*.md", "data/*.json", "data/*.txt", "gui/st
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# 2026-11-12: a passing test's tmp_path is removed when it ends (it kept ~7 GB of leftovers after each full run)
+tmp_path_retention_policy = "failed"
+markers = [
+    "heavy: writes hundreds of MB or runs for many seconds; left out of a local run of the whole suite (CI runs it)",
+    "random: a seeded random run (2 seeds here, 10 in CI, 30 with ENLENS_LONG_RANDOM=1)",
+    "durable: needs SQLite's real flushes and journal (the fast test settings are off for it)",
+]
