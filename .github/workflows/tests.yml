@@ -3,8 +3,10 @@
 # (release.yml) does not run the tests again when this workflow has passed on the tagged commit.
 # 2026-11-12: the tests run side by side (pytest-xdist: -n), each with a 10-minute limit (pytest-timeout), so a test
 # that hangs fails with its stack instead of holding the job until its timeout. Windows, the slowest system (about 35
-# minutes one test at a time, 18 with 8 side by side), is split over three machines (ENLENS_TEST_SHARD, see
-# tests/conftest.py). The 25 slowest tests of each job are listed at the end of its log.
+# minutes one test at a time, 18 with 8 side by side), is split over four machines of four (ENLENS_TEST_SHARD, see
+# tests/conftest.py). 8 side by side on its 4 cores was a little faster per machine, but it slowed the heaviest tests
+# tenfold, which widens every timing gap a test can fall into. The 25 slowest tests of each job are listed at the end
+# of its log.
 name: Tests
 
 on:
@@ -35,15 +37,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # workers: "auto" is one per core (4 on Linux, 3 on macOS); Windows waits on its disk more than on its
-          # cores, so 8 side by side on its 4 cores were faster than 4 (trial of 2026-11-12)
+          # workers: "auto" is one per core (4 on Linux and Windows, 3 on macOS)
           - {os: ubuntu-latest, python: "3.10", label: "Linux, Python 3.10", lint: false, advisory: false, workers: auto, shard: ""}
           - {os: ubuntu-latest, python: "3.13", label: "Linux, Python 3.13", lint: true, advisory: false, workers: auto, shard: ""}
           # 0.15: advisory until the suite passed there; 0.15.7: it does, so a failure on macOS or Windows fails the run
           - {os: macos-latest, python: "3.12", label: "macOS, Python 3.12", lint: false, advisory: false, workers: auto, shard: ""}
-          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 1 of 3", lint: false, advisory: false, workers: "8", shard: "1/3"}
-          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 2 of 3", lint: false, advisory: false, workers: "8", shard: "2/3"}
-          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 3 of 3", lint: false, advisory: false, workers: "8", shard: "3/3"}
+          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 1 of 4", lint: false, advisory: false, workers: auto, shard: "1/4"}
+          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 2 of 4", lint: false, advisory: false, workers: auto, shard: "2/4"}
+          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 3 of 4", lint: false, advisory: false, workers: auto, shard: "3/4"}
+          - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 4 of 4", lint: false, advisory: false, workers: auto, shard: "4/4"}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

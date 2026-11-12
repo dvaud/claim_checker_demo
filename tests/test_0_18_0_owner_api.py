@@ -63,9 +63,18 @@ class Served:
         return [j for j in self.app.jobs.all() if kind is None or j.kind == kind]
 
     def idle(self, timeout: float = 60) -> None:
-        """Every job of this app has ended (so nothing runs as this person while the test acts as another)."""
+        """Every job of this app has ended (so nothing runs as this person while the test acts as another). 2026-11-12:
+        and so has each job's thread: a job shows as done before its `ended` listeners run, and one of them may start
+        the next job (the new reading after a round); under load that gap let this return before it was queued."""
         t0 = time.time()
-        while any(j.state in ("queued", "running") for j in self.app.jobs.all()):
+
+        def busy() -> bool:
+            jobs = self.app.jobs.all()
+            names = {f"job-{j.kind}-{j.id}" for j in jobs}
+            return (any(j.state in ("queued", "running") for j in jobs)
+                    or any(t.name in names and t.is_alive() for t in threading.enumerate()))
+
+        while busy():
             assert time.time() - t0 < timeout, [j.view(False) for j in self.app.jobs.all()]
             time.sleep(0.05)
 

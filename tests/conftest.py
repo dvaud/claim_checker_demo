@@ -71,7 +71,7 @@ def _read_one_file_at_a_time(monkeypatch):
 
 def pytest_collection_modifyitems(config, items):
     """2026-11-12, CI (tests.yml): ENLENS_TEST_SHARD=k/n keeps every n-th test from the k-th on, so n machines share the
-    suite evenly (Windows, the slowest system, is split in three). Neighbouring tests (the cases of one parametrised
+    suite evenly (Windows, the slowest system, is split in four). Neighbouring tests (the cases of one parametrised
     test, the tests of one file) go to different machines, and every machine and every pytest-xdist worker collects
     the same order, so they agree on the split. Unset (as on this computer): every test runs."""
     import os

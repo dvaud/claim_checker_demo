@@ -13,9 +13,9 @@
 - **Stop on Windows says at once that Claude Code has stopped.** Stopping a run ended its processes but did not wait
   for them, so on a busy computer the run could still show as working just after Stop.
 - **For developers: the test suite runs side by side**, with pytest-xdist and pytest-timeout in the `dev` extra
-  (`python -m pytest -n auto`). On GitHub the tests of each system run side by side, Windows on three machines, and
+  (`python -m pytest -n auto`). On GitHub the tests of each system run side by side, Windows on four machines, and
   a test that hangs fails after 10 minutes with its stack; a release no longer runs the tests again when the Tests
-  run of its commit has passed. The Tests run went from about 35 minutes to about 8 and a half (macOS from 19 to 4.5).
+  run of its commit has passed. The Tests run went from about 35 minutes to about 7 (macOS from 19 to under 5, each Windows part about 6).
 
 ## 0.17.0 (November 2026): working together through a shared folder, and one look on every page
 
