@@ -1,7 +1,58 @@
 # Changelog
 
-## Unreleased
+## 0.17.1 (November 2026): faster and sturdier, and safer with colleagues' files
 
+0.17.0 was the first version in which work from other people comes into a project, through a shared folder or a zip.
+0.17.1 comes from a review of all of ENLENS after it: defects, speed, memory, and above all what a colleague's file
+can do. Nothing here changes how a check is answered or how a document reads.
+
+### Faster, and lighter on memory
+
+- **Adding many documents is up to 70 times faster.** 152 long text documents took 550 seconds to add and now take
+  7.4 seconds; they read exactly as before, byte for byte. Adding a file that is already in the project is instant
+  (its checksum is compared first), and a document being added no longer holds up others that write to the project
+  (the longest wait went from 7 seconds to 0.3).
+- **Themes, the glossary and long lists need far less.** Themes by words used 1.3 GB on that project and now use
+  160 MB; making the glossary went from 880 MB to 385 MB. The next page of a search opens in milliseconds instead of
+  1.2 seconds; the list of answers of a project with 20,000 check tasks in 0.9 seconds instead of 28; the counts of
+  the Claude Code queue and the sidebar in a few milliseconds.
+
+### Safer with what comes from colleagues
+
+- **A colleague's file never acts in your name.** A note, log entry, judgement or record of who owns the project
+  that a file says you wrote, but that your copy does not hold, is not taken.
+- **Files that are too large are refused**, with the problem *too large* in the Team tab: 64 MB for a bundle's
+  description, 4 GB for its database, 256 MB per reading, 64 MB per codebook file. Each bundle is unpacked once per
+  round, and never its `cache/` or `backups/` folder. The paths of your bibliography files are left out of what
+  comes in, and a project's settings that only make sense on one computer are cleaned.
+- **With *Keep documents marked Only a local AI or No AI out of the shared folder* on**, such a document also leaves
+  the folder after you remove it from the project. Records that 0.17.0 wrote count as restricted, so the first round
+  after such a removal makes one extra fresh start for colleagues.
+- **"The owner has left" needs the owner's subfolder to have been seen** in this folder before.
+
+### Who may read with AI
+
+- **The setting is checked again when a task is sent**, never looser than when the task was made. A task brought back
+  after its answer waits for the local model when its document was made stricter since; theme names, the glossary's
+  links and keyword profiles now check each passage too. A chat can no longer grade a round a helper holds.
+
+### Downloads
+
+- **Spreadsheet downloads no longer run anything.** A cell that starts like a formula (`=`, `+`, `-`, `@`) gets a
+  leading apostrophe in every CSV and Excel download, so a spreadsheet shows it as text. Plain numbers stay numbers.
+  (The codebook CSV, which is also a file you can bring back in, follows in a later release.)
+- **A changed original outside the project folder is no longer served or exported** as if it were the one added.
+
+### Other defects fixed
+
+- Settings, links and other small files are written whole: two saves at the same moment can no longer leave half a
+  file, and twelve first starts at once make one person id, not eleven.
+- A merge or move of themes no longer touches a theme of another run with the same number.
+- The research log download is no longer cut at 2,000 entries; searching notes and the log ignores case in every
+  language.
+- A file that makes its reading process crash is listed as unreadable instead of stopping the add.
+- Highlights and quotes place letters outside the basic set (emoji, maths letters) correctly, and links that come with
+  documents or bibliographies open only web addresses. More than twenty smaller page defects were fixed.
 - **ENLENS starts without waiting for this computer's name.** Python's built-in web server, which ENLENS uses, looks
   up the computer's full name when it starts, and ENLENS never uses that name. On a Mac whose name the network does
   not answer for, the lookup waited 35 seconds (70 in network mode) at every start; GitHub's Mac test machines are
@@ -12,12 +63,33 @@
   ENLENS did not try again at all. It now tries for about 8 seconds on Windows and about a second elsewhere.
 - **Stop on Windows says at once that Claude Code has stopped.** Stopping a run ended its processes but did not wait
   for them, so on a busy computer the run could still show as working just after Stop.
-- **For developers: the test suite runs side by side**, with pytest-xdist and pytest-timeout in the `dev` extra
+
+### For developers
+
+- **The test suite runs side by side**, with pytest-xdist and pytest-timeout in the `dev` extra
   (`python -m pytest -n auto`). On GitHub the tests of each system run side by side, Windows on four machines, and
   a test that hangs fails after 10 minutes with its stack. The Tests run went from about 35 minutes to about 8 (macOS
   from 19 to under 6, each Windows part 6 to 8). A release no longer runs the suite again: it takes the result of the
   Tests run of its commit, waiting for it when the tag came with the commit, and a failed run stops the draft. On a
   commit whose Tests run is green, the release takes about 2 minutes instead of 8 to 15.
+
+### Tests
+
+Nine new files `tests/test_0_17_1_*.py` (184 tests: deep_dive, ai_guard, reading_speed, adding_and_rereading,
+sync_hardening, queue_speed_and_exports, front_end, front_end_views, explore). Each fix's test fails on 0.17.0; the few
+that pass there are controls.
+
+### Not yet done
+
+- **Files are still not signed.** Someone who can write in the shared folder can still write rows in the owner's name
+  that the other copies follow, and work in a third person's name. The next release adds Owner, Co-owner and Member
+  roles and makes such rows unable to loosen an AI setting, remove a document for good or change the owner without
+  your click. Until then, share a folder only with people you trust.
+- A colleague's version of a check can still replace your own, their renames of a shared codebook's codes move your
+  labels, and a file can still clear one of your judgements: fixed in the next release.
+- Four reading defects need a new reader (next release): a `.txt` with one paragraph per line reads as one block;
+  a table nested in a Word table is read three times; Word content controls are skipped; a PDF that repeats one short
+  line at the top of every page can stop the add.
 
 ## 0.17.0 (November 2026): working together through a shared folder, and one look on every page
 

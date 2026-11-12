@@ -502,7 +502,12 @@ class OllamaBackend:
                 last = time.time()
                 if not val.strip():
                     continue
-                chunk = json.loads(val)
+                try:  # a line that does not parse (cut in two, or not JSON at all) is skipped, as LocalBackend does
+                    chunk = json.loads(val)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                if not isinstance(chunk, dict):
+                    continue
                 if chunk.get("error"):
                     raise BackendError(f"Ollama stopped with an error: {chunk['error']}")
                 if info["first_token_after"] is None:
@@ -583,13 +588,6 @@ class OllamaBackend:
             return n if ":" in n else f"{n}:latest"
 
         return bool(a) and bool(b) and full(a) == full(b)
-
-    def is_loaded(self, model: str) -> bool | None:
-        """Whether Ollama holds the model in memory now (None when it does not say)."""
-        try:
-            return any(self._same(m, model) for m in self.loaded(timeout=5))
-        except BackendError:
-            return None
 
     def memory_need(self, model: str) -> int | None:
         """About how many bytes the model takes in memory at this context length: its weights (the size Ollama lists)

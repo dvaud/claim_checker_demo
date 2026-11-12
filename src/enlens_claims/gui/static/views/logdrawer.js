@@ -26,16 +26,6 @@ export function pageContext(hash) {
   return null;
 }
 
-// "Today 17:26", "Yesterday 17:26", "4 Nov 17:26"
-export function whenText(iso, now = new Date()) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso || "");
-  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((day(now) - day(d)) / 86400000);
-  return `${diff === 0 ? "Today" : diff === 1 ? "Yesterday" : fmt.dateShort(iso)} ${time}`;
-}
-
 export function initLogDrawer() {
   if (document.getElementById("logdrawer")) return;
   const shell = document.getElementById("shell");
@@ -45,8 +35,7 @@ export function initLogDrawer() {
   let mode = session("logdrawer-mode") === "all" ? "all" : "page";
   let shown = PAGE;
   let token = 0;               // the newest refresh wins
-  let docTitles = null;        // {doc_id: title} of this project, fetched when a document page is the context
-  let docTitlesFor = null;
+  const docTitles = new Map(); // "project, document" -> its title, each asked for once when a document page is the context
 
   // ---- the button (the drawer component's, docs/DESIGN.md: the drawer)
   const btn = drawerButton({ id: "logdrawer-btn", controls: "logdrawer", label: "Research log", icon: "notebook",
@@ -153,14 +142,14 @@ export function initLogDrawer() {
   async function titleOf(ctx) {
     if (!ctx || ctx.subject_kind !== "document") return ctx && ctx.label;
     const project = App.project;
-    if (docTitlesFor !== project || !docTitles || !(ctx.subject_id in docTitles)) {
-      try {
-        const r = await api("GET", `/api/projects/${P(project)}/documents`);
-        docTitles = Object.fromEntries((r.documents || []).map((d) => [d.doc_id, d.title]));
-        docTitlesFor = project;
+    const key = `${project}\n${ctx.subject_id}`;
+    if (!docTitles.has(key)) {
+      try {   // the one document, not the whole list of them
+        const r = await api("GET", `/api/projects/${P(project)}/documents/${P(ctx.subject_id)}?limit=1`);
+        docTitles.set(key, r.title || null);
       } catch (_) { /* the words "this document" do */ }
     }
-    return (docTitlesFor === project && docTitles && docTitles[ctx.subject_id]) || ctx.label;
+    return docTitles.get(key) || ctx.label;
   }
 
   // ---- reading
@@ -217,7 +206,7 @@ export function initLogDrawer() {
       ol.appendChild(h("li", { class: "log-entry" + (e.kind === "entry" ? " log-own" : "") },
         h("span", { class: "log-icon", "aria-hidden": "true" }, icon(GROUP_ICON[e.group] || "circle", { size: 14 })),
         h("div", { class: "log-body" },
-          h("div", { class: "log-meta" }, h("time", { class: "log-time", datetime: e.at, title: fmt.date(e.at) }, whenText(e.at)), entryWho(e)),
+          h("div", { class: "log-meta" }, h("time", { class: "log-time", datetime: e.at, title: fmt.date(e.at) }, fmt.whenText(e.at)), entryWho(e)),
           entryText(e, to),
           e.why ? h("div", { class: "log-why" }, `Why: ${e.why}`) : null,
           entrySubject(e, to) ? h("div", { class: "log-meta" }, entrySubject(e, to)) : null)));
@@ -259,7 +248,7 @@ export function initLogDrawer() {
     if (App.project !== countFor) { countFor = App.project; setTeamCount(0); if (team) team.refresh(); }
     else if (open && team && tab === "team") team.refresh();
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && open && !e.defaultPrevented && !document.querySelector("#dialogs [role=dialog]")) close(aside.contains(document.activeElement)); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && open && !e.defaultPrevented && !document.querySelector("#dialogs dialog[open]")) close(aside.contains(document.activeElement)); });
   document.addEventListener("click", (e) => {
     if (open && overlay() && !aside.contains(e.target) && !btn.contains(e.target) && !e.target.closest(".sidebar, .topbar, .toasts, #dialogs")) close(false);
   });

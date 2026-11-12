@@ -263,6 +263,7 @@ def decode_text(data: bytes, html: bool = False) -> str:
 
 _W ="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 DOCX_MAX = 200 * 1024 ** 2   # bytes of XML read from one Word file (a zip): a bound against zip bombs
+DOCX_CORE_MAX = 1024 ** 2    # bytes of a Word file's document properties (where its title is): the same, for them
 
 
 def _read_docx(path: Path) -> tuple[list[str], str | None, set[str]]:
@@ -289,7 +290,10 @@ def _read_docx(path: Path) -> tuple[list[str], str | None, set[str]]:
             raise ValueError(f"the Word file's text could not be read ({e})") from e
         title = None
         try:
-            core = ET.fromstring(zf.read("docProps/core.xml"))
+            core_info = zf.getinfo("docProps/core.xml")
+            if core_info.file_size > DOCX_CORE_MAX:  # a title is a few words: anything this large is not one
+                raise KeyError("docProps/core.xml")
+            core = ET.fromstring(zf.read(core_info))
             t = core.find("{http://purl.org/dc/elements/1.1/}title")
             title = (t.text or "").strip() or None if t is not None else None
         except (KeyError, ET.ParseError, *ZIP_ERRORS):  # 0.14.3: damaged properties: the text is read all the same
@@ -1186,7 +1190,12 @@ def _read_whole(f: Path, ocr: OcrOptions, max_chars: int, min_chars: int, should
     """A file read and made into a Document, as `ingest` does it: ("ok", raw, doc); ("failed", the problem in words);
     ("stopped",) for Stop during OCR; ("unbuilt", raw, the exception) when the Document could not be made, which
     `ingest` raises only for a file that is not a duplicate, as before. A file whose checksum is in `known` (a
-    duplicate) is read but not made into a Document: ("ok", raw, None), as `ingest` never made one of a duplicate."""
+    duplicate) is not read at all: ("ok", a RawDoc with its checksum and no text, None), as `ingest` only counts a
+    duplicate. What storing never reads (each line of the layout, the pages' raw text) is let go (`_lighten`)."""
+    if known:
+        cs = _checksum(f)
+        if cs is not None and cs in known:  # a file already stored: parsing it (or recognising its scans) is wasted
+            return ("ok", _duplicate(f, cs), None)
     try:
         raw = read_file(f, ocr, should_stop)
     except Stopped:
@@ -1194,9 +1203,9 @@ def _read_whole(f: Path, ocr: OcrOptions, max_chars: int, min_chars: int, should
     except Exception as e:  # noqa: BLE001 - one unreadable file should not stop the others
         return ("failed", _read_problem(e))
     if raw.sha1 in known:
-        return ("ok", raw, None)
+        return ("ok", _lighten_raw(raw), None)
     try:
-        return ("ok", raw, build_document(raw, max_chars, min_chars))
+        return ("ok", raw, _lighten(build_document(raw, max_chars, min_chars)))
     except Exception as e:  # noqa: BLE001 - raised by `ingest` once it knows the file is new
         return ("unbuilt", raw, e)
 
@@ -1211,6 +1220,46 @@ def _checksum(f: Path) -> str | None:
         return None
 
 
+def _duplicate(f: Path, sha1: str) -> RawDoc:
+    """What `ingest` needs of a file it already has: its checksum (the kind as `read_file` names it)."""
+    ext = f.suffix.lower()
+    kind = {".pdf": "pdf", ".docx": "docx", ".html": "html", ".htm": "html"}.get(ext, "text")
+    return RawDoc(f, kind, [], None, sha1)
+
+
+def _lighten_raw(raw: RawDoc) -> RawDoc:
+    raw.pages = []        # the text is the Document's now; storing reads the page spans, not this
+    raw.line_pos = None   # where each line starts: only the reader reads it
+    return raw
+
+
+def _lighten(doc: "Document") -> "Document":
+    """A Document as storing it needs it: each block's box kept (it is worked out from the block's lines, so one line
+    with that box stands for them), every other line, each block's own copy of its words (storing reads the
+    Document's text) and the raw page text let go. A reading process sends far less back, and a reading kept for
+    later holds less memory. What is stored does not change: a block whose box would come out otherwise keeps its
+    lines."""
+    for b in getattr(doc, "blocks", None) or []:
+        b.text = ""
+        lines = b.lines
+        if len(lines) <= 1:
+            continue
+        box = b.bbox
+        if box is None:
+            b.lines = []
+        else:
+            from .reader import Line
+
+            b.lines = [Line(lines[0].page, "", x0=box[0], top=box[1], x1=box[2], bottom=box[3])]
+        if b.bbox != box:  # a box of zero width or height at the page's edge reads otherwise from one line
+            b.lines = lines
+    _lighten_raw(doc.raw)
+    return doc
+
+
+# a file whose reading ended its reading process (`_Readings._away`): said under `failed`
+CRASHED = ("reading it stopped the reading program (the file may be damaged, or too large to read with the memory "
+           "this computer has free)")
 _LIVE: "weakref.WeakSet" = weakref.WeakSet()  # every reading process started and not yet ended
 _LIVE_LOCK = threading.Lock()
 _ENDING = False  # set by end_reading_processes: no reading process is started after it
@@ -1238,8 +1287,9 @@ atexit.register(end_reading_processes)
 class _Readings:
     """The readings of a batch of files, in their order. With `workers` above 1, files are read ahead in that many
     reading processes (`readworker.py`, each kept busy by a thread of its own); with 1, or for a file whose reading in
-    a process went wrong in any way (the process could not start, ended, or its answer could not come back), here,
-    the way `ingest` read every file before 0.16. The threads are daemon threads and the processes end when ENLENS
+    a process went wrong (the process could not start, or its answer could not come back), here, the way `ingest`
+    read every file before 0.16. A file that ends its reading process (a crash, the memory used up) is listed as one
+    that could not be read, and is not read here again. The threads are daemon threads and the processes end when ENLENS
     does (`end_reading_processes`), so neither Quit nor an update waits for a file being read; a reading process also
     ends by itself when the program that started it is gone."""
 
@@ -1326,24 +1376,50 @@ class _Readings:
         return p
 
     def _away(self, i: int) -> tuple:
-        """File i read by this thread's reading process (in a reading thread)."""
+        """File i read by this thread's reading process (in a reading thread). A file already stored is not sent: only
+        its checksum is needed. A process that ends while it reads the file (a crash, or the computer's memory used
+        up) leaves that file unread, listed as one that could not be read: read here, it could take the app with it.
+        The next file gets a new process."""
         from . import readworker
 
-        p = self._process()
-        cs = _checksum(self.files[i]) if self.known else None  # a new project has no duplicate to look for
-        known = frozenset([cs]) if cs is not None and cs in self.known else frozenset()  # a duplicate: not built
+        f = self.files[i]
+        cs = _checksum(f) if self.known else None  # a new project has no duplicate to look for
+        if cs is not None and cs in self.known:
+            return ("ok", _duplicate(f, cs), None)
+        for attempt in (0, 1):
+            p = self._process()
+            try:
+                readworker.send(p.stdin, (f, self.ocr, self.max_chars, self.min_chars, self.stop_file, frozenset()))
+            except Exception:  # noqa: BLE001 - it had ended before it got the file: a new process takes it
+                self._ended(p)
+                if attempt:
+                    raise ChildProcessError("the reading process ended") from None
+                continue
+            try:
+                got = readworker.receive(p.stdout)
+            except Exception:  # noqa: BLE001 - the pipe broke: as when the process ended
+                got = None
+            if got is not None:
+                return got
+            code = self._ended(p)
+            ours = self.closed or _ENDING  # ended on purpose (the batch is over, or ENLENS is ending)
+            if code not in (None, 0) and not ours:
+                return ("failed", CRASHED)
+            raise ChildProcessError("the reading process ended")
+        raise ChildProcessError("the reading process ended")
+
+    @staticmethod
+    def _ended(p) -> int | None:
+        """How a reading process that stopped answering ended: its exit code (a crash: not 0; ended by a signal: below
+        0 on POSIX), or None when it was still running and is ended here."""
         try:
-            readworker.send(p.stdin, (self.files[i], self.ocr, self.max_chars, self.min_chars, self.stop_file, known))
-            got = readworker.receive(p.stdout)
-        except Exception:  # noqa: BLE001 - the pipe broke: as when the process ended
-            got = None
-        if got is None:  # the process ended (or was ended): the next file gets a new one
+            return p.wait(timeout=2)
+        except Exception:  # noqa: BLE001 - still running (its answer was garbled): ended here
             try:
                 p.kill()
             except OSError:
                 pass
-            raise ChildProcessError("the reading process ended")
-        return got
+            return None
 
     def get(self, i: int) -> tuple:
         if self.workers > 1 and self.tasks is None:
@@ -1368,7 +1444,11 @@ class _Readings:
                     break
                 except FutureTimeout:
                     if self.should_stop and self.should_stop():
-                        self._stop()  # OCR in the reading process stops at its next page
+                        # Stop: this file is not added, as when Stop comes during the text recognition of a file read
+                        # here; the batch ends and `close` ends the process still reading it
+                        self._stop()
+                        self.futures[i] = fut  # still being read: `close` ends its process at once
+                        return ("stopped",)
         except Exception:  # noqa: BLE001 - this file's reading did not come back: read it here, the old way
             return self.here(i)
         if got[0] == "redo":

@@ -130,7 +130,7 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
         rk = ws.scalar("SELECT run_key FROM theme_runs WHERE run_id=?", (run_id,))
         from .themes import _edits, _final
 
-        ed = _edits(ws, rk)
+        ed = _edits(ws, rk, run_id)
         for m in ws.query("SELECT passage_id, theme_id, similarity FROM theme_members WHERE run_id=?", (run_id,)):
             moved = ed["moves"].get(m["passage_id"])
             t = _final(ed["merges"], moved or m["theme_id"])

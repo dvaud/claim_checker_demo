@@ -4,7 +4,9 @@ from __future__ import annotations
 import csv
 import json
 import random
+import re
 from pathlib import Path
+from typing import Any
 
 from .analysis import vca_support
 from .store import Workspace, now
@@ -56,10 +58,7 @@ def export(ws: Workspace, path: str | Path, audit_fraction: float = 0.05, seed: 
                          "quote": q.get("quote", ""), "source": q.get("title", ""), "page": q.get("page", "")})
             n_vca += 1
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=COLUMNS)
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: r.get(k, "") for k in COLUMNS})
+        write_csv(f, [{k: r.get(k, "") for k in COLUMNS} for r in rows], COLUMNS)
     return {"rows": len(rows), "needs_review": n_review, "audit": n_audit, "vca_claims": n_vca}
 
 
@@ -78,6 +77,58 @@ def _parse_targets(s: str) -> list[tuple[str, str, str]]:
             raise ValueError(f"bad influence in {part!r}; use one of {', '.join(INFLUENCES)}")
         out.append((code, direction, influence))
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Spreadsheets ENLENS writes (CSV and Excel). Their text comes from documents (a table read from a PDF), bibliography
+# files and colleagues (a hypothesis, a note, a name, a quote), and a spreadsheet runs text that looks like a formula:
+# "=HYPERLINK(...)" in a cell sends the cells beside it away when clicked, "=WEBSERVICE(...)" without a click. Every
+# CSV goes through `write_csv` (its cells through `csv_cell`), every Excel row through `append_row`.
+# ---------------------------------------------------------------------------------------------
+_PLAIN_NUMBER = re.compile(r"[+-]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?%?")
+
+
+def csv_cell(value: Any) -> Any:
+    """A cell for a CSV file, as text a spreadsheet shows and does not run. The program that opens a CSV decides what
+    a cell is, so text it could take for a formula gets a leading apostrophe ("'=1+1"): text that starts with "=",
+    "@", a tab or a carriage return, and text that starts with "+" or "-" unless it is a plain number (an optional
+    sign, digits with an optional decimal part or thousands separators, an optional "%": "-5", "+1,200.5", "-3%"),
+    the sign is followed by a space ("- a list item") or it is the sign alone ("-"): quotes are compared by their
+    text, so those stay as written. Numbers (int, float) and anything that is not text are never changed."""
+    if not isinstance(value, str) or not value:
+        return value
+    first = value[0]
+    if first in "=@\t\r":
+        return "'" + value
+    if first in "+-":
+        if len(value) == 1 or value[1] == " " or _PLAIN_NUMBER.fullmatch(value):
+            return value
+        return "'" + value
+    return value
+
+
+def write_csv(out, rows: list[dict], fieldnames: list[str] | None = None) -> None:
+    """Rows as CSV into an open text file (or a StringIO), with a header row: the keys of the first row unless
+    `fieldnames` names them (then the header is written even with no rows); nothing at all for no rows and no
+    `fieldnames`. Every cell, the header's too, goes through `csv_cell`."""
+    if fieldnames is None:
+        if not rows:
+            return
+        fieldnames = list(rows[0])
+    csv.writer(out).writerow([csv_cell(h) for h in fieldnames])
+    w = csv.DictWriter(out, fieldnames=fieldnames)
+    w.writerows({k: csv_cell(v) for k, v in r.items()} for r in rows)
+
+
+def append_row(sheet, values: list) -> None:
+    """Append a row to an Excel sheet (openpyxl) with every text cell written as text. openpyxl writes text that
+    starts with "=" as a formula (and "#N/A" as an error), which Excel runs; set as text it shows as written, with
+    no apostrophe added. Numbers and dates stay what they are."""
+    sheet.append(values)
+    r = sheet.max_row
+    for j, v in enumerate(values, 1):
+        if isinstance(v, str):
+            sheet.cell(row=r, column=j).data_type = "s"
 
 
 def read_csv_rows(path: str | Path) -> list[dict]:

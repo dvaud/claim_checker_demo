@@ -12,7 +12,12 @@ class OwnerRules:
         """Each of the four tables by its own rule (see ownership.py's notes): records of who the owner is and
         decisions are added (which of them counts is worked out when they are read, alike in every copy); a proposal
         is added, and one its maker took back is taken back here; of two rows about a document by one writer, the
-        later one stays. Then the documents this merge must not bring back (`not_wanted`) are known."""
+        later one stays. Then the documents this merge must not bring back (`not_wanted`) are known.
+
+        A row written in this person's name (`by`) comes from this copy and from nowhere else: one in a colleague's
+        file that this copy does not hold is not taken (a record of who the owner is, a proposal, a decision, a row
+        of the documents as accepted). Without this, one row "by the owner" with a high number, sent to the owner's
+        own copy, changed there who may read a document with AI, as if the owner had decided it."""
         from .. import ownership
 
         self.not_wanted: set[str] = set()
@@ -20,19 +25,23 @@ class OwnerRules:
         rep = self.r.setdefault("proposals", {"new": [], "decided": 0, "owner": None})
         if {"ownership", "proposals", "decisions", "canon"} <= there:
             before = ownership.owner(cx)
-            self._insert(cx, "ownership", _rows(self.icx, "SELECT * FROM ownership"))
+
+            def theirs(sql: str) -> list[dict]:
+                return [r for r in _rows(self.icx, sql) if r.get("by") != self.me]
+
+            self._insert(cx, "ownership", theirs("SELECT * FROM ownership"))
             have = {r[0]: r[1] for r in cx.execute("SELECT id, taken_back_at FROM proposals")}
-            for p in _rows(self.icx, "SELECT * FROM proposals"):
+            for p in theirs("SELECT * FROM proposals"):
                 if p["id"] not in have:
                     self._insert(cx, "proposals", [p])
                     if p["by"] != self.me and not p["taken_back_at"]:
                         rep["new"].append({"id": p["id"], "kind": p["kind"], "title": p["title"], "by": p["by"]})
                 elif p["taken_back_at"] and not have[p["id"]] and p["by"] != self.me:
                     cx.execute("UPDATE proposals SET taken_back_at=? WHERE id=?", (p["taken_back_at"], p["id"]))
-            rep["decided"] = self._insert(cx, "decisions", _rows(self.icx, "SELECT * FROM decisions"))
+            rep["decided"] = self._insert(cx, "decisions", theirs("SELECT * FROM decisions"))
             mine = {(r[0], r[1]): (r[2] or 0, r[3] or 0) for r in cx.execute("SELECT doc, by, owner_seq, n FROM canon")}
             cols = _cols(cx, "canon")
-            for r in _rows(self.icx, "SELECT * FROM canon"):
+            for r in theirs("SELECT * FROM canon"):
                 if (r["owner_seq"] or 0, r["n"] or 0) > mine.get((r["doc"], r["by"]), (-1, -1)):
                     cx.execute(f"INSERT OR REPLACE INTO canon({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
                                [r.get(c) for c in cols])

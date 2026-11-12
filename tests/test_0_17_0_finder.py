@@ -114,7 +114,7 @@ def test_nonsense_finds_nothing(found):
 def test_finder_js_exports_and_search_row():
     src = (STATIC / "finder.js").read_text()
     assert "export function openFinder(" in src and "export function finderBox(" in src
-    assert "Search the documents for" in src and "#/search?q=" in src
+    assert "Search the documents for" in src and "href: searchHref(q)," in src   # the link is lib.js's own
     for aria in ('role: "combobox"', 'role: "listbox"', 'role: "option"', "aria-activedescendant", 'aria-modal'):
         assert aria in src
 

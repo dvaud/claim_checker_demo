@@ -85,9 +85,12 @@ def things(report: dict | None) -> int:
 
 
 def offline(result: Any) -> bool:
-    """A round whose problems are all `unreachable` (at least one): the folder could not be reached."""
+    """A round whose problems are all `unreachable`, and the folder itself among them (a problem of no colleague's):
+    the folder could not be reached. One colleague's file that could not be read is not the folder away: the next
+    round tries again at the usual pace."""
     probs = result.get("problems") if isinstance(result, dict) else None
-    return bool(probs) and all(isinstance(x, dict) and x.get("kind") == "unreachable" for x in probs)
+    return bool(probs) and all(isinstance(x, dict) and x.get("kind") == "unreachable" for x in probs) and \
+        any(not x.get("person") for x in probs)
 
 
 def _round(ws, job: Job) -> dict | None:

@@ -531,8 +531,10 @@ def build_server():
             bad: list[str] = []
 
             def waiting(name, ws):
-                n = ws.scalar("SELECT COUNT(*) FROM tasks WHERE COALESCE(queued, 0)=1 AND (status IN ('pending', "
-                              "'retry') OR (status='done' AND again=1))") or 0
+                # what queue_status of that project calls waiting: tasks Claude Code may take now (not those a
+                # claim holds, nor any it is never handed)
+                n = ws.scalar(f"SELECT COUNT(*) FROM tasks t WHERE {taskqueue.WAITING} AND NOT {taskqueue.CLAIMED}",
+                              (taskqueue._cutoff(),)) or 0
                 if n:
                     out.append({"project": name, "waiting": n})
 

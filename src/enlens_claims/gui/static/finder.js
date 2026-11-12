@@ -1,13 +1,11 @@
 // 0.17.0: the feature finder ("Find": Ctrl+K or ⌘K, the sidebar's button, and a box on the Overview). Type what you
 // want to do; it suggests the place, view or action you probably meant, misspellings included. Not an AI feature:
 // finder-index.js matches the words with plain loops.
-import { h, icon, input as fieldInput, navigate } from "./lib.js";
+import { h, icon, input as fieldInput, navigate, searchHref } from "./lib.js";
 import { FEATURES, PLACES, SECTIONS } from "./features.js";
 import { buildIndex, findFeatures } from "./finder-index.js";
 
 let uid = 0;
-
-const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}`;
 
 // The rows for a query: "Go to" (places and views), then "Do" (actions), then, for a query, a Search row.
 function rowsFor(query, index) {

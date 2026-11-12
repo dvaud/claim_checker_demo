@@ -2,7 +2,7 @@
 // (a concordance). No hypothesis and no AI are needed. Clicking a word of a line adds it to the search; Shift-click
 // makes a phrase. A line opens its document at the words, or starts a check about what it says.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, addDocumentsFirst, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks, button, link, notice, card, input, select, fold, choice, shortTitle } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, addDocumentsFirst, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks, button, link, notice, card, input, select, fold, choice, shortTitle, textPositions, cpLength, latest } from "../lib.js";
 
 const MODES = [
   ["any", "any of the words"],
@@ -29,10 +29,12 @@ export function starterSentence(left, node, right) {
 
 // 0.17: the words the search found, marked in a text. `marks` are [start, end] offsets the server gives (the same
 // words and stemmer as the search, so exactly what it found is marked); this only draws them. `shift` is where
-// `text` begins in the longer text the offsets refer to.
+// `text` begins in the longer text the offsets refer to. Both are the app’s offsets (code points), turned into
+// indices of `text` here.
 export function markedText(text, marks, shift = 0) {
   const out = [];
-  const rel = (marks || []).map(([a, b]) => [a - shift, b - shift]).filter(([a, b]) => b > 0 && a < text.length).sort((x, y) => x[0] - y[0]);
+  const pos = textPositions(text);
+  const rel = (marks || []).map(([a, b]) => [pos.index(a - shift), pos.index(b - shift)]).filter(([a, b]) => b > 0 && a < text.length).sort((x, y) => x[0] - y[0]);
   let last = 0;
   for (const [a0, b0] of rel) {
     const a = Math.max(a0, last), b = Math.min(b0, text.length);
@@ -45,17 +47,25 @@ export function markedText(text, marks, shift = 0) {
   return out;
 }
 
-// Clickable words: a click adds the word to the query, Shift-click extends the last phrase with it. A word on a
-// mark (another searched word of the line, 0.17) is drawn marked and stays clickable.
-function wordSpans(text, onWord, marks = [], shift = 0) {
+// Clickable words: a click adds the word to the query, Shift-click extends the last phrase with it (one listener on
+// the table, wordClick(): a page of results has thousands of words). A word on a mark (another searched word of the
+// line, 0.17) is drawn marked and stays clickable. `marks` and `shift` are the app’s offsets (see markedText).
+// The click on a word of the table: the word, and whether Shift was held (null: not on a word).
+function wordClick(e, onWord) {
+  const w = e.target instanceof Element ? e.target.closest(".kw-word") : null;
+  if (w) onWord(w.textContent, e.shiftKey);
+}
+
+function wordSpans(text, marks = [], shift = 0) {
   const out = [];
   const rx = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
+  const pos = textPositions(text);
   let last = 0, m;
   while ((m = rx.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const w = m[0];
-    const a = m.index + shift, b = a + w.length;
-    const span = h("span", { class: "kw-word", title: "Click: add to the search. Shift-click: make a phrase with the words before.", onClick: (e) => onWord(w, e.shiftKey) }, w);
+    const a = pos.point(m.index) + shift, b = pos.point(m.index + w.length) + shift;
+    const span = h("span", { class: "kw-word" }, w);
     out.push((marks || []).some(([ma, mb]) => ma < b && a < mb) ? h("mark", { class: "kw-also" }, span) : span);
     last = m.index + w.length;
   }
@@ -136,15 +146,17 @@ export async function renderSearch(view, params, query) {
     return qs;
   }
 
+  const fresh = latest();   // a search answered after a newer one was asked (Next, Next) is not drawn
   async function go_() {
+    const mine = fresh();
     history.replaceState(null, "", hashWith({ q: st.q, mode: st.mode, near: st.mode === "near" ? st.near : "", exact: st.exact, all: st.all, docs: st.docs, code: st.code, sort: st.sort === "doc" ? "" : st.sort, offset: st.offset || "", meaning: st.meaning }));
     if (!st.q) { replace(out, emptyState("text-search", "Type a word to search for", "Every place it occurs in your documents is listed, one line per place. Click a word in a line to add it to the search; Shift-click to make a phrase.")); return; }
     replace(out, h("p", { class: "muted" }, "Searching…"));
-    if (st.meaning) return meaningResults();
+    if (st.meaning) return meaningResults(mine);
     let r;
     try { r = await api("GET", `/api/projects/${P(project)}/search?${apiQs({ offset: st.offset, limit: PAGE })}`); }
-    catch (e) { replace(out, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
-    drawLines(r);
+    catch (e) { if (mine()) replace(out, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
+    if (mine()) drawLines(r);
   }
 
   // forms of the words that the search does not find ("commuters" for "commuting"), to add with one click
@@ -187,7 +199,7 @@ export async function renderSearch(view, params, query) {
       ]));
     out.appendChild(tools);
     const rows = r.lines.map((x) => {
-      const node = h("mark", {}, ...wordSpans(x.node, addWord));
+      const node = h("mark", {}, ...wordSpans(x.node));
       const docHref = `#/doc/${encodeURIComponent(x.doc_id)}?q=${x.start}-${x.end}`;
       // it only takes the line to the Hypotheses page (nothing is checked yet): a place, so a link (DESIGN.md 6)
       const check = link({ href: `#/hypotheses?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`, class: "kw-check",
@@ -198,12 +210,12 @@ export async function renderSearch(view, params, query) {
       const where = x.location ? `${title} · ${x.location}` : title;
       return h("tr", { title: where },
         h("td", { class: "kw-where kw-where-title" }, link({ kind: "title", serif: true, href: docHref, class: "kw-title", title: `Open the document at these words: ${where}`, "aria-label": `Open the document at these words: ${where}` }, title)),
-        h("td", { class: "kw-left" }, h("span", {}, ...wordSpans(x.left, addWord, x.marks))),
+        h("td", { class: "kw-left" }, h("span", {}, ...wordSpans(x.left, x.marks))),
         h("td", { class: "kw-node" }, node),
-        h("td", { class: "kw-right" }, ...wordSpans(x.right, addWord, x.marks, x.left.length + x.node.length)),
+        h("td", { class: "kw-right" }, ...wordSpans(x.right, x.marks, cpLength(x.left) + cpLength(x.node))),
         h("td", { class: "kw-act" }, check));
     });
-    out.appendChild(h("div", { class: "kwic-wrap" }, h("table", { class: "kwic" }, h("caption", { class: "visually-hidden" }, "Concordance: the words found, with the words before and after"), h("tbody", {}, rows))));
+    out.appendChild(h("div", { class: "kwic-wrap" }, h("table", { class: "kwic", onClick: (e) => wordClick(e, addWord) }, h("caption", { class: "visually-hidden" }, "Concordance: the words found, with the words before and after"), h("tbody", {}, rows))));
     const pages = h("div", { class: "pager" },
       button({ sm: true, disabled: st.offset <= 0, onClick: () => { st.offset = Math.max(0, st.offset - PAGE); go_(); window.scrollTo(0, 0); } }, icon("chevron-left", { size: 13 }), "Previous"),
       h("span", { class: "muted small" }, `Lines ${fmt.num(st.offset + 1)}–${fmt.num(st.offset + r.lines.length)} of ${fmt.num(r.total)}`),
@@ -237,16 +249,17 @@ export async function renderSearch(view, params, query) {
     out.appendChild(colBox);
   }
 
-  async function meaningResults() {
+  async function meaningResults(mine = () => true) {
     let r;
     try { r = await api("GET", `/api/projects/${P(project)}/search?${apiQs({ mode: "meaning", limit: 30 })}`); }
-    catch (e) { replace(out, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
+    catch (e) { if (mine()) replace(out, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
+    if (!mine()) return;
     clear(out);
     out.appendChild(h("div", { class: "section-title" }, h("h2", {}, `The ${r.passages.length} passages closest in meaning`), h("span", { class: "muted" }, "whole passages, by keywords and meaning together")));
     if (!r.passages.length) { out.appendChild(emptyState("search-x", "Nothing found", "No passage is close to these words.")); return; }
     out.appendChild(h("div", { class: "meaning-list" }, r.passages.map((p) => card({ as: "article" },
       h("div", { class: "row sr-meaning-head" },
-        link({ kind: "title", serif: true, title: `Open the document at this passage: ${p.title || "untitled"}`, "aria-label": `Open the document at this passage: ${p.title || "untitled"}${p.location ? " · " + p.location : ""}`, href: `#/doc/${encodeURIComponent(p.doc_id)}?q=${p.start}-${(p.start || 0) + p.text.length}&whole=1` }, h("strong", {}, p.title || "untitled")),
+        link({ kind: "title", serif: true, title: `Open the document at this passage: ${p.title || "untitled"}`, "aria-label": `Open the document at this passage: ${p.title || "untitled"}${p.location ? " · " + p.location : ""}`, href: `#/doc/${encodeURIComponent(p.doc_id)}?q=${p.start}-${(p.start || 0) + cpLength(p.text)}&whole=1` }, h("strong", {}, p.title || "untitled")),
         h("span", { class: "muted small" }, p.location)),
       h("p", { class: "passage serif" }, ...markedText(p.text, p.marks)),
       h("div", { class: "found-words" }, p.found_by === "meaning" ? "Found by meaning: it shares none of the words." : ["Found by the words: ", h("b", {}, (p.matched || []).join(", "))])))));

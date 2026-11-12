@@ -54,7 +54,6 @@ import datetime as _dt
 import hashlib
 import json
 import sqlite3
-from pathlib import Path
 from typing import Any, Iterable
 
 from . import people
@@ -236,7 +235,10 @@ def owner_left(ws: Workspace, cx: sqlite3.Connection, ch: list[dict]) -> str | N
         base = folder.chosen(ws)
         if base is not None and base.is_dir():
             team = base / folder.team_name(ws)
-            if team.is_dir() and (team / people.me()).is_dir() and not (team / who).is_dir():
+            # gone only once this copy has seen it there: an owner who has not chosen the folder yet, or whose
+            # subfolder the cloud service has not delivered, has not left
+            if team.is_dir() and (team / people.me()).is_dir() and not (team / who).is_dir() and \
+                    folder.seen_there(cx, who):
                 return "The owner's folder is no longer in the shared folder."
     except (ImportError, OSError):
         pass

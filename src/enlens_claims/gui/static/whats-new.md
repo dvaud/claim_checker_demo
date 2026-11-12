@@ -1,7 +1,6 @@
-# 0.17.0: Working together, and one look
-*Work with colleagues through a folder your team shares, in an app that looks the same on every page.*
-- In the new Team tab, choose a folder your team shares: OneDrive, Dropbox or a network drive
-- What you make stays private until you press Share; one owner decides which documents the project holds
-- One look for every button, link and tag, light and dark; the guide is at #/design
-- Seven places in the sidebar, Find with Ctrl+K, and the research log beside every page
-- The glossary and key terms leave out each language's common words
+# 0.17.1: Faster, and safer with colleagues
+*A review of all of ENLENS after 0.17.0: speed, memory and what comes in from colleagues.*
+- Adding many documents is up to 70 times faster; they read exactly as before
+- Themes and the glossary need far less memory; search pages open at once
+- A colleague's file can no longer act in your name, and oversized files are refused
+- Spreadsheet downloads no longer carry cells that run as formulas

@@ -221,10 +221,9 @@ def search(ws: Workspace, q: str | None = None, doc_id: str | None = None, colou
     """Notes whose words or note contain `q` (every word of it, in any order), newest first: {notes, total,
     documents: [{doc_id, title, notes}]}."""
     where, args = [], []
-    for w in (q or "").lower().split()[:12]:
-        like = "%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        where.append("(lower(COALESCE(text, '')) LIKE ? ESCAPE '\\' OR lower(quote) LIKE ? ESCAPE '\\')")
-        args += [like, like]
+    # the words are looked for here, not by the database: its lower() and LIKE know the letters a to z only, so a
+    # note that writes "Életminőség" was not found by "életminőség"
+    words = (q or "").casefold().split()[:12]
     if doc_id:
         where.append("doc_id=?")
         args.append(doc_id)
@@ -235,10 +234,17 @@ def search(ws: Workspace, q: str | None = None, doc_id: str | None = None, colou
         where.append("person_id=?")
         args.append(_me())
     sql_where = ("WHERE " + " AND ".join(where)) if where else ""
+    first, most = max(0, int(offset)), max(1, min(int(limit), 100000))
     with ws.connect() as cx:
-        total = cx.execute(f"SELECT COUNT(*) FROM notes {sql_where}", args).fetchone()[0]
-        rows = cx.execute(f"SELECT * FROM notes {sql_where} ORDER BY COALESCE(edited_at, created_at) DESC, rowid DESC "
-                          "LIMIT ? OFFSET ?", (*args, max(1, min(int(limit), 100000)), max(0, int(offset)))).fetchall()
+        if words:
+            rows = [r for r in cx.execute(f"SELECT * FROM notes {sql_where} ORDER BY COALESCE(edited_at, created_at) "
+                                          "DESC, rowid DESC", args).fetchall()
+                    if all(w in (r["text"] or "").casefold() or w in (r["quote"] or "").casefold() for w in words)]
+            total, rows = len(rows), rows[first:first + most]
+        else:
+            total = cx.execute(f"SELECT COUNT(*) FROM notes {sql_where}", args).fetchone()[0]
+            rows = cx.execute(f"SELECT * FROM notes {sql_where} ORDER BY COALESCE(edited_at, created_at) DESC, rowid "
+                              "DESC LIMIT ? OFFSET ?", (*args, most, first)).fetchall()
         out = _placed(cx, rows)
         docs = []
         for did, n in cx.execute("SELECT doc_id, COUNT(*) FROM notes GROUP BY doc_id").fetchall():
@@ -375,6 +381,10 @@ def merge(cx: sqlite3.Connection, rows: list[dict], fix) -> int:
             continue
         have = cx.execute("SELECT person_id, edited_at FROM notes WHERE note_id=?", (r["note_id"],)).fetchone()
         use = [c for c in cols if c in r]
+        if have is None and r.get("person_id") == me:
+            # nothing in a colleague's file is written in your name: a note of yours that is not here is one
+            # you removed, or one the file made up
+            continue
         if have is None:
             cx.execute(f"INSERT INTO notes({','.join(use)}) VALUES ({','.join('?' * len(use))})", [r[c] for c in use])
             n += 1

@@ -316,7 +316,9 @@ class ChecksApi:
         if kind in ("decompose", "expand", "check"):
             # a check waiting for Claude Code is taken back whole, as a stopped check (it leaves nothing behind);
             # 0.13.11: not one Claude Code has finished, whose local excerpts wait for "Read them now"
-            for (hid,) in ws.query("SELECT hyp_id FROM hypotheses WHERE queue='waiting'"):
+            # only the checks that wait for this kind, and none whose task a helper holds now (taskqueue.withdraw
+            # leaves those tasks alone, so the check is left whole too)
+            for hid in taskqueue.checks_waiting_on(ws, kind):
                 if claimcheck.only_local_waits(ws, hid):
                     continue
                 claimcheck.delete_hypothesis(ws, hid, unmade=True)

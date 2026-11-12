@@ -29,14 +29,17 @@ import io
 import json
 import re
 import shutil
+import threading
 import time
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
 
 from . import frameworks, history
 from .frameworks import BUNDLED, NAME_RE, Code
 from .store import Workspace, now
+from .textutil import fast_normalise, normalise
 
 MAX_CODES = 5000
 MAX_EXAMPLES = 8
@@ -202,7 +205,12 @@ def settle_clash(ws: Workspace, name: str, uid: str, keep: str, why: str | None 
     if not meta.get("clashes"):
         meta.pop("clashes", None)
     vid = _keep_version(f, name, "settling a sync clash") if keep == "mine" else None
-    _write(f, name, frameworks.decode((f / f"{name}.csv").read_bytes()), meta)
+    try:
+        _write(f, name, frameworks.decode((f / f"{name}.csv").read_bytes()), meta)
+    except BaseException:
+        _kept(f, name, vid, False)
+        raise
+    _kept(f, name, vid, True)
     if keep == "mine":
         with ws.connect() as cx:
             researchlog.record(cx, "codebook-changed", f"Kept your version of the code "
@@ -407,7 +415,8 @@ def _version_dir(f: Path, name: str) -> Path:
 
 
 def _keep_version(f: Path, name: str, label: str) -> str | None:
-    """The codebook's files as they are now, as a version (before a change). Returns its id."""
+    """The codebook's files as they are now, as a version (before a change). Returns its id. The oldest beyond KEEP
+    are not pruned here: only once the change is written (`_kept`), so a change that fails loses no real version."""
     csv_p = f / f"{name}.csv"
     if not csv_p.is_file():
         return None
@@ -420,10 +429,19 @@ def _keep_version(f: Path, name: str, label: str) -> str | None:
         "csv": frameworks.decode(csv_p.read_bytes()),
         "meta": json.loads(meta_p.read_text(encoding="utf-8")) if meta_p.is_file() else {}},
         ensure_ascii=False), encoding="utf-8")
-    old = sorted(d.glob("c*.json"), key=_order)
-    for p in old[:-KEEP]:
-        p.unlink(missing_ok=True)
     return vid
+
+
+def _kept(f: Path, name: str, vid: str | None, written: bool) -> None:
+    """After a change: written, the oldest versions beyond KEEP go; not written (the file is open in a spreadsheet),
+    the version kept for it goes, so the history shows no change that never happened."""
+    d = _version_dir(f, name)
+    if not written:
+        if vid:
+            (d / f"{vid}.json").unlink(missing_ok=True)
+        return
+    for p in sorted(d.glob("c*.json"), key=_order)[:-KEEP] if d.is_dir() else []:
+        p.unlink(missing_ok=True)
 
 
 def _order(p: Path) -> tuple:
@@ -584,11 +602,12 @@ def save(ws: Workspace, name: str, state: dict, merges: list[dict] | None = None
         e.update(id=uuid.uuid4().hex[:12], at=at, seq=i)
     # the examples: each must be words of a document (here, or in the project it was found in)
     places = {}
+    where_found = find_examples(ws, [e["quote"] for c in new["codes"] for e in c["examples"] if not e.get("doc_id")])
     for c in new["codes"]:
         kept = []
         for e in c["examples"]:
             if not e.get("doc_id"):
-                got = find_example(ws, e["quote"])
+                got = where_found.get(" ".join((e["quote"] or "").split()))
                 if got:
                     e.update(got)
             kept.append({k: e.get(k) for k in ("quote", "doc_id", "title", "page", "start", "end", "project")
@@ -603,7 +622,12 @@ def save(ws: Workspace, name: str, state: dict, merges: list[dict] | None = None
     else:
         meta.pop("directional", None)
     vid = _keep_version(f, name, label)
-    _write(f, name, _csv_text(new["codes"], new["groups"]), meta)
+    try:
+        _write(f, name, _csv_text(new["codes"], new["groups"]), meta)
+    except BaseException:
+        _kept(f, name, vid, False)
+        raise
+    _kept(f, name, vid, True)
     follow(ws, name)
     text = (f"Restored the codebook {researchlog.quoted(meta['title'], 80)} to its version of {restoring}: "
             if restoring else f"Changed the codebook {researchlog.quoted(meta['title'], 80)}: ")
@@ -797,8 +821,13 @@ def remove(ws: Workspace, name: str, why: str | None = None) -> None:
         raise ValueError("The SDG codebooks ship with the app and cannot be removed.")
     title = frameworks.get(name, ws).title
     vid = _keep_version(f, name, "removing the codebook")
-    for ext in ("csv", "json"):
-        (f / f"{name}.{ext}").unlink(missing_ok=True)
+    try:
+        (f / f"{name}.csv").unlink(missing_ok=True)
+    except OSError:   # open in a spreadsheet (Windows): nothing was removed
+        _kept(f, name, vid, False)
+        raise ValueError(_BUSY) from None
+    _kept(f, name, vid, True)
+    (f / f"{name}.json").unlink(missing_ok=True)
     with ws.connect() as cx:
         researchlog.record(cx, "codebook-removed", f"Removed the codebook {researchlog.quoted(title, 80)} "
                                                    f"({'from all projects' if where == 'home' else 'from this project'}).",
@@ -869,21 +898,88 @@ def csv_of(ws: Workspace, name: str) -> tuple[str, bytes]:
 def find_example(ws: Workspace, quote: str, doc_id: str | None = None) -> dict | None:
     """Where an example quote is in this project's documents (the quote check): {doc_id, title, page, start, end,
     project}, or None. The quote must be the documents' own words (as every quote is found)."""
+    return find_examples(ws, [quote], doc_id).get(" ".join((quote or "").split()))
+
+
+_LOOKED: "OrderedDict[tuple, dict | None]" = OrderedDict()   # quotes looked for, by project, documents and quote
+_LOOKED_MAX = 2000
+_LOOKED_LOCK = threading.Lock()
+
+
+def _needle(q: str) -> tuple[str, bool]:
+    """What a passage must hold for `find_quote` to find the quote in it, compared with spaces left out (its spacing
+    pass joins words split by spaces): the longest run of letters and digits of the quote's normalised words that are
+    plain ASCII (True), which every passage that holds the quote holds in `fast_normalise`'s folding too; for a quote
+    without such a run, all of its folded words (False: a capital sigma and Hangul compose differently there, so this
+    one is a best effort)."""
+    flat = "".join(normalise(q).split())
+    runs = re.findall(r"[a-z0-9]+", flat)
+    best = max(runs, key=len, default="")
+    if len(best) >= 3:
+        return best, True
+    return "".join(fast_normalise(q).split()).replace("ς", "σ"), False
+
+
+def find_examples(ws: Workspace, quotes: list[str], doc_id: str | None = None) -> dict[str, dict | None]:
+    """Where each example quote is (`find_example`), with one reading of the passages for them all. Each passage's
+    text is folded as the quote check folds it (`fast_normalise`, spaces left out) and `find_quote` decides only where
+    it holds the quote's words: SQLite's lower() and LIKE fold only ASCII letters, so a quote with a capital accented
+    letter, or a ligature in the passage, was never found. A quote looked for against the same documents (the
+    project's corpus version) is not looked for again: a codebook's every save looked again for every example
+    without a place."""
     from .textutil import find_quote
 
-    q = " ".join((quote or "").split())
-    if len(q) < 8:
-        return None
-    words = [w for w in re.findall(r"\w{4,}", q)][:3] or [q[:20]]
-    sql = "SELECT passage_id, doc_id, page, start, text FROM passages WHERE " + " AND ".join(
-        "instr(lower(text), ?) > 0" for _ in words) + (" AND doc_id=?" if doc_id else "") + " LIMIT 200"
-    for r in ws.query(sql, [w.lower() for w in words] + ([doc_id] if doc_id else [])):
-        hit = find_quote(r["text"] or "", q)
-        if hit:
-            title = ws.scalar("SELECT title FROM documents WHERE doc_id=?", (r["doc_id"],))
-            return {"doc_id": r["doc_id"], "title": title, "page": r["page"], "start": r["start"] + hit[0],
-                    "end": r["start"] + hit[1], "project": ws.project_uid(), "quote": (r["text"] or "")[hit[0]:hit[1]]}
-    return None
+    out: dict[str, dict | None] = {}
+    todo: dict[str, tuple[str, bool]] = {}
+    base = (str(ws.db_path.resolve()), ws.corpus_version(), doc_id)
+    for quote in quotes:
+        q = " ".join((quote or "").split())
+        if q in out or q in todo:
+            continue
+        if len(q) < 8:
+            out[q] = None
+            continue
+        with _LOOKED_LOCK:
+            seen = base + (q,) in _LOOKED
+            if seen:
+                _LOOKED.move_to_end(base + (q,))
+                out[q] = _LOOKED[base + (q,)]
+        if not seen:
+            todo[q] = _needle(q)
+    if todo:
+        sql = ("SELECT passage_id, doc_id, page, start, text FROM passages " +
+               ("WHERE doc_id=? ORDER BY seq" if doc_id else "ORDER BY rowid"))
+        found: dict[str, dict] = {}
+        cur = ws._conn().execute(sql, (doc_id,) if doc_id else ())
+        while len(found) < len(todo):
+            rows = cur.fetchmany(500)
+            if not rows:
+                break
+            for r in rows:
+                text = r["text"] or ""
+                flat = None
+                for q, (needle, ascii_) in todo.items():
+                    if q in found:
+                        continue
+                    if flat is None:
+                        flat = "".join(fast_normalise(text).split())
+                        folded = flat.replace("ς", "σ")
+                    if needle not in (flat if ascii_ else folded):
+                        continue
+                    hit = find_quote(text, q)
+                    if hit:
+                        title = ws.scalar("SELECT title FROM documents WHERE doc_id=?", (r["doc_id"],))
+                        found[q] = {"doc_id": r["doc_id"], "title": title, "page": r["page"],
+                                    "start": r["start"] + hit[0], "end": r["start"] + hit[1],
+                                    "project": ws.project_uid(), "quote": text[hit[0]:hit[1]]}
+        cur.close()
+        with _LOOKED_LOCK:
+            for q in todo:
+                out[q] = found.get(q)
+                _LOOKED[base + (q,)] = out[q]
+            while len(_LOOKED) > _LOOKED_MAX:
+                _LOOKED.popitem(last=False)
+    return {q: (dict(v) if v else None) for q, v in out.items()}
 
 
 def _sentence_at(text: str, n: int = 260) -> tuple[str, int, int]:
@@ -984,13 +1080,17 @@ def try_codes(ws: Workspace, state: dict, progress: Callable[[int, int], None] |
     from .profile import MAX_CANDIDATES, keyword_candidates, rank_candidates
     from .search import passage_index
 
+    from .concordance import CHUNK
+
     fw = _draft(state)
     idx = passage_index(ws)
-    rows = idx.read(list(range(len(idx.doc_of))))
+    n_rows = len(idx.doc_of)
     idf = idx.bm25.idf
     totals: dict[str, float] = {}
     per: dict[str, dict] = {c: {"passages": 0, "docs": set(), "examples": []} for c in fw.codes}
     titles = {r[0]: r[1] for r in ws.query("SELECT doc_id, title FROM documents")}
+    # the passages' text a chunk at a time, not all of it at once
+    rows = (r for k in range(0, n_rows, CHUNK) for r in idx.read(range(k, min(k + CHUNK, n_rows))))
     for n, r in enumerate(rows, 1):
         cands = keyword_candidates(fw, r["text"], idf, totals)
         for code, _c in rank_candidates(cands)[:MAX_CANDIDATES]:
@@ -1002,18 +1102,18 @@ def try_codes(ws: Workspace, state: dict, progress: Callable[[int, int], None] |
                                       "title": titles.get(r["doc_id"]), "page": r["page"],
                                       "text": _sentence(r["text"], 300)})
         if progress and n % 500 == 0:
-            progress(n, len(rows))
+            progress(n, n_rows)
     total_docs = len(set(idx.doc_of))
     out = {}
     for code, p in per.items():
-        share = p["passages"] / max(1, len(rows))
+        share = p["passages"] / max(1, n_rows)
         out[code] = {"passages": p["passages"], "documents": len(p["docs"]), "examples": p["examples"],
                      "share": round(share, 4),
                      "note": ("matches nothing: add words it is matched by, or change its definition"
                               if not p["passages"] else
                               "matches a large part of the documents: its words may be too common" if share > 0.25
                               else None)}
-    return {"passages": len(rows), "documents": total_docs, "codes": out}
+    return {"passages": n_rows, "documents": total_docs, "codes": out}
 
 
 def relabel_passages(ws: Workspace, name: str, code: str) -> list[str]:

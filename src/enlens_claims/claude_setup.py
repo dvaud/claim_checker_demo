@@ -443,7 +443,9 @@ def run_args(project: str, claude: str = "", plan: dict | None = None, options: 
 def _log_path(project: str) -> Path:
     d = core.home() / "claude-runs"
     d.mkdir(parents=True, exist_ok=True)
-    return d / ((re.sub(r"[^A-Za-z0-9_-]+", "_", project).strip("_") or "project") + ".log")
+    # named as the run's record and its work folder are (`_run_key`): two projects whose names differ only in
+    # accented letters or punctuation ("Előadás", "El ad s") shared one log, and one run's start emptied the other's
+    return d / f"{_run_key(project)}.log"
 
 
 # 0.14.3: every run's process id is written under the data folder (claude-runs/<project>.run.json), because _RUNS

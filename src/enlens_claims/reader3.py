@@ -390,6 +390,10 @@ _TOC_HEAD = re.compile(r"^(table of )?contents?\.?$|^inhoud(sopgave)?$|^inhaltsv
                        r"^table des mati[eè]res$|^[íi]ndice$|^tartalom(jegyz[eé]k)?$", re.I)
 _TOC_LINE = re.compile(r"^(?P<title>.*?[^\W\d_].*?)(?P<lead>\s*[.·…_]{2,}\s*|\s*\|\s*|\s+)(?P<num>\d{1,4}|[ivxlc]{1,7})$",
                        re.I)
+# A line can only be an entry of a table of contents when it ends as one does: a number, after a space, a "|" or
+# leader dots. Looked at first, in the line's last characters: `_TOC_LINE` tries every split of a line that does not
+# end so, which took seconds for a paragraph on one line (most of the time it took to read a text file).
+_TOC_TAIL = re.compile(r"(?:\s|\||[.·…_]{2})\s*(?:\d{1,4}|[ivxlc]{1,7})$", re.I)
 _INDEX_LINE = re.compile(r"[^\W\d_].*?,\s*(?:\d{1,4}(?:n\d+)?(?:[–-]\d{1,4})?(?:,\s*)?)+\.?$|"
                          r"^[^\W\d_][^,]{1,60}\s\d{1,4}(?:[–-]\d{1,4})?(?:,\s*\d{1,4}(?:[–-]\d{1,4})?)+$")
 _NUMBER_WORDS = ("one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|"
@@ -424,6 +428,12 @@ def _stems(t: str) -> set[str]:
 
 
 def _same_title(block: str, entry: str) -> bool:
+    return _same_prepared(block, _stems(block), entry, _stems(entry))
+
+
+def _same_prepared(block: str, a: set[str], entry: str, b: set[str]) -> bool:
+    """`_same_title` with the word stems of both titles already worked out (a book's table of contents is compared
+    with thousands of blocks, and the stems of an entry never change)."""
     if not block or not entry:
         return False
     if block == entry:
@@ -431,12 +441,15 @@ def _same_title(block: str, entry: str) -> bool:
     if len(entry) >= 8 and len(block) >= 8 and (block.startswith(entry) and len(block) <= len(entry) + 40
                                                   or entry.startswith(block) and len(block) >= 0.45 * len(entry)):
         return True
-    a, b = _stems(block), _stems(entry)
-    return len(a) >= 2 and len(b) >= 2 and len(a & b) / len(a | b) >= 0.75
+    la, lb = len(a), len(b)
+    if la < 2 or lb < 2 or min(la, lb) * 4 < max(la, lb) * 3:  # the shared share cannot reach 0.75 if the sizes differ
+        return False
+    return len(a & b) / len(a | b) >= 0.75
 
 
 def _toc_entry(line: str):
-    m = _TOC_LINE.match(line.strip())
+    line = line.strip()
+    m = _TOC_LINE.match(line) if _TOC_TAIL.search(line[-10:]) else None
     if not m:
         return None
     num = m.group("num")
@@ -506,6 +519,81 @@ def find_contents(blocks, fracs) -> tuple[int, int, list[str]] | None:
     return None
 
 
+def _find_entries(blocks, fracs: list[float], c1: int, titles: list[str]) -> list[tuple[int, str]]:
+    """The entries' headings in the text, in order: (block index, entry title), looking from block `c1` on."""
+    n = len(blocks)
+    entries = [(t, _norm(t)) for t in titles]
+    # what an entry needs for each block is worked out once, not once per block: whether it is end matter, and
+    # its title and the parts of its title before a colon, each with its stems and its stems as a number's bits
+    bits: dict[str, int] = {}
+
+    def mask_of(stems: set[str]) -> int:
+        return sum(1 << bits[w] for w in stems if w in bits)
+
+    prepared = []
+    for t, ne in entries:
+        if not ne:
+            prepared.append(None)
+            continue
+        late = bool(_ENTRY_REFS.match(ne) or _ENTRY_INDEX.match(ne) or _ENTRY_BACK.match(ne))
+        parts = [ne] + ([p for p in (_norm(s) for s in t.split(":")) if len(p) >= 6] if ":" in t else [])
+        stemmed = [(p, _stems(p)) for p in parts]
+        for _p, st in stemmed:
+            for w in st:
+                bits.setdefault(w, len(bits))
+        prepared.append((late, stemmed))
+    prepared = [None if pr is None else (pr[0], [(p, st, len(st), mask_of(st), p[0]) for p, st in pr[1]])
+                for pr in prepared]
+    matches: list[tuple[int, str]] = []    # (block index, entry title)
+    e = 0
+    k = c1
+    while k < n and e < len(entries):
+        b = blocks[k]
+        tb = _text(b)
+        if b.kind in ("furniture", "table", "figure", "contents") or len(tb) > 200:
+            k += 1
+            continue
+        mine = _norm(tb)
+        mine_stems = _stems(mine)
+        nxt = next((blocks[x] for x in range(k + 1, min(n, k + 3)) if blocks[x].kind != "furniture"), None)
+        tn = _text(nxt) if nxt is not None else ""
+        both = _norm(tb + " " + tn) if nxt is not None and len(tn) <= 80 else None
+        both_stems = _stems(both) if both else None
+        early = fracs[k] < 0.5
+        # `_same_prepared` says yes only to an entry that starts with the same letter (equal, or one the start of
+        # the other) or shares three quarters of the stems (counted here with bits); every other pair is passed
+        # over here, which is almost all of them
+        first, la, ma = mine[:1], len(mine_stems), mask_of(mine_stems)
+        first2, la2, ma2 = (both[:1], len(both_stems), mask_of(both_stems)) if both else ("", 0, 0)
+        hit = None
+        for x in range(e, len(entries)):
+            prep = prepared[x]
+            if prep is None:
+                continue
+            late, parts = prep
+            if late and early:
+                continue  # end matter is at the end: a "Notes" heading inside a chapter is not it
+            for p, ps, lb, mb, p0 in parts:
+                if lb >= 2 and la >= 2 and (n_in := (ma & mb).bit_count()) * 4 >= 3 * (la + lb - n_in) \
+                        or p0 == first:
+                    if _same_prepared(mine, mine_stems, p, ps):
+                        hit = x
+                        break
+            else:
+                p, ps, lb, mb, p0 = parts[0]
+                if both and (lb >= 2 and la2 >= 2 and (n_in := (ma2 & mb).bit_count()) * 4 >= 3 * (la2 + lb - n_in)
+                             or p0 == first2):
+                    if _same_prepared(both, both_stems, p, ps):
+                        hit = x
+            if hit is not None:
+                break
+        if hit is not None:
+            matches.append((k, entries[hit][0]))
+            e = hit + 1
+        k += 1
+    return matches
+
+
 def book_parts(blocks, fracs: list[float]) -> dict:
     """Set the kinds of a book's or thesis's parts from its table of contents (`contents`, `front`, `back`,
     `references`, `index`), and an index known by its shape. Returns what was found, for the reading report."""
@@ -518,35 +606,7 @@ def book_parts(blocks, fracs: list[float]) -> dict:
             if b.kind != "furniture":
                 b.kind = "contents"
         out["contents"] = 1
-        # the entries' headings in the text, in order
-        entries = [(t, _norm(t)) for t in titles]
-        matches: list[tuple[int, str]] = []    # (block index, entry title)
-        e = 0
-        k = c1
-        while k < n and e < len(entries):
-            b = blocks[k]
-            if b.kind in ("furniture", "table", "figure", "contents") or len(_text(b)) > 200:
-                k += 1
-                continue
-            mine = _norm(_text(b))
-            nxt = next((blocks[x] for x in range(k + 1, min(n, k + 3)) if blocks[x].kind != "furniture"), None)
-            both = _norm(_text(b) + " " + _text(nxt)) if nxt is not None and len(_text(nxt)) <= 80 else None
-            hit = None
-            for x in range(e, len(entries)):
-                t, ne = entries[x]
-                if not ne:
-                    continue
-                late = bool(_ENTRY_REFS.match(ne) or _ENTRY_INDEX.match(ne) or _ENTRY_BACK.match(ne))
-                if late and fracs[k] < 0.5:
-                    continue  # end matter is at the end: a "Notes" heading inside a chapter is not it
-                parts = [ne] + ([p for p in (_norm(s) for s in t.split(":")) if len(p) >= 6] if ":" in t else [])
-                if any(_same_title(mine, p) for p in parts) or (both and _same_title(both, ne)):
-                    hit = x
-                    break
-            if hit is not None:
-                matches.append((k, entries[hit][0]))
-                e = hit + 1
-            k += 1
+        matches = _find_entries(blocks, fracs, c1, titles)
         out["chapters"] = len(matches)
         # front matter: before the contents (an abstract, summary or preface stays), and between the contents and
         # the first entry found
@@ -617,7 +677,7 @@ def _index_by_shape(blocks, fracs) -> None:
             close()
             continue
         lines = [ln.text.strip() for ln in b.lines if ln.text.strip()]
-        hits = sum(1 for t in lines if _INDEX_LINE.search(t) and len(t) <= 160)
+        hits = sum(1 for t in lines if len(t) <= 160 and _INDEX_LINE.search(t))  # the length first: a long line is none
         if lines and hits >= max(1, 0.6 * len(lines)):
             run.append(i)
             lines_in += hits

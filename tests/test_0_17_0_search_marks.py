@@ -64,8 +64,8 @@ def test_meaning_results_carry_every_matched_word(tmp_path):
 
 def test_the_page_draws_the_marks_and_puts_the_title_first():
     js = (STATIC / "views" / "search.js").read_text(encoding="utf-8")
-    assert "wordSpans(x.left, addWord, x.marks)" in js
-    assert "wordSpans(x.right, addWord, x.marks, x.left.length + x.node.length)" in js
+    assert "wordSpans(x.left, x.marks)" in js   # 0.17.1: the words' clicks are one listener on the table
+    assert "wordSpans(x.right, x.marks, cpLength(x.left) + cpLength(x.node))" in js   # the app's offsets
     assert "markedText(p.text, p.marks)" in js
     assert ".slice(0, 28)" not in js
     assert 'class: "kw-title"' in js and "aria-label" in js

@@ -3,7 +3,7 @@
 // check: the passage holding its words becomes an excerpt you judged, with the note's words as your sentence.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
-  downloadLinks, debounce, dialog, shortTitle, GRADE_TEXT, button, link, choice, input, select, textarea, card, optionCards, emptyState, notice, personMark } from "../lib.js";
+  downloadLinks, debounce, dialog, shortTitle, GRADE_TEXT, button, link, choice, input, select, textarea, card, optionCards, emptyState, notice, personMark, latest } from "../lib.js";
 import { shareInline, sharingOf } from "./share.js";   // 0.18 (L1)
 
 export const COLOUR_NAME = { yellow: "Yellow", green: "Green", blue: "Blue", pink: "Pink" };
@@ -126,14 +126,21 @@ export async function renderNotes(view, _params, query) {
   const listBox = h("div", { class: "notes-list", "aria-live": "polite" });
   view.append(h("div", { class: "notes-tools" }, search, docSel, colourChips, dl), listBox);
 
+  let shares = new Map();   // the sharing state of each note, by note id
+  let sharesStale = true;   // read once for the page; again only after a change to a note (a share, an edit, a removal)
+  const fresh = latest();   // the newest request of the list: an older answer never draws over it
+  const changed = () => { sharesStale = true; return load(); };
+
   async function load() {
-    let data;
+    const mine = fresh();
+    let data, read = null;
     const qs = new URLSearchParams({ limit: "2000" });
     if (q) qs.set("q", q);
     if (doc) qs.set("doc", doc);
     if (colour) qs.set("colour", colour);
-    let shares;   // 0.18 (L1): each note's sharing state, by note id
-    try { [data, shares] = await Promise.all([api("GET", `${base}?${qs}`), sharingOf("note")]); } catch (e) { failedLoad(listBox, e); return; }
+    try { [data, read] = await Promise.all([api("GET", `${base}?${qs}`), sharesStale ? sharingOf("note") : null]); } catch (e) { if (mine()) failedLoad(listBox, e); return; }
+    if (!mine()) return;
+    if (read) { shares = read; sharesStale = false; }
     data.shares = shares;
     clear(docSel);
     docSel.appendChild(h("option", { value: "" }, "All documents"));
@@ -160,7 +167,7 @@ export async function renderNotes(view, _params, query) {
       const first = ns[0];
       listBox.appendChild(h("h2", { class: "notes-doc-title" }, first.present ? link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(did)}?tab=notes` }, first.title || did) : h("span", {}, first.title || did, h("span", { class: "muted" }, " · removed from the project"))));
       const ul = h("ul", { class: "notes-cards" });
-      for (const n of ns) ul.appendChild(noteCard(n, load, { share: data.shares && data.shares.get(n.note_id) }));
+      for (const n of ns) ul.appendChild(noteCard(n, changed, { share: data.shares && data.shares.get(n.note_id) }));
       listBox.appendChild(ul);
     }
   }

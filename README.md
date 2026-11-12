@@ -63,10 +63,10 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **Private until you share it, and one owner**: your checks, themes, codebooks, notes and log entries stay yours until
   you press *Share*; the owner decides which documents a project holds. Cannot change how a check is answered; a
   document change the owner accepts changes your documents as one of your own would.
-- **One look on every page**, light and dark, with a design guide and a reference page in the app (`#/design`).
-  Cannot change results.
-- **Seven places in the sidebar**, tabs for each place's views, *Find* (Ctrl+K or ⌘K) and the research log beside every
-  page. Cannot change results.
+- **One look on every page**, light and dark, with a design guide (`#/design`); seven places in the sidebar, *Find*
+  (Ctrl+K or ⌘K) and the research log beside every page. Cannot change results.
+- **0.17.1: faster, and safer with colleagues' files**: adding documents, themes, the glossary and long lists are many
+  times faster or lighter, and a colleague's file can no longer act in your name. Cannot change results.
 - **Key terms without each language's common words**: the glossary and the key terms of themes found from now on
   leave out "ik", "ja", "because". Can change results for them; search is not changed.
 

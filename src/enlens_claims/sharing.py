@@ -78,10 +78,6 @@ def has_table(cx: sqlite3.Connection) -> bool:
     return bool(cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone())
 
 
-def _table_cols(cx: sqlite3.Connection, table: str) -> set[str]:
-    return {r[1] for r in cx.execute(f"PRAGMA table_info({table})")}
-
-
 def _q(n: int) -> str:
     return ",".join("?" * n)
 
@@ -683,7 +679,7 @@ def strip(cx: sqlite3.Connection, root: Path | str | None, me: str) -> dict:
 # the project's rows: no one's item (0.18, the shared folder, sync/folder.py)
 # ---------------------------------------------------------------------------------------------
 # tasks of these kinds belong to checks and theme runs (sync.fingerprints check_tasks, themes_tasks), never to the project
-_ITEM_TASK_KINDS = ("check", "expand", "decompose", "reread", "second", "theme")
+ITEM_TASK_KINDS = ("check", "expand", "decompose", "reread", "second", "theme")
 # tables without words of a document in them: a document kept out of the shared folder does not keep these rows out
 _NO_TEXT = {"ai_sent", "people", "bib_items", "bib_links", "research_log", "sync_removed", "runs", "meta",
             "ownership", "proposals", "decisions", "canon"}  # 0.18 L2: they name documents, and hold none of their words
@@ -860,7 +856,7 @@ class ProjectRows:
         own = [("labels", f"source IN ('model', 'person') AND framework IN ({bundled})", "*"),
                ("mentions", "1", "*"),
                ("tasks", f"status NOT IN ({','.join(repr(u) for u in UNFINISHED)}) AND kind NOT IN "
-                         f"({','.join(repr(k) for k in _ITEM_TASK_KINDS)})",
+                         f"({','.join(repr(k) for k in ITEM_TASK_KINDS)})",
                 _TASK_COLS + (", payload_json" if self.kept_out else "")),
                ("results", "1", "task_id, attempt"),
                ("ai_sent", "1", "*"),

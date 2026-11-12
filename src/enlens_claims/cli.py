@@ -981,13 +981,8 @@ def _summary(r: dict) -> dict:
 
 
 def _write_csv(path: str, rows: list[dict]) -> None:
-    import csv
-
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        if rows:
-            w = csv.DictWriter(f, fieldnames=list(rows[0]))
-            w.writeheader()
-            w.writerows(rows)
+        review.write_csv(f, rows)
 
 
 if __name__ == "__main__":  # pragma: no cover

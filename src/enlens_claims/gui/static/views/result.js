@@ -2,7 +2,7 @@
 // what (documents, from `balance`), then the evidence as verified quotes. Every count on the page is computed from
 // the same `passages` the cards are drawn from, so sections and numbers always agree. A person's judgement
 // replaces the AI's; it is protected (no silent overwrite) and every save can be undone.
-import { App, api, h, icon, readsLine, aiWhere, judgementIcon, pageHead, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark,
+import { App, api, h, icon, readsLine, aiWhere, judgementIcon, pageHead, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, cpToIndex, indexToCp, cpLength, breaksToIndex, latest, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark,
   button, iconButton, link, tag, notice, card as cardBox, fold as foldBox, choice, helpMark, downloadButton, textarea, input as fieldInput, select as selectField, reviewedMark, emptyState, personMark } from "../lib.js";
 import { withAI } from "../features.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
@@ -105,7 +105,8 @@ export function splitSentences(text) {
 // 0.12: the part of an excerpt a card shows at first: the sentences of the highlight with one sentence before and one
 // after (no highlight: the first two sentences), as [start, end]; null when that would hide little (then the whole
 // excerpt is shown). A sentence ends at . ! ? before a space, and at the excerpt's own paragraph breaks. opts.after: 0
-// leaves out the sentence after the highlight (on a phone).
+// leaves out the sentence after the highlight (on a phone). Every position here is a string index of `text` (the
+// app’s offsets go through cpToIndex() and breaksToIndex() first).
 export function excerptWindow(text, start, end, breaks, opts = {}) {
   text = String(text || "");
   const cuts = new Set([0, text.length]);
@@ -141,7 +142,8 @@ export function excerptWindow(text, start, end, breaks, opts = {}) {
   return text.length - (b - a) < 200 ? null : [a, b];
 }
 
-// The window of an excerpt as a passage, its highlight and breaks moved with it, an ellipsis where text is left out.
+// The window of an excerpt as a passage, its highlight and breaks moved with it, an ellipsis where text is left out
+// (string indices of `text`, as excerptWindow’s).
 function windowNode(text, start, end, cls, breaks, [a, b]) {
   const t = text.slice(a, b).replace(/\s+$/, "");
   const shifted = (breaks || []).filter((x) => x && Number.isInteger(x.at) && x.at >= a && x.at < a + t.length)
@@ -218,7 +220,7 @@ export async function renderResult(view, [hypId], query) {
       if (!box.isConnected) return;
       const typing = (document.activeElement && document.activeElement.id === "note") || noteDirty;
       if (typing) { armWait(); return; }
-      load().catch(() => {});
+      load({ ifChanged: true }).catch(() => {});
     }, 5000);
   }
   let noteDirty = false;           // 0.14.3: a note typed and not saved yet
@@ -229,12 +231,28 @@ export async function renderResult(view, [hypId], query) {
   };
   window.addEventListener("pagehide", saveNoteOnLeave);
 
-  async function load() {
+  // The result is asked for in several places (a save, the look every few seconds, the end of a job): only the answer
+  // to the newest request is drawn, so a look answered after a save never puts the judgement back as it was.
+  // fetchResult() gives null when a newer request was made meanwhile (its answer is drawn instead).
+  const newest = latest();
+  async function fetchResult(look = false) {
+    const mine = look ? newest.quiet() : newest();   // the look every few seconds never hides a save’s answer
+    const r = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`);
+    return mine() ? r : null;
+  }
+  // opts.ifChanged (the look while a check waits for Claude Code): the page is drawn again only when the answer is not
+  // the one shown, so it does not rebuild every card every few seconds while nothing has come in
+  async function load(opts = {}) {
     let r;
-    try { r = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`); }
+    try { r = await fetchResult(!!opts.ifChanged); }
     catch (e) {
       if (e.status === 404) { notFound(e.data && e.data.in_project); return; }
       throw e;
+    }
+    if (!r) return;
+    if (opts.ifChanged && current && JSON.stringify(r) === JSON.stringify(current)) {
+      if (waitsForClaude(r)) armWait();   // as draw() would: look again in a few seconds
+      return;
     }
     current = r;
     draw(r);
@@ -286,6 +304,11 @@ export async function renderResult(view, [hypId], query) {
     return d;
   }
 
+  // only the excerpts of documents marked Only a local AI wait (nothing for Claude Code), and whether the page waits
+  // for Claude Code, so it looks again every few seconds
+  const onlyLocalWaits = (r) => !!r.waiting_local && !(r.parts || []).some((p) => (p.rounds_info || []).some((x) => x.waiting) || ["terms", "rank", "judge"].includes(p.stage));
+  const waitsForClaude = (r) => r.status === "waiting" && !onlyLocalWaits(r);
+
   function draw(r) {
     const y = window.scrollY;
     localJobShown = false;   // 0.13.11: the running "Read them now" is shown once, at the first part that waits
@@ -311,7 +334,7 @@ export async function renderResult(view, [hypId], query) {
     // 0.14: a sync clash: this is a colleague's version of a check you both changed, or one came in beside this one
     if (r.clash || (r.clash_copies || []).length) box.appendChild(clashNotice(r));
 
-    const onlyLocal = r.waiting_local && !parts.some((p) => (p.rounds_info || []).some((x) => x.waiting) || ["terms", "rank", "judge"].includes(p.stage));
+    const onlyLocal = onlyLocalWaits(r);
     if (r.status === "waiting" && onlyLocal) {
       // 0.11: only the excerpts of documents marked Only a local AI wait (their notice is on each part)
       box.appendChild(notice({ kind: "info", icon: "house" }, h("p", {}, `${r.waiting_local} ${r.waiting_local === 1 ? "excerpt waits" : "excerpts wait"} for the local model; the answer counts the rest meanwhile. See “Read them now” below.`)));
@@ -344,7 +367,7 @@ export async function renderResult(view, [hypId], query) {
       box.appendChild(downloadsCard(r, parts));
       box.appendChild(h("div", { class: "result-foot" }, techCard(r, parts),
         // 0.16 (F5): your judgements as they were before each change, to compare and restore
-        historyButton("check", hypId, { text: "History of your judgements", onRestored: async () => { current = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`); draw(current); } }),
+        historyButton("check", hypId, { text: "History of your judgements", onRestored: () => load().catch(showError) }),
         button({ kind: "danger", sm: true, onClick: () => deleteHyp(r) }, icon("trash", { size: 13 }), "Delete this result")));
     }
 
@@ -750,7 +773,7 @@ export async function renderResult(view, [hypId], query) {
     w.promise.then(async (job) => {
       running.delete(jobId);
       let fresh = null;
-      try { fresh = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`); }
+      try { fresh = await fetchResult(); }   // null: a newer request was made, and draws
       catch (e) { if (e.status === 404) { await load(); return; } showError(e); }   // deleted meanwhile: load() says so
       if (job.state === "done") { try { await onDone(job, fresh || current); } catch (e) { showError(e); } }
       else if (job.state === "error") (extra.onError ? extra.onError(job) : showError({ message: job.error, kind: job.error_kind }));
@@ -1112,8 +1135,9 @@ export async function renderResult(view, [hypId], query) {
   function secondQuote(p) {
     const q = p.second && p.second.verdict ? p.second.quote : null;
     if (!q) return null;
-    const i = String(p.text || "").indexOf(q);
-    return i >= 0 ? { start: i, end: i + q.length } : null;
+    const t = String(p.text || "");
+    const i = t.indexOf(q);   // a string index: the place is kept as the app counts, like the quote’s own
+    return i >= 0 ? { start: indexToCp(t, i), end: indexToCp(t, i + q.length) } : null;
   }
 
   // 0.11.2: when the second opinion quoted another sentence, a switch for which of the two quotes the passage
@@ -1209,8 +1233,10 @@ export async function renderResult(view, [hypId], query) {
       : showSecond ? [sq.start, sq.end, "passage passage-second"] : [p.quote_start, p.quote_end, "passage"];
     const wkey = pendingKey(p, part);
     const whole = wholeShown.has(wkey);
-    const win = !whole && !p.waiting_for_you ? excerptWindow(p.text, hs, he, p.breaks, { after: matchMedia("(max-width: 600px)").matches ? 0 : 1 }) : null;
-    const passageEl = win ? windowNode(p.text, hs, he, hcls, p.breaks, win) : passageNode(p.text, hs, he, "p", hcls, p.breaks);
+    // the window is worked out on the text’s own indices: the app’s offsets are turned into them first
+    const [hsI, heI, brI] = [cpToIndex(p.text || "", hs), cpToIndex(p.text || "", he), breaksToIndex(p.text || "", p.breaks)];
+    const win = !whole && !p.waiting_for_you ? excerptWindow(p.text, hsI, heI, brI, { after: matchMedia("(max-width: 600px)").matches ? 0 : 1 }) : null;
+    const passageEl = win ? windowNode(p.text, hsI, heI, hcls, brI, win) : passageNode(p.text, hsI, heI, "p", hcls, brI);
     card.appendChild(passageEl);
     // the ways into the document: with the whole excerpt (In context), not in every card's row
     // the links in one line, then the download (an action) after it, its words a verb (DESIGN.md 6)
@@ -1369,7 +1395,7 @@ export async function renderResult(view, [hypId], query) {
   function quoteSpan(p) {
     const base = p.doc_start || 0;
     if (Number.isInteger(p.quote_start) && Number.isInteger(p.quote_end) && p.quote_end > p.quote_start) return { start: base + p.quote_start, end: base + p.quote_end };
-    return { start: base, end: base + (p.text || "").length, whole: true };
+    return { start: base, end: base + cpLength(p.text || ""), whole: true };
   }
   function docHref(p, span) {
     return `#/doc/${encodeURIComponent(p.doc_id)}?from=${encodeURIComponent(hypId)}&card=${encodeURIComponent(p.passage_id)}&q=${span.start}-${span.end}${span.whole ? "&whole=1" : ""}`;
@@ -1504,8 +1530,8 @@ export async function renderResult(view, [hypId], query) {
         msg.textContent = "";
         if (current) { put(current, undefined, "Saved: your sentence is highlighted.", { quote: q, onError: (e) => { msg.textContent = e.message || "Could not save the sentence."; } }); return; }
         // no judgement yet: the sentence is kept on the card (not saved) until a judgement is chosen for it
-        const at = (p.text || "").indexOf(q);
-        pendingQuote.set(pendingKey(p, part), { text: q, start: at >= 0 ? at : null, end: at >= 0 ? at + q.length : null });
+        const at = (p.text || "").indexOf(q);   // a string index; kept as the app counts, like the quote’s own place
+        pendingQuote.set(pendingKey(p, part), { text: q, start: at >= 0 ? indexToCp(p.text, at) : null, end: at >= 0 ? indexToCp(p.text, at + q.length) : null });
         focusAfter = { passage_id: p.passage_id, claim_id: part.claim_id, ...placeOf(p.passage_id, part.claim_id), anchor: ".judge", anchorTop: wrap.getBoundingClientRect().top, noNote: true };
         redraw();
         const el = box.querySelector(`[data-claim="${CSS.escape(part.claim_id)}"] [data-passage="${CSS.escape(p.passage_id)}"] .judge-panel [role="group"] button`);
@@ -1569,6 +1595,7 @@ export async function renderResult(view, [hypId], query) {
         if (job.state === "done") {
           const n = (job.result && job.result.passages) || 0;
           const y = window.scrollY;
+          const mine = newest();   // as fetchResult(): drawn only when no newer request was made meanwhile
           const fresh = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`);
           const fp = (fresh.parts || []).find((x) => x.claim_id === part.claim_id) || {};
           const round = before + 1;
@@ -1581,8 +1608,7 @@ export async function renderResult(view, [hypId], query) {
             : `Nothing new was found for ${terms.join(", ")}: no unread excerpt contains these words. Try other words, or words that appear in your documents.` });
           if (n) termsOpen.delete(part.claim_id);
           toast(n ? `${n} more ${n === 1 ? "excerpt" : "excerpts"} read. See “Just now” in the answer box.` : "Nothing new was found for these words.", n ? "ok" : "warn", { small: true, ttl: 4000 });
-          current = fresh; draw(fresh);
-          window.scrollTo(0, y);
+          if (mine()) { current = fresh; draw(fresh); window.scrollTo(0, y); }
         } else if (job.state === "error") showError({ message: job.error, kind: job.error_kind });
         else replace(status);
       } catch (e) { showError(e); }
@@ -1602,8 +1628,7 @@ export async function renderResult(view, [hypId], query) {
         if (!res) return;
         toast(res.new ? "Your note is an excerpt of the check now, with your judgement." : "The check had that passage already: your judgement of it is set.", "ok", { small: true });
         const y = window.scrollY;
-        current = await api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}?threshold=${threshold}`);
-        draw(current);
+        await load();
         window.scrollTo(0, y);
       } }, icon("highlighter", { size: 13 }), "Add one of your notes");
     row.append(...[
@@ -1726,22 +1751,17 @@ function othersLine(p) {
         h("strong", {}, o.mine ? "you" : o.name), ` ${word(o.verdict)}`, differs(o) ? " (differs from yours)" : "")])));
 }
 
-// 0.14.3: a button that downloads with the token in a header, like the other downloads: no token in the address
-// (history, the download list, the file's "where from"). 0.18: `opts.scope` "shared" (what you shared, for a colleague)
-// or "all" (the whole project, to move it: it asks first, share.js zipButton).
-export function projectZipLink(project, opts = {}) {
-  return zipButton(project, opts.scope === "shared" ? "shared" : "all", opts);
-}
-
 // A block (paragraph or page) of a document, with a global character span highlighted where it overlaps. The
-// block's heading lines (0.6: `headings`, offsets in its text) are shown bold.
+// block’s heading lines (0.6: `headings`, offsets in its text) are shown bold. All are the app’s offsets, turned
+// into indices of the block’s text for passageNode().
 export function blockNode(b, span, tag = "p", cls = "") {
   const text = b.text || "";
-  const breaks = (b.headings || []).map((x) => ({ at: x.at, end: x.end, kind: "heading" }));
+  const breaks = breaksToIndex(text, (b.headings || []).map((x) => ({ at: x.at, end: x.end, kind: "heading" })));
   if (!span) return passageNode(text, null, null, tag, cls, breaks);
-  const s = Math.max(0, span.start - b.start), e = Math.min(text.length, span.end - b.start);
-  if (e <= 0 || s >= text.length || e <= s) return passageNode(text, null, null, tag, cls, breaks);
-  return passageNode(text, s, e, tag, cls, breaks);
+  const n = cpLength(text);
+  const s = Math.max(0, span.start - b.start), e = Math.min(n, span.end - b.start);
+  if (e <= 0 || s >= n || e <= s) return passageNode(text, null, null, tag, cls, breaks);
+  return passageNode(text, cpToIndex(text, s), cpToIndex(text, e), tag, cls, breaks);
 }
 
 // What the blocks around one block are called: "paragraphs" (also within a page), "pages", or nothing to say.

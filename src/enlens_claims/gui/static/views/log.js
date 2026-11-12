@@ -3,7 +3,7 @@
 // a person's own entries and their reasons. An entry about a change can be compared with now and restored (F5).
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, clear, toast, showError, failedLoad, fmt, pageHead, P, confirmDialog, download, downloadLinks,
-  debounce, session, dialog, button, card, input, textarea, choice, link, personMark, emptyState } from "../lib.js";
+  debounce, session, dialog, button, card, input, textarea, choice, link, personMark, emptyState, latest } from "../lib.js";
 import { compareVersion } from "./versions.js";
 import { shareInline, sharingOf } from "./share.js";   // 0.18 (L1)
 
@@ -60,7 +60,9 @@ export async function renderLog(view) {
   let group = session(`log-group:${project}`) || "";
   let q = "";
   let shown = PAGE;
-  let shares = new Map();   // 0.18 (L1): the sharing state of entries people wrote, by entry id
+  let shares = new Map();   // the sharing state of entries people wrote, by entry id
+  let sharesStale = true;   // read once for the page; again only after a change that can alter it (a new entry, a share)
+  const fresh = latest();   // the newest request of the list: an older answer never draws over it
 
   // ---- a new entry
   const ta = textarea({ rows: 3, maxlength: 10000, "aria-label": "A new entry",
@@ -74,7 +76,7 @@ export async function renderLog(view) {
     const text = ta.value.trim();
     if (!text) { ta.focus(); return; }
     addBtn.disabled = true;
-    try { await api("POST", base, { text }); ta.value = ""; toast("Added to the research log.", "ok"); await load(); }
+    try { await api("POST", base, { text }); ta.value = ""; toast("Added to the research log.", "ok"); sharesStale = true; await load(); }
     catch (e) { showError(e); } finally { addBtn.disabled = false; }
   }
 
@@ -86,13 +88,16 @@ export async function renderLog(view) {
   view.append(h("div", { class: "log-tools" }, chips, h("div", { class: "log-tools-right" }, search, dl)), listBox);
 
   async function load() {
-    let data;
+    const mine = fresh();
+    let data, read = null;
     try {
       const qs = new URLSearchParams({ limit: String(shown) });
       if (group) qs.set("group", group);
       if (q) qs.set("q", q);
-      [data, shares] = await Promise.all([api("GET", `${base}?${qs}`), sharingOf("log")]);
-    } catch (e) { failedLoad(listBox, e); return; }
+      [data, read] = await Promise.all([api("GET", `${base}?${qs}`), sharesStale ? sharingOf("log") : null]);
+    } catch (e) { if (mine()) failedLoad(listBox, e); return; }
+    if (!mine()) return;
+    if (read) { shares = read; sharesStale = false; }
     drawChips(data);
     drawList(data);
   }
@@ -139,7 +144,7 @@ export async function renderLog(view) {
     const text = entryText(e, href);
     const who = entryWho(e), about = entrySubject(e, href);
     // 0.18 (L1): an entry you wrote has its sharing state, and Share / Unshare
-    const share = e.kind === "entry" && shares.get(e.entry_id) ? shareInline(shares.get(e.entry_id), () => load(), { owner: false }) : null;
+    const share = e.kind === "entry" && shares.get(e.entry_id) ? shareInline(shares.get(e.entry_id), () => { sharesStale = true; return load(); }, { owner: false }) : null;
     const meta = who || share || about || e.edited_at ? h("div", { class: "log-meta" }, who, share, about,
       e.edited_at ? h("span", { class: "muted" }, `edited ${fmt.dateShort(e.edited_at)}`) : null) : null;
     const why = e.why ? h("p", { class: "log-why" }, h("strong", {}, "Why: "), e.why) : null;
@@ -172,12 +177,12 @@ export async function renderLog(view) {
     ta2.value = e.text;
     const r = await textDialog("Edit your entry", ta2, "Save");
     if (r === null) return;
-    try { await api("PUT", `${base}/${P(e.entry_id)}`, { text: ta2.value }); await load(); } catch (err) { showError(err); }
+    try { await api("PUT", `${base}/${P(e.entry_id)}`, { text: ta2.value }); sharesStale = true; await load(); } catch (err) { showError(err); }
   }
 
   async function removeEntry(e) {
     if (!(await confirmDialog({ title: "Remove your entry?", message: "It is removed from the log here and, once your work is sent, from your colleagues' copies.", confirmText: "Remove" }))) return;
-    try { await api("DELETE", `${base}/${P(e.entry_id)}`); await load(); } catch (err) { showError(err); }
+    try { await api("DELETE", `${base}/${P(e.entry_id)}`); sharesStale = true; await load(); } catch (err) { showError(err); }
   }
 
   await load();

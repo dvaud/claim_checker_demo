@@ -145,7 +145,7 @@ def test_the_words_of_the_plan():
         "Waiting for the owner", "Waiting for you", "Nothing waits for the owner.", "Nothing waits for you.",
         "This project has no owner yet. An owner decides which documents the project holds, how they are read and who "
         "may read them with AI. Until someone is, everything works as before.", "Become the owner",
-        'low: "Low", medium: "Medium", high: "High"', "It is in every copy for now. Declined, it stays in ",
+        "It is in every copy for now. Declined, it stays in ",
         "Accepted, every copy reads it again and moves its results with it.", "Where the text starts or ends was changed.",
         "Accepted, it leaves every copy; checks keep what they read of it.", "you accept", "nothing changes anywhere.",
         "other proposal for this document waits too.", "Accept", "Decline", "Reason (optional)",

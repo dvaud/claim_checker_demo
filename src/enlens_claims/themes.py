@@ -69,18 +69,21 @@ def _stopped():
 
 
 def _passages(ws: Workspace) -> tuple[list[dict], int]:
-    """Body passages without exact repeats (the first of each repeated text is kept), and how many were dropped."""
-    rows = [dict(r) for r in ws.query("SELECT passage_id, doc_id, seq, text FROM passages WHERE section='body' "
-                                      "ORDER BY passage_id")]
-    seen: set[str] = set()
+    """Body passages without exact repeats (the first of each repeated text is kept), and how many were dropped.
+    Their text is read one row at a time and not kept (nothing after this reads it): a repeat is known by a 128-bit
+    digest of its normalised text, not by the text."""
+    seen: set[bytes] = set()
     out = []
-    for r in rows:
-        key = fast_normalise(r["text"])
+    n = 0
+    for pid, doc, seq, text in ws._conn().execute("SELECT passage_id, doc_id, seq, text FROM passages WHERE "
+                                                  "section='body' ORDER BY passage_id"):
+        n += 1
+        key = hashlib.blake2b(fast_normalise(text).encode("utf-8", "surrogatepass"), digest_size=16).digest()
         if key in seen:
             continue
         seen.add(key)
-        out.append(r)
-    return out, len(rows) - len(out)
+        out.append({"passage_id": pid, "doc_id": doc, "seq": seq})
+    return out, n - len(out)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -205,8 +208,8 @@ def kmeans_sparse(vecs: list[dict], k: int, seed: int = 0, should_stop: Callable
         if should_stop and should_stop():
             raise _stopped()
         new, sim = _assign(vecs, _inverted(centres), k)
-        if new == assign:
-            break
+        if new == assign:   # converged: this round's assignment is the one to the final centres
+            return new, sim, centres
         assign = new
         sums: list[dict] = [defaultdict(float) for _ in range(k)]
         for v, j in zip(vecs, assign):
@@ -220,7 +223,7 @@ def kmeans_sparse(vecs: list[dict], k: int, seed: int = 0, should_stop: Callable
                 assign[far] = j
             top = sorted(sums[j].items(), key=lambda x: (-x[1], x[0]))[:CENTROID_TERMS]
             centres[j] = _unit_sparse(dict(top))
-    assign, sim = _assign(vecs, _inverted(centres), k)
+    assign, sim = _assign(vecs, _inverted(centres), k)   # the rounds ran out: assigned to the last centres
     return assign, sim, centres
 
 
@@ -497,7 +500,7 @@ def runs(ws: Workspace) -> list[dict]:
         d["stale"] = d["corpus_version"] != ws.corpus_version()
         d["named_by_model"] = int(ws.scalar("SELECT COUNT(*) FROM themes WHERE run_id=? AND name_source='model'",
                                             (r["run_id"],)) or 0)
-        merges = _edits(ws, d["run_key"])["merges"]
+        merges = _edits(ws, d["run_key"], r["run_id"])["merges"]
         ids = [x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=? AND removed_at IS NULL",
                                       (r["run_id"],))]
         d["themes_now"] = sum(1 for t in ids if _final(merges, t) == t)   # after the person's merges and removals
@@ -527,7 +530,12 @@ def delete_run(ws: Workspace, run_id: str, why: str | None = None) -> None:
 # ---------------------------------------------------------------------------------------------
 # a person's edits (reviews under the run's key) and the view of a run with them applied
 # ---------------------------------------------------------------------------------------------
-def _edits(ws: Workspace, rkey: str) -> dict:
+def _edits(ws: Workspace, rkey: str, run_id: str | None = None) -> dict:
+    """A person's edits kept under a run's key: names, merges and moved passages. Runs with the same settings and
+    the same grouping share a key, so that edits hold when a set of themes is made again; but a theme found in place
+    of a removed one exists in one run only. With `run_id`, a merge or a move that names a theme this run does not
+    have is left out: followed, it took a theme of this run (and its passages) to a theme that is not there, and the
+    theme was gone from the page."""
     from .people import review_order
 
     names, merges, moves = {}, {}, {}
@@ -541,8 +549,13 @@ def _edits(ws: Workspace, rkey: str) -> dict:
             merges[int(tail)] = int(r["corrected"]) if r["corrected"] else None
         elif r["item_kind"] == "theme_member":
             moves[tail] = int(r["corrected"]) if r["corrected"] else None
-    return {"names": {k: v for k, v in names.items() if v}, "merges": {k: v for k, v in merges.items() if v},
-            "moves": {k: v for k, v in moves.items() if v}}
+    merges = {k: v for k, v in merges.items() if v}
+    moves = {k: v for k, v in moves.items() if v}
+    if run_id is not None:
+        ids = {x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (run_id,))}
+        merges = {k: v for k, v in merges.items() if k in ids and v in ids}
+        moves = {k: v for k, v in moves.items() if v in ids}
+    return {"names": {k: v for k, v in names.items() if v}, "merges": merges, "moves": moves}
 
 
 def edit(ws: Workspace, run_id: str, what: str, theme_id: int | None = None, value=None,
@@ -557,7 +570,7 @@ def edit(ws: Workspace, run_id: str, what: str, theme_id: int | None = None, val
     ids = {x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (run_id,))}
     removed = {x[0] for x in ws.query("SELECT theme_id FROM themes WHERE run_id=? AND removed_at IS NOT NULL",
                                       (run_id,))}
-    merges = _edits(ws, rkey)["merges"] if what == "remove" else {}
+    merges = _edits(ws, rkey, run_id)["merges"] if what == "remove" else {}
     gone = "That theme was removed: bring it back first."
     from .people import me as _me
 
@@ -649,7 +662,7 @@ def view(ws: Workspace, run_id: str, framework: str | None = None) -> dict:
     if not r:
         raise KeyError(run_id)
     run_row = dict(r[0])
-    ed = _edits(ws, run_row["run_key"])
+    ed = _edits(ws, run_row["run_key"], run_id)
     themes = {t["theme_id"]: dict(t) for t in ws.query("SELECT * FROM themes WHERE run_id=? ORDER BY theme_id", (run_id,))}
     members = [dict(m) for m in ws.query("SELECT m.passage_id, m.theme_id, m.similarity, m.found_in, p.doc_id FROM "
                                          "theme_members m JOIN passages p ON p.passage_id=m.passage_id WHERE m.run_id=?",
@@ -785,7 +798,7 @@ def theme_passages(ws: Workspace, run_id: str, theme_id: int, offset: int = 0, l
 
     v = view(ws, run_id)
     r = ws.query("SELECT run_key FROM theme_runs WHERE run_id=?", (run_id,))[0]
-    ed = _edits(ws, r["run_key"])
+    ed = _edits(ws, r["run_key"], run_id)
     # only the rows that can belong to this theme (0.11.1: every member of the run was read, with its text, per
     # page of one theme): its own and the themes merged into it, plus the passages moved into it
     own = [t for (t,) in ws.query("SELECT theme_id FROM themes WHERE run_id=?", (run_id,))
@@ -879,7 +892,7 @@ def new_theme(ws: Workspace, run_id: str, replaces: int, progress: Callable[[str
                                                       "WHERE run_id=?", (run_id,))}
     if replaces not in trows:
         raise KeyError(replaces)
-    ed = _edits(ws, run_row["run_key"])
+    ed = _edits(ws, run_row["run_key"], run_id)
     name_of = lambda x: ed["names"].get(x) or trows[x]["name"]  # noqa: E731
     if not trows[replaces]["removed_at"]:
         raise ValueError("A new theme is found in place of a removed one: remove this theme first.")
@@ -1091,11 +1104,17 @@ def name_with_model(ws: Workspace, run_id: str, backend, model: str, progress: C
                                            "AND status != 'done' ORDER BY task_id", (len(head), head))]
     rid = runs_mod.start(ws, "theme", run_id, backend, model, len(todo))
     done = failed = kept = 0
+    dflt = access.default(ws)
     for i, tid in enumerate(todo, 1):
         if should_stop and should_stop():
             break
         if progress:
             progress(i, len(todo))
+        # the setting worked out again as the text is about to leave (not the one stored when the tasks were made):
+        # a document's cap counts what the themes named before this one sent
+        with ws.connect() as cx:
+            if access.recheck(cx, tid, dflt) is None:
+                continue
         got = readers.for_task(ws, tid)
         if got is None:
             kept += 1  # keeps its key terms as its name

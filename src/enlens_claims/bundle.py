@@ -25,6 +25,7 @@ whose database cannot be read leaves nothing in `projects/`.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -32,6 +33,7 @@ import time
 import unicodedata
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 from .store import Workspace
@@ -163,9 +165,15 @@ def _forget_folder(ws: Workspace, sender: str | None) -> None:
         _set_config(ws, **{FOLDER: None})
     if sender and sender == (load_settings().get("person_id") or ""):
         return
+    from .sharing import without_paths
+
     with ws.connect() as cx:
         for t in ("sync_written", "sync_folder_read", "sync_folder_docs"):
             cx.execute(f"DELETE FROM {t}")
+        # the bibliography's attachments name files on the colleague's computer: a path here could name a file of
+        # this one, which *Add the files the bibliography has* would then add to the project (as a merge clears them)
+        for key, files in cx.execute("SELECT item_key, files_json FROM bib_items").fetchall():
+            cx.execute("UPDATE bib_items SET files_json=? WHERE item_key=?", (without_paths(files), key))
 
 
 def _adopt(ws: Workspace, sender: str | None) -> None:
@@ -230,6 +238,29 @@ DAMAGED_DB = ("The project's database in this zip cannot be read: the zip is dam
               "Ask for a new copy of the file.")
 
 
+NOT_ROWS = ("The project's database in this zip holds more than a project's rows (a table that works out its own "
+            "values). ENLENS does not open it. Ask for a new copy, made with “Download as a zip”.")
+
+
+def _rows_only(cx: sqlite3.Connection) -> None:
+    """A database that came from someone else is taken for its rows alone. What else a database file can hold goes:
+    triggers (they would run at every change this person makes afterwards: one turned *Only a local AI* back to
+    *cloud* the moment it was set, another emptied the record of what was sent to Claude) and views (one can stand in
+    the place of a table). A table that works out its values itself (a generated column, a virtual table) is refused:
+    a setting kept in one could not be changed here. ENLENS makes none of these; an add-on's own come back when the
+    project is opened (`store._setup_addons`)."""
+    for kind, name in cx.execute("SELECT type, name FROM sqlite_master WHERE type IN ('trigger', 'view')").fetchall():
+        cx.execute(f"DROP {'TRIGGER' if kind == 'trigger' else 'VIEW'} IF EXISTS \"{name.replace(chr(34), chr(34) * 2)}\"")
+    for name, sql in cx.execute("SELECT name, sql FROM sqlite_master WHERE type='table'").fetchall():
+        if name.startswith("sqlite_"):
+            continue
+        quoted = name.replace(chr(34), chr(34) * 2)
+        if (sql or "").lstrip().upper().startswith("CREATE VIRTUAL") or any(
+                r[6] in (2, 3) for r in cx.execute(f"PRAGMA table_xinfo(\"{quoted}\")")):
+            raise ValueError(NOT_ROWS)
+    cx.commit()
+
+
 def _open_staged(folder: Path) -> bool:
     """0.14.3: check the database unpacked into the staging folder and open it there (which adds the tables and
     columns of this version), before the project is put in place. Raises ValueError with a plain message when it
@@ -238,6 +269,8 @@ def _open_staged(folder: Path) -> bool:
         cx = sqlite3.connect(folder / "enlens.sqlite")
         try:
             ok = cx.execute("PRAGMA quick_check").fetchone()
+            if ok and ok[0] == "ok":
+                _rows_only(cx)
             before_011 = "ai_access" not in {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
         finally:
             cx.close()
@@ -248,6 +281,64 @@ def _open_staged(folder: Path) -> bool:
     except sqlite3.DatabaseError as e:
         raise ValueError(DAMAGED_DB) from e
     return before_011
+
+
+# config.json: what ENLENS reads of a project's settings, and what each may hold. A project from a zip keeps only these,
+# each of its kind and in a sensible range, else ENLENS's own (`store.DEFAULT_CONFIG`): the file comes from someone
+# else's computer, and a value of the wrong kind stopped every page of results (a `thresholds` that is not a dict)
+_NUMBERS = {"thresholds": {"screen_min_score": (0.0, 100.0), "accept_confidence": (0.0, 1.0),
+                           "support_confidence": (0.0, 1.0), "verify_top_k": (1, 200)},
+            "passages": {"max_chars": (100, 100000), "min_chars": (0, 100000)}}
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,119}")  # a model's name, as Settings and the routes write it
+
+
+def _clean_config(raw: Any) -> dict:
+    """A project's config.json as a zip brought it, with only what ENLENS knows (see `_NUMBERS`)."""
+    from .access import LEVELS
+    from .store import DEFAULT_CONFIG
+
+    cfg = raw if isinstance(raw, dict) else {}
+    out: dict[str, Any] = {}
+    for part, ranges in _NUMBERS.items():
+        given = cfg.get(part) if isinstance(cfg.get(part), dict) else {}
+        out[part] = {}
+        for k, (lo, hi) in ranges.items():
+            v = given.get(k)
+            ok = isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= v <= hi and \
+                (isinstance(v, int) or not isinstance(lo, int))
+            out[part][k] = v if ok else DEFAULT_CONFIG[part][k]
+    if out["passages"]["min_chars"] > out["passages"]["max_chars"]:
+        out["passages"] = dict(DEFAULT_CONFIG["passages"])
+    models = cfg.get("models") if isinstance(cfg.get("models"), dict) else {}
+    out["models"] = {k: (v if isinstance(v, str) and _MODEL.fullmatch(v) else d)
+                     for k, d in DEFAULT_CONFIG["models"].items() for v in [models.get(k)]}
+    if cfg.get("ai_access_default") in LEVELS:
+        out["ai_access_default"] = cfg["ai_access_default"]
+    for k in ("ai_access_ask", "ai_access_banner", "shared_folder_keep_out"):
+        if isinstance(cfg.get(k), bool):
+            out[k] = cfg[k]
+    return out
+
+
+# what a project zip may hold that is not unpacked: made again here (the search index, the cache of the terms), or the
+# sender's own (the copy of their database made before they brought work in)
+_NOT_UNPACKED = ("cache/", "backups/")
+
+
+class _Without:
+    """A zip as `ingest._safe_extract` reads it, without what is not unpacked (`_NOT_UNPACKED`)."""
+
+    def __init__(self, zf: zipfile.ZipFile, prefix: str):
+        self.zf, self.prefix = zf, prefix
+
+    def infolist(self) -> list[zipfile.ZipInfo]:
+        from .ingest import zip_name
+
+        skip = tuple(self.prefix + n for n in _NOT_UNPACKED)
+        return [i for i in self.zf.infolist() if not zip_name(i).startswith(skip)]
+
+    def open(self, *a, **k):
+        return self.zf.open(*a, **k)
 
 
 def import_project(zip_path: str | Path, dest: str | Path, merge_only: bool = False) -> Workspace:
@@ -272,7 +363,7 @@ def import_project(zip_path: str | Path, dest: str | Path, merge_only: bool = Fa
         staging.mkdir(parents=True)
         try:
             try:
-                _safe_extract(zf, staging, [MAX_IMPORT], strip=prefix)
+                _safe_extract(_Without(zf, prefix), staging, [MAX_IMPORT], strip=prefix)
             except ZIP_ERRORS as e:  # 0.14.3: a damaged or password-protected zip, in words
                 raise ValueError(f"This project zip could not be unpacked ({zip_problem(e)}). Ask for a new copy of "
                                  "the file.") from e
@@ -292,6 +383,12 @@ def import_project(zip_path: str | Path, dest: str | Path, merge_only: bool = Fa
             shutil.rmtree(staging, ignore_errors=True)
             raise
     ws = Workspace.open(dest)  # opened in staging already: the tables and columns of this version are there
+    try:
+        sent = json.loads(ws.config_path.read_text(encoding="utf-8")) if ws.config_path.exists() else {}
+    except (OSError, ValueError):
+        sent = {}
+    ws.config_path.write_text(json.dumps(_clean_config(sent), indent=2), encoding="utf-8")
+    ws._config_cache = None
     if before_011:
         # 0.11: a project made before per-document AI settings: the app asks once who may read its documents
         cfg = json.loads(ws.config_path.read_text(encoding="utf-8")) if ws.config_path.exists() else {}

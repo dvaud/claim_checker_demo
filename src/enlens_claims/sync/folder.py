@@ -55,7 +55,10 @@ that holds it or ENLENS's folder (`check_folder`).
 here, a file only with it (and checked against its sha1), so a large corpus is not copied every round. It stops at a
 gap (a bundle the cloud has not delivered yet, or one still arriving: tried again next round), at a bundle of a newer
 format (that person's stream only, in the plain words of `formats.problem`; the others go on), and before a bundle
-whose new documents have not arrived; a damaged bundle, or one whose merge fails, stops that colleague's stream only.
+whose new documents have not arrived; a damaged bundle, one larger than ENLENS reads (`_MAX_META` and the others: a
+colleague's file never fills this computer's memory), or one whose merge fails, stops that colleague's stream only.
+Each bundle is unpacked once per round (`_Opened`). Before anyone's work is merged, what the waiting bundles say an
+item's owner took back is noted (`_withdrawals_first`), so the order in which colleagues are read changes nothing.
 A copy held up says where in its own subfolder (`waiting.json`); the writer's copy reads it, and when the bundle is
 damaged or gone on its own computer too, or names a reading no copy can write again, it starts afresh, so nobody waits
 for ever for what will never come (`_asked_to_begin_again`).
@@ -79,13 +82,15 @@ import sqlite3
 import tempfile
 import uuid
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from .. import __version__, people, sharing
 from ..store import Workspace, now
 from . import formats
-from .common import DOC_ID, LOCAL_ONLY, UNFINISHED, _TOKEN, _cols, _pk, _rows, _sha, base_id, text_fp
+from .common import (DOC_ID, LOCAL_ONLY, READING_TABLES as _READING_TABLES, UNFINISHED, _TOKEN, _cols, _pk, _rows, _sha,
+                     base_id, text_fp)
 from .fingerprints import _PERSONAL, _running, record_seen
 
 FOLDER = "shared_folder"            # config.json: the folder the team shares (a path on this computer)
@@ -97,11 +102,20 @@ JOB = "folder-sync"                 # the kind of job of a round (gui/api_folder
 _BUNDLE = re.compile(r"(\d{6,})\.zip")
 _READING = re.compile(r"[0-9a-f]{12}\.[0-9a-f]{16}\.zip")
 _FILE = re.compile(r"([0-9a-f]{40})\.([a-z0-9]{1,8})")
-_READING_TABLES = ("pages", "paragraphs", "headings", "passages", "blocks", "doc_tables")
 _NOT_IN_FP = {"sync_seen", "sync_copies"}            # they travel, but change whenever copies exchange
 _VOLATILE = {"queued", "queued_at", "claimed_by", "claimed_at"}  # where a task waits, not what it is
 _RESTRICTED = ("local", "none")
 _HELD_UP = ("gap", "arriving", "damaged", "documents")  # why a colleague's bundle cannot be read (yet): `_waiting_json`
+# The most of a colleague's file that is read, by what it is (its size unpacked, as the zip says it; a zip member is
+# never read past that size). Each is many times what ENLENS writes for a large project: a bundle's description holds a
+# short stub per document (100,000 documents are about 50 MB), a reading one document's text and passages (a book of
+# a thousand pages is about 20 MB), a codebook a few thousand codes. The database is unpacked to disk, never into
+# memory, and read a slice at a time. A file larger than these is held up with a plain message: a damaged or hostile
+# file cannot fill this computer's memory or disk.
+_MAX_META = 64 * 1024 ** 2        # bundle.json
+_MAX_ROWS = 4 * 1024 ** 3         # rows.sqlite
+_MAX_READING = 256 * 1024 ** 2    # reading.json of a document
+_MAX_CODEBOOK = 64 * 1024 ** 2    # each file of a codebook
 
 Progress = Callable[[str, str, dict], None]
 ShouldStop = Callable[[], bool]   # a round asked to stop part-way (the job was cancelled, the app quits): `sync_now`
@@ -274,8 +288,11 @@ def set_folder(ws: Workspace, raw: Any) -> dict:
     _set_config(ws, **{FOLDER: str(p)})
     if before is None or Path(before) != p:
         _note(ws, "folder-chosen", f"Chose the shared folder {p} for working together.")
+        there = str((_json(p / team_name(ws) / "project.json") or {}).get("folder_id") or "")
         with ws.connect() as cx:  # another folder: this copy's record holds for it only once its project.json says so
-            cx.execute("UPDATE sync_written SET fp='' WHERE kind='head' AND key=''")
+            row = cx.execute("SELECT fp FROM sync_written WHERE kind='head' AND key=''").fetchone()
+            if not (there and row and row[0] == there):  # (the same folder chosen again: what it wrote there stays)
+                cx.execute("UPDATE sync_written SET fp='' WHERE kind='head' AND key=''")
     return status(ws)
 
 
@@ -346,22 +363,40 @@ def keep_out_state(ws: Workspace, team: Path | None = None, me: str | None = Non
     return {"mine": mine, "colleagues": by, "in_force": mine or bool(by)}
 
 
-def _remember_switches(cx: sqlite3.Connection, team: Path, me: str) -> None:
+def _switches(team: Path, me: str) -> list[tuple[str, dict | None]]:
+    """[(person id, their `person.json` or None)] of every copy's subfolder (this copy's own without its file): what
+    `_remember_switches` keeps, read from the folder before the project's database is written."""
+    return [(p.name, _json(p / "person.json") if p.name != me else None) for p in _people_dirs(team)]
+
+
+def _remember_switches(cx: sqlite3.Connection, team: Path, me: str,
+                       found: list[tuple[str, dict | None]] | None = None) -> None:
     """How each colleague's switch stands, as last read from their `person.json` (`sync_written` kind "keep"; the Team
     tab shows it while the folder cannot be read, `keep_out_state`). A colleague whose subfolder is gone (they left)
-    is forgotten, as `keep_out_state` leaves them out while the folder can be read."""
+    is forgotten, as `keep_out_state` leaves them out while the folder can be read. Every colleague's subfolder seen is
+    noted (kind "seen", `seen_there`). `found`: the folder as `_switches` read it (None: read now)."""
+    found = _switches(team, me) if found is None else found
     last = {r[0]: r[1] for r in cx.execute("SELECT key, fp FROM sync_written WHERE kind='keep'")}
-    dirs = _people_dirs(team)
-    for p in dirs:
-        pj = _json(p / "person.json") if p.name != me else None
+    seen = {r[0] for r in cx.execute("SELECT key FROM sync_written WHERE kind='seen'")}
+    cx.executemany("INSERT OR IGNORE INTO sync_written(kind, key, fp, seq, at) VALUES ('seen', ?, '', NULL, ?)",
+                   [(pid, now()) for pid, _pj in found if pid != me and pid not in seen])
+    for pid, pj in found:
         on = None if pj is None else "1" if pj.get("keep_out") is True else "0"
-        if on is not None and last.get(p.name) != on:  # (written only when it changed)
+        if on is not None and last.get(pid) != on:  # (written only when it changed)
             cx.execute("INSERT OR REPLACE INTO sync_written(kind, key, fp, seq, at) VALUES ('keep', ?, ?, NULL, ?)",
-                       (p.name, on, now()))
-    if dirs:  # (a listing that failed says nothing of who left)
-        there = {p.name for p in dirs}
+                       (pid, on, now()))
+    if found:  # (a listing that failed says nothing of who left)
+        there = {pid for pid, _pj in found}
         for pid in set(last) - there:
             cx.execute("DELETE FROM sync_written WHERE kind='keep' AND key=?", (pid,))
+
+
+def seen_there(cx: sqlite3.Connection, pid: str) -> bool:
+    """Whether this copy has seen a colleague's subfolder in the folder it uses now: it brought in their work, or a
+    round found their subfolder (`_remember_switches`). A subfolder never seen is not one that went: its person may
+    not have chosen the folder yet, or the cloud service has not delivered it."""
+    return bool(cx.execute("SELECT 1 FROM sync_folder_read WHERE person_id=?", (pid,)).fetchone() or
+                cx.execute("SELECT 1 FROM sync_written WHERE kind IN ('seen', 'keep') AND key=?", (pid,)).fetchone())
 
 
 def _open_team(ws: Workspace, create: bool) -> tuple[Path, dict]:
@@ -496,12 +531,31 @@ def _keep_words_out(got: dict[str, list[dict]], kept_out: set[str]) -> dict[str,
 def kept_out_docs(ws: Workspace, cx: sqlite3.Connection, in_force: bool) -> set[str]:
     """The documents whose words stay out of the folder while the switch is in force: those marked Only a local AI or
     No AI here, and those this copy does not hold (removed here, or never added) that a colleague's copy marks so
-    (`sync_folder_docs`): a check shared here may still hold their passages in what it handed to the AI."""
+    (`sync_folder_docs`): a check shared here may still hold their passages in what it handed to the AI. And those this
+    copy wrote in words and has removed since, unless they were last written as a document an AI in the cloud may
+    read (`_words_fp`; one written before that was recorded counts as restricted): their reading and file stay in
+    this copy's subfolder until it takes them out (`_take_words_out`), and nothing else here says how they were set."""
     if not in_force:
         return set()
     levels = ai_settings(ws, cx)
     heard = {r[0] for r in cx.execute("SELECT doc_id FROM sync_folder_docs WHERE ai_access IN ('local', 'none')")}
-    return {d for d, lv in levels.items() if lv in _RESTRICTED} | (heard - set(levels))
+    gone = {d for d, fp in cx.execute("SELECT key, fp FROM sync_written WHERE kind='words'")
+            if d not in levels and _words_said(fp).get("ai") != "cloud"}
+    return {d for d, lv in levels.items() if lv in _RESTRICTED} | (heard - set(levels)) | gone
+
+
+def _words_fp(level: str | None, sha1: str | None) -> str:
+    """What this copy keeps of a document it wrote in words (`sync_written` kind "words"): who might read it with AI
+    then, and its file, so they are known after the document is removed here."""
+    return json.dumps({"ai": level, "sha1": (sha1 or "").split("~")[0] or None}, sort_keys=True)
+
+
+def _words_said(fp: str | None) -> dict:
+    try:
+        out = json.loads(fp or "")
+    except ValueError:
+        return {}
+    return out if isinstance(out, dict) else {}
 
 
 def _item(ws: Workspace, cx: sqlite3.Connection, kind: str, key: str, r: dict, kept_out: set[str] = frozenset()) -> dict:
@@ -608,7 +662,19 @@ def _same_folder(cx: sqlite3.Connection, folder_id: str) -> int:
     return 0
 
 
-def _start(cx: sqlite3.Connection, mine: Path, folder_id: str) -> tuple[int, bool, int, str]:
+def _own(mine: Path) -> tuple[dict, int]:
+    """(this copy's `head.json`, the number of the last bundle in its subfolder): what `_start` goes on from."""
+    head = _json(mine / "head.json") or {}
+    try:
+        files = max((int(m.group(1)) for f in (mine / "bundles").iterdir() if (m := _BUNDLE.fullmatch(f.name))),
+                    default=0)
+    except OSError:
+        files = 0
+    return head, files
+
+
+def _start(cx: sqlite3.Connection, mine: Path, folder_id: str,
+           own: tuple[dict, int] | None = None) -> tuple[int, bool, int, str]:
     """(the number of the next bundle, whether it is a snapshot, the snapshot before it, the epoch). When this copy has not
     written to this folder yet, or the folder lost what it wrote (its subfolder emptied), it starts afresh: everything
     it contributes goes into the next bundle, a snapshot, where a colleague new to the folder starts reading it. What
@@ -618,13 +684,8 @@ def _start(cx: sqlite3.Connection, mine: Path, folder_id: str) -> tuple[int, boo
     both)."""
     _same_folder(cx, folder_id)
     local_last = int(cx.execute("SELECT seq FROM sync_written WHERE kind='head' AND key=''").fetchone()[0] or 0)
-    head = _json(mine / "head.json") or {}
+    head, files = own if own is not None else _own(mine)
     there = _int(head.get("last")) or 0
-    try:
-        files = max((int(m.group(1)) for f in (mine / "bundles").iterdir() if (m := _BUNDLE.fullmatch(f.name))),
-                    default=0)
-    except OSError:
-        files = 0
     snap = _int(head.get("snapshot")) or 0
     epoch = head.get("epoch") if isinstance(head.get("epoch"), str) and head.get("epoch") else None
     if local_last == 0 or there < local_last or not 0 < snap <= there or not epoch:  # (nothing to go on from)
@@ -724,13 +785,17 @@ def _take_words_out(cx: sqlite3.Connection, mine: Path, kept_out: set[str]) -> i
     what colleagues brought in already stays with them. Returns how many documents were taken out.
 
     Which documents: those this copy recorded as written while they were not kept out (`sync_written` kind "words"),
-    and any whose reading or file is in its subfolder now (a round that failed half-way recorded nothing)."""
+    and any whose reading or file is in its subfolder now (a round that failed half-way recorded nothing). `cx` is only
+    read: the files go first, and `write` forgets the record of words written once they are gone."""
     if not kept_out:
         return 0
     sha1s = {d: (s or "").split("~")[0] for d, s in cx.execute("SELECT doc_id, sha1 FROM documents")}
     stays = {s for d, s in sha1s.items() if d not in kept_out}  # (a file two documents share: one of them may stay)
     for d, s in cx.execute("SELECT doc_id, sha1 FROM sync_folder_docs WHERE sha1 IS NOT NULL").fetchall():
         sha1s.setdefault(d, s.split("~")[0])  # (a document not held here any more: its file as the folder named it)
+    for d, fp in cx.execute("SELECT key, fp FROM sync_written WHERE kind='words'").fetchall():
+        if isinstance(_words_said(fp).get("sha1"), str):
+            sha1s.setdefault(d, _words_said(fp)["sha1"])  # (one removed here: its file as this copy wrote it)
     heads = {_sha(d)[:12]: d for d in kept_out}
     files = {sha1s[d]: d for d in kept_out if sha1s.get(d) and sha1s[d] not in stays}
     doomed: list[Path] = []
@@ -750,8 +815,7 @@ def _take_words_out(cx: sqlite3.Connection, mine: Path, kept_out: set[str]) -> i
     left = _remove(doomed) + _begin_again(mine)
     if left:  # not done: nothing is written until it is (this copy's record stays, so the next round goes on)
         raise _still_there(left)
-    cx.execute("DELETE FROM sync_written WHERE kind='words'")
-    return len(gone)
+    return len(gone)  # (the caller then forgets what was written in words: `write`)
 
 
 def _taken_out(cx: sqlite3.Connection, team: Path, me: str) -> Callable[[str, str], bool]:
@@ -801,6 +865,19 @@ def _mend_readings(team: Path, mine: Path, me: str) -> None:
                     _remove([f])
 
 
+def _checksum(f: Path) -> str:
+    """The sha1 of an original file, worked out once while the file stays as it is (`sources._SHA1S`, by its path,
+    time and size): a file that changed since its document was added would otherwise be read whole every round."""
+    from ..ingest import _sha1
+    from ..sources import _SHA1S
+
+    st = f.stat()
+    key = (str(f), st.st_mtime_ns, st.st_size)
+    if key not in _SHA1S:
+        _SHA1S[key] = _sha1(f)
+    return _SHA1S[key]
+
+
 def _doc_tokens(rows: Iterable[dict], docs: set[str], cols: Iterable[str] | None = None) -> set[str]:
     """The documents named in these rows (as a document id, or the head of a passage id or a task id)."""
     out: set[str] = set()
@@ -825,7 +902,7 @@ class _Writer:
         self.found: list[tuple[str, str, str]] = []  # ("reading" | "file", name, whose subfolder) already there
         self.new_rows: dict[str, list[int]] = {}     # the project's rows to write: their row numbers, per table
         self.row_keys: list[str] = []
-        self.words: list[str] = []                   # documents not kept out, not yet recorded as written in words
+        self.words: list[tuple[str, str]] = []       # documents not kept out, written in words (`_words_fp`)
         self.rows_written: dict[str, int] = {}
         self.kept_out: set[str] = set()
         self.project: sharing.ProjectRows | None = None
@@ -846,7 +923,6 @@ class _Writer:
         return out
 
     def plan(self, cx: sqlite3.Connection) -> None:
-        from ..ingest import _sha1
         from ..sources import original_file
 
         ws = self.ws
@@ -866,8 +942,8 @@ class _Writer:
             self.items.append(it)
         # the documents: a stub of each, a reading per reading, a file per file. What is in the folder is read from the
         # folder each round, not from this copy's record: a colleague who wrote a reading may leave, with their subfolder
-        docs = _rows(cx, "SELECT doc_id, sha1, text_fp, old_fps, title, ai_budget, sent_share, reader FROM documents "
-                         "ORDER BY doc_id")
+        docs = _rows(cx, "SELECT doc_id, sha1, text_fp, old_fps, title, ai_budget, sent_share, reader, path "
+                         "FROM documents ORDER BY doc_id")
         readings_there = self._in_folder("docs")
         files_there = {m.group(1): pid for n, pid in self._in_folder("files").items() if (m := _FILE.fullmatch(n))}
         taken_out = _taken_out(cx, self.team, self.me)
@@ -889,7 +965,8 @@ class _Writer:
                     readings_there[name] = self.me
                 elif written.get(("reading", name)) != readings_there[name] and readings_there[name] != self.me:
                     self.found.append(("reading", name, readings_there[name]))  # a colleague wrote it already
-                info = original_file(ws, doc, verify=False)
+                # (a document without a recorded file has none to look for)
+                info = original_file(ws, doc, verify=False) if d["path"] else {"available": False}
                 plain = (d["sha1"] or "").split("~")[0]
                 if info["available"] and re.fullmatch(r"[0-9a-f]{40}", plain):
                     fname = f"{plain}.{_ext(info['name'] or info['path'])}"
@@ -898,7 +975,7 @@ class _Writer:
                             self.found.append(("file", plain, files_there[plain]))
                     elif taken_out("file", plain):
                         fname = None
-                    elif _sha1(Path(info["path"])) == plain:  # the file it was read from, not one changed since
+                    elif _checksum(Path(info["path"])) == plain:  # the file it was read from, not one changed since
                         self.files.append((fname, Path(info["path"])))
                         files_there[plain] = self.me
                     else:
@@ -909,8 +986,9 @@ class _Writer:
                 stub["canon_ai"] = followed[doc]
             fp = _sha(json.dumps(stub, sort_keys=True, default=str))[:20]
             self.stubs[doc] = stub
-            if not kept and ("words", doc) not in written:  # its words may be in what goes now (`_take_words_out`)
-                self.words.append(doc)
+            said = _words_fp(levels.get(doc), d["sha1"])
+            if not kept and written.get(("words", doc)) != said:  # its words may go now (`_take_words_out`)
+                self.words.append((doc, said))
             if written.get(("doc", doc)) != fp:
                 self.stub_fps[doc] = fp
         # the project's rows written since the last bundle (each once): their numbers now, read whole when the bundle
@@ -1060,10 +1138,40 @@ def _leaks(cx: sqlite3.Connection, items: list[dict]) -> str | None:
                               "subject_kind IN (" + ",".join(repr(k) for k in sharing.KINDS) + ")"):
         if (sk, sid) not in shared:
             return "an entry of the research log about an item that is not shared was among what was to go."
+    # the rows that hang on a check or a set of themes: each must hang on one that is shared
+    checks, runs = keys("check"), keys("themes")
+    claims = cx.execute("SELECT claim_id, hyp_id FROM user_claims").fetchall()
+    parts = {c for c, h in claims if h in checks}
+    if len(parts) != len(claims):
+        return "a part of a check that is not shared was among what was to go."
+    for table, sql in (("verifications", "SELECT subject_id FROM verifications WHERE subject_kind='user_claim'"),
+                       ("second_opinions", "SELECT subject_id FROM second_opinions"),
+                       ("judgements", "SELECT claim_id FROM judgements")):
+        if any(c not in parts for (c,) in cx.execute(sql)):
+            return f"a row of {table} of a check that is not shared was among what was to go."
+    kinds = sharing.ITEM_TASK_KINDS
+    for (tid,) in cx.execute(f"SELECT task_id FROM tasks WHERE kind IN ({','.join('?' * len(kinds))})", kinds):
+        if not _task_of(tid or "", checks, parts, runs):
+            return "a task of a check or a set of themes that is not shared was among what was to go."
+    if any(r not in runs for (r,) in cx.execute("SELECT DISTINCT run_id FROM theme_members")):
+        return "a theme of a set of themes that is not shared was among what was to go."
     if cx.execute("SELECT 1 FROM shares WHERE state NOT IN ('shared', 'withdrawn') OR (state='withdrawn' AND title IS "
                   "NOT NULL)").fetchone():
         return "the mark of an item that is not shared was among what was to go."
     return None
+
+
+def _task_of(task_id: str, checks: set[str], parts: set[str], runs: set[str]) -> bool:
+    """Whether a task of a check or a set of themes is one of these (named as `fingerprints.check_tasks` and
+    `themes_tasks` name them: the check's split, each part's readings, readings again and second opinions)."""
+    t = task_id[len("second:"):] if task_id.startswith("second:") else task_id
+    head, _, rest = t.partition(":")
+    owner = rest.split(":", 1)[0]
+    if head == "theme":
+        return owner in runs
+    if head == "decompose":
+        return owner in checks
+    return head in ("expand", "check", "reread") and owner in parts
 
 
 def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldStop | None = None) -> dict:
@@ -1093,16 +1201,25 @@ def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSt
         record_seen(ws, cx)
         _same_folder(cx, folder_id)
         kept_out = kept_out_docs(ws, cx, keep["in_force"])
-        taken_out = _take_words_out(cx, mine, kept_out)
-        if _taken_back_since(ws, cx):
-            left = _begin_again(mine)
-            if left:
-                raise _still_there(left)
-        elif _asked_to_begin_again(ws, cx, team, mine, me, kept_out):
-            _begin_again(mine)
-        _mend_readings(team, mine, me)
-        _remember_switches(cx, team, me)
-        seq, fresh, snap, epoch = _start(cx, mine, folder_id)
+        taken_back = _taken_back_since(ws, cx)
+    # this copy's own subfolder, looked at and tidied without holding the project's write lock (a slow network or
+    # cloud folder would hold up every change made in the app meanwhile): only this copy writes there, a round at a
+    # time, and its record changes only once the files are gone
+    taken_out = _take_words_out(ws._conn(), mine, kept_out)
+    if taken_out:
+        with ws.connect() as cx:
+            cx.execute("DELETE FROM sync_written WHERE kind='words'")
+    if taken_back:
+        left = _begin_again(mine)
+        if left:
+            raise _still_there(left)
+    elif _asked_to_begin_again(ws, ws._conn(), team, mine, me, kept_out):
+        _begin_again(mine)
+    _mend_readings(team, mine, me)
+    found, own = _switches(team, me), _own(mine)
+    with ws.connect() as cx:
+        _remember_switches(cx, team, me, found)
+        seq, fresh, snap, epoch = _start(cx, mine, folder_id, own)
     _person(mine, me, name, keep["mine"])
     w = _Writer(ws, team, me, keep["in_force"], progress)
     rcx = _reader_cx(ws)
@@ -1143,7 +1260,7 @@ def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSt
                 + [("reading", n, "", seq) for _d, n in w.readings] + [(k, n, pid, None) for k, n, pid in w.found]
                 + [("file", f.split(".")[0], "", seq) for f, _src in w.files]
                 + [("row", h, content, seq) for h, content in w.row_keys]
-                + [("words", d, "", seq) for d in w.words]
+                + [("words", d, said, seq) for d, said in w.words]
                 + [("content", f"{it['kind']}/{it['key']}", "", seq) for it in w.items if it.get("here")]
                 + [("head", "", folder_id, seq)], at)
     out.update(seq=seq, snapshot=fresh, documents=len(w.out_stubs), readings=len(w.readings), files=len(w.files),
@@ -1179,12 +1296,12 @@ def fetch_documents(ws: Workspace, doc_ids: Iterable[str]) -> list[str]:
     a colleague's document does (merge.py), from its reading in the folder, with its file when that is there.
     Returns the ids that came in; one whose reading is not in the folder (kept out, or not there any more) stays
     out, to be added by hand."""
-    from . import _backup
     from .merge import _Merge
 
     from ..ownership import canon
 
     team, _info = _open_team(ws, create=False)
+    index, backup = _Index(team), _once(ws)
     cx = ws._conn()
     held = {r[0] for r in cx.execute("SELECT doc_id FROM documents")}
     want = [d for d in dict.fromkeys(doc_ids) if d not in held]
@@ -1195,7 +1312,7 @@ def fetch_documents(ws: Workspace, doc_ids: Iterable[str]) -> list[str]:
     for d in want:
         r = rows.get(d)
         if (r is None or not r.get("reading")) and d in K:
-            r = _stub_from_canon(team, K[d]) or r  # read while this copy held it: no stub kept, the folder has it
+            r = _stub_from_canon(team, K[d], index) or r  # read while this copy held it: no stub; the folder has it
         s = _clean_stub({**r, "ai_access": r.get("ai_access") or "none"}) if r else None
         if s is None or not s.get("reading") or s.get("kept_out"):
             continue
@@ -1205,11 +1322,14 @@ def fetch_documents(ws: Workspace, doc_ids: Iterable[str]) -> list[str]:
             scratch = Workspace.create(tmp / "work")
             with scratch.connect() as scx:
                 scratch.set_meta("project_uid", ws.project_uid(), scx)
-                ok = _put_reading(scx, scratch, team, s)
+                try:
+                    ok = _put_reading(scx, scratch, team, s, index)
+                except _Stop:  # (larger than ENLENS reads: it stays out, to be added by hand)
+                    ok = False
             if not ok:
                 continue
             pid = r.get("person_id") or people.UNKNOWN
-            _backup(ws)
+            backup()
             report = _Merge(ws, scratch, {"from": {"id": pid, "name": names.get(pid) or ""}, "name": Path(ws.root).name,
                                           "version": __version__, "sync_format": formats.FORMAT}).run()
             if report["documents"]["new"] or report["documents"]["clash"]:
@@ -1221,26 +1341,19 @@ def fetch_documents(ws: Workspace, doc_ids: Iterable[str]) -> list[str]:
     return out
 
 
-def _stub_from_canon(team: Path, k: dict) -> dict | None:
+def _stub_from_canon(team: Path, k: dict, index: _Index | None = None) -> dict | None:
     """0.18 L2: what a stub would say of a document the project holds (its row in `canon`), when this copy kept none:
     it held the document when the folder named it (and has removed it since). The reading and the file are named as
     every copy names them (`reading_name`, the sha1); `_put_reading` checks that they are what canon says."""
     if k.get("state") != "in" or not k.get("text_fp"):
         return None
+    index = index or _Index(team)
     name = reading_name(k["doc"], k["text_fp"])
-    f = _find(team, "docs", name)
+    f = index.find("docs", name)
     if f is None:
         return None
     plain = (k.get("sha1") or "").split("~")[0]
-    file = None
-    if re.fullmatch(r"[0-9a-f]{40}", plain):
-        for p in _people_dirs(team):
-            try:
-                file = next((g.name for g in sorted((p / "files").glob(plain + ".*")) if _FILE.fullmatch(g.name)), None)
-            except OSError:
-                file = None
-            if file:
-                break
+    file = index.file_of(plain) if re.fullmatch(r"[0-9a-f]{40}", plain) else None
     return {"doc_id": k["doc"], "text_fp": k["text_fp"], "sha1": k.get("sha1"), "title": k.get("title"),
             "ai_access": k.get("ai_access") or "none", "reading": name, "file": file, "name": None, "kept_out": 0,
             "person_id": f.parent.parent.name}
@@ -1314,18 +1427,53 @@ def _start_at(head: dict, done: int, epoch: str | None) -> int:
     return done + 1
 
 
-def _bundle_meta(f: Path, pid: str, seq: int, uid: str, who: str, epoch: str | None = None) -> dict:
-    """What a bundle says about itself, once it can be read whole and is what its name says. Raises _Stop."""
-    try:
+_META_SEEN: dict[tuple, tuple[Any, frozenset[str]]] = {}  # what bundles said, by (path, modified, size): `_described`
+
+
+def _too_large(who: str, seq: int | None, what: str, cap: int) -> _Stop:
+    return _Stop("too_large", f"{who}'s work number {seq} in the shared folder holds {what} larger than ENLENS reads "
+                              f"({cap // 1024 ** 2} MB). It is left aside; nothing was changed. Ask them to tell the "
+                              "makers of ENLENS.", seq)
+
+
+def _member(zf: zipfile.ZipFile, name: str, cap: int, who: str, seq: int | None, what: str) -> zipfile.ZipInfo:
+    """A member of a colleague's zip, checked against its cap before a byte of it is read. KeyError: not there."""
+    info = zf.getinfo(name)
+    if info.file_size > cap:
+        raise _too_large(who, seq, what, cap)
+    return info
+
+
+def _described(f: Path, who: str, seq: int) -> tuple[Any, frozenset[str]]:
+    """(what `bundle.json` says, the names in the zip): read once per bundle as it is on disk (a bundle is never
+    rewritten; the Team tab asks every few seconds while one waits). Only `bundle.json` is unpacked: the rest of a
+    bundle is checked as it is read (`_unpack`). Raises OSError (FileNotFoundError: not there), zipfile.BadZipFile and
+    the like when the zip cannot be read (yet), _Stop when it is too large."""
+    st = f.stat()
+    key = (str(f), st.st_mtime_ns, st.st_size)
+    if key not in _META_SEEN:
         with zipfile.ZipFile(f) as zf:
-            bad = zf.testzip()
-            meta = json.loads(zf.read("bundle.json"))
-            names = set(zf.namelist())
+            with zf.open(_member(zf, "bundle.json", _MAX_META, who, seq, "a description")) as src:
+                meta = json.loads(src.read())
+            names = frozenset(zf.namelist())
+        if len(_META_SEEN) > 256:
+            _META_SEEN.clear()
+        _META_SEEN[key] = (meta, names)
+    return _META_SEEN[key]
+
+
+def _bundle_meta(f: Path, pid: str, seq: int, uid: str, who: str, epoch: str | None = None) -> dict:
+    """What a bundle says about itself, once its description can be read and it is what its name says. Raises _Stop.
+    Whether the rest of it is whole is known when it is unpacked (`_unpack`): every member is read through its
+    checksum there."""
+    bad = False
+    try:
+        meta, names = _described(f, who, seq)
     except FileNotFoundError:
         raise _Stop("gap", f"Waiting for {who}'s work number {seq}: the shared folder has not received it yet (the "
                            "cloud service may still be copying it). ENLENS tries again on the next round.", seq) from None
-    except (zipfile.BadZipFile, KeyError, ValueError, OSError, EOFError):
-        bad, meta = True, None
+    except (zipfile.BadZipFile, KeyError, ValueError, OSError, EOFError, zlib.error):
+        bad, meta, names = True, None, frozenset()
     if bad or not isinstance(meta, dict):
         raise _Stop("arriving", f"{who}'s work number {seq} cannot be read yet: it may still be arriving in the shared "
                                 "folder. ENLENS tries again on the next round.", seq)
@@ -1347,24 +1495,102 @@ def _bundle_meta(f: Path, pid: str, seq: int, uid: str, who: str, epoch: str | N
     return meta
 
 
-def _rows_readable(f: Path) -> bool:
-    """Whether a bundle's database can be read (a crafted or damaged file must not stop the round)."""
-    tmp = Path(tempfile.mkdtemp(prefix="enlens-check-"))
+def _unpack(f: Path, dest: Path, who: str, seq: int | None) -> None:
+    """A bundle's database (`rows.sqlite`) and its codebooks, unpacked once into `dest` and checked: each member read
+    through its checksum (a bundle still arriving, or damaged in the cloud, fails here), each within its cap (`_MAX_*`),
+    and the database a whole SQLite file with a table `shares` (a crafted or damaged file must not stop the round).
+    Raises _Stop: "gap" (the bundle went), "arriving" (it cannot be read whole), "damaged", "too_large"."""
+    from ..frameworks import BUNDLED, NAME_RE
+
     try:
-        db = tmp / "rows.sqlite"
         with zipfile.ZipFile(f) as zf:
-            db.write_bytes(zf.read("rows.sqlite"))
-        cx = sqlite3.connect(db)
+            plan = [("rows.sqlite", _member(zf, "rows.sqlite", _MAX_ROWS, who, seq, "a database"))]
+            for n in zf.namelist():
+                stem, _, ext = n[len("frameworks/"):].rpartition(".")
+                if n.startswith("frameworks/") and n.count("/") == 1 and ext in ("csv", "json") and \
+                        NAME_RE.match(stem) and stem not in BUNDLED:
+                    plan.append((n, _member(zf, n, _MAX_CODEBOOK, who, seq, "a codebook")))
+            for n, info in plan:
+                out = dest / n
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, open(out, "wb") as dst:
+                    shutil.copyfileobj(src, dst, 1 << 20)
+    except FileNotFoundError:
+        raise _Stop("gap", f"Waiting for {who}'s work number {seq}: it went from the shared folder while it was read "
+                           "(they may have started afresh). ENLENS tries again on the next round.", seq) from None
+    except KeyError:
+        raise _Stop("damaged", f"{who}'s work number {seq} in the shared folder is damaged (it holds no database). It "
+                               "is left aside; nothing was changed.", seq) from None
+    except (zipfile.BadZipFile, OSError, EOFError, zlib.error, ValueError):
+        raise _Stop("arriving", f"{who}'s work number {seq} cannot be read yet: it may still be arriving in the shared "
+                                "folder. ENLENS tries again on the next round.", seq) from None
+    try:
+        cx = sqlite3.connect(dest / "rows.sqlite")
         try:
             ok = cx.execute("PRAGMA quick_check").fetchone()
-            return bool(ok and ok[0] == "ok" and cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND "
-                                                            "name='shares'").fetchone())
+            whole = bool(ok and ok[0] == "ok" and cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND "
+                                                             "name='shares'").fetchone())
         finally:
             cx.close()
-    except (sqlite3.DatabaseError, zipfile.BadZipFile, KeyError, OSError):
+    except sqlite3.DatabaseError:
+        whole = False
+    if not whole:
+        raise _Stop("damaged", f"{who}'s work number {seq} in the shared folder is damaged (its database cannot be "
+                               "read). It is left aside; nothing was changed.", seq)
+
+
+def _rows_readable(f: Path) -> bool:
+    """Whether a bundle's database and codebooks can be read whole (`_unpack`)."""
+    tmp = Path(tempfile.mkdtemp(prefix="enlens-check-"))
+    try:
+        _unpack(f, tmp, "your", None)
+        return True
+    except _Stop:
         return False
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+class _Opened:
+    """The colleagues' bundles of one round, each unpacked once (`_unpack`) into a scratch folder that lasts the round:
+    the withdrawals read first (`_withdrawals_first`), the check before a bundle is taken and the merge all read the
+    same files, and a bundle's database is never held in memory whole."""
+
+    def __init__(self) -> None:
+        self.tmp: Path | None = None
+        self.got: dict[tuple, Path] = {}
+        self.last: dict[str, tuple] = {}
+
+    def __call__(self, f: Path, who: str, seq: int) -> Path:
+        """The folder bundle `f` was unpacked into (`rows.sqlite`, `frameworks/`). Raises _Stop, and OSError when the
+        bundle cannot be looked at (`read` tells a bundle that went from a folder that went). A bundle that went after
+        it was unpacked, from a subfolder still there (its writer started afresh), is read as it was unpacked: the
+        round merges what it checked. A folder that went changes nothing."""
+        try:
+            st = f.stat()
+        except FileNotFoundError:
+            if str(f) in self.last and f.parent.parent.is_dir():
+                return self.got[self.last[str(f)]]
+            raise
+        key = (str(f), st.st_mtime_ns, st.st_size)
+        if key not in self.got:
+            if self.tmp is None:
+                self.tmp = Path(tempfile.mkdtemp(prefix="enlens-round-"))
+            dest = self.tmp / str(len(self.got))
+            dest.mkdir()
+            try:
+                _unpack(f, dest, who, seq)
+            except BaseException:
+                shutil.rmtree(dest, ignore_errors=True)
+                raise
+            self.got[key] = dest
+        self.last[str(f)] = key
+        return self.got[key]
+
+    def close(self) -> None:
+        if self.tmp is not None:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+        self.tmp, self.got, self.last = None, {}, {}
 
 
 def _find(team: Path, sub: str, name: str) -> Path | None:
@@ -1374,6 +1600,37 @@ def _find(team: Path, sub: str, name: str) -> Path | None:
         if f.is_file():
             return f
     return None
+
+
+class _Index:
+    """Where each reading and file is in the folder, listed once per round (`_find` looks in every copy's subfolder
+    for each document): the same answers as `_find`, which is asked again for a name not in the list (one that
+    arrived since)."""
+
+    def __init__(self, team: Path) -> None:
+        self.team = team
+        self.subs: dict[str, dict[str, Path]] = {}
+
+    def listing(self, sub: str) -> dict[str, Path]:
+        if sub not in self.subs:
+            out: dict[str, Path] = {}
+            for p in _people_dirs(self.team):
+                try:
+                    for f in (p / sub).iterdir():
+                        out.setdefault(f.name, f)
+                except OSError:
+                    continue
+            self.subs[sub] = out
+        return self.subs[sub]
+
+    def find(self, sub: str, name: str) -> Path | None:
+        f = self.listing(sub).get(name)
+        return f if f is not None and f.is_file() else _find(self.team, sub, name)
+
+    def file_of(self, sha1: str) -> str | None:
+        """The name of an original file in the folder with this checksum (`<sha1>.<ext>`)."""
+        return next((n for n in sorted(self.listing("files")) if n.startswith(sha1 + ".") and _FILE.fullmatch(n)),
+                    None)
 
 
 def _clean_stub(s: Any) -> dict | None:
@@ -1417,19 +1674,27 @@ def _put_stub(scx: sqlite3.Connection, s: dict) -> None:
                  s.get("reader") if isinstance(s.get("reader"), int) else None))
 
 
-def _put_reading(scx: sqlite3.Connection, scratch: Workspace, team: Path, s: dict) -> bool:
+def _put_reading(scx: sqlite3.Connection, scratch: Workspace, team: Path, s: dict,
+                 index: _Index | None = None) -> bool:
     """A document new here, from its reading in the folder (checked: the reading of that document, with that text),
     with its original file when the folder has it (checked against its sha1). False when the reading is not there or
-    is not what the stub says."""
+    is not what the stub says. Raises _Stop ("too_large") for a reading larger than ENLENS reads."""
     from ..ingest import _sha1
 
-    f = _find(team, "docs", s["reading"])
+    index = index or _Index(team)
+    f = index.find("docs", s["reading"])
     if f is None:
         return False
     try:
         with zipfile.ZipFile(f) as zf:
-            data = json.loads(zf.read("reading.json"))
-    except (zipfile.BadZipFile, KeyError, ValueError, OSError, EOFError):
+            info = zf.getinfo("reading.json")
+            if info.file_size > _MAX_READING:
+                raise _Stop("too_large", f"The reading of “{str(s.get('title') or s['doc_id'])[:60]}” in the shared "
+                                         f"folder is larger than ENLENS reads ({_MAX_READING // 1024 ** 2} MB). It is "
+                                         "left aside; nothing was changed.")
+            with zf.open(info) as src:
+                data = json.loads(src.read())
+    except (zipfile.BadZipFile, KeyError, ValueError, OSError, EOFError, zlib.error):
         return False
     doc = data.get("documents") if isinstance(data, dict) else None
     if not isinstance(doc, dict) or data.get("doc_id") != s["doc_id"] or text_fp(doc.get("text")) != s["text_fp"]:
@@ -1447,7 +1712,7 @@ def _put_reading(scx: sqlite3.Connection, scratch: Workspace, team: Path, s: dic
         scx.execute(f"DELETE FROM {t} WHERE doc_id=?", (d,))
         _insert(scx, t, rows)
     plain = (row.get("sha1") or "").split("~")[0]
-    src = _find(team, "files", s["file"]) if s.get("file") and s["file"].startswith(plain + ".") else None
+    src = index.find("files", s["file"]) if s.get("file") and s["file"].startswith(plain + ".") else None
     if src is not None:
         dest = Path(scratch.root) / "originals" / d / _safe_name(s.get("name"), s["file"])
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1459,11 +1724,9 @@ def _put_reading(scx: sqlite3.Connection, scratch: Workspace, team: Path, s: dic
     return True
 
 
-def _apply_bundle(scx: sqlite3.Connection, scratch: Workspace, zf: zipfile.ZipFile, meta: dict, tmp: Path) -> None:
-    """One bundle into the scratch copy: the items it holds replace what earlier bundles held of them (each item is
-    written whole), then its rows and its codebooks go in."""
-    from ..frameworks import BUNDLED, NAME_RE
-
+def _apply_bundle(scx: sqlite3.Connection, scratch: Workspace, unpacked: Path, meta: dict) -> None:
+    """One bundle (unpacked by `_unpack`) into the scratch copy: the items it holds replace what earlier bundles held
+    of them (each item is written whole), then its rows, a slice at a time, and its codebooks go in."""
     fw = Path(scratch.root) / "frameworks"
     for it in meta.get("items") or []:
         kind, key = (it.get("kind"), it.get("key")) if isinstance(it, dict) else (None, None)
@@ -1473,9 +1736,7 @@ def _apply_bundle(scx: sqlite3.Connection, scratch: Workspace, zf: zipfile.ZipFi
             if kind == "codebook":
                 for ext in ("csv", "json"):
                     (fw / f"{key}.{ext}").unlink(missing_ok=True)
-    db = tmp / "rows.sqlite"
-    db.write_bytes(zf.read("rows.sqlite"))
-    bcx = sqlite3.connect(db)
+    bcx = sqlite3.connect(unpacked / "rows.sqlite")
     try:
         here = {r[0] for r in scx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         tables = [r[0] for r in bcx.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
@@ -1483,51 +1744,53 @@ def _apply_bundle(scx: sqlite3.Connection, scratch: Workspace, zf: zipfile.ZipFi
             if t not in here or t.startswith("sqlite_") or (t in LOCAL_ONLY and t != "meta") or t == "documents" \
                     or t in _READING_TABLES:
                 continue
-            rows = _rows(bcx, f"SELECT * FROM {t}")
-            if t == "meta":  # only what a merge reads of a colleague's settings
-                rows = [r for r in rows if r.get("key") == "bibliography" or
-                        str(r.get("key") or "").startswith("codebook_followed:")]
-            if not rows:
-                continue
-            cols = [c for c in _cols(scx, t) if c in rows[0]]
-            if _pk(scx, t) or t == "reviews":
-                scx.executemany(f"INSERT OR REPLACE INTO {t}({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
-                                [tuple(r.get(c) for c in cols) for r in rows])
-            else:  # a table without a key (the ledger of what was sent to Claude): each row once
-                have = {tuple(r) for r in scx.execute(f"SELECT {','.join(cols)} FROM {t}")}
-                new = [tuple(r.get(c) for c in cols) for r in rows]
-                new = [v for v in dict.fromkeys(new) if v not in have]
-                scx.executemany(f"INSERT INTO {t}({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", new)
+            cur = bcx.execute(f"SELECT * FROM {t}")
+            names = [c[0] for c in cur.description]
+            cols = [c for c in _cols(scx, t) if c in names]
+            at = [names.index(c) for c in cols]
+            keyed = bool(_pk(scx, t)) or t == "reviews"
+            insert = f"INSERT {'OR REPLACE' if keyed else ''} INTO {t}({','.join(cols)}) VALUES " \
+                     f"({','.join('?' * len(cols))})"
+            # a table without a key (the ledger of what was sent to Claude): each row once
+            have = None if keyed else {tuple(r) for r in scx.execute(f"SELECT {','.join(cols)} FROM {t}")}
+            while rows := cur.fetchmany(5000):
+                if t == "meta":  # only what a merge reads of a colleague's settings
+                    k = names.index("key") if "key" in names else None
+                    rows = [r for r in rows if k is not None and (r[k] == "bibliography" or
+                                                                  str(r[k] or "").startswith("codebook_followed:"))]
+                vals = [tuple(r[i] for i in at) for r in rows]
+                if have is not None:
+                    vals = [v for v in dict.fromkeys(vals) if v not in have]
+                    have.update(vals)
+                if vals:
+                    scx.executemany(insert, vals)
     finally:
         bcx.close()
-        db.unlink(missing_ok=True)
-    for n in zf.namelist():
-        if not n.startswith("frameworks/") or n.count("/") != 1:
-            continue
-        stem, _, ext = n[len("frameworks/"):].rpartition(".")
-        if ext in ("csv", "json") and NAME_RE.match(stem) and stem not in BUNDLED:
-            fw.mkdir(exist_ok=True)
-            (fw / f"{stem}.{ext}").write_bytes(zf.read(n))
+    for f in sorted((unpacked / "frameworks").glob("*")) if (unpacked / "frameworks").is_dir() else []:
+        fw.mkdir(exist_ok=True)  # (`_unpack` unpacked only the codebooks a bundle may carry)
+        shutil.copyfile(f, fw / f.name)
 
 
 def _take(ws: Workspace, team: Path, pdir: Path, start: int, last: int, who: str, held: set, removed: set,
-          epoch: str | None = None) -> tuple[list[tuple[int, Path, dict]], _Stop | None]:
-    """The bundles of one colleague that can come in now, in order, and why the rest cannot (yet)."""
+          epoch: str | None = None, opened: _Opened | None = None,
+          index: _Index | None = None) -> tuple[list[tuple[int, Path, dict]], _Stop | None]:
+    """The bundles of one colleague that can come in now, in order, and why the rest cannot (yet). Each is unpacked
+    once for the round (`opened`)."""
     uid = ws.project_uid()
+    opened = opened if opened is not None else _Opened()
+    index = index or _Index(team)
     take: list[tuple[int, Path, dict]] = []
     for seq in range(start, last + 1):
         f = pdir / "bundles" / f"{seq:06d}.zip"
         try:
             meta = _bundle_meta(f, pdir.name, seq, uid, who, epoch)
+            opened(f, who, seq)
         except _Stop as e:
             return take, e
-        if not _rows_readable(f):
-            return take, _Stop("damaged", f"{who}'s work number {seq} in the shared folder is damaged (its database "
-                                          "cannot be read). It is left aside; nothing was changed.", seq)
         missing, readings = [], []
         for s in meta.get("documents") or []:
             s = _clean_stub(s)
-            if s is not None and _needs_reading(s, held, removed) and _find(team, "docs", s["reading"]) is None:
+            if s is not None and _needs_reading(s, held, removed) and index.find("docs", s["reading"]) is None:
                 missing.append(str(s.get("title") or s["doc_id"]))
                 readings.append(s["reading"])
         if missing:
@@ -1541,12 +1804,17 @@ def _take(ws: Workspace, team: Path, pdir: Path, start: int, last: int, who: str
 
 def _merge_bundles(ws: Workspace, team: Path, pid: str, who_name: str, person: dict,
                    take: list[tuple[int, Path, dict]], progress: Progress | None, epoch: str | None = None,
-                   should_stop: ShouldStop | None = None) -> dict:
+                   should_stop: ShouldStop | None = None, opened: _Opened | None = None,
+                   index: _Index | None = None, backup: Callable[[], Any] | None = None) -> dict:
     """One colleague's bundles, merged as one colleague's zip: one scratch project fed to `merge._Merge`. Asked to stop
     (`_Stopped`) while the scratch copy is put together, nothing of it reaches the project and nothing is recorded as
-    read; the merge itself, once begun, runs to its end (one transaction), and what it brought in is recorded with it."""
+    read; the merge itself, once begun, runs to its end (one transaction), and what it brought in is recorded with it.
+    `backup`: the copy of the database made before the merge (one per round: `_once`)."""
     from . import _backup, log_bring_in
     from .merge import _Merge
+
+    opened = opened if opened is not None else _Opened()
+    index = index or _Index(team)
 
     with ws.connect() as cx:
         held = {(base_id(d), fp) for d, fp in cx.execute("SELECT doc_id, text_fp FROM documents") if fp}
@@ -1564,8 +1832,7 @@ def _merge_bundles(ws: Workspace, team: Path, pid: str, who_name: str, person: d
                 _stop_here(should_stop)
                 _say(progress, "read", f"Reading {_who(who_name)}'s work ({i} of {len(take)})",
                      {"index": i, "total": len(take), "person": pid})
-                with zipfile.ZipFile(f) as zf:
-                    _apply_bundle(scx, scratch, zf, meta, tmp)
+                _apply_bundle(scx, scratch, opened(f, _who(who_name), seq), meta)
                 for s in meta.get("documents") or []:
                     s = _clean_stub(s)
                     if s is not None:
@@ -1579,7 +1846,7 @@ def _merge_bundles(ws: Workspace, team: Path, pid: str, who_name: str, person: d
                 _stop_here(should_stop)
                 _say(progress, "read", f"Fetching document {i} of {len(new)} from the shared folder",
                      {"index": i, "total": len(new)})
-                if not _put_reading(scx, scratch, team, s):
+                if not _put_reading(scx, scratch, team, s, index):
                     raise _Stop("documents", f"A document of {_who(who_name)}'s (“{str(s.get('title') or '')[:60]}”) "
                                              "could not be read from the shared folder yet. ENLENS tries again on the "
                                              "next round.", take[0][0], [s["reading"]])
@@ -1592,7 +1859,7 @@ def _merge_bundles(ws: Workspace, team: Path, pid: str, who_name: str, person: d
                 "sync_format": max(formats.of(m)[0] for _s, _f, m in take), "stubs": only_stub,
                 "canon_ai": {d: s.get("canon_ai") for d, s in stubs.items()}}  # 0.18 L2
         _stop_here(should_stop)
-        _backup(ws)
+        (backup or (lambda: _backup(ws)))()
         merge = _Merge(ws, scratch, info)
         report = merge.run()
         report["via"] = "folder"
@@ -1653,8 +1920,80 @@ def read(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSto
         return out
     with ws.connect() as cx:
         _same_folder(cx, str(info.get("folder_id") or ""))
+    opened, index = _Opened(), _Index(team)
+    try:
+        _withdrawals_first(ws, team, me, opened, should_stop)
+        _read_people(ws, team, me, out, progress, should_stop, opened, index)
+    finally:
+        opened.close()
+    return out
+
+
+def _withdrawals_first(ws: Workspace, team: Path, me: str, opened: _Opened, should_stop: ShouldStop | None) -> None:
+    """Before anyone's work is merged in a round: every item this copy does not hold that a colleague's waiting
+    bundles say its owner took back (*Unshare*) is noted here as taken back (`sharing.receive`, by the owner's word
+    only). A merge keeps out an item its owner took back only when it knows of it (share_merge.py `_withhold`);
+    without this, an item came in through a colleague who still held it whenever that colleague's work was read before
+    the owner's (in the order of their ids). An item held here is the merge's, as before (its report says it was taken
+    back). Of an item in several bundles of one colleague, the last says how it stands (a later bundle holds it
+    whole)."""
+    uid = ws.project_uid()
+    with ws.connect() as cx:
+        read_upto = _read_upto(cx)
+    said: list[dict] = []
+    for pdir in _people_dirs(team):
+        if pdir.name == me:
+            continue
+        if should_stop is not None and should_stop():
+            return
+        head = _json(pdir / "head.json") or {}
+        last = _int(head.get("last")) or 0
+        done, epoch = read_upto.get(pdir.name, (0, None))
+        head_epoch = head.get("epoch") if isinstance(head.get("epoch"), str) else None
+        marks: dict[tuple[str, str], dict] = {}
+        for seq in range(_start_at(head, done, epoch), last + 1):
+            f = pdir / "bundles" / f"{seq:06d}.zip"
+            try:
+                _bundle_meta(f, pdir.name, seq, uid, "a colleague", head_epoch)
+                bcx = sqlite3.connect(opened(f, "a colleague", seq) / "rows.sqlite")
+                try:
+                    marks.update({(r["kind"], r["key"]): r for r in _rows(bcx, "SELECT * FROM shares")})
+                finally:
+                    bcx.close()
+            except (_Stop, OSError, sqlite3.Error):
+                break  # (said again, in its words, when this colleague's work is read)
+        said += [r for r in marks.values() if r.get("state") == "withdrawn"]
+    if not said:
+        return
+    root = Path(ws.root)
+    with ws.connect() as cx:
+        for r in said:
+            kind, key = r.get("kind"), r.get("key")
+            if kind in sharing.KINDS and isinstance(key, str) and key and not sharing.exists(cx, root, kind, key):
+                sharing.receive(cx, kind, key, r, me, False, had=False)
+
+
+def _once(ws: Workspace) -> Callable[[], None]:
+    """The copy of the database made before a merge (`sync._backup`), made once however many merges follow: the state
+    before the round (or before what `fetch_documents` brings in) is the one to go back to."""
+    from . import _backup
+
+    done: list[bool] = []
+
+    def backup() -> None:
+        if not done:
+            _backup(ws)
+            done.append(True)
+
+    return backup
+
+
+def _read_people(ws: Workspace, team: Path, me: str, out: dict, progress: Progress | None,
+                 should_stop: ShouldStop | None, opened: _Opened, index: _Index) -> None:
+    """`read`'s work for each colleague, in turn (see `read`)."""
     held_up: dict[str, dict] = {}
     reached: set[str] = set()   # the colleagues this round got to (asked to stop, it may not reach them all)
+    backup = _once(ws)
     for pdir in _people_dirs(team):
         pid = pdir.name
         if pid == me:
@@ -1683,10 +2022,10 @@ def read(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSto
             continue
         try:
             head_epoch = head.get("epoch") if isinstance(head.get("epoch"), str) else None
-            take, stop = _take(ws, team, pdir, start, last, who, held, removed, head_epoch)
+            take, stop = _take(ws, team, pdir, start, last, who, held, removed, head_epoch, opened, index)
             if take:
                 entry["report"] = _merge_bundles(ws, team, pid, who_name, person, take, progress, head_epoch,
-                                                 should_stop)
+                                                 should_stop, opened, index, backup)
                 entry["bundles"] = [take[0][0], take[-1][0]]
         except _Stopped:  # nothing of this colleague's came in: as before, for the next round
             reached.discard(pid)
@@ -1695,9 +2034,16 @@ def read(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSto
         except _Stop as e:
             stop = e
         except OSError as e:  # the folder went away in the middle: nothing came in
-            stop = _Stop("unreachable", f"The shared folder could not be read while {who}'s work was brought in "
-                                        f"({e.strerror or e}). Nothing was changed; ENLENS tries again on the next "
-                                        "round.")
+            if isinstance(e, FileNotFoundError) and pdir.is_dir():
+                # only a file of theirs went while it was read (they started afresh): the folder is there, and the
+                # next round reads their new start (an unreachable folder would hold the rounds back for long)
+                stop = _Stop("gap", f"Some of {who}'s work went from the shared folder while it was brought in (they "
+                                    "may have started afresh). Nothing was changed; ENLENS tries again on the next "
+                                    "round.")
+            else:
+                stop = _Stop("unreachable", f"The shared folder could not be read while {who}'s work was brought in "
+                                            f"({e.strerror or e}). Nothing was changed; ENLENS tries again on the next "
+                                            "round.")
         except Exception as e:  # noqa: BLE001 - one colleague's work that cannot be merged never stops the others'
             import traceback
 
@@ -1723,7 +2069,6 @@ def read(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSto
         _waiting_json(team / me, held_up, reached if out["stopped"] else None)
     except OSError:
         pass
-    return out
 
 
 def _waiting_json(mine: Path, held_up: dict[str, dict], reached: set[str] | None = None) -> None:

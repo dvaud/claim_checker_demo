@@ -13,6 +13,8 @@ FORMAT = "enlens-project"
 _TOKEN = re.compile(r"[A-Za-z0-9_\-]+")
 DOC_ID = re.compile(r"[A-Za-z0-9_]{1,64}(-[0-9a-f]{6})?")  # a document id ("d1a2b3c4d5e", a copy "…-0f1e2d"): never a path
 UNFINISHED = ("pending", "retry")
+# a document's reading: its text is in `documents`, the rest in these tables (one row set per document)
+READING_TABLES = ("pages", "paragraphs", "headings", "passages", "blocks", "doc_tables")
 _TEXT_COLS = {"text"}  # never rewritten (documents', passages' and hypotheses' own words)
 # the tables of a copy that are never merged: derived again from the documents, or about this copy only
 LOCAL_ONLY = {"meta", "embeddings", "code_vectors", "terms", "term_mentions", "concepts", "concept_terms", "task_claims",

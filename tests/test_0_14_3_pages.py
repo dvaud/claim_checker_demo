@@ -74,9 +74,8 @@ def test_the_answer_card_names_excerpts_that_wait_and_colleagues_who_differ():
 
 def test_the_project_zip_is_downloaded_with_the_token_in_a_header():
     js = _js("views/result.js")
-    fn = js[js.index("export function projectZipLink"):]
-    fn = fn[:fn.index("\n}\n")]
-    assert "zipButton(" in fn  # 0.18: the two downloads (what you shared, the whole project) live in share.js
+    # 0.18: the two downloads (what you shared, the whole project) live in share.js; the result page uses its button
+    assert 'zipButton(project, "shared"' in js and 'zipButton(project, "all"' in js
     share = _js("views/share.js")
     fn = share[share.index("export async function downloadProject"):]
     fn = fn[:fn.index("\n}\n")]
@@ -93,7 +92,11 @@ def test_a_result_in_another_project_offers_the_switch():
 def test_loosening_an_ai_setting_is_asked_about_and_a_table_that_fits():
     js = _js("views/sources.js")
     assert "confirmLoosen" in js and "cannot be taken back" in js
-    assert 'if (!(await confirmLoosen(ids, level))) { await reloadDocs(); return; }' in js
+    # cancelled, the rows asked about show their own setting again, in place (the whole list went back to the top)
+    fn = js[js.index("async function setAccess"):]
+    fn = fn[:fn.index("\n    }\n")]
+    assert "if (!(await confirmLoosen(ids, level))) {" in fn and "patchDocs({ documents: docs.filter(" in fn
+    assert "reloadDocs" not in fn[:fn.index("const body")]
     # Open and Remove sit in the title cell, not in a last column that was out of sight
     assert 'class: "doc-actions"' in js and 'h("td", { class: "actions" }' not in js
     assert "docs[at] = d" in js

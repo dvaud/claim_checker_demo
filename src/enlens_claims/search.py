@@ -30,6 +30,15 @@ class PassageIndex:
         self.rows, self.bm25, self.pos = rows, bm25, pos
         self.ids = ids if ids is not None else [r["passage_id"] for r in rows]
         self.doc_of = doc_of if doc_of is not None else [r["doc_id"] for r in rows]
+        self.key: tuple | None = None          # the state of the project it was made from (`_key`)
+        self._totals: dict[str, int] = {}     # each word's occurrences in all the passages, summed once
+
+    def total(self, word: str) -> int:
+        """How often a word (a stem, as indexed) occurs in all the passages: its postings summed, once per index."""
+        n = self._totals.get(word)
+        if n is None:
+            n = self._totals[word] = sum(f for _i, f in self.bm25.postings.get(word, ()))
+        return n
 
     @property
     def on_disk(self) -> bool:
@@ -52,7 +61,7 @@ class PassageIndex:
 
     def terms_starting(self, prefix: str) -> list[tuple[str, int]]:
         """(word, occurrences) of every indexed word starting with `prefix`, in the order of words."""
-        return sorted((t, sum(f for _i, f in pl)) for t, pl in self.bm25.postings.items() if t.startswith(prefix))
+        return sorted((t, self.total(t)) for t in self.bm25.postings if t.startswith(prefix))
 
 
 _INDEXES: "OrderedDict[tuple, PassageIndex]" = OrderedDict()
@@ -81,6 +90,23 @@ def _build(ws: Workspace, all_sections: bool) -> PassageIndex:
     return PassageIndex(rows, BM25([tokens(r["text"]) for r in rows]), {r["passage_id"]: i for i, r in enumerate(rows)})
 
 
+def _retitled(ws: Workspace, key: tuple) -> PassageIndex | None:
+    """The cached index of the same passages when only the titles' version differs (a work of the bibliography was
+    linked): its words and postings hold no title (since 0.16 titles are read with the rows when shown), so they are
+    used again, and only what reads the rows is made afresh."""
+    if IN_MEMORY:
+        return None
+    from . import searchindex
+
+    with _LOCK:
+        old = next((v for k, v in reversed(_INDEXES.items()) if k[:4] == key[:4] and k[5:] == key[5:]), None)
+    if old is None or not old.on_disk:
+        return None
+    idx = PassageIndex(searchindex._Rows(ws, old.ids), old.bm25, old.pos, old.ids, old.doc_of)
+    idx._totals = old._totals
+    return idx
+
+
 def passage_index(ws: Workspace, all_sections: bool = False) -> PassageIndex:
     """Readable passages of the project and their keyword index (built on first use, then cached).
 
@@ -98,7 +124,8 @@ def passage_index(ws: Workspace, all_sections: bool = False) -> PassageIndex:
             hit = _INDEXES.get(key)
         if hit is not None:
             return hit
-        idx = _build(ws, all_sections)
+        idx = _retitled(ws, key) or _build(ws, all_sections)
+        idx.key = key
         with _LOCK:
             for k in [k for k in _INDEXES if k[0] == key[0] and k[-1] == key[-1]]:  # older states of the project
                 del _INDEXES[k]

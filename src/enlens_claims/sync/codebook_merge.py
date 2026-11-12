@@ -33,6 +33,17 @@ from pathlib import Path
 from .fingerprints import HEAD, _codebook_fp, _home_codebooks, code_fp, codebook_state, head_fp
 
 
+def _event_order(e: dict) -> tuple:
+    """Where a codebook's event (a rename, a merge of codes) goes among the others: by its time, its number, then its
+    id, so two copies holding the same events order them alike (the time is to the second; a number that is not one
+    counts as 0)."""
+    try:
+        seq = int(e.get("seq") or 0)
+    except (TypeError, ValueError):
+        seq = 0
+    return str(e.get("at") or ""), seq, str(e.get("id") or "")
+
+
 class CodebookRules:
     def _codebooks(self, cx: sqlite3.Connection) -> None:
         """The colleague's codebooks: a new one comes in; one of yours they changed (and you did not) is brought up to
@@ -193,7 +204,7 @@ class CodebookRules:
         events = [e for e in (m_meta.get("events") or []) if isinstance(e, dict)]
         have = {e.get("id") for e in events}
         events += [e for e in (t_meta.get("events") or []) if isinstance(e, dict) and e.get("id") not in have]
-        events.sort(key=lambda e: (str(e.get("at") or ""), int(e.get("seq") or 0)))
+        events.sort(key=_event_order)
         events += renamed
         if renamed:  # your labels never had their name for it: the rename is followed here only by theirs
             row = cx.execute("SELECT value FROM meta WHERE key=?", (f"codebook_followed:{name}",)).fetchone()

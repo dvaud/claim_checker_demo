@@ -31,9 +31,11 @@ import uuid
 import zlib
 from array import array
 from collections import Counter, defaultdict
+from itertools import compress
 from typing import Callable
 
 from .people import me, mine_sql
+from .searchindex import unzip
 from .store import Workspace, now
 from . import stopwords
 from .textutil import fast_normalise, is_stop, stem, token_spans
@@ -137,13 +139,14 @@ FRAGMENT_PIECES = 8     # most pieces one word is joined from
 _PIECE = re.compile(r"[^\W\d_]{1,%d}" % FRAGMENT_MAX)
 
 
-def joiner_counts(texts) -> tuple[Counter, Counter]:
+def joiner_counts(texts, words: list | None = None) -> tuple[Counter, Counter]:
     """What the joiner counts in some texts: every word, and every run of pieces that stands apart. Both are sums
-    over the texts, so a corpus's counts are the sums of its documents' (0.16, H3: each document's are kept)."""
+    over the texts, so a corpus's counts are the sums of its documents' (0.16, H3: each document's are kept).
+    `words`: each text's words (`token_spans(text, keep_stop=True)`), when they are read already."""
     vocab: Counter[str] = Counter()
     split: Counter[str] = Counter()   # how often each run of pieces stands apart ("net zero": often)
-    for t in texts:
-        toks = token_spans(t, keep_stop=True)
+    for n, t in enumerate(texts):
+        toks = words[n] if words is not None else token_spans(t, keep_stop=True)
         vocab.update(w for _a, _b, _s, w in toks)
         for i in range(len(toks) - 1):
             if not _PIECE.fullmatch(toks[i][3]):
@@ -246,13 +249,16 @@ def _at_edge(a: int, b: int, e: tuple[int, int]) -> bool:
     return b <= e[0] or a >= e[1]
 
 
-def running_heads(rows, joiner: Joiner | None = None,
-                  stops_of: dict[str, frozenset[str]] | None = None) -> tuple[dict[str, tuple[int, int]], set[tuple[str, str]]]:
+def running_heads(rows, joiner: Joiner | None = None, stops_of: dict[str, frozenset[str]] | None = None,
+                  words: list | None = None,
+                  grams_of: dict | None = None) -> tuple[dict[str, tuple[int, int]], set[tuple[str, str]]]:
     """Running heads and feet ("Journal of Energy in Southern Africa • Vol 33", "IEA. All rights reserved"): the
     candidate terms found at the top or bottom of at least 3 pages, and of at least a third of the pages, of one
     document. Returns {passage_id: (head end, foot start)} for the first and last passage of each page, and the
     (doc_id, term key) pairs that are running heads; their mentions there are left out of the glossary (search still
-    finds them). `stops_of`: {passage_id: the common words of its language} (by default the English rule)."""
+    finds them). `stops_of`: {passage_id: the common words of its language} (by default the English rule).
+    `words`: each row's words, when they are read already; `grams_of`: a dict that is given the candidates of each
+    first and last passage of a page, so the caller does not find them again."""
     first: dict[tuple, dict] = {}
     lastp: dict[tuple, dict] = {}
     pages: dict[str, set] = defaultdict(set)
@@ -269,11 +275,15 @@ def running_heads(rows, joiner: Joiner | None = None,
     for k, r in lastp.items():
         edges.setdefault(r["passage_id"], [0, 10 ** 9])[1] = max(0, len(r["text"]) - EDGE_CHARS)
     seen: dict[tuple[str, str], set] = defaultdict(set)
-    for r in rows:
+    for n, r in enumerate(rows):
         e = edges.get(r["passage_id"])
         if not e:
             continue
-        for a, b, key in _grams(r["text"], joiner, (stops_of or {}).get(r["passage_id"])):
+        gs = list(_grams(r["text"], joiner, (stops_of or {}).get(r["passage_id"]),
+                         words[n] if words is not None else None))
+        if grams_of is not None:
+            grams_of[r["passage_id"]] = gs
+        for a, b, key in gs:
             if _at_edge(a, b, e):
                 seen[(r["doc_id"], key)].add(r["page"])
     boiler = {dk for dk, pg in seen.items() if len(pg) >= 3 and len(pg) * 3 >= len(pages[dk[0]])}
@@ -329,9 +339,9 @@ def _blobs(reading: dict, grams: array) -> tuple[bytes, bytes, str]:
 
 def _decode(rb: bytes | None, gb: bytes | None) -> tuple[dict, array] | None:
     try:
-        rd = json.loads(zlib.decompress(rb)) if rb else None
+        rd = json.loads(unzip(rb)) if rb else None
         g = array("I")
-        g.frombytes(zlib.decompress(gb)) if gb else None
+        g.frombytes(unzip(gb)) if gb else None
     except (ValueError, TypeError, zlib.error):
         return None
     if not isinstance(rd, dict) or not isinstance(rd.get("keys"), list) or len(g) % 4:
@@ -387,7 +397,7 @@ class _Readings:
         """What the document adds to the joiner (its words, its runs of pieces): its text's alone. Or None."""
         r = self._select(doc_id, fp, "counts")
         try:
-            v = json.loads(zlib.decompress(r[0])) if r and r[0] else None
+            v = json.loads(unzip(r[0])) if r and r[0] else None
             return (v["vocab"], v["split"]) if isinstance(v, dict) else None
         except (ValueError, KeyError, TypeError, zlib.error):
             return None
@@ -396,10 +406,15 @@ class _Readings:
         """The joiner's decisions the reading was made with (its runs read whole), and its digest. Or None."""
         r = self._select(doc_id, fp, "reading, digest")
         try:
-            rd = json.loads(zlib.decompress(r[0])) if r and r[0] else None
+            rd = json.loads(unzip(r[0])) if r and r[0] else None
         except (ValueError, TypeError, zlib.error):
             return None
         return (set(rd.get("joined") or ()), r[1]) if isinstance(rd, dict) and r[1] else None
+
+    def digest_of(self, doc_id: str, fp: str) -> str | None:
+        """The digest of the kept reading of this text (nothing is unpacked), or None."""
+        r = self._select(doc_id, fp, "digest")
+        return r[0] if r and r[0] else None
 
     def load(self, doc_id: str, fp: str, digest: str) -> tuple[dict, array] | None:
         """The reading with that digest (candidates, their places, abbreviations), or None (another program's build
@@ -456,20 +471,26 @@ class _Readings:
             self.cx = None
 
 
-def _read_document(rows, joiner: Joiner, split: dict, rules: stopwords.Rules | None = None) -> tuple[dict, array]:
+def _read_document(rows, joiner: Joiner, split: dict | None = None, rules: stopwords.Rules | None = None,
+                   with_counts: bool = False) -> tuple:
     """One document's candidate terms with their places (running heads and feet left out), as `build` read them
     before 0.16, the joiner's decisions for its runs of pieces, and (0.17) how many of its passages are in each
-    language: each passage is read by the common words of its own language (`stopwords`)."""
+    language: each passage is read by the common words of its own language (`stopwords`). `split`: the document's
+    runs of pieces (counted here when not given); `with_counts`: the document's counts for the joiner are returned
+    too, from the words read here."""
     rules = rules or stopwords.DEFAULT
     words = [token_spans(r["text"], keep_stop=True) for r in rows]
     langs = stopwords.fill([stopwords.detect(t[3] for t in toks) for toks in words])
     stops_of = {r["passage_id"]: rules.stops(c) for r, c in zip(rows, langs)}
-    edges, boiler = running_heads(rows, joiner, stops_of)
+    found: dict[str, list] = {}   # the candidates of the passages at the top and bottom of a page, found once
+    edges, boiler = running_heads(rows, joiner, stops_of, words, found)
     keys: dict[str, int] = {}
     grams = array("I")
     for n, r in enumerate(rows):
-        e = edges.get(r["passage_id"])
-        for a, b, key in _grams(r["text"], joiner, stops_of[r["passage_id"]], words[n]):
+        pid = r["passage_id"]
+        e = edges.get(pid)
+        gs = found.pop(pid, None)
+        for a, b, key in gs if gs is not None else _grams(r["text"], joiner, stops_of[pid], words[n]):
             if e and (r["doc_id"], key) in boiler and _at_edge(a, b, e):
                 continue
             k = keys.get(key)
@@ -481,13 +502,19 @@ def _read_document(rows, joiner: Joiner, split: dict, rules: stopwords.Rules | N
         if "(" in r["text"]:
             for short, long in abbreviations(r["text"]):
                 abbrev[(short, long)] += 1
-    joined = sorted(k for k in split if joiner.whole(k.split(" ")))
-    return {"keys": list(keys), "joined": joined, "abbrev": [[s, lf, c] for (s, lf), c in abbrev.items()],
-            "langs": dict(Counter(langs))}, grams
+    counts = joiner_counts([r["text"] for r in rows], words) if with_counts or split is None else None
+    joined = sorted(k for k in (split if split is not None else counts[1]) if joiner.whole(k.split(" ")))
+    reading = {"keys": list(keys), "joined": joined, "abbrev": [[s, lf, c] for (s, lf), c in abbrev.items()],
+               "langs": dict(Counter(langs))}
+    return (reading, grams, counts) if with_counts else (reading, grams)
 
 
 _BUILDING: dict[str, threading.Lock] = {}
 _BUILDING_GUARD = threading.Lock()
+
+
+class _Changed(Exception):
+    """A document's text changed while the glossary was made (its text is read one document at a time)."""
 
 
 def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
@@ -503,19 +530,60 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
         rules = stopwords.rules(ws)
         store = _Readings(ws, rules)
         try:
-            return _build(ws, store, progress, should_stop, embedder, max_terms, rules)
+            for attempt in range(3):
+                try:
+                    return _build(ws, store, progress, should_stop, embedder, max_terms, rules)
+                except _Changed:   # a document was read again or removed meanwhile: start again with its new text
+                    if attempt == 2:
+                        raise ValueError("The documents kept changing while the glossary was made. Make it again "
+                                         "once they are added.") from None
         finally:
             store.close()
 
 
+def _body_docs(ws: Workspace) -> dict[str, int]:
+    """The documents with body text, in order, and the number of their body passages."""
+    return {r[0]: r[1] for r in ws.query("SELECT doc_id, COUNT(*) FROM passages WHERE section='body' "
+                                         "GROUP BY doc_id ORDER BY doc_id")}
+
+
+def _body_rows(ws: Workspace, doc_id: str) -> list:
+    return ws.query("SELECT passage_id, doc_id, page, start, text FROM passages WHERE section='body' AND doc_id=? "
+                    "ORDER BY seq", (doc_id,))
+
+
+def _mention_indexes() -> list[tuple[str, str]]:
+    """The indexes of `term_mentions` as the project's schema makes them (`store.INDEXES`): (name, statement)."""
+    from .store import INDEXES
+
+    out = []
+    for stmt in INDEXES.split(";"):
+        m = re.match(r"\s*CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+(\w+)\s+ON\s+term_mentions\s*\(", stmt, re.I)
+        if m:
+            out.append((m.group(1), stmt.strip()))
+    return out
+
+
+_LOW = (1 << 32) - 1   # a candidate's count of documents, in the low bits of its entry (its mentions above them)
+
+
 def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max_terms: int,
            rules: stopwords.Rules = stopwords.DEFAULT) -> dict:
-    rows = ws.query("SELECT passage_id, doc_id, page, start, text FROM passages WHERE section='body' ORDER BY doc_id, seq")
+    # the corpus version before the text: a document that changes while the glossary is made leaves the glossary
+    # marked out of date, never up to date with the old text
     version = ws.corpus_version()
-    by_doc: dict[str, list] = {}
-    for r in rows:
-        by_doc.setdefault(r["doc_id"], []).append(r)
-    fps = {d: _doc_fp(rs) for d, rs in by_doc.items()}
+    sizes = _body_docs(ws)
+    docs = list(sizes)
+    n_rows = sum(sizes.values())
+    fps: dict[str, str] = {}
+
+    def rows_of(d: str) -> list:
+        """A document's body passages with their text. The text of a large project is never held whole (it is read
+        a document at a time when needed), so each later reading is checked against the first."""
+        rs = _body_rows(ws, d)
+        if _doc_fp(rs) != fps[d]:
+            raise _Changed()
+        return rs
 
     def stop_check():
         if should_stop and should_stop():
@@ -524,75 +592,100 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
     # the joiner (0.8: letter-spaced words read whole, glossary and key terms only), from every document's counts
     vocab: Counter[str] = Counter()
     split: Counter[str] = Counter()
-    fresh: dict[str, tuple[dict, dict]] = {}
-    for d, rs in by_doc.items():
+    unread: set[str] = set()   # documents with no counts kept: read in full
+    for d in docs:
+        stop_check()
+        rs = _body_rows(ws, d)
+        fps[d] = _doc_fp(rs)
         c = store.counts(d, fps[d])
         if c is None:
-            stop_check()
-            c = fresh[d] = joiner_counts(r["text"] for r in rs)
+            c = joiner_counts(r["text"] for r in rs)
+            unread.add(d)
         vocab.update(c[0])
         split.update(c[1])
+    rs = c = None
     joiner = Joiner(counts=(vocab, split))
     whole_now = {k for k in split if joiner.whole(k.split(" "))}
 
-    def counts_of(d: str) -> tuple[dict, dict]:
-        return fresh.get(d) or store.counts(d, fps[d]) or joiner_counts(r["text"] for r in by_doc[d])
-
-    # a kept reading holds when the joiner decides each of the document's runs as it did then
+    # A kept reading holds when the joiner decides each of the document's runs as it did then. The last build noted
+    # the runs it read whole and the reading of each document it used: for those readings only the runs whose
+    # decision changed since are looked for (none changed: nothing is unpacked); other kept readings are checked
+    # in full.
+    prev = store.state()
+    last_whole = set(prev["whole"]) if prev and isinstance(prev.get("whole"), list) else None
+    last_docs = (prev or {}).get("docs") or {}
+    last_joins = set((prev or {}).get("joins") or ())
+    flipped = whole_now ^ last_whole if last_whole is not None else None
     digests: dict[str, str] = {}   # the reading this build uses, by its digest
     plain: dict[str, bool] = {}    # no word of the document read whole: its spellings are its words as written
     to_read = []
-    for d in by_doc:
-        got = store.joined(d, fps[d]) if d not in fresh else None
-        if got is not None:
-            mine = store.counts(d, fps[d])
-            if mine is not None and {k for k in whole_now if k in mine[1]} == got[0]:
-                digests[d], plain[d] = got[1], not got[0]
-                continue
+    for d in docs:
+        if d not in unread:
+            dg = store.digest_of(d, fps[d])
+            before = last_docs.get(d)
+            if dg and flipped is not None and isinstance(before, list) and before[:2] == [fps[d], dg]:
+                mine = store.counts(d, fps[d]) if flipped else None
+                if not flipped or (mine is not None and not any(k in mine[1] for k in flipped)):
+                    digests[d], plain[d] = dg, d not in last_joins
+                    continue
+            else:
+                got = store.joined(d, fps[d])
+                if got is not None:
+                    mine = store.counts(d, fps[d])
+                    if mine is not None and {k for k in whole_now if k in mine[1]} == got[0]:
+                        digests[d], plain[d] = got[1], not got[0]
+                        continue
         to_read.append(d)
-    total = sum(len(by_doc[d]) for d in to_read) + 2 * len(rows)
+    mine = None
+    total = sum(sizes[d] for d in to_read) + 2 * n_rows
     done = 0
-    here: dict[str, tuple[dict, array]] = {}   # readings this build holds itself (the file could not take them)
+
+    # first reading: how often each candidate occurs and in how many documents, in one entry per candidate
+    seen: dict[str, int] = {}
+    langs_of: dict[str, dict] = {}   # passages per language (0.17), per document
+
+    def count(d: str, rd: dict, g: array) -> None:
+        keys, get = rd["keys"], seen.get
+        for i, n in Counter(g[3::4]).items():
+            k = keys[i]
+            seen[k] = get(k, 0) + (n << 32) + 1
+        langs_of[d] = rd.get("langs") or {}
+
     for d in to_read:
         stop_check()
-        rd, g = _read_document(by_doc[d], joiner, counts_of(d)[1], rules)
-        digests[d], plain[d] = store.put(d, fps[d], counts_of(d), rd, g), not rd["joined"]
-        if store.cx is None:
-            here[d] = (rd, g)
-        done += len(by_doc[d])
+        rd, g, c = _read_document(rows_of(d), joiner, None, rules, with_counts=True)
+        digests[d], plain[d] = store.put(d, fps[d], c, rd, g), not rd["joined"]
+        count(d, rd, g)
+        done += 2 * sizes[d]
         if progress:
             progress(done, total)
-    fresh.clear()
+    rd = g = c = None
+    here: dict[str, tuple[dict, array]] = {}   # readings made again here (another build replaced the kept one)
 
     def reading(d: str) -> tuple[dict, array]:
         """The document's reading this build decided on: kept, or (when another program's build put another in
         its place meanwhile, or the file went) read again here with this build's joiner."""
         got = here.get(d) or store.load(d, fps[d], digests[d])
         if got is None:
-            got = here[d] = _read_document(by_doc[d], joiner, counts_of(d)[1], rules)
+            got = here[d] = _read_document(rows_of(d), joiner, None, rules)
             digests[d], plain[d] = _blobs(*got)[2], not got[0]["joined"]
         return got
 
-    # first reading: how often each candidate occurs and in how many documents
-    tf: Counter[str] = Counter()
-    df: Counter[str] = Counter()
-    languages: Counter[str] = Counter()   # passages per language (0.17)
-    for d, rs in by_doc.items():
+    for d in docs:
+        if d in langs_of:
+            continue
         stop_check()
-        rd, g = reading(d)
-        keys = rd["keys"]
-        languages.update(rd.get("langs") or {})
-        for i, n in Counter(g[3::4]).items():
-            k = keys[i]
-            tf[k] += n
-            df[k] += 1
-        done += len(rs)
+        count(d, *reading(d))
+        done += sizes[d]
         if progress:
             progress(done, total)
-    n_docs = len(by_doc)
+    languages: Counter[str] = Counter()
+    for d in docs:
+        languages.update(langs_of.get(d) or {})
+    n_docs = len(docs)
     min_df = MIN_DF if n_docs >= MIN_DF else 1   # a project of one document (a quick look) still gets its terms
-    kept = {k: tf[k] for k in tf if tf[k] >= MIN_TF and df[k] >= min_df and k not in _GENERAL_STEMS
-            and k not in rules.phrases}
+    kept = {k: v >> 32 for k, v in seen.items() if v >> 32 >= MIN_TF and v & _LOW >= min_df
+            and k not in _GENERAL_STEMS and k not in rules.phrases}
     # C-value: log2(|a| + 1) * (f(a) - mean f of the longer kept candidates that contain a)
     containers: dict[str, list[int]] = defaultdict(list)
     for k, f in kept.items():
@@ -612,6 +705,14 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
     chosen = sorted((k for k in kept if cval[k] > 0), key=lambda k: (-cval[k], k))[:max(1, int(max_terms))]
     keep = set(chosen)
     tid = {k: term_id(k) for k in chosen}
+    tf = {k: seen[k] >> 32 for k in chosen}
+    df = {k: seen[k] & _LOW for k in chosen}
+    cval = {k: cval[k] for k in chosen}
+    n_candidates = len(kept)
+    seen.clear()   # every candidate's counts: what the second reading needs is only the chosen terms'
+    kept = containers = None
+    cidx = {k: i for i, k in enumerate(chosen)}
+    tids = [tid[k] for k in chosen]
 
     # What the last build wrote, when the database still holds exactly that: then only what changed is written. A
     # document's rows stand when the last build wrote them from the reading this build uses (its digest) and they are
@@ -631,40 +732,50 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
     if prev and prev.get("stamps") == stamps and stamps[0]:
         read_now = set(to_read)
         before = prev.get("docs") or {}
-        same = {d for d in by_doc if d not in read_now and before.get(d) == [fps[d], digests[d], *have.get(d, [0])]}
+        same = {d for d in docs if d not in read_now and before.get(d) == [fps[d], digests[d], *have.get(d, [0])]}
     old_keys = set(prev.get("chosen") or ()) if same else set()
     entering = keep - old_keys
 
     def second_reading(diff: bool):
         """The places of the chosen terms, their spellings and passages, and the abbreviations the text defines.
         With `diff`, only the mentions to write: every mention of a document read again or new, and the mentions of
-        terms new to the glossary in the others."""
-        mentions: list[tuple] = []
+        terms new to the glossary in the others. The mentions to write are kept as numbers (a document's passage,
+        start, end and term, four to a mention: a few bytes, where a row of Python objects takes about 150), and
+        `rows()` gives them as rows, in the same order."""
+        written: list[tuple[str, list, list, array]] = []   # per document: its passages' ids and starts, mentions
         spell: dict[str, Counter] = defaultdict(Counter)
         passages: Counter[str] = Counter()
         abbrev: Counter[tuple[str, str]] = Counter()
         per_doc: dict[str, list[int]] = {}
         spelt: dict[str, str] = {}  # a mention's spelling by its raw text: the same words recur (0.11.1)
         nonlocal done
-        for d, rs in by_doc.items():
+        for d in docs:
             stop_check()
             rd, g = reading(d)
+            rs = rows_of(d)
             keys = rd["keys"]
-            want = {i: k for i, k in enumerate(keys) if k in keep}
-            write = {i for i, k in want.items() if not diff or d not in same or k in entering}
+            want = {i: cidx[k] for i, k in enumerate(keys) if k in cidx}
+            write = {i for i, c in want.items() if not diff or d not in same or chosen[c] in entering}
             single = plain[d]
-            seen = set()
+            seen_at = set()
             n_doc = 0
-            for x in range(0, len(g), 4):
-                i = g[x + 3]
-                key = want.get(i)
-                if key is None:
-                    continue
+            out = array("I")
+            # most candidates are not terms: the places of the terms' are picked out without a step in Python for
+            # each of the others (in the order of the text, as before)
+            col = g[3::4]
+            mask = bytearray(len(keys))
+            for i in want:
+                mask[i] = 1
+            for p in compress(range(len(col)), map(mask.__getitem__, col)):
+                i = col[p]
+                c = want[i]
+                key = chosen[c]
+                x = 4 * p
                 n, a, b = g[x], g[x + 1], g[x + 2]
                 r = rs[n]
                 n_doc += 1
                 if i in write:
-                    mentions.append((tid[key], r["passage_id"], d, r["start"] + a, r["start"] + b))
+                    out.extend((n, a, b, c))
                 raw = r["text"][a:b]
                 # a document with no word read whole, and a mention whose words stand one space apart: each run of
                 # pieces in it is one of the document's own runs, none read whole, so `_spelling` would change
@@ -676,16 +787,26 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
                     if sp is None:
                         sp = spelt[raw] = _spelling(raw, joiner)
                 spell[key][sp] += 1
-                if (n, i) not in seen:
-                    seen.add((n, i))
+                if (n, i) not in seen_at:
+                    seen_at.add((n, i))
                     passages[key] += 1
             for short, long, c in rd["abbrev"]:
                 abbrev[(short, long)] += c
             per_doc[d] = [n_doc]
-            done += len(rs)
+            if out:
+                written.append((d, [r["passage_id"] for r in rs], [r["start"] for r in rs], out))
+            done += sizes[d]
             if progress:
                 progress(min(done, total), total)
-        return mentions, spell, passages, abbrev, per_doc
+
+        def rows():
+            for d, pids, starts, m in written:
+                for x in range(0, len(m), 4):
+                    n = m[x]
+                    s = starts[n]
+                    yield tids[m[x + 3]], pids[n], d, s + m[x + 1], s + m[x + 2]
+
+        return rows, spell, passages, abbrev, per_doc
 
     diff = bool(same)
     mentions, spell, passages, abbrev, per_doc = second_reading(diff)
@@ -699,8 +820,9 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
     def write(cx, diff: bool) -> int:
         cx.execute("DELETE FROM terms")
         cx.executemany("INSERT INTO terms VALUES (?,?,?,?,?,?,?,?)", terms)
+        made_again = []
         if diff:
-            for d in [d for d in set(have) | set(by_doc) if d not in same]:
+            for d in [d for d in set(have) | set(docs) if d not in same]:
                 cx.execute("DELETE FROM term_mentions WHERE doc_id=?", (d,))
             gone = [term_id(k) for k in old_keys - keep]
             for i in range(0, len(gone), 500):
@@ -708,7 +830,14 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
                 cx.execute(f"DELETE FROM term_mentions WHERE term_id IN ({','.join('?' * len(chunk))})", chunk)
         else:
             cx.execute("DELETE FROM term_mentions")
-        cx.executemany("INSERT INTO term_mentions VALUES (?,?,?,?,?)", mentions)
+            # every mention written anew: the indexes are made once after the rows, not kept up row by row (in the
+            # same transaction, so a failure leaves them as they were)
+            made_again = _mention_indexes()
+            for name, _sql in made_again:
+                cx.execute(f"DROP INDEX IF EXISTS {name}")
+        cx.executemany("INSERT INTO term_mentions VALUES (?,?,?,?,?)", mentions())
+        for _name, sql in made_again:
+            cx.execute(sql)
         # abbreviation links: the short form and the long form, both terms of the index
         cx.execute("DELETE FROM concept_links WHERE source='abbreviation'")
         best: dict[str, tuple[int, str]] = {}
@@ -740,12 +869,13 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
                 raise _Moved()
             n_abbr = write(cx, diff)
     except _Moved:
-        done = total - len(rows)
+        done = total - n_rows
         mentions, spell, passages, abbrev, per_doc = second_reading(False)
         with ws.connect() as cx:
             n_abbr = write(cx, False)
-    store.finish(set(by_doc), {"stamps": [build_id, built_at, version], "chosen": chosen,
-                               "docs": {d: [fps[d], digests[d], *per_doc.get(d, [0])] for d in by_doc}})
+    store.finish(set(docs), {"stamps": [build_id, built_at, version], "chosen": chosen,
+                             "docs": {d: [fps[d], digests[d], *per_doc.get(d, [0])] for d in docs},
+                             "whole": sorted(whole_now), "joins": sorted(d for d in docs if not plain[d])})
     variants = 0
     if embedder is not None:
         try:
@@ -753,9 +883,9 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
         except Exception as e:  # the glossary is useful without them; say why there are none
             ws.set_meta("terms_meaning_error", str(e)[:300])
     rebuild_concepts(ws)
-    return {**status(ws), "candidates": len(kept), "mentions": sum(v[0] for v in per_doc.values()),
+    return {**status(ws), "candidates": n_candidates, "mentions": sum(v[0] for v in per_doc.values()),
             "abbreviations": n_abbr, "meaning_pairs": variants, "documents_read": len(to_read),
-            "documents_kept": len(by_doc) - len(to_read)}
+            "documents_kept": len(docs) - len(to_read)}
 
 
 def _spelling(span: str, joiner: Joiner | None = None) -> str:
@@ -1298,15 +1428,26 @@ def set_link(ws: Workspace, a: str, b: str, decision: str, relation: str | None 
 # ---------------------------------------------------------------------------------------------
 # key terms (F6)
 # ---------------------------------------------------------------------------------------------
-def key_terms(ws: Workspace, doc_id: str | None = None, passage_id: str | None = None, n: int = 20) -> list[dict]:
+def _docs_with_terms(ws: Workspace) -> int:
+    """How many documents the glossary's mentions are in: COUNT(DISTINCT doc_id), found by stepping from one
+    document to the next on the index of (doc_id, term_id), a look-up per document, instead of reading every
+    mention (two seconds on a large project, on every opening of a document)."""
+    return int(ws.scalar("WITH RECURSIVE d(x) AS (SELECT MIN(doc_id) FROM term_mentions UNION ALL SELECT "
+                         "(SELECT MIN(doc_id) FROM term_mentions WHERE doc_id > x) FROM d WHERE x IS NOT NULL) "
+                         "SELECT COUNT(x) FROM d") or 0)
+
+
+def key_terms(ws: Workspace, doc_id: str | None = None, passage_id: str | None = None, n: int = 20,
+              _docs: int | None = None) -> list[dict]:
     """The terms that characterise a document (or a passage) against the corpus: TF-IDF of its terms, with
-    sublinear term frequency; a term inside a longer one already chosen with as many mentions is left out."""
+    sublinear term frequency; a term inside a longer one already chosen with as many mentions is left out.
+    `_docs`: the number of documents with mentions, when the caller has counted them (`key_terms_table`)."""
     if bool(doc_id) == bool(passage_id):
         raise ValueError("Give a document or a passage.")
     if doc_id:
         rows = ws.query("SELECT m.term_id, COUNT(*) AS tf, t.label, t.stems, t.df AS df FROM term_mentions m "
                         "JOIN terms t ON t.term_id=m.term_id WHERE m.doc_id=? GROUP BY m.term_id", (doc_id,))
-        total = int(ws.scalar("SELECT COUNT(DISTINCT doc_id) FROM term_mentions") or 1)
+        total = (_docs if _docs is not None else _docs_with_terms(ws)) or 1
     else:
         rows = ws.query("SELECT m.term_id, COUNT(*) AS tf, t.label, t.stems, t.passages AS df FROM term_mentions m "
                         "JOIN terms t ON t.term_id=m.term_id WHERE m.passage_id=? GROUP BY m.term_id", (passage_id,))
@@ -1346,8 +1487,9 @@ def key_term_spans(ws: Workspace, doc_id: str, n: int = 15) -> dict:
 def key_terms_table(ws: Workspace, n: int = 15) -> list[dict]:
     """Key terms per document, for the Excel sheet "Key terms per document"."""
     rows = []
+    docs = _docs_with_terms(ws)   # once, not per document
     for d in ws.query("SELECT doc_id, title FROM documents ORDER BY title"):
-        for i, k in enumerate(key_terms(ws, doc_id=d["doc_id"], n=n), 1):
+        for i, k in enumerate(key_terms(ws, doc_id=d["doc_id"], n=n, _docs=docs), 1):
             rows.append({"Document": d["title"] or d["doc_id"], "Rank": i, "Key term": k["label"],
                          "Mentions": k["mentions"], "Score (TF-IDF)": k["score"]})
     return rows
@@ -1356,15 +1498,20 @@ def key_terms_table(ws: Workspace, n: int = 15) -> list[dict]:
 def passage_term_counts(ws: Workspace) -> dict[str, Counter]:
     """{passage_id: Counter(term_id)} over the body text (the vectors of themes by words). In the order of the text
     (0.16: a build writes only the mentions that changed, so the table's own order is no longer the text's; the order
-    of a passage's terms decides the order sums are taken in, and so the last digits of a theme's similarities)."""
-    places: dict[str, list] = defaultdict(list)
-    for pid, tid, a, b in ws.query("SELECT passage_id, term_id, start, end FROM term_mentions"):
-        places[pid].append((a, b, tid))
+    of a passage's terms decides the order sums are taken in, and so the last digits of a theme's similarities).
+    The mentions come in that order from the database, one at a time (not all held at once and sorted); each term id
+    and passage id is one object however often it recurs."""
     out: dict[str, Counter] = defaultdict(Counter)
-    for pid in sorted(places):
-        c = out[pid]
-        for _a, _b, tid in sorted(places[pid]):
-            c[tid] += 1
+    ids: dict[str, str] = {}
+    pid_now, c = None, None
+    for pid, tid in ws._conn().execute("SELECT passage_id, term_id FROM term_mentions "
+                                       "ORDER BY passage_id, start, end, term_id"):
+        if pid != pid_now:
+            pid_now, c = pid, out[pid]
+        t = ids.get(tid)
+        if t is None:
+            t = ids[tid] = tid
+        c[t] += 1
     return out
 
 
@@ -1454,6 +1601,7 @@ def judge_links(ws: Workspace, pairs: list[tuple[str, str]], backend, model: str
 
     done = failed = 0
     readers = access.Readers(backend, model)
+    dflt = access.default(ws)
     # every task first (0.8): with Claude Code they all wait in the queue at once, to be answered in batches
     made = [make_link_task(ws, a, b, model, readers.main_levels, readers.local_configured()) for a, b in pairs]
     ids = [t for t in made if t]
@@ -1464,6 +1612,12 @@ def judge_links(ws: Workspace, pairs: list[tuple[str, str]], backend, model: str
                 break
             if progress:
                 progress(i, len(pairs))
+            # the setting worked out again as the text is about to leave (not the one stored when the tasks were
+            # made): a document's cap counts what the tasks before this one sent, and a task over it waits for a
+            # model that may read it, or the person
+            with ws.connect() as cx:
+                if access.recheck(cx, tid, dflt) is None:
+                    continue
             got = readers.for_task(ws, tid)
             if got is None:
                 continue
@@ -1497,6 +1651,9 @@ def propose_wordings(ws: Workspace, term: str, backend, model: str) -> list[dict
     with ws.connect() as cx:
         tasks._insert_task(cx, tid, "expand", model, {"concept": term, "claim": f"the concept: {labels[0]}"
                                                        + (f" (also written: {', '.join(labels[1:6])})" if labels[1:] else "")})
+        # worked out again as it leaves, as in the runs of several tasks (an add-on's floor may hold it back)
+        if access.recheck(cx, tid) not in access.backend_levels(backend):
+            raise ValueError("This concept's wordings may not be sent to this model.")
     tasks.run_one(ws, tid, backend, model)
     return suggested_wordings(ws, term)
 

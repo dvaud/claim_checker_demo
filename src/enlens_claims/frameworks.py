@@ -325,6 +325,10 @@ def _load_file(path: Path, source: str) -> Framework | None:
                    str(meta.get("label") or "code"), codes, source, directional=bool(meta.get("directional")),
                    ordered=bool(meta.get("ordered")), meta=meta)
     with _LOCK:
+        # one entry per file: the earlier states of a codebook saved in the editor (each with its index) go, not
+        # kept in memory for good
+        for k in [k for k in _CACHE if k[0] == key[0] and k != key]:
+            del _CACHE[k]
         _CACHE[key] = fw
     return fw
 

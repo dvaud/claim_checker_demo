@@ -4,13 +4,20 @@
 // A theme that is not relevant can be removed (its passages are left out until it is brought back), and a new theme
 // found in its place, on this computer without AI (POST …/new, job "theme-new").
 import { featureEyebrow, withAI } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold, readsLine, stopButton, menu, inset } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold, readsLine, stopButton, menu, inset, searchHref } from "../lib.js";
 import { simpleProgress, MiniJob, jobError } from "./progress.js";
 import { historyButton, askWhy } from "./versions.js";
 import { shareBar } from "./share.js";   // 0.18 (L1)
 
+// The largest count in a grid of rows of cells (at least 1), found by a loop: Math.max(...every cell) throws a
+// RangeError above about 125,000 arguments, which a project of thousands of documents reaches.
+function gridMax(rows) {
+  let max = 1;
+  for (const row of Object.values(rows)) for (const n of Object.values(row)) if (n > max) max = n;
+  return max;
+}
+
 const PASSAGES = 30;   // passages per page on a theme's page
-const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}&mode=phrase`;
 const runHref = (rid) => `#/themes/${encodeURIComponent(rid)}`;
 const themeHref = (rid, tid) => `#/themes/${encodeURIComponent(rid)}/${encodeURIComponent(tid)}`;
 const modeWords = (m) => (m === "meaning" ? "by meaning" : "by words");
@@ -246,7 +253,7 @@ async function renderRun(view, runId, info, query) {
         h("div", { class: "th-size" },
           h("div", { class: "th-bar", "aria-hidden": "true" }, h("span", { style: { width: `${Math.max(2, pct)}%` } })),
           h("span", { class: "th-size-text" }, `${plural(t.size, "passage")} from ${plural(docs.length, "document")}`)),
-        t.terms && t.terms.length ? h("div", { class: "chips th-terms", role: "list", "aria-label": "Key terms" }, t.terms.map((w, i) => [i ? " · " : null, link({ role: "listitem", href: searchHref(w), title: `Search the documents for “${w}”` }, w)])) : null,
+        t.terms && t.terms.length ? h("div", { class: "chips th-terms", role: "list", "aria-label": "Key terms" }, t.terms.map((w, i) => [i ? " · " : null, link({ role: "listitem", href: searchHref(w, { mode: "phrase" }), title: `Search the documents for “${w}”` }, w)])) : null,
         docs.length ? h("p", { class: "th-docs muted small" }, "Mostly from ", docs.slice(0, 3).map((d) => [" ", docLead(d)]), docs.length > 3 ? [" ", h("span", { class: "nowrap" }, `and ${plural(docs.length - 3, "other document")}`)] : "") : null,
         reps.length ? fold({ class: "th-reps" }, `The ${reps.length === 1 ? "passage that represents" : `${reps.length} passages that represent`} it best`,
           h("div", { class: "stack th-reps" }, reps.map((p) => repCard(p, t)))) : null,
@@ -266,7 +273,7 @@ async function renderRun(view, runId, info, query) {
   function docGrid() {
     const docs = v.documents || [];
     const grid = v.doc_grid || {};
-    const max = Math.max(1, ...Object.values(grid).flatMap((row) => Object.values(row)));
+    const max = gridMax(grid);
     const wrap = h("div");
     wrap.appendChild(h("p", { class: "muted small th-docs-grid-help" }, "How many passages of each document fall in each theme. The darker the cell, the more passages."));
     const table = h("table", { class: "map-table th-grid" },
@@ -306,7 +313,7 @@ async function renderRun(view, runId, info, query) {
     }).catch(() => codeInfo.set(cg.framework, {}));
     const fwLabel = (frameworks.find((f) => f.name === cg.framework) || {}).label || "code";
     const cells = cg.cells || {};
-    const max = Math.max(1, ...Object.values(cells).flatMap((row) => Object.values(row)));
+    const max = gridMax(cells);
     wrap.appendChild(h("p", { class: "muted small th-codes-grid-help" }, `How many passages of each theme carry each ${fwLabel} (found by keywords, by the AI, or by you on the Profile page). The darker the cell, the more passages.`));
     const table = h("table", { class: "map-table th-grid th-codes" },
       h("caption", { class: "visually-hidden" }, `Themes by ${fwLabel}: the number of passages`),
@@ -614,7 +621,7 @@ export async function renderTheme(view, [runId, themeId], query) {
     // key terms and documents
     body.appendChild(h("section", { class: "section", "aria-labelledby": "th-t-h" },
       h("div", { class: "section-title" }, h("h2", { id: "th-t-h" }, "Key terms"), h("span", { class: "muted" }, "The words that set this theme apart. Click one to search the documents for it.")),
-      h("div", { class: "chips" }, (t.terms || []).map((w, i) => [i ? " · " : null, link({ href: searchHref(w) }, icon("text-search", { size: 12 }), w)]))));
+      h("div", { class: "chips" }, (t.terms || []).map((w, i) => [i ? " · " : null, link({ href: searchHref(w, { mode: "phrase" }) }, icon("text-search", { size: 12 }), w)]))));
     body.appendChild(h("section", { class: "section", "aria-labelledby": "th-d-h" },
       h("div", { class: "section-title" }, h("h2", { id: "th-d-h" }, "The documents it comes from"), h("span", { class: "muted" }, plural(docs.length, "document"))),
       h("ul", { class: "th-doclist" }, docs.slice(0, 12).map((x) => h("li", {}, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(x.doc_id)}`, title: x.title }, shortTitle(x.title, 90)), h("span", { class: "muted small" }, plural(x.passages, "passage"))))),

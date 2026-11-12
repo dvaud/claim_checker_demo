@@ -114,18 +114,15 @@ def test_page_context_in_node(tmp_path):
                                      " fmt = {}, toast = n, showError = n, P = (x) => x, button = n, link = n, textarea = n,"
                                      " choice = n, tag = n, drawer = n, drawerButton = n, setDrawerOpen = n;")   # 0.18: tag (the Team tab's count)
     (tmp_path / "run.mjs").write_text(
-        'import { pageContext, whenText } from "./views/logdrawer.js";\n'
+        'import { pageContext } from "./views/logdrawer.js";\n'
         f"const cases = {json.dumps(list(NODE_CASES))};\n"
         "const out = {}; for (const c of cases) { const r = pageContext(c); out[c] = r && (({ label, ...rest }) => rest)(r); }\n"
         "const lbl = [pageContext('#/h/x').label, pageContext('#/doc/x').label, pageContext('#/themes/r').label,"
         " pageContext('#/codebooks/Mine').label, pageContext('#/sources').label];\n"
-        "const now = new Date(2026, 10, 9, 18, 0);\n"
-        "const when = [whenText(new Date(2026, 10, 9, 9, 5).toISOString(), now), whenText(new Date(2026, 10, 8, 17, 26).toISOString(), now)];\n"
-        "console.log(JSON.stringify({ out, lbl, when }));\n")
+        "console.log(JSON.stringify({ out, lbl }));\n")
     got = json.loads(subprocess.run(["node", str(tmp_path / "run.mjs")], capture_output=True, text=True, check=True).stdout)
     assert got["out"] == NODE_CASES
     assert got["lbl"] == ["this hypothesis", "this document", "these themes", "Mine", "the project"]
-    assert got["when"] == ["Today 09:05", "Yesterday 17:26"]
 
 
 def test_an_entry_written_with_a_subject_comes_back_from_the_subject_filter(api):  # noqa: F811

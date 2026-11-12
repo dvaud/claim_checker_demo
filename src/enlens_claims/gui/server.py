@@ -16,8 +16,6 @@ runs as a job in a background thread; the page polls /api/jobs/<id> for its prog
 """
 from __future__ import annotations
 
-import csv
-import io
 import json
 import mimetypes
 import os
@@ -27,20 +25,17 @@ import sys
 import threading
 import time
 import traceback
-import uuid
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import __version__, access, addons, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import sync
-from .. import runs as runs_mod
 from .. import tasks as tasks_mod
 from .. import llm, ollama_setup
 from ..llm import BackendError, detect_local
-from ..claude_setup import setup_info as claude_setup_info
 from ..store import now as _now
 from ..sources import document_overview
 from .progress import Tracker
@@ -258,8 +253,7 @@ class App(LibraryMixin, QueueMixin):
             return None
         try:
             ws = home.open_project(name)
-            n = ws.scalar("SELECT COUNT(*) FROM tasks WHERE COALESCE(queued, 0)=1 AND COALESCE(access, 'cloud')='cloud' "
-                          "AND (status IN ('pending', 'retry') OR (status='done' AND again=1))") or 0
+            n = ws.scalar(f"SELECT COUNT(*) FROM tasks WHERE {taskqueue.WAITING}") or 0  # the partial index alone
         except Exception:  # noqa: BLE001
             return None
         return {"waiting": int(n)}
@@ -1274,7 +1268,7 @@ def whats_new_note() -> dict | None:
         return None
     if not note or note["version"] != __version__:
         return None
-    with _whats_new_lock:
+    with _whats_new_lock, home.LOCK:  # (home.LOCK: read and written back as one step, as every change of settings)
         try:
             settings = home.load_settings()
             if settings.get("whats_new_seen") == __version__:
@@ -1516,13 +1510,13 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
     # -- plumbing --------------------------------------------------------------------------------
     def _send(self, status: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
         self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("X-Frame-Options", "DENY")
-        for k, v in (extra or {}).items():
+        # one header of each name: an endpoint's own (`extra`) takes the place of the default. Sent after it, as a
+        # second header, `Cache-Control: private, max-age=3600` lost to `no-store`, so every picture of a page was
+        # drawn again each time it was shown
+        headers = {"Content-Type": ctype, "Content-Length": str(len(body)), "Cache-Control": "no-store",
+                   "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"}
+        headers.update(extra or {})
+        for k, v in headers.items():
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
@@ -1532,12 +1526,10 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
         """Send a file in chunks (never held in memory as a whole)."""
         size = path.stat().st_size
         self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(size))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        for k, v in (extra or {}).items():
+        headers = {"Content-Type": ctype, "Content-Length": str(size), "Cache-Control": "no-store",
+                   "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+        headers.update(extra or {})
+        for k, v in headers.items():
             self.send_header(k, v)
         self.end_headers()
         if self.command == "HEAD":
@@ -1572,9 +1564,18 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
                 return False  # a domain name could be a DNS-rebinding page
         return False
 
+    def _length(self) -> int:
+        """The request body's length as the client gave it; what is no whole number, or below 0, is no body (a
+        negative length read until the client hung up, and a word in its place stopped the request with an error
+        the terminal printed)."""
+        try:
+            return max(0, int(self.headers.get("Content-Length") or 0))
+        except ValueError:
+            return 0
+
     def _body(self) -> dict:
         self._consumed = True
-        n = int(self.headers.get("Content-Length") or 0)
+        n = self._length()
         if n > MAX_JSON:
             raise ApiError(413, "The request is too large.")
         raw = self.rfile.read(n) if n else b""
@@ -1608,7 +1609,7 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
         if getattr(self, "_consumed", True):
             return
         self._consumed = True
-        n = int(self.headers.get("Content-Length") or 0)
+        n = self._length()
         if n > MAX_JSON:
             self.close_connection = True
         elif n:

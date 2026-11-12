@@ -199,6 +199,12 @@ def original_file(ws: Workspace, doc_id: str, verify: bool = True) -> dict:
     Returns {"doc_id", "kind", "title", "recorded", "name", "path" | None, "available", "inside", "reason"};
     `inside` says the file is in the project folder. With `verify`, a file whose checksum differs from the one
     recorded (up to 300 MB) is reported as changed, not available.
+
+    A file outside the project folder is the document's only when it is the very file that was read: its checksum
+    must be recorded and equal, whatever `verify` says. The recorded path is a line in the project's database, and a
+    project that came from someone else (a zip, a folder linked) may name any file of this computer there: it was
+    shown as the document's original and went out again with the next zip of the project. A path on another
+    computer (`\\\\server\\share`) is never looked at: Windows would sign in to that computer to look.
     """
     from .ingest import _sha1
 
@@ -211,6 +217,9 @@ def original_file(ws: Workspace, doc_id: str, verify: bool = True) -> dict:
            "name": re.sub(r".*[/\\]", "", recorded), "path": None, "available": False, "inside": False, "reason": ""}
     if not recorded:
         out["reason"] = "No file was recorded for this document."
+        return out
+    if recorded.startswith(("\\\\", "//")):
+        out["reason"] = "The original file is recorded on another computer; the text the app read is shown here."
         return out
     p = Path(recorded)
     cands = [p] if p.is_absolute() else [ws.root / p, ws.root.parent / p, Path.cwd() / p]
@@ -230,12 +239,16 @@ def original_file(ws: Workspace, doc_id: str, verify: bool = True) -> dict:
             continue
         st = c.stat()
         key = (str(c), st.st_mtime_ns, st.st_size)
-        if verify and key not in _SHA1S and st.st_size <= 300 * 1024 ** 2:
+        inside = c.is_relative_to(root)
+        if not inside and not sha1:  # nothing says this file is the document's
+            continue
+        if (verify and st.st_size <= 300 * 1024 ** 2 or not inside) and key not in _SHA1S:
             _SHA1S[key] = _sha1(c)
-        if verify and sha1 and key in _SHA1S and _SHA1S[key] != sha1:
+        if (verify or not inside) and sha1 and key in _SHA1S and _SHA1S[key] != sha1:
             out["reason"] = f"The file at {c} has changed since it was added; the text the app read is shown here."
+            out["changed"] = str(c)  # (there, and not the file that was read: for those who say so in their own words)
             return out
-        out.update(path=str(c), available=True, inside=c.is_relative_to(root))
+        out.update(path=str(c), available=True, inside=inside)
         return out
     out["reason"] = f"The original file is no longer at {recorded}; the text the app read is shown here."
     return out

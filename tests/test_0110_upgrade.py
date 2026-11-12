@@ -36,6 +36,8 @@ def _make_010(path, corpus) -> Workspace:
         claimcheck.queue_check(ws, "Electrolysis needs fresh water.", None, k=6, per_doc=2, expand=False)
     ws.close()
     cx = sqlite3.connect(ws.db_path)
+    # (a project of 0.10 has no index that names `tasks.access` either: the one of today is made after the column)
+    cx.execute("DROP INDEX IF EXISTS ix_tasks_waiting")
     for t, c in (("documents", "ai_access"), ("documents", "ai_note"), ("documents", "ai_budget"), ("tasks", "access")):
         cx.execute(f"ALTER TABLE {t} DROP COLUMN {c}")
     cx.execute("DROP TABLE ai_sent")

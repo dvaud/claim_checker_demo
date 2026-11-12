@@ -17,7 +17,9 @@ import json
 import os
 import re
 import shutil
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from .llm import (AnthropicBackend, BackendError, BaselineBackend, LocalBackend, OllamaBackend, detect_local,
@@ -106,26 +108,200 @@ def home() -> Path:
     return h
 
 
+class _Lock:
+    """One change at a time of the small files of the data folder (settings.json, links.json, quicklook.json,
+    benchmarks.json): each is read, changed and written back, by requests, jobs and the poller at once, and by other
+    programs too (the connector Claude Code runs, the command line). Held by one thread of this program (it may take
+    it again inside), and across programs through a lock on the file `.lock` of the data folder; when that file
+    cannot be locked within a few seconds the change goes ahead (the lock is for rare collisions, not a gate).
+    Reading needs no lock: a file is always put in place whole (`_write_whole`)."""
+
+    def __init__(self) -> None:
+        self._thread = threading.RLock()
+        self._depth = 0
+        self._fd: int | None = None
+
+    def __enter__(self) -> "_Lock":
+        self._thread.acquire()
+        if self._depth == 0:
+            self._fd = self._lock_file()
+        self._depth += 1
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._depth -= 1
+        if self._depth == 0 and self._fd is not None:
+            fd, self._fd = self._fd, None
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            finally:
+                os.close(fd)
+        self._thread.release()
+
+    @staticmethod
+    def _lock_file() -> int | None:
+        try:
+            fd = os.open(home() / ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+        except OSError:
+            return None
+        for attempt in range(100):  # about five seconds
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return fd
+            except OSError:
+                time.sleep(0.05)
+        os.close(fd)
+        return None
+
+
+LOCK = _Lock()
+
+
+class Unreadable(OSError):
+    """A file of the data folder is there and cannot be read this moment: nothing may be written in its place."""
+
+
+def _write_whole(path: Path, text: str, private: bool = False) -> None:
+    """Write a file of the data folder whole: under another name beside it, then put in its place. A reader (another
+    thread, the connector, the command line) then finds the file as it was or as it is now, never half of it:
+    written in place, settings.json was empty for a moment, read as "no settings", and the defaults read then were
+    written back (the name and the person's id gone, a new id made). `private`: readable by this user only, and
+    made that way, so it is never briefly world-readable."""
+    part = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.part")
+    try:
+        fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600 if private else 0o666)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        if private:
+            try:
+                os.chmod(part, 0o600)
+            except OSError:  # pragma: no cover - e.g. some Windows file systems
+                pass
+        for attempt in range(8):
+            try:
+                os.replace(part, path)
+                return
+            except PermissionError:  # Windows: another program reads the file this very moment
+                if attempt == 7:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+    finally:
+        try:
+            part.unlink()
+        except OSError:
+            pass
+
+
+def _read_json(path: Path, tries: int = 6):
+    """The JSON a small file of the data folder holds, or None when there is no such file. A file that cannot be read
+    this moment (Windows, while it is being put in place or a virus scanner holds it) or does not parse is tried
+    again before that is believed; then the error is raised: ValueError (what it holds is not JSON) or Unreadable."""
+    for attempt in range(tries):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except ValueError:
+            if attempt == tries - 1:
+                raise
+        except OSError as e:
+            if attempt == tries - 1:
+                raise Unreadable(f"ENLENS could not read {path.name} in its data folder just now ({e}). Nothing was "
+                                 "changed: try again in a moment.") from e
+        time.sleep(0.03 * (attempt + 1))
+    return None
+
+
+def _read_dict(path: Path, strict: bool) -> dict:
+    """A small file of the data folder that holds a JSON object ({} when there is none, or it holds something else).
+    `strict` (before a change is written back): a file that cannot be read raises Unreadable instead of counting as
+    empty, so what it holds is never replaced by the one change."""
+    try:
+        data = _read_json(path)
+    except ValueError:
+        return {}
+    except Unreadable:
+        if strict:
+            raise
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _stored_settings() -> dict | None:
+    """settings.json as it is stored (None: there is none). A damaged file gives way to the copy kept from before the
+    last change (settings.json.bak), and is put aside as settings.json.damaged when there is none. Raises Unreadable
+    when the file is there and cannot be read this moment."""
+    p = home() / "settings.json"
+    try:
+        got = _read_json(p)
+    except ValueError:
+        try:
+            got = _read_json(p.with_name("settings.json.bak"))
+        except (ValueError, OSError):
+            got = None
+        if not isinstance(got, dict):
+            try:
+                os.replace(p, p.with_name("settings.json.damaged"))
+            except OSError:
+                pass
+    return got if isinstance(got, dict) else None
+
+
 def _write_private(path: Path, text: str) -> None:
     """Write a file readable by this user only (created that way, so it is never briefly world-readable)."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    try:
-        os.chmod(path, 0o600)
-    except OSError:  # pragma: no cover - e.g. some Windows file systems
-        pass
+    _write_whole(path, text, private=True)
 
 
 # ---------------------------------------------------------------------------------------------
 # settings and key
 # ---------------------------------------------------------------------------------------------
-def load_settings() -> dict:
-    p = home() / "settings.json"
+_TO_CHANGE = threading.local()
+
+
+@contextmanager
+def to_change():
+    """Inside it, `load_settings()` is strict: for the settings read in order to be changed and written back, or to
+    make a person's id. (Said this way, not as an argument, so `load_settings()` keeps taking none: tests and
+    add-ons put their own in its place.)"""
+    was = getattr(_TO_CHANGE, "on", False)
+    _TO_CHANGE.on = True
+    try:
+        yield
+    finally:
+        _TO_CHANGE.on = was
+
+
+def load_settings(strict: bool = False) -> dict:
+    """The settings. `strict` (or inside `to_change()`: before they are changed and written back, and before a
+    person's id is made): a settings file that is there and cannot be read this moment raises Unreadable; otherwise
+    the defaults stand in for it, for showing only (written back, they took the person's name and id with them)."""
     s = dict(DEFAULTS)
-    if p.exists():
+    try:
+        stored = _stored_settings()
+    except Unreadable:
+        if strict or getattr(_TO_CHANGE, "on", False):
+            raise
+        stored = None
+    if isinstance(stored, dict):
         try:
-            stored = json.loads(p.read_text(encoding="utf-8"))
             s.update({k: v for k, v in stored.items() if k in DEFAULTS})
             # 0.5 wrote its default context length (16,384) into every settings file: from 0.6 that default is
             # "auto", which uses less of the computer's memory; a length chosen in 0.6 or later is kept
@@ -251,23 +427,30 @@ SETTINGS_VERSION = 2  # 2: written by 0.6 (num_ctx "auto" is the default)
 
 
 def save_settings(s: dict) -> None:
-    (home() / "settings.json").write_text(json.dumps({"_version": SETTINGS_VERSION,
-                                                      **{k: s.get(k, v) for k, v in DEFAULTS.items()}}, indent=2),
-                                          encoding="utf-8")
+    with LOCK:
+        p = home() / "settings.json"
+        try:  # the settings as they were, kept beside them: what a damaged file gives way to (`_stored_settings`)
+            if isinstance(_read_json(p, tries=1), dict):
+                shutil.copyfile(p, p.with_name("settings.json.bak"))
+        except (ValueError, OSError):
+            pass
+        _write_whole(p, json.dumps({"_version": SETTINGS_VERSION, **{k: s.get(k, v) for k, v in DEFAULTS.items()}},
+                                   indent=2))
 
 
 def update_settings(changes: dict) -> dict:
-    s = load_settings()
-    s.update(clean_settings(changes))
-    if local_only() and (s["backend"] in OFF_COMPUTER or s["allow_cloud"] or s.get("allow_claude_code")):
-        raise ValueError("Cloud models are switched off on this computer by whoever installed ENLENS: "
-                         "everything stays on this computer.")
-    if s["backend"] in CLOUD_BACKENDS and not s["allow_cloud"]:
-        raise ValueError("Allow cloud models first: with the Claude API the passages read leave this computer.")
-    if s["backend"] == "claude_code" and not s.get("allow_claude_code"):
-        raise ValueError("Confirm Claude Code first: the passages inside the tasks it takes are sent to Anthropic.")
-    save_settings(s)
-    return s
+    with LOCK, to_change():  # read, changed and written as one step: two changes at once each kept only its own
+        s = load_settings()
+        s.update(clean_settings(changes))
+        if local_only() and (s["backend"] in OFF_COMPUTER or s["allow_cloud"] or s.get("allow_claude_code")):
+            raise ValueError("Cloud models are switched off on this computer by whoever installed ENLENS: "
+                             "everything stays on this computer.")
+        if s["backend"] in CLOUD_BACKENDS and not s["allow_cloud"]:
+            raise ValueError("Allow cloud models first: with the Claude API the passages read leave this computer.")
+        if s["backend"] == "claude_code" and not s.get("allow_claude_code"):
+            raise ValueError("Confirm Claude Code first: the passages inside the tasks it takes are sent to Anthropic.")
+        save_settings(s)
+        return s
 
 
 def stored_key() -> str:
@@ -593,17 +776,13 @@ def safe_name(name: str) -> str:
     return re.sub(r"\.(importing)$", r" \1", n)  # 0.14.3: that ending marks a project zip being imported
 
 
-def _links() -> dict[str, str]:
-    p = home() / "links.json"
-    try:
-        data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        return {}
+def _links(strict: bool = False) -> dict[str, str]:
+    """The linked projects. `strict`: before they are changed and written back (`_read_dict`)."""
+    return {str(k): str(v) for k, v in _read_dict(home() / "links.json", strict).items()}
 
 
 def _save_links(links: dict[str, str]) -> None:
-    (home() / "links.json").write_text(json.dumps(links, indent=2), encoding="utf-8")
+    _write_whole(home() / "links.json", json.dumps(links, indent=2))
 
 
 def list_projects() -> list[str]:
@@ -629,10 +808,11 @@ def create_project(name: str) -> Workspace:
         raise ValueError("Give the project a name (letters, digits, spaces, dots, dashes).")
     if n in list_projects() or (project_path(n) / "enlens.sqlite").exists():
         raise ValueError(f"A project called {n!r} already exists.")
-    links = _links()
-    if n in links:  # a link whose folder is gone (0.11.1): the new project is made in the data folder, not there
-        links.pop(n)
-        _save_links(links)
+    with LOCK:
+        links = _links(strict=True)
+        if n in links:  # a link whose folder is gone (0.11.1): the new project is made in the data folder, not there
+            links.pop(n)
+            _save_links(links)
     return Workspace.create(home() / "projects" / n)
 
 
@@ -679,19 +859,21 @@ def link_existing(path: str, name: str | None = None) -> str:
     n = safe_name(name or src.name) or "workspace"
     if n in list_projects() or (home() / "projects" / n).exists():
         raise ValueError(f"A project called {n!r} already exists.")
-    links = _links()
-    links[n] = str(src)
-    _save_links(links)
+    with LOCK:
+        links = _links(strict=True)
+        links[n] = str(src)
+        _save_links(links)
     return n
 
 
 def remove_project(name: str) -> str:
     """Unlink a linked project (its folder is untouched), or move an own project to the trash folder."""
-    links = _links()
-    if name in links:
-        del links[name]
-        _save_links(links)
-        return "unlinked"
+    with LOCK:
+        links = _links(strict=True)
+        if name in links:
+            del links[name]
+            _save_links(links)
+            return "unlinked"
     p = home() / "projects" / name
     keep_project(name)  # a quick look that is removed is not one any more
     if p.is_symlink():
@@ -782,17 +964,33 @@ def make_second_backend(settings: dict, api_key: str = ""):
 QUICKLOOK_DAYS = 7
 
 
-def _quicklooks() -> dict[str, dict]:
-    p = home() / "quicklook.json"
-    try:
-        data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-        return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        return {}
+def _quicklooks(strict: bool = False) -> dict[str, dict]:
+    """The quick looks not kept yet. `strict`: before they are changed and written back (`_read_dict`)."""
+    return _read_dict(home() / "quicklook.json", strict)
+
+
+def mark_temporary(name: str, **about) -> None:
+    """Note a project as temporary (a quick look, a model test's scratch copy): it goes to the trash after
+    QUICKLOOK_DAYS days unless it is kept."""
+    with LOCK:
+        data = _quicklooks(strict=True)
+        data[name] = {"created_at": time.time(), **about}
+        _save_quicklooks(data)
+
+
+def forget_temporary(name: str) -> bool:
+    """Take a project off the list of temporary ones (it was kept, or it is gone). Whether it was on it."""
+    with LOCK:
+        data = _quicklooks(strict=True)
+        if name not in data:
+            return False
+        del data[name]
+        _save_quicklooks(data)
+        return True
 
 
 def _save_quicklooks(data: dict) -> None:
-    (home() / "quicklook.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _write_whole(home() / "quicklook.json", json.dumps(data, indent=2))
 
 
 def create_quicklook(filename: str, came_from: str | None = None) -> Workspace:
@@ -801,9 +999,7 @@ def create_quicklook(filename: str, came_from: str | None = None) -> Workspace:
     stem = re.sub(r"\.(pdf|docx|html?|txt|md|zip)$", "", Path(filename or "document").name, flags=re.I)
     name = unique_project_name(stem or "Quick look")
     ws = create_project(name)
-    data = _quicklooks()
-    data[ws.root.name] = {"created_at": time.time(), "file": Path(filename or "").name, "from": came_from}
-    _save_quicklooks(data)
+    mark_temporary(ws.root.name, file=Path(filename or "").name, **{"from": came_from})
     return ws
 
 
@@ -828,12 +1024,7 @@ def quicklook_origin(name: str) -> str | None:
 
 
 def keep_project(name: str) -> bool:
-    data = _quicklooks()
-    if name not in data:
-        return False
-    del data[name]
-    _save_quicklooks(data)
-    return True
+    return forget_temporary(name)
 
 
 def cleanup_quicklooks(now_: float | None = None) -> list[str]:
@@ -843,7 +1034,6 @@ def cleanup_quicklooks(now_: float | None = None) -> list[str]:
         return []
     t = time.time() if now_ is None else now_
     moved = []
-    changed = False
     for name, q in list(data.items()):
         if t - float(q.get("created_at") or t) < QUICKLOOK_DAYS * 86400:
             continue
@@ -852,25 +1042,29 @@ def cleanup_quicklooks(now_: float | None = None) -> list[str]:
                 remove_project(name)
             moved.append(name)
         except FolderInUse:
-            continue  # 0.15.7: tried again later, not forgotten (it stayed a project for good)
+            # 0.15.7: tried again later, not forgotten (it stayed a project for good). Removing it took it off the
+            # list before the move was tried: it goes back on, as the list is now (not as it was read above: what
+            # another request or a model test noted meanwhile was written over)
+            with LOCK:
+                now = _quicklooks(strict=True)
+                if name not in now:
+                    now[name] = q
+                    _save_quicklooks(now)
+            continue
         except (KeyError, OSError):
             pass
-        data.pop(name, None)
-        changed = True
-    if changed:  # 0.11.1: the file was rewritten on every /api/state while any quick look existed
-        _save_quicklooks(data)
+        forget_temporary(name)  # (written only when it was still on the list: not on every /api/state, 0.11.1)
     return moved
 
 
 def record_benchmark(model: str, kinds: dict) -> None:
     """Keep the model test's median seconds per task of each kind (estimates of long runs use them)."""
     p = home() / "benchmarks.json"
-    try:
-        data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-    except (json.JSONDecodeError, OSError):
-        data = {}
-    data.setdefault(model, {}).update({k: v.get("seconds_median") for k, v in kinds.items() if v.get("seconds_median")})
-    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    with LOCK:
+        data = _read_dict(p, strict=True)
+        data.setdefault(model, {}).update({k: v.get("seconds_median") for k, v in kinds.items()
+                                           if v.get("seconds_median")})
+        _write_whole(p, json.dumps(data, indent=2))
 
 
 def benchmark_medians() -> dict:

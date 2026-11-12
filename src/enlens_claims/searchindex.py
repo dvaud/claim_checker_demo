@@ -160,10 +160,26 @@ def _blobs(p: list, v: list, tr: array) -> tuple[bytes, bytes, bytes]:
             zlib.compress(tr.tobytes(), 1))
 
 
+# The most a kept blob may unpack to. A cache file may come from someone else's project folder, and a few bytes can
+# unpack to gigabytes; the words of a document of thousands of pages unpack to tens of megabytes.
+MAX_UNPACKED = 1 << 30
+
+
+def unzip(blob: bytes, cap: int | None = None) -> bytes:
+    """`zlib.decompress` with a cap (by default MAX_UNPACKED): more than `cap` bytes, or a stream cut short, is a
+    damaged blob (zlib.error)."""
+    d = zlib.decompressobj()
+    out = d.decompress(blob, MAX_UNPACKED if cap is None else cap)
+    if d.unconsumed_tail or not d.eof:
+        raise zlib.error("a kept blob that is cut short or too large")
+    return out
+
+
 def _unpack(blob: bytes, kind: str):
-    """A kept list (passages, words) or the triples; None when it cannot be read."""
+    """A kept list (passages, words) or the triples; None when it cannot be read (or would unpack to more than
+    MAX_UNPACKED)."""
     try:
-        raw = zlib.decompress(blob)
+        raw = unzip(blob)
         if kind == "triples":
             tr = array("I")
             tr.frombytes(raw)

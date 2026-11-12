@@ -38,9 +38,7 @@ import json
 import sqlite3
 from types import SimpleNamespace
 
-from .common import DOC_ID, _rows, base_id, text_fp
-
-_READING_TABLES = ("pages", "paragraphs", "headings", "passages", "blocks", "doc_tables")
+from .common import DOC_ID, READING_TABLES as _READING_TABLES, _rows, base_id, text_fp
 
 
 def _fps(raw: str | None) -> list[str]:

@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from itertools import combinations
 
 from .store import Workspace
-from .taxonomy import SEGMENTS, goal_of, target_sort_key, targets
+from .taxonomy import SEGMENTS, goal_of, target_sort_key
 
 USABLE_DEFAULT = ("auto", "needs_review", "accepted", "changed")
 USABLE_STRICT = ("auto", "accepted", "changed")
@@ -29,10 +29,6 @@ def claim_rows(ws: Workspace, strict: bool = False) -> list[dict]:
         d["countries"] = json.loads(d.pop("countries_json") or "[]")
         out.append(d)
     return out
-
-
-def evidence_for(ws: Workspace, claim_id: str) -> list[dict]:
-    return [dict(r) for r in ws.query("SELECT * FROM evidence WHERE claim_id=? ORDER BY field='claim' DESC", (claim_id,))]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -321,11 +317,6 @@ def label_recovery(ws: Workspace, strict: bool = False, min_docs: int = 1, only_
         "new_candidates": sorted(({"target": e["target"], "segment": e["segment"], "sign": e["sign"], "n_docs": e["n_docs"]} for e in new),
                                  key=lambda x: (-x["n_docs"], target_sort_key(x["target"]))),
     }
-
-
-def target_label(code: str) -> str:
-    t = targets().get(code)
-    return f"{code} {t.description[:90]}" if t else code
 
 
 def status_sensitivity(ws: Workspace, thresholds=(0.0, 0.5, 0.6, 0.7, 0.8)) -> list[dict]:

@@ -22,9 +22,11 @@ provisional ones of pass 1; a person's decisions (reviews, item_kind 'label') an
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import statistics
 from collections import Counter, defaultdict
+from operator import itemgetter
 from typing import Callable
 
 from . import __version__, frameworks
@@ -62,20 +64,24 @@ def label_id(framework: str, passage_id: str, code: str, source: str) -> str:
 # pass 1: keywords and meaning
 # ---------------------------------------------------------------------------------------------
 def _coverage(fw: frameworks.Framework, code: str, have: set[str], idf: dict[str, float],
-              totals: dict | None = None) -> tuple[float, list[str]]:
-    """The share of a code text's words (weighted by how rare they are in the corpus) that a passage has. `totals`
-    caches each code's denominator for one pass (0.11.1: a module-wide cache keyed by the idf dict's address kept
-    the denominators of an earlier corpus once the index was rebuilt)."""
+              totals: dict | None = None, words: bool = True) -> tuple[float, list[str] | set[str]]:
+    """The share of a code text's words (weighted by how rare they are in the corpus) that a passage has, and the
+    words shared (sorted; with `words` False, the set as found, for a caller that sorts only the ones it keeps).
+    `totals` caches each code's denominator and word weights for one pass (0.11.1: a module-wide cache keyed by the
+    idf dict's address kept the denominators of an earlier corpus once the index was rebuilt)."""
     want = fw.code_stems(code)
     if not want:
         return 0.0, []
-    total = totals.get(code) if totals is not None else None
-    if total is None:
-        total = sum(idf.get(t, 1.0) for t in want) or 1.0
+    got = totals.get(code) if totals is not None else None
+    if got is None:
+        weight = {t: idf.get(t, 1.0) for t in want}
+        got = (sum(idf.get(t, 1.0) for t in want) or 1.0, weight)
         if totals is not None:
-            totals[code] = total
+            totals[code] = got
+    total, weight = got
     shared = want & have
-    return sum(idf.get(t, 1.0) for t in shared) / total, sorted(shared)
+    cov = sum(weight[t] for t in shared) / total   # the same weights added in the same order as before
+    return cov, (sorted(shared) if words else shared)
 
 
 def code_vectors(ws: Workspace, fw: frameworks.Framework, embedder) -> dict[str, list[float]] | None:
@@ -172,12 +178,13 @@ def keyword_candidates(fw: frameworks.Framework, text: str, idf: dict[str, float
     lex_hits = fw.lexicon_hits(text) if fw.lexicon else set()
     scores = fw.scores(text, toks, lex_hits)  # the phrasings matched once, not twice (0.11.1)
     cands: dict[str, dict] = {}
-    for code, sc in sorted(scores.items(), key=lambda x: -x[1])[:MAX_CANDIDATES * 3]:
-        cov, shared = _coverage(fw, code, have, idf, totals)
+    # the best scores only, in the order a full sort gave them (`nlargest` is that sort's first n, ties included)
+    for code, sc in heapq.nlargest(MAX_CANDIDATES * 3, scores.items(), key=itemgetter(1)):
+        cov, shared = _coverage(fw, code, have, idf, totals, words=False)
         lexicon = code in lex_hits
         if cov < KEYWORD_FLOOR and not lexicon:
             continue
-        cands[code] = {"score": round(sc, 3), "coverage": round(cov, 3), "matched": shared, "lexicon": lexicon}
+        cands[code] = {"score": round(sc, 3), "coverage": round(cov, 3), "matched": sorted(shared), "lexicon": lexicon}
     return cands
 
 
@@ -410,6 +417,7 @@ def run_labels(ws: Workspace, framework: str, backend, model: str, doc_ids: list
 
     plan = label_plan(ws, framework, doc_ids, all_passages, limit, passage_ids)
     readers = access.Readers(backend, model)
+    dflt = access.default(ws)
     lv = access.levels(ws)
     doc_of = access.doc_of_passages(ws._conn(), plan["passage_ids"]) if plan["passage_ids"] else {}
     reader_of = {}
@@ -434,8 +442,12 @@ def run_labels(ws: Workspace, framework: str, backend, model: str, doc_ids: list
         if progress:
             progress(i, len(plan["passage_ids"]))
         t0 = time.time()
-        with ws.connect() as cx:  # its document's setting now (a cap on what Claude reads may be reached meanwhile)
-            access.relabel(cx, [tid])
+        # its setting worked out again as its text is about to leave, as `tasks.run` does: a document's cap counts
+        # what the passages before this one sent (and a passage Claude has read already adds nothing to it)
+        with ws.connect() as cx:
+            if access.recheck(cx, tid, dflt) is None:
+                skipped += 1
+                continue
         got = readers.for_task(ws, tid)
         if got is None:
             skipped += 1
@@ -593,9 +605,14 @@ def doc_profile(ws: Workspace, framework: str, doc_id: str) -> dict:
                       "positions": sorted({(where.get(r["label_id"]) or {}).get("position_pct") or 0 for r in rs}),
                       "items": items})
     codes.sort(key=lambda c: (-c["passages"], c["code"]))
-    read = int(ws.scalar("SELECT COUNT(*) FROM tasks WHERE kind='label' AND status='done' AND substr(task_id, 1, ?) = ? "
-                         "AND json_extract(payload_json, '$.doc_id') = ?",
-                         (len(f"label:{framework}:"), f"label:{framework}:", doc_id)) or 0)
+    # a label task's id is its passage's ("label:<framework>:<doc_id>:<seq>", a tombstone "<doc_id>:r1-<seq>" after
+    # a new reading): the document's tasks are a range of the ids' index, and only theirs are parsed (every label
+    # task of the project was)
+    head = f"label:{framework}:{doc_id}:"
+    # (`+kind`, `+status`: not the index of kinds, which a project without statistics would choose)
+    read = int(ws.scalar("SELECT COUNT(*) FROM tasks WHERE task_id >= ? AND task_id < ? AND +kind='label' AND "
+                         "+status='done' AND json_extract(payload_json, '$.doc_id') = ?",
+                         (head, head[:-1] + ";", doc_id)) or 0)
     return {"doc_id": doc_id, "title": d["title"], "framework": fw.name, "framework_title": fw.title,
             "code_label": fw.label, "directional": fw.directional, "n_pages": d["n_pages"], "passages": n_body,
             "read_by_model": read, "codes": codes, "pass1": pass1_status(ws, framework)}
@@ -616,9 +633,13 @@ def grid(ws: Workspace, framework: str, doc_ids: list[str] | None = None, level:
         if level == "group" and key in fw.codes:
             key = fw.codes[key].group or key
         cells[r["doc_id"]][key].add(r["passage_id"])
+    place: dict[str, int] = {}   # each code's place in the codebook's order (the first, as list.index found it)
+    if level != "group":
+        for i, c in enumerate(fw.sorted_codes()):
+            place.setdefault(c.code, i)
     cols = sorted({k for row in cells.values() for k in row},
                   key=lambda k: frameworks._natural(k) if level == "group" else
-                  ([c.code for c in fw.sorted_codes()].index(k) if k in fw.codes else 10 ** 6))
+                  (place[k] if k in fw.codes else 10 ** 6))
     docs = sorted(cells, key=lambda d: (-sum(len(v) for v in cells[d].values()), titles.get(d, "").lower()))
     names = {}
     for c in cols:

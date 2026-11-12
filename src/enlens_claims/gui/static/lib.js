@@ -130,6 +130,64 @@ export { icon };
 // quote's yellow (docs/DESIGN.md 4.23)
 export function foundWords(text) { return h("mark", { class: "found" }, text); }
 
+// ---------------------------------------------------------------------------------------------
+// Text positions. The app counts the characters of a text as Python does, one per code point; a JavaScript string
+// counts UTF-16 units, so a character outside the Basic Multilingual Plane (an emoji, a mathematical letter such as
+// 𝑥 that PDFs of papers are full of, a rare CJK character) is one position there and two here. Every offset the app
+// sends (a quote’s quote_start/quote_end, a block’s start/end, the marks of a search, a note’s place, breaks) is
+// turned into a string index with these before a slice, and every position the page sends back (a selection, a word
+// clicked) is turned into the app’s count first. Offsets inside one string that never leave the page need neither.
+// ---------------------------------------------------------------------------------------------
+const SURROGATE = /[\uD800-\uDFFF]/;
+const PLAIN_POSITIONS = { index: (cp) => cp, point: (i) => i, length: 0, plain: true };
+const POSITIONS = new Map();   // the tables of the texts used last (a block’s text is looked at once per decoration)
+// The table of one text: index(cp) gives the string index of the app’s offset cp, point(i) the app’s offset of the
+// string index i (an index inside a pair of surrogates counts as the pair’s start), length the text’s length as the
+// app counts it. A text without such characters (nearly all) is tested once and its offsets are its indices.
+export function textPositions(text) {
+  text = String(text ?? "");
+  const known = POSITIONS.get(text);
+  if (known) return known;
+  let table;
+  if (!SURROGATE.test(text)) table = { ...PLAIN_POSITIONS, length: text.length };
+  else {
+    const astral = [];   // the string index of each such character’s first half, in order
+    for (let i = 0; i + 1 < text.length; i++) {
+      const c = text.charCodeAt(i);
+      if (c >= 0xD800 && c <= 0xDBFF && (text.charCodeAt(i + 1) & 0xFC00) === 0xDC00) { astral.push(i); i++; }
+    }
+    // how many of the first `n` such characters satisfy `test` (it holds for a prefix of them): a bisection
+    const count = (test) => { let lo = 0, hi = astral.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (test(mid)) lo = mid + 1; else hi = mid; } return lo; };
+    table = {
+      plain: !astral.length,
+      length: text.length - astral.length,
+      // the k-th such character is at the app’s offset astral[k] - k; each one before cp adds a unit
+      index: (cp) => cp + count((k) => astral[k] - k < cp),
+      point: (i) => {
+        const k = count((j) => astral[j] < i);   // characters starting before i
+        if (k && astral[k - 1] + 1 === i) return astral[k - 1] - (k - 1);   // inside a pair: its start
+        return i - k;
+      },
+    };
+  }
+  if (POSITIONS.size >= 256) POSITIONS.delete(POSITIONS.keys().next().value);
+  POSITIONS.set(text, table);
+  return table;
+}
+// The string index of the app’s offset `cp` in `text`, and back; the length of `text` as the app counts it.
+export function cpToIndex(text, cp) { return Number.isInteger(cp) ? textPositions(text).index(cp) : cp; }
+export function indexToCp(text, i) { return Number.isInteger(i) ? textPositions(text).point(i) : i; }
+export function cpLength(text) { return textPositions(text).length; }
+// A list of breaks ({at, end, …}, the app’s offsets in `text`) as string indices.
+export function breaksToIndex(text, breaks) {
+  if (!Array.isArray(breaks)) return breaks;
+  const pos = textPositions(text);
+  if (pos.plain) return breaks;
+  return breaks.map((b) => (b && typeof b === "object" ? { ...b, at: Number.isInteger(b.at) ? pos.index(b.at) : b.at, end: Number.isInteger(b.end) ? pos.index(b.end) : b.end } : b));
+}
+
+// `start`, `end` and the breaks are string indices of `text`: the app’s offsets (a quote’s quote_start, a block’s
+// headings) go through cpToIndex() and breaksToIndex() first.
 export function passageNode(text, start, end, tag = "p", cls = "passage", breaks = null) {
   text = String(text || "");
   const ok = Number.isInteger(start) && Number.isInteger(end) && start >= 0 && start < end && end <= text.length;
@@ -156,6 +214,7 @@ export function passageNode(text, start, end, tag = "p", cls = "passage", breaks
 
 // The segments of a text cut at its breaks: [{start, end, heading}], trimmed of the whitespace that joins
 // paragraphs in the unbroken text (offsets stay those of the unbroken text). null when there is nothing to cut.
+// Offsets here are string indices: the app’s go through breaksToIndex() first.
 export function breakSegments(text, breaks) {
   if (!Array.isArray(breaks) || !breaks.length) return null;
   const cuts = breaks.filter((b) => b && Number.isInteger(b.at) && b.at >= 0 && b.at <= text.length).sort((a, b) => a.at - b.at);
@@ -236,6 +295,21 @@ export const fmt = {
   unix(sec) {
     return sec ? fmt.date(new Date(sec * 1000).toISOString()) : "";
   },
+  // "Today 17:26", "Yesterday 17:26", "4 Nov 17:26", "4 Nov 2025 17:26" (the research log’s way, and the shared
+  // folder’s): `t` an ISO time, or a number of seconds or milliseconds since 1970; "" when there is none
+  whenText(t, now = new Date()) {
+    if (t === null || t === undefined || t === "") return "";
+    const m = typeof t === "number" ? (t < 1e12 ? t * 1000 : t) : Date.parse(t);
+    if (Number.isNaN(m)) return String(t);
+    const d = new Date(m);
+    const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((day(now) - day(d)) / 86400000);
+    if (diff === 0) return `Today ${time}`;
+    if (diff === 1) return `Yesterday ${time}`;
+    const sameYear = d.getFullYear() === now.getFullYear();
+    return `${d.toLocaleDateString("en-GB", sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" })} ${time}`;
+  },
   secs(s) {
     if (s === null || s === undefined || Number.isNaN(Number(s))) return "";
     s = Number(s);
@@ -273,6 +347,9 @@ export function shortTitle(t, n = 70) {
 }
 // "page 3" -> "Page 3"
 export const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+// A text with each run of white space as one space and none at the ends: two texts that differ only in line breaks or
+// spacing then compare alike (a hypothesis, and the title of the job that checks it).
+export const norm = (t) => String(t || "").split(/\s+/).filter(Boolean).join(" ");
 
 // Plain vocabulary, used consistently on every screen. Technical names stay available in "details" places.
 export const GRADE_TEXT = { supports: "Supports", partially_supports: "Partly supports", refutes: "Contradicts" };
@@ -330,15 +407,33 @@ export function docsCountSentence(bal) {
   if (both) text += ` (${both === 1 ? "one document has" : both + " documents have"} excerpts on both sides)`;
   return text + ".";
 }
-// How a status reads inside a sentence about one part.
-export const PART_PHRASE = { supported: "is supported", partially_supported: "is only partly supported", contested: "has mixed evidence", contradicted: "is contradicted", uncertain: "has only uncertain evidence", unsupported: "has no evidence", no_passages: "matched nothing in the documents", not_checked: "is not finished", failed: "could not be checked" };
-export function partsSentence(parts, status) {
-  if (!parts || !parts.length) return "";
-  const bad = parts.filter((p) => p.status !== "supported");
-  if (!bad.length) return "Every part is supported, so the whole hypothesis is supported.";
-  const names = bad.map((p) => `Part ${p.part} ${PART_PHRASE[p.status] || p.status}`);
-  const list = names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0];
-  return `The hypothesis holds only if every part holds. ${list}, so the whole hypothesis ${PART_PHRASE[status] || status}.`;
+
+// A link’s address only when it uses one of `schemes` (by default the web’s own: http and https; the Zotero links
+// also "zotero"); otherwise null, so h() leaves the href out. An address from a file or a library (a bibliography
+// entry’s link) is never trusted to be a web page: "javascript:" and the like never reach a link.
+export function safeHref(url, schemes = ["http", "https"]) {
+  const m = /^\s*([a-z][a-z0-9+.-]*):/i.exec(String(url ?? ""));
+  return m && schemes.includes(m[1].toLowerCase()) ? String(url).trim() : null;
+}
+
+// The Search page for some words: `#/search?q=…`; opts.mode ("phrase": the words as one phrase) and any other
+// option of the page (docs, exact…) are added as given.
+export function searchHref(words, opts = {}) {
+  const qs = new URLSearchParams({ q: String(words ?? "") });
+  for (const [k, v] of Object.entries(opts)) if (v !== undefined && v !== null && v !== "" && v !== false) qs.set(k, v === true ? "1" : String(v));
+  return `#/search?${qs.toString().replace(/\+/g, "%20")}`;
+}
+
+// The newest of several requests of one kind: `const fresh = latest();` then, for each request, `const mine =
+// fresh();` before it and `if (!mine()) return;` after it. An older answer that arrives after a newer request was
+// made is dropped, so it never draws over the newer one (paging Next, Next; a poll answered after a save).
+// fresh.quiet() is for a request that looks again on its own (every few seconds): it is dropped like the others when
+// a request was made after it, but makes no other request old.
+export function latest() {
+  let seq = 0;
+  const fresh = () => { const my = ++seq; return () => my === seq; };
+  fresh.quiet = () => { const my = seq; return () => my === seq; };
+  return fresh;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -444,16 +539,39 @@ export function confirmDialog({ title, message, confirmText = "Confirm", typeToC
 export async function download(path, filename, fallback) {
   const res = await api("GET", path, undefined, { raw: true });
   const blob = await res.blob();
-  const cd = res.headers.get("Content-Disposition") || "";
-  const m = /filename="?([^";]+)"?/.exec(cd);
-  const name = filename || (m && m[1]) || fallback || "download";
+  saveBlob(blob, filename || dispositionName(res.headers.get("Content-Disposition")) || fallback || "download");
+  return res;
+}
+
+// The name of the file from a Content-Disposition header: the real one in filename*=UTF-8''… first (the app puts a name
+// with accents there, "Ábel Gergő"), else the plain filename="…", which holds only an ASCII stand-in for it ("_bel
+// Gerg_"). "" when it names none.
+export function dispositionName(cd) {
+  cd = String(cd || "");
+  const star = /filename\*\s*=\s*([^']*)'[^']*'([^;]+)/i.exec(cd);
+  if (star) {
+    try { return decodeURIComponent(star[2].trim().replace(/^"|"$/g, "")); } catch (_) { /* a broken name: the plain one */ }
+  }
+  const m = /filename\s*=\s*(?:"([^"]*)"|([^;]+))/i.exec(cd);
+  return m ? (m[1] !== undefined ? m[1] : m[2].trim()) : "";
+}
+
+// A file made in the page (or fetched) saved under `name`: the browser’s own download.
+export function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
-  const a = h("a", { href: url, download: name });
+  const a = h("a", { href: url, download: name || "download" });
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  return res;
+}
+
+// An uploaded text file (a CSV, a list) as text: UTF-8, else the Windows code page of a spreadsheet saved in Europe
+// (f.text() read every file as UTF-8 and garbled the others: ő and ű mark the Central European page).
+export async function readTextFile(f) {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^﻿/, ""); }
+  catch (_) { return new TextDecoder(bytes.some((b) => b === 0xF5 || b === 0xD5) ? "windows-1250" : "windows-1252").decode(bytes); }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -979,7 +1097,8 @@ export function menu(opts = {}) {
   // the list's own scrolling (a long project list) is not a scroll that leaves the button behind
   const away = (e) => { if (e && e.type === "scroll" && e.target instanceof Node && list.contains(e.target)) return; if (det.open) close(); };
   det.addEventListener("toggle", () => {
-    if (!det.open) { unfloat(); window.removeEventListener("scroll", away, true); window.removeEventListener("resize", away); return; }
+    if (!det.open) { unfloat(); MENUS_OPEN.delete(det); unfloatMenu(det); return; }
+    MENUS_OPEN.add(det);
     unfloat();   // measured where it hangs from its button
     const frame = cutBy();
     if (!frame) return;
@@ -989,14 +1108,35 @@ export function menu(opts = {}) {
     const x = r.right - w >= Math.max(8, f.left) ? r.right - w : Math.min(r.left, window.innerWidth - w - 8);
     list.style.left = `${Math.round(Math.max(8, x))}px`;
     list.style.top = `${Math.round(r.bottom + 4 + hgt <= window.innerHeight - 8 ? r.bottom + 4 : Math.max(8, r.top - 4 - hgt))}px`;
-    window.addEventListener("scroll", away, true); window.addEventListener("resize", away);
+    floatMenu(det, away);
   });
-  const outside = (e) => {
-    if (!det.isConnected) { document.removeEventListener("click", outside); return; }
-    if (det.open && !det.contains(e.target)) close();
-  };
-  document.addEventListener("click", outside);
+  if (!MENU_CLICKS.on) { document.addEventListener("click", menuClick); MENU_CLICKS.on = true; }
   return det;
+}
+// Every menu shares the same listeners, so a list with a menu per row (the Documents page) adds none of its own: one
+// click listener on the document closes an open menu the click was not in, and, only while a floating list is open,
+// one scroll and one resize listener on the window close it. A menu removed from the page while open is forgotten.
+const MENU_CLICKS = { on: false };
+const MENUS_OPEN = new Set();    // the menus open now
+const MENUS_FLOAT = new Map();   // a menu whose list floats -> what a scroll or resize does to it
+function menuClick(e) {
+  for (const det of [...MENUS_OPEN]) {
+    if (det.isConnected === false || !det.open) { MENUS_OPEN.delete(det); unfloatMenu(det); continue; }
+    if (!det.contains(e.target)) det.open = false;
+  }
+}
+function menuAway(e) {
+  for (const [det, away] of [...MENUS_FLOAT]) {
+    if (det.isConnected === false) { MENUS_OPEN.delete(det); unfloatMenu(det); } else away(e);
+  }
+}
+function floatMenu(det, away) {
+  if (!MENUS_FLOAT.size) { window.addEventListener("scroll", menuAway, true); window.addEventListener("resize", menuAway); }
+  MENUS_FLOAT.set(det, away);
+}
+function unfloatMenu(det) {
+  if (!MENUS_FLOAT.delete(det) || MENUS_FLOAT.size) return;
+  window.removeEventListener("scroll", menuAway, true); window.removeEventListener("resize", menuAway);
 }
 
 // A colleague's initials: the first letters of the first and the last word of the name, so particles (de, van, von,

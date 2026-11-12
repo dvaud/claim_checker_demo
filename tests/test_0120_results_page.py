@@ -179,7 +179,7 @@ def test_an_excerpt_card_is_compact_and_can_be_dismissed():
     card = js[js.index("  function evidenceCard("):js.index("  // Where a card is on the screen now")]
     # the quote in its context; "In context" is the one way to more of the text (the whole excerpt, and on into the
     # document); the actions in one row that never moves: the judge and More panels open under it
-    assert "excerptWindow(p.text, hs, he, p.breaks, { after:" in card and '"Show the whole excerpt"' not in card and "function contextView" not in js
+    assert "excerptWindow(p.text, hsI, heI, brI, { after:" in card and '"Show the whole excerpt"' not in card and "function contextView" not in js
     assert 'whole ? "Less context" : "In context"' in card and '"Open the whole document at this place"' in card
     assert "judgeControl(p, part, passageEl, extras)" in card and 'panelToggle(`tech:${p.passage_id}`, "Details", morePanel, false)' in card
     # five actions in the row; reading again is under Details, the original file with the whole excerpt (In context);

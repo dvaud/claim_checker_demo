@@ -446,11 +446,59 @@ def _counting(groups: list[list], statuses: list[str] | None = None) -> tuple[Ca
     for g, st in zip(groups, sts):
         if st == "failed":
             for t in g:
-                failed.update(p["passage_id"] for p in json.loads(t["payload_json"])["passages"])
+                failed.update(x[0] for x in _excerpts(t))
     if not failed:
         return (lambda v: True), failed
     people_count = "done" in sts
     return (lambda v: v["passage_id"] not in failed or (people_count and bool(v["user_verdict"]))), failed
+
+
+def _excerpts(t) -> list[tuple]:
+    """(passage id, document id, …) of each excerpt a check task shows: from a light row (`_light_checks`), else from
+    its payload."""
+    if isinstance(t, dict) and "excerpts" in t:
+        return t["excerpts"]
+    return [(p["passage_id"], p["doc_id"]) for p in json.loads(t["payload_json"])["passages"]]
+
+
+def _light_checks(ws: Workspace, claim_ids: list[str] | None = None, titles: bool = False) -> dict[str, list[dict]]:
+    """The check tasks of these claims (of every claim, with None) by claim, each in the order they were made, as
+    light rows: task_id, status, queued, model, `excerpts`, the (passage id, document id[, title]) of each excerpt,
+    and `n`, its place among them all.
+    SQLite reads the payloads (json_each) and hands over only those ids: a list of every check held each check's
+    whole text in memory to count its excerpts."""
+    cols = "json_extract(j.value, '$.passage_id'), json_extract(j.value, '$.doc_id')" + (
+        ", json_extract(j.value, '$.title')" if titles else "")
+    sql = (f"SELECT t.task_id, t.status, t.queued, t.model, CASE WHEN json_valid(t.payload_json) THEN (SELECT "
+           f"json_group_array(json_array({cols})) FROM json_each(t.payload_json, '$.passages') j) END AS ex "
+           "FROM tasks t WHERE ")
+    if claim_ids is None:
+        rows = ws.query(sql + "t.kind='check' ORDER BY t.created_at, t.rowid")
+    else:
+        rows = []
+        for cid in claim_ids:
+            cond, args = tasks.check_task_ids_sql(cid)
+            rows += ws.query(sql + f"+t.kind='check' AND {cond.replace('task_id', 't.task_id')} "
+                             "ORDER BY t.created_at, t.rowid", args)
+    out: dict[str, list[dict]] = {}
+    for n, r in enumerate(rows):
+        if r["ex"] is None:  # a payload SQLite cannot read: read (and fail) as before
+            ex = [tuple(x) for x in _excerpts(ws.query("SELECT payload_json FROM tasks WHERE task_id=?",
+                                                       (r["task_id"],))[0])]
+        else:
+            ex = [tuple(x) for x in json.loads(r["ex"])]
+        out.setdefault(r["task_id"].split(":")[1], []).append(
+            {"task_id": r["task_id"], "status": r["status"], "queued": r["queued"], "model": r["model"], "excerpts": ex,
+             "n": n})
+    return out
+
+
+def _only_local(claims: list, rounds_of: Callable[[str], list]) -> bool:
+    """`only_local_waits` from a hypothesis's claims ({claim_id, stage}) and their check tasks (`rounds_of`)."""
+    if not claims or any(c["stage"] not in ("judge", "done", None) for c in claims):
+        return False
+    open_ = [t for c in claims for t in rounds_of(c["claim_id"]) if t["status"] in ("pending", "retry")]
+    return bool(open_) and all(t["task_id"].endswith(":local") for t in open_)
 
 
 def _is_person(t) -> bool:
@@ -591,17 +639,14 @@ def local_waiting(ws: Workspace, hyp_ids: list[str] | None = None, retry_failed:
     """The local parts of rounds that wait for the local model ({"task_id", "status", "passages"}): made by a check
     by queue or in a Claude chat, or left waiting when the computer had no room for the model (0.13.11). With
     `retry_failed`, also those whose answers could not be used."""
-    rows = ws.query("SELECT task_id, payload_json, status FROM tasks WHERE kind='check' AND status IN "
-                    f"('pending', 'retry'{', ' + repr('failed') if retry_failed else ''}) AND substr(task_id, -6) = ':local'")
-    out = []
-    for r in rows:
-        payload = json.loads(r["payload_json"])
-        if hyp_ids is not None:
-            hid = ws.scalar("SELECT hyp_id FROM user_claims WHERE claim_id=?", (payload.get("subject_id"),))
-            if hid not in hyp_ids:
-                continue
-        out.append({"task_id": r["task_id"], "status": r["status"], "passages": len(payload.get("passages") or [])})
-    return out
+    # the open check tasks (the index on kind and status finds them), each with its hypothesis in the same query and
+    # its excerpts counted by SQLite, not one parse and one query per part
+    sts = "'pending', 'retry'" + (", 'failed'" if retry_failed else "")
+    rows = ws.query("SELECT t.task_id, t.status, json_array_length(t.payload_json, '$.passages') AS n, u.hyp_id "
+                    "FROM tasks t LEFT JOIN user_claims u ON u.claim_id=json_extract(t.payload_json, '$.subject_id') "
+                    f"WHERE t.kind='check' AND t.status IN ({sts}) AND substr(t.task_id, -6) = ':local'")
+    return [{"task_id": r["task_id"], "status": r["status"], "passages": int(r["n"] or 0)} for r in rows
+            if hyp_ids is None or r["hyp_id"] in hyp_ids]
 
 
 def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=None, retry_failed: bool = False,
@@ -633,10 +678,13 @@ def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=Non
             on_start(got[1], sum(r["passages"] for r in rows))
     n = 0
     for r in rows:
-        if r["status"] == "failed":
-            with ws.connect() as cx:
+        with ws.connect() as cx:
+            if r["status"] == "failed":
                 cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=?", (r["task_id"],))
-        if got is None:
+            # the setting of its documents now: one marked No AI since it was made goes to the person, not the model
+            access.relabel(cx, [r["task_id"]])
+            lv = cx.execute("SELECT access FROM tasks WHERE task_id=?", (r["task_id"],)).fetchone()
+        if got is None or (lv and lv[0] == "none"):
             _to_person(ws, r["task_id"])
         else:
             try:
@@ -645,6 +693,8 @@ def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=Non
             except MemoryShort as e:
                 readers.memory_short = e
                 return n
+            except access.AccessError:  # the guard stopped this part: no model may read it; the others go on
+                _to_person(ws, r["task_id"])
             except BackendError as e:
                 if readers.stopped():
                     raise  # 0.13.11: stopped, the part keeps waiting for the local model
@@ -658,10 +708,7 @@ def only_local_waits(ws: Workspace, hyp_id: str) -> bool:
     """0.13.11: whether all a check still waits for is the local model (the excerpts of documents marked Only a local
     AI): Claude (Code) has done its part. A check by queue counts once its parts are past choosing excerpts."""
     claims = ws.query("SELECT claim_id, stage FROM user_claims WHERE hyp_id=?", (hyp_id,))
-    if not claims or any(c["stage"] not in ("judge", "done", None) for c in claims):
-        return False
-    open_ = [t for c in claims for t in _check_tasks(ws, c["claim_id"]) if t["status"] in ("pending", "retry")]
-    return bool(open_) and all(t["task_id"].endswith(":local") for t in open_)
+    return _only_local(claims, lambda cid: _check_tasks(ws, cid))
 
 
 def _readers(backend, model: str, readers=None):
@@ -1208,8 +1255,8 @@ def chat_rules() -> str:
 
 
 def _check_tasks(ws: Workspace, cid: str) -> list:
-    return ws.query("SELECT * FROM tasks WHERE kind='check' AND (task_id=? OR task_id LIKE ?) ORDER BY created_at, rowid",
-                    (f"check:{cid}", f"check:{cid}:%"))
+    cond, args = tasks.check_task_ids_sql(cid)  # on the key: called per part on every look at the queue
+    return ws.query(f"SELECT * FROM tasks WHERE +kind='check' AND {cond} ORDER BY created_at, rowid", args)
 
 
 def _shown(payload: dict) -> list[dict]:
@@ -1299,6 +1346,11 @@ def more_passages(ws: Workspace, cid: str, k: int = 8, model: str = CHAT_MODEL, 
     return {"check_id": cid, "round": n, "passages": _shown(payload), "parts": parts}
 
 
+_HELPER_HOLDS = ("This round waits in ENLENS's queue for a helper of Claude Code (/enlens-run), or a helper is "
+                 "grading it now: its grades will be stored from there, so they are not taken from this chat. Read "
+                 "the result later with get_check.")
+
+
 def submit_grades(ws: Workspace, cid: str, grades: list[dict], summary: str | None = None,
                   model: str = CHAT_MODEL) -> dict:
     """Validate and store the grades for the open round. Problems come back so they can be fixed and resent."""
@@ -1315,7 +1367,12 @@ def submit_grades(ws: Workspace, cid: str, grades: list[dict], summary: str | No
         raise ValueError("These passages are already graded. Ask for more_passages to read further.")
     if t["status"] == "failed":
         raise ValueError("This round failed three times. Start a new check.")
-    ok, errors = tasks.ingest_result(ws, t["task_id"], {"evidence": grades, "rationale": summary}, model=model)
+    try:  # whether a helper holds the round is checked where the grades are written, so none takes it in between
+        ok, errors = tasks.ingest_result(ws, t["task_id"], {"evidence": grades, "rationale": summary}, model=model,
+                                         free=True)
+    except tasks.NotHeld as e:
+        raise ValueError(_HELPER_HOLDS if e.reason == "queued" else
+                         "These passages are already graded. Ask for more_passages to read further.") from None
     if not ok:
         left = tasks.MAX_ATTEMPTS - int(ws.scalar("SELECT attempts FROM tasks WHERE task_id=?", (t["task_id"],)) or 0)
         return {"accepted": False, "problems": errors, "attempts_left": max(0, left)}
@@ -1581,6 +1638,12 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     Each passage carries the AI's grade (`ai_verdict`), a person's own judgement if they gave one (`user_verdict`),
     the judgement that counts (`verdict`), and whether it counts at this threshold (`counted`).
     """
+    return _result(ws, claim_id, threshold)[0]
+
+
+def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tuple[dict, dict]:
+    """`result`, and what `hypothesis_result` needs of it besides (so it does not read it all again per part): the
+    judgements that count (`vs`), the rounds (`groups`) and the claim's `stage`."""
     thr = _threshold(ws, threshold)
     rows = ws.query("SELECT * FROM user_claims WHERE claim_id=?", (claim_id,))
     if not rows:
@@ -1607,9 +1670,10 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     vs = [effective(v) for v in raw_vs if counts(v)]
     out["balance"] = balance(vs, thr)
     stage = uc.get("stage")
+    extra = {"vs": vs, "groups": groups, "stage": stage}
     if not rounds:
         out["status"] = out["status_any"] = "waiting" if stage in ("terms", "rank", "judge") else "no_passages"
-        return out
+        return out, extra
     readers_of = _readers_of(ws, rounds)
     shown = []
     for r_i, g in enumerate(groups, 1):
@@ -1776,7 +1840,7 @@ def result(ws: Workspace, claim_id: str, threshold: float | None = None) -> dict
     out["references_missing"] = sum(1 for x in out["passages"] if x["reference_missing"] and not x["reviewed"])
     order = {"supports": 0, "partially_supports": 1, "refutes": 2, None: 3}
     out["passages"].sort(key=lambda x: (order[x["verdict"]], not x["counted"], -(x["confidence"] or 0), x["n"]))
-    return out
+    return out, extra
 
 
 def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None) -> dict:
@@ -1787,7 +1851,9 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
         raise KeyError(hyp_id)
     h = dict(rows[0])
     part_ids = [r[0] for r in ws.query("SELECT claim_id FROM user_claims WHERE hyp_id=? ORDER BY part, rowid", (hyp_id,))]
-    parts = [result(ws, cid, thr) for cid in part_ids]
+    got = [_result(ws, cid, thr) for cid in part_ids]
+    parts = [p for p, _x in got]
+    extras = {cid: x for cid, (_p, x) in zip(part_ids, got)}
     out = {"hyp_id": hyp_id, "text": h["text"], "framework": h["framework"], "code": h["code"],
            "created_at": h["created_at"], "options": json.loads(h["options_json"] or "{}"),
            "decomposed": len(parts) > 1, "model": h["model"] or (parts[0]["model"] if parts else None),
@@ -1805,13 +1871,8 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     else:
         out["status"] = aggregate([p["status"] for p in parts])
         out["status_any"] = aggregate([p["status_any"] for p in parts])
-    vs = []
-    for cid in part_ids:  # 0.14.3: as each part counts them (not the AI's judgements of a round that failed)
-        counts, _failed = _counting(_rounds(ws, cid))
-        vs += [effective(v) for v in ws.query("SELECT passage_id, verdict, confidence, doc_id, user_verdict FROM "
-                                              "verifications WHERE subject_kind='user_claim' AND subject_id=?", (cid,))
-               if counts(v)]
-    out["balance"] = balance(vs, thr)
+    # 0.14.3: as each part counts them (not the AI's judgements of a round that failed): the parts worked them out
+    out["balance"] = balance([v for cid in part_ids for v in extras[cid]["vs"]], thr)
     out["documents_in_project"] = int(ws.scalar("SELECT COUNT(*) FROM documents") or 0)
     out["passages_in_project"] = int(ws.scalar("SELECT COUNT(*) FROM passages") or 0)
     out["excerpts_read"] = sum(len(p["passages"]) for p in parts)
@@ -1821,7 +1882,9 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
                             for p in parts)
     out["queue"] = h.get("queue")
     out["status_text"] = STATUS_TEXT.get(out["status"], out["status"])
-    if out["status"] == "waiting" and only_local_waits(ws, hyp_id):
+    if out["status"] == "waiting" and _only_local(  # only_local_waits, from the rounds the parts read
+            [{"claim_id": cid, "stage": extras[cid]["stage"]} for cid in part_ids],
+            lambda cid: [t for g in extras[cid]["groups"] for t in g]):
         out["status_text"] = WAITING_LOCAL  # 0.13.11: not "Waiting for Claude Code" once Claude Code is done
     elif out["status"] == "not_checked" and any(p.get("status_text") == WAITING_YOU for p in parts) and all(
             p.get("status_text") == WAITING_YOU for p in parts if p["status"] == "not_checked"):
@@ -1855,7 +1918,8 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     out["second_read"] = len(with_second)
     out["disagreements"] = sum(1 for x in with_second if not x["second"]["agrees"])
     out["disagreements_to_review"] = sum(1 for x in with_second if not x["second"]["agrees"] and not yours(x))
-    out["docs_added_since"] = new_documents(ws, hyp_id)
+    out["docs_added_since"] = new_documents(ws, hyp_id, _seen={x[1] for cid in part_ids for g in extras[cid]["groups"]
+                                                               for t in g for x in _excerpts(t)})
     out["docs_added_since_matching"] = sum(1 for d in out["docs_added_since"] if d["matching"])
     return out
 
@@ -1876,8 +1940,8 @@ def models_used(ws: Workspace, hyp_id: str, parts: list[dict]) -> list[dict]:
     for p in parts:
         ids.append(f"expand:{p['claim_id']}")
         ids += p.get("rounds_task_ids") or []
-        ids += [r[0] for r in ws.query("SELECT task_id FROM tasks WHERE kind='reread' AND task_id LIKE ?",
-                                       (f"reread:{p['claim_id']}:%",))]
+        ids += [r[0] for r in ws.query("SELECT task_id FROM tasks WHERE +kind='reread' AND task_id >= ? AND "
+                                       "task_id < ?", tasks.id_range(f"reread:{p['claim_id']}:"))]
     rows: list = []
     for i in range(0, len(ids), 900):  # SQLite's limit on bound parameters
         chunk = ids[i:i + 900]
@@ -1931,7 +1995,7 @@ def _shown_docs(rounds: list) -> set[str]:
     return {p["doc_id"] for r in rounds for p in json.loads(r["payload_json"])["passages"]}
 
 
-def new_documents(ws: Workspace, hyp_id: str, matching: bool = True) -> list[dict]:
+def new_documents(ws: Workspace, hyp_id: str, matching: bool = True, _seen: set[str] | None = None) -> list[dict]:
     """Documents added to the project after a hypothesis was checked (or after its new documents were last read)
     that none of its rounds read from: [{doc_id, title, added_at, matching}]. `matching` says whether the document
     has an excerpt that shares a word with the hypothesis or its search words (keyword search, nothing is read).
@@ -1943,8 +2007,9 @@ def new_documents(ws: Workspace, hyp_id: str, matching: bool = True) -> list[dic
         return []
     cutoff = max(h[0]["created_at"] or "", h[0]["docs_checked_at"] or "")
     claims = [dict(r) for r in ws.query("SELECT claim_id, text, terms_json FROM user_claims WHERE hyp_id=?", (hyp_id,))]
-    rounds = [t for c in claims for t in _check_tasks(ws, c["claim_id"])]
-    seen_docs = _shown_docs(rounds)
+    # `_seen`: the documents its rounds read, when the caller has read them (hypothesis_result)
+    seen_docs = _seen if _seen is not None else _shown_docs([t for c in claims
+                                                             for t in _check_tasks(ws, c["claim_id"])])
     rows = [d for d in ws.query("SELECT doc_id, title, added_at FROM documents WHERE added_at > ? "
                                 "ORDER BY added_at, title", (cutoff,)) if d["doc_id"] not in seen_docs]
     hits: set[str] = set()
@@ -2028,6 +2093,7 @@ def second_opinion(ws: Workspace, hyp_ids: list[str], backend, main_model: str, 
         with ws.connect() as cx:
             if st is not None:  # asked again after a failure: three new attempts
                 cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=?", (tid,))
+                access.relabel(cx, [tid])  # with its documents' settings of now, not of its first try
                 if tasks.queue_mode():
                     tasks.mark_queued(cx, [tid])
             else:
@@ -2058,10 +2124,11 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     that answer, and is `key` when it decides at least two answers and a fifth of them.
     """
     thr = _threshold(ws, threshold)
+    checks = _light_checks(ws, titles=True)  # read once, for the history below too
     if cache is not None and batch_id is None and cache.thr == thr:
         hs = cache.history()
     else:
-        hs = history(ws, thr, batch_id=batch_id)
+        hs = history(ws, thr, batch_id=batch_id, _checks=checks)
     if hyp_ids is not None:
         keep = set(hyp_ids)
         hs = [h for h in hs if h["hyp_id"] in keep]
@@ -2070,14 +2137,11 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     for r in ws.query("SELECT claim_id, hyp_id, stage FROM user_claims ORDER BY part, rowid"):
         if (r["hyp_id"] or r["claim_id"]) in want:
             claims.setdefault(r["hyp_id"] or r["claim_id"], []).append((r["claim_id"], r["stage"]))
-    tasks_of: dict[str, list] = {}
+    tasks_of = checks
     titles: dict[str, str] = {}
-    for r in ws.query("SELECT task_id, status, payload_json, queued, model FROM tasks WHERE kind='check' "
-                      "ORDER BY created_at, rowid"):
-        cid = r["task_id"].split(":")[1]
-        tasks_of.setdefault(cid, []).append(r)
-        for p in json.loads(r["payload_json"])["passages"]:
-            titles.setdefault(p["doc_id"], p.get("title") or "")
+    for r in sorted((r for rows in checks.values() for r in rows), key=lambda r: r["n"]):  # the order made
+        for _pid, did, title in r["excerpts"]:
+            titles.setdefault(did, title or "")
     # 0.14.3: rounds as the result page and the Results list see them (grouped, a part no model answers neutral,
     # waiting when a part still waits): the map worked them out on its own and disagreed with both
     rounds: dict[str, tuple[list[str], bool]] = {}
@@ -2222,40 +2286,51 @@ def calibration(ws: Workspace) -> dict:
 
 
 def history(ws: Workspace, threshold: float | None = None, limit: int | None = None, query: str | None = None,
-            status: str | None = None, batch_id: str | None = None) -> list[dict]:
+            status: str | None = None, batch_id: str | None = None, _checks: dict | None = None) -> list[dict]:
     """Every hypothesis checked in the project, newest first, with its status (computed in a few queries).
 
     `supports`, `partly`, `refutes` count the excerpts whose judgement counts at this threshold; `uncounted` the
-    judged excerpts below it; `docs_*` count documents as on the result page.
+    judged excerpts below it; `docs_*` count documents as on the result page. With `limit`, the checks and
+    judgements of each hypothesis are read as it is reached, so a short list does not read every check.
+    `_checks`: every claim's check tasks already read (`_light_checks`, by `evidence_map`).
     """
     thr = _threshold(ws, threshold)
     hyps = ws.query("SELECT * FROM hypotheses ORDER BY created_at DESC, rowid DESC")
     claims: dict[str, list] = {}
     for r in ws.query("SELECT claim_id, hyp_id, part, model, options_json, stage FROM user_claims ORDER BY part, rowid"):
         claims.setdefault(r["hyp_id"] or r["claim_id"], []).append(r)
-    rounds: dict[str, list] = {}
-    for r in ws.query("SELECT task_id, status, payload_json, queued, model FROM tasks WHERE kind='check' "
-                      "ORDER BY created_at, rowid"):
-        cid = r["task_id"].split(":")[1]
-        rounds.setdefault(cid, []).append(r)
+    rounds: dict[str, list] = _checks if _checks is not None else {}
     ver: dict[str, list] = {}
     ai_of: dict[tuple[str, str], str | None] = {}
     first_of: dict[str, list] = {}  # 0.11.2: the excerpts as the first model judged them, where a stronger one read again
     from .people import me as _me
 
     me = _me()
-    for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model, ai_history_json, "
-                      "user_by FROM verifications WHERE subject_kind='user_claim'"):
-        f = first_reading(v)
-        if f is not None:
-            first_of.setdefault(v["subject_id"], []).append(effective(f))
-        e = effective(v)
-        # 0.14.3: "changed by you" counts your own changes only (a colleague's judgement counts where you made none)
-        e["_mine"] = bool(v["user_verdict"]) and (v["user_by"] or me) == me
-        e["_changed"] = changed_by_person(v) and e["_mine"]
-        e["_ai_judged"] = v["verdict"] in ("supports", "partially_supports", "refutes")
-        ver.setdefault(v["subject_id"], []).append(e)
-        ai_of[(v["subject_id"], v["passage_id"])] = v["verdict"] if v["verdict"] in GRADES else None
+
+    def load(cids: list[str] | None) -> None:
+        """The check tasks and judgements of these claims (of all, with None)."""
+        if _checks is None:
+            rounds.update(_light_checks(ws, cids))
+        sql = ("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model, ai_history_json, "
+               "user_by FROM verifications WHERE subject_kind='user_claim'")
+        if cids is None:
+            vs = ws.query(sql)
+        else:
+            vs = [v for cid in cids for v in ws.query(sql + " AND subject_id=?", (cid,))]
+        for v in vs:
+            f = first_reading(v)
+            if f is not None:
+                first_of.setdefault(v["subject_id"], []).append(effective(f))
+            e = effective(v)
+            # 0.14.3: "changed by you" counts your own changes only (a colleague's judgement counts where you made none)
+            e["_mine"] = bool(v["user_verdict"]) and (v["user_by"] or me) == me
+            e["_changed"] = changed_by_person(v) and e["_mine"]
+            e["_ai_judged"] = v["verdict"] in ("supports", "partially_supports", "refutes")
+            ver.setdefault(v["subject_id"], []).append(e)
+            ai_of[(v["subject_id"], v["passage_id"])] = v["verdict"] if v["verdict"] in GRADES else None
+
+    if not limit:
+        load(None)
     second: dict[tuple[str, str], str | None] = {}  # the latest second-model grade of each excerpt
     for r in ws.query("SELECT subject_id, passage_id, verdict FROM second_opinions ORDER BY at, rowid"):
         second[(r["subject_id"], r["passage_id"])] = r["verdict"] if r["verdict"] in GRADES else None
@@ -2281,6 +2356,8 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         if batch_id and h["batch_id"] != batch_id:
             continue
         parts = claims.get(h["hyp_id"], [])
+        if limit:
+            load([c["claim_id"] for c in parts])
         st, st_any, st_first, counts, read = [], [], [], {"supports": 0, "partially_supports": 0, "refutes": 0}, 0
         all_vs = []
         uncounted = corrected = reviewed = to_review = disagree = 0
@@ -2305,11 +2382,11 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             else:
                 st_first.append(st[-1])
             for r in rs:
-                shown = json.loads(r["payload_json"])["passages"]
+                shown = _excerpts(r)
                 read += len(shown)
-                for p in shown:
-                    shown_docs.add(p["doc_id"])
-                    key = (c["claim_id"], p["passage_id"])
+                for pid, did, *_title in shown:
+                    shown_docs.add(did)
+                    key = (c["claim_id"], pid)
                     if key in second and second[key] != ai_of.get(key):
                         disagree += 1
             limited = limited or bool(json.loads(c["options_json"] or "{}").get("doc_ids"))
@@ -2337,7 +2414,8 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         since = 0 if limited else sum(1 for at, d in added[bisect.bisect_right(added, (cutoff, "\uffff")):]
                                       if d not in shown_docs)
         st_text = None
-        if s == "waiting" and only_local_waits(ws, h["hyp_id"]):
+        if s == "waiting" and _only_local([c for c in parts if c["hyp_id"] == h["hyp_id"]],
+                                          lambda cid: rounds.get(cid, [])):  # only_local_waits, from what is read
             st_text = WAITING_LOCAL
         elif s == "not_checked" and any(for_you) and all(y for y, x in zip(for_you, st) if x == "not_checked"):
             st_text = WAITING_YOU
@@ -2401,15 +2479,6 @@ def hypothesis_rows(res: dict) -> list[dict]:
 
 JUDGEMENT_TEXT = {"supports": "Supports", "partially_supports": "Partly supports", "refutes": "Contradicts",
                   "not_relevant": "Not about the hypothesis", None: "Not about the hypothesis"}
-
-
-def _local_time(iso: str | None) -> str:
-    import datetime as _dt
-
-    try:
-        return _dt.datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
-    except (TypeError, ValueError):
-        return iso or ""
 
 
 def _local_dt(iso: str | None):
@@ -2594,6 +2663,8 @@ def write_xlsx(rows: list[dict], path_or_buffer, title: str = "Results", summary
     from openpyxl.styles import Alignment, Font
     from openpyxl.utils import get_column_letter
 
+    from .review import append_row  # text is written as text, never as a formula Excel would run
+
     widths = {"Hypothesis": 50, "Part checked": 40, "Quote": 70, "Document": 40, "Your comment on this excerpt": 40,
               "Your notes on this result": 40, "Excerpt (the text the AI read)": 90, "Answer for each part": 60,
               "Strictness": 40, "About another group (AI's note)": 30, "What the quote refers to (AI)": 30,
@@ -2605,11 +2676,11 @@ def write_xlsx(rows: list[dict], path_or_buffer, title: str = "Results", summary
         sh = wb.active if i == 0 else wb.create_sheet()
         sh.title = name[:31]
         headers = list(data[0]) if data else ["Hypothesis", "Answer"]
-        sh.append(headers)
+        append_row(sh, headers)  # a column may be named after a document (the evidence map)
         for c in sh[1]:
             c.font = Font(bold=True)
         for r in data:
-            sh.append([r.get(h, "") for h in headers])
+            append_row(sh, [r.get(h, "") for h in headers])
         for j, h in enumerate(headers, 1):
             sh.column_dimensions[get_column_letter(j)].width = widths.get(h, max(12, min(30, len(h) + 2)))
             if h == "Checked on":
@@ -2734,8 +2805,8 @@ def reread_excerpt(ws: Workspace, claim_id: str, passage_id: str, backend, model
         payload["reader_note"] = " ".join(note.split())[:1000]
     payload["previous_at"] = ws.scalar("SELECT received_at FROM results WHERE task_id=? AND valid=1 ORDER BY attempt DESC "
                                        "LIMIT 1", (rnd["task_id"],))
-    n = int(ws.scalar("SELECT COUNT(*) FROM tasks WHERE kind='reread' AND task_id LIKE ?",
-                      (f"reread:{claim_id}:{passage_id}:%",)) or 0) + 1
+    n = int(ws.scalar("SELECT COUNT(*) FROM tasks WHERE +kind='reread' AND task_id >= ? AND task_id < ?",
+                      tasks.id_range(f"reread:{claim_id}:{passage_id}:")) or 0) + 1
     tid = f"reread:{claim_id}:{passage_id}:{n}"
     if n > 1:
         payload["previous_at"] = ws.scalar("SELECT received_at FROM results WHERE task_id=? AND valid=1 ORDER BY attempt "
@@ -2788,9 +2859,10 @@ def delete_claim(ws: Workspace, claim_id: str, why: str | None = None, _log: boo
         for tid in (f"expand:{claim_id}", f"check:{claim_id}"):
             cx.execute("DELETE FROM results WHERE task_id=?", (tid,))
             cx.execute("DELETE FROM tasks WHERE task_id=?", (tid,))
-        for pat in (f"check:{claim_id}:%", f"reread:{claim_id}:%", f"second:check:{claim_id}:%"):
-            cx.execute("DELETE FROM results WHERE task_id LIKE ?", (pat,))
-            cx.execute("DELETE FROM tasks WHERE task_id LIKE ?", (pat,))
+        for prefix in (f"check:{claim_id}:", f"reread:{claim_id}:", f"second:check:{claim_id}:"):
+            lo_hi = tasks.id_range(prefix)  # ranges on the keys (results' key starts with task_id)
+            cx.execute("DELETE FROM results WHERE task_id >= ? AND task_id < ?", lo_hi)
+            cx.execute("DELETE FROM tasks WHERE task_id >= ? AND task_id < ?", lo_hi)
         cx.execute("DELETE FROM second_opinions WHERE subject_id=?", (claim_id,))
         cx.execute("DELETE FROM user_claims WHERE claim_id=?", (claim_id,))
         hid = hyp[0] if hyp and hyp[0] else claim_id

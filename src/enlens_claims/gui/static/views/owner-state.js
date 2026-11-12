@@ -20,8 +20,6 @@ export const OWNER_API = {
   takeBack: (p, id) => `/api/projects/${p}/owner/proposals/${id}/take-back`, // POST {}
 };
 
-// how much a change matters: the word, never only a colour
-export const SEVERITY_WORDS = { low: "Low", medium: "Medium", high: "High" };
 // who may read a document with AI (the titles of views/ai-access.js LEVEL)
 export const LEVEL_WORDS = { cloud: "Claude may read it", local: "Only a local AI", none: "No AI" };
 export const ANSWERED_SHOWN = 10;

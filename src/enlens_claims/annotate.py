@@ -163,6 +163,7 @@ class PageText:
     height: float = 0.0
     x0: float = 0.0
     y0: float = 0.0
+    norm: dict = field(default_factory=dict, repr=False, compare=False)  # `_find_nearest`'s two normalisations of text
 
 
 def _join_lines(lines: list[list[tuple[str, tuple | None]]]) -> tuple[str, list]:
@@ -188,7 +189,10 @@ def _join_lines(lines: list[list[tuple[str, tuple | None]]]) -> tuple[str, list]
     return "".join(chars), boxes
 
 
-def _pdfminer_pages(path: Path) -> dict[int, PageText] | None:
+def _pdfminer_pages(path: Path, wanted: set[int] | None = None) -> dict[int, PageText | None] | None:
+    """The pages of the PDF as pdfminer reads them. With `wanted`, only those pages keep their characters and boxes
+    (the others are None): a mark is looked for on its own page and the ones beside it, and the boxes of a whole
+    book were held in memory."""
     try:
         from pdfminer.high_level import extract_pages
         from pdfminer.layout import LAParams, LTAnno, LTChar, LTTextContainer, LTTextLine
@@ -198,6 +202,9 @@ def _pdfminer_pages(path: Path) -> dict[int, PageText] | None:
     line_no = 0
     try:
         for pno, page in enumerate(extract_pages(str(path), laparams=LAParams()), 1):
+            if wanted is not None and pno not in wanted:
+                out[pno] = None
+                continue
             lines: list[list] = []
 
             def walk(obj):
@@ -231,44 +238,54 @@ def _pdfminer_pages(path: Path) -> dict[int, PageText] | None:
 
 
 def _pypdf_pages(reader) -> dict[int, PageText]:
-    """Line boxes from pypdf's text visitor: each run's start and font size; characters get estimated widths."""
+    """`_pypdf_page` for every page pypdf can read."""
     out: dict[int, PageText] = {}
-    for pno, page in enumerate(reader.pages, 1):
-        runs: list[tuple[str, float, float, float]] = []
-
-        def visit(text, cm, tm, _font, size):
-            if not text:
-                return
-            try:
-                x = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
-                y = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
-                scale = abs(tm[0] * cm[0]) or abs(tm[3] * cm[3]) or 1.0
-            except (TypeError, IndexError):
-                return
-            runs.append((text, float(x), float(y), float(size or 10) * float(scale or 1.0)))
-
-        try:
-            page.extract_text(visitor_text=visit)
-        except Exception:
-            continue
-        lines: list[list] = [[]]
-        line = 0
-        for text, x, y, size in runs:
-            cw = 0.5 * size
-            col = 0
-            for c in text:
-                if c == "\n":
-                    lines.append([])
-                    line += 1
-                    col = 0
-                    continue
-                lines[-1].append((c, (x + col * cw, y - 0.25 * size, x + (col + 1) * cw, y + 0.85 * size, f"p{line}")))
-                col += 1
-        text, boxes = _join_lines([ln for ln in lines if ln])
-        box = page.mediabox
-        out[pno] = PageText(text, boxes, "lines", float(box.width), float(box.height), float(box.left),
-                            float(box.bottom))
+    for pno in range(1, len(reader.pages) + 1):
+        pt = _pypdf_page(reader, pno)
+        if pt is not None:
+            out[pno] = pt
     return out
+
+
+def _pypdf_page(reader, pno: int) -> PageText | None:
+    """Line boxes from pypdf's text visitor for one page: each run's start and font size; characters get estimated
+    widths. None when pypdf cannot read the page, or there is no such page."""
+    if not 1 <= pno <= len(reader.pages):
+        return None
+    page = reader.pages[pno - 1]
+    runs: list[tuple[str, float, float, float]] = []
+
+    def visit(text, cm, tm, _font, size):
+        if not text:
+            return
+        try:
+            x = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
+            y = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+            scale = abs(tm[0] * cm[0]) or abs(tm[3] * cm[3]) or 1.0
+        except (TypeError, IndexError):
+            return
+        runs.append((text, float(x), float(y), float(size or 10) * float(scale or 1.0)))
+
+    try:
+        page.extract_text(visitor_text=visit)
+    except Exception:
+        return None
+    lines: list[list] = [[]]
+    line = 0
+    for text, x, y, size in runs:
+        cw = 0.5 * size
+        col = 0
+        for c in text:
+            if c == "\n":
+                lines.append([])
+                line += 1
+                col = 0
+                continue
+            lines[-1].append((c, (x + col * cw, y - 0.25 * size, x + (col + 1) * cw, y + 0.85 * size, f"p{line}")))
+            col += 1
+    text, boxes = _join_lines([ln for ln in lines if ln])
+    box = page.mediabox
+    return PageText(text, boxes, "lines", float(box.width), float(box.height), float(box.left), float(box.bottom))
 
 
 def _ocr_page(path: Path, pno: int, lang: str = "eng") -> PageText | None:
@@ -338,12 +355,13 @@ def _quads(pt: PageText, a: int, b: int) -> list[tuple[float, float, float, floa
     return out
 
 
-def _find_nearest(text: str, quote: str, where: float | None) -> tuple[int, int, str] | None:
+def _find_nearest(text: str, quote: str, where: float | None, cache: dict | None = None) -> tuple[int, int, str] | None:
     """The match of `quote` in a page's text nearest to `where` (how far into the page its words stand in ENLENS's
     text, 0 to 1); the first match when `where` is unknown. 0.14.3: every highlight used to go to the first match
     of its words on the page, and a mention under three characters ("it", "we") was never placed. A short quote is
     matched exactly, as a whole word; a longer one as `find_quote` does (typography, whitespace and case ignored;
-    then whitespace ignored altogether)."""
+    then whitespace ignored altogether). `cache` keeps the normalised page text (with and without spaces) between the
+    quotes looked for on one page, which were each normalised again."""
     q = (quote or "").strip()
     if not q:
         return None
@@ -352,7 +370,12 @@ def _find_nearest(text: str, quote: str, where: float | None) -> tuple[int, int,
     for drop, kind in ((False, "exact"), (True, "spacing")):
         if short and drop:
             break
-        nh, hstart, hend = _normalise_spans(text, drop_spaces=drop)
+        if cache is None:
+            nh, hstart, hend = _normalise_spans(text, drop_spaces=drop)
+        else:
+            if drop not in cache:
+                cache[drop] = _normalise_spans(text, drop_spaces=drop)
+            nh, hstart, hend = cache[drop]
         nq = _normalise_spans(q, drop_spaces=drop)[0]
         if not nq:
             continue
@@ -377,22 +400,26 @@ def place(path: Path, marks: list[Mark], use_pdfminer: bool = True, ocr_lang: st
     from pypdf import PdfReader
 
     reader = PdfReader(str(path))
-    exact = _pdfminer_pages(path) if use_pdfminer else None
-    lines = None
+    # the pages the marks can be on (a mark's own and its neighbours); a mark of unknown page may be on any
+    wanted = None if any(not m.page for m in marks) else {p for m in marks for p in (m.page - 1, m.page, m.page + 1)}
+    exact = _pdfminer_pages(path, wanted) if use_pdfminer else None
+    lines: dict[int, PageText | None] = {}  # pypdf's reading of the pages looked at, each made the first time
     ocr_cache: dict[int, PageText | None] = {}
     for m in marks:
         candidates = [m.page] if m.page else list(range(1, len(reader.pages) + 1))
         if m.page:
             candidates += [p for p in (m.page - 1, m.page + 1) if 1 <= p <= len(reader.pages)]
         for pno in candidates:
+            if not 1 <= pno <= len(reader.pages):
+                continue  # a page the file does not have (the mark says more pages than this PDF): nothing to look at
             got = None
             for source in ("exact", "lines", "ocr"):
                 if source == "exact" and not exact:
                     continue
                 if source == "lines":
-                    if lines is None:
-                        lines = _pypdf_pages(reader)
-                    pt = lines.get(pno)
+                    if pno not in lines:
+                        lines[pno] = _pypdf_page(reader, pno)
+                    pt = lines[pno]
                 elif source == "exact":
                     pt = exact.get(pno)
                 else:
@@ -402,7 +429,7 @@ def place(path: Path, marks: list[Mark], use_pdfminer: bool = True, ocr_lang: st
                     pt = ocr_cache[pno]
                 if not pt or not pt.text.strip():
                     continue
-                hit = _find_nearest(pt.text, m.quote, m.where)
+                hit = _find_nearest(pt.text, m.quote, m.where, pt.norm)
                 if hit:
                     q = _quads(pt, hit[0], hit[1])
                     if q:
@@ -463,10 +490,20 @@ def write_html(text: str, marks: list[Mark], name: str) -> bytes:
     bounds = sorted({0, len(text), *(m.start for m in marks), *(m.end for m in marks)})
     order = {"refutes": 0, "partially_supports": 1, "supports": 2, "label": 3, "concept": 4, "reference": 5}
     parts = []
+    # a sweep along the text: the marks that cover a stretch between two bounds are those started at or before its
+    # start and not yet ended (every mark was tested against every stretch), kept in the marks' own order
+    by_start = sorted(range(len(marks)), key=lambda i: marks[i].start)
+    nxt = 0
+    active: set[int] = set()
     for a, b in zip(bounds, bounds[1:]):
+        while nxt < len(by_start) and marks[by_start[nxt]].start <= a:
+            active.add(by_start[nxt])
+            nxt += 1
+        if active:
+            active = {i for i in active if marks[i].end > a}
         if a >= b:
             continue
-        on = [m for m in marks if m.start <= a and b <= m.end]
+        on = [marks[i] for i in sorted(active)]
         seg = html.escape(text[a:b])
         if on:
             top = min(on, key=lambda m: order.get(m.kind, 9))
@@ -565,15 +602,3 @@ def annotate_hypothesis_zip(ws: Workspace, hyp_id: str, layers=("judgements",), 
     return buf.getvalue(), summary
 
 
-def check_placement(ws: Workspace, doc_id: str, use_pdfminer: bool = True) -> dict:
-    """For the F7 measure: how many quotes of a PDF land on their words (the text under the boxes, read again with
-    pdfminer, is the quote) or at least on the right lines."""
-    from .sources import original_file
-
-    info = original_file(ws, doc_id)
-    if not info["available"] or not str(info["path"]).lower().endswith(".pdf"):
-        raise ValueError("This document has no original PDF here.")
-    marks = collect(ws, doc_id, layers=("judgements", "labels"))
-    place(Path(info["path"]), marks, use_pdfminer)
-    return {"quotes": len(marks), "placed": sum(m.placed for m in marks),
-            "by_method": {k: sum(1 for m in marks if m.method == k) for k in ("exact", "lines", "ocr")}}

@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 from bisect import bisect_left, bisect_right
-from collections import Counter
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 
 from .search import passage_index
@@ -227,6 +228,37 @@ def _code_passages(ws: Workspace, code: str | None) -> set[str] | None:
 
 EXPORT_MAX = 50000  # lines of one export
 
+# The hits of the last few searches, so another page or another sort of a search is a slice of them instead of every
+# candidate passage read and split into words again. Keyed by the index's state (`search._key`: a change of the
+# documents or their titles is another key) and everything the hits depend on; a search with a code filter is not
+# kept (a code's passages change without the documents changing). A hit takes about 300 bytes (its place, its marks,
+# and its place in each sort asked for), so HITS_KEPT bounds this at about 90 MB (a search with more is not kept).
+SEARCHES_KEPT = 4
+HITS_KEPT = 300_000
+_KEPT: "OrderedDict[tuple, dict]" = OrderedDict()
+_KEPT_LOCK = threading.Lock()
+
+
+def _words_left(text: str, a: int) -> list[str]:
+    t = text[max(0, a - 80):a]
+    return [w for _s, _e, _st, w in reversed(token_spans(t, keep_stop=True))][:3]
+
+
+def _words_right(text: str, b: int) -> list[str]:
+    t = text[b:b + 80]
+    return [w for _s, _e, _st, w in token_spans(t, keep_stop=True)][:3]
+
+
+def _sort_words(idx, found: list[tuple], sort: str) -> list[list[str]]:
+    """The words beside each hit that a sort by the left or right context sorts by, from its passage read again."""
+    out: list[list[str]] = []
+    for k in range(0, len(found), CHUNK):
+        part = found[k:k + CHUNK]
+        rows = idx.read([h[0] for h in part])
+        out.extend(_words_left(r["text"], h[1]) if sort == "left" else _words_right(r["text"], h[2])
+                   for h, r in zip(part, rows))
+    return out
+
 
 def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = None, sort: str = "doc",
            offset: int = 0, limit: int | None = PAGE, exact: bool = False, near: int = 5, width: int = 60,
@@ -243,41 +275,29 @@ def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = No
     query = parse(q, mode, exact, near)
     idx = passage_index(ws, all_sections=all_sections)
     allowed_docs = set(docs) if docs else None
-    allowed_passages = _code_passages(ws, code)
-    rare = _rarest(idx, query) if mode == "all" else None
-    # 0.16 (H2): each candidate passage is read once, in chunks, and what the counts and the sorting need is kept
-    # with its hits: (row index, start, end, marks, doc_id, title, seq, passage_id, sort words)
-    found: list[tuple] = []
-    cands = [i for i in _candidates(idx, query)
-             if (allowed_docs is None or idx.doc_of[i] in allowed_docs)
-             and (allowed_passages is None or idx.ids[i] in allowed_passages)]
-
-    def words_left(text, a):
-        t = text[max(0, a - 80):a]
-        return [w for _s, _e, _st, w in reversed(token_spans(t, keep_stop=True))][:3]
-
-    def words_right(text, b):
-        t = text[b:b + 80]
-        return [w for _s, _e, _st, w in token_spans(t, keep_stop=True)][:3]
-
-    for k in range(0, len(cands), CHUNK):
-        chunk = cands[k:k + CHUNK]
-        for i, r in zip(chunk, idx.read(chunk)):
-            for a, b, marks in _hits_in(r["text"], query, rare):
-                words = (words_left(r["text"], a) if sort == "left" else
-                         words_right(r["text"], b) if sort == "right" else None)
-                found.append((i, a, b, marks, r["doc_id"], r["title"] or "", r["seq"], r["passage_id"], words))
-    per: dict[str, dict] = {}
-    for h in found:
-        d = per.setdefault(h[4], {"doc_id": h[4], "title": h[5], "hits": 0, "_p": set()})
-        d["hits"] += 1
-        d["_p"].add(h[7])
-    per_doc = sorted(({**{k: v for k, v in d.items() if k != "_p"}, "passages": len(d["_p"])} for d in per.values()),
-                     key=lambda d: (-d["hits"], d["title"].lower()))
-    if sort == "doc":
-        found.sort(key=lambda h: (h[5].lower(), h[4], h[6], h[1]))
-    else:
-        found.sort(key=lambda h: (h[8], h[7], h[1]))
+    ck = None if code or idx.key is None else (idx.key, q, mode, bool(exact), query.near,
+                                               tuple(sorted(allowed_docs)) if allowed_docs is not None else None)
+    with _KEPT_LOCK:
+        kept = _KEPT.get(ck) if ck is not None else None
+        if kept is not None:
+            _KEPT.move_to_end(ck)
+    if kept is None:
+        kept = _search_hits(ws, idx, query, mode, allowed_docs, code, sort)
+        if ck is not None and len(kept["found"]) <= HITS_KEPT:
+            with _KEPT_LOCK:
+                _KEPT[ck] = kept
+                while len(_KEPT) > SEARCHES_KEPT or sum(len(v["found"]) for v in _KEPT.values()) > HITS_KEPT:
+                    _KEPT.popitem(last=False)
+    rare, per_doc = kept["rare"], kept["per_doc"]
+    found = kept["sorted"].get(sort)
+    if found is None:   # another sort of a search kept: its hits sorted again (stable, from the order found in)
+        base = kept["found"]
+        if sort == "doc":
+            found = sorted(base, key=lambda h: (h[5].lower(), h[4], h[6], h[1]))
+        else:
+            words = kept["words"].pop(sort, None) or _sort_words(idx, base, sort)   # not kept once sorted by
+            found = [base[n] for n in sorted(range(len(base)), key=lambda n: (words[n], base[n][7], base[n][1]))]
+        kept["sorted"][sort] = found
     # a page of lines; `limit` None gives every hit at once, for the export (0.11.1: it ran the whole search once per
     # thousand lines), at most EXPORT_MAX
     offset = max(0, int(offset))
@@ -298,11 +318,47 @@ def search(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None = No
                       "section": r.get("section") or "body",
                       "left": left, "node": re.sub(r"\s", " ", r["text"][a:b]), "right": right, "marks": rel,
                       "start": (r["start"] or 0) + a, "end": (r["start"] or 0) + b})
+    if "other_forms" not in kept:
+        kept["other_forms"] = [] if exact else other_forms(idx, query)
     return {"query": q, "mode": mode, "exact": bool(exact), "near": query.near, "sort": sort,
             "words": [w for _s, w in query.words] + [" ".join(w for _s, w in ph) for ph in query.phrases],
-            "other_forms": [] if exact else other_forms(idx, query), "rarest": rare[1] if rare else None,
-            "total": len(found), "passages": len({h[7] for h in found}),
-            "documents": len(per_doc), "per_doc": per_doc, "lines": lines, "offset": offset, "limit": limit}
+            "other_forms": [dict(x) for x in kept["other_forms"]], "rarest": rare[1] if rare else None,
+            "total": len(found), "passages": kept["passages"],
+            "documents": len(per_doc), "per_doc": [dict(d) for d in per_doc], "lines": lines, "offset": offset,
+            "limit": limit}
+
+
+def _search_hits(ws: Workspace, idx, query: Query, mode: str, allowed_docs: set | None, code: str | None,
+                 sort: str) -> dict:
+    """Every hit of a search, in the order found, with the counts per document: what `search` keeps of a search.
+    0.16 (H2): each candidate passage is read once, in chunks, and what the counts and the sorting need is kept with
+    its hits: (row index, start, end, marks, doc_id, title, seq, passage_id); the words a sort by the left or right
+    context sorts by are taken then for the sort asked for, the other's when it is asked for."""
+    allowed_passages = _code_passages(ws, code)
+    rare = _rarest(idx, query) if mode == "all" else None
+    found: list[tuple] = []
+    words: list[list[str]] = []
+    cands = [i for i in _candidates(idx, query)
+             if (allowed_docs is None or idx.doc_of[i] in allowed_docs)
+             and (allowed_passages is None or idx.ids[i] in allowed_passages)]
+    for k in range(0, len(cands), CHUNK):
+        chunk = cands[k:k + CHUNK]
+        for i, r in zip(chunk, idx.read(chunk)):
+            for a, b, marks in _hits_in(r["text"], query, rare):
+                if sort == "left":
+                    words.append(_words_left(r["text"], a))
+                elif sort == "right":
+                    words.append(_words_right(r["text"], b))
+                found.append((i, a, b, marks, r["doc_id"], r["title"] or "", r["seq"], r["passage_id"]))
+    per: dict[str, dict] = {}
+    for h in found:
+        d = per.setdefault(h[4], {"doc_id": h[4], "title": h[5], "hits": 0, "_p": set()})
+        d["hits"] += 1
+        d["_p"].add(h[7])
+    per_doc = sorted(({**{k: v for k, v in d.items() if k != "_p"}, "passages": len(d["_p"])} for d in per.values()),
+                     key=lambda d: (-d["hits"], d["title"].lower()))
+    return {"found": found, "rare": rare, "per_doc": per_doc, "passages": len({h[7] for h in found}),
+            "sorted": {}, "words": {sort: words} if sort != "doc" else {}}
 
 
 def other_forms(idx, query: Query, n: int = 8) -> list[dict]:
@@ -384,7 +440,7 @@ def collocates(ws: Workspace, q: str, mode: str = "any", docs: list[str] | None 
     for st, c in near_counts.items():
         if c < floor:
             continue
-        corpus = sum(f for i, f in idx.bm25.postings.get(st, ()) if scope is None or i in scope)
+        corpus = idx.total(st) if scope is None else sum(f for i, f in idx.bm25.postings.get(st, ()) if i in scope)
         if not corpus:
             continue
         expected = corpus * window_words / total

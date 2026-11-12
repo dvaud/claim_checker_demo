@@ -35,6 +35,7 @@ from __future__ import annotations
 import re
 import statistics
 import unicodedata
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from dataclasses import dataclass, field
 
@@ -307,6 +308,19 @@ _TAIL = re.compile(r"([^\W\d_]+)[-‐]$")
 _HEAD = re.compile(r"^([^\W\d_]+)")
 
 
+def _tail_match(text: str):
+    """`_TAIL.search(text)`, found by looking only at the end of `text`: the match is the run of letters before a last
+    hyphen, so it can only start inside the last word. The look starts a few characters back and goes further back
+    only while the run of letters reaches its start (a block of 2,000 lines was searched whole for every line)."""
+    n = len(text)
+    back = 64
+    while True:
+        m = _TAIL.search(text, max(0, n - back))
+        if m is None or m.start() > n - back or back >= n:
+            return m
+        back *= 4
+
+
 def join_lines(texts: list[str], vocab: Counter, counts: Counter) -> str:
     """The lines of one block joined into one paragraph: a hyphen at a line end joins a word broken by typesetting
     ("exam-" + "ple") and stays in a compound ("long-" + "term", "COVID-" + "19"); other line ends become a space."""
@@ -322,7 +336,7 @@ def join_lines(texts: list[str], vocab: Counter, counts: Counter) -> str:
             out = out[:-1] + t
             counts["hyphens_joined"] += 1
             continue
-        m = _TAIL.search(out)
+        m = _tail_match(out) if out[-1] in "-‐" else None
         nxt = _HEAD.match(t)
         if m and out[-1] in "-‐" and nxt and t[0].islower():
             left, right = m.group(1), nxt.group(1)
@@ -350,7 +364,7 @@ def join_lines(texts: list[str], vocab: Counter, counts: Counter) -> str:
         if out[-1] in "-‐–/" and not out.endswith(" -") and not out.endswith(" –"):
             out = out + t  # "COVID-" + "19", "2010–" + "2020", "and/" + "or"
             continue
-        out = out + " " + t
+        out = out + (" " + t)  # (the brackets let Python grow `out` in place instead of copying it twice per line)
     return out.replace("­", "")
 
 
@@ -1133,7 +1147,7 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
     for a, c in zip(content, content[1:]):
         if a.kind == c.kind and not _ENDS.search(a.text.rstrip()) and c.text[:1].islower():
             a.continues = True
-            if a.text.endswith(("-", "\u2010")) and _TAIL.search(a.text):
+            if a.text.endswith(("-", "\u2010")) and _tail_match(a.text):
                 head, _sp, rest = c.text.partition(" ")
                 joined = join_lines([a.text, head], vocab, counts)
                 a.text = joined
@@ -1432,9 +1446,17 @@ def apply_choices(cx, doc_id: str) -> list[int]:
         cx.executemany("UPDATE blocks SET included=? WHERE doc_id=? AND n=?", [(want[n], doc_id, n) for n in changed])
     spans = [(a, z, want[n], kind) for n, a, z, kind, _inc in rows]
     ups = []
+    starts = [b0 for b0, _b1, _inc, _k in spans]
+    ends = [b1 for _b0, b1, _inc, _k in spans]
+    # blocks lie in order, so those a passage touches are one run, found by bisection (every passage was compared
+    # with every block); blocks out of order take the plain scan
+    in_order = all(x <= y for x, y in zip(starts, starts[1:])) and all(x <= y for x, y in zip(ends, ends[1:]))
     for pid, a, z, section in cx.execute("SELECT passage_id, start, end, section FROM passages WHERE doc_id=?",
                                          (doc_id,)).fetchall():
-        mine = [(inc, kind) for b0, b1, inc, kind in spans if b0 < z and b1 > a]
+        if in_order:
+            mine = [(inc, kind) for _b0, _b1, inc, kind in spans[bisect_right(ends, a):bisect_left(starts, z)]]
+        else:
+            mine = [(inc, kind) for b0, b1, inc, kind in spans if b0 < z and b1 > a]
         if not mine:
             continue
         inc = any(i for i, _k in mine)

@@ -614,7 +614,7 @@ h2 .defined-wrap { font-size: var(--fs-small); font-weight: var(--fw-regular); }
 /* in the drawer: a narrower column, a step smaller */
 .drawer-section .log-text { font-size: var(--fs-small); white-space: pre-wrap; }
 .drawer-section .log-why { font-size: var(--fs-small); }
-.log-meta .log-who, .log-meta .log-subject { display: inline-flex; align-items: center; gap: 4px; }
+.log-meta .log-subject { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ==== 4.21 Progress and work states */
 /* Work under way, waiting, not running, done, did not work: words and an icon (workState()), never a pill; the running

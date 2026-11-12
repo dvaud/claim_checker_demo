@@ -1,13 +1,13 @@
 """Write the evidence report (one self-contained HTML file) and CSV/JSON exports."""
 from __future__ import annotations
 
-import csv
 import html
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
 from . import analysis
+from .review import write_csv
 from .store import Workspace, now
 from .taxonomy import HORIZON_LABELS, SEGMENT_LABELS, SEGMENTS, goal_names, target_sort_key, targets
 
@@ -75,12 +75,9 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
     if not rows:
         path.write_text("")
         return
-    keys = list(rows[0].keys())
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for k, v in r.items()})
+        write_csv(f, [{k: json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for k, v in r.items()}
+                      for r in rows])
 
 
 def build(ws: Workspace, out_dir: str | Path | None = None, strict: bool = False) -> Path:

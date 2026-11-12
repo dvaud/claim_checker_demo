@@ -190,9 +190,12 @@ CREATE TABLE IF NOT EXISTS shares(kind TEXT, key TEXT, state TEXT, owner TEXT, b
 -- 0.18 (the shared folder, sync/folder.py): this copy's own record of the folder, never exchanged. What it wrote there
 -- (kind: an item's kind and key with its fingerprint; "doc": a document's stub; "reading", "file": a reading or an
 -- original file there; "row": one of the project's rows; "head": the folder written to and the last bundle's number;
--- "words": a document whose words may be in what was written, taken out again if it is later kept out of the folder;
+-- "words": a document whose words may be in what was written, taken out again if it is later kept out of the folder
+-- (its fp: who may read it with AI and its checksum as last written, as JSON, so this holds once the document is
+-- removed here);
 -- "content": an item written whole, "<kind>/<key>", taken out again if it is later taken back; "keep": a colleague's
--- switch as last read; a "reading" or "file" seen in a colleague's subfolder has that colleague's id as its fp),
+-- switch as last read; "seen": a colleague whose subfolder this copy has seen there (an owner whose subfolder was
+-- never seen has not left); a "reading" or "file" seen in a colleague's subfolder has that colleague's id as its fp),
 -- with the bundle that carried it; how far it has brought in each colleague's bundles; and what the folder says of each
 -- document (the latest stub heard), so a check that read a document this copy does not hold is still compared by
 -- content (sync.fingerprints._canon), and the document's file can be fetched once it arrives
@@ -224,6 +227,9 @@ CREATE TABLE IF NOT EXISTS canon_seen(doc TEXT PRIMARY KEY, state_n INT, read_n 
 # 0.11.1: the label lookups per passage (`WHERE framework=? AND passage_id=?`) and per task were planned over the
 # framework index alone (a project has no statistics), hundreds of times slower on a large project; the index on
 # (passage_id, framework) answers them directly, and the old single-column one is dropped.
+# The task queue asks every few seconds what waits and what a claim holds: ix_tasks_waiting holds only the tasks that
+# wait (its WHERE is taskqueue.WAITING word for word: SQLite uses a partial index only for a query that repeats its
+# condition), ix_tasks_claimed only the tasks a claim holds. Both stay small however many tasks were answered.
 INDEXES = """
 CREATE INDEX IF NOT EXISTS ix_ver_subject ON verifications(subject_kind, subject_id);
 CREATE INDEX IF NOT EXISTS ix_ver_passage ON verifications(passage_id);
@@ -248,6 +254,9 @@ CREATE INDEX IF NOT EXISTS ix_theme_members_theme ON theme_members(run_id, theme
 CREATE INDEX IF NOT EXISTS ix_mentions_chain ON mentions(doc_id, chain_id);
 CREATE INDEX IF NOT EXISTS ix_reviews_item ON reviews(item_kind, item_id);
 CREATE INDEX IF NOT EXISTS ix_tasks_queued ON tasks(queued, kind, status);
+CREATE INDEX IF NOT EXISTS ix_tasks_waiting ON tasks(kind, queued_at) WHERE COALESCE(queued, 0)=1 AND
+  COALESCE(access, 'cloud')='cloud' AND (status IN ('pending', 'retry') OR (status='done' AND again=1));
+CREATE INDEX IF NOT EXISTS ix_tasks_claimed ON tasks(claimed_by) WHERE claimed_by IS NOT NULL;
 """
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -477,6 +486,9 @@ class Workspace:
             cx = sqlite3.connect(self.db_path, timeout=60, isolation_level=None, factory=_Cx, check_same_thread=False)
             cx.row_factory = sqlite3.Row
             cx.execute("PRAGMA synchronous=NORMAL")  # safe with WAL; much faster commits
+            # a project may have come from someone else: nothing its database's own definitions name (in a default, an
+            # index, a check) may call functions that reach outside the database
+            cx.execute("PRAGMA trusted_schema=OFF")
             self._local.cx, self._local.depth, self._local.gen = cx, 0, self._gen
             with self._all_lock:
                 self._all.add(cx)

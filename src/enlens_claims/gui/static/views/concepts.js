@@ -2,7 +2,7 @@
 // concept: its wordings, the documents that discuss it, the passages as concordance lines, and related concepts
 // (a person accepts or rejects the links proposed by search by meaning or by the AI).
 import { featureEyebrow, withAI } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob, button, link, notice, card, tag, input, select, textarea, fold, readsLine, inset } from "../lib.js";
+import { App, api, h, icon, replace, clear, toast, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob, button, link, notice, card, tag, input, select, textarea, fold, readsLine, inset, searchHref } from "../lib.js";
 import { MiniJob, jobCard as jobCardOf } from "./progress.js";
 import { shareInline, sharingOf } from "./share.js";   // 0.18 (L1)
 
@@ -11,7 +11,6 @@ const LINES = 50;      // concordance lines per page
 
 // "green hydrogen" -> "Green hydrogen" (a name written with capitals stays as it is)
 const cap = (s) => (s && /^[a-z]/.test(s) && !/[A-Z]/.test(s) ? s[0].toUpperCase() + s.slice(1) : s || "");
-const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}&mode=phrase`;
 const conceptHref = (tid) => `#/concepts/${encodeURIComponent(tid)}`;
 const checkHref = (text) => `#/hypotheses?text=${encodeURIComponent(text)}`;
 
@@ -113,7 +112,7 @@ export async function renderConcepts(view, params, query) {
     live.textContent = q ? `${plural(total, "concept")} match “${q}”.` : `${plural(total, "concept")}.`;
     if (!total) {
       listBox.appendChild(emptyState("search-x", q ? "No concept matches" : "The glossary is empty", q ? `No term of the glossary contains “${q}”. Try another word, or search the documents for it.` : "No term occurs often enough in at least two documents.",
-        q ? link({ kind: "next", href: searchHref(q) }, "Search the documents for it") : null));
+        q ? link({ kind: "next", href: searchHref(q, { mode: "phrase" }) }, "Search the documents for it") : null));
       return;
     }
     const pager = () => h("div", { class: "pager" },
@@ -298,7 +297,7 @@ export async function renderConcept(view, [termId], query) {
       facts: [plural(c.mentions, "mention"), plural(c.passages, "passage"), plural((c.documents || []).length, "document"),
         c.wordings.length > 1 ? `${c.wordings.length} wordings` : null],
       sub: [h("span", { class: "ct-ways" }, link({ href: checkHref(cap(c.label) + " ") }, "Check a hypothesis about this concept"),
-        link({ href: searchHref(c.label) }, "Search for it"))],
+        link({ href: searchHref(c.label, { mode: "phrase" }) }, "Search for it"))],
     }));
     document.title = `${c.label} · Concepts · ENLENS`;
     clear(body);
@@ -324,7 +323,7 @@ export async function renderConcept(view, [termId], query) {
   // ---- wordings, and other wordings the AI proposes
   function wordingsCard() {
     const list = h("ul", { class: "ct-wordings" }, c.wordings.map((w) => inset({ as: "li" },
-      link({ kind: "title", serif: true, href: searchHref(w.label), class: "ct-wording", title: `Search the documents for “${w.label}”` }, w.label),
+      link({ kind: "title", serif: true, href: searchHref(w.label, { mode: "phrase" }), class: "ct-wording", title: `Search the documents for “${w.label}”` }, w.label),
       h("span", { class: "muted small" }, `${plural(w.mentions, "mention")} in ${plural(w.documents, "document")}`),
       w.joined_by && w.joined_by.length ? tag({}, `joined by ${[...new Set(w.joined_by.map((s) => JOINED_TEXT[s] || s))].join(" and ")}`) : null,
       w.joins && w.joins.length ? button({ kind: "quiet", sm: true, title: `Split “${w.label}” off: it does not mean the same as the other wordings`, onClick: async (e) => {

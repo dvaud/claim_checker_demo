@@ -4,7 +4,7 @@
 // bibliography.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, confirmDialog, emptyState, TERMINAL,
-  dialog, session, download, plural, spinner, button, downloadButton, fileButton, link, notice, card, input, select, fold, stopButton, choice, foundWords } from "../lib.js";
+  dialog, session, download, plural, spinner, button, downloadButton, fileButton, link, notice, card, input, select, fold, stopButton, choice, foundWords, readTextFile, safeHref, cpToIndex } from "../lib.js";
 import { simpleProgress, jobError } from "./progress.js";
 import { accessChoice } from "./ai-access.js";
 
@@ -229,7 +229,8 @@ export async function renderBibliography(view) {
       if (!f) return;
       if (f.size > 18 * 1024 * 1024) { toast("This file is too large (over 18 MB). Export one collection at a time.", "warn"); return; }
       let text;
-      try { text = await f.text(); } catch (e) { showError(e); return; }
+      try { text = await readTextFile(f); }   // a file from an older reference manager may be in a Windows code page
+      catch (e) { showError(e); return; }
       start({ file: { name: f.name, text } }, `Reading ${f.name}`);
     });
     return card({ as: "div", class: "bib-zotero-help" },
@@ -297,7 +298,8 @@ export async function renderBibliography(view) {
     w.doi ? [h("span", { class: "sep" }, "·"), link({ kind: "external", href: `https://doi.org/${w.doi}`, target: "_blank", rel: "noopener noreferrer", class: "it", title: `Open doi.org/${w.doi} in your browser` }, "DOI")] : null,
     // 0.14.3: only a web address (http or https) becomes a link: a bibliography file can carry any text as its "url"
     w.url && !w.doi && /^https?:\/\//i.test(String(w.url).trim()) ? [h("span", { class: "sep" }, "·"), link({ kind: "external", href: w.url, target: "_blank", rel: "noopener noreferrer", class: "it", title: w.url }, "Web page")] : null,
-    w.link ? [h("span", { class: "sep" }, "·"), link({ href: w.link, class: "it", title: "Shows this work in Zotero" }, "Open in Zotero")] : null];
+    // the link of a library entry: a web address or the Zotero app’s own (zotero://), never another scheme
+    safeHref(w.link, ["http", "https", "zotero"]) ? [h("span", { class: "sep" }, "·"), link({ href: safeHref(w.link, ["http", "https", "zotero"]), class: "it", title: "Shows this work in Zotero" }, "Open in Zotero")] : null];
   // 0.13.3: a linked document is called by its work's title; the title read from the file is under its file name
   const docCell = (d) => h("div", { class: "bib-doc" }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}`, class: "bib-doc-title" }, d.title || d.file), h("div", { class: "doc-file" }, d.file),
     d.file_title ? h("div", { class: "muted small bib-own-title" }, "Title in the file: ", d.file_title) : null);
@@ -321,8 +323,10 @@ export async function renderBibliography(view) {
       } }, icon("check", { size: 13 }), `Confirm all ${rows.length}`) : null));
     for (const r of rows) {
       const ev = r.evidence || {};
+      // start and end count the excerpt’s characters as the app does (code points): the string’s indices come from them
+      const from = ev.excerpt ? cpToIndex(ev.excerpt, ev.start) : 0, to = ev.excerpt ? cpToIndex(ev.excerpt, ev.end) : 0;
       const ex = ev.excerpt ? h("blockquote", { class: "bib-excerpt" },
-        ev.end > ev.start ? [ev.excerpt.slice(0, ev.start), foundWords(ev.excerpt.slice(ev.start, ev.end)), ev.excerpt.slice(ev.end)] : ev.excerpt) : null;
+        to > from ? [ev.excerpt.slice(0, from), foundWords(ev.excerpt.slice(from, to)), ev.excerpt.slice(to)] : ev.excerpt) : null;
       const found = [
         ev.title === "doi" ? "the work’s DOI, somewhere on the first pages (the document may only cite it)" : ev.title === "whole" ? "the whole title" : ev.title === "main" ? "the title without its subtitle" : "nearly all the words of the title",
         ev.author ? `the author ${titleCase(ev.author)}` : null,

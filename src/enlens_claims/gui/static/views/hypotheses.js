@@ -6,7 +6,7 @@
 // after the other. The progress of the check the page follows is under the box, then every answer (history.js), with
 // the checks still running or waiting their turn at the top. The evidence map is the place's other view (map.js).
 import { featureEyebrow, withAI, viewTabs } from "../features.js";
-import { App, api, h, icon, readsLine, replace, clear, append, toast, showError, fmt, pageHead, navigate, watchJob, P, debounce, session, emptyState, statusBadge, download, downloadLinks, button, iconButton, link, notice, tag, card, fold, fileButton, select, textarea, input as fieldInput, choice } from "../lib.js";
+import { App, api, h, icon, readsLine, replace, clear, append, toast, showError, fmt, pageHead, navigate, watchJob, P, debounce, session, emptyState, statusBadge, download, downloadLinks, button, iconButton, link, notice, tag, card, fold, fileButton, select, textarea, input as fieldInput, choice, latest, norm, readTextFile } from "../lib.js";
 import { checkOptions, pickCode } from "./options.js";
 import { ProgressPanel } from "./progress.js";
 import { answersList } from "./history.js";
@@ -93,7 +93,9 @@ export async function renderHypotheses(view, params, query) {
     codeClear.hidden = !code;
     saveDraft();
   };
+  const freshSuggestions = latest();   // only the newest request of suggestions is drawn
   const fetchSuggestions = debounce(async () => {
+    const mine = freshSuggestions();
     const text = ta.value.trim();
     const fwName = fwSelect.value;
     if (mode !== "single" || !fwName || text.length < MIN_CHARS) { suggestions = []; replace(suggestBox); return; }
@@ -101,6 +103,7 @@ export async function renderHypotheses(view, params, query) {
       const r = await api("GET", `/api/projects/${P(project)}/suggest?text=${encodeURIComponent(text)}&framework=${P(fwName)}&n=5`);
       suggestions = r.codes || [];
     } catch (_) { suggestions = []; }
+    if (!mine()) return;
     // the suggested codes: a choice; the code chosen shows as chosen
     replace(suggestBox, suggestions.length ? [h("span", { id: "hyp-suggest-l" }, "Suggested:"),
       choice({ filter: true, sm: true, "aria-labelledby": "hyp-suggest-l", value: code || null,
@@ -268,7 +271,7 @@ export async function renderHypotheses(view, params, query) {
   fileInput.addEventListener("change", async () => {
     const f = fileInput.files && fileInput.files[0];
     if (!f) return;
-    try { ta.value = await f.text(); onText(); if (mode === "list") { previewSoon.cancel(); preview(); } toast(`Loaded ${f.name}.`, "ok", { ttl: 2500 }); }
+    try { ta.value = await readTextFile(f); onText(); if (mode === "list") { previewSoon.cancel(); preview(); } toast(`Loaded ${f.name}.`, "ok", { ttl: 2500 }); }
     catch (e) { showError(e); }
     fileInput.value = "";
   });
@@ -384,7 +387,6 @@ export async function renderHypotheses(view, params, query) {
   };
   // the draft is forgotten once what it held is checked (not when another hypothesis was written meanwhile). A job's
   // title is the first 120 characters of its hypothesis.
-  const norm = (t) => String(t || "").split(/\s+/).filter(Boolean).join(" ");
   const forgetDraft = (text) => {
     const d = norm((session("draft") || {}).text), t = norm(text);
     if (d && t && (d === t || (t.length >= 100 && d.startsWith(t)))) session("draft", null);

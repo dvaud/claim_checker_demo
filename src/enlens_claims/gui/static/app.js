@@ -260,6 +260,8 @@ function sidebarScrollInit() {
 // ---------------------------------------------------------------------------------------------
 let statusTimer = null;
 let statusBusy = false, statusAgain = false;
+let statusFailures = 0;   // looks at /api/jobs that failed in a row (the computer slept, the app was busy): each waits longer
+const HIDDEN_LOOK = 15000;   // a tab nobody sees looks this seldom; it looks at once when it comes back (visibilitychange, focus)
 let statusKey = "";  // what the box drawn last shows, all but the seconds (a redraw under the pointer kept its tooltip)
 async function renderStatus() {
   if (statusBusy) { statusAgain = true; return; }
@@ -275,7 +277,11 @@ async function drawStatus() {
   if (!box || !privacy) return;
   clearTimeout(statusTimer);
   let jobs = [];
-  try { jobs = (await api("GET", "/api/jobs")).jobs || []; } catch (_) { return; }
+  try { jobs = (await api("GET", "/api/jobs")).jobs || []; statusFailures = 0; }
+  catch (_) {   // look again later, a little longer each time, so one failed request does not end the sidebar’s status
+    statusTimer = setTimeout(renderStatus, Math.min(60000, 5000 * 2 ** Math.min(statusFailures++, 4)));
+    return;
+  }
   const s = App.settings();
   const summary = (App.state && App.state.queue) || {};
   let q = null;
@@ -350,6 +356,7 @@ async function drawStatus() {
   // nothing else running, no look was due, and it never showed)
   const quietIn = quietRoundAgainIn(jobs);
   if (quietIn !== null) again = again ? Math.min(again, quietIn) : quietIn;
+  if (again && document.hidden) again = Math.max(again, HIDDEN_LOOK);
   if (again) statusTimer = setTimeout(renderStatus, again);
 }
 
@@ -784,6 +791,7 @@ async function boot() {
   document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") { e.preventDefault(); openFinder(); } });
   // keep the sidebar fresh when the window regains focus
   window.addEventListener("focus", () => renderStatus());
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) renderStatus(); });
 }
 
 boot();

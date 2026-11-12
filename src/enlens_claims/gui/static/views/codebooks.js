@@ -6,7 +6,7 @@
 // codes* when a code is removed. An edit changes no result by itself.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
-  dialog, field, switchControl, watchJob, emptyState, shortTitle, session, button, iconButton, downloadButton, link, menu, notice, card, tag, input, select, textarea, choice, optionCards, readsLine, inset, workState, personMark, compare } from "../lib.js";
+  dialog, field, switchControl, watchJob, emptyState, shortTitle, session, button, iconButton, downloadButton, link, menu, notice, card, tag, input, select, textarea, choice, optionCards, readsLine, inset, workState, personMark, compare, readTextFile, setBusy } from "../lib.js";
 import { forgetFrameworks } from "./options.js";
 import { showHistory, askWhy } from "./versions.js";
 import { shareBar } from "./share.js";   // 0.18 (L1)
@@ -17,14 +17,6 @@ const drafts = new Map();   // unsaved edits, kept while you look at another pag
 function whereBadge(where) {
   const [t, ic] = WHERE[where] || [where, "circle"];
   return tag({ class: `cb-where cb-where-${where}`, icon: ic }, t);
-}
-
-// A CSV file as text: UTF-8, else the Windows code page of a spreadsheet saved in Europe (f.text() read every file as
-// UTF-8 and garbled the others: ő and ű mark the Central European page).
-async function readCsv(f) {
-  const bytes = new Uint8Array(await f.arrayBuffer());
-  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, ""); }
-  catch (_) { return new TextDecoder(bytes.some((b) => b === 0xF5 || b === 0xD5) ? "windows-1250" : "windows-1252").decode(bytes); }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -119,7 +111,7 @@ export async function newCodebook(start = "fresh", opts = {}) {
   if (start === "csv") {
     const f = file.files && file.files[0];
     if (!f) { toast("Choose a CSV file.", "info"); return; }
-    body.source = { csv: await readCsv(f) };
+    body.source = { csv: await readTextFile(f) };
   }
   if (start === "themes") {
     const picked = await pickThemes(where === "home");
@@ -229,6 +221,7 @@ export async function renderCodebook(view, [name]) {
     if (e.status === 404) { view.appendChild(emptyState("search-x", "No such codebook", "It was removed, or it belongs to another project.", link({ kind: "back", href: "#/codebooks" }, "All codebooks"))); return; }
     throw e;
   }
+  let trying = false, tryWatch = null;   // the job of Try it, while it runs
   let st, merges, dirty = false, tried = null, openCode = session(`cb-open:${key}`) || null;
   // what the codebook was when unsaved edits began: a draft made on another state (restored meanwhile, or changed in
   // another window) is set aside rather than saved over it
@@ -269,7 +262,7 @@ export async function renderCodebook(view, [name]) {
         cb.shadows_home ? h("span", { class: "muted" }, " · this project's own copy of a codebook kept with all projects") : null),
       actions: h("div", { class: "btn-row" },
         ro ? button({ kind: "main", sm: true, onClick: () => newCodebook("copy", { of: cb.name, title: `${cb.title} (copy)` }) }, icon("copy", { size: 14 }), "Make a copy to change it") : null,
-        button({ sm: true, title: "Without AI: how many passages and documents the keyword pass would pick for each code", onClick: tryIt }, icon("zap", { size: 14 }), "Try it"),
+        button({ sm: true, title: "Without AI: how many passages and documents the keyword pass would pick for each code", disabled: trying, onClick: (e) => tryIt(e.currentTarget) }, icon("zap", { size: 14 }), "Try it"),
         ro ? null : button({ kind: "quiet", sm: true, title: "Earlier versions: compare them with now, or restore one",
           onClick: () => { if (dirty) { toast("Save or discard your changes first: a restore would replace them.", "info"); return; } showHistory({ kind: "codebook", key: cb.name, onRestored: reload }); } },
           icon("history", { size: 14 }), "History"),
@@ -623,11 +616,18 @@ export async function renderCodebook(view, [name]) {
   }
 
   // ---- whole-codebook actions
-  async function tryIt() {
+  // One pass at a time: the button waits while its job runs (also on a page drawn again meanwhile), and the job is
+  // watched only while this page is shown
+  async function tryIt(btn) {
+    if (trying) return;
+    trying = true;
+    if (btn) setBusy(btn, true);
     toast("Trying the codebook on every passage (no AI)…", "info", { small: true, group: "cb-try" });
     try {
       const r = await api("POST", `${base}/try`, { codebook: st });
-      const job = await watchJob(r.job.id).promise;
+      tryWatch = watchJob(r.job.id);
+      const job = await tryWatch.promise;
+      trying = false;
       if (job.state !== "done") { if (job.error) toast(job.error, "error"); return; }
       tried = job.result;
       const none = Object.entries(tried.codes).filter(([, x]) => !x.passages).map(([k]) => k);
@@ -635,6 +635,7 @@ export async function renderCodebook(view, [name]) {
       toast(`Tried on ${plural(tried.passages, "passage")}.${none.length ? ` ${plural(none.length, "code")} match nothing.` : ""}${many.length ? ` ${plural(many.length, "code")} match a large part of the documents.` : ""} Open a code to see what it picks.`, none.length || many.length ? "warn" : "ok", { group: "cb-try" });
       draw();
     } catch (e) { showError(e); }
+    finally { trying = false; tryWatch = null; if (btn) setBusy(btn, false); }
   }
   async function relabel(code) {
     try {
@@ -663,5 +664,5 @@ export async function renderCodebook(view, [name]) {
   const onUnload = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } };
   window.addEventListener("beforeunload", onUnload);
   draw();
-  return () => window.removeEventListener("beforeunload", onUnload);
+  return () => { window.removeEventListener("beforeunload", onUnload); if (tryWatch) tryWatch.stop(); };
 }

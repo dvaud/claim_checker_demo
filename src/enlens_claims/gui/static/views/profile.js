@@ -7,6 +7,14 @@ import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice, readsLine, inset } from "../lib.js";
 import { jobCard } from "./progress.js";
 
+// The largest count in a grid of rows of cells (at least 1), found by a loop: Math.max(...every cell) throws a
+// RangeError above about 125,000 arguments, which a project of thousands of documents reaches.
+function gridMax(rows) {
+  let max = 1;
+  for (const row of Object.values(rows)) for (const n of Object.values(row)) if (n > max) max = n;
+  return max;
+}
+
 const pct = (x) => `${Math.round((x || 0) * 100)}%`;
 
 // Who put a label there, in the app's words
@@ -416,7 +424,7 @@ export async function renderProfile(view, params, query) {
       gridBox.appendChild(emptyState("tag", "No code found yet", "No passage has a code that counts. The AI can read the passages with a candidate code, or try another codebook."));
       return;
     }
-    const max = Math.max(1, ...Object.values(cells).flatMap((row) => Object.values(row)));
+    const max = gridMax(cells);
     const docHref = (d, code) => `#/doc/${encodeURIComponent(d.doc_id)}?tab=codes${framework !== (App.settings().profile_framework || "sdg") ? `&framework=${encodeURIComponent(framework)}` : ""}${code ? `&code=${encodeURIComponent(code)}` : ""}`;
     const tbody = h("tbody");
     const table = h("table", { class: "map-table pf-grid" },

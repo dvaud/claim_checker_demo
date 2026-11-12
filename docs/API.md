@@ -361,7 +361,9 @@ and original files are stored there once for the whole team.
   project), `gap` (a colleague's bundle the cloud service has not brought yet), `arriving` (one still being copied, or
   the project's own `project.json` not brought yet), `damaged` (not what its name says, or its database cannot be read:
   left aside, and that colleague's later work waits behind it), `newer_format` (made by a newer ENLENS: update; that
-  colleague's work waits, the others' comes in), `documents` (documents their work reads have not arrived yet),
+  colleague's work waits, the others' comes in), `too_large` (a bundle, or a document's reading, larger than ENLENS
+  reads: left aside, that colleague's later work waits behind it), `documents` (documents their work reads have not
+  arrived yet),
   `failed` (their work could not be merged: nothing of it changed, the others' came in). Each `message` is in plain
   words, ready to show; every one except `other_project` goes away by itself on a later round. A copy held up at a
   colleague's bundle says so in its own subfolder (`waiting.json`); when that bundle is damaged or gone on its

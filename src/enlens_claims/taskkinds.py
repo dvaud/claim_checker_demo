@@ -17,7 +17,7 @@ it, and the task goes through the same guard as every other (`access`, `home.loc
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping, Sequence, Set
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 
@@ -89,10 +89,6 @@ def get(name: str) -> TaskKind | None:
             _loading = False
         k = _REG.get(name)
     return k
-
-
-def all_kinds() -> list[TaskKind]:
-    return list(_REG.values())
 
 
 def register(kind: TaskKind) -> TaskKind:

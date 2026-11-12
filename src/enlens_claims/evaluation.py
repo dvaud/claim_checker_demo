@@ -448,16 +448,17 @@ def score(ref: Workspace, folder: str | Path, apply: bool = False) -> dict:
 
 def apply_choice(chosen: dict) -> dict:
     """Make the chosen Claude models the defaults of this installation (Settings, AI model per task)."""
-    s = home.load_settings()
-    tm = dict(s.get("task_models") or {})
-    claude = dict(tm.get("claude") or {})
-    for kind, c in chosen.items():
-        if c.get("claude"):
-            claude[kind] = c["claude"]
-    if claude:
-        tm["claude"] = claude
-    home.update_settings({"task_models": tm})
-    return tm
+    with home.LOCK, home.to_change():  # read, changed and written back as one step
+        s = home.load_settings()
+        tm = dict(s.get("task_models") or {})
+        claude = dict(tm.get("claude") or {})
+        for kind, c in chosen.items():
+            if c.get("claude"):
+                claude[kind] = c["claude"]
+        if claude:
+            tm["claude"] = claude
+        home.update_settings({"task_models": tm})
+        return tm
 
 
 def report_markdown(out: dict) -> str:

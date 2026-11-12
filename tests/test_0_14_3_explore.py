@@ -354,6 +354,9 @@ def test_a_bad_codebook_in_a_folder_is_reported(tmp_path, monkeypatch):
 def test_the_page_reads_a_codebook_in_its_own_code_page_and_shows_problems():
     # 0.16: codebooks are added on their own page (views/codebooks.js), with the same reading of the file
     js = (STATIC / "views" / "codebooks.js").read_text(encoding="utf-8")
-    assert "readCsv(f)" in js and "windows-1250" in js and "fatal: true" in js
+    # one reading of an uploaded text file for every page (lib.js readTextFile), not a copy in each
+    assert "readTextFile(f)" in js and "readCsv" not in js and "windows-1250" not in js
+    lib = (STATIC / "lib.js").read_text(encoding="utf-8")
+    assert "windows-1250" in lib and "fatal: true" in lib
     assert "data.problems" in js   # the codebook files that cannot be used, each with the reason
     assert "await f.text()" not in js

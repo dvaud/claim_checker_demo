@@ -12,8 +12,8 @@ from typing import Any
 from .. import people
 from ..store import Workspace, now
 from .codebook_merge import CodebookRules
-from .common import (DOC_ID, ID_COLS, LOCAL_ONLY, OWN_RULES, UNFINISHED, _TEXT_COLS, _TOKEN, _cols, _pk, _rows, _sha,
-                     _tokens, base_id, text_fps)
+from .common import (DOC_ID, ID_COLS, LOCAL_ONLY, OWN_RULES, READING_TABLES, UNFINISHED, _TEXT_COLS, _TOKEN, _cols,
+                     _pk, _rows, _sha, _tokens, base_id, text_fps)
 from .fingerprints import (_canon, _check_unit, _fingerprints, _known, _plain, _running, _themes_unit,
                            record_seen)
 from .owner_merge import OwnerRules
@@ -143,6 +143,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             for d, stub in self.stubs.items():    # 0.18: no text of these came: what the folder says is all there is
                 icx.execute("UPDATE documents SET text_fp=? WHERE doc_id=?", (stub.get("text_fp"), d))
         with self.ws.connect() as cx:
+            self._cx, self._dflt = cx, None      # what a task of theirs may hand to an AI here (`_access_here`)
             people.adopt(cx, self.me)            # and what you decided before 0.14 is yours
             if self.stubs:
                 self._remember_stubs(cx)         # 0.18: before anything is compared (fingerprints._canon reads them)
@@ -305,7 +306,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                 self.r["documents"]["clash"].append({"title": title, "doc_id": local})
             else:
                 self.r["documents"]["new"].append(title)
-            for table in ("pages", "paragraphs", "headings", "passages", "blocks", "doc_tables"):
+            for table in READING_TABLES:
                 if table in ("blocks", "doc_tables") and not self.icx.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
                     continue  # 0.15: a colleague's copy from before 0.15 has no blocks
@@ -408,12 +409,15 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                     if self._doc_ok(r) and r["doc_id"] in self.docs and self.docs[r["doc_id"]] not in have_mentions]
         self._insert(cx, "mentions", mentions)
         # the tasks behind them (and every other finished task outside checks and theme runs): how each answer was made
+        from ..sharing import ITEM_TASK_KINDS
+
         tasks = [t for t in _rows(self.icx, f"SELECT * FROM tasks WHERE status NOT IN ({','.join('?' * len(UNFINISHED))}) "
-                                            "AND kind NOT IN ('check', 'expand', 'decompose', 'reread', 'second', "
-                                            "'theme')", UNFINISHED)
+                                            f"AND kind NOT IN ({','.join('?' * len(ITEM_TASK_KINDS))})",
+                                  (*UNFINISHED, *ITEM_TASK_KINDS))
                  if not any(x in self.skip_docs for x in _TOKEN.findall(t["task_id"]))]
         added = {self._id("task_id", t["task_id"]) for t in tasks}
-        self._insert(cx, "tasks", [dict(t, queued=0, claimed_by=None) for t in tasks])
+        self._insert(cx, "tasks", [dict(t, queued=0, claimed_by=None, access=None) for t in tasks],
+                     fix=self._access_here)
         if added:
             self._insert(cx, "results", [r for r in _rows(self.icx, "SELECT * FROM results")
                                          if self._id("task_id", r["task_id"]) in added])
@@ -583,7 +587,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         self.claims |= {mp.get(c["claim_id"], c["claim_id"]) for c in unit.get("user_claims", [])}
 
     def _put(self, cx: sqlite3.Connection, kind: str, unit: dict[str, list[dict]]) -> None:
-        tasks_ = [dict(t, queued=0, claimed_by=None, claimed_at=None) for t in unit["tasks"]]
+        tasks_ = [dict(t, queued=0, claimed_by=None, claimed_at=None, access=None) for t in unit["tasks"]]
         if kind == "check":
             from ..tasks import _h
 
@@ -612,8 +616,23 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         else:
             for table in ("theme_runs", "themes", "theme_members"):
                 self._insert(cx, table, unit[table], verb="OR REPLACE")
-        self._insert(cx, "tasks", tasks_, verb="OR REPLACE", fix=self._payload_here)
+        self._insert(cx, "tasks", tasks_, verb="OR REPLACE", fix=lambda t: self._access_here(self._payload_here(t)))
         self._insert(cx, "results", unit["results"], verb="OR REPLACE")
+
+    def _access_here(self, t: dict) -> dict:
+        """Who may read what a task of theirs hands to the AI, as this copy says: worked out from its payload (named as
+        here) and this copy's settings, never taken from the sender. Their copy may let Claude read a document this
+        copy keeps for No AI, and an answered task is not relabelled when a setting changes, so *Ask a stronger
+        model* would otherwise send its passages to Claude here. A payload that cannot be read stays here (`none`)."""
+        from ..access import _default_from_cx, label_payload
+
+        if self._dflt is None:
+            self._dflt = _default_from_cx(self._cx)
+        try:
+            lv = label_payload(self._cx, json.loads(t.get("payload_json") or "{}"), dflt=self._dflt)
+        except (ValueError, TypeError):
+            lv = "none"
+        return dict(t, access=lv)
 
     def _payload_here(self, t: dict) -> dict:
         """0.18: a task of theirs whose payload came without the text of a document kept out of the shared folder
@@ -717,7 +736,13 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         if mine and not same:
             self.r["bibliography"] = "kept_yours"
             return
-        self._insert(cx, "bib_items", _rows(self.icx, "SELECT * FROM bib_items"))
+        # a work's attachments without where they are on the sender's computer (as `sharing.without_paths` sends them):
+        # a path in a colleague's file may name a file of this one, which *Add the files the bibliography has* would
+        # then add to the project
+        from ..sharing import without_paths
+
+        self._insert(cx, "bib_items", [dict(r, files_json=without_paths(r.get("files_json")))
+                                       for r in _rows(self.icx, "SELECT * FROM bib_items")])
         decided = ("confirmed", "rejected")
         here = {(r[0], r[1]): r[2] for r in cx.execute("SELECT item_key, doc_id, status FROM bib_links")}
         for r in _rows(self.icx, "SELECT * FROM bib_links"):

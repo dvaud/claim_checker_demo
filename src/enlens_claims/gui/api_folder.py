@@ -5,7 +5,8 @@ documents marked Only a local AI or No AI, and *Sync now*, which runs as a job (
 `Handler` takes this class as a base, so the names in ROUTES resolve on it."""
 from __future__ import annotations
 
-from .api_common import ApiError, Job
+from .api_common import ApiError
+from .poller import TITLE, _round  # one round, by hand or by the poller, is the same job
 from ..sync import folder
 
 
@@ -72,16 +73,5 @@ class FolderApi:
         ws = self.app.ws(name)
         if folder.chosen(ws) is None:
             raise ApiError(400, "Choose a shared folder for this project first.")
-        job = self.app.jobs.start(folder.JOB, "Working together: the shared folder", name,
-                                  lambda job: _round(ws, job), uses_model=False, unique=True)
+        job = self.app.jobs.start(folder.JOB, TITLE, name, lambda job: _round(ws, job), uses_model=False, unique=True)
         return {"job": job.view()}
-
-
-def _round(ws, job: Job) -> dict | None:
-    """One round as a job. Stopped (the person stops it, the app quits), it ends between two steps of the round
-    (`folder.sync_now`'s `should_stop`) and returns None, so the job ends as cancelled ("Last round stopped")."""
-    def progress(step: str, message: str, info: dict) -> None:
-        job.progress = {"step": step, "message": message, **info}
-
-    out = folder.sync_now(ws, progress, should_stop=job.cancel.is_set)
-    return None if out.get("stopped") else out

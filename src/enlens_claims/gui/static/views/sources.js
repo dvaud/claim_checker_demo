@@ -2,7 +2,7 @@
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { tesseractHelp, App, api, h, icon, readsLine, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
-  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
+  dialog, certainty, breakSegments, breaksToIndex, textPositions, cpLength, safeHref, searchHref, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
@@ -366,7 +366,12 @@ export async function renderSources(view) {
         confirmText: toClaude ? "Let Claude read it" : "Let a local AI read it", danger: true });
     }
     async function setAccess(ids, level, note) {
-      if (!(await confirmLoosen(ids, level))) { await reloadDocs(); return; }
+      // cancelled: those rows show their own setting again; the list stays where it is (it went back to the top)
+      if (!(await confirmLoosen(ids, level))) {
+        patchDocs({ documents: docs.filter((d) => ids.includes(d.doc_id)) }, ids);
+        if (ids.length === 1) { const sel = rows.get(ids[0])?.querySelector(".access-select"); if (sel) sel.focus(); }
+        return;
+      }
       const body = { doc_ids: ids, ai_access: level === pa.default ? null : level };
       if (note !== undefined) body.note = note;
       try {
@@ -562,7 +567,9 @@ export async function renderDocument(view, [docId], query) {
   const reading = blocks.some((b) => b.kind);  // 0.15: read by the new reader: blocks that know what they are
   const hit = span ? blocks.findIndex((b) => span.start >= b.start && span.start < b.end) : -1;
   // the quote's text, for opening the original at it (the whole excerpt is too long for that)
-  const quoteText = hit >= 0 && !span.whole ? (blocks[hit].text || "").slice(Math.max(0, span.start - blocks[hit].start), Math.max(0, span.end - blocks[hit].start)).trim() || null : null;
+  // (span and the block’s start are the app’s offsets: turned into indices of the block’s own text to cut it)
+  const hitPos = hit >= 0 ? textPositions(blocks[hit].text || "") : null;
+  const quoteText = hit >= 0 && !span.whole ? (blocks[hit].text || "").slice(hitPos.index(Math.max(0, span.start - blocks[hit].start)), hitPos.index(Math.max(0, span.end - blocks[hit].start))).trim() || null : null;
   const back = from ? { href: `#/h/${encodeURIComponent(from)}${query.card ? `?card=${encodeURIComponent(query.card)}` : ""}`, text: "Back to the result" } : null;
   const watchers = [];
   const cleanups = [];
@@ -581,7 +588,7 @@ export async function renderDocument(view, [docId], query) {
       d.bib ? h("p", { class: "dv-bib" }, icon("library", { size: 13 }), h("span", {}, "In your ", h("a", { href: "#/bibliography" }, "bibliography"), ": ", h("strong", {}, d.bib.cite || d.bib.title)),
         d.bib.title && d.bib.title !== d.title ? [h("span", { class: "sep" }, "·"), h("span", { class: "serif" }, d.bib.title)] : null,
         d.bib.doi && d.bib.doi !== d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.bib.doi}`, target: "_blank", rel: "noopener noreferrer" }, `doi ${d.bib.doi}`)] : null,
-        d.bib.link ? [h("span", { class: "sep" }, "·"), h("a", { href: d.bib.link }, "Open in Zotero")] : null) : null,
+        safeHref(d.bib.link, ["http", "https", "zotero"]) ? [h("span", { class: "sep" }, "·"), h("a", { href: safeHref(d.bib.link, ["http", "https", "zotero"]) }, "Open in Zotero")] : null) : null,
       // 0.13.3: the heading is the work's title; the one read from the file stays visible, on a line of its own
       d.file_title ? h("p", { class: "muted small dv-file-title" }, "Title in the file: ", h("span", { class: "serif" }, d.file_title)) : null,
       h("div", { class: "row dv-head-row" },
@@ -612,8 +619,10 @@ export async function renderDocument(view, [docId], query) {
       b.kind === "table" && b.included === false && !b.changed ? h("span", { class: "dv-mine dv-muted" }, "left out") : null,
       reading ? blockActions(b) : null];
   }
+  const rowWatchers = new Set();       // observers that follow every row (the Page panel’s), the rows added later too
   function addBlocks(bs) {
     for (const b of bs) {
+      if (rows.has(b.n)) continue;     // drawn already: a block is on the page once, so blockAt’s search holds
       const body = h("div", { class: "dv-body" });
       const kindCls = b.kind ? ` dv-k-${b.kind}${b.included === false ? " dv-out" : ""}${b.changed ? " dv-changed" : ""}${b.joined ? " dv-joined" : ""}` : "";
       const label = h("div", { class: "pp" }, labelParts(b));
@@ -622,6 +631,7 @@ export async function renderDocument(view, [docId], query) {
       rows.set(b.n, { row, body, label, b, sig: null });
       place(b, row, keptOpen);
       loaded.push(b);
+      for (const w of rowWatchers) w.observe(row);
     }
   }
   // where a block's row goes: after a page mark where a page begins; folded under "Left out of the text" when it is
@@ -841,15 +851,22 @@ export async function renderDocument(view, [docId], query) {
     moreBox.appendChild(button({ sm: true, onClick: (e) => { e.currentTarget.disabled = true; loadMore().then(() => paint()); } }, icon("chevron-down", { size: 13 }),
       reading ? `Show the rest of the document (${fmt.num(totalBlocks - loaded.length)} more parts)` : `Show the rest of the document (${fmt.num(totalBlocks - loaded.length)} more ${blockUnit(blocks[0])})`));
   }
-  async function loadMore() {
+  // one load at a time: a second call while one is under way (a jump, the Page panel, "Show the rest") waits for it
+  // instead of asking for the same 500 blocks again
+  let loading = null;
+  function loadMore() {
+    if (!loading) loading = loadNext().finally(() => { loading = null; });
+    return loading;
+  }
+  async function loadNext() {
     if (loaded.length >= totalBlocks) return false;
     let r;
     try { r = await api("GET", `${docBase}?view=blocks&offset=${loaded.length}&limit=500`); } catch (e) { showError(e); return false; }
     const bs = r.blocks || [];
-    if (!bs.length) return false;
+    const before = loaded.length;
     addBlocks(bs);
     drawMore();
-    return true;
+    return loaded.length > before;
   }
   // make sure the text up to a document offset is on the page
   async function ensureLoaded(off) {
@@ -867,7 +884,8 @@ export async function renderDocument(view, [docId], query) {
   function docSlice(s, e) {
     const b = blockAt(s);
     if (!b || e > b.end) return null;
-    return b.text.slice(s - b.start, e - b.start);
+    const pos = textPositions(b.text);
+    return b.text.slice(pos.index(s - b.start), pos.index(e - b.start));
   }
 
   // Every decoration: {start, end, cls, mark (a highlight, drawn as <mark>), term (a key term's id)} in document offsets
@@ -881,37 +899,47 @@ export async function renderDocument(view, [docId], query) {
     if (focus) { out.push({ start: focus.start, end: focus.end, cls: focus.cls || "dv-focus", mark: !focus.soft }); for (const x of focus.extra || []) out.push(x); }
     return out;
   }
+  // one sweep of the decorations, sorted by where they start, along the blocks in their order: each block takes the
+  // ones that overlap it from those started before its end (a search with thousands of hits and a document of
+  // thousands of blocks no longer filter every decoration for every block on every jump)
   function paint() {
-    const all = decorations();
+    const all = decorations().sort((x, y) => x.start - y.start);
+    let next = 0, open = [];
     for (const b of loaded) {
+      while (next < all.length && all[next].start < b.end) open.push(all[next++]);
+      open = open.filter((x) => x.end > b.start);   // ended before this block: no later block has it either
       const r = rows.get(b.n);
-      const mine = all.filter((x) => x.start < b.end && x.end > b.start);
+      const mine = open.filter((x) => x.start < b.end);
       const sig = mine.map((x) => `${x.start}-${x.end}-${x.cls}-${x.term || ""}-${x.note || ""}`).join("|");
       if (r.sig === sig) continue;
       r.sig = sig;
       replace(r.body, blockText(b, mine));
     }
   }
-  // A block's text cut at its headings (as blockNode does), each piece under the decorations that cover it.
+  // A block’s text cut at its headings (as blockNode does), each piece under the decorations that cover it. The
+  // decorations and headings are the app’s offsets: cut here at the indices of the block’s own text, and each piece
+  // remembers the app’s offset of its first character (nodeAt).
   function blockText(b, decos) {
     const text = b.text || "";
+    const pos = textPositions(text);
     if (b.table && !decos.length) {
       const rowsT = b.table.rows || [];
       return h("div", { class: "dv-table-wrap" }, h("table", { class: "dv-table" },
         rowsT.length ? h("thead", {}, h("tr", {}, rowsT[0].map((c) => h("th", { scope: "col" }, c)))) : null,
         h("tbody", {}, rowsT.slice(1).map((r) => h("tr", {}, r.map((c) => h("td", {}, c)))))));
     }
-    const breaks = (b.headings || []).map((x) => ({ at: x.at, end: x.end, kind: "heading" }));
+    const breaks = breaksToIndex(text, (b.headings || []).map((x) => ({ at: x.at, end: x.end, kind: "heading" })));
     const segs = breakSegments(text, breaks);
+    const spans = decos.map((x) => ({ x, a: pos.index(x.start - b.start), z: pos.index(x.end - b.start) }));
     const fill = (el, s0, s1) => {
       const cuts = new Set([s0, s1]);
-      for (const x of decos) { const a = x.start - b.start, z = x.end - b.start; if (a > s0 && a < s1) cuts.add(a); if (z > s0 && z < s1) cuts.add(z); }
+      for (const { a, z } of spans) { if (a > s0 && a < s1) cuts.add(a); if (z > s0 && z < s1) cuts.add(z); }
       const pts = [...cuts].sort((p, q) => p - q);
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], z = pts[i + 1];
-        const on = decos.filter((x) => x.start - b.start < z && x.end - b.start > a);
+        const on = spans.filter((s) => s.a < z && s.z > a).map((s) => s.x);
         const t = document.createTextNode(text.slice(a, z));
-        nodeAt.set(t, b.start + a);
+        nodeAt.set(t, b.start + pos.point(a));
         if (!on.length) { el.appendChild(t); continue; }
         const terms = on.filter((x) => x.term).map((x) => x.term);
         const noteIds = on.filter((x) => x.note).map((x) => x.note);   // 0.16: a click on a highlight opens its note
@@ -945,16 +973,16 @@ export async function renderDocument(view, [docId], query) {
     setTimeout(() => r.row.classList.remove("ev-flash"), 1700);
   }
 
-  // where a click or a selection is, as a document offset
+  // where a click or a selection is, as a document offset (the app’s count: a node’s offset is an index of its text)
   function docOffset(node, offset, isEnd) {
-    if (node.nodeType === Node.TEXT_NODE) { const o = nodeAt.get(node); return o === undefined ? null : o + offset; }
+    if (node.nodeType === Node.TEXT_NODE) { const o = nodeAt.get(node); return o === undefined ? null : o + textPositions(node.data).point(offset); }
     const walker = document.createTreeWalker(list, NodeFilter.SHOW_TEXT);
     const ref = node.childNodes[offset] || null;
     let t = null;
     if (isEnd) {
       if (ref) { walker.currentNode = ref; t = walker.previousNode(); }
       else { let last = node; while (last.lastChild) last = last.lastChild; t = last.nodeType === Node.TEXT_NODE ? last : (walker.currentNode = last, walker.previousNode()); }
-      return t && nodeAt.has(t) ? nodeAt.get(t) + t.length : null;
+      return t && nodeAt.has(t) ? nodeAt.get(t) + cpLength(t.data) : null;
     }
     if (ref && ref.nodeType === Node.TEXT_NODE) t = ref;
     else if (ref) { walker.currentNode = ref; t = walker.nextNode(); }
@@ -970,14 +998,15 @@ export async function renderDocument(view, [docId], query) {
     const b = blockAt(off);
     if (!b) return null;
     const t = b.text;
-    let i = off - b.start;
+    const pos = textPositions(t);
+    let i = pos.index(off - b.start);
     if (!WORD.test(t[i] || "")) { if (i > 0 && WORD.test(t[i - 1])) i--; else return null; }
     let s = i, e = i + 1;
     while (s > 0 && WORD.test(t[s - 1])) s--;
     while (e < t.length && WORD.test(t[e])) e++;
     while (s < e && /['’-]/.test(t[s])) s++;
     while (e > s && /['’-]/.test(t[e - 1])) e--;
-    return e > s ? { start: b.start + s, end: b.start + e, text: t.slice(s, e) } : null;
+    return e > s ? { start: b.start + pos.point(s), end: b.start + pos.point(e), text: t.slice(s, e) } : null;
   }
 
   // a click on a word (with Search in this document open) adds it to the search; Shift-click makes a phrase
@@ -1358,8 +1387,10 @@ export async function renderDocument(view, [docId], query) {
       const first = vis.map((r) => r.b).filter((b) => b.page).sort((a, z) => a.start - z.start)[0];
       if (first) go(first.page, false);
     }, { rootMargin: "0px 0px -60% 0px" });
+    // the rows there now, and (through rowWatchers) every row "Show the rest" or a jump adds later
     for (const r of rows.values()) seen.observe(r.row);
-    cleanups.push(() => seen.disconnect());
+    rowWatchers.add(seen);
+    cleanups.push(() => { rowWatchers.delete(seen); seen.disconnect(); });
     go((hit >= 0 && blocks[hit].page) || (loaded[0] && loaded[0].page) || 1, false);
     return { el, live: drawBoxes };   // 0.16: Restore and Leave out change the outlines (solid or dashed)
   }
@@ -1563,10 +1594,11 @@ export async function renderDocument(view, [docId], query) {
     }
     function wordMarks(text, startAt, words) {
       const out = [];
+      const pos = textPositions(text);   // the matches are indices of the text; the marks, the app’s offsets
       for (const w of words || []) {
         const rx = new RegExp(`(?<![\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "giu");
         let mm;
-        while ((mm = rx.exec(text))) out.push({ start: startAt + mm.index, end: startAt + mm.index + mm[0].length, cls: "dv-code-mark", mark: true });
+        while ((mm = rx.exec(text))) out.push({ start: startAt + pos.point(mm.index), end: startAt + pos.point(mm.index + mm[0].length), cls: "dv-code-mark", mark: true });
       }
       return out;
     }
@@ -1574,7 +1606,7 @@ export async function renderDocument(view, [docId], query) {
       if (Number.isInteger(it.start) && Number.isInteger(it.end)) return jumpTo({ start: it.start, end: it.end });
       const p = await passageOf(it.passage_id);
       if (!p || !Number.isInteger(p.start)) { toast("This passage could not be placed in the text.", "warn"); return; }
-      jumpTo({ start: p.start, end: p.start + (p.text || "").length }, { soft: true, extra: wordMarks(p.text || "", p.start, it.matched) });
+      jumpTo({ start: p.start, end: p.start + cpLength(p.text || "") }, { soft: true, extra: wordMarks(p.text || "", p.start, it.matched) });
     }
 
     // the passages of the open codes, marked in the text: quotes where the AI or you gave one, else the matched words
@@ -1716,7 +1748,7 @@ export async function renderDocument(view, [docId], query) {
             h("span", { class: "muted small" }, isPin && places.length ? `place ${cursor[t.term_id] + 1} of ${places.length}` : plural(t.mentions, "mention"))),
           h("span", { class: "dv-term-bar", "aria-hidden": "true" }, h("span", { style: { width: `${Math.max(4, Math.round(((t.score || 0) / max) * 100))}%` } })),
           h("span", { class: "dv-term-links" },
-            link({ href: `#/search?q=${encodeURIComponent(t.label)}&mode=phrase`, title: `Search the whole project for “${t.label}”` }, icon("text-search", { size: 13 }), h("span", { class: "visually-hidden" }, `Search the project for ${t.label}`)),
+            link({ href: searchHref(t.label, { mode: "phrase" }), title: `Search the whole project for “${t.label}”` }, icon("text-search", { size: 13 }), h("span", { class: "visually-hidden" }, `Search the project for ${t.label}`)),
             link({ href: `#/concepts?name=${encodeURIComponent(t.label)}`, title: `The concept “${t.label}” across the documents` }, icon("network", { size: 13 }), h("span", { class: "visually-hidden" }, `Open the concept ${t.label}`))));
         return li;
       })));
@@ -1864,32 +1896,38 @@ export async function renderDocument(view, [docId], query) {
       draw();
       paint();
     }
+    // Previous, Next or a hit picked: the current row and the counter change in place (the table of up to hundreds of
+    // hits is not drawn again), and the hit’s mark in the text through jumpTo’s paint
+    let rowsNow = [], counter = null;
     function go(i) {
       if (!res || !res.lines[i]) return;
+      if (rowsNow[cur]) rowsNow[cur].classList.remove("dv-cur");
       cur = i;
-      draw();
+      if (rowsNow[cur]) rowsNow[cur].classList.add("dv-cur");
+      if (counter) counter.textContent = `${cur + 1} of ${fmt.num(res.lines.length)}`;
       jumpTo(res.lines[i]);
     }
     function draw() {
       clear(results);
+      rowsNow = []; counter = null;
       if (!res) return;
       const lines = res.lines || [];
-      if (!res.total) { results.appendChild(h("p", { class: "muted" }, `No hit for “${res.query}” in this document.`, " ", h("a", { href: `#/search?q=${encodeURIComponent(res.query)}` }, "Search the whole project"))); return; }
+      if (!res.total) { results.appendChild(h("p", { class: "muted" }, `No hit for “${res.query}” in this document.`, " ", h("a", { href: searchHref(res.query) }, "Search the whole project"))); return; }
       results.appendChild(h("div", { class: "row dv-hitnav" },
         h("strong", {}, `${plural(res.total, "hit")} in ${plural(res.passages, "passage")}`),
         h("span", { class: "grow" }),
         button({ sm: true, disabled: !lines.length, "aria-label": "Previous hit", onClick: () => go(cur <= 0 ? lines.length - 1 : cur - 1) }, icon("chevron-left", { size: 13 })),
-        h("span", { class: "small muted" }, cur >= 0 ? `${cur + 1} of ${fmt.num(lines.length)}` : ""),
+        counter = h("span", { class: "small muted" }, cur >= 0 ? `${cur + 1} of ${fmt.num(lines.length)}` : ""),
         button({ sm: true, disabled: !lines.length, "aria-label": "Next hit", onClick: () => go(cur >= lines.length - 1 ? 0 : cur + 1) }, icon("chevron-right", { size: 13 }))));
       results.appendChild(h("div", { class: "kwic-wrap dv-kwic" }, h("table", { class: "kwic" },
         h("caption", { class: "visually-hidden" }, `Hits for ${res.query} in this document`),
-        h("tbody", {}, lines.map((l, i) => h("tr", { class: i === cur ? "dv-cur" : "" },
+        h("tbody", {}, rowsNow = lines.map((l, i) => h("tr", { class: i === cur ? "dv-cur" : "" },
           h("td", { class: "kw-left" }, h("span", {}, l.left)),
           h("td", { class: "kw-node" }, h("button", { class: "dv-node", type: "button", title: `Go to ${l.location || "it"}`, onClick: () => go(i) }, h("mark", {}, l.node))),
           h("td", { class: "kw-right" }, l.right),
           h("td", { class: "kw-where" }, l.location || "")))))));
       if (lines.length < res.total) results.appendChild(button({ kind: "quiet", sm: true, class: "dv-more-hits-btn", onClick: () => run(true) }, icon("chevron-down", { size: 13 }), `Show more hits (${fmt.num(res.total - lines.length)} more)`));
-      results.appendChild(h("p", { class: "small dv-search-note" }, h("a", { href: `#/search?q=${encodeURIComponent(res.query)}${mode.value !== "any" ? `&mode=${mode.value}` : ""}` }, icon("text-search", { size: 12 }), " Search the whole project for it")));
+      results.appendChild(h("p", { class: "small dv-search-note" }, h("a", { href: searchHref(res.query, { mode: mode.value !== "any" ? mode.value : null }) }, icon("text-search", { size: 12 }), " Search the whole project for it")));
     }
     function addWord(w, shift) {
       let v = qIn.value;

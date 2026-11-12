@@ -146,7 +146,7 @@ class _Evidence:
             from .themes import _edits
 
             rk = ws.query("SELECT run_key FROM theme_runs WHERE run_id=?", (run_id,))
-            moves = _edits(ws, rk[0][0])["moves"] if rk else {}
+            moves = _edits(ws, rk[0][0], run_id)["moves"] if rk else {}
             rows = ws.query("SELECT passage_id, theme_id FROM theme_members WHERE run_id=?", (run_id,))
             ids = {r[1] for r in rows}
             for pid, tid in rows:

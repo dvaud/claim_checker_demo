@@ -42,6 +42,7 @@ Nothing is sent anywhere: the merge reads the file on this computer.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -188,16 +189,24 @@ def log_bring_in(cx: sqlite3.Connection, report: dict, where: str = "") -> None:
 
 
 def _backup(ws: Workspace) -> Path:
-    """The project's database as it was before the merge (one copy, replaced each time): backups/before-bringing-in."""
+    """The project's database as it was before the merge (one copy, replaced each time): backups/before-bringing-in.
+    Each backup is written under a temporary name of its own and put in place whole: two at once (a round of the
+    shared folder and the owner's Accept) never write into one file."""
     folder = Path(ws.root) / "backups"
     folder.mkdir(exist_ok=True)
     out = folder / "before-bringing-in.sqlite"
-    part = out.with_name(out.name + ".part")
-    src, dst = sqlite3.connect(ws.db_path, timeout=60), sqlite3.connect(part)
+    fd, name = tempfile.mkstemp(dir=folder, prefix=".before-bringing-in-", suffix=".part")
+    os.close(fd)
+    part = Path(name)
     try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()
-    part.replace(out)
+        src, dst = sqlite3.connect(ws.db_path, timeout=60), sqlite3.connect(part)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        part.replace(out)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
     return out

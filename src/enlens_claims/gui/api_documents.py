@@ -255,16 +255,18 @@ class DocumentsApi:
         from openpyxl import Workbook
         from openpyxl.styles import Font
 
+        from ..review import append_row  # a cell read from a PDF is written as text, never as a formula
+
         wb = Workbook()
         sh = wb.active
         sh.title = f"Table {n}"[:31]
-        sh.append([r["caption"] or f"Table {n}"])
+        append_row(sh, [r["caption"] or f"Table {n}"])
         sh["A1"].font = Font(bold=True)
-        sh.append([f"From: {r['title'] or ''}" + (f", page {r['page']}" if r["page"] else "")
-                   + ". Read by ENLENS from the PDF: check the numbers against the original."])
+        append_row(sh, [f"From: {r['title'] or ''}" + (f", page {r['page']}" if r["page"] else "")
+                        + ". Read by ENLENS from the PDF: check the numbers against the original."])
         sh.append([])
         for cells in json.loads(r["rows_json"] or "[]"):
-            sh.append([_cell(c) for c in cells])
+            append_row(sh, [_cell(c) for c in cells])
         buf = io.BytesIO()
         wb.save(buf)
         fname = _filename(f"{(r['title'] or 'Document')[:60]} - table {n}", "xlsx")
@@ -272,7 +274,7 @@ class DocumentsApi:
 
     def _body_size(self) -> int:
         """The size of a raw upload, refused above MAX_UPLOAD (the connection is closed: the body is not read)."""
-        n = int(self.headers.get("Content-Length") or 0)
+        n = self._length()
         if n > MAX_UPLOAD:
             self.close_connection = True
             raise ApiError(413, "Files larger than 2 GB are not accepted.")

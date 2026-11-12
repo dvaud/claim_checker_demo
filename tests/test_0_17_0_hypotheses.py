@@ -84,7 +84,7 @@ def test_one_box_for_one_hypothesis_or_a_list():
     buttons = _fn(hyp, "function drawButtons()")
     assert '"Check"' in buttons and "`Check ${list.ready}`" in buttons
     # one way to load a file in both modes; the text it brings decides the mode
-    assert "Load a spreadsheet (CSV) or text file" in hyp and "ta.value = await f.text(); onText();" in hyp
+    assert "Load a spreadsheet (CSV) or text file" in hyp and "ta.value = await readTextFile(f); onText();" in hyp
 
 
 def test_the_ai_marks_and_the_line_on_who_reads():
@@ -139,7 +139,7 @@ def test_running_checks_are_rows_at_the_top_of_the_answers():
     assert "`#/hypotheses?job=${encodeURIComponent(j.id)}`" in row
     assert '"Waiting its turn"' in row and '"Checking…"' in row and 'j.state === "queued"' in row
     draw = _fn(hist, "function drawTable()")
-    assert "jobs.map(jobRow), rows.map(" in draw
+    assert "h(\"tbody\", {}, jobs.map(jobRow))" in draw and "drawInSteps(tbody, rows, answerRow," in draw   # the running checks whole, the answers in steps
     # a check being made has its answer row from the start: it is shown once, as the running check
     assert "UNFINISHED.has(x.status)" in draw and "norm(x.text || x.claim).startsWith(t)" in draw
     assert "running.filter((j) => j.id !== skip)" in draw   # the one the page follows is shown above, not here

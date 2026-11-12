@@ -2,7 +2,6 @@
 bodies, and the small helpers that write exports (split out of server.py in 0.16)."""
 from __future__ import annotations
 
-import csv
 import io
 import json
 import re
@@ -529,9 +528,8 @@ def _installation() -> dict:
 
 
 def _csv(rows: list[dict]) -> bytes:
+    from ..review import write_csv
+
     buf = io.StringIO()
-    if rows:
-        w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        w.writerows(rows)
+    write_csv(buf, rows)  # text a spreadsheet would run as a formula is written as text (review.csv_cell)
     return buf.getvalue().encode("utf-8-sig")

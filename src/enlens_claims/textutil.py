@@ -295,17 +295,24 @@ _ABBREV = re.compile(
 _SENT_END = re.compile(r"[.!?](?:[\"'”’)\]]+)?(\s+)(?=[\"'“‘(\[]?[A-Z0-9])")
 
 
+_LIST_NUMBER = re.compile(r"\s*\d+\.")
+# The longest ending `_ABBREV` takes is "approx." (7 characters); with the character before it, which `\b` looks at, a
+# look at the last ten characters of a sentence finds exactly what a look at all of it finds.
+_ABBREV_LOOK = 10
+
+
 def split_sentences(text: str, offset: int = 0) -> list[tuple[int, int]]:
     """Split into sentences; returns (start, end) spans (shifted by offset). Rule-based, abbreviation aware."""
     spans: list[tuple[int, int]] = []
     start = 0
     for m in _SENT_END.finditer(text):
         end = m.start(1)  # just after the punctuation and any closing quote or bracket
+        # only the end of the sentence is looked at: a long stretch of abbreviation stops was read again at every one
+        if _ABBREV.search(text[max(start, end - _ABBREV_LOOK):end]):
+            continue
+        if _LIST_NUMBER.fullmatch(text, start, end):  # list numbering such as "3."
+            continue
         head = text[start:end]
-        if _ABBREV.search(head):
-            continue
-        if re.fullmatch(r"\s*\d+\.", head):  # list numbering such as "3."
-            continue
         if head.strip():
             s = start + (len(head) - len(head.lstrip()))
             spans.append((offset + s, offset + end))
@@ -376,30 +383,33 @@ def token_spans(text: str, keep_stop: bool = False) -> list[tuple[int, int, str,
     return out
 
 
-_ONE: dict[str, str | None] = {}
+# What each character becomes under `_one_to_one`, as a table for `str.translate`. ASCII is worked out here with the
+# same two rules the loop used (lower case, any white space a plain space); another character is added the first
+# time it is seen, as a finished entry, so a thread that reads the table meanwhile sees only right answers.
+_ONE_TABLE: dict[int, str] = {i: " " if chr(i).isspace() else chr(i).lower() for i in range(128)}
+_NOT_ONE: set[str] = set()  # characters that do not become exactly one character (never put into the table)
 
 
 def _one_to_one(text: str) -> str | None:
     """`text` normalised character by character when every character becomes exactly one (most PDF text: accents,
     typographic quotes and dashes); None when one does not (ligatures, soft hyphens, combining marks), which then
     takes the exact but slower way."""
-    out = []
-    for ch in text:
-        if ch < "\x80":
-            out.append(ch.lower() if not ch.isspace() else " ")
+    table = _ONE_TABLE
+    for ch in set(text):  # each kind of character once: the work per character of the text is done by translate
+        if ord(ch) in table:
             continue
-        rep = _ONE.get(ch, "")
-        if rep == "":
-            if unicodedata.combining(ch):
-                rep = None
-            else:
-                r = _norm_cluster(ch)
-                rep = r if len(r) == 1 else None
-            _ONE[ch] = rep
-        if rep is None:
+        if ch in _NOT_ONE:
             return None
-        out.append(rep)
-    return "".join(out)
+        if unicodedata.combining(ch):
+            rep = None
+        else:
+            r = _norm_cluster(ch)
+            rep = r if len(r) == 1 else None
+        if rep is None:
+            _NOT_ONE.add(ch)
+            return None
+        table[ord(ch)] = rep
+    return text.translate(table)
 
 
 def surface_words(text: str) -> dict[str, str]:

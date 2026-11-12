@@ -96,11 +96,20 @@ def plan(ws: Workspace, kind: str, scope: str, backend, model: str) -> dict:
     return {"now": cur, "last": before, "changed": changed, "seconds_per_task": seconds_per_task(ws, kind, model)}
 
 
-def timing(ws: Workspace, kind: str, model: str, seconds: float) -> None:
-    """Remember how long a task of this kind took with this model (the last 50), for estimates."""
+def timing(ws: Workspace, kind: str, model: str, seconds: float, times: int = 1) -> None:
+    """Remember how long a task of this kind took with this model (the last 50), for estimates. `times`: that many
+    tasks took that long each (the answers of one batch), written at once. The list is read and written in one
+    transaction, so two programs storing answers at the same moment do not drop each other's."""
+    if times < 1:
+        return
     key = f"seconds:{kind}:{model}"
-    xs = (ws.meta(key) or [])[-49:] + [round(float(seconds), 2)]
-    ws.set_meta(key, xs)
+    with ws.connect() as cx:
+        row = cx.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        try:
+            xs = (json.loads(row[0]) if row and row[0] is not None else None) or []
+        except ValueError:
+            xs = []
+        ws.set_meta(key, (xs + [round(float(seconds), 2)] * times)[-50:], cx)
 
 
 def seconds_per_task(ws: Workspace, kind: str, model: str) -> float | None:
@@ -207,12 +216,18 @@ def made_with(ws: Workspace) -> dict:
 
 
 def hypothesis_task_ids(ws: Workspace, hyp_ids: list[str]) -> list[str]:
+    from .tasks import check_task_ids_sql, id_range
+
     ids: list[str] = []
     for hid in hyp_ids:
         ids.append(f"decompose:{hid}")
         for (cid,) in ws.query("SELECT claim_id FROM user_claims WHERE hyp_id=?", (hid,)):
             ids.append(f"expand:{cid}")
-            ids += [r[0] for r in ws.query("SELECT task_id FROM tasks WHERE kind IN ('check','reread','second') AND "
-                                           "(task_id=? OR task_id LIKE ? OR task_id LIKE ? OR task_id LIKE ?)",
-                                           (f"check:{cid}", f"check:{cid}:%", f"reread:{cid}:%", f"second:check:{cid}%"))]
+            # ranges on the key (`id_range`), as LIKE would read every task of these kinds once per part
+            cond, args = check_task_ids_sql(cid)
+            for prefix in (f"reread:{cid}:", f"second:check:{cid}"):
+                cond += " OR (task_id >= ? AND task_id < ?)"
+                args += list(id_range(prefix))
+            ids += [r[0] for r in ws.query("SELECT task_id FROM tasks WHERE +kind IN ('check','reread','second') AND "
+                                           f"({cond})", args)]
     return ids

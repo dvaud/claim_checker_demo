@@ -37,8 +37,14 @@ def me() -> str:
 
     pid = home.load_settings().get("person_id") or ""
     if not ID_RE.fullmatch(pid):
-        pid = "p" + uuid.uuid4().hex[:12]
-        home.update_settings({"person_id": pid})
+        with home.LOCK:  # made once: two requests of a new installation at once each made their own
+            # (strict: settings that cannot be read this moment are not "no id yet": a new id made then took the
+            # person's place in every shared project)
+            with home.to_change():
+                pid = home.load_settings().get("person_id") or ""
+            if not ID_RE.fullmatch(pid):
+                pid = "p" + uuid.uuid4().hex[:12]
+                home.update_settings({"person_id": pid})
     return pid
 
 
