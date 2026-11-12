@@ -780,26 +780,29 @@ def run_here(ws: Workspace, backend, kinds: list[str] | None = None, limit: int 
 # ---------------------------------------------------------------------------------------------
 # 0.8.1: model tests by queue (label compare, the model test): asked on a scratch copy, nothing stored
 # ---------------------------------------------------------------------------------------------
-def remove_copy(copy: Workspace, tries: int = 12, windows: bool | None = None) -> bool:
+def remove_copy(copy: Workspace, tries: int | None = None, windows: bool | None = None) -> bool:
     """Remove a scratch copy of a project (answer_on_copy); True when it is gone. 0.15.7: every connection to it is
     closed first, in every thread (also the ones open_project keeps), or Windows keeps the copy: its database is open.
     0.16.0rc2: a helper that reads the copy at that moment (Claude Code's connector in the middle of a call) opens it
     again before it is gone, and Windows keeps it then too: there, closing and removing are tried again for a few
-    seconds. 2026-11-12: about 8 seconds (12 tries) instead of 3.6 (8): on a busy Windows computer 3.6 s was not
-    always enough, and the copy was left for the trash."""
+    seconds. 2026-11-12: on Windows for about 8 seconds (12 tries) instead of 3.6, which a busy computer did not always
+    give the helper; and on macOS and Linux too, for about a second (4 tries): opening the copy just then makes its
+    database file again, so its folder is not empty when it is removed (seen on Linux under load)."""
     import os
     import shutil
 
     from . import home
 
     windows = os.name == "nt" if windows is None else windows
-    for attempt in range(max(1, tries)):
+    tries = max(1, (12 if windows else 4) if tries is None else tries)
+    for attempt in range(tries):
         copy.close_all()
         home.close_project(copy.root)
         shutil.rmtree(copy.root, ignore_errors=True)
-        if not copy.root.exists() or not windows:
+        if not copy.root.exists():
             break
-        time.sleep(0.1 * (attempt + 1))
+        if attempt + 1 < tries:
+            time.sleep(0.1 * (attempt + 1))
     return not copy.root.exists()
 
 

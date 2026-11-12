@@ -6,13 +6,16 @@
   up the computer's full name when it starts, and ENLENS never uses that name. On a Mac whose name the network does
   not answer for, the lookup waited 35 seconds (70 in network mode) at every start; GitHub's Mac test machines are
   such Macs. ENLENS's server now skips it.
-- **A model test on Windows removes its scratch copy of the project more reliably.** When Claude Code's connector
-  still had the copy open, ENLENS tried to remove it again for about 3.6 seconds; on a busy computer that was not
-  always enough, and the copy was left for the trash. It now tries for about 8 seconds.
+- **A model test or a label comparison with Claude Code removes its scratch copy of the project more reliably.**
+  When Claude Code's connector opened the copy just as it was removed, the copy could stay and wait for the trash:
+  on Windows, where ENLENS tried again for about 3.6 seconds, a busy computer needed longer, and on macOS and Linux
+  ENLENS did not try again at all. It now tries for about 8 seconds on Windows and about a second elsewhere.
+- **Stop on Windows says at once that Claude Code has stopped.** Stopping a run ended its processes but did not wait
+  for them, so on a busy computer the run could still show as working just after Stop.
 - **For developers: the test suite runs side by side**, with pytest-xdist and pytest-timeout in the `dev` extra
   (`python -m pytest -n auto`). On GitHub the tests of each system run side by side, Windows on three machines, and
   a test that hangs fails after 10 minutes with its stack; a release no longer runs the tests again when the Tests
-  run of its commit has passed. Waiting for Tests before a release went from about 35 minutes to about 8.
+  run of its commit has passed. The Tests run went from about 35 minutes to about 8 and a half (macOS from 19 to 4.5).
 
 ## 0.17.0 (November 2026): working together through a shared folder, and one look on every page
 

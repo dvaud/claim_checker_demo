@@ -526,6 +526,11 @@ def _end_process(pid: int, proc=None, wait: float = 10.0) -> None:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=30, **no_window())
         except (OSError, subprocess.SubprocessError):
             pass
+        # 2026-11-12: taskkill returns before the process has ended; on a busy computer Stop then still reported the
+        # run as working. Wait for it, as below on macOS and Linux.
+        t0 = time.time()
+        while time.time() - t0 < wait and not gone():
+            time.sleep(0.1)
         return
     import signal
 

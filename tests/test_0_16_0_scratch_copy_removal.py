@@ -5,7 +5,9 @@ Claude Code answers such tasks from a copy of the project, which is removed afte
 closed first, as Windows cannot remove an open database; but a helper that reads the copy at that moment (the
 connector in the middle of a call) opens it again before it is gone, and on Windows the copy stayed behind. On
 Windows the closing and removing are now tried again for a few seconds. This Mac and Linux remove an open file, so the
-held file is played here by a removal that fails the first times.
+held file is played here by a removal that fails the first times. 2026-11-12: macOS and Linux try again too, for about
+a second: a helper that opens the copy just then makes its database file again, and the folder stayed (Linux, under
+load).
 """
 from __future__ import annotations
 
@@ -39,13 +41,16 @@ def test_the_copy_is_removed_again_on_windows_while_a_helper_holds_it(monkeypatc
     assert len(calls) == 3 and len(closed) == 3            # closed again before each removal
 
 
-def test_elsewhere_and_when_it_stays_held_it_is_tried_once_or_given_up(monkeypatch, tmp_path):
+def test_elsewhere_and_when_it_stays_held_it_is_tried_a_few_times_or_given_up(monkeypatch, tmp_path):
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "home"))
     from enlens_claims import home, taskqueue
 
-    monkeypatch.setattr(taskqueue.time, "sleep", lambda s: None)
+    waits = []
+    monkeypatch.setattr(taskqueue.time, "sleep", waits.append)
     copy = home.create_project("C model test")
     calls = _held(monkeypatch, fails=99)
-    assert taskqueue.remove_copy(copy, windows=False) is False and len(calls) == 1   # macOS, Linux: no waiting
-    assert taskqueue.remove_copy(copy, tries=4, windows=True) is False and len(calls) == 5
+    assert taskqueue.remove_copy(copy, windows=False) is False and len(calls) == 4   # macOS, Linux: about a second
+    assert sum(waits) < 1.5 and len(waits) == 3                                       # no wait after the last try
+    assert taskqueue.remove_copy(copy, windows=True) is False and len(calls) == 16   # Windows: about 8 seconds
+    assert taskqueue.remove_copy(copy, tries=4, windows=True) is False and len(calls) == 20
     assert copy.root.exists()                               # left for the trash, as a quick look, as before
