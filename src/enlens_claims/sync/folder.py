@@ -88,7 +88,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from .. import __version__, people, sharing
-from ..store import Workspace, now, scratch
+from ..store import Workspace, now, scratch as scratch_settings
 from . import changes, formats
 from .common import (DOC_ID, LOCAL_ONLY, READING_TABLES as _READING_TABLES, UNFINISHED, _TOKEN, _cols, _pk, _rows, _sha,
                      base_id, text_fp)
@@ -1204,7 +1204,7 @@ class _Writer:
         tmp = Path(tempfile.mkdtemp(prefix="enlens-bundle-"))
         try:
             db = Workspace.create(tmp / "b", scratch=True).db_path
-            bcx = scratch(sqlite3.connect(db))
+            bcx = scratch_settings(sqlite3.connect(db))
             # 2026-11-12: a file of its own, thrown away if anything fails: its rows are written once (in WAL mode they
             # went to the log and then into the file) and VACUUM's copy is made in memory; a bundle of 4.7 MB wrote
             # 11 MB instead of 27 MB. Not WAL in the zip either: a colleague's ENLENS reads it as one plain file.
