@@ -99,6 +99,12 @@ def pytest_configure(config):
     `ENLENS_TEST_TMP=<folder>`, or a volume named ENLENS-TESTS (docs/DEVELOPING.md says how to make one). This sets
     TMPDIR, so pytest's tmp_path and every temporary file ENLENS makes in a test (scratch projects of a sync round,
     unpacked zips) land there; pytest-xdist's workers inherit it."""
+    # 2026-11-12: programs a test starts (`python -m enlens_claims.gui.launch`, the dev server, reading processes) import
+    # this copy's ENLENS too. pytest's `pythonpath` reaches only this process, so in a git worktree they imported the
+    # copy the virtual environment was installed from (another version: three launcher tests failed in worktrees).
+    src = str(Path(__file__).resolve().parent.parent / "src")
+    paths = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p and p != src]
+    os.environ["PYTHONPATH"] = os.pathsep.join([src, *paths])
     tmp = os.environ.get("ENLENS_TEST_TMP") or (RAM_DISK if os.path.isdir(RAM_DISK) else "")
     if tmp and os.path.isdir(tmp):
         for name in ("TMPDIR", "TEMP", "TMP"):
