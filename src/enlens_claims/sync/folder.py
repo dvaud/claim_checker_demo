@@ -1203,7 +1203,7 @@ class _Writer:
         (`_leaks`), so nothing that is not shared can be in it."""
         tmp = Path(tempfile.mkdtemp(prefix="enlens-bundle-"))
         try:
-            db = Workspace.create(tmp / "b").db_path
+            db = Workspace.create(tmp / "b", scratch=True).db_path
             bcx = scratch(sqlite3.connect(db))
             # 2026-11-12: a file of its own, thrown away if anything fails: its rows are written once (in WAL mode they
             # went to the log and then into the file) and VACUUM's copy is made in memory; a bundle of 4.7 MB wrote

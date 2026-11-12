@@ -627,11 +627,16 @@ def scratch(cx: sqlite3.Connection) -> sqlite3.Connection:
     return cx
 
 _ONE_TRANSACTION = True  # a new database is set up in one transaction (False: a statement at a time, as before)
-_EMPTY: dict[str, bytes] = {}
+_EMPTY: dict[tuple[str, int | None], bytes] = {}
 _EMPTY_LOCK = threading.Lock()
+# 2026-11-12: a scratch project's pages are 1 KB, not SQLite's 4 KB: an empty project is one page per table and index
+# (164 of them), so its empty database is 181 KB instead of 672 KB, and a round makes one per colleague whose work it
+# reads and one for the bundle it writes. Its rows are few in nearly every round; a large first bundle is read a little
+# more slowly. A bundle's database keeps the size (VACUUM does), which a colleague's ENLENS reads as any other.
+SCRATCH_PAGE_SIZE = 1024
 
 
-def _copy_empty_database(dest: Path) -> None:
+def _copy_empty_database(dest: Path, page_size: int | None = None) -> None:
     """2026-11-13: a new project's database is a copy of an empty one that this process made once, the usual way
     (`Workspace._setup`), and keeps in memory as the file's bytes. Setting one up takes about 17 ms on a Mac and many
     times that on Windows, most of it the columns added after a table was made (each makes SQLite read the whole
@@ -644,12 +649,15 @@ def _copy_empty_database(dest: Path) -> None:
     when first asked for).
 
     The copy is written beside `dest` and put in place only if there is no database there yet, so two creations of the
-    same new project at once never copy an empty database over what the other already wrote (after review)."""
+    same new project at once never copy an empty database over what the other already wrote (after review).
+
+    `page_size`: of the empty database (None: SQLite's own, 4 KB), for scratch projects (SCRATCH_PAGE_SIZE)."""
     import os
 
     from .addons import database
 
-    key = repr((SCHEMA, INDEXES, MIGRATIONS, database()))
+    layout = repr((SCHEMA, INDEXES, MIGRATIONS, database()))
+    key = (layout, page_size)
     with _EMPTY_LOCK:
         empty = _EMPTY.get(key)
         if empty is None:
@@ -659,6 +667,13 @@ def _copy_empty_database(dest: Path) -> None:
             tmp = Path(tempfile.mkdtemp(prefix="enlens-empty-"))
             try:
                 made = Workspace(tmp)
+                if page_size:
+                    cx = sqlite3.connect(made.db_path)
+                    try:
+                        cx.execute(f"PRAGMA page_size={int(page_size)}")
+                        cx.execute("PRAGMA journal_mode=WAL")  # the file is made, with that page size
+                    finally:
+                        cx.close()
                 made._setup()  # closes its connection: the log is written into the file and removed
                 left = [f.name for f in tmp.iterdir() if f.name != made.db_path.name]
                 if left:
@@ -666,7 +681,8 @@ def _copy_empty_database(dest: Path) -> None:
                 empty = made.db_path.read_bytes()
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
-            _EMPTY.clear()  # only the latest layout is wanted
+            for k in [k for k in _EMPTY if k[0] != layout]:
+                del _EMPTY[k]  # only the latest layout is wanted
             _EMPTY[key] = empty
     part = dest.with_name(f"{dest.name}.{os.getpid()}-{threading.get_ident()}.new")
     part.write_bytes(empty)
@@ -726,7 +742,10 @@ class Workspace:
             ws.config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=2))
         if not ws.db_path.exists():
             try:
-                _copy_empty_database(ws.db_path)
+                if scratch:
+                    _copy_empty_database(ws.db_path, SCRATCH_PAGE_SIZE)
+                else:
+                    _copy_empty_database(ws.db_path)
             except (OSError, sqlite3.Error):
                 pass  # (no temporary folder, say) `_setup` makes it the usual way
         ws._setup()  # as for any project: whatever the copy lacks is added here
