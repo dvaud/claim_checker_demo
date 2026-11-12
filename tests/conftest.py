@@ -78,6 +78,19 @@ def _read_one_file_at_a_time(monkeypatch):
     monkeypatch.setenv("ENLENS_READ_WORKERS", "1")
 
 
+@pytest.fixture(autouse=True)
+def _queue_looks_often(monkeypatch):
+    """2026-11-12: the app looks at tasks waiting for Claude Code every 1.5 s (`taskqueue.QUEUE_POLL`) and at checks
+    waiting for it every 2 s (`server.FOLLOW_POLL`). The stand-ins of Claude Code in tests answer at once, so each
+    wait cost a test up to two seconds of nothing (13 s of test_08_queue's every-AI-button test); here they look
+    every 0.1 s."""
+    from enlens_claims import taskqueue
+    from enlens_claims.gui import server
+
+    monkeypatch.setattr(taskqueue, "QUEUE_POLL", 0.1)
+    monkeypatch.setattr(server, "FOLLOW_POLL", 0.1)
+
+
 RAM_DISK = "/Volumes/ENLENS-TESTS"
 
 

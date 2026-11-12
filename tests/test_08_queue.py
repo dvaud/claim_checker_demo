@@ -9,14 +9,13 @@ import shutil
 import sqlite3
 import sys
 import threading
-import time
 from pathlib import Path
 
 import pytest
 
 import fake_claude_code as fcc
 import fake_servers
-from test_app import CLAIM, Api, api, home  # noqa: F401  (fixtures)
+from test_app import CLAIM, Api, _wait_until, api, home  # noqa: F401  (fixtures)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -55,7 +54,7 @@ class Session(threading.Thread):
                 self.cc.run(self.project)
             except Exception as e:  # noqa: BLE001 - reported by the test
                 self.errors.append(repr(e))
-            time.sleep(0.2)
+            self.stop.wait(0.2)  # 2026-11-12: wakes at once when stopped, so finish() does not wait out the pause
 
     def finish(self):
         self.stop.set()
@@ -75,7 +74,11 @@ def test_every_ai_button_waits_for_claude_code_and_gets_its_answers(api, corpus)
     # nothing answers yet: the label button prepares tasks and waits, and the page says what waits
     st, r = api("POST", "/api/projects/P/profile/label", {"limit": 3})
     assert st == 200 and r["job"]["queue"] is True
-    time.sleep(1.5)
+    # 2026-11-12: wait until the tasks are prepared (the page then says what waits), not a fixed 1.5 s
+    def _waiting():
+        j = api("GET", f"/api/jobs/{r['job']['id']}")[1]
+        return j["state"] == "running" and j["progress"].get("queue", {}).get("text", "").startswith("Waiting for Claude Code")
+    _wait_until(_waiting)
     job = api("GET", f"/api/jobs/{r['job']['id']}")[1]
     assert job["state"] == "running" and job["progress"]["queue"]["text"].startswith("Waiting for Claude Code: 3 passages")
     q = api("GET", "/api/projects/P/queue")[1]
@@ -164,7 +167,7 @@ def test_every_ai_button_waits_for_claude_code_and_gets_its_answers(api, corpus)
 def test_stopping_a_waiting_check_withdraws_it(api, corpus):
     _project(api, corpus)
     r = api("POST", "/api/projects/P/checks", {"text": CLAIM, "k": 3})[1]
-    time.sleep(1.0)
+    _wait_until(lambda: api("GET", "/api/projects/P/queue")[1]["waiting"] == 1)  # 2026-11-12: was a fixed 1 s
     q = api("GET", "/api/projects/P/queue")[1]
     assert q["waiting"] == 1 and q["groups"][0]["kind"] == "expand"
     h = api("GET", "/api/projects/P/hypotheses")[1]["hypotheses"]
