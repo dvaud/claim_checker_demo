@@ -120,7 +120,8 @@ order, each step tested before the next:
 
 Built in 0.17.0 (November 2026). Still to do, after 0.17.0:
 
-- Try it between two computers through a real OneDrive, Dropbox and network drive, and on a real Windows PC.
+- Try it between two computers through a real OneDrive, Dropbox and network drive, and on a real Windows PC. The
+  first try on OneDrive (12 November 2026) found the set-up clunky: [L6 and L7](#l-working-together-live).
 - A collaborator's own removal of a document can, in one case, be undone without a word: count it as done only when
   their proposal for it is older than the owner's last change.
 - *Become the owner* on a project shared before 0.17.0 turns every earlier removal into a proposal at once: propose only
@@ -572,7 +573,9 @@ its own)
 The owner's model (9 November 2026). Until 0.17.0 (0.14, `sync.py`) colleagues exchanged a project as one zip file by
 hand: what is new comes in, each person's judgements are kept under their name, and nothing decided is replaced. L
 keeps those merge rules and makes the exchange continuous and selective. **L1 to L5 are built in 0.17.0**; each item
-ends with what was decided. The known limits are in the 0.17.0 changelog entry, under *Not yet done*.
+ends with what was decided. The known limits are in the 0.17.0 changelog entry, under *Not yet done*. **L6 and L7**
+(planned 12 November 2026) make the set-up easier: a storage space of the team's own (recommended), and an easier
+shared folder.
 
 **L1. Private until shared** · Level 0 · built in 0.17.0 (`sharing.py`, the `sync/` package)
 - Everything a person makes is theirs alone until they share it: checks of hypotheses, notes and highlights, research
@@ -628,6 +631,129 @@ ends with what was decided. The known limits are in the 0.17.0 changelog entry, 
   documents marked *Only a local AI* or *No AI* out of the folder; shared items still carry the words they quote.
   What is written is not signed: the folder is shared only with the team.
 
+**Seen in use (12 November 2026).** Setting up the shared folder on a second Mac through OneDrive is clunky: each
+colleague needs the OneDrive app, has to add the shared folder to their own files on OneDrive's website (*Add shortcut
+to My files*), find it under `~/Library/CloudStorage/` and paste its path. The owner's wish: as little of this as
+possible, for teams outside an institution too, free for a research group, and nothing that depends on one person
+running something for years. So, in this order of recommendation:
+
+1. **A storage space of the team's own** (L6), at an online storage service: no folder, no sync app, and colleagues
+   join from an invite link.
+   - a. **Backblaze**: recommended for most research groups (no card, an EU region, each colleague's key limited to
+     their own part).
+   - b. **Cloudflare**: recommended for large teams that grow quickly (downloads are always free, so many colleagues
+     joining costs nothing; it asks for a card).
+2. **A folder the team already shares** (L7): OneDrive, Dropbox, SURFdrive, a network drive. Built in 0.17.0 (L5),
+   made easier to set up.
+
+The zip stays for one-off exchanges.
+
+**L6. A storage space of the team's own (recommended)** · Level 0 · ENLENS candidate (the `sync/` package,
+`views/team.js`)
+
+*In plain words:* the team rents a private storage space, free at a team's size, at a company that keeps files online
+(technically an *S3 bucket*: S3 is the common language such services speak). ENLENS puts the team's shared work there
+and fetches colleagues' work from it by itself. Nobody installs anything or looks for a folder. The owner sets it up
+once, in about five minutes; colleagues open an invite link in ENLENS and are in.
+
+What it does, at either service:
+- **No server, no sync app, nothing for anyone to maintain.** ENLENS writes and reads the storage itself, with the
+  layout `sync/folder.py` already uses (each copy writes only its own part, numbered files are never rewritten,
+  `head.json` is written last, a document once for the team). Speed is not a goal: a round every 10 minutes is enough.
+- **The storage never reads the work.** Everything is encrypted on the computer before it leaves it, with the
+  project's key, which travels only in the invite link after its `#` (never sent to a server). Each person's bundles
+  are signed with their own key, and a copy brings in only what its writer signed: a file put in someone else's part
+  is set aside. (L5 decided that what is written is not signed; with storage outside the institution it is.)
+- **Colleagues never leave ENLENS.** *Invite a colleague* makes a link holding their own access and the project's
+  key: no account at the service, no app, no folder.
+- **The storage is never the only copy.** Every copy holds the whole project. Storage lost, unpaid or deleted is
+  replaced with *Move to another storage space*: the copies write everything once more (the snapshot a copy writes
+  when it starts afresh in a folder). Removing a colleague deletes their access, and the project's key is replaced for
+  those who stay; what the colleague already has stays with them, as with *Unshare*.
+- **The owner's role carries the storage's access** (L2): handed over with the project, so the team never depends on
+  the person who set it up.
+- **What it costs: nothing at a team's size.** Both give 10 GB free (a corpus of a few hundred PDFs is 1 to 3 GB,
+  plus small bundles); looking for changes every 10 minutes is about 4,300 calls a month per person, free at both.
+
+**L6a. Backblaze B2: recommended for most research groups**
+- *Tried 12 November 2026:* the sign-up page opens from a plain link
+  (`www.backblaze.com/sign-up/b2-cloud-storage-backup-archive`); it asks for an email address and a password only (no
+  card, no robot check), and the **storage region is chosen on the sign-up form** (CA East, EU Central, US East, US
+  West): ENLENS's steps must say *choose EU Central* before *Create Account*, as it cannot be changed afterwards. The
+  dashboard has *Buckets*, *Application Keys* and *Caps & Alerts*. Backblaze's site was down for maintenance the same
+  evening: the set-up must say so in plain words and offer to try again later.
+- *Free tier (Backblaze's pricing pages, November 2026):* the first 10 GB of storage; uploads, downloads and listings
+  free since 2026 (one newer kind of call has 2,500 free a day, which ENLENS does not need); downloads free up to three
+  times what is stored each month (only many colleagues joining in one month could go over, by cents). Above the free
+  tier: about $6.95 per TB a month (third-party figure).
+- **The owner's steps:** (1) sign up, choosing EU Central; (2) under *Application Keys*, *Generate New Master
+  Application Key*, and paste its *keyID* and *applicationKey* into ENLENS. That is all: B2's interface for programs
+  covers the rest, so ENLENS then, by itself:
+  - checks where the data is (the address B2 gives back names the region, such as `eu-central-003`) and says so, or
+    warns when it is not in the EU;
+  - makes a key of its own with only the rights it needs (buckets and keys, not billing), keeps it in the system's
+    keychain and forgets the master key; it suggests generating a new master key afterwards, which voids the pasted
+    one;
+  - makes the bucket: private, keeping only the latest version of a file (otherwise old versions count towards the
+    10 GB), with a random name;
+  - writes, reads back and deletes a test file;
+  - for each invite, makes the colleague's two keys: one that may write only their own part (B2 keys can be limited
+    to a bucket and a name prefix, so the storage itself enforces one writer per part) and one that may read the
+    team's;
+  - removing a colleague deletes their keys; *Move to another storage space* and deleting the bucket at the end of a
+    project use the same key.
+- **To check before building:** whether a key made in the dashboard can make other keys (if not, the master key is
+  the only way in, as above); what *Caps & Alerts* shows for an account without a card, and what such an account does
+  at the free tier's limit (Backblaze has no interface for caps, so ENLENS can only point to the page). A script that
+  plays the whole set-up on a test account (sign in, own key, bucket, test file, a colleague's keys, a refused write
+  outside their part, clean-up) was written on 12 November 2026 and waits for Backblaze's maintenance to end.
+
+**L6b. Cloudflare R2: recommended for large teams that grow quickly**
+- *Why for them:* downloads are free without limit, so many colleagues joining, or one large corpus fetched often,
+  costs nothing; the free tier gives 10 GB, 1 million uploads and listings and 10 million downloads a month. But a
+  card is needed, and access can be limited to a bucket, not to one person's part, so the signatures are what keeps
+  each part its writer's.
+- *Tried 12 November 2026:* a new account and a token need no card, but **switching R2 on asks for one** (nothing is
+  charged within the free tier). The link that fills in the token form works:
+  `dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=[{"key":"workers_r2","type":"edit"}]&accountId=*&name=ENLENS`
+  opens it with the name *ENLENS* and *Workers R2 Storage: Edit* on all accounts, ready for *Create Token*. Opened while
+  signed out, it led through the login page to an *Invalid redirect_uri* error on sign-up: ENLENS shows the token
+  link only once the owner says they are signed in.
+- **The owner's steps:** (1) sign up (typing `dash.cloudflare.com/sign-up`); (2) switch R2 on, with a card; (3) the
+  token link, then *Create Token*, and paste the token into ENLENS. ENLENS then makes the bucket (in Cloudflare's EU
+  jurisdiction), tests it, and for each invite a token limited to the bucket. To give each colleague their own token,
+  the owner's token also needs the right to make tokens: a powerful token, kept in the keychain and asked for only
+  when inviting or removing someone.
+- **To check before building:** whether the page after *Create Token* also shows the S3 access values (an *Access
+  Key ID* and *Secret Access Key*), which would save ENLENS a step.
+
+**Order of work for L6:** first a storage layer under `sync/folder.py` (list, read, write a file whole, remove), which
+today works on paths throughout; the folder becomes one kind of storage. Then the storage space over S3 with
+encryption and signatures, then invite and join in the Team tab, then the one-click set-up for Backblaze and then
+Cloudflare (keys on B2, tokens on R2: the only part written per service), then *Move to another storage space* and
+removing a colleague. WebDAV (SURFdrive, SURF Research Drive, a university's Nextcloud) can come later on the same
+layer.
+
+*Decided (12 November 2026):* a storage space of the team's own is the recommended way, Backblaze first, Cloudflare
+beside it; the shared folder (L7) and the zip stay. Not chosen: **an ENLENS server**, also one ENLENS sets up at a
+cloud host with one click (it costs money and needs someone to keep it secure for years); **OneDrive or Google Drive
+through their own programming interfaces** (an app registered with Microsoft or Google, which an institution's
+administrators often refuse); **a GitHub repository** (accounts, size limits, not meant for storage); **free servers**
+such as Oracle's (a card, servers taken back when idle, still a server to keep up); **one member's computer as the
+team's host** (colleagues cannot reach a laptop behind most networks, and the team stops when it sleeps).
+
+**L7. An easier shared folder** · Level 0 · ENLENS candidate (`views/team.js`, `sync/folder.py`)
+- For teams that already share a folder, or cannot use an online storage service: OneDrive, Dropbox, SURFdrive for
+  Dutch institutions, a network drive, or Syncthing (computer to computer, no cloud, both computers on at once). It
+  works today (L5); what is clunky is choosing the folder.
+- *Choose folder…* opens the system's own folder picker instead of asking for a pasted path.
+- The cloud folders this computer already has are offered by name: on a Mac those in `~/Library/CloudStorage/`
+  (OneDrive, Google Drive, Box) and `~/Dropbox`; on Windows the folders named by `%OneDrive%` and
+  `%OneDriveCommercial%`, and Dropbox's.
+- What a colleague is sent to join names the shared folder, and their ENLENS finds it among their cloud folders: they
+  confirm, not search. When it is not there, one line says what to do (on OneDrive: *Add shortcut to My files* on
+  OneDrive's website, and *Always Keep on This Device* so files are not fetched only when opened).
+
 ## M. Small fixes from use (November 2026)
 
 Seen while using 0.17.0rc2, and small enough to come before the next feature. Built in 0.17.0rc3: the Overview's
@@ -670,6 +796,17 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - Say beforehand how many can move cleanly; report in one line and a compact table instead of one sentence per
   document; one combined review of the results that would lose their place, then *Move anyway*; and *Review next* to
   walk the documents one at a time.
+
+**M8. A local model that works without a terminal** · Level 0
+- Seen on Windows after *Install Ollama*: the person still had to open Ollama, and then a terminal, before a model
+  would answer. Someone who has never used a terminal, and doesn't know what a model is, stops there. ENLENS should
+  go from the installed program to a model that answers by itself: start Ollama, wait until it answers, then offer the
+  model straight away. Nothing to open, nothing to type. Find out first where this run stopped: the installer didn't
+  start Ollama, or ENLENS didn't notice it.
+- Recommend models for this computer, instead of one model for every computer (today `qwen3:8b`, about 5 GB). Read its
+  memory (and a graphics card's, where there is one), free disk space and system, then suggest one model, with a
+  smaller, faster one and a larger, better one beside it. Each shows its download size, how quick it will be here and
+  what it is good for, in plain words, with one line on what a model is. The same for search by meaning.
 
 ## N. Ideas for later
 
