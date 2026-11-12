@@ -444,6 +444,10 @@ class Workspace:
         cx = sqlite3.connect(self.db_path, timeout=60)
         try:
             cx.execute("PRAGMA journal_mode=WAL")  # readers do not block on a long write; persistent per file
+            # each statement of the schema below is a transaction of its own: with the default FULL each one is
+            # flushed to disk (about a second per new project on Windows, and a round of the shared folder makes
+            # one to three scratch projects); NORMAL, as every connection of `_conn`, is safe with WAL
+            cx.execute("PRAGMA synchronous=NORMAL")
             doc_cols = {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
             before_011 = bool(doc_cols) and "ai_access" not in doc_cols  # a project made before 0.11, opened now
             before_018 = not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone()

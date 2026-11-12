@@ -335,6 +335,9 @@ search still finds every word, and themes found before keep their key terms unti
 
 ### Fixed
 
+- **Windows: a new project is set up quickly.** Setting up a project wrote each of its database's set-up steps to
+  disk on its own, about a second each on Windows. Every round of a shared folder sets up one to three scratch
+  projects, so rounds there were far slower than on a Mac. It now writes them as every other change is written.
 - **A shared check could lose an excerpt.** When a colleague's newer reading of a file had come in as a sync-clash
   copy and you then read your own document again with the new reader, a check of yours with an excerpt on both the
   document and its copy could come back from a third colleague with one excerpt fewer. Every copy now keeps both
@@ -542,7 +545,7 @@ search still finds every word, and themes found before keep their key terms unti
 
 ### Tests
 
-Full suite on macOS with every extra: 1,493 passed, 17 skipped.
+Full suite on macOS with every extra: 1,494 passed, 17 skipped.
 
 New, for the design guide, the sidebar and the small fixes:
 

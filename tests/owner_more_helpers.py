@@ -128,7 +128,7 @@ def bundle_dbs(shared: Path, tmp: Path) -> list[sqlite3.Connection]:
 
 
 def file_names(shared: Path) -> set[str]:
-    return {str(f.relative_to(shared)) for f in shared.rglob("*") if f.is_file()}
+    return {f.relative_to(shared).as_posix() for f in shared.rglob("*") if f.is_file()}
 
 
 # ---- the state of one copy ---------------------------------------------------------------------------------------
