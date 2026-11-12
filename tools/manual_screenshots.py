@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import io
+import json
 import re
 import shutil
 import socket
@@ -79,7 +80,7 @@ class DevServer:
         cmd = [python, str(DEV_SERVER), "--home", str(self.home), "--port", str(port), *options]
         self.lines: list[str] = []
         self.proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        self.url = ""
+        self.url = self.token = ""
         ready = threading.Event()
 
         def drain():
@@ -88,6 +89,9 @@ class DevServer:
                 m = re.match(r"app: (http://\S+)", line)
                 if m and not self.url:
                     self.url = m.group(1)
+                t = re.match(r"token: (\S+)", line)  # printed after the address
+                if t and not self.token:
+                    self.token = t.group(1)
                     ready.set()
             ready.set()
 
@@ -384,6 +388,8 @@ def main() -> int:
                 page.on("pageerror", lambda x, e=errors: e.append(str(x)))
                 try:
                     server = servers.get(tuple(options))
+                    # 0.17.2: the page carries no token: the tab holds it, as one opened from the app's link would
+                    ctx.add_init_script(f"try {{ sessionStorage.setItem('enlens-token', {json.dumps(server.token)}); }} catch (e) {{}}")
                     what = globals()["shot_" + name.replace("-", "_")](page, server)
                     path = out / f"{name}.png"
                     take(page, what, path)

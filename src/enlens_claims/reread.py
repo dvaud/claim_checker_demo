@@ -76,8 +76,8 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, ingest
-from .store import Workspace, now
-from .textutil import _normalise_spans, _word_edge, normalise, split_sentences
+from .store import Workspace, now, passage_range
+from .textutil import _normalise_spans, _word_edge, normalise, pack_text, spacing_matches, split_sentences
 
 # what each kind of result is, for the person (the report's `kind_text`)
 KIND_TEXT = {
@@ -171,18 +171,7 @@ class _Finder:
     def _pack(self, drop: str) -> tuple:
         got = self._packs.get(drop)
         if got is None:
-            chars, starts, ends, gap = [], [], [], []
-            prev = False
-            for c, a, b in zip(self.nh, self.hs, self.he):
-                if c in drop:
-                    prev = True
-                    continue
-                chars.append(c)
-                starts.append(a)
-                ends.append(b)
-                gap.append(prev)
-                prev = False
-            got = self._packs[drop] = ("".join(chars), starts, ends, gap)
+            got = self._packs[drop] = pack_text(self.nh, self.hs, self.he, drop)
         return got
 
     def all(self, quote: str) -> list[tuple[int, int]]:
@@ -206,31 +195,8 @@ class _Finder:
         return out
 
     def _loose(self, nq: str, drop: str) -> list[tuple[int, int]]:
-        sh, starts, ends, gap = self._pack(drop)
-        qc, qgap, prev = [], [], False
-        for c in nq:
-            if c in drop:
-                prev = True
-                continue
-            qc.append(c)
-            qgap.append(prev)
-            prev = False
-        sq = "".join(qc)
-        if len(sq) < 3:
-            return []
-
-        def edge(i: int, start: bool = False) -> bool:
-            return i <= 0 or i >= len(sh) or gap[i] or _word_edge(self.text, sh, starts, i, start)
-
-        out = []
-        pos = sh.find(sq)
-        while pos >= 0:
-            end = pos + len(sq)
-            # a space (or hyphen) the quote puts between two words must be a word edge in the text too
-            if edge(pos, True) and edge(end) and all(edge(pos + k) for k in range(1, len(sq)) if qgap[k]):
-                out.append((starts[pos], ends[end - 1]))
-            pos = sh.find(sq, pos + 1)
-        return out
+        # a space (or hyphen) the quote puts between two words must be a word edge in the text too
+        return list(spacing_matches(self.text, self._pack(drop), nq, drop, True, 3))
 
 
 def _worth(s: str) -> bool:
@@ -765,6 +731,7 @@ class _Plan:
         self.dropped: dict[str, str] = {}     # task ids dropped -> the id their ledger rows take
         self.kept: list[str] = []             # the new ids of answered tasks named by a passage, kept
         self.after: list = []                 # (sql, args) run after the new reading is stored
+        self.first: list = []                 # (sql, args) run before the plan's deletions and changes of rows
 
     def upd(self, table: str, rid: int, **cols) -> None:
         self.updates[table].setdefault(rid, {}).update(cols)
@@ -1183,8 +1150,8 @@ def _plan(ws: Workspace, cx, doc_id: str, new_doc, m: _Map | None = None,
     for r in _in(cx, "SELECT rowid AS rid FROM embeddings WHERE passage_id IN ({})", sorted(old_set | set(new_pids))):
         plan.deletes["embeddings"].add(r["rid"])
     n_emb = len(plan.deletes["embeddings"])
-    plan.deletes["term_mentions"] |= {r[0] for r in cx.execute("SELECT rowid FROM term_mentions WHERE doc_id=?",
-                                                               (doc_id,))}
+    # 0.17.2: the glossary's places have no rowid (store.SCHEMA): the document's go by the range of its passage ids
+    plan.first.append(("DELETE FROM term_mentions WHERE passage_id >= ? AND passage_id < ?", passage_range(doc_id)))
     plan.deletes["mentions"] |= {r[0] for r in cx.execute("SELECT rowid FROM mentions WHERE doc_id=?", (doc_id,))}
 
     # --- a bibliography match's evidence (where the title stands) --------------------------------------------------
@@ -1561,6 +1528,8 @@ def _write_plan(cx, plan: _Plan) -> None:
     """The plan's deletions and changes of rows (every result moved to its place in the new reading). 0.18: also used
     by the sync (sync/readings.py), which places a colleague's results made on another reading of a document on the
     reading this copy has."""
+    for sql, args in plan.first:
+        cx.execute(sql, args)
     for table, rids in plan.deletes.items():
         ids = sorted(rids)
         for i in range(0, len(ids), 500):
@@ -1592,7 +1561,8 @@ def _apply(ws: Workspace, cx, doc_id: str, plan: _Plan, info: dict, new_doc, who
     raw = new_doc.raw
     from . import notes, researchlog
 
-    moved_notes = notes.move(cx, doc_id, new_doc.text)  # 0.16: a person's notes follow their words
+    # 0.16: a person's notes follow their words (0.17.2: and take the page of their new place)
+    moved_notes = notes.move(cx, doc_id, new_doc.text, new_doc.page_spans if raw.paginated else None)
     # what Claude had read of passages that have no place now still counts (access.shares)
     sent = info["sent_share"]
     cx.execute("UPDATE documents SET text=?, n_chars=?, n_pages=?, reader=?, app_version=?, text_fp=?, "

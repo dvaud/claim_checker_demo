@@ -26,7 +26,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from .store import Workspace
+from .store import Workspace, passage_range
 from .textutil import split_sentences
 
 SCHEMA = """
@@ -144,9 +144,11 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
         vecs = (model, embed.vectors(ws, model)) if model else None
         if vecs and vecs[1] is None:
             vecs = None
-    from .terms import key_terms
+    from .terms import _docs_with_terms, _term_info, key_terms
 
     has_terms = bool(ws.scalar("SELECT 1 FROM terms LIMIT 1"))
+    # the glossary's terms and its count of documents, read once for every document's key terms (0.17.2)
+    kt_docs, kt_info = (_docs_with_terms(ws), _term_info(ws)) if has_terms else (0, {})
 
     stats = {"documents": 0, "sentences": 0, "labelled_sentences": 0, "chains": 0, "clusters": 0, "embeddings": 0}
     cx = sqlite3.connect(out)
@@ -177,13 +179,14 @@ def export(ws: Workspace, out: str | Path, framework: str = "sdg", embed_model: 
                 cur = best.get(sid)
                 if cur is None or (_RANK[r["source"]], -(r["confidence"] or 0)) < (_RANK[cur["source"]], -(cur["confidence"] or 0)):
                     best[sid] = r
-            kt = {k["term_id"]: k["score"] for k in key_terms(ws, doc_id=doc_id, n=30)} if has_terms else {}
+            kt = {k["term_id"]: k["score"] for k in key_terms(ws, doc_id=doc_id, n=30, _docs=kt_docs,
+                                                              _info=kt_info)} if has_terms else {}
             spans: dict[int, list] = {}
             if kt:
                 q = ",".join("?" * len(kt))
-                for m in ws.query(f"SELECT term_id, start, end FROM term_mentions WHERE doc_id=? AND term_id IN ({q}) "
-                                  "ORDER BY start, end",
-                                  (doc_id, *kt)):
+                for m in ws.query(f"SELECT term_id, start, end FROM term_mentions WHERE passage_id >= ? AND "
+                                  f"passage_id < ? AND term_id IN ({q}) ORDER BY start, end",
+                                  (*passage_range(doc_id), *kt)):
                     spans.setdefault(sid_at(m["start"]), []).append(
                         {"text": text[m["start"]:m["end"]], "start_char": m["start"], "end_char": m["end"],
                          "importance": kt[m["term_id"]]})

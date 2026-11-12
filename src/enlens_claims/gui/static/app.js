@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, setButtonKind, menu, plural, emptyState, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice , cancelJob } from "./lib.js";
+import { App, api, h, icon, setButtonKind, menu, plural, emptyState, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice , cancelJob, ensureToken, keyWasStale, copyLine } from "./lib.js";
 import { FEATURES, SECTIONS, PLACES, aiTag } from "./features.js";
 import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
 import { quietRound, quietRoundAgainIn, nextSyncLook } from "./views/team-state.js";   // 0.18 stage 5
@@ -493,7 +493,8 @@ async function updateApp(btn) {
   function done() { btn.disabled = false; if (btn.lastChild && label) btn.lastChild.textContent = label; }
 }
 
-// the restart: a page that says so, then the new version once it answers (a new copy hands out a new token)
+// the restart: a page that says so, then the new version once it answers (0.17.2: the new copy keeps the token,
+// which this tab keeps too; it is known by its run, the page's enlens-run)
 async function restartApp(version) {
   const running = await runningJobs();
   const ok = await confirmDialog({
@@ -510,7 +511,7 @@ async function restartApp(version) {
 // longer than a restart
 function waitForRestart(version, handover = false) {
   const meta = (name) => (document.querySelector(`meta[name="${name}"]`) || {}).content || "";
-  const oldToken = meta("enlens-token");
+  const oldRun = meta("enlens-run");
   const status = h("p", { class: "muted" }, handover
     ? `${appName()} closes while Windows installs the new version, then opens again by itself. This page follows in a minute or two.`
     : "This page opens the new version by itself in a moment.");
@@ -526,8 +527,8 @@ function waitForRestart(version, handover = false) {
     try {
       const res = await fetch("/", { cache: "no-store" });
       const page = res.ok ? await res.text() : "";
-      const token = (page.match(/name="enlens-token" content="([^"]*)"/) || [])[1];
-      if (page.includes('name="enlens-version"') && (wentDown || (token !== undefined && token !== oldToken))) {
+      const run = (page.match(/name="enlens-run" content="([^"]*)"/) || [])[1];
+      if (page.includes('name="enlens-version"') && (wentDown || (run !== undefined && run !== oldRun))) {
         location.reload();
         return;
       }
@@ -761,7 +762,23 @@ function syncNewsInit() {
   look();
 }
 
+// 0.17.2: a tab without ENLENS's key (the bare address, a bookmark, or a key from before ENLENS started again): how to
+// open it. The page carries no key, so that no one else on this computer can use ENLENS (lib.js ensureToken).
+function renderNoKey(stale) {
+  const name = appName();
+  document.title = `Open ${name} from its icon`;
+  replace(document.body, h("main", { class: "stopped-page", id: "main" },
+    h("img", { src: brand().logo, alt: "", width: 48, height: 48 }),
+    emptyState("key", `Open ${name} from its icon`,
+      stale ? `${name} has started again since this tab was opened, so the tab's key no longer works. Double-click the ${name} icon (on your Desktop, or in Applications), or run enlens-gui in a terminal.`
+        : `${name} opens with a key in its link, so no one else on this computer can use it, and this address on its own has none. Double-click the ${name} icon (on your Desktop, or in Applications), or run enlens-gui in a terminal.`,
+      copyLine("enlens-gui", "Copy", "a terminal")),
+    h("p", { class: "muted small" }, `Your projects and results are kept. A bookmark of this address does not open ${name}; Settings › Technical › Your link to ${name} copies one that does, until ${name} stops.`)));
+}
+
 async function boot() {
+  // 0.17.2: the key first: without it nothing below can load
+  if (!(await ensureToken())) { renderNoKey(keyWasStale()); return; }
   skipLinkInit();
   connectionInit();
   themeInit();
@@ -774,6 +791,7 @@ async function boot() {
   try {
     await App.refresh();
   } catch (e) {
+    if (e.status === 401) { renderNoKey(true); return; }
     replace(document.getElementById("view"), notice({ kind: "error" }, h("p", {}, e.message)));
     return;
   }

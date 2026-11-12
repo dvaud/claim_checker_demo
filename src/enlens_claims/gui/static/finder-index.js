@@ -53,6 +53,7 @@ export const ACTIONS = [
   ["Work together or share a project", "in Projects", "#/projects", "users", "share colleague team collaborate export import send file together"],
   ["Start a new project", "in Projects", "#/projects", "folder-open", "create project new open switch"],
   ["Open the settings", "in Settings", "#/settings", "sliders", "settings preferences options appearance dark light"],
+  ["Copy my link", "in Settings › Technical", "#/settings/link", "link", "bookmark link address url open browser"],
 ];
 
 const PLACE_WHERE = { explore: "in Explore", check: "in Check hypotheses", record: "in Your notes" };

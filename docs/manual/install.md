@@ -93,7 +93,7 @@ With Python 3.10 or newer, in a clone of the repository:
 ```bash
 pip install -e '.[connector]'    # the app, the command line and the connector (recommended)
 pip install -e .                 # core only: the app and the command line
-pip install -e '.[fast]'         # numpy: faster search by meaning on large projects
+pip install -e '.[fast]'         # numpy: faster search by meaning and faster themes by words on large projects
 pip install -e '.[pdfminer]'     # the PDF layout reader (columns, tables)
 pip install -e '.[anthropic]'    # the Claude API (cloud, opt-in)
 pip install -e '.[ocr]'          # scanned PDFs on this computer (also needs Tesseract, above)

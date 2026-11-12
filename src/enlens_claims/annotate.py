@@ -117,13 +117,14 @@ def collect(ws: Workspace, doc_id: str, hyp_ids: list[str] | None = None, layers
             marks.append(Mark(r["start"], r["end"], r["quote"], "label", "\n".join(lines), "labels", r["page"]))
     if "concepts" in layers and concept:
         from . import terms
+        from .store import passage_range
 
         ids = terms.concept_of(ws, concept)
         label = ws.scalar("SELECT label FROM terms WHERE term_id=?", (concept,)) or ""
         q = ",".join("?" * len(ids))
         text = ws.scalar("SELECT text FROM documents WHERE doc_id=?", (doc_id,)) or ""
-        for r in ws.query(f"SELECT start, end FROM term_mentions WHERE doc_id=? AND term_id IN ({q}) ORDER BY start",
-                          (doc_id, *ids)):
+        for r in ws.query(f"SELECT start, end FROM term_mentions WHERE passage_id >= ? AND passage_id < ? AND "
+                          f"term_id IN ({q}) ORDER BY start", (*passage_range(doc_id), *ids)):
             marks.append(Mark(r["start"], r["end"], text[r["start"]:r["end"]], "concept", f"Concept: {label}", "concepts"))
     if "references" in layers:
         from .references import chains
@@ -190,21 +191,29 @@ def _join_lines(lines: list[list[tuple[str, tuple | None]]]) -> tuple[str, list]
 
 
 def _pdfminer_pages(path: Path, wanted: set[int] | None = None) -> dict[int, PageText | None] | None:
-    """The pages of the PDF as pdfminer reads them. With `wanted`, only those pages keep their characters and boxes
-    (the others are None): a mark is looked for on its own page and the ones beside it, and the boxes of a whole
-    book were held in memory."""
+    """The pages of the PDF as pdfminer reads them. With `wanted` (page numbers from 1), only those pages are read and
+    kept (the others are missing or None): a mark is looked for on its own page and the ones beside it, and reading
+    every page of a book took minutes and held the boxes of all its characters in memory."""
     try:
         from pdfminer.high_level import extract_pages
         from pdfminer.layout import LAParams, LTAnno, LTChar, LTTextContainer, LTTextLine
     except ImportError:
         return None
-    out: dict[int, PageText] = {}
+    out: dict[int, PageText | None] = {}
     line_no = 0
+    if wanted is None:
+        pages = enumerate(extract_pages(str(path), laparams=LAParams()), 1)
+    else:
+        numbers = sorted(p for p in wanted if p >= 1)
+        out = dict.fromkeys(numbers)
+        if not numbers:  # (pdfminer reads every page when given none)
+            return out
+        # pdfminer yields the pages asked for in the file's order, so they pair with the sorted numbers; it stops
+        # after the last one
+        pages = zip(numbers, extract_pages(str(path), laparams=LAParams(), page_numbers={p - 1 for p in numbers},
+                                           maxpages=numbers[-1]))
     try:
-        for pno, page in enumerate(extract_pages(str(path), laparams=LAParams()), 1):
-            if wanted is not None and pno not in wanted:
-                out[pno] = None
-                continue
+        for pno, page in pages:
             lines: list[list] = []
 
             def walk(obj):

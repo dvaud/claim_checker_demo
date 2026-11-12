@@ -420,12 +420,18 @@ def build_server():
 
         name, ws = _project(project)
         hidden = access.restricted_titles(ws)
-        everything = concordance.search(ws, query, mode, document_ids, "doc", 0, 1, exact, near)
         # 0.11: lines only from documents Claude may read; hits in the others as counts
-        cloud = sorted(d for d, lv in access.levels(ws).items() if lv == "cloud" and
-                       (not document_ids or d in set(document_ids)))
+        levels = access.levels(ws)
+        wanted = set(document_ids) if document_ids else None
+        cloud = sorted(d for d, lv in levels.items() if lv == "cloud" and (wanted is None or d in wanted))
         r = concordance.search(ws, query, mode, cloud or ["-"], "doc", max(0, int(offset)), max(1, min(int(lines), 200)),
                                exact, near)
+        # 0.17.2: the counts are of every document asked for; when Claude may read all of them they are this search's,
+        # so it is not made twice (a search over other documents is another search: the cache does not know it)
+        if all(lv == "cloud" for d, lv in levels.items() if wanted is None or d in wanted):
+            everything = r
+        else:
+            everything = concordance.search(ws, query, mode, document_ids, "doc", 0, 1, exact, near)
         shown = [{"document": x["title"], "where": x["location"], "text": f"{x['left']}[{x['node']}]{x['right']}",
                   "passage_id": x["passage_id"]} for x in r["lines"]]
         access.record_passages(ws, [x["passage_id"] for x in r["lines"]], access.ROUTE_NAMES["chat"], "search")

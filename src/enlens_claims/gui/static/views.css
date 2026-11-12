@@ -1520,6 +1520,8 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .stopped-page { max-width: 34rem; margin: 18vh auto 0; padding: 0 16px; text-align: center; }
 .stopped-page h1 { font-size: var(--fs-title); margin: 12px 0 8px; }
 .stopped-page p { margin: 6px 0; }
+/* 0.17.2: "Open ENLENS from its icon" (a tab without the key): its command line, centred like the rest */
+.stopped-page .copy-line { justify-content: center; }
 
 /* ==== The design reference (#/design): a page of samples, laid out only. One section per section of
    docs/DESIGN.md, numbered and in its order; a sample is a label and the pieces it shows. */

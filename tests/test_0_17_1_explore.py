@@ -118,7 +118,8 @@ def demo(tmp_path):
 
 
 def _glossary(ws) -> list:
-    return [[tuple(r) for r in ws.query(f"SELECT * FROM {t} ORDER BY rowid")] for t in ("terms", "term_mentions")]
+    return [[tuple(r) for r in ws.query(q)] for q in ("SELECT * FROM terms ORDER BY rowid",
+                                                      "SELECT * FROM term_mentions ORDER BY term_id, passage_id, start, end")]
 
 
 def _scratch(ws, tmp_path, name: str):
@@ -134,14 +135,29 @@ def _scratch(ws, tmp_path, name: str):
     return other
 
 
-def test_a_glossary_made_from_scratch_writes_its_mentions_in_the_order_of_the_text_and_keeps_its_indexes(demo):
+def test_a_glossary_made_from_scratch_writes_its_places_in_the_order_of_the_key_and_keeps_its_index(demo, monkeypatch):
+    """0.17.2: the places are written in the order of the table's key (a table WITHOUT ROWID is its key), so its pages
+    are filled in order; the one index is made again after them."""
+    from enlens_claims import store
+
+    written = []
+    real = store._Cx.executemany
+
+    def spy(self, sql, rows):
+        if "term_mentions" in sql:
+            rows = list(rows)
+            written.extend(rows)
+        return real(self, sql, rows)
+
+    monkeypatch.setattr(store._Cx, "executemany", spy)
     terms.build(demo)
-    rows = demo.query("SELECT m.rowid, m.doc_id, p.seq, m.start, m.end FROM term_mentions m JOIN passages p ON "
-                      "p.passage_id=m.passage_id")
-    assert rows and [r[0] for r in rows] != [] and \
-        [r[0] for r in sorted(rows, key=lambda r: (r[1], r[2], r[3], r[4]))] == sorted(r[0] for r in rows)
+    monkeypatch.setattr(store._Cx, "executemany", real)
+    assert len(written) > 100 and written == sorted(written)
+    assert written == [tuple(r) for r in demo.query("SELECT term_id, passage_id, start, end FROM term_mentions "
+                                                    "ORDER BY term_id, passage_id, start, end")]
     have = {r[0] for r in demo.query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='term_mentions'")}
-    assert {name for name, _sql in terms._mention_indexes()} <= have and len(terms._mention_indexes()) == 3
+    assert {name for name, _sql in terms._mention_indexes()} <= have and len(terms._mention_indexes()) == 1
+    assert "WITHOUT ROWID" in demo.scalar("SELECT sql FROM sqlite_master WHERE name='term_mentions'")
 
 
 def test_a_document_read_again_while_the_glossary_is_made_starts_the_build_again(demo, tmp_path, monkeypatch):
@@ -204,7 +220,8 @@ def test_the_terms_of_each_passage_are_the_same_in_the_same_order(demo):
     got, want = terms.passage_term_counts(demo), _released_passage_term_counts(demo)
     assert [(p, list(c.items())) for p, c in got.items()] == [(p, list(c.items())) for p, c in want.items()]
     doc = demo.scalar("SELECT doc_id FROM documents ORDER BY doc_id LIMIT 1")
-    assert terms._docs_with_terms(demo) == demo.scalar("SELECT COUNT(DISTINCT doc_id) FROM term_mentions") > 1
+    assert terms._docs_with_terms(demo) == demo.scalar("SELECT COUNT(DISTINCT p.doc_id) FROM term_mentions m JOIN "
+                                                       "passages p ON p.passage_id=m.passage_id") > 1
     assert terms.key_terms(demo, doc_id=doc) == terms.key_terms(demo, doc_id=doc, _docs=terms._docs_with_terms(demo))
 
 

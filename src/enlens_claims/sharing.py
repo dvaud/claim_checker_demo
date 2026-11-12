@@ -886,12 +886,16 @@ class ProjectRows:
                 and not (table == "people" and c == "seen_at")}  # (when a person was last heard of: every round)
         return hashlib.sha1(json.dumps(keep, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()[:16]
 
-    def scan(self) -> Iterator[tuple[str, int, tuple, str]]:
-        """(table, row number, identity, content digest) of every row that is the project's."""
+    def scan(self, only: Iterable[str] | None = None) -> Iterator[tuple[str, int, tuple, str]]:
+        """(table, row number, identity, content digest) of every row that is the project's; `only`: of these tables
+        only (a task's answers go with the task: name `tasks` with `results`)."""
         from .frameworks import BUNDLED
 
+        only = None if only is None else set(only)
         corpus_tasks: set[str] = set()
         for table, where, cols in self.tables():
+            if only is not None and table not in only:
+                continue
             for r in self._light(table, where, cols):
                 if self._about_kept_out(table, r):
                     continue

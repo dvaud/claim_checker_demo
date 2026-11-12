@@ -197,25 +197,28 @@ def test_a_launched_copy_restarts_in_place(home, tmp_path):  # noqa: F811
                 f"{tail(home.home() / 'app.json')}\n--- output:\n{tail(tmp_path / 'app.out')}\n--- log:\n"
                 f"{tail(home.home() / 'logs' / 'enlens.log')}")
 
-    def token_now():
+    def token_now():  # (address, token, run): 0.17.2: the token from its file, the run from the page
         live = launcher.running(timeout=0.5)
         if not live:
             return None
         try:
             page = urllib.request.urlopen(live["url"], timeout=5).read().decode()
-            return live["url"].rstrip("/"), page.split('name="enlens-token" content="')[1].split('"')[0]
+            run = page.split('name="enlens-run" content="')[1].split('"')[0]
         except (OSError, IndexError, http.client.HTTPException):
             return None  # 0.13.5: a restart began between the two: "not answering yet", not an error
+        token = launcher.read_token(live["port"])
+        return (live["url"].rstrip("/"), token, run) if token else None
 
     try:
         assert _wait(lambda: token_now() is not None, timeout=60), "ENLENS did not start: " + why()
-        url, token = token_now()
+        url, token, run = token_now()
         assert url == f"http://127.0.0.1:{port}"
         assert Api(url, token)("POST", "/api/restart", {})[1]["restarting"] is True
-        assert _wait(lambda: (t := token_now()) is not None and t[1] != token, timeout=60), \
+        assert _wait(lambda: (t := token_now()) is not None and t[2] != run, timeout=60), \
             "ENLENS did not come back: " + why()
-        url2, token2 = token_now()
+        url2, token2, _run2 = token_now()
         assert url2 == url  # the open page finds it where it was
+        assert token2 == token  # 0.17.2: and its token still works (the page keeps it; it carries none)
         if os.name != "nt":
             assert proc.poll() is None  # macOS and Linux: the same process became the new copy
         a = Api(url2, token2)

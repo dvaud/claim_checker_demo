@@ -36,7 +36,7 @@ from typing import Callable
 
 from .people import me, mine_sql
 from .searchindex import unzip
-from .store import Workspace, now
+from .store import DOC_OF, Workspace, now, passage_range
 from . import stopwords
 from .textutil import fast_normalise, is_stop, stem, token_spans
 
@@ -222,7 +222,7 @@ def _grams(text: str, joiner: Joiner | None = None, stops: frozenset[str] | None
 def status(ws: Workspace) -> dict:
     """Whether the glossary is made, and whether it is out of date: documents changed (`documents_changed`) or what it
     leaves out changed (`words_changed`, 0.17: a person's choice, or the lists of a newer ENLENS)."""
-    built = ws.meta("terms_corpus_version")
+    built = ws.meta("glossary_corpus_version")
     n = int(ws.scalar("SELECT COUNT(*) FROM terms") or 0)
     docs = built is not None and built != ws.corpus_version()
     # the rules of the last build, as that build noted them: a build by an ENLENS before 0.17 notes none
@@ -719,11 +719,19 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
     # all still there (outside a build, rows go only a whole document at a time: removing or reading it again); the
     # database must not have been written by any other build since (its id, time and corpus version, which a build of
     # before 0.16 also changes). The count comes from an index; sums of places cost half a second a look (review).
+    # 0.17.2: counted per passage on the index of passages (a document's passages are next to each other in it) and
+    # summed per document here: the table has no column of documents any more.
     def db_state(cx) -> tuple[dict, list]:
-        per = {r[0]: [r[1]] for r in cx.execute("SELECT doc_id, COUNT(*) FROM term_mentions GROUP BY doc_id")}
+        per: dict[str, list[int]] = {}
+        for pid, n in cx.execute("SELECT passage_id, COUNT(*) FROM term_mentions GROUP BY passage_id"):
+            d = pid.partition(":")[0]
+            if d in per:
+                per[d][0] += n
+            else:
+                per[d] = [n]
         stamps = [json.loads(r[0]) if r and r[0] is not None else None for r in (
             cx.execute("SELECT value FROM meta WHERE key=?", (k,)).fetchone()
-            for k in ("terms_build_id", "terms_built_at", "terms_corpus_version"))]
+            for k in ("terms_build_id", "terms_built_at", "glossary_corpus_version"))]
         return per, stamps
 
     prev = store.state()
@@ -739,10 +747,12 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
     def second_reading(diff: bool):
         """The places of the chosen terms, their spellings and passages, and the abbreviations the text defines.
         With `diff`, only the mentions to write: every mention of a document read again or new, and the mentions of
-        terms new to the glossary in the others. The mentions to write are kept as numbers (a document's passage,
-        start, end and term, four to a mention: a few bytes, where a row of Python objects takes about 150), and
-        `rows()` gives them as rows, in the same order."""
-        written: list[tuple[str, list, list, array]] = []   # per document: its passages' ids and starts, mentions
+        terms new to the glossary in the others. The mentions to write are kept as numbers per term (a document, its
+        passage, start and end, four to a mention: a few bytes, where a row of Python objects takes about 150), and
+        `rows()` gives them as rows in the order of the table's key (0.17.2: term, passage, place), so the table is
+        written in order, its pages full, rather than into the middle of it a row at a time."""
+        written: list[tuple[list, list]] = []   # per document with mentions to write: its passages' ids and starts
+        by_term: dict[int, array] = {}          # per term (its index in `chosen`): document, passage, start, end
         spell: dict[str, Counter] = defaultdict(Counter)
         passages: Counter[str] = Counter()
         abbrev: Counter[tuple[str, str]] = Counter()
@@ -759,7 +769,8 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
             single = plain[d]
             seen_at = set()
             n_doc = 0
-            out = array("I")
+            w = len(written)   # this document's place in `written`, if it has mentions to write
+            wrote = False
             # most candidates are not terms: the places of the terms' are picked out without a step in Python for
             # each of the others (in the order of the text, as before)
             col = g[3::4]
@@ -775,7 +786,11 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
                 r = rs[n]
                 n_doc += 1
                 if i in write:
-                    out.extend((n, a, b, c))
+                    m = by_term.get(c)
+                    if m is None:
+                        m = by_term[c] = array("I")
+                    m.extend((w, n, a, b))
+                    wrote = True
                 raw = r["text"][a:b]
                 # a document with no word read whole, and a mention whose words stand one space apart: each run of
                 # pieces in it is one of the document's own runs, none read whole, so `_spelling` would change
@@ -793,18 +808,20 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
             for short, long, c in rd["abbrev"]:
                 abbrev[(short, long)] += c
             per_doc[d] = [n_doc]
-            if out:
-                written.append((d, [r["passage_id"] for r in rs], [r["start"] for r in rs], out))
+            if wrote:
+                written.append(([r["passage_id"] for r in rs], [r["start"] for r in rs]))
             done += sizes[d]
             if progress:
                 progress(min(done, total), total)
 
         def rows():
-            for d, pids, starts, m in written:
+            for c in sorted(by_term, key=tids.__getitem__):
+                t, m = tids[c], by_term[c]
                 for x in range(0, len(m), 4):
-                    n = m[x]
+                    pids, starts = written[m[x]]
+                    n = m[x + 1]
                     s = starts[n]
-                    yield tids[m[x + 3]], pids[n], d, s + m[x + 1], s + m[x + 2]
+                    yield t, pids[n], s + m[x + 2], s + m[x + 3]
 
         return rows, spell, passages, abbrev, per_doc
 
@@ -823,7 +840,7 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
         made_again = []
         if diff:
             for d in [d for d in set(have) | set(docs) if d not in same]:
-                cx.execute("DELETE FROM term_mentions WHERE doc_id=?", (d,))
+                cx.execute("DELETE FROM term_mentions WHERE passage_id >= ? AND passage_id < ?", passage_range(d))
             gone = [term_id(k) for k in old_keys - keep]
             for i in range(0, len(gone), 500):
                 chunk = gone[i:i + 500]
@@ -835,7 +852,9 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
             made_again = _mention_indexes()
             for name, _sql in made_again:
                 cx.execute(f"DROP INDEX IF EXISTS {name}")
-        cx.executemany("INSERT INTO term_mentions VALUES (?,?,?,?,?)", mentions())
+        # the same place of a term twice is one place (the key would refuse the second: the build would stop)
+        cx.executemany("INSERT OR IGNORE INTO term_mentions(term_id, passage_id, start, end) VALUES (?,?,?,?)",
+                       mentions())
         for _name, sql in made_again:
             cx.execute(sql)
         # abbreviation links: the short form and the long form, both terms of the index
@@ -853,7 +872,9 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
             cx.execute("INSERT OR REPLACE INTO concept_links VALUES (?,?,?,?,?,?,?,?,?)",
                        (a, b, "same", "abbreviation", 1.0, f"{long} ({short})", short, None, now()))
             n_abbr += 1
-        ws.set_meta("terms_corpus_version", version, cx)
+        ws.set_meta("glossary_corpus_version", version, cx)   # 0.17.2: see store.GLOSSARY_META
+        # an ENLENS before 0.17.2 notes its builds here: from now on this build is the one in force
+        cx.execute("DELETE FROM meta WHERE key='terms_corpus_version'")
         ws.set_meta("terms_words", {"digest": rules.digest, "build": build_id}, cx)   # 0.17: what it left out
         ws.set_meta("terms_languages", dict(languages), cx)
         ws.set_meta("terms_built_at", built_at, cx)
@@ -1201,13 +1222,15 @@ def glossary(ws: Workspace, q: str | None = None, offset: int = 0, limit: int = 
     # documents per entry: a term's own count is kept with it (`df`); only the terms of a concept need the mentions
     # (0.11.1: every mention of the corpus was read for each glossary page)
     docs: dict[str, set] = defaultdict(set)
-    for r in ws.query("SELECT DISTINCT m.term_id, m.doc_id FROM term_mentions m JOIN concept_terms ct ON "
-                      "ct.term_id=m.term_id"):
+    # (0.17.2: from the terms of concepts to their places, CROSS JOIN keeping that order: SQLite would otherwise read
+    # every place of the glossary to find theirs)
+    for r in ws.query(f"SELECT DISTINCT ct.term_id, {DOC_OF.format('m.passage_id')} AS doc_id FROM concept_terms ct "
+                      "CROSS JOIN term_mentions m ON m.term_id=ct.term_id"):
         docs[in_concept.get(r["term_id"]) or r["term_id"]].add(r["doc_id"])
     own_docs = {t["term_id"]: t["df"] for t in terms if t["term_id"] not in in_concept}
     pas = {r["term_id"]: r["n"] for r in ws.query("SELECT term_id, passages AS n FROM terms")}
-    for r in ws.query("SELECT ct.concept_id, COUNT(DISTINCT m.passage_id) AS n FROM term_mentions m JOIN concept_terms ct "
-                      "ON ct.term_id=m.term_id GROUP BY ct.concept_id"):
+    for r in ws.query("SELECT ct.concept_id, COUNT(DISTINCT m.passage_id) AS n FROM concept_terms ct CROSS JOIN "
+                      "term_mentions m ON ct.term_id=m.term_id GROUP BY ct.concept_id"):
         pas[r["concept_id"]] = r["n"]
     for key, e in entries.items():
         e["documents"] = own_docs[key] if key in own_docs else len(docs.get(key, ()))
@@ -1262,10 +1285,11 @@ def card(ws: Workspace, term: str, offset: int = 0, limit: int = 50, with_refere
     # documents
     docs = []
     for r in ws.query(f"SELECT m.doc_id, d.title, COUNT(*) AS n, COUNT(DISTINCT m.passage_id) AS p, MIN(m.start) AS first "
-                      f"FROM term_mentions m JOIN documents d ON d.doc_id=m.doc_id WHERE m.term_id IN ({q}) "
+                      f"FROM (SELECT {DOC_OF.format('passage_id')} AS doc_id, passage_id, start FROM term_mentions "
+                      f"WHERE term_id IN ({q})) m JOIN documents d ON d.doc_id=m.doc_id "
                       "GROUP BY m.doc_id ORDER BY n DESC, d.title", ids):
-        end = ws.scalar(f"SELECT MAX(end) FROM term_mentions WHERE doc_id=? AND start=? AND term_id IN ({q})",
-                        (r["doc_id"], r["first"], *ids))
+        end = ws.scalar(f"SELECT MAX(end) FROM term_mentions WHERE passage_id >= ? AND passage_id < ? AND start=? AND "
+                        f"term_id IN ({q})", (*passage_range(r["doc_id"]), r["first"], *ids))
         docs.append({"doc_id": r["doc_id"], "title": r["title"] or "", "mentions": r["n"], "passages": r["p"],
                      "first": r["first"], "first_end": end})
     if docs:  # the first page (or paragraph) where each document mentions it
@@ -1287,9 +1311,9 @@ def card(ws: Workspace, term: str, offset: int = 0, limit: int = 50, with_refere
             d["references"] = refs.get(d["doc_id"], 0)
     # passages as concordance lines
     total = int(ws.scalar(f"SELECT COUNT(*) FROM term_mentions WHERE term_id IN ({q})", ids) or 0)
-    page = ws.query(f"SELECT m.term_id, m.passage_id, m.doc_id, m.start, m.end, p.text, p.start AS pstart, p.page, "
+    page = ws.query(f"SELECT m.term_id, m.passage_id, p.doc_id, m.start, m.end, p.text, p.start AS pstart, p.page, "
                     f"d.title FROM term_mentions m JOIN passages p ON p.passage_id=m.passage_id JOIN documents d "
-                    f"ON d.doc_id=m.doc_id WHERE m.term_id IN ({q}) ORDER BY d.title, p.seq, m.start LIMIT ? OFFSET ?",
+                    f"ON d.doc_id=p.doc_id WHERE m.term_id IN ({q}) ORDER BY d.title, p.seq, m.start LIMIT ? OFFSET ?",
                     (*ids, max(1, min(int(limit), 500)), max(0, int(offset))))
     where = locate(ws, [(i, r["passage_id"], r["start"]) for i, r in enumerate(page)])
     lines = []
@@ -1429,24 +1453,34 @@ def set_link(ws: Workspace, a: str, b: str, decision: str, relation: str | None 
 # key terms (F6)
 # ---------------------------------------------------------------------------------------------
 def _docs_with_terms(ws: Workspace) -> int:
-    """How many documents the glossary's mentions are in: COUNT(DISTINCT doc_id), found by stepping from one
-    document to the next on the index of (doc_id, term_id), a look-up per document, instead of reading every
-    mention (two seconds on a large project, on every opening of a document)."""
-    return int(ws.scalar("WITH RECURSIVE d(x) AS (SELECT MIN(doc_id) FROM term_mentions UNION ALL SELECT "
-                         "(SELECT MIN(doc_id) FROM term_mentions WHERE doc_id > x) FROM d WHERE x IS NOT NULL) "
-                         "SELECT COUNT(x) FROM d") or 0)
+    """How many documents the glossary's mentions are in: one look-up per document on the index of passages (its
+    passages are a range there, store.passage_range), instead of reading every mention (two seconds on a large
+    project, on every opening of a document)."""
+    return int(ws.scalar("SELECT COUNT(*) FROM documents d WHERE EXISTS (SELECT 1 FROM term_mentions "
+                         "WHERE passage_id >= d.doc_id || ':' AND passage_id < d.doc_id || ';')") or 0)
+
+
+def _term_info(ws: Workspace) -> dict[str, tuple]:
+    """{term_id: (label, stems, df)} of every term of the glossary."""
+    return {r[0]: (r[1], r[2], r[3]) for r in ws._conn().execute("SELECT term_id, label, stems, df FROM terms")}
 
 
 def key_terms(ws: Workspace, doc_id: str | None = None, passage_id: str | None = None, n: int = 20,
-              _docs: int | None = None) -> list[dict]:
+              _docs: int | None = None, _info: dict | None = None) -> list[dict]:
     """The terms that characterise a document (or a passage) against the corpus: TF-IDF of its terms, with
     sublinear term frequency; a term inside a longer one already chosen with as many mentions is left out.
-    `_docs`: the number of documents with mentions, when the caller has counted them (`key_terms_table`)."""
+    `_docs`: the number of documents with mentions, when the caller has counted them (`key_terms_table`); `_info`:
+    `_term_info`, when the caller has read it."""
     if bool(doc_id) == bool(passage_id):
         raise ValueError("Give a document or a passage.")
     if doc_id:
-        rows = ws.query("SELECT m.term_id, COUNT(*) AS tf, t.label, t.stems, t.df AS df FROM term_mentions m "
-                        "JOIN terms t ON t.term_id=m.term_id WHERE m.doc_id=? GROUP BY m.term_id", (doc_id,))
+        # 0.17.2: a document's places are a range of the index of passages; counted per term here, as SQLite would
+        # sort them all first to count them (seven times slower)
+        tf = Counter(r[0] for r in ws._conn().execute(
+            "SELECT term_id FROM term_mentions WHERE passage_id >= ? AND passage_id < ?", passage_range(doc_id)))
+        info = _info if _info is not None else _term_info(ws)
+        rows = [{"term_id": t, "tf": c, "label": info[t][0], "stems": info[t][1], "df": info[t][2]}
+                for t, c in sorted(tf.items()) if t in info]
         total = (_docs if _docs is not None else _docs_with_terms(ws)) or 1
     else:
         rows = ws.query("SELECT m.term_id, COUNT(*) AS tf, t.label, t.stems, t.passages AS df FROM term_mentions m "
@@ -1479,17 +1513,17 @@ def key_term_spans(ws: Workspace, doc_id: str, n: int = 15) -> dict:
     if ids:
         q = ",".join("?" * len(ids))
         spans = [{"term_id": r["term_id"], "start": r["start"], "end": r["end"]} for r in ws.query(
-            f"SELECT term_id, start, end FROM term_mentions WHERE doc_id=? AND term_id IN ({q}) ORDER BY start",
-            (doc_id, *ids))]
+            f"SELECT term_id, start, end FROM term_mentions WHERE passage_id >= ? AND passage_id < ? AND term_id IN ({q}) "
+            "ORDER BY start", (*passage_range(doc_id), *ids))]
     return {"terms": kt, "spans": spans}
 
 
 def key_terms_table(ws: Workspace, n: int = 15) -> list[dict]:
     """Key terms per document, for the Excel sheet "Key terms per document"."""
     rows = []
-    docs = _docs_with_terms(ws)   # once, not per document
+    docs, info = _docs_with_terms(ws), _term_info(ws)   # once, not per document
     for d in ws.query("SELECT doc_id, title FROM documents ORDER BY title"):
-        for i, k in enumerate(key_terms(ws, doc_id=d["doc_id"], n=n, _docs=docs), 1):
+        for i, k in enumerate(key_terms(ws, doc_id=d["doc_id"], n=n, _docs=docs, _info=info), 1):
             rows.append({"Document": d["title"] or d["doc_id"], "Rank": i, "Key term": k["label"],
                          "Mentions": k["mentions"], "Score (TF-IDF)": k["score"]})
     return rows
@@ -1504,7 +1538,7 @@ def passage_term_counts(ws: Workspace) -> dict[str, Counter]:
     out: dict[str, Counter] = defaultdict(Counter)
     ids: dict[str, str] = {}
     pid_now, c = None, None
-    for pid, tid in ws._conn().execute("SELECT passage_id, term_id FROM term_mentions "
+    for pid, tid in ws._conn().execute("SELECT passage_id, term_id FROM term_mentions "   # the order of its index
                                        "ORDER BY passage_id, start, end, term_id"):
         if pid != pid_now:
             pid_now, c = pid, out[pid]
@@ -1521,9 +1555,9 @@ def passage_term_counts(ws: Workspace) -> dict[str, Counter]:
 def snippets(ws: Workspace, term: str, n: int = 3, width: int = 150, allowed: set[str] | None = None) -> list[dict]:
     """Up to n short passages where a term occurs, from different documents where possible; with `allowed` (0.11),
     only from documents of those AI settings."""
-    rows = ws.query("SELECT m.passage_id, m.doc_id, m.start, m.end, p.text, p.start AS pstart, d.title FROM term_mentions m "
-                    "JOIN passages p ON p.passage_id=m.passage_id JOIN documents d ON d.doc_id=m.doc_id "
-                    "WHERE m.term_id=? ORDER BY m.doc_id, m.start", (term,))
+    rows = ws.query("SELECT m.passage_id, p.doc_id, m.start, m.end, p.text, p.start AS pstart, d.title FROM term_mentions m "
+                    "JOIN passages p ON p.passage_id=m.passage_id JOIN documents d ON d.doc_id=p.doc_id "
+                    "WHERE m.term_id=? ORDER BY p.doc_id, m.start", (term,))
     if allowed is not None:
         from . import access
 
@@ -1660,12 +1694,17 @@ def propose_wordings(ws: Workspace, term: str, backend, model: str) -> list[dict
 
 def terms_in_docs(ws: Workspace, term_ids, docs) -> set[str]:
     """The terms among these that occur in at least one of these documents (0.11)."""
-    ids, docs = list(term_ids), list(docs)
+    ids, docs = list(term_ids), set(docs)
     if not ids or not docs:
         return set()
-    return {r[0] for r in ws.query(f"SELECT DISTINCT term_id FROM term_mentions WHERE term_id IN "
-                                   f"({','.join('?' * len(ids))}) AND doc_id IN ({','.join('?' * len(docs))})",
-                                   [*ids, *docs])}
+    # 0.17.2: a term's places in passage order, until one is in these documents (mostly the first)
+    cx, out = ws._conn(), set()
+    for t in dict.fromkeys(ids):
+        for (pid,) in cx.execute("SELECT passage_id FROM term_mentions WHERE term_id=?", (t,)):
+            if pid.partition(":")[0] in docs:
+                out.add(t)
+                break
+    return out
 
 
 def stems_of(text: str) -> str:

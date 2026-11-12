@@ -17,7 +17,6 @@ import socket
 import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
 
 from enlens_claims import __version__
@@ -181,8 +180,7 @@ def test_the_icon_replaces_an_older_running_copy(home, tmp_path):  # noqa: F811
         assert procs[0].wait(timeout=30) == 0  # the old copy quit
         new = wait_for(procs[1].pid)
         assert new["version"] == __version__
-        page = urllib.request.urlopen(new["url"], timeout=5).read().decode()
-        token = page.split('name="enlens-token" content="')[1].split('"')[0]
+        token = launcher.read_token(new["port"])  # 0.17.2: the page carries none; the stop above used it too
         a = Api(new["url"].rstrip("/"), token)
         assert a("GET", "/api/state")[1]["version"] == __version__
         assert a("POST", "/api/quit", {})[1]["stopping"] is True

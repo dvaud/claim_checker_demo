@@ -6,16 +6,28 @@ the model service chosen in Settings.
 
 ## Rules
 
-- **Token.** `GET /` returns `index.html` with `{{ENLENS_TOKEN}}` replaced by a random token for this run (and
-  `{{ENLENS_VERSION}}` by the version). Every API call sends it as the header `X-Enlens-Token`. The endpoints a
-  plain link opens (the exports `…/export.csv|json|xlsx|zip`, the original file `…/documents/<id>/file`, and the
-  0.7 downloads: search, profile and themes exports, highlighted copies, the FlexiConc file) also accept `?token=`.
+- **Token.** Every API call sends the run's token as the header `X-Enlens-Token`; without it, or with an old one,
+  401. The endpoints a plain link opens (the exports `…/export.csv|json|xlsx|zip`, the original file
+  `…/documents/<id>/file`, the page pictures `…/pages/<n>.png`, and the 0.7 downloads: search, profile and themes
+  exports, highlighted copies, the FlexiConc file) also accept `?token=`: the page uses it for an `<img>` and for
+  "open the PDF at this page", which `fetch` cannot do.
+- **How a client gets the token** (0.17.2). `GET /` never carries it, whatever the `Host` (any account on the computer
+  could fetch it); `index.html` has `{{ENLENS_VERSION}}` and `{{ENLENS_RUN}}` (a random id of this run, not a
+  secret) filled in. The app opens `http://127.0.0.1:<port>/#token=<token>` in the browser (and prints it, unless
+  started from the icon, whose output goes to a log). The page reads it from `location.hash`, keeps it in
+  `sessionStorage` and takes it out of the address bar; a tab without it asks the app's other tabs in the same browser
+  (a `BroadcastChannel` named `enlens-token`) and keeps the first answer the API accepts. A program on this computer
+  reads it from `app-token-<port>.json` in the data folder: `{"url", "port", "pid", "token"}`, written whole when
+  the app starts (mode 0600 on macOS and Linux; on Windows the user's profile folder protects it, and with a data
+  folder outside the profile the file is in `%LOCALAPPDATA%\ENLENS`) and removed when it stops (`gui/launcher.py`
+  `token_path`, `read_token`, `open_link`). On Linux the browser is given a file `open-<port>.html` beside it (also
+  0600) that sends it on to the link, so the token is on no program's command line (`launcher.browse`). Every start has a new token, except a restart after an update
+  (below).
 - **Host.** Requests must name `127.0.0.1:<port>`, `localhost:<port>` or `[::1]:<port>` in `Host`; requests carrying an
   `Origin` other than their own `Host` are refused (403).
 - **Network mode** (`enlens-gui --host 0.0.0.0`): `Host` may also be an IP address of the computer (never a domain
-  name: that could be DNS rebinding). The page is served without the token (`{{ENLENS_TOKEN}}` becomes empty); the
-  token comes in the link printed in the terminal, `http://<address>:<port>/#token=<token>`, which the page reads
-  from `location.hash` and keeps in `sessionStorage`.
+  name: that could be DNS rebinding). As on `127.0.0.1`, the token comes in the link printed in the terminal,
+  `http://<address>:<port>/#token=<token>`.
 - **Content Security Policy** on the page: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
   img-src 'self' data:; font-src 'self' data:; connect-src 'self'`. No inline `<script>`, no external resources.
 - **Static files**: `GET /static/<file>` serves files from the `static/` folder (also `/<file>` with an extension).
@@ -25,7 +37,8 @@ the model service chosen in Settings.
 - **JSON in, JSON out.** Request bodies are JSON objects (`Content-Type: application/json`), except uploads (raw bytes).
 - **Errors**: status 4xx/5xx with `{"error": "plain-language message", "kind": "request" | "backend" | "internal"}`.
   `kind: "backend"` (HTTP 502) means the model service is the problem (not running, model missing, key wrong): offer
-  a link to Settings. 401 means the token is wrong: ask to reload.
+  a link to Settings. 401 means the token is missing or from an earlier run: open ENLENS from its icon (or run
+  `enlens-gui`).
 - **Jobs.** Long work returns `{"job": Job}` at once; poll `GET /api/jobs/<id>` (about every 500 ms while
   `state` is `queued` or `running`). Jobs that use the chat model run one at a time; others wait in `queued`.
   0.17.0: jobs of one project that change the same things wait their turn in `queued` too, with `waiting_for` saying
@@ -210,8 +223,11 @@ since 0.13.6 only when there is an update).
 - `POST /api/restart` `{}` → `{"restarting": true, "jobs_stopped": n}`: restarts into the version on disk (*Restart
   now* on the banner *ENLENS X is installed, but Y is still running*); 409 when this copy cannot restart itself.
 
-The restarted copy has a new access token: the page waits until `/` answers with a new `enlens-token` (or answers
-again after not answering) and reloads. On macOS and Linux the same process becomes the new version (`os.execv`),
+0.17.2: the restarted copy keeps the access token (it is handed over in the environment, `ENLENS_RESTART_TOKEN`,
+which the new copy takes out at once; on Windows the update starts handover.py with it in that program's environment
+only, and handover.py gives it to the copy it starts and to nothing else), so the open
+tabs, which keep it, reach the new copy. A restart that cannot have its old port back takes a new token. The page
+waits until `/` answers with a new `enlens-run` (or answers again after not answering) and reloads. On macOS and Linux the same process becomes the new version (`os.execv`),
 in the same terminal; on Windows a new one is started and the old one ends. Started from the icon, it is restarted
 as the icon starts it (`--launcher`, output to `logs/enlens.log`), without opening a new browser tab.
 
@@ -1104,14 +1120,15 @@ every answer they store records the model, its digest, the prompt version, the s
 - `GET /api/projects/<p>/themes` → `{runs, auto_mode, auto_why, k}`; each run has `themes_now` (after merges and
   removals).
 - `POST /api/projects/<p>/themes {k?, seed?, mode?: auto|meaning|words}` → job: a new set of themes (spherical
-  k-means; the same documents and settings give the same themes). A small project gets fewer themes than `k`
+  k-means, in numpy when it is installed and otherwise in plain Python, with the same result; the same documents and
+  settings give the same themes). A small project gets fewer themes than `k`
   (about three passages a theme); fewer than 5 passages is an error.
 - `GET /api/projects/<p>/themes/<run>?framework=` → the themes (names, key terms, size, documents,
   representative passages), `removed` (the themes a person removed, without a `number`), `doc_grid` and
   `code_grid` (without the removed themes' passages). Each theme has `removed`, `removed_at`, `replaces` (`{theme_id,
   name}` of the removed theme a new theme was found in place of, or null), `replaced_by` and `drawn_from` (`[{theme_id,
   name, passages}]`: the themes a new theme took its passages from); `edits` also counts `removed` and `added`.
-  `GET …/themes/<run>/<theme_id>?offset=&limit=` → one theme (a removed one too) and its passages. `DELETE
+  `GET …/themes/<run>/<theme_id>?offset=&limit=` → one theme (a removed one too) and its passages (built from that theme alone: `themes.view(only=)`). `DELETE
   …/themes/<run>[?why=<reason>]` (0.16: `why` as for a document).
 - `PUT /api/projects/<p>/themes/<run>/edit {what: rename|merge|move|remove, theme_id?, value?, passage_id?, why?}`
   (0.16: `why`, an optional reason, goes into the research log; each edit also keeps the state before it as a version):
@@ -1471,7 +1488,9 @@ codes, where each example was found, the groups and their order. The old routes 
   "copy" | "csv", "source"?, "label"?}` → `{"codebook"}`. `source`: `{"codes": [...]}` (drafts from
   `GET …/codebooks/sources`, the ones kept), `{"of": "<codebook name>"}` or `{"csv": "<text>"}`. The columns of a CSV
   are `code`, `description`, `group`, `group_name`, `when_to_use`, `when_not_to_use`, `keywords` (separated by `;`) and
-  `examples` (one per line); `code` and `description` are required. A name that is taken gets a number.
+  `examples` (one per line); `code` and `description` are required. A cell that starts with an apostrophe before text a
+  spreadsheet would run as a formula (`'=1+1`, `'@x`, `'-x`) loses that one apostrophe: it is what the CSV download
+  adds (below). Any other cell is read as written. A name that is taken gets a number.
 - `GET /api/projects/<p>/codebooks/sources?all=1` → `{"runs": [{"run_id", "project", "here", "created_at", "themes":
   [{"name", "size", "code": {"code", "description", "described", "keywords", "examples"}}]}]}`: the sets of themes a
   codebook can start from (removed themes left out); `all` adds those of every project.
@@ -1489,7 +1508,11 @@ codes, where each example was found, the groups and their order. The old routes 
   "note"}}}`; `note` says a code matches nothing, or more than a quarter of the passages.
 - `POST …/codebooks/<name>/relabel {"code"}` → `{"passages", "job"}`: the AI labels again the passages it labelled with
   that code before its wording changed (a label job with `passage_ids`); 409 when there are none.
-- `GET /api/projects/<p>/codebooks/<name>.csv` → the codebook as a CSV file (the columns above).
+- `GET /api/projects/<p>/codebooks/<name>.csv` → the codebook as a CSV file (the columns above). As in every CSV
+  ENLENS writes, a cell that starts with `=`, `@`, a tab or a carriage return, or with `+` or `-` unless it is a number
+  (or `- ` and a space), gets a leading apostrophe, so a spreadsheet shows it and does not run it; reading a codebook
+  takes that apostrophe off (`review.csv_cell` and `review.csv_uncell`, exact inverses). Codebook files written before
+  0.17.2 have none; the download adds them.
 
 ### Jobs
 

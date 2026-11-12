@@ -624,7 +624,8 @@ def test_letter_spaced_words_are_joined_for_the_glossary_only(tmp_path):
     labels = {r[0] for r in ws.query("SELECT label FROM terms")}
     assert not {"tr", "oly", "Elec", "Elec tr oly ser"} & labels
     tid = terms.find_term(ws, "electrolyser")
-    docs = {r[0] for r in ws.query("SELECT DISTINCT doc_id FROM term_mentions WHERE term_id=?", (tid,))}
+    docs = {r[0] for r in ws.query("SELECT DISTINCT p.doc_id FROM term_mentions m JOIN passages p ON "
+                                   "p.passage_id=m.passage_id WHERE m.term_id=?", (tid,))}
     assert len(docs) == 2                                  # the letter-spaced document mentions it too
     assert "net zero" in {x.lower() for x in labels}       # two words written apart stay two words
     assert "Elec tr oly ser" in ws.scalar("SELECT text FROM documents WHERE text LIKE '%Elec tr%'")  # text as read

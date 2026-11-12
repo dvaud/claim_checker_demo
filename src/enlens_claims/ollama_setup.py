@@ -328,14 +328,9 @@ def start(sys_name: str | None = None) -> dict:
 
 def answers(url: str | None = None) -> bool:
     """Whether an Ollama answers at `url` (by default where Ollama listens)."""
-    from urllib.request import urlopen
+    from .llm import ollama_version
 
-    url = (url or DEFAULT_URL).rstrip("/")
-    try:
-        with urlopen(f"{url}/api/version", timeout=1.5) as r:
-            return r.status == 200
-    except (OSError, ValueError):
-        return False
+    return ollama_version(url or DEFAULT_URL, 1.5) is not None
 
 
 def _wait(is_running: Callable[[], bool], seconds: float, should_stop: Callable[[], bool] = lambda: False) -> bool:

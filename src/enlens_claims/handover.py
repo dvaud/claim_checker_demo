@@ -13,6 +13,8 @@ that uv installed, outside ENLENS's own folder, so the update replaces nothing i
    reading it);
 4. finishes the update with the new version's `enlens post-install` (the marker and the Claude Code plugin);
 5. starts the app again on the same address, whether the install worked or not (the open page reloads itself);
+   0.17.2: with the app's token (ENLENS_RESTART_TOKEN, inherited from the app and given to nothing else), so the open
+   tabs, which keep the token, reach the new copy;
 6. writes what happened to the result file (the app shows a failure once, update_note()) and to the log;
 7. if no app comes back within `come_back` seconds, opens a PowerShell window that says so and runs the install
    line of the new version, so the person is never left without ENLENS.
@@ -31,6 +33,7 @@ from pathlib import Path
 CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NEW_CONSOLE = 0x00000010
+RESTART_TOKEN = "ENLENS_RESTART_TOKEN"  # as gui/server.py (this script imports nothing from ENLENS)
 IN_USE = ("os error 5", "os error 32", "access is denied", "being used by another process")
 
 
@@ -161,10 +164,10 @@ def _run(job: dict, args: list[str], env: dict | None = None) -> tuple[int, str]
     return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
 
 
-def _start(args: list[str], folder: str) -> int:
+def _start(args: list[str], folder: str, env: dict | None = None) -> int:
     """Start a program that outlives this script; returns its process number."""
     kw: dict = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
-                "close_fds": True, "cwd": folder}
+                "close_fds": True, "cwd": folder, "env": env}
     if os.name != "nt":
         return subprocess.Popen(args, start_new_session=True, **kw).pid  # console: not on Windows
     flags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
@@ -218,6 +221,7 @@ def _finish(job: dict, result: dict) -> dict:
 
 def run(job: dict) -> dict:
     """Carry out the job (see the module's notes). Returns what was written to the result file."""
+    token = os.environ.pop(RESTART_TOKEN, "")  # for the app it starts only, not the installer
     _log(job, f"updating ENLENS {job.get('from')} to {job.get('version')} (this script runs with {sys.executable}): "
               "waiting for the app to quit")
     if not _wait_gone(job["pids"], job.get("wait", 120)):
@@ -253,7 +257,7 @@ def run(job: dict) -> dict:
         result.update(hint="in_use" if any(s in low for s in IN_USE) else "install", error=out[-1500:])
     try:
         before = int(job["pids"][0]) if job.get("pids") else 0
-        pid = _start(job["start"], job["folder"])
+        pid = _start(job["start"], job["folder"], {**os.environ, RESTART_TOKEN: token} if token else None)
         _log(job, f"started ENLENS again (process {pid})")
         result["restarted"] = _came_back(job, before, job.get("come_back", 60))
     except (OSError, KeyError) as e:

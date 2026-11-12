@@ -38,6 +38,7 @@ from typing import Any, Callable
 
 from . import frameworks, history
 from .frameworks import BUNDLED, NAME_RE, Code
+from .review import csv_cell, csv_uncell
 from .store import Workspace, now
 from .textutil import fast_normalise, normalise
 
@@ -364,8 +365,10 @@ def _csv_text(codes: list[dict], groups: list[dict]) -> str:
     w = csv.writer(buf, lineterminator="\n")
     w.writerow(COLUMNS)
     for c in codes:
-        w.writerow([c["code"], c["description"], c["group"], gname.get(c["group"], ""), c["include"], c["exclude"],
-                    "; ".join(c["keywords"]), "\n".join(e["quote"] for e in c["examples"])])
+        # 0.17.2: through csv_cell like every other CSV ENLENS writes; frameworks.parse_csv takes the apostrophe off
+        w.writerow([csv_cell(x) for x in
+                    (c["code"], c["description"], c["group"], gname.get(c["group"], ""), c["include"], c["exclude"],
+                     "; ".join(c["keywords"]), "\n".join(e["quote"] for e in c["examples"]))])
     return buf.getvalue()
 
 
@@ -889,7 +892,21 @@ def csv_of(ws: Workspace, name: str) -> tuple[str, bytes]:
         fw = frameworks.get(name, ws)
         st = _state(name, fw.codes, {}, fw.title, fw.label, fw.directional)
         return f"{name}.csv", _csv_text(_clean_state(st)["codes"], st["groups"]).encode("utf-8-sig")
-    return f"{name}.csv", (f / f"{name}.csv").read_bytes()
+    return f"{name}.csv", _protected_csv(frameworks.decode((f / f"{name}.csv").read_bytes())).encode("utf-8")
+
+
+def _protected_csv(text: str) -> str:
+    """A codebook's file as an export a spreadsheet will not run: every cell through `csv_cell`. The file may have been
+    written before 0.17.2 or be a CSV someone imported as it was, so each cell is first taken back to what it says
+    (`csv_uncell`): one that is protected already stays as it is, not protected twice. The columns, their order and
+    the file's separator stay."""
+    text = text.lstrip("\ufeff")
+    delim = frameworks._delimiter(text)
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=delim, lineterminator="\n")
+    for row in csv.reader(io.StringIO(text), delimiter=delim):
+        w.writerow([csv_cell(csv_uncell(x)) for x in row])
+    return buf.getvalue()
 
 
 # ---------------------------------------------------------------------------------------------

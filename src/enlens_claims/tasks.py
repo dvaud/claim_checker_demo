@@ -560,6 +560,9 @@ def _store_answer(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     kind = taskkinds.get(t["kind"])
     if kind is None or kind.store is None:
         raise ValueError(f"unknown task kind {t['kind']!r}")
+    problems = taskkinds.long_quote_problems(obj, kind.quote_fields)  # 0.17.2: too long is as good as not found
+    if problems:
+        return False, problems
     if not kind.core:
         if kind.schema is not None:
             obj = kind.schema.model_validate(obj).model_dump()
@@ -783,6 +786,27 @@ def capped(verdict: str, scope_note: str | None) -> str:
     return "partially_supports" if scope_note and verdict == "supports" else verdict
 
 
+_NOT_GRADED = ("not_enough_info", None, None, None, None, None)
+
+
+def _graded_row(cx, p: dict, graded: tuple, missing: int | None = None) -> tuple:
+    """(verdict, confidence, quote, start, end, scope_note) of a graded excerpt, as the three paths that store a
+    grade (a set of excerpts, one read again, a second opinion) keep it. `missing`: see doc_span."""
+    ev, hit = graded
+    note = getattr(ev, "scope_note", None)  # a set's grades carry none
+    return (capped(ev.verdict, note), ev.confidence, p["text"][hit[0]:hit[1]],
+            *doc_span(cx, p["passage_id"], p["text"], hit[0], hit[1], missing=missing, anchor=p.get("anchor")), note)
+
+
+def _history_entry(b, at: str | None = None, why: str | None = None) -> dict:
+    """The AI's earlier grade of an excerpt (a row of `verifications`) as one entry of `ai_history_json`."""
+    e = {"verdict": b["verdict"], "confidence": b["confidence"], "quote": b["quote"], "scope_note": b["scope_note"],
+         "model": b["model"], "prompt_version": b["prompt_version"], "at": at, "replaced_at": now()}
+    if why is not None:
+        e["why"] = why
+    return e
+
+
 def _store_verify_set(cx, t, payload, obj, model, schema=VerifySetOut) -> tuple[bool, list[str]]:
     v = schema.model_validate(obj)
     passages = payload["passages"]
@@ -795,21 +819,18 @@ def _store_verify_set(cx, t, payload, obj, model, schema=VerifySetOut) -> tuple[
     for n, p in enumerate(passages, 1):
         vid = f"v{_h(t['task_id'], p['passage_id'])}"
         before = cx.execute("SELECT * FROM verifications WHERE ver_id=?", (vid,)).fetchone()
-        note = None
         ref = (None, None, None, None)
         if n in graded:
-            ev, hit = graded[n]
-            note = getattr(ev, "scope_note", None)
-            row = (capped(ev.verdict, note), ev.confidence, p["text"][hit[0]:hit[1]],
-                   *doc_span(cx, p["passage_id"], p["text"], hit[0], hit[1], missing=0, anchor=p.get("anchor")))
-            ref = _refers(cx, p, ev)
+            row = _graded_row(cx, p, graded[n], missing=0)
+            ref = _refers(cx, p, graded[n][0])
         else:
-            row = ("not_enough_info", None, None, None, None)
+            row = _NOT_GRADED
+        note = row[5]
         cx.execute("INSERT OR REPLACE INTO verifications(ver_id, subject_kind, subject_id, passage_id, doc_id, verdict, "
                    "confidence, quote, start, end, page, model, prompt_version, scope_note, refers_to, refers_start, "
                    "refers_end, refers_where) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (vid, payload["subject_kind"], payload["subject_id"],
-                    p["passage_id"], p["doc_id"], *row[:3], row[3], row[4], p.get("page"), model, t["prompt_version"],
+                    p["passage_id"], p["doc_id"], *row[:5], p.get("page"), model, t["prompt_version"],
                     note, *ref))
         if before is not None:
             _keep_person_and_history(cx, vid, before, why)
@@ -821,9 +842,7 @@ def _keep_person_and_history(cx, vid: str, before, why: str) -> None:
     the AI's earlier judgement joins its history (shown on the result, as for an excerpt read again)."""
     b = dict(before)
     hist = json.loads(b.get("ai_history_json") or "[]")
-    hist.append({"verdict": b.get("verdict"), "confidence": b.get("confidence"), "quote": b.get("quote"),
-                 "scope_note": b.get("scope_note"), "model": b.get("model"), "prompt_version": b.get("prompt_version"),
-                 "at": None, "replaced_at": now(), "why": why})
+    hist.append(_history_entry(b, why=why))
     cx.execute("UPDATE verifications SET user_verdict=?, user_note=?, user_at=?, user_quote=?, user_start=?, user_end=?, "
                "user_by=?, ai_history_json=?, reread_json=? WHERE ver_id=?",
                (b.get("user_verdict"), b.get("user_note"), b.get("user_at"), b.get("user_quote"), b.get("user_start"),
@@ -840,12 +859,10 @@ def _store_reread(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
         return False, errors
     ref = (None, None, None, None)
     if 1 in graded:
-        ev, hit = graded[1]
-        row = (capped(ev.verdict, ev.scope_note), ev.confidence, p["text"][hit[0]:hit[1]],
-               *doc_span(cx, p["passage_id"], p["text"], hit[0], hit[1], anchor=p.get("anchor")), ev.scope_note)
-        ref = _refers(cx, p, ev)
+        row = _graded_row(cx, p, graded[1])
+        ref = _refers(cx, p, graded[1][0])
     else:
-        row = ("not_enough_info", None, None, None, None, None)
+        row = _NOT_GRADED
     old = cx.execute("SELECT * FROM verifications WHERE subject_kind=? AND subject_id=? AND passage_id=?",
                      (payload["subject_kind"], payload["subject_id"], p["passage_id"])).fetchone()
     info = json.dumps({"hint": payload.get("reader_note"), "rationale": (v.rationale or "").strip() or None,
@@ -853,9 +870,7 @@ def _store_reread(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
     history = []
     if old is not None:
         history = json.loads(old["ai_history_json"] or "[]")
-        history.append({"verdict": old["verdict"], "confidence": old["confidence"], "quote": old["quote"],
-                        "scope_note": old["scope_note"], "model": old["model"], "prompt_version": old["prompt_version"],
-                        "at": payload.get("previous_at"), "replaced_at": now()})
+        history.append(_history_entry(old, at=payload.get("previous_at")))
         cx.execute("UPDATE verifications SET verdict=?, confidence=?, quote=?, start=?, end=?, scope_note=?, model=?, "
                    "prompt_version=?, ai_history_json=?, reread_json=?, refers_to=?, refers_start=?, refers_end=?, "
                    "refers_where=? WHERE ver_id=?",
@@ -908,12 +923,7 @@ def _store_second(cx, t, payload, obj, model) -> tuple[bool, list[str]]:
         return False, errors
     second = payload.get("second_model") or model
     for n, p in enumerate(passages, 1):
-        if n in graded:
-            ev, hit = graded[n]
-            row = (capped(ev.verdict, ev.scope_note), ev.confidence, p["text"][hit[0]:hit[1]],
-                   *doc_span(cx, p["passage_id"], p["text"], hit[0], hit[1], anchor=p.get("anchor")), ev.scope_note)
-        else:
-            row = ("not_enough_info", None, None, None, None, None)
+        row = _graded_row(cx, p, graded[n]) if n in graded else _NOT_GRADED
         cx.execute("INSERT OR REPLACE INTO second_opinions(subject_id, passage_id, model, verdict, confidence, quote, "
                    "start, end, scope_note, at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                    (payload["subject_id"], p["passage_id"], second, *row, now()))
@@ -1317,23 +1327,36 @@ You are answering model tasks for the ENLENS claims pipeline.
 """
 
 
+_EXPORT_CHUNK = 200  # tasks whose payloads are read at once while the file queue checks what may leave
+
+
 def export(ws: Workspace, kind: str, batch_size: int = 25, limit: int | None = None) -> list[Path]:
     _sync_thresholds(ws)
     # 0.11: the file queue hands tasks to a worker outside this program, so only tasks whose documents Claude may
-    # read are written; the others stay pending for a local model or a person
-    cand = [t for t in pending(ws, kind) if (t["access"] or "cloud") == "cloud"]
+    # read are written; the others stay pending for a local model or a person. 0.17.2: only the ids are listed; a
+    # task's payload is read for the few tasks of a chunk, then again for the batch it is written in, so 20,000
+    # waiting tasks are never all in memory
+    cand = [r[0] for r in ws.query(
+        "SELECT task_id FROM tasks WHERE kind=? AND status IN ('pending','retry') "
+        "AND COALESCE(NULLIF(access,''),'cloud')='cloud' ORDER BY task_id", (kind,))]
     # the passages leave with the files: recorded per task in order, so a document's cap counts the tasks written
     # before each one (a task over the cap stays pending for a local model or a person)
-    todo = []
+    todo: list[str] = []
     with ws.connect() as cx:
         dflt = access.default(ws)
-        for t in cand:
+        for c in range(0, len(cand), _EXPORT_CHUNK):
             if limit and len(todo) >= limit:
                 break
-            if access.recheck(cx, t["task_id"], dflt) != "cloud":
-                continue
-            access.record_sent(cx, t["task_id"], json.loads(t["payload_json"]), "file queue", t["kind"])
-            todo.append(t)
+            chunk = cand[c:c + _EXPORT_CHUNK]
+            payloads = dict(cx.execute(
+                f"SELECT task_id, payload_json FROM tasks WHERE task_id IN ({','.join('?' * len(chunk))})", chunk))
+            for tid in chunk:
+                if limit and len(todo) >= limit:
+                    break
+                if access.recheck(cx, tid, dflt) != "cloud":
+                    continue
+                access.record_sent(cx, tid, json.loads(payloads[tid]), "file queue", kind)
+                todo.append(tid)
     out_dir = ws.root / "tasks" / kind
     out_dir.mkdir(parents=True, exist_ok=True)
     (ws.root / "results" / kind).mkdir(parents=True, exist_ok=True)
@@ -1344,15 +1367,18 @@ def export(ws: Workspace, kind: str, batch_size: int = 25, limit: int | None = N
     files = []
     for b in range(0, len(todo), batch_size):
         path = out_dir / f"batch_{start + b // batch_size + 1:04d}.jsonl"
+        ids = todo[b:b + batch_size]
+        rows = {r["task_id"]: r for r in ws.query(
+            f"SELECT * FROM tasks WHERE task_id IN ({','.join('?' * len(ids))})", ids)}
         with path.open("w", encoding="utf-8") as f:
-            for t in todo[b:b + batch_size]:
-                _sys, user = render(ws, t)
-                f.write(json.dumps({"task_id": t["task_id"], "user": user}, ensure_ascii=False) + "\n")
+            for tid in ids:
+                _sys, user = render(ws, rows[tid])
+                f.write(json.dumps({"task_id": tid, "user": user}, ensure_ascii=False) + "\n")
         files.append(path)
     with ws.connect() as cx:
-        for t in todo:  # 0.14.3: with the version of the instructions written beside it (SYSTEM.md)
-            cx.execute("UPDATE tasks SET status='exported', prompt_version=? WHERE task_id=?",
-                       (prompts.VERSIONS.get(kind) or t["prompt_version"], t["task_id"]))
+        # 0.14.3: with the version of the instructions written beside it (SYSTEM.md)
+        cx.executemany("UPDATE tasks SET status='exported', prompt_version=COALESCE(NULLIF(?, ''), prompt_version) "
+                       "WHERE task_id=?", [(prompts.VERSIONS.get(kind), tid) for tid in todo])
     return files
 
 

@@ -36,8 +36,10 @@ SUPPORTED = {".pdf", ".html", ".htm", ".txt", ".md", ".docx"}
 # text or passages raises this number: documents already in a project keep the reading they have, so every result in
 # them stays where it is, until a person has one read with the new reader (planned with the next reader); only new
 # documents get the new reader.
-READER = 3  # 1: ENLENS 0.5 to 0.14 (pypdf's page text, cut by sentences); 2: ENLENS 0.15.0 (reader.py);
-            # 3: ENLENS 0.15.1 (reader.py with reader3.py: text-only files, books, words run together)
+READER = 4  # 1: ENLENS 0.5 to 0.14 (pypdf's page text, cut by sentences); 2: ENLENS 0.15.0 (reader.py);
+            # 3: ENLENS 0.15.1 (reader.py with reader3.py: text-only files, books, words run together);
+            # 4: ENLENS 0.17.2 (reader4.py: a text file's lines as paragraphs; Word's nested tables read once, and
+            #    its content controls read)
 REF_HEADING = re.compile(
     r"(?:^|\s)(References|REFERENCES|Bibliography|BIBLIOGRAPHY|Literature [Cc]ited|Works [Cc]ited|Reference [Ll]ist)"
     r"\s*:?\s+(?=\[?\(?\d|[A-Z][A-Za-z'\-]+,?\s+[A-Z]|[A-Z]{2,})"
@@ -56,6 +58,17 @@ class RawDoc:
     ocr_pages: int = 0       # PDF pages without a text layer whose text was recognised (OCR)
     scanned_pages: int = 0   # PDF pages without a text layer (recognised or not)
     line_pos: list | None = None  # PDFs: per page, the (x, y) where each line of its text starts (None: unknown)
+    # Word files whose text reader 4 reads otherwise (`_read_docx`): the pages, headings and pagination readers 1 to 3
+    # read, so that an older reader number still reads the file byte for byte as it did (`as_read_by`)
+    before_4: dict | None = None
+
+    def as_read_by(self, reader: int) -> "RawDoc":
+        """The file as the given reader reads it: itself, or for readers 1 to 3 the Word text they read."""
+        if reader >= 4 or not self.before_4:
+            return self
+        import dataclasses
+
+        return dataclasses.replace(self, **self.before_4, before_4=None)
     page_sizes: list | None = None  # PDFs (0.15): per page, (width, height) in points
 
 
@@ -150,8 +163,8 @@ def read_file(path: Path, ocr: "OcrOptions | None" = None, should_stop=None) -> 
                       page_sizes=sizes or None)
     if ext == ".docx":
         sha1 = _sha1(path)
-        pages, title, heads = _read_docx(path)
-        return RawDoc(path, "docx", pages, title, sha1, paginated=len(pages) > 1, headings=heads)
+        pages, title, heads, before = _read_docx(path)
+        return RawDoc(path, "docx", pages, title, sha1, paginated=len(pages) > 1, headings=heads, before_4=before)
     data = path.read_bytes()
     sha1 = hashlib.sha1(data).hexdigest()
     if ext in (".html", ".htm"):
@@ -266,11 +279,16 @@ DOCX_MAX = 200 * 1024 ** 2   # bytes of XML read from one Word file (a zip): a b
 DOCX_CORE_MAX = 1024 ** 2    # bytes of a Word file's document properties (where its title is): the same, for them
 
 
-def _read_docx(path: Path) -> tuple[list[str], str | None, set[str]]:
+def _read_docx(path: Path) -> tuple[list[str], str | None, set[str], dict | None]:
     """A Word file (.docx: a zip of XML) with the standard library: its paragraphs (separated by a blank line, as in a
     text file), its headings (paragraph styles Title and Heading 1 to 9), its pages where Word marked them (a page
     break, or where Word last laid out a new page), and its title (document properties). Tables are read row by row;
-    footnotes, comments and text boxes are left out."""
+    footnotes, comments and text boxes are left out.
+
+    Reader 4 reads text inside content controls and custom XML around paragraphs and tables (readers 1 to 3 dropped
+    it), and a table inside a table's cell once, its rows after the row that holds it (readers 1 to 3 read it three
+    times). The last value is what readers 1 to 3 read ({"pages", "headings", "paginated"}, for `RawDoc.before_4`)
+    when that differs, else None."""
     import xml.etree.ElementTree as ET
 
     try:
@@ -299,6 +317,43 @@ def _read_docx(path: Path) -> tuple[list[str], str | None, set[str]]:
         except (KeyError, ET.ParseError, *ZIP_ERRORS):  # 0.14.3: damaged properties: the text is read all the same
             title = None
     body = root.find(f"{_W}body")
+    pages3, heads3 = _docx_text(body, 3)
+    pages, heads = _docx_text(body, 4)
+    before = None
+    if pages3 != pages or heads3 != heads:
+        before = {"pages": pages3, "headings": heads3, "paginated": len(pages3) > 1}
+    return pages, title, heads, before
+
+
+# block-level elements that only wrap other block-level elements: a content control (its content) and custom XML
+_DOCX_WRAPPERS = {f"{_W}sdt", f"{_W}customXml"}
+
+
+def _docx_blocks(el):
+    """The paragraphs and tables directly in a body, a table cell or a content control's content, with those inside
+    content controls and custom XML taken out of them in their place (reader 4)."""
+    for child in el:
+        if child.tag in _DOCX_WRAPPERS:
+            inner = child.find(f"{_W}sdtContent") if child.tag == f"{_W}sdt" else child
+            if inner is not None:
+                yield from _docx_blocks(inner)
+        elif child.tag in (f"{_W}p", f"{_W}tbl"):
+            yield child
+
+
+def _docx_children(el, tag: str):
+    """The rows of a table or the cells of a row, also those inside content controls and custom XML (reader 4)."""
+    for child in el:
+        if child.tag in _DOCX_WRAPPERS:
+            inner = child.find(f"{_W}sdtContent") if child.tag == f"{_W}sdt" else child
+            if inner is not None:
+                yield from _docx_children(inner, tag)
+        elif child.tag == tag:
+            yield child
+
+
+def _docx_text(body, version: int) -> tuple[list[str], set[str]]:
+    """The pages and headings of a Word file's body, as reader `version` reads them (see `_read_docx`)."""
     pages: list[list[str]] = [[]]
     heads: set[str] = set()
 
@@ -344,19 +399,46 @@ def _read_docx(path: Path) -> tuple[list[str], str | None, set[str]]:
                 if heading:
                     heads.add(" ".join(piece.split()))
 
-    for child in list(body) if body is not None else []:
-        if child.tag == f"{_W}p":
-            text, new_page = para_text(child)
-            st = style(child).lower().replace(" ", "")
-            add(text, new_page, st == "title" or bool(re.fullmatch(r"heading[1-9]", st)))
-        elif child.tag == f"{_W}tbl":
-            for row in child.iter(f"{_W}tr"):
-                cells = []
-                for cell in row.iter(f"{_W}tc"):
-                    cells.append(" ".join(para_text(p)[0].replace("\f", " ").strip() for p in cell.iter(f"{_W}p")).strip())
-                add(" | ".join(c for c in cells if c), False, False)
+    def paragraph(p) -> None:
+        text, new_page = para_text(p)
+        st = style(p).lower().replace(" ", "")
+        add(text, new_page, st == "title" or bool(re.fullmatch(r"heading[1-9]", st)))
+
+    def table(tbl) -> None:
+        # reader 4: each row once, its cells' own paragraphs; a table in a cell comes after the row that holds it
+        for row in _docx_children(tbl, f"{_W}tr"):
+            cells, inner = [], []
+            for cell in _docx_children(row, f"{_W}tc"):
+                parts = []
+                for b in _docx_blocks(cell):
+                    if b.tag == f"{_W}tbl":
+                        inner.append(b)
+                    else:
+                        parts.append(para_text(b)[0].replace("\f", " ").strip())
+                cells.append(" ".join(parts).strip())
+            add(" | ".join(c for c in cells if c), False, False)
+            for t in inner:
+                table(t)
+
+    if version < 4:
+        for child in list(body) if body is not None else []:
+            if child.tag == f"{_W}p":
+                paragraph(child)
+            elif child.tag == f"{_W}tbl":
+                for row in child.iter(f"{_W}tr"):
+                    cells = []
+                    for cell in row.iter(f"{_W}tc"):
+                        cells.append(" ".join(para_text(p)[0].replace("\f", " ").strip()
+                                              for p in cell.iter(f"{_W}p")).strip())
+                    add(" | ".join(c for c in cells if c), False, False)
+    else:
+        for child in _docx_blocks(body) if body is not None else []:
+            if child.tag == f"{_W}p":
+                paragraph(child)
+            else:
+                table(child)
     out = ["\n\n".join(pg) for pg in pages if any(x.strip() for x in pg)]
-    return out or [""], title, heads
+    return out or [""], heads
 
 
 def _md_line(ln: str) -> str:
@@ -947,6 +1029,7 @@ def read_document(path: Path, reader: int | None = None, ocr: "OcrOptions | None
 
 
 def build_document(raw: RawDoc, max_chars: int = 1100, min_chars: int = 200, reader: int | None = None) -> Document:
+    raw = raw.as_read_by(reader or READER)
     if (reader or READER) >= 2:
         from . import reader as reader2
 

@@ -70,7 +70,8 @@ half-written `.part` files. What was brought in is recorded (`sync_folder_read`,
 what they took back); `status(ws)` says what the Team tab shows. Both are safe when the folder is not
 there: nothing in the project changes until a merge, which reads only the scratch copy, runs in one transaction. A
 round can be stopped part-way (`should_stop`: the person stops it, the app quits); it ends between two steps, and the
-next round carries on from there.
+next round carries on from there. A round looks only at what changed since the last one (`changes.py`: counters kept by
+triggers, and what the round remembers in this process), so a round that finds nothing new costs almost nothing.
 """
 from __future__ import annotations
 
@@ -88,10 +89,10 @@ from typing import Any, Callable, Iterable
 
 from .. import __version__, people, sharing
 from ..store import Workspace, now
-from . import formats
+from . import changes, formats
 from .common import (DOC_ID, LOCAL_ONLY, READING_TABLES as _READING_TABLES, UNFINISHED, _TOKEN, _cols, _pk, _rows, _sha,
                      base_id, text_fp)
-from .fingerprints import _PERSONAL, _running, record_seen
+from .fingerprints import _PERSONAL, _running, record_seen_since
 
 FOLDER = "shared_folder"            # config.json: the folder the team shares (a path on this computer)
 KEEP_OUT = "shared_folder_keep_out"  # config.json: keep documents marked Only a local AI or No AI out of it
@@ -642,7 +643,8 @@ def _reader_cx(ws: Workspace) -> sqlite3.Connection:
 
 
 def _written(cx: sqlite3.Connection) -> dict[tuple[str, str], str]:
-    return {(k, key): fp for k, key, fp in cx.execute("SELECT kind, key, fp FROM sync_written")}
+    """What this copy wrote, but the project's rows (one per row: they are looked up as they are read, `_plan_rows`)."""
+    return {(k, key): fp for k, key, fp in cx.execute("SELECT kind, key, fp FROM sync_written WHERE kind != 'row'")}
 
 
 def _same_folder(cx: sqlite3.Connection, folder_id: str) -> int:
@@ -909,6 +911,14 @@ class _Writer:
         self.out_stubs: dict[str, dict] = {}
         self.absent: dict[str, dict] = {}
         self.removed: dict[str, dict] = {}
+        # what changed since the last round (sync/changes.py): None, look at everything
+        self.memory: changes.Memory | None = None
+        self.changed: dict[str, set[str]] | None = None
+        self.clock: int | None = None
+        self.context: tuple | None = None
+        self.item_fps: dict[tuple[str, str], dict] = {}
+        self.tables: list[str] = []
+        self.seen_rows: set[str] | None = None       # every row's key, when every table was read (`_prune_rows`)
 
     def _in_folder(self, sub: str) -> dict[str, str]:
         """{name: whose subfolder} of what is in `sub` of every copy's subfolder (a reading or a file is stored once
@@ -922,24 +932,19 @@ class _Writer:
                 continue
         return out
 
-    def plan(self, cx: sqlite3.Connection) -> None:
+    def plan(self, cx: sqlite3.Connection, memory: changes.Memory | None = None, full: bool = False) -> None:
+        """What this round writes, read from one moment of the project (`cx`, a read transaction). With `memory`, what
+        did not change since the last round is not looked at again (sync/changes.py); `full`: look at everything (a
+        snapshot: everything goes, and what the record holds that is no more is pruned, `_prune_rows`)."""
         from ..sources import original_file
 
         ws = self.ws
         written = _written(cx)
         levels = ai_settings(ws, cx)
         self.kept_out = kept_out_docs(ws, cx, self.keep_out)
-        # the items: shared ones that changed, and the marks of those taken back
-        for (kind, key), r in sorted(sharing.rows(cx).items()):
-            if kind not in sharing.KINDS or r.get("state") not in ("shared", "withdrawn"):
-                continue
-            it = _item(ws, cx, kind, key, r, self.kept_out)
-            if written.get((kind, key)) == it["fp"]:
-                continue
-            if it["busy"]:
-                self.waiting.append({"kind": kind, "key": key, "title": it["title"]})
-                continue
-            self.items.append(it)
+        self.project = sharing.ProjectRows(cx, ws.root, self.kept_out)
+        self._what_changed(cx, memory, full)
+        self._plan_items(cx, written)
         # the documents: a stub of each, a reading per reading, a file per file. What is in the folder is read from the
         # folder each round, not from this copy's record: a colleague who wrote a reading may leave, with their subfolder
         docs = _rows(cx, "SELECT doc_id, sha1, text_fp, old_fps, title, ai_budget, sent_share, reader, path "
@@ -994,15 +999,7 @@ class _Writer:
         # the project's rows written since the last bundle (each once): their numbers now, read whole when the bundle
         # is written, a slice at a time (a large corpus's AI work is never held in memory at once)
         _say(self.progress, "write", "Looking for what changed", {})
-        self.project = sharing.ProjectRows(cx, ws.root, self.kept_out)
-        was = {key: fp for (k, key), fp in written.items() if k == "row"}
-        seen: set[str] = set()
-        for table, rowid, ident, content in self.project.scan():
-            h = _row_key(table, ident)
-            if h not in seen and was.get(h) != content:  # new, or changed since it was written
-                self.new_rows.setdefault(table, []).append(rowid)
-                self.row_keys.append((h, content))
-            seen.add(h)
+        self._plan_rows(cx)
         if (self.new_rows.get("bib_items") or self.new_rows.get("bib_links")) and not self.new_rows.get("meta"):
             # a colleague's merge takes the bibliography's works and links only with the bibliography they belong to
             row = cx.execute("SELECT rowid FROM meta WHERE key='bibliography'").fetchone()
@@ -1011,6 +1008,103 @@ class _Writer:
         self.absent = {r["doc_id"]: r for r in _rows(cx, "SELECT * FROM sync_folder_docs")}
         self.removed = {r["key"]: r for r in _rows(cx, "SELECT key, title, fp FROM sync_removed WHERE kind='document' "
                                                        "AND fp IS NOT NULL")}
+
+    # ---- what changed since the last round (deep dive S5, sync/changes.py) ------------------------------------
+    def _what_changed(self, cx: sqlite3.Connection, memory: changes.Memory | None, full: bool) -> None:
+        """What changed since the round this process last remembered (`self.changed`; None: look at everything). What
+        the counters cannot see makes it look at everything: another table definition, other documents kept out of the
+        folder, other tables of the project's rows, other codebooks of the project's own."""
+        self.memory, self.clock = memory, changes.clock(cx)
+        self.tables = [t for t, _where, _cols in self.project.tables()]
+        books = Path(self.ws.root) / "frameworks"
+        self.context = (changes.ident(cx), changes.schema(cx), tuple(sorted(self.kept_out)), tuple(self.tables),
+                        tuple(sorted(p.stem for p in books.glob("*.csv"))) if books.is_dir() else ())
+        if full or memory is None or memory.context != self.context:
+            self.changed = None
+        else:
+            self.changed = changes.changed_since(cx, memory.upto, memory.ignore)
+
+    def _codebook_sig(self, key: str) -> tuple:
+        from ..home import home
+
+        return changes.files_sig(f / f"{key}.{ext}" for f in (Path(self.ws.root) / "frameworks", home() / "frameworks")
+                                 for ext in ("csv", "json"))
+
+    def _plan_items(self, cx: sqlite3.Connection, written: dict[tuple[str, str], str]) -> None:
+        """The items: shared ones that changed, and the marks of those taken back. An item nothing touched since the
+        last round has the fingerprint it had then (`self.memory.items`); it is read whole only when it goes."""
+        ws, mem = self.ws, self.memory
+        if self.changed is None or mem is None:
+            touched, kinds, known = set(), set(), {}
+        else:
+            (touched, kinds), known = changes.touched(cx, self.changed), mem.items
+        for (kind, key), r in sorted(sharing.rows(cx).items()):
+            if kind not in sharing.KINDS or r.get("state") not in ("shared", "withdrawn"):
+                continue
+            mark = _mark(r)
+            files = self._codebook_sig(key) if kind == "codebook" else None
+            was = known.get((kind, key))
+            if was is not None and ((kind, key) in touched or kind in kinds or was["mark"] != mark
+                                    or was["files"] != files):
+                was = None
+            if was is not None and (written.get((kind, key)) == was["fp"] or was["busy"]):
+                self.item_fps[(kind, key)] = was
+                if written.get((kind, key)) != was["fp"]:
+                    self.waiting.append({"kind": kind, "key": key, "title": r.get("title") or key})
+                continue
+            it = _item(ws, cx, kind, key, r, self.kept_out)
+            self.item_fps[(kind, key)] = {"fp": it["fp"], "busy": it["busy"], "mark": mark, "files": files}
+            if written.get((kind, key)) == it["fp"]:
+                continue
+            if it["busy"]:
+                self.waiting.append({"kind": kind, "key": key, "title": it["title"]})
+                continue
+            self.items.append(it)
+
+    def _plan_rows(self, cx: sqlite3.Connection) -> None:
+        """The project's rows new or changed since they were written: of the tables that changed since the last round
+        (or that a change elsewhere changes, `changes.tables_to_read`), looked up in this copy's record as they are read,
+        a slice at a time (S14: the record holds one entry per row, never loaded whole)."""
+        mem = self.memory
+        if self.changed is None or mem is None or "row" in self.changed.get("sync_written", ()):
+            only = None  # (an entry of the record taken away: what it named may have to go again)
+        else:
+            only = (set(self.tables) - mem.clean) | changes.tables_to_read(self.changed, self.tables,
+                                                                             bool(self.kept_out))
+            if "results" in only:
+                only.add("tasks")
+        seen: set[str] = set()
+        batch: list[tuple[str, int, str, str]] = []
+
+        def look_up() -> None:
+            keys = [h for _t, _i, h, _c in batch]
+            was = dict(cx.execute(f"SELECT key, fp FROM sync_written WHERE kind='row' AND key IN "
+                                  f"({','.join('?' * len(keys))})", keys)) if keys else {}
+            for table, rowid, h, content in batch:
+                if was.get(h) != content:  # new, or changed since it was written
+                    self.new_rows.setdefault(table, []).append(rowid)
+                    self.row_keys.append((h, content))
+            batch.clear()
+
+        for table, rowid, ident, content in self.project.scan(only):
+            h = _row_key(table, ident)
+            if h in seen:
+                continue
+            seen.add(h)
+            batch.append((table, rowid, h, content))
+            if len(batch) >= 500:
+                look_up()
+        look_up()
+        self.seen_rows = seen if only is None else None
+
+    def remember(self) -> None:
+        """What this round looked at, once it is recorded (or there was nothing to write): the next round looks only at
+        what changes after it."""
+        mem = self.memory
+        if mem is None or self.clock is None:
+            return
+        mem.upto, mem.context, mem.items, mem.clean, mem.ignore = (self.clock, self.context, dict(self.item_fps),
+                                                                   set(self.tables), {})
 
     def choose_stubs(self, named: set[str]) -> None:
         """The stubs that go: of documents that changed, and of every document the rows that go name (a colleague's
@@ -1174,6 +1268,31 @@ def _task_of(task_id: str, checks: set[str], parts: set[str], runs: set[str]) ->
     return head in ("expand", "check", "reread") and owner in parts
 
 
+def _count_changes(ws: Workspace, cx: sqlite3.Connection) -> None:
+    """Deep dive S5: the change counters on every table a round reads (sync/changes.py), in the round's first write
+    transaction. A table that had none (new, or made anew) was not counted: this process's rounds look at everything."""
+    tables = set(changes.ITEM_TABLES) | {t for t, _w, _c in sharing.ProjectRows(cx, ws.root).tables()}
+    if changes.ensure(cx, tables):
+        changes.memory(ws.db_path).forget()
+
+
+def _prune_rows(ws: Workspace, w: _Writer) -> None:
+    """Deep dive S14: once a snapshot is written, the record keeps only the project's rows that are still here as they
+    would leave (`w.seen_rows`, every table read): a row deleted since, or one without a key that changed (its content
+    is its name), no longer holds an entry for ever. The round's own deletions are not a change for the next round."""
+    if w.seen_rows is None:
+        return
+    with ws.connect() as cx:
+        stale = [k for (k,) in cx.execute("SELECT key FROM sync_written WHERE kind='row'") if k not in w.seen_rows]
+        for i in range(0, len(stale), 500):
+            chunk = stale[i:i + 500]
+            cx.execute(f"DELETE FROM sync_written WHERE kind='row' AND key IN ({','.join('?' * len(chunk))})", chunk)
+        n = cx.execute(f"SELECT n FROM {changes.TABLE} WHERE tbl='sync_written' AND hint='row'").fetchone() \
+            if stale and w.memory is not None else None
+    if n is not None:
+        w.memory.ignore[("sync_written", "row")] = int(n[0])
+
+
 def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldStop | None = None) -> dict:
     """Write what changed since the last round into this copy's subfolder: the documents' readings and files new to the
     folder first, then the bundle, then `head.json` (so a colleague who sees the bundle finds what it names, once the
@@ -1198,10 +1317,11 @@ def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSt
     with ws.connect() as cx:  # as before a zip is made (sync.before_sending): who decided what, and every state
         people.adopt(cx, me)
         people.remember(cx, me, name)
-        record_seen(ws, cx)
+        _count_changes(ws, cx)
         _same_folder(cx, folder_id)
         kept_out = kept_out_docs(ws, cx, keep["in_force"])
         taken_back = _taken_back_since(ws, cx)
+    record_seen_since(ws)  # (the fingerprints of what changed, without the write lock)
     # this copy's own subfolder, looked at and tidied without holding the project's write lock (a slow network or
     # cloud folder would hold up every change made in the app meanwhile): only this copy writes there, a round at a
     # time, and its record changes only once the files are gone
@@ -1224,13 +1344,14 @@ def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSt
     w = _Writer(ws, team, me, keep["in_force"], progress)
     rcx = _reader_cx(ws)
     try:
-        w.plan(rcx)
+        w.plan(rcx, changes.memory(ws.db_path), full=fresh)
         out = {"seq": None, "snapshot": False, "items": [], "documents": 0, "readings": 0, "files": 0, "rows": 0,
                "waiting": w.waiting, "kept_out": len(w.kept_out), "taken_out": taken_out}
         if w.empty():
             if w.found:
                 with ws.connect() as cx:
                     _record(cx, [(k, n, pid, None) for k, n, pid in w.found])
+            w.remember()
             if not fresh:
                 _prune(mine, snap)
             return out
@@ -1263,6 +1384,9 @@ def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSt
                 + [("words", d, said, seq) for d, said in w.words]
                 + [("content", f"{it['kind']}/{it['key']}", "", seq) for it in w.items if it.get("here")]
                 + [("head", "", folder_id, seq)], at)
+    w.remember()
+    if fresh:
+        _prune_rows(ws, w)
     out.update(seq=seq, snapshot=fresh, documents=len(w.out_stubs), readings=len(w.readings), files=len(w.files),
                rows=sum(w.rows_written.values()),
                items=[{"kind": it["kind"], "key": it["key"], "state": it["state"], "title": it["title"]}
@@ -1375,8 +1499,11 @@ def _prune(mine: Path, snapshot: int) -> None:
 
 
 def _record(cx: sqlite3.Connection, rows: list[tuple], at: str | None = None) -> None:
+    # (an upsert, not INSERT OR REPLACE: a replaced entry is deleted first, and with recursive triggers, the default of
+    # some SQLite builds, that deletion would count as a change to the record, sync/changes.py)
     at = at or now()
-    cx.executemany("INSERT OR REPLACE INTO sync_written(kind, key, fp, seq, at) VALUES (?,?,?,?,?)",
+    cx.executemany("INSERT INTO sync_written(kind, key, fp, seq, at) VALUES (?,?,?,?,?) ON CONFLICT(kind, key) DO UPDATE "
+                   "SET fp=excluded.fp, seq=excluded.seq, at=excluded.at",
                    [(k, key, fp, seq, at) for k, key, fp, seq in rows])
 
 

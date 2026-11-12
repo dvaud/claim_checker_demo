@@ -558,7 +558,9 @@ def _references(ws: Workspace, doc: str) -> list[tuple[str, str, int, str]]:
     out = []
     for (t,) in ws.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"):
         cols = [r[1] for r in ws.query(f"PRAGMA table_info({t})")]
-        for r in ws.query(f"SELECT rowid AS _rid, * FROM {t}"):
+        rid = "NULL" if "WITHOUT ROWID" in (ws.scalar("SELECT sql FROM sqlite_master WHERE name=?", (t,)) or "") \
+            else "rowid"
+        for r in ws.query(f"SELECT {rid} AS _rid, * FROM {t}"):
             for c in cols:
                 v = r[c]
                 if isinstance(v, str) and doc in v:
@@ -608,8 +610,8 @@ def test_no_row_anywhere_names_an_old_passage_id_that_now_means_other_text(paper
                                                              "quote": Q_WATER}, model="m2")[0]
     with ws.connect() as cx:  # what the term index, the meaning index and reference chains hold, and the ledger
         p0 = ws.query("SELECT * FROM passages ORDER BY seq LIMIT 1")[0]
-        cx.execute("INSERT INTO term_mentions VALUES ('t1', ?, ?, ?, ?)",
-                   (p0["passage_id"], doc, p0["start"], p0["start"] + 5))
+        cx.execute("INSERT INTO term_mentions(term_id, passage_id, start, end) VALUES ('t1', ?, ?, ?)",
+                   (p0["passage_id"], p0["start"], p0["start"] + 5))
         cx.execute("INSERT INTO embeddings VALUES ('m', ?, x'00')", (p0["passage_id"],))
         cx.execute("INSERT INTO mentions(doc_id, chain_id, start, end, text, is_named, source, model, passage_id, "
                    "window) VALUES (?, 1, ?, ?, 'it', 0, 'model', 'm', ?, ?)",
@@ -773,7 +775,10 @@ def _dump(ws: Workspace) -> dict:
     out = {}
     tables = ws.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     for (t,) in tables:
-        out[t] = [tuple(r) for r in ws.query(f"SELECT rowid, * FROM {t} ORDER BY rowid")]
+        if "WITHOUT ROWID" in (ws.scalar("SELECT sql FROM sqlite_master WHERE name=?", (t,)) or ""):
+            out[t] = sorted(tuple(r) for r in ws.query(f"SELECT * FROM {t}"))   # 0.17.2: term_mentions, its own key
+        else:
+            out[t] = [tuple(r) for r in ws.query(f"SELECT rowid, * FROM {t} ORDER BY rowid")]
     return out
 
 

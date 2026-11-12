@@ -23,12 +23,14 @@ enlens-gui                 # opens http://127.0.0.1:8765 in your browser
 | `--make-launcher` | Make the ENLENS icon ([Install](install.md#the-enlens-icon)). |
 | `--host 0.0.0.0` | Expose the app to your network (below). |
 
-The app listens on this computer only and answers only to the page it served (a token per run). Nothing is loaded
-from the internet: no CDN, no fonts, no analytics. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd> or *Quit*.
+The app listens on this computer only and answers only to the link it opens (a key, or token, per run, after
+`#token=` in the link; the page itself carries none). The terminal prints that link too; started from the icon, the
+key is in `app-token-<port>.json` in the data folder, readable by your account only. Nothing is loaded from the
+internet: no CDN, no fonts, no analytics. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd> or *Quit*.
 
 > [!WARNING]
-> `--host 0.0.0.0` exposes the app to your network. The page then does not carry the token: open the link the
-> terminal prints (it ends in `#token=…`), and only by IP address. Do this only on a network you trust.
+> `--host 0.0.0.0` exposes the app to your network. Open the link the terminal prints (it ends in `#token=…`), and
+> only by IP address. Do this only on a network you trust.
 
 ## Checking hypotheses
 

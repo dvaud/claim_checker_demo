@@ -65,8 +65,9 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   document change the owner accepts changes your documents as one of your own would.
 - **One look on every page**, light and dark, with a design guide (`#/design`); seven places in the sidebar, *Find*
   (Ctrl+K or ⌘K) and the research log beside every page. Cannot change results.
-- **0.17.1: faster, and safer with colleagues' files**: adding documents, themes, the glossary and long lists are many
-  times faster or lighter, and a colleague's file can no longer act in your name. Cannot change results.
+- **0.17.1 and 0.17.2: faster, smaller and safer**: adding documents, themes and long lists are many times faster,
+  project files a quarter smaller, and only you can open your ENLENS. Reader 4 reads text and Word files better: can
+  change results for the documents you move to it.
 - **Key terms without each language's common words**: the glossary and the key terms of themes found from now on
   leave out "ik", "ja", "because". Can change results for them; search is not changed.
 

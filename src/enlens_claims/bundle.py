@@ -58,7 +58,7 @@ def export_project(ws: Workspace, out: str | Path, scope: str = "all") -> dict:
     from .sources import original_file
 
     from . import sharing, sync
-    from .sync import formats as sync_formats
+    from .sync import changes as sync_changes, formats as sync_formats
 
     if scope not in SCOPES:
         raise ValueError("A project zip holds the whole project or what you shared.")
@@ -80,6 +80,7 @@ def export_project(ws: Workspace, out: str | Path, scope: str = "all") -> dict:
         cx = sqlite3.connect(db)
         try:
             with cx:
+                sync_changes.forget(cx)  # this computer's own counters of what changed (sync/changes.py)
                 if scope == "shared":
                     left_out = sharing.strip(cx, ws.root, stamp["from"]["id"])
                     shared_books = sharing.shared_keys(cx, "codebook")
@@ -247,8 +248,9 @@ def _rows_only(cx: sqlite3.Connection) -> None:
     triggers (they would run at every change this person makes afterwards: one turned *Only a local AI* back to
     *cloud* the moment it was set, another emptied the record of what was sent to Claude) and views (one can stand in
     the place of a table). A table that works out its values itself (a generated column, a virtual table) is refused:
-    a setting kept in one could not be changed here. ENLENS makes none of these; an add-on's own come back when the
-    project is opened (`store._setup_addons`)."""
+    a setting kept in one could not be changed here. ENLENS's own triggers (sync/changes.py) are this computer's and
+    never in a zip: its first round of the shared folder makes them again; an add-on's own come back when the project is
+    opened (`store._setup_addons`)."""
     for kind, name in cx.execute("SELECT type, name FROM sqlite_master WHERE type IN ('trigger', 'view')").fetchall():
         cx.execute(f"DROP {'TRIGGER' if kind == 'trigger' else 'VIEW'} IF EXISTS \"{name.replace(chr(34), chr(34) * 2)}\"")
     for name, sql in cx.execute("SELECT name, sql FROM sqlite_master WHERE type='table'").fetchall():

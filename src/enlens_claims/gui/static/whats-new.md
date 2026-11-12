@@ -1,6 +1,6 @@
-# 0.17.1: Faster, and safer with colleagues
-*A review of all of ENLENS after 0.17.0: speed, memory and what comes in from colleagues.*
-- Adding many documents is up to 70 times faster; they read exactly as before
-- Themes and the glossary need far less memory; search pages open at once
-- A colleague's file can no longer act in your name, and oversized files are refused
-- Spreadsheet downloads no longer carry cells that run as formulas
+# 0.17.2: A new reader, smaller files, your key off the page
+*Text and Word files read better, projects take less space, and only you can open your ENLENS.*
+- Reader 4: a text file with one paragraph per line, and Word's content controls and nested tables
+- Project files about a quarter smaller; the glossary is made again once
+- A shared folder costs almost nothing when nothing changed
+- The page no longer carries ENLENS's key: open ENLENS from its icon, or copy your link in Settings

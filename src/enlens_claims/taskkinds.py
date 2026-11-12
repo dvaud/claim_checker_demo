@@ -351,6 +351,21 @@ def quotes_in(obj: Any, fields: tuple[str, ...]) -> list[str]:
     return out
 
 
+QUOTE_KEYS = ("quote", "quote_a", "quote_b")  # the keys that hold a quote in ENLENS's own answers (at any depth)
+
+
+def long_quote_problems(obj: Any, extra_fields: tuple[str, ...] = ()) -> list[str]:
+    """The quotes of an answer that are longer than `textutil.MAX_QUOTE_CHARS` (0.17.2, H11), one problem each."""
+    from .textutil import long_quote_problem
+
+    seen: list[str] = []
+    for q in quotes_in(obj, tuple(dict.fromkeys((*QUOTE_KEYS, *extra_fields)))):
+        p = long_quote_problem(q)
+        if p and p not in seen:
+            seen.append(p)
+    return seen
+
+
 def check_quotes(kind: TaskKind, payload: dict, obj: Any) -> list[str]:
     """The problems with an answer's quotes: each must be found in the text `quote_from` gives (whitespace, case and
     typography aside, as for every quote ENLENS checks)."""

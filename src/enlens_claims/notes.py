@@ -20,7 +20,7 @@ import sqlite3
 import uuid
 
 from .store import Workspace, now
-from .textutil import find_selection
+from .textutil import find_selection, normalise
 
 COLOURS = ("yellow", "green", "blue", "pink")
 MAX_QUOTE = 4000
@@ -176,14 +176,19 @@ def _placed(cx: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict]:
             texts[did] = (row[0] or "", row[1], True) if row else (None, *_title(cx, did))
         body, title, present = texts[did]
         d["title"], d["present"], d["lost"] = title, present, False
-        if present and body[d["start"]:d["end"]] != d["quote"]:
+        here = body[d["start"]:d["end"]] if present else d["quote"]
+        # 0.17.2: words that differ from the note's only in typography (a new reading) are still its words in place:
+        # nothing is looked for again, and nothing is written
+        if present and here != d["quote"] and normalise(here) != normalise(d["quote"] or ""):
             got = find(body, d["quote"] or "", d["start"])
             if got is None:
                 d["lost"] = True
             else:
+                page = _page(cx, did, got[0])
+                if got != (d["start"], d["end"]) or page != d["page"]:  # written down only when the place changed
+                    cx.execute("UPDATE notes SET start=?, end=?, page=? WHERE note_id=?", (*got, page, d["note_id"]))
                 d["start"], d["end"] = got
-                d["page"] = _page(cx, did, got[0])
-                cx.execute("UPDATE notes SET start=?, end=?, page=? WHERE note_id=?", (*got, d["page"], d["note_id"]))
+                d["page"] = page
         d["mine"] = d["person_id"] == me
         out.append(d)
     if out:
@@ -348,9 +353,12 @@ def use_as_evidence(ws: Workspace, note_id: str, claim_id: str, verdict: str, co
     return {"hyp_id": uc["hyp_id"] or claim_id, "claim_id": claim_id, "passage_id": p["passage_id"], "new": new}
 
 
-def move(cx: sqlite3.Connection, doc_id: str, new_text: str) -> dict:
+def move(cx: sqlite3.Connection, doc_id: str, new_text: str, page_spans: list | None = None) -> dict:
     """The notes of a document read again into `new_text` (reread.py): each follows its words, nearest its old place
-    in proportion; those whose words cannot be found keep them and are marked lost when shown. {moved, lost}."""
+    in proportion, and takes the page of its new place (`page_spans`: the new reading's (start, end) of each page, in
+    order; none for a text without pages); those whose words cannot be found keep them and are marked lost when
+    shown. {moved, lost}."""
+    starts = [a for a, _b in page_spans or []]
     rows = cx.execute("SELECT note_id, start, quote FROM notes WHERE doc_id=?", (doc_id,)).fetchall()
     old_len = cx.execute("SELECT length(text) FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
     scale = (len(new_text) / old_len[0]) if old_len and old_len[0] else 1.0
@@ -360,7 +368,8 @@ def move(cx: sqlite3.Connection, doc_id: str, new_text: str) -> dict:
         if got is None:
             lost += 1
             continue
-        cx.execute("UPDATE notes SET start=?, end=? WHERE note_id=?", (*got, nid))
+        page = max(0, bisect.bisect_right(starts, got[0]) - 1) + 1 if starts else None
+        cx.execute("UPDATE notes SET start=?, end=?, page=? WHERE note_id=?", (*got, page, nid))
         moved += 1
     return {"moved": moved, "lost": lost}
 

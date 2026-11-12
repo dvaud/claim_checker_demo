@@ -29,6 +29,9 @@ file reads the same on every computer with the same reader and engine.
 Reader 3 (ENLENS 0.15.1) is this reader with the rules of `reader3.py` added: running heads, page numbers and paragraphs
 in text-only files, headings where a file marks none, the parts of books and theses from their table of contents, an
 index, and words run together. `read_blocks(raw, version=2)` still reads exactly as reader 2 did.
+
+Reader 4 (ENLENS 0.17.2) adds the rule of `reader4.py` (a text file with one paragraph per line) and reads Word files'
+content controls and nested tables (`ingest._read_docx`). `read_blocks(raw, version=3)` still reads as reader 3 did.
 """
 from __future__ import annotations
 
@@ -41,7 +44,7 @@ from dataclasses import dataclass, field
 
 from .textutil import split_sentences
 
-READER = 3   # 2: ENLENS 0.15.0; 3: ENLENS 0.15.1 (reader3.py)
+READER = 4   # 2: ENLENS 0.15.0; 3: ENLENS 0.15.1 (reader3.py); 4: ENLENS 0.17.2 (reader4.py)
 INCLUDED = ("body", "heading", "title", "abstract", "caption")
 KINDS = ("title", "heading", "abstract", "body", "caption", "table", "footnote", "front", "back", "references",
          "figure", "furniture", "contents", "index")
@@ -462,9 +465,12 @@ def mark_furniture(pages: list[list[Line]], dims: list[tuple[float, float]]) -> 
 
         def apart(ln: Line) -> bool:
             k = placed.index(ln)
-            other = placed[k + 1] if ln.top < 0.5 * h else placed[k - 1] if k else None
-            if other is None or (ln.top >= 0.5 * h and k == 0) or (ln.top < 0.5 * h and k + 1 >= len(placed)):
+            # nothing towards the middle (a page that holds only this line): apart. Tested before the neighbour is
+            # taken, which raised IndexError on such a page and stopped the whole add; every page that read before
+            # reads the same, so this needs no new reader number.
+            if (ln.top >= 0.5 * h and k == 0) or (ln.top < 0.5 * h and k + 1 >= len(placed)):
                 return True
+            other = placed[k + 1] if ln.top < 0.5 * h else placed[k - 1]
             gap = abs(other.top - ln.top)
             return gap > 1.4 * step or (ln.size and other.size and abs(ln.size - other.size) > 0.5)
         # line numbers: a column of short numbers at one x, as manuscripts under review have
@@ -999,8 +1005,10 @@ class Reading:
 
 def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
     """The blocks of a RawDoc in reading order, with their kinds and repaired text, and the reading report. `version`
-    2 reads as ENLENS 0.15.0 did; 3 adds the rules of `reader3.py`."""
-    from . import reader3
+    2 reads as ENLENS 0.15.0 did; 3 adds the rules of `reader3.py`; 4 those of `reader4.py`."""
+    from . import reader3, reader4
+
+    raw = raw.as_read_by(version) if hasattr(raw, "as_read_by") else raw
 
     v3 = version >= 3
     counts: Counter = Counter()
@@ -1042,6 +1050,8 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
         # numbers by repetition, and paragraphs in hard-wrapped text
         reader3.undouble_lines(pages, counts)
         layout = reader3.text_furniture(pages)
+        if version >= 4 and raw.kind == "text" and reader4.paragraph_lines(pages):
+            layout["paragraph_lines"] = True  # each line a paragraph (no blank lines between them)
         layout["wrapped"] = reader3.paragraph_breaks(pages) is not None
     all_lines = [ln for p in pages for ln in p]
     sizes = Counter()
@@ -1273,9 +1283,10 @@ def make_passages(text: str, blocks: list[Block], spans, max_chars: int, min_cha
 
 
 def build_document(raw, max_chars: int = 1100, min_chars: int = 200, version: int = READER):
-    """A Document read by reader 2 or 3 (see `ingest.read_document`)."""
+    """A Document read by reader 2, 3 or 4 (see `ingest.read_document`)."""
     from .ingest import Document, Layout, guess_doi, guess_title
 
+    raw = raw.as_read_by(version) if hasattr(raw, "as_read_by") else raw
     blocks, report = read_blocks(raw, version)
     text, spans = assemble(blocks, max(1, len(raw.pages)))
     for n, b in enumerate(blocks, 1):

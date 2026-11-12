@@ -21,12 +21,23 @@
 | **Nowhere** | With a model on this computer, every word stays on it. |
 
 Apart from the AI you chose, ENLENS itself goes online only to look for a new version on GitHub, and, when you ask for
-them, to get Claude Code or a local model. There is no telemetry. The app is a small server on `127.0.0.1` with a token
-per run, and the page loads nothing from the internet (no CDN, fonts or analytics). Bringing in a colleague's work reads
+them, to get Claude Code or a local model. There is no telemetry. The app is a small server on `127.0.0.1` with a key
+(an access token) per run, and the page loads nothing from the internet (no CDN, fonts or analytics). Bringing in a colleague's work reads
 the file on this computer and sends nothing. A shared folder is written and read on this computer too: ENLENS itself
 sends nothing for it, and your cloud service or network drive carries what is in it. Zotero is only read (never
 changed), through the Zotero app on this computer and never through Zotero's servers, and nothing about your works is
 sent to Claude.
+
+**Who can open ENLENS on this computer.** Only you. Since 0.17.2 the page itself carries no key, so another account
+on a shared computer cannot use ENLENS by opening its address. The ENLENS icon (or `enlens-gui`) opens a link with the
+key after `#`; the browser keeps it for that tab only and takes it out of the address bar. ENLENS also keeps the key
+in a file that only your account can read (`app-token-<port>.json` in the data folder), so the icon can open the copy
+already running. On Windows that file is protected by your user folder, which other accounts cannot read; with a data
+folder outside it (on another drive, say) the file goes to your `AppData\Local\ENLENS` instead. Your projects in such
+a folder are only as private as the folder: keep the data folder in your user folder (the default) if other people
+sign in to the same computer. The address on its own, or a bookmark of it,
+shows *Open ENLENS from its icon*. *Settings → Technical → Your link to ENLENS* copies the link with the key: whoever
+has it can open ENLENS while it runs, so keep it to yourself.
 
 Whoever installs ENLENS can remove every cloud option for good (`--local-only`,
 [Settings](settings.md#for-whoever-installs-enlens)).

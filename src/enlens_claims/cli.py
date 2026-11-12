@@ -658,8 +658,10 @@ def _cmd_07(a, ws) -> int:
                                  all_sections=a.all_sections, code=a.code)
         if a.out:
             rows = []
-            for off in range(0, max(res["total"], 1), 1000):
-                rows += concordance.table(concordance.search(ws, a.query, a.mode, a.docs, a.sort, off, 1000, a.exact,
+            # limit None: up to EXPORT_MAX lines at once. A search is kept between calls only without --code and
+            # under HITS_KEPT hits, so a page of 1,000 lines ran the whole search again for every page otherwise
+            for off in range(0, max(res["total"], 1), concordance.EXPORT_MAX):
+                rows += concordance.table(concordance.search(ws, a.query, a.mode, a.docs, a.sort, off, None, a.exact,
                                                              a.near, all_sections=a.all_sections, code=a.code))
             _write_csv(a.out, rows)
             print(f"{len(rows)} lines written to {a.out}", file=sys.stderr)

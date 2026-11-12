@@ -225,7 +225,8 @@ def test_api_guards(api):
     assert api("GET", "/api/nothing")[0] == 404
     assert api("DELETE", "/api/state")[0] == 405
     st, page = api("GET", "/", token=False)
-    assert st == 200 and api.token.encode() in page and b"{{ENLENS_TOKEN}}" not in page
+    # 0.17.2: the page never carries the token (any account on this computer can fetch it)
+    assert st == 200 and api.token.encode() not in page and b"{{ENLENS_" not in page
     assert api("GET", "/static/../server.py", token=False)[0] == 404
     st, s = api("GET", "/api/state")
     assert st == 200 and s["settings"]["backend"] == "claude_code" and s["projects"] == [] and s["statuses"]
@@ -732,14 +733,14 @@ def test_the_icon_starts_one_copy_without_a_terminal_and_quit_stops_it(home, tmp
         assert live and live["port"] == port and live["pid"] == first.pid
         again = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=30)  # a second double-click
         assert again.returncode == 0 and "already running" in again.stdout
-        page = urllib.request.urlopen(live["url"], timeout=5).read().decode()
-        token = page.split('name="enlens-token" content="')[1].split('"')[0]
+        token = launcher.read_token(live["port"])  # 0.17.2: the page carries none
         a = Api(live["url"].rstrip("/"), token)
         st, s = a("GET", "/api/state")
         assert s["launcher"] is True and s["can_quit"] is True
         assert a("POST", "/api/quit", {})[1]["stopping"] is True
         assert first.wait(timeout=15) == 0
         assert not (home.home() / "app.json").exists() and launcher.running() is None
+        assert not launcher.token_path(port).exists()  # 0.17.2: its token file goes with it
         log = (home.home() / "logs" / "enlens.log").read_text()
         assert "started by the launcher" in log and "ENLENS stopped." in log
     finally:

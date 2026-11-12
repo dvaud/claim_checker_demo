@@ -127,6 +127,71 @@ class _BudgetReached(Exception):
         self.thinking = thinking
 
 
+def _read_lines(opener, req, *, stall_timeout: float, timeout: float, t0: float, should_stop, report, on_line,
+                stalled, slow, whole_body: bool = False) -> None:
+    """The plumbing both streaming backends share (0.17.2; it was written out twice): one request, read by a thread
+    that hands every line to this one, so a Stop, a silence or a total time limit is noticed even while the server
+    sends nothing. `on_line(raw)` takes each line and returns True when the answer is complete; `report()` shows
+    progress; `stalled()` and `slow()` give the error to raise after `stall_timeout` seconds without a line and
+    after `timeout` seconds in all (each backend words them for its own server). With `whole_body`, a response that
+    cannot be iterated (a server that ignores "stream") is handed over as one line. The response is closed when this
+    returns or raises, and at once if a Stop came before the server had answered the headers (0.11.1). Anything the
+    request raises is raised here."""
+    import queue
+    import threading
+    import time
+
+    q: queue.Queue = queue.Queue()
+    held: dict = {}
+
+    def reader():
+        try:
+            with opener(req, timeout=stall_timeout) as resp:
+                held["resp"] = resp
+                if held.get("stopped"):  # stopped while the model was still reading the prompt (0.11.1)
+                    return
+                if not whole_body or (hasattr(resp, "__iter__") and not hasattr(resp, "_fake_whole")):
+                    for line in resp:
+                        q.put(("line", line))
+                else:
+                    q.put(("line", resp.read()))
+            q.put(("end", None))
+        except Exception as e:  # handed to the waiting thread, which turns it into a readable message
+            q.put(("error", e))
+
+    last = time.time()
+    threading.Thread(target=reader, daemon=True).start()
+    try:
+        while True:
+            if should_stop and should_stop():
+                raise BackendError("Stopped.")
+            try:
+                what, val = q.get(timeout=1.0)
+            except queue.Empty:
+                report()
+                if time.time() - last > stall_timeout:
+                    raise stalled()
+                if time.time() - t0 > timeout:
+                    raise slow()
+                continue
+            if what == "error":
+                raise val
+            if what == "end":
+                return
+            last = time.time()
+            if on_line(val):
+                return
+    finally:
+        # Ollama answers the headers with the first token, so a Stop before that finds no response to close: the
+        # flag makes the reader close it as soon as it arrives, so the model does not go on generating
+        held["stopped"] = True
+        try:
+            if held.get("resp") is not None:
+                held["resp"].close()
+        except Exception:
+            pass
+
+
 JUDGING = taskkinds.NameSet(lambda k: k.judging)   # the task kinds where reasoning can help: judging excerpts
 
 
@@ -439,103 +504,68 @@ class OllamaBackend:
     def _stream(self, body: dict, model: str, info: dict, t0: float, budget: int) -> tuple[list[str], dict]:
         """One streamed request: the answer's pieces and Ollama's final chunk. Raises _BudgetReached when the model
         has reasoned for `budget` tokens without starting its answer."""
-        import queue
-        import threading
         import time
         from urllib.error import HTTPError
         from urllib.request import Request
 
         req = Request(f"{self.base_url}/api/chat", data=json.dumps(body).encode(), method="POST",
                       headers={"Content-Type": "application/json"})
-        q: queue.Queue = queue.Queue()
-        held: dict = {}
-
-        def reader():
-            try:
-                with self.opener(req, timeout=self.stall_timeout) as resp:
-                    held["resp"] = resp
-                    if held.get("stopped"):  # stopped while the model was still reading the prompt (0.11.1)
-                        return
-                    for line in resp:
-                        q.put(("line", line))
-                q.put(("end", None))
-            except Exception as e:  # handed to the waiting thread, which turns it into a readable message
-                q.put(("error", e))
-
-        def stop():
-            # Ollama answers the headers with the first token, so a Stop before that finds no response to close:
-            # the flag makes the reader close it as soon as it arrives, so the model does not go on generating
-            held["stopped"] = True
-            try:
-                if held.get("resp") is not None:
-                    held["resp"].close()
-            except Exception:
-                pass
-
         slow = (f"{model} was still answering after {self.timeout} seconds. It is too slow on this computer for this "
                 "task: give reasoning a budget or switch it off in Settings, or choose a smaller model.")
         content: list[str] = []
         thinking: list[str] = []
         thought = 0
         final: dict = {}
-        last = time.time()
-        threading.Thread(target=reader, daemon=True).start()
+
+        def silent() -> BackendError:
+            said = "before starting its answer" if info["phase"] == "waiting" else "in the middle of its answer"
+            return BackendError(f"{model} sent nothing for {self.stall_timeout} seconds {said}. The computer may "
+                                "be short of memory (check Activity Monitor), or the model is too large for it.")
+
+        def on_line(val) -> bool:
+            nonlocal thought, final
+            if not val.strip():
+                return False
+            try:  # a line that does not parse (cut in two, or not JSON at all) is skipped, as LocalBackend does
+                chunk = json.loads(val)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return False
+            if not isinstance(chunk, dict):
+                return False
+            if chunk.get("error"):
+                raise BackendError(f"Ollama stopped with an error: {chunk['error']}")
+            if info["first_token_after"] is None:
+                info["first_token_after"] = time.time() - t0
+            msg = chunk.get("message") or {}
+            if msg.get("thinking"):
+                info["thinking_tokens"] += 1
+                thought += 1
+                info["phase"] = "thinking"
+                thinking.append(msg["thinking"])
+                info["tail"] = "".join(thinking[-80:])[-400:]
+                if budget and thought >= budget and not content:
+                    raise _BudgetReached("".join(thinking))
+            if msg.get("content"):
+                content.append(msg["content"])
+                info["answer_tokens"] += 1
+                info["phase"] = "writing"
+                info["tail"] = "".join(content)[-400:]
+            if info["answer_tokens"] > 50 and len("".join(content[-60:]).strip()) == 0:
+                raise AnswerError(f"{model} got stuck writing blank space instead of an answer (a known problem of "
+                                  "some models with fixed-format answers). Try again, switch reasoning off, or "
+                                  "choose another model.", "".join(content))
+            if time.time() - t0 > self.timeout:
+                raise BackendError(slow)
+            self._report(info, t0)
+            if chunk.get("done"):
+                final = chunk
+                return True
+            return False
+
         try:
-            while True:
-                if self.should_stop and self.should_stop():
-                    raise BackendError("Stopped.")
-                try:
-                    what, val = q.get(timeout=1.0)
-                except queue.Empty:
-                    self._report(info, t0)
-                    if time.time() - last > self.stall_timeout:
-                        said = "before starting its answer" if info["phase"] == "waiting" else "in the middle of its answer"
-                        raise BackendError(f"{model} sent nothing for {self.stall_timeout} seconds {said}. The computer may "
-                                           "be short of memory (check Activity Monitor), or the model is too large for it.")
-                    if time.time() - t0 > self.timeout:
-                        raise BackendError(slow)
-                    continue
-                if what == "error":
-                    raise val
-                if what == "end":
-                    break
-                last = time.time()
-                if not val.strip():
-                    continue
-                try:  # a line that does not parse (cut in two, or not JSON at all) is skipped, as LocalBackend does
-                    chunk = json.loads(val)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    continue
-                if not isinstance(chunk, dict):
-                    continue
-                if chunk.get("error"):
-                    raise BackendError(f"Ollama stopped with an error: {chunk['error']}")
-                if info["first_token_after"] is None:
-                    info["first_token_after"] = time.time() - t0
-                msg = chunk.get("message") or {}
-                if msg.get("thinking"):
-                    info["thinking_tokens"] += 1
-                    thought += 1
-                    info["phase"] = "thinking"
-                    thinking.append(msg["thinking"])
-                    info["tail"] = "".join(thinking[-80:])[-400:]
-                    if budget and thought >= budget and not content:
-                        raise _BudgetReached("".join(thinking))
-                if msg.get("content"):
-                    content.append(msg["content"])
-                    info["answer_tokens"] += 1
-                    info["phase"] = "writing"
-                    info["tail"] = "".join(content)[-400:]
-                if info["answer_tokens"] > 50 and len("".join(content[-60:]).strip()) == 0:
-                    raise AnswerError(f"{model} got stuck writing blank space instead of an answer (a known problem of "
-                                      "some models with fixed-format answers). Try again, switch reasoning off, or "
-                                      "choose another model.", "".join(content))
-                if time.time() - t0 > self.timeout:
-                    raise BackendError(slow)
-                self._report(info, t0)
-                if chunk.get("done"):
-                    final = chunk
-                    break
+            _read_lines(self.opener, req, stall_timeout=self.stall_timeout, timeout=self.timeout, t0=t0,
+                        should_stop=self.should_stop, report=lambda: self._report(info, t0), on_line=on_line,
+                        stalled=silent, slow=lambda: BackendError(slow))
         except HTTPError as e:
             detail = ""
             try:
@@ -549,12 +579,8 @@ class OllamaBackend:
             raise
         except (TimeoutError, OSError) as e:
             if "timed out" in str(e).lower() or isinstance(e, TimeoutError):
-                said = "before starting its answer" if info["phase"] == "waiting" else "in the middle of its answer"
-                raise BackendError(f"{model} sent nothing for {self.stall_timeout} seconds {said}. The computer may be "
-                                   "short of memory (check Activity Monitor), or the model is too large for it.") from e
+                raise silent() from e
             raise BackendError(f"Could not reach Ollama at {self.base_url}. Start the Ollama app, or run `ollama serve`.") from e
-        finally:
-            stop()
         return content, final
 
     # -- information ----------------------------------------------------------------------------
@@ -817,36 +843,16 @@ class LocalBackend:
         raise self._error(last or RuntimeError("no answer"), model)
 
     def _run(self, kind: str, model: str, body: dict, prompt_tokens: int, cap: int) -> str:
-        import queue
-        import threading
         import time
 
         req = self._request("/chat/completions", body)
-        q: queue.Queue = queue.Queue()
-        held: dict = {}
-
-        def reader():
-            try:
-                with self.opener(req, timeout=self.stall_timeout) as resp:
-                    held["resp"] = resp
-                    if held.get("stopped"):  # stopped while the server was still reading the prompt (0.11.1)
-                        return
-                    if hasattr(resp, "__iter__") and not hasattr(resp, "_fake_whole"):
-                        for line in resp:
-                            q.put(("line", line))
-                    else:
-                        q.put(("line", resp.read()))
-                q.put(("end", None))
-            except Exception as e:
-                q.put(("error", e))
-
         info = {"task": kind, "model": model, "phase": "waiting", "prompt_tokens": prompt_tokens, "thinking_tokens": 0,
                 "answer_tokens": 0, "seconds": 0.0, "first_token_after": None, "rate": None, "tail": "", "cap": cap,
                 "thinks": False}
         content: list[str] = []
         whole: list[bytes] = []
         finish = None
-        t0 = last = time.time()
+        t0 = time.time()
         last_report = [0.0]
 
         def report(force: bool = False):
@@ -863,68 +869,50 @@ class LocalBackend:
             except Exception:
                 pass
 
-        threading.Thread(target=reader, daemon=True).start()
-        try:
-            while True:
-                if self.should_stop and self.should_stop():
-                    raise BackendError("Stopped.")
-                try:
-                    what, val = q.get(timeout=1.0)
-                except queue.Empty:
-                    report()
-                    if time.time() - last > self.stall_timeout:
-                        raise BackendError(f"{model} sent nothing for {self.stall_timeout} seconds.")
-                    if time.time() - t0 > self.timeout:
-                        raise BackendError(f"{model} was still answering after {self.timeout} seconds. It is too slow "
-                                           "on this computer for this task: choose a smaller model.")
-                    continue
-                if what == "error":
-                    raise val
-                if what == "end":
-                    break
-                last = time.time()
-                line = val.decode("utf-8", errors="replace") if isinstance(val, bytes) else str(val)
-                stripped = line.strip()
-                if not stripped.startswith("data:"):
-                    whole.append(val if isinstance(val, bytes) else line.encode())
-                    continue
-                data = stripped[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                if chunk.get("error"):
-                    err = chunk["error"]
-                    raise BackendError(f"The local server stopped with an error: {err.get('message') if isinstance(err, dict) else err}")
-                ch = (chunk.get("choices") or [{}])[0]
-                delta = ch.get("delta") or {}
-                if info["first_token_after"] is None and (delta.get("content") or delta.get("reasoning_content")
-                                                          or delta.get("reasoning")):
-                    info["first_token_after"] = time.time() - t0
-                if delta.get("reasoning_content") or delta.get("reasoning"):
-                    info["thinking_tokens"] += 1
-                    info["phase"] = "thinking"
-                    info["thinks"] = True
-                if delta.get("content"):
-                    content.append(delta["content"])
-                    info["answer_tokens"] += 1
-                    info["phase"] = "writing"
-                    info["tail"] = "".join(content[-60:])[-400:]
-                if ch.get("finish_reason"):
-                    finish = ch["finish_reason"]
-                if info["answer_tokens"] > 50 and len("".join(content[-60:]).strip()) == 0:
-                    raise AnswerError(f"{model} got stuck writing blank space instead of an answer. Try again or "
-                                      "choose another model.", "".join(content))
-                report()
-        finally:
-            held["stopped"] = True
+        def on_line(val) -> bool:
+            nonlocal finish
+            line = val.decode("utf-8", errors="replace") if isinstance(val, bytes) else str(val)
+            stripped = line.strip()
+            if not stripped.startswith("data:"):
+                whole.append(val if isinstance(val, bytes) else line.encode())
+                return False
+            data = stripped[5:].strip()
+            if data == "[DONE]":
+                return True
             try:
-                if held.get("resp") is not None:
-                    held["resp"].close()
-            except Exception:
-                pass
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                return False
+            if chunk.get("error"):
+                err = chunk["error"]
+                raise BackendError(f"The local server stopped with an error: {err.get('message') if isinstance(err, dict) else err}")
+            ch = (chunk.get("choices") or [{}])[0]
+            delta = ch.get("delta") or {}
+            if info["first_token_after"] is None and (delta.get("content") or delta.get("reasoning_content")
+                                                      or delta.get("reasoning")):
+                info["first_token_after"] = time.time() - t0
+            if delta.get("reasoning_content") or delta.get("reasoning"):
+                info["thinking_tokens"] += 1
+                info["phase"] = "thinking"
+                info["thinks"] = True
+            if delta.get("content"):
+                content.append(delta["content"])
+                info["answer_tokens"] += 1
+                info["phase"] = "writing"
+                info["tail"] = "".join(content[-60:])[-400:]
+            if ch.get("finish_reason"):
+                finish = ch["finish_reason"]
+            if info["answer_tokens"] > 50 and len("".join(content[-60:]).strip()) == 0:
+                raise AnswerError(f"{model} got stuck writing blank space instead of an answer. Try again or "
+                                  "choose another model.", "".join(content))
+            report()
+            return False
+
+        _read_lines(self.opener, req, stall_timeout=self.stall_timeout, timeout=self.timeout, t0=t0,
+                    should_stop=self.should_stop, report=report, on_line=on_line, whole_body=True,
+                    stalled=lambda: BackendError(f"{model} sent nothing for {self.stall_timeout} seconds."),
+                    slow=lambda: BackendError(f"{model} was still answering after {self.timeout} seconds. It is too slow "
+                                              "on this computer for this task: choose a smaller model."))
         if whole and not content:  # the server ignored "stream" and sent one JSON body
             try:
                 data = json.loads(b"".join(whole).decode("utf-8", errors="replace"))
@@ -1035,6 +1023,24 @@ OPENAI_PORTS = ("http://localhost:1234/v1", "http://localhost:8080/v1", "http://
 _DETECTED: dict = {}
 
 
+def ollama_version(url: str, timeout: float = 1.5) -> str | None:
+    """The one probe of "does an Ollama answer here" (0.17.2: it was written three times): the version it reports
+    ("" when it answers without one), or None when nothing answers within `timeout` seconds. Any 200 counts as
+    answering. Each caller keeps its own time limit."""
+    from urllib.request import urlopen
+
+    try:
+        with urlopen(f"{url.rstrip('/')}/api/version", timeout=timeout) as r:
+            if r.status != 200:
+                return None
+            try:
+                return str(json.loads(r.read().decode() or "{}").get("version", ""))
+            except (ValueError, AttributeError):
+                return ""
+    except (OSError, ValueError):
+        return None
+
+
 def detect_local(ollama_url: str | None = None, extra: list[str] | None = None, timeout: float = 0.6,
                  cache_seconds: float = 10.0) -> list[dict]:
     """Local model servers that answer right now, with their models: [{"kind", "url", "models", "version"?}].
@@ -1059,7 +1065,9 @@ def detect_local(ollama_url: str | None = None, extra: list[str] | None = None, 
     def probe_ollama():
         try:
             be = OllamaBackend(base_url=ollama, timeout=timeout)
-            version = be._call("/api/version", timeout=timeout).get("version", "")
+            version = ollama_version(be.base_url, timeout)
+            if version is None:
+                return
             inv = be.inventory(timeout=max(timeout, 2))
             found[0] = {"kind": "ollama", "url": be.base_url, "version": version, **inv}
         except Exception:

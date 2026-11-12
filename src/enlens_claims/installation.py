@@ -178,9 +178,9 @@ def _open(running: dict | None, home: str | None, local_only: bool) -> bool:
 
     if running:
         if running.get("version") == __version__:
-            import webbrowser
+            from .gui.launcher import browse, open_link
 
-            webbrowser.open(running["url"])
+            browse(open_link(running))  # 0.17.2: with its token (the page has none)
             return True
         return False  # an older copy runs: it has to be quit first
     from .gui.launcher import _args

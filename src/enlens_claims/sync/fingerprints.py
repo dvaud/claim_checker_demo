@@ -9,6 +9,7 @@ copy has had (its `sync_seen` and its current one) is older here; the other way 
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -282,6 +283,35 @@ def _used_codebooks(cx: sqlite3.Connection) -> set[str]:
     return names - set(BUNDLED)
 
 
+def _codebook_where(ws: Workspace, name: str) -> Path:
+    folder = Path(ws.root) / "frameworks"
+    return folder if (folder / f"{name}.csv").is_file() else _home_codebooks()
+
+
+def _codebook_rows(ws: Workspace, name: str) -> list[tuple[str, str, str]]:
+    """What `record_seen` writes down of one codebook: its fingerprint and each code's."""
+    where = _codebook_where(ws, name)
+    fp = _codebook_fp(where, name)
+    if not fp:
+        return []
+    rows = [("codebook", name, fp)]
+    st = codebook_state(where, name)
+    if st:
+        rows += [("code", k, v) for k, v in code_states(st).items()]
+    return rows
+
+
+def _codebooks_seen(ws: Workspace, cx: sqlite3.Connection, used: set[str] | None = None) -> list[str]:
+    """The codebooks `record_seen` writes down: the project's own, used or not, and those it uses from the home
+    folder (`used`: `_used_codebooks`, when the caller knows it already)."""
+    from ..frameworks import BUNDLED, NAME_RE
+
+    folder = Path(ws.root) / "frameworks"
+    own = {p.stem for p in folder.glob("*.csv")} if folder.is_dir() else set()
+    names = ((_used_codebooks(cx) if used is None else used) | own) - set(BUNDLED)
+    return sorted(n for n in names if NAME_RE.match(n))
+
+
 def record_seen(ws: Workspace, cx: sqlite3.Connection) -> None:
     """Write down the fingerprint of every check, theme run and codebook as it is now (when sent or brought in)."""
     canon = _canon(cx)
@@ -291,21 +321,70 @@ def record_seen(ws: Workspace, cx: sqlite3.Connection) -> None:
         rows += [("check", hid, fp) for fp in fps(_check_unit(cx, hid), canon)]  # both forms (0.14.3)
     for (rid,) in cx.execute("SELECT run_id FROM theme_runs").fetchall():
         rows += [("themes", rid, fp) for fp in fps(_themes_unit(cx, rid), canon)]
-    folder = Path(ws.root) / "frameworks"
     # 0.18: the project's own codebooks too, used or not, and each code of each (a codebook both copies changed is
     # merged code by code: codebook_merge.py); one used from the home folder is read there
-    own = {p.stem for p in folder.glob("*.csv")} if folder.is_dir() else set()
-    from ..frameworks import BUNDLED, NAME_RE
-
-    for name in sorted((_used_codebooks(cx) | own) - set(BUNDLED)):
-        if not NAME_RE.match(name):
-            continue
-        where = folder if (folder / f"{name}.csv").is_file() else _home_codebooks()
-        fp = _codebook_fp(where, name)
-        if fp:
-            rows.append(("codebook", name, fp))
-            st = codebook_state(where, name)
-            if st:
-                rows += [("code", k, v) for k, v in code_states(st).items()]
+    for name in _codebooks_seen(ws, cx):
+        rows += _codebook_rows(ws, name)
     cx.executemany("INSERT OR IGNORE INTO sync_seen(kind, key, fp) VALUES (?,?,?)", rows)
 
+
+def record_seen_since(ws: Workspace) -> None:
+    """`record_seen` for a round of the shared folder (deep dive S5): what it would write down, worked out for the
+    checks, theme runs and codebooks that changed since the last round only (sync/changes.py), from one moment of the
+    project read without the write lock; then added in a short transaction of its own. What it adds is what
+    `record_seen` would add: a unit that did not change had its fingerprints written down by an earlier round of this
+    process (a row of `sync_seen` taken away since counts as a change)."""
+    from . import changes
+
+    mem = changes.memory(ws.db_path)
+    with mem.lock:
+        rcx = sqlite3.connect(ws.db_path, timeout=60, isolation_level=None)
+        try:
+            rcx.execute("BEGIN")
+            now = changes.clock(rcx)
+            canon = _canon(rcx)
+            ctx = (changes.ident(rcx), changes.schema(rcx), hashlib.sha1(json.dumps(sorted(canon.items())).encode()).hexdigest())
+            changed = changes.changed_since(rcx, mem.seen_upto) if mem.seen_context == ctx else None
+            fps = _fingerprints(rcx)
+            hyps = [r[0] for r in rcx.execute("SELECT hyp_id FROM hypotheses")]
+            runs = [r[0] for r in rcx.execute("SELECT run_id FROM theme_runs")]
+            if changed is None:
+                again: set[tuple[str, str]] | None = None
+                lost_books: set[str] = set()
+            else:
+                keys, kinds = changes.touched(rcx, changed)
+                again = {k for k in keys if k[0] in ("check", "themes")} | {
+                    (k, key) for k in kinds & {"check", "themes"} for key in (hyps if k == "check" else runs)}
+                lost_books = set()
+                for h in changed.get("sync_seen", ()):  # a fingerprint taken away: written down again
+                    k, _, key = h.partition("|")
+                    if k in ("check", "themes"):
+                        again.add((k, key))
+                    elif k in ("codebook", "code"):
+                        lost_books.add(key.split("/", 1)[0])
+            rows = []
+            units = set()
+            for kind, ids, unit in (("check", hyps, _check_unit), ("themes", runs, _themes_unit)):
+                for key in ids:
+                    units.add((kind, key))
+                    if again is None or (kind, key) in again or (kind, key) not in mem.seen_units:
+                        rows += [(kind, key, fp) for fp in fps(unit(rcx, key), canon)]
+            if changed is None or mem.seen_names is None or {"labels", "hypotheses", "user_claims"} & set(changed):
+                used = _used_codebooks(rcx)
+            else:
+                used = mem.seen_names
+            books = {}
+            for name in _codebooks_seen(ws, rcx, used):
+                books[name] = changes.files_sig(f / f"{name}.{ext}" for f in (Path(ws.root) / "frameworks",
+                                                                              _home_codebooks())
+                                                for ext in ("csv", "json"))
+                if again is None or name in lost_books or mem.seen_books.get(name) != books[name]:
+                    rows += _codebook_rows(ws, name)
+        finally:
+            rcx.rollback()
+            rcx.close()
+        if rows:
+            with ws.connect() as cx:
+                cx.executemany("INSERT OR IGNORE INTO sync_seen(kind, key, fp) VALUES (?,?,?)", rows)
+        mem.seen_upto, mem.seen_context, mem.seen_units = now, ctx, units
+        mem.seen_books, mem.seen_names = books, used

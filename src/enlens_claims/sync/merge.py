@@ -106,9 +106,9 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                 t = tuple(t[c] for c in cols)
             vals.append(t)
         sql = f"INSERT {verb} INTO {table}({','.join(cols)}) VALUES ({','.join('?' * len(cols))})"
-        before = cx.total_changes
-        cx.executemany(sql, vals)
-        return cx.total_changes - before
+        # the statement's own rows (`rowcount`), not `total_changes`: that counts what triggers write too (the shared
+        # folder's change counters, sync/changes.py, an add-on's own)
+        return max(cx.executemany(sql, vals).rowcount, 0)
 
     def _doc_ok(self, r: dict) -> bool:
         """A row of the incoming copy about a document that is not brought in (removed here) stays out."""
@@ -679,13 +679,12 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         rows = [r for r in _rows(self.icx, "SELECT * FROM judgements") if self._id("claim_id", r["claim_id"]) in self.claims
                 and (r["person_id"] != self.me or (r["verdict"] is None and r["note"] is None))]
         cols = ["claim_id", "passage_id", "person_id", "verdict", "note", "at", "quote", "start", "end"]
-        before = cx.total_changes
-        cx.executemany(f"INSERT INTO judgements({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
+        cur = cx.executemany(f"INSERT INTO judgements({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
                        "ON CONFLICT(claim_id, passage_id, person_id) DO UPDATE SET verdict=excluded.verdict, "
                        "note=excluded.note, at=excluded.at, quote=excluded.quote, start=excluded.start, end=excluded.end "
                        "WHERE excluded.at > judgements.at OR (excluded.at = judgements.at AND excluded.verdict IS NULL "
                        "AND excluded.note IS NULL)", [self._row(r, cols) for r in rows])
-        self.r["judgements"] = cx.total_changes - before
+        self.r["judgements"] = max(cur.rowcount, 0)  # (its own rows: not what triggers write, as in `_insert`)
         people.refresh(cx, self.claims, self.me)
 
     # reviews, links between terms, the bibliography -------------------------------------------

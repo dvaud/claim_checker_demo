@@ -72,9 +72,7 @@ def main(argv: list[str] | None = None) -> int:
                       f"When it is done, choose Quit ENLENS and open ENLENS again to use {__version__}.")
         if live:  # already running: just show it
             if not a.headless:
-                import webbrowser
-
-                webbrowser.open(live["url"])
+                launcher.browse(launcher.open_link(live))  # 0.17.2: with its token (the page has none)
             print(f"ENLENS is already running at {live['url']}.")
             return 0
         launcher.detach()

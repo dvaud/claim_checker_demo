@@ -168,11 +168,13 @@ def installed_extras(pyproject: Path) -> list[str]:
 
 
 def update(check_only: bool = False, root: Path | None = None, run: Runner = _run,
-           python: str | None = None, quick: bool = False, restart: list[str] | None = None) -> dict:
+           python: str | None = None, quick: bool = False, restart: list[str] | None = None,
+           token: str | None = None) -> dict:
     """Bring this ENLENS up to date, the way it was installed (see the module's notes). Returns what happened.
     `quick` (0.13.6, the app's check every two minutes): a one-line install learns the newest version from GitHub's
     release page, which GitHub's limit of 60 API requests an hour does not count. `restart` (0.15.4, the app on
-    Windows): the command that starts the app again, for the hand-over (update_release)."""
+    Windows): the command that starts the app again, for the hand-over (update_release); 0.17.2: `token`, the app's
+    access token, which the hand-over gives to the copy it starts (start_handover)."""
     if root is None and source_root() is None:
         from . import installation
 
@@ -180,7 +182,8 @@ def update(check_only: bool = False, root: Path | None = None, run: Runner = _ru
         if k == "script":
             if quick and check_only:
                 return update_release(check_only=True, run=run, peek=_peek)
-            return update_release(check_only=check_only, run=run, **({"restart": restart} if restart else {}))
+            return update_release(check_only=check_only, run=run, **({"restart": restart} if restart else {}),
+                                  **({"token": token} if token else {}))
         if k == "package":
             raise UpdateError("This ENLENS came as a download for this system: download the newest one from "
                               f"https://github.com/{installation.REPO}/releases and install it over this one (your "
@@ -556,20 +559,27 @@ def handover_job(rel: dict, have: str, folder: Path, install: list[str], restart
             "wait": 120, "free_wait": 60, "tries": 4, "retry_after": 5, "come_back": 90}
 
 
-def start_handover(job: dict) -> None:
-    """Copy handover.py next to the job and start it with outside_python(); it waits for this app to quit."""
+def start_handover(job: dict, token: str | None = None) -> None:
+    """Copy handover.py next to the job and start it with outside_python(); it waits for this app to quit. 0.17.2:
+    `token` goes to it in its environment only (never in the job file, nor in this app's environment, which the
+    programs a job starts meanwhile would inherit); it hands it to the copy it starts."""
     from . import handover
 
     folder = Path(job["folder"])
     script = folder / "handover.py"
     shutil.copyfile(Path(handover.__file__), script)
     (folder / "job.json").write_text(json.dumps(job, indent=1), encoding="utf-8")
-    handover._start([outside_python(), str(script), str(folder / "job.json")], str(folder))
+    args = [outside_python(), str(script), str(folder / "job.json")]
+    if token:
+        handover._start(args, str(folder), {**os.environ, handover.RESTART_TOKEN: token})
+    else:
+        handover._start(args, str(folder))
 
 
 def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = _fetch, workdir: Path | None = None,
                    windows: bool | None = None, peek: Peek | None = None, channel: str | None = None,
-                   restart: list[str] | None = None, start: Callable[[dict], None] | None = None) -> dict:
+                   restart: list[str] | None = None, start: Callable[[dict], None] | None = None,
+                   token: str | None = None) -> dict:
     """Install the newest GitHub Release over a one-line install (see the module's notes). With `peek` (0.13.6), a
     check reads the newest version from the release page (`latest_version`), and asks the API only when the page does
     not say. 0.15: `channel` ("stable" or "early", default from the settings) says whether a release candidate counts.
@@ -622,7 +632,7 @@ def update_release(check_only: bool = False, run: Runner = _run, fetch: Fetch = 
         spec = f"enlens-claims[{','.join(installation.EXTRAS)}] @ {wheel.resolve().as_uri()}"
         install = [uv, "tool", "install", "--force", "--quiet", "--python", "3.12", spec]
         if windows:  # 0.15.4: handover.py installs it once this app has quit, and starts the app again
-            (start or start_handover)(handover_job(rel, have, tmp, install, restart or []))
+            (start or (lambda job: start_handover(job, token)))(handover_job(rel, have, tmp, install, restart or []))
             handed = True
             return {"updated": True, "from": have, "version": rel["version"], "route": "release", "handover": True,
                     "message": f"ENLENS {rel['version']} is installed as soon as ENLENS has quit; it then opens again."}

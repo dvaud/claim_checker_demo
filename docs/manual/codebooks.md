@@ -103,5 +103,6 @@ codes were reworded and when removed codes' labels wait, each with *Open the cod
 
 The ⋯ menu beside the codebook has *Keep it with all my projects* and *Keep it with this project only*; for a codebook
 kept with all projects, *This project's own copy (change it here only)*; and *Remove the codebook*, which asks *Why?*.
-Labels made with a codebook stay when it is removed: they are results. *CSV* downloads the codebook, and *History*
+Labels made with a codebook stay when it is removed: they are results. *CSV* downloads the codebook (a cell that starts with `=`, `@` or a sign gets an apostrophe in front, so a spreadsheet
+shows it and does not run it as a formula; ENLENS takes the apostrophe off again when it reads the file), and *History*
 lists its earlier versions, to compare and restore ([earlier versions](notes-and-log.md#earlier-versions)).

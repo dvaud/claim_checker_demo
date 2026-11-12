@@ -201,10 +201,18 @@ def find_quote(haystack: str, quote: str, whole_words: bool = True) -> tuple[int
             return hstart[pos], hend[end - 1], "exact"
         pos = nh.find(nq, pos + 1)
     # the spacing pass: every space is left out, and it is noted where the text had one before each character
+    for a, b in spacing_matches(haystack, pack_text(nh, hstart, hend), nq, whole_words=whole_words):
+        return a, b, "spacing"
+    return None
+
+
+def pack_text(nh: str, hstart: list[int], hend: list[int], drop: str = " ") -> tuple:
+    """Normalised text (`_normalise_spans`) with the characters of `drop` left out, for `spacing_matches`: (the
+    packed text, each character's start and end offset, and whether a dropped character stood before it)."""
     chars, starts, ends, gap = [], [], [], []
     prev = False
     for c, a, b in zip(nh, hstart, hend):
-        if c == " ":
+        if c in drop:
             prev = True
             continue
         chars.append(c)
@@ -212,22 +220,32 @@ def find_quote(haystack: str, quote: str, whole_words: bool = True) -> tuple[int
         ends.append(b)
         gap.append(prev)
         prev = False
-    sh = "".join(chars)
+    return "".join(chars), starts, ends, gap
+
+
+def spacing_matches(text: str, packed: tuple, nq: str, drop: str = " ", whole_words: bool = True, min_len: int = 1):
+    """Every place `nq` (a normalised quote) is in `text` once the characters of `drop` are ignored where the text
+    has more of them than the quote, as (start, end) offsets in `text`. `packed`: `pack_text` of the text with the
+    same `drop`. The one spacing pass for `find_quote` (spaces: PDF text splits words, "wi ll") and for reread's
+    finder (also hyphens and table cell bars, which other readers wrote or left out). With `whole_words`, a place
+    must begin and end at a word edge, and a space the quote puts between two words must be an edge in the text too.
+    A quote shorter than `min_len` once packed has no places. (0.17.2: written three times before.)"""
+    sh, starts, ends, gap = packed
     qc, qgap = [], []
     prev = False
     for c in nq:
-        if c == " ":
+        if c in drop:
             prev = True
             continue
         qc.append(c)
         qgap.append(prev)
         prev = False
     sq = "".join(qc)
-    if not sq:
-        return None
+    if not sq or len(sq) < min_len:
+        return
 
     def edge(i: int, start: bool = False) -> bool:
-        return i <= 0 or i >= len(sh) or gap[i] or _word_edge(haystack, sh, starts, i, start)
+        return i <= 0 or i >= len(sh) or gap[i] or _word_edge(text, sh, starts, i, start)
 
     pos = sh.find(sq)
     while pos >= 0:
@@ -235,9 +253,8 @@ def find_quote(haystack: str, quote: str, whole_words: bool = True) -> tuple[int
         # a space the quote puts between two words must be in the text too (or the text must have an edge there)
         if not whole_words or (edge(pos, True) and edge(end)
                                and all(edge(pos + k) for k in range(1, len(sq)) if qgap[k])):
-            return starts[pos], ends[end - 1], "spacing"
+            yield starts[pos], ends[end - 1]
         pos = sh.find(sq, pos + 1)
-    return None
 
 
 def find_selection(haystack: str, quote: str) -> tuple[int, int, str] | None:
@@ -277,6 +294,24 @@ def grade_quote_problem(quote: str | None) -> str | None:
         return None
     return (f"the quote {q[:80]!r} is too short to show the judgement: quote at least {MIN_GRADE_WORDS} words (or "
             f"{MIN_GRADE_CHARS} characters), copied exactly")
+
+
+# 0.17.2 (H11): the most a quote stored with a model's answer may hold, counted as a person reads it (a run of
+# whitespace is one character). The instructions ask for the shortest span that shows the point, which is a few
+# words to a sentence; a hypothesis written by a colleague could steer a local model into quoting pages of a
+# document this copy keeps from the cloud, and a long quote travels with a shared check. 600 characters is
+# about a long sentence, above any quote a model gave in the test suite.
+MAX_QUOTE_CHARS = 600
+
+
+def long_quote_problem(quote: str) -> str | None:
+    """What is wrong with a quote that is longer than `MAX_QUOTE_CHARS`, or None. It is worded like a quote that was
+    not found, so the helper that wrote it is asked to give a shorter one."""
+    n = len(" ".join((quote or "").split()))
+    if n <= MAX_QUOTE_CHARS:
+        return None
+    return (f"quote too long: {n} characters, the most is {MAX_QUOTE_CHARS} ({' '.join(quote.split())[:80]!r}…). "
+            "Quote the shortest contiguous span that shows the point, not the whole passage.")
 
 
 def partial_word_hint(haystack: str, quote: str) -> str:

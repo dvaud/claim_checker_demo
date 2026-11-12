@@ -2,7 +2,7 @@
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { tesseractHelp, App, api, h, icon, readsLine, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
-  dialog, certainty, breakSegments, breaksToIndex, textPositions, cpLength, safeHref, searchHref, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
+  dialog, certainty, breakSegments, breaksToIndex, textPositions, wordSpan, cpLength, safeHref, searchHref, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
@@ -289,7 +289,7 @@ export async function renderSources(view) {
     if (warned) docsBox.appendChild(notice({ kind: "attention", class: "docs-warned" }, h("p", {}, `${warned} ${warned === 1 ? "document needs" : "documents need"} a look: see the note next to ${warned === 1 ? "it" : "them"}.`)));
     shieldNote = shieldNode();
     docsBox.appendChild(shieldNote);
-    nr.older = docs.filter((d) => (d.reader || 1) < newReader);
+    nr.older = docs.filter((d) => newReaderFor(d, newReader));
     docsBox.appendChild(nrBox);
     drawNr();
     // 0.11: the AI setting of each document (a dropdown), several at once, and how much Claude has read
@@ -405,7 +405,9 @@ export async function renderSources(view) {
       const n = older.length;
       parts.push(notice({ kind: "info", icon: "layers" }, h("div", { class: "grow" },
         h("p", {}, h("strong", {}, `${fmt.num(n)} ${n === 1 ? "document was" : "documents were"} read by an earlier reader of ENLENS.`),
-          ` ${n === 1 ? "It keeps" : "They keep"} that reading, so your quotes and judgements stay where they are. The new reader reads two columns in the right order, sets running heads, page numbers and the like aside, keeps tables as tables and repairs words broken over lines.`),
+          ` ${n === 1 ? "It keeps" : "They keep"} that reading, so your quotes and judgements stay where they are. `,
+          older.some((d) => (d.reader || 1) < 3) ? "The new reader reads two columns in the right order, sets running heads, page numbers and the like aside, keeps tables as tables and repairs words broken over lines."
+            : READER_4_NEWS),
         h("div", { class: "btn-row docs-nr-actions" },
           button({ kind: "main", sm: true, onClick: () => startNr(sel.length ? sel : older, !!sel.length) }, icon("layers", { size: 13 }),
             sel.length ? `Read the ${sel.length === 1 ? "selected one" : `${fmt.num(sel.length)} selected`} with the new reader` : n === 1 ? "Read it with the new reader" : `Read all ${fmt.num(n)} with the new reader`),
@@ -502,7 +504,15 @@ export async function renderSources(view) {
 // 0.15: how a document was read, in the list: one that read badly or has something to check (0.15.7: until the
 // person marks the reading as checked), or one read by an earlier reader (0.15.7: also 0.15.0's; its link opens the
 // preview of the move)
-let newReader = 3;  // ingest.READER, as the list of documents says it
+let newReader = 4;  // ingest.READER, as the list of documents says it
+// 0.17.2: what reader 4 reads otherwise than reader 3 (only text files and Word files can change)
+// 0.17.2: reader 4 reads only text and Word files otherwise than reader 3, so a reader-3 PDF or web page is not offered
+// it (it would read the same); documents of earlier readers are offered it whatever their kind
+function newReaderFor(d, latest) {
+  const r = d.reader || 1;
+  return r < latest && !(r === 3 && latest === 4 && !["text", "docx"].includes(d.kind));
+}
+const READER_4_NEWS = "The new reader takes each line of a text file without blank lines between its paragraphs as a paragraph of its own, and reads the text in a Word file's content controls and a table inside a table once. Other documents read the same.";
 function readingNote(d) {
   const href = `#/doc/${encodeURIComponent(d.doc_id)}?tab=reading`;
   if ((d.reading_quality === "poor" || d.reading_quality === "fair") && !d.reading_checked) {
@@ -511,7 +521,7 @@ function readingNote(d) {
     if (d.reading_quality === "poor") return h("span", {}, tag({ kind: "attention" }, "read badly"), " ", link({ href, title }, "Look at its reading"));
     return link({ href, title, class: "it small" }, icon("info", { size: 12 }), "something to check in its reading");
   }
-  if ((d.reader || 1) < newReader) return link({ class: "it small", href: `${href}&preview=1`, title: "Read by an earlier reader of ENLENS. Open it to see what the new reader would change, or read several at once with the button above the list." },
+  if (newReaderFor(d, newReader)) return link({ class: "it small", href: `${href}&preview=1`, title: "Read by an earlier reader of ENLENS. Open it to see what the new reader would change, or read several at once with the button above the list." },
     icon("layers", { size: 12 }), (d.reader || 1) < 2 ? "read before 0.15" : "read by an earlier reader");
   return null;
 }
@@ -537,7 +547,6 @@ const KIND_PLURAL = { title: ["title", "titles"], heading: ["heading", "headings
 const movedCount = (r) => Object.values((r && r.counts) || {}).reduce((a, c) => a + (c.moved || 0), 0);
 let keepPlace = null;               // 0.15: where the reader was before a block was restored or left out
 const kindCount = (k, n) => `${fmt.num(n)} ${(KIND_PLURAL[k] || [k, k])[n === 1 ? 0 : 1]}`;
-const WORD = /[\p{L}\p{N}_'’-]/u;
 // a job this page started earlier (kept for this tab), if it is still running
 async function stillRunning(key) {
   const j = session(key);
@@ -999,14 +1008,10 @@ export async function renderDocument(view, [docId], query) {
     if (!b) return null;
     const t = b.text;
     const pos = textPositions(t);
-    let i = pos.index(off - b.start);
-    if (!WORD.test(t[i] || "")) { if (i > 0 && WORD.test(t[i - 1])) i--; else return null; }
-    let s = i, e = i + 1;
-    while (s > 0 && WORD.test(t[s - 1])) s--;
-    while (e < t.length && WORD.test(t[e])) e++;
-    while (s < e && /['’-]/.test(t[s])) s++;
-    while (e > s && /['’-]/.test(t[e - 1])) e--;
-    return e > s ? { start: b.start + pos.point(s), end: b.start + pos.point(e), text: t.slice(s, e) } : null;
+    const span = wordSpan(t, pos.index(off - b.start));   // lib.js: a letter outside the BMP is one letter
+    if (!span) return null;
+    const [s, e] = span;
+    return { start: b.start + pos.point(s), end: b.start + pos.point(e), text: t.slice(s, e) };
   }
 
   // a click on a word (with Search in this document open) adds it to the search; Shift-click makes a phrase
@@ -1182,7 +1187,7 @@ export async function renderDocument(view, [docId], query) {
   function readingPanel() {
     const el = h("section", { class: "dv-panel", "aria-labelledby": "dv-read-h" });
     const rep = d.reading || {};
-    const older = (d.reader || 1) < (d.new_reader || 1);
+    const older = newReaderFor(d, d.new_reader || 1);
     const before15 = (d.reader || 1) < 2;  // 0.15.1: a document of 0.15.0's reader has a reading report too
     const qual = { good: "Read well.", fair: "Read, with something to check.", poor: "Read badly: check it before you rely on it." }[rep.quality];
     const figs = [];
@@ -1229,7 +1234,8 @@ export async function renderDocument(view, [docId], query) {
     el.append(...[h("h2", { id: "dv-read-h", class: "dv-panel-title", tabindex: "-1" }, "How this document was read"),
       older ? notice({ kind: "info" }, h("div", {},
         h("p", {}, before15 ? `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`
-          : `Read by the reader of ENLENS 0.15.0. The reader of ENLENS ${App.state.version || ""} also sets running heads, page numbers, contents pages and indexes aside in text files and books, finds their headings and paragraphs, and puts apart words that ran together.`),
+          : d.reader === 2 ? `Read by the reader of ENLENS 0.15.0. The reader of ENLENS ${App.state.version || ""} also sets running heads, page numbers, contents pages and indexes aside in text files and books, finds their headings and paragraphs, and puts apart words that ran together.`
+          : `Read by the reader of ENLENS 0.15.1 to 0.17.1. ${READER_4_NEWS}`),
         h("p", { class: "small" }, "Documents already in a project keep their reading, so every quote and judgement in them stays where it is, until you move one over."))) : null,
       // a reading to check needs you: an attention notice; a good one is a quiet line with the tick (DESIGN 3.3, 4.12)
       !before15 && qual ? (rep.quality === "good" ? h("p", { class: "dv-quality small" }, icon("check", { size: 14 }), ` ${qual}`)

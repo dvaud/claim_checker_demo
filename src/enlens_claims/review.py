@@ -97,13 +97,29 @@ def csv_cell(value: Any) -> Any:
     text, so those stay as written. Numbers (int, float) and anything that is not text are never changed."""
     if not isinstance(value, str) or not value:
         return value
+    # 0.17.2: text that already starts with apostrophes before something protected ("'=1") gets one more, so
+    # `csv_uncell` (which takes off exactly one) gives the original back, not a changed text
+    return "'" + value if _needs_apostrophe(value.lstrip("'")) else value
+
+
+def _needs_apostrophe(value: str) -> bool:
+    if not value:
+        return False
     first = value[0]
     if first in "=@\t\r":
-        return "'" + value
+        return True
     if first in "+-":
-        if len(value) == 1 or value[1] == " " or _PLAIN_NUMBER.fullmatch(value):
-            return value
-        return "'" + value
+        return not (len(value) == 1 or value[1] == " " or _PLAIN_NUMBER.fullmatch(value))
+    return False
+
+
+def csv_uncell(value: Any) -> Any:
+    """The inverse of `csv_cell`, for a CSV ENLENS reads back (a codebook, which is both an export and an import
+    format): a cell that is an apostrophe plus text `csv_cell` would have protected loses that one apostrophe. Any
+    other cell, including one that starts with an apostrophe for another reason ("'quoted"), is kept as written, so a
+    file written before 0.17.2 (without the apostrophes) reads the same."""
+    if isinstance(value, str) and value[:1] == "'" and _needs_apostrophe(value[1:].lstrip("'")):
+        return value[1:]
     return value
 
 

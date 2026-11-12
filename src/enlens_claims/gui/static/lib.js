@@ -4,18 +4,67 @@ import { icon, STATUS_ICON } from "./icons.js";
 // ---------------------------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------------------------
-// The page carries its token; when the app listens on the network it does not, and the token comes in the link
-// printed in the terminal (#token=…), kept for this tab only.
+// 0.17.2: the page never carries the access token (any account on this computer could fetch it). It comes in the link
+// the app opens (or the terminal shows), after # so it never reaches a server: #token=…, kept for this tab only and
+// taken out of the address bar. A tab opened without it (a new tab, a bookmark) asks this browser's other ENLENS tabs
+// (ensureToken); when none has it, the page says how to open ENLENS (app.js).
+const TOKEN_KEY = "enlens-token";
+const TOKEN_RX = /^[A-Za-z0-9_-]{16,}$/;
+function keepToken(t) { try { sessionStorage.setItem(TOKEN_KEY, t); } catch (_) { /* this tab only, then */ } }
+let fromStore = false;   // the token came from this tab's storage (a reload): it may be from before a restart
 function readToken() {
-  const meta = (document.querySelector('meta[name="enlens-token"]') || {}).content || "";
-  if (meta && !meta.startsWith("{{")) return meta;
   const m = /(?:^#|&)token=([A-Za-z0-9_-]+)/.exec(location.hash || "");
-  try {
-    if (m) { sessionStorage.setItem("enlens-token", m[1]); history.replaceState(null, "", location.pathname + "#/"); return m[1]; }
-    return sessionStorage.getItem("enlens-token") || "";
-  } catch (_) { return m ? m[1] : ""; }
+  if (m) {
+    keepToken(m[1]);
+    try { history.replaceState(null, "", location.pathname + "#/"); } catch (_) { /* the address keeps it */ }
+    return m[1];
+  }
+  try { const t = sessionStorage.getItem(TOKEN_KEY) || ""; fromStore = !!t; return t; } catch (_) { return ""; }
 }
-export const TOKEN = readToken();
+export let TOKEN = readToken();
+
+// The app's other tabs in this browser: a BroadcastChannel reaches only pages of the same address (this app, in this
+// browser, so this account), never another web site or another account's browser. Each tab that has the token
+// answers; the asking tab takes the first answer the app accepts (a tab left open from before a restart holds an old
+// one).
+const CHANNEL = "enlens-token";
+function channel() {
+  try { return typeof BroadcastChannel === "function" ? new BroadcastChannel(CHANNEL) : null; } catch (_) { return null; }
+}
+async function askOtherTabs(wait = 400) {
+  const ch = channel();
+  if (!ch) return [];
+  const got = [];
+  ch.onmessage = (e) => { const t = e.data && e.data.token; if (typeof t === "string" && TOKEN_RX.test(t) && !got.includes(t)) got.push(t); };
+  ch.postMessage({ ask: true });
+  await new Promise((r) => setTimeout(r, wait));
+  ch.close();
+  return got;
+}
+// true: the app takes it; false: it refuses it (401); null: no answer (the app is not running: say that, not "old key")
+async function verdict(t) {
+  try { const r = await fetch("/api/jobs", { headers: { "X-Enlens-Token": t } }); return r.status === 401 ? false : r.ok ? true : null; }
+  catch (_) { return null; }
+}
+let answering = null, stale = false;
+export const keyWasStale = () => stale;
+export async function ensureToken() {
+  // a token this tab kept from before ENLENS started again: drop it, and ask the other tabs as a tab without one would
+  if (TOKEN && fromStore && (await verdict(TOKEN)) === false) {
+    stale = true; TOKEN = "";
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch (_) { /* gone with the tab */ }
+  }
+  if (!TOKEN) {
+    for (const t of await askOtherTabs()) if ((await verdict(t)) === true) { TOKEN = t; keepToken(t); stale = false; break; }
+  }
+  if (TOKEN && !answering && (answering = channel())) {
+    answering.onmessage = (e) => { if (e.data && e.data.ask && TOKEN) answering.postMessage({ token: TOKEN }); };
+  }
+  return TOKEN;
+}
+// 0.17.2: the link that opens ENLENS with this tab's token (Settings › Technical › Your link to ENLENS)
+export function myLink() { return TOKEN ? `${location.origin}/#token=${TOKEN}` : ""; }
+export const OPEN_FROM_ICON = "Open ENLENS from its icon (or run enlens-gui).";
 export const VERSION = (document.querySelector('meta[name="enlens-version"]') || {}).content || "";
 
 export class ApiError extends Error {
@@ -67,7 +116,7 @@ export async function api(method, path, body, opts = {}) {
   try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text || "Unreadable answer from the app." }; }
   if (!res.ok) {
     const msg = (data && data.error) || `Request failed (${res.status}).`;
-    const err = new ApiError(res.status, res.status === 401 ? (TOKEN ? "The page's token is no longer valid. Reload the page." : "Open the link that enlens-gui printed in its terminal: it carries the access token.") : msg,
+    const err = new ApiError(res.status, res.status === 401 ? (TOKEN ? `This tab's key to ENLENS no longer works: ENLENS has started again since it was opened. ${OPEN_FROM_ICON}` : `This tab was opened without ENLENS's key. ${OPEN_FROM_ICON}`) : msg,
       (data && data.kind) || (res.status === 502 ? "backend" : "request"));
     err.data = data;   // 0.14: what else the app said (a file of another project: who sent it)
     throw err;
@@ -178,6 +227,24 @@ export function textPositions(text) {
 export function cpToIndex(text, cp) { return Number.isInteger(cp) ? textPositions(text).index(cp) : cp; }
 export function indexToCp(text, i) { return Number.isInteger(i) ? textPositions(text).point(i) : i; }
 export function cpLength(text) { return textPositions(text).length; }
+// The word around the string index `i` of `text`: [start, end) as string indices, or null when `i` is not in or right
+// after a word. A letter outside the BMP (𝑥, 𐍈, 𠀀) is two UTF-16 units: it is looked at whole, so it is a word's letter
+// like any other (looked at as halves, neither half is a letter and a click on it picked nothing).
+const WORD_CHAR = /[\p{L}\p{N}_'’-]/u;
+export function wordSpan(text, i) {
+  const t = String(text ?? "");
+  const at = (j) => (j >= 0 && j < t.length ? String.fromCodePoint(t.codePointAt(j)) : "");
+  const back = (j) => (j >= 2 && (t.charCodeAt(j - 1) & 0xFC00) === 0xDC00 && (t.charCodeAt(j - 2) & 0xFC00) === 0xD800 ? j - 2 : j - 1);
+  const fwd = (j) => j + (t.codePointAt(j) > 0xFFFF ? 2 : 1);
+  if ((t.charCodeAt(i) & 0xFC00) === 0xDC00 && i > 0 && (t.charCodeAt(i - 1) & 0xFC00) === 0xD800) i--;   // inside a pair: its start
+  if (!WORD_CHAR.test(at(i))) { if (i > 0 && WORD_CHAR.test(at(back(i)))) i = back(i); else return null; }
+  let s = i, e = fwd(i);
+  while (s > 0 && WORD_CHAR.test(at(back(s)))) s = back(s);
+  while (e < t.length && WORD_CHAR.test(at(e))) e = fwd(e);
+  while (s < e && /['’-]/.test(t[s])) s++;
+  while (e > s && /['’-]/.test(t[e - 1])) e--;
+  return e > s ? [s, e] : null;
+}
 // A list of breaks ({at, end, …}, the app’s offsets in `text`) as string indices.
 export function breaksToIndex(text, breaks) {
   if (!Array.isArray(breaks)) return breaks;

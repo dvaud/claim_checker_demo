@@ -351,7 +351,7 @@ def test_a_document_of_reader_2_moves_to_reader_3_with_the_persons_marks(tmp_pat
                    (doc_id, reader.bound_key("end", fps, about - 1)))
     assert reread.check(ws, doc_id)["ok"]
     assert reread.move(ws, doc_id)["moved"] is not None
-    assert ws.scalar("SELECT reader FROM documents") == 3
+    assert ws.scalar("SELECT reader FROM documents") == ingest.READER   # 3, and 4 since 0.17.2 (the same for a book)
     kinds = Counter(r[0] for r in ws.query("SELECT kind FROM blocks WHERE doc_id=?", (doc_id,)))
     assert kinds["furniture"] >= 40 and kinds["contents"] and kinds["index"]
     # nothing after the person's mark is read

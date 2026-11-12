@@ -21,7 +21,8 @@ LOCAL_ONLY = {"meta", "embeddings", "code_vectors", "terms", "term_mentions", "c
               "sync_log", "sqlite_sequence",
               "versions",  # 0.16: earlier versions of themes and checks are this copy's history (history.py)
               "sync_written", "sync_folder_read", "sync_folder_docs",  # 0.18: this copy's record of the shared folder
-              "canon_seen"}  # 0.18 L2: how far this copy has followed the owner's decisions (ownership.py)
+              "canon_seen",  # 0.18 L2: how far this copy has followed the owner's decisions (ownership.py)
+              "sync_changes"}  # what changed since the shared folder's last round (changes.py)
 # merged by their own rules (merge.py); every other table (the SDG pack's, an add-on's) is merged row by row, keeping yours
 OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "blocks", "doc_tables", "labels", "mentions", "tasks", "results",
              "ai_sent", "hypotheses", "user_claims", "second_opinions", "judgements", "people", "theme_runs", "themes",

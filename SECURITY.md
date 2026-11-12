@@ -17,7 +17,8 @@ in plain words.
 
 - Anything that sends the text of your documents off the computer when it should not: for example a document marked
   *Only a local AI* or *No AI* that reaches Claude, or anything sent while cloud models are switched off.
-- A way for a web page, or another computer, to reach the local app and read or change your projects.
+- A way for a web page, another computer, or another account on the same computer, to reach the local app and read or
+  change your projects.
 - A problem in the installer or the update: a file that is not checked, a download that could be replaced.
 - A key or other secret kept or shown where it should not be.
 

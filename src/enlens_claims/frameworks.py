@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .retrieve import BM25
+from .review import csv_uncell
 from .textutil import tokens
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
@@ -262,7 +263,9 @@ def parse_csv(text: str, allow_empty: bool = False, extra: bool = False) -> dict
     that name is read as before 0.16."""
     text = text.lstrip("\ufeff")
     reader = csv.DictReader(io.StringIO(text), delimiter=_delimiter(text))
-    rows = list(reader)
+    # 0.17.2: a codebook's CSV is written through review.csv_cell (a spreadsheet would run "=..." as a formula); the
+    # apostrophe it adds comes off again here, so the codebook reads as it was written
+    rows = [{k: csv_uncell(v) for k, v in r.items()} for r in reader]
     if not rows:
         heads = {(c or "").strip().lower() for c in (reader.fieldnames or [])}
         if allow_empty and {"code", "description"} <= heads:

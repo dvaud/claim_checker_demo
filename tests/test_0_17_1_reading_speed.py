@@ -599,8 +599,8 @@ def test_pdfminer_keeps_the_boxes_of_the_pages_asked_for_only(tmp_path):
     path, _ = _pdf_with_marks(tmp_path, 1)
     full = annotate._pdfminer_pages(path)
     some = annotate._pdfminer_pages(path, {2, 3})
-    assert set(some) == set(full) and len(full) == 7
-    assert [p for p, v in some.items() if v is not None] == [2, 3]
+    assert len(full) == 7
+    assert sorted(some) == [2, 3] and all(some.values())   # 0.17.2: the other pages are not read at all
     for p in (2, 3):
         assert some[p].text == full[p].text
         assert [b and b[:4] for b in some[p].boxes] == [b and b[:4] for b in full[p].boxes]

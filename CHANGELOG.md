@@ -1,5 +1,106 @@
 # Changelog
 
+## 0.17.2 (November 2026): a new reader, smaller project files, and your key off the page
+
+The rest of the review that gave 0.17.1: a new reader for text and Word files, project files about a quarter smaller,
+a shared folder that costs almost nothing when nothing changed, and ENLENS's key no longer handed to anyone on the
+computer who asks.
+
+### Reading (can change results, for documents you move to the new reader)
+
+- **Reader 4: text files with one paragraph per line, and Word files read in full.** A text file with no blank line
+  between its paragraphs, each paragraph one long line (what Word saves as "plain text"), was read as a single
+  paragraph: every quote in it was cited as paragraph 1. Reader 4 takes each line of such a file as a paragraph. In a
+  Word file, a table inside a table's cell was read three times and is now read once (after the row that holds it),
+  and text inside content controls (a cover page, a contents box, form fields) was left out without a word and is now
+  read; Word's own table of contents is set aside, as a book's is. PDFs, web pages and all other text files read
+  exactly as before. New documents get reader 4; documents already in a project keep their reading until you choose
+  *Read with the new reader*, which the Documents page now offers only to text and Word files of reader 3.
+- **A PDF with a page that holds only its running head is added.** A page with nothing on it but the short line
+  repeated at the top of every page ("Draft for comment") stopped the whole add with an error. It is read now, and
+  every other PDF reads exactly as before, so this needs no new reader.
+- **Marking a large PDF is quick.** A PDF downloaded with its quotes highlighted is now marked in 0.3 seconds instead
+  of 17 for 1,000 pages: only the pages the quotes are on are read. A quote of unknown page is still looked for
+  everywhere.
+
+### Smaller and quicker
+
+- **Project files are about a quarter smaller.** The glossary keeps where its terms occur in a third less space. The
+  first time you open a project made with an earlier ENLENS, its glossary shows *No glossary yet*: press *Make the
+  glossary* (it is also made again when you add documents or find themes by words). Your links between terms and your
+  concepts stay. On that first opening the file is also made smaller once, when the disk has room: on a project of
+  152 documents it went from 460 MB to 93 MB at once, and to 335 MB once the glossary was made again. The glossary,
+  key terms, concepts, the concordance and the FlexiConc export show exactly what they did; the glossary page opens in
+  0.04 seconds instead of 0.27.
+- **A look at the shared folder that finds nothing new costs almost nothing.** ENLENS looks in a project's shared
+  folder every couple of minutes, and each look went over every shared check and every row of the project, even when
+  nothing had changed: about 3 seconds of work each time on a project of 1,000 documents. It now looks only at what
+  changed: 0.22 seconds. Nothing changes in what is written to the folder or brought in.
+- **Themes by words are about twice as quick** when numpy is installed (12 themes on 152 documents: 10.4 s, now 4.5 s),
+  with the same themes to the last decimal; a theme's page builds only that theme.
+- `enlens search … --out` and the connector's `search_corpus` run their search once; making a file for a worker with
+  20,000 waiting tasks needs a tenth of the memory; the Claude Code queue finds its newest answer without reading
+  every answer.
+
+### Safer
+
+- **No one else on this computer can open your ENLENS.** The page ENLENS serves used to carry its key (the access
+  token), so another account on a shared computer could open the address and use ENLENS with all your projects. The
+  key is now only in the link ENLENS opens itself, from its icon or with `enlens-gui`; the browser keeps it for that
+  tab and takes it out of the address bar, and a new tab finds it by itself while ENLENS is open. The address on its
+  own, or a bookmark of it, now shows *Open ENLENS from its icon*. For a bookmark: *Settings → Technical → Your link to
+  ENLENS → Copy my link* (it works until ENLENS stops, and opens ENLENS for whoever has it). **Once, just after
+  updating to this version, the open tab cannot follow the restart: open ENLENS from its icon.** Later updates keep
+  the open tabs working.
+- **Proven: "Only a local AI" stays on this computer** for search by meaning, the second model, *auto* with addresses
+  you gave, and the local model for restricted documents (new tests; nothing needed changing).
+- **A quote an AI gives can be at most 600 characters.** A longer one is sent back like a quote that was not found.
+  This also stops a colleague's hypothesis from steering your local model into quoting pages of a document that stays
+  on this computer.
+- **The codebook CSV is safe in a spreadsheet**, like every other download since 0.17.1: a cell that starts like a
+  formula gets an apostrophe, and ENLENS takes exactly that apostrophe off when it reads the file back.
+
+### Other fixes
+
+- After a document is read again, each of your notes also takes the page it is now on; looking at your notes no
+  longer writes to the project.
+- A click on a letter such as 𝑥 or 𠀁 in *Search in this document* picks its word; a word with such a letter in it
+  is no longer cut in two.
+
+### For developers
+
+- `reader.READER` and `ingest.READER` are 4 (`reader4.py`); readers 2 and 3 read byte for byte as before, also from a
+  Word file read for reader 4 (`RawDoc.before_4`). `tools/reader_fingerprints.py` and
+  `tools/reader_fingerprints_pytest.py` check that a reader change leaves the frozen readers alone.
+- `term_mentions` is WITHOUT ROWID, key `(term_id, passage_id, start, end)`, one index
+  `ix_term_mentions_at(passage_id, start, end, term_id)`; `doc_id` stays empty for older versions; a document's places
+  are `store.passage_range(doc_id)`.
+- `sync/changes.py`: triggers (only in projects with a shared folder) stamp change counters in `sync_changes` (this
+  copy's own, dropped from every zip); a round reads only what changed, `sync_written` is read in slices and pruned at
+  a snapshot. Bulk inserts into labels, tasks, verifications and the research log cost about 20 µs more a row while
+  the triggers are there. A merge counts its own rows (`rowcount`), not what triggers write.
+- `GET /` never carries the token: clients read `app-token-<port>.json` (mode 0600) or get `/#token=…`; a restart
+  after an update hands it on in `ENLENS_RESTART_TOKEN`; the page has `enlens-run` instead of `enlens-token`.
+- `review.csv_uncell` is the inverse of `review.csv_cell`; `themes.kmeans_sparse` picks a numpy path that adds in the
+  same order as the Python one; `llm._read_lines`, `llm.ollama_version`, `tasks._graded_row`,
+  `textutil.spacing_matches` replace code that was written two or three times; an index `ix_results_route`.
+
+### Tests
+
+New: `tests/test_0_17_2_reader4.py`, `_reader_offer.py`, `_db_size.py`, `_idle_rounds.py`, `_token.py`,
+`_local_servers.py`, `_codebook_csv_safe.py`, `_themes_speed.py`, `_export_searches.py`, `_small_leftovers.py`,
+`_last_leftovers.py`. Each fix's test fails on 0.17.1; the reader tests also hold readers 2 and 3 to their old output
+on every document the suite reads and on a corpus of 152 documents.
+
+### Not yet done
+
+- Owner, Co-owner and Member roles, and files that can no longer loosen your AI setting, remove a document for good
+  or change the owner without your click: built and reviewed, coming as 0.18.0rc1. Until then, share a folder only
+  with people you trust.
+- The results page still redraws whole when one judgement changes (it redraws only on a change).
+- Opening a project with an earlier ENLENS after this version is not supported: it works, but that version's
+  *Read with the new reader* and *remove document* leave the glossary wrong until it is made again.
+
 ## 0.17.1 (November 2026): faster and sturdier, and safer with colleagues' files
 
 0.17.0 was the first version in which work from other people comes into a project, through a shared folder or a zip.

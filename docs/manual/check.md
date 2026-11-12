@@ -48,7 +48,7 @@ flowchart LR
 4. The AI judges each excerpt that bears on the claim: *supports*, *partly supports* or *contradicts*, with a quote
    and a certainty.
 5. Every quote is checked character by character against the excerpt, as whole words ("legal" is not found in
-   "illegal"), and has at least three words (or 15 characters). An answer that fails is sent back with its problems
+   "illegal"), and has at least three words (or 15 characters) and at most 600. An answer that fails is sent back with its problems
    listed, and so is one a local model could not finish (cut off, stuck); the check goes on with its other parts.
 6. The answer counts the judgements the AI is sure enough about, and yours ([below](#the-answers)).
 

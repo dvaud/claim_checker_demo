@@ -93,6 +93,8 @@ research log, and sent to no one.
 Once a project has a shared folder, ENLENS looks in it every 2 minutes, as if you pressed *Sync now*: also soon after
 ENLENS starts, and about 20 seconds after you change something in the project (share an item, edit a shared note),
 waiting while you keep working. Nothing runs between two looks, and a project without a shared folder is left alone.
+A look that finds nothing new costs almost nothing, also in a large project: ENLENS keeps count of what changes in the
+project and looks only at that. The first look after ENLENS starts looks at everything once.
 
 - **How often.** *How often ENLENS looks*, in the Team tab: from every minute to every 60 minutes, for all your
   projects.

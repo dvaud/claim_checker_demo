@@ -19,6 +19,7 @@ where it is.
 | 1 | before 0.15 | Every document added before 0.15. |
 | 2 | 0.15.0 | PDFs by their layout: columns, tables, what to set aside. |
 | 3 | 0.15.1 | Reader 2, plus text files and books: running heads, page numbers, paragraphs and headings found from the text alone. |
+| 4 | 0.17.2 | Reader 3, plus: a text file with one paragraph per line, and a Word file's content controls and tables inside tables (see *What reader 4 changed* below). PDFs and web pages read as with reader 3. |
 
 ## What the reader does
 
@@ -42,7 +43,9 @@ has; without it, it reads the PDF's text layer, without columns or tables):
   (a heading with the text under it counts as one), every block between blank lines in a text file.
 
 **Word files, web pages and text files** are read with the same repairs, their headings and reference list set aside
-in the same way.
+in the same way. A Word file's tables are read row by row, a table inside a table's cell after the row that holds it;
+text in its content controls (a cover page, a contents box, form fields) is read like any other text, and Word's own
+table of contents is set aside as a book's is. Footnotes, comments and text boxes are not read.
 
 **Text files and books.** Many `.txt` and `.md` files are text copied out of a PDF by a converter: every running
 head and page number is still in the text, while the pages, the headings and often the spaces between words are
@@ -55,6 +58,15 @@ gone. Reader 3 reads such files by rules on the text alone (no AI):
 | Paragraphs and headings | A short line that ends a sentence ends its paragraph; a short line on its own is a heading. A Markdown file, web page or Word file that marks fewer than three headings gets headings this way too. |
 | A book's parts | The table of contents (lines ending in page numbers that go up) is set aside, and its entries find the chapter headings. Front matter before the first chapter (half title, other books by the author, copyright page, dedication, lists of figures) is set aside, but an abstract, summary or preface stays. Notes, bibliography, index, *About the author* and acknowledgements at the end are set aside; an index is also known by its lines ("archetypes, 112–116, 191"). |
 | Damaged text | Text printed twice ("TTIISS ffiinnaall" → "TIS final"), ligatures broken by a space ("fi nd" → "find"), and, only in a file that lost many of its spaces, words run together ("peoplelivingwithdementia" → "people living with dementia", using words the document itself writes apart; never into word endings). |
+
+**What reader 4 changed.** Reader 4 reads three things otherwise than reader 3; everything else reads exactly as before:
+
+- **A text file with one paragraph per line**, as Word saves "plain text": no blank line between paragraphs, each
+  paragraph one long line. Reader 3 read such a file as a single paragraph, so every quote in it was cited as
+  paragraph 1. Reader 4 takes each line as a paragraph. A file whose lines are wrapped to one width, or whose
+  paragraphs have a blank line between them, reads as before.
+- **A table inside a table's cell** in a Word file was read three times; it is now read once.
+- **Text in a Word file's content controls** (and in custom XML) was left out without a word; it is now read.
 
 > [!TIP]
 > If you have the PDF of a text file, add the PDF instead: it reads better. The *Reading* panel says when a text
@@ -102,7 +114,8 @@ as you scroll; click an outline to go to that block.
 
 A document read by an older reader keeps that reading, and the list of documents marks it (*read before 0.15*, or
 *read by an earlier reader*). Its *Reading* panel offers **Read with the new reader** (the mark in the list opens it
-with the preview already started):
+with the preview already started; a PDF or web page read by reader 3 is not offered reader 4, as it would read the
+same):
 
 ```mermaid
 flowchart LR

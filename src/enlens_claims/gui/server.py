@@ -5,8 +5,10 @@
 
 Local first:
 - It listens on 127.0.0.1 only (another address only with --host, at your own risk).
-- Every API call needs the token embedded in the page it served, and a Host header naming this computer, so other
-  web sites open in the same browser cannot use it (no CORS, DNS rebinding blocked).
+- Every API call needs the access token and a Host header naming this computer, so other web sites open in the same
+  browser cannot use it (no CORS, DNS rebinding blocked). 0.17.2: the page does not carry the token, so another
+  account on the same computer cannot fetch it: the app opens its link with the token after `#` (never sent to a
+  server), and keeps it in a file only this account can read (launcher.token_path) for the icon and the command line.
 - The page loads nothing from the internet: no CDN, no fonts, no analytics.
 - Text goes only to the model service chosen in Settings: a local server by default; the Claude API only after
   cloud models are allowed.
@@ -91,6 +93,9 @@ STATIC = Path(__file__).with_name("static")
 class App(LibraryMixin, QueueMixin):
     def __init__(self, token: str | None = None):
         self.token = token or secrets.token_urlsafe(24)
+        # 0.17.2: which run of the app served a page (not a secret): the page that waits for a restart knows the new
+        # copy by it, now that the token no longer changes in the page (a restart keeps it: _restart)
+        self.run_id = secrets.token_hex(6)
         self.jobs = Jobs()
         self.session_key = ""      # a Claude API key given for this session only
         self.allowed_hosts: set[str] = set()
@@ -1647,7 +1652,7 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
                     hname = addons.handler_name(name)
                     token = self.headers.get("X-Enlens-Token") or (_str(q, "token") if hname in downloads else None)
                     if not token or not secrets.compare_digest(token, self.app.token):
-                        raise ApiError(401, "Missing or wrong token. Reload the page.")
+                        raise ApiError(401, "Missing or wrong token. Open ENLENS from its icon (or run enlens-gui).")
                     args = [unquote(g) for g in mt.groups()]
                     out = getattr(self, name)(*args, q=q) if isinstance(name, str) else name(self, *args, q=q)
                     if method != "GET" and args and path.startswith("/api/projects/") and path.count("/") > 3 \
@@ -1682,8 +1687,9 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
         if path in ("/", "/index.html") or not Path(path).suffix:
             frozen = self.app.frozen_static
             page = (frozen["index.html"] if frozen is not None else (STATIC / "index.html").read_bytes()).decode("utf-8")
-            # on the network the page does not carry the token: it comes in the link printed in the terminal (#token=)
-            page = page.replace("{{ENLENS_TOKEN}}", "" if self.app.any_host else self.app.token)
+            # 0.17.2: the page never carries the token (any local account can fetch it): it comes in the link the app
+            # opens, or that the terminal shows (#token=)
+            page = page.replace("{{ENLENS_RUN}}", self.app.run_id)
             page = page.replace("{{ENLENS_VERSION}}", __version__)
             csp = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; "
                    "connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
@@ -1786,7 +1792,7 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
             else:
                 cmd = handover_command(self.app)
                 try:
-                    r = upd.update(**({"restart": cmd} if cmd else {}))
+                    r = upd.update(**({"restart": cmd, "token": self.app.token} if cmd else {}))
                 except upd.UpdateError as e:
                     raise ApiError(409, str(e)) from e
             if not r.get("updated"):
@@ -1880,18 +1886,34 @@ def make_server(host: str = "127.0.0.1", port: int = 8765, app: App | None = Non
     return srv, app
 
 
+RESTART_TOKEN = "ENLENS_RESTART_TOKEN"  # 0.17.2: the token a restart carries over (_restart, handover.py)
+
+
+def carried_token() -> str | None:
+    """The token of the copy this one restarts (after an update), taken out of the environment so the programs this
+    copy starts do not inherit it. None on an ordinary start: every start has a new token."""
+    tok = os.environ.pop(RESTART_TOKEN, "")
+    return tok if re.fullmatch(r"[A-Za-z0-9_-]{32,}", tok) else None
+
+
 def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, launcher: bool = False) -> int:
     """Run the app until Ctrl+C or "Quit ENLENS" (`POST /api/quit`). `launcher`: started from the ENLENS icon
     (see launcher.py): the address is recorded so a second double-click opens this one."""
+    carried = carried_token()
+    app = App(token=carried)
     for attempt in range(10):
         try:
-            srv, app = make_server(host, port + attempt if port else 0)
+            srv, app = make_server(host, port + attempt if port else 0, app)
             break
         except OSError:
             continue
     else:
         print(f"Ports {port} to {port + 9} are all in use. Choose another with --port.", file=sys.stderr)
         return 1
+    if carried and port and app.port != port:
+        # the open tabs keep the token for the address they were on; whatever answers there now (another program
+        # took the port during the restart) must not find tabs that hold a token that works here
+        app.token = secrets.token_urlsafe(24)
     app.launcher = launcher
     app.host = host
     app.freeze_static()
@@ -1904,13 +1926,20 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
 
     app.restart = restart
     url = f"http://{'127.0.0.1' if host in ('127.0.0.1', '0.0.0.0', '::') else host}:{srv.server_address[1]}/"
-    if launcher and host == "127.0.0.1":
-        from . import launcher as _l
+    from . import launcher as _l
 
+    if launcher and host == "127.0.0.1":
         _l.write_info(url, srv.server_address[1])
-    if app.any_host:
-        url += f"#token={app.token}"  # the page does not hand out the token on the network: open this link
-    print(f"ENLENS hypothesis checker {__version__} at {url}  (data folder: {home.home()})")
+    # 0.17.2: the page does not hand out the token: the browser opens this link, and the icon and the command line
+    # find the token in a file only this account can read
+    link = _l.link(url, app.token)
+    try:
+        _l.write_token(url, srv.server_address[1], app.token)
+    except OSError as e:  # never in the way of starting: the link below still opens the app
+        print(f"Could not write the token file: {e}", file=sys.stderr)
+    # started from the icon, what is printed goes to a log file (launcher.log_to_file): the link with the token is
+    # not written there
+    print(f"ENLENS hypothesis checker {__version__} at {url if launcher else link}  (data folder: {home.home()})")
     if app.any_host:
         print("Warning: listening beyond this computer. Open the link above (it carries the access token); anyone "
               "with that link and access to this address can use the app and read your projects.", file=sys.stderr)
@@ -1919,9 +1948,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
     ollama_setup.clear_downloads()   # 0.15.6: what an install cut short by quitting left behind (no job runs yet)
     threading.Thread(target=_repair_icons, daemon=True, name="icon-repair").start()
     if open_browser:
-        import webbrowser
-
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.6, lambda: _l.browse(link)).start()
     app.poller.start()  # 0.18 (L3)
     try:
         srv.serve_forever(poll_interval=0.5)
@@ -1931,11 +1958,10 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
         app.poller.stop()  # 0.18 (L3): no round starts once the app stops
         srv.server_close()
         if launcher:
-            from . import launcher as _l
-
             _l.clear_info()
+        _l.clear_token(app.port)
     if again.is_set():
-        _restart(restart_command(host, app.port, launcher))
+        _restart(restart_command(host, app.port, launcher), app.token)
     print("ENLENS stopped.")
     return 0
 
@@ -1955,10 +1981,13 @@ def handover_command(app: App) -> list[str] | None:
     return restart_command(app.host, app.port, app.launcher) if os.name == "nt" else None
 
 
-def _restart(cmd: list[str]) -> None:
+def _restart(cmd: list[str], token: str | None = None) -> None:
     """Start the new version. On macOS and Linux this process becomes it (os.execv: same process, same terminal,
     same Ctrl+C); Windows has no real exec, so there the new one is started beside this one, which then ends. The
-    data folder and local-only setting carry over in the environment (ENLENS_HOME, ENLENS_LOCAL_ONLY)."""
+    data folder and local-only setting carry over in the environment (ENLENS_HOME, ENLENS_LOCAL_ONLY). 0.17.2: so does
+    the token (RESTART_TOKEN), so the open tabs, which keep it, reach the new copy."""
+    if token:
+        os.environ[RESTART_TOKEN] = token
     print("Restarting ENLENS with the version now installed…", flush=True)
     from .. import ingest
 

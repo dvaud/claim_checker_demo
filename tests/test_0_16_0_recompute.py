@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from enlens_claims import ingest, terms, themes
-from enlens_claims.store import Workspace
+from enlens_claims.store import Workspace, passage_range
 
 TOPICS = ["proton exchange membrane", "green hydrogen", "water stress", "electricity grid", "ammonia export",
           "solid oxide cell", "hydrogen valley", "offshore wind"]
@@ -44,7 +44,7 @@ def _write(folder: Path, name: str, text: str) -> Path:
 def _dump(ws: Workspace) -> dict:
     out = {}
     for name, q in [("terms", "SELECT * FROM terms ORDER BY term_id"),
-                    ("mentions", "SELECT * FROM term_mentions ORDER BY doc_id, start, end"),
+                    ("mentions", "SELECT * FROM term_mentions ORDER BY passage_id, start, end, term_id"),
                     ("abbr", "SELECT a, b, relation, quote_a, quote_b FROM concept_links WHERE source='abbreviation' "
                              "ORDER BY a, b"),
                     ("concepts", "SELECT * FROM concept_terms ORDER BY concept_id, term_id")]:
@@ -97,7 +97,8 @@ def test_a_new_document_that_joins_letter_spaced_words_elsewhere(project, tmp_pa
     assert st["documents_read"] == 3   # the two new documents and the one with the spaced word
     spaced = ws.scalar("SELECT doc_id FROM documents WHERE path LIKE '%spaced.txt'")
     assert ws.scalar("SELECT COUNT(*) FROM term_mentions m JOIN terms t ON t.term_id=m.term_id "
-                     "WHERE m.doc_id=? AND t.stems LIKE 'electrolys%' AND t.n_words=1", (spaced,)) == 3
+                     "WHERE m.passage_id >= ? AND m.passage_id < ? AND t.stems LIKE 'electrolys%' AND t.n_words=1",
+                     passage_range(spaced)) == 3
     assert _dump(ws) == _from_scratch(ws, tmp_path)
 
 
@@ -108,7 +109,8 @@ def test_removing_and_changing_documents(project, tmp_path):
     ws.remove_document(gone)
     st = terms.build(ws)
     assert st["documents_read"] == 0 and st["documents_kept"] == 5
-    assert not ws.scalar("SELECT COUNT(*) FROM term_mentions WHERE doc_id=?", (gone,))
+    assert not ws.scalar("SELECT COUNT(*) FROM term_mentions WHERE passage_id >= ? AND passage_id < ?",
+                         passage_range(gone))
     assert _dump(ws) == _from_scratch(ws, tmp_path)
     # a passage's text changes (as when a document is read again): that document only
     with ws.connect() as cx:
@@ -158,7 +160,7 @@ def test_mentions_changed_behind_the_glossarys_back(project, tmp_path):
     terms.build(ws)
     doc = ws.scalar("SELECT doc_id FROM documents ORDER BY doc_id LIMIT 1")
     with ws.connect() as cx:
-        cx.execute("DELETE FROM term_mentions WHERE doc_id=?", (doc,))
+        cx.execute("DELETE FROM term_mentions WHERE passage_id >= ? AND passage_id < ?", passage_range(doc))
         ws.bump_corpus(cx)
     terms.build(ws)
     assert _dump(ws) == _from_scratch(ws, tmp_path)
@@ -171,7 +173,8 @@ def test_mentions_changed_behind_the_glossarys_back(project, tmp_path):
         if not state["done"]:
             state["done"] = True
             other = sqlite3.connect(ws.db_path)
-            other.execute("INSERT INTO term_mentions VALUES ('tX', 'pX', ?, 0, 1)", (doc,))
+            other.execute("INSERT INTO term_mentions(term_id, passage_id, start, end) VALUES ('tX', ?, 0, 1)",
+                          (f"{doc}:9999",))
             other.commit()
             other.close()
         return real(spellings)
@@ -270,8 +273,10 @@ def test_a_joiner_decision_that_flips_back(project, tmp_path):
 
 
 def test_a_build_by_an_earlier_version_in_between(project, tmp_path):
-    """A program still on 0.15 (the connector, say) rebuilds the glossary its way: every mention rewritten, its own
-    time and corpus version, no build id. The next build must not take its rows for its own."""
+    """A program still on an earlier ENLENS (the connector, say) rebuilds the glossary its way while this one runs:
+    every mention rewritten with its document (0.17.2: the same table, whose `doc_id` this version leaves empty), its
+    own terms, time and corpus version (`terms_corpus_version`, a name this version no longer writes), no build id. The
+    next build must not take its rows for its own; the next opening keeps the glossary this version made after it."""
     ws, src = project
     terms.build(ws, max_terms=12)
     ingest.ingest(ws, [_write(src, "report_6.txt", _text(6))])
@@ -279,7 +284,8 @@ def test_a_build_by_an_earlier_version_in_between(project, tmp_path):
     shutil.copytree(ws.root, copy, ignore=shutil.ignore_patterns("cache", "*.sqlite-shm"))
     other = Workspace.open(copy)
     terms.build(other, max_terms=12)
-    rows = [tuple(r) for r in other.query("SELECT * FROM term_mentions")]
+    rows = [(r["term_id"], r["passage_id"], r["passage_id"].split(":")[0], r["start"], r["end"])
+            for r in other.query("SELECT * FROM term_mentions")]
     trows = [tuple(r) for r in other.query("SELECT * FROM terms")]
     with ws.connect() as cx:   # what a build of 0.15 writes
         cx.execute("DELETE FROM terms")
@@ -290,9 +296,13 @@ def test_a_build_by_an_earlier_version_in_between(project, tmp_path):
         ws.set_meta("terms_built_at", "2026-11-09T05:00:00", cx)
     ingest.ingest(ws, [_write(src, "report_7.txt", _text(7))])
     terms.build(ws, max_terms=12)
-    assert ws.scalar("SELECT COUNT(*) FROM (SELECT 1 FROM term_mentions GROUP BY term_id, passage_id, start, end "
-                     "HAVING COUNT(*) > 1)") == 0
-    assert _dump(ws) == _from_scratch(ws, tmp_path, max_terms=12)
+    want = _from_scratch(ws, tmp_path, max_terms=12)
+    assert _dump(ws) == want
+    assert not ws.scalar("SELECT COUNT(*) FROM term_mentions WHERE doc_id IS NOT NULL")
+    ws.close_all()
+    again = Workspace.open(ws.root)
+    assert terms.status(again)["built"] and not terms.status(again)["stale"] and _dump(again) == want
+    again.close_all()
 
 
 def test_a_kept_reading_replaced_while_a_build_runs(project, tmp_path, monkeypatch):

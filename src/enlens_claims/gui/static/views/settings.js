@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere } from "../lib.js";
+import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere, myLink } from "../lib.js";
 import { withAI } from "../features.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -13,7 +13,7 @@ const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 // the AI tab wears the icon of the sidebar's AI line (where text goes): the chip is the AI mark's only (DESIGN.md 3.3)
 const TABS = [["model", "AI", "cloud"], ["basics", "Checking", "flask"], ["explore", "Exploring", "network"], ["documents", "Documents", "book-open"], ["advanced", "Technical", "sliders"]];
 const TAB_OF = { model: "model", ai: "model", speed: "model", queue: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
-  advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", updates: "advanced", data: "advanced" };
+  advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", updates: "advanced", data: "advanced", link: "advanced" };
 
 export async function renderSettings(view, [section]) {
   const s = { ...App.settings() };
@@ -49,7 +49,7 @@ export async function renderSettings(view, [section]) {
   else {
     // a local model's own settings (second model, context length) only when a local model answers
     const local = ["auto", "ollama", "openai"].includes(s.backend || "auto");
-    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s, watchers), ledgerSection(), updatesSection(), dataSection()].filter(Boolean));
+    main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s, watchers), ledgerSection(), updatesSection(), linkSection(), dataSection()].filter(Boolean));
     if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (the model for second opinions, the context length) show here when a local model is chosen under AI."));
   }
   // a link to one setting (#/settings/speed): it comes into view clear of the top bar, and its control takes the focus
@@ -813,6 +813,22 @@ function updatesSection() {
     // 0.17.0: while an update waits, its button takes Quit's place at the foot of the sidebar: Quit is here too
     st.can_quit && Updates.quit ? h("div", { class: "save-row" }, button({ onClick: () => Updates.quit() }, icon("power", { size: 14 }), `Quit ${name}`),
       h("span", { class: "muted small" }, "Stops the app on this computer; your projects and results are kept.")) : null);
+}
+
+// 0.17.2: the link that opens ENLENS (the page itself carries no key: lib.js ensureToken), for a bookmark. It holds
+// this run's key, so it works until ENLENS stops, and it opens ENLENS for whoever has it.
+function linkSection() {
+  const name = appName();
+  const btn = button({}, icon("link", { size: 14 }), "Copy my link");
+  const box = h("div", {});
+  btn.addEventListener("click", async () => {
+    const url = myLink();
+    try { await navigator.clipboard.writeText(url); toast("Copied. Keep it to yourself.", "ok", { ttl: 2500 }); }
+    catch (_) { replace(box, h("code", { class: "copy-code" }, url)); toast("Select the link and copy it with Ctrl+C (or Cmd+C).", "info"); }
+  });
+  return sectionCard("link", `Your link to ${name}`, `${name} opens with a key in its link, so no one else on this computer can use it. Its icon (or enlens-gui) opens that link for you; the address alone shows how to open ${name}.`,
+    notice({ kind: "attention" }, h("p", {}, h("strong", {}, `The link opens ${name} for whoever has it`), `, with all your projects, while ${name} runs. Do not share it or post it.`)),
+    h("div", { class: "save-row" }, btn, h("span", { class: "muted small" }, `For a bookmark. It works until ${name} stops; after it starts again, copy it again.`)), box);
 }
 
 // 0.15: which versions the update check offers. A git copy follows main and has no choice.

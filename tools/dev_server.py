@@ -125,7 +125,7 @@ def main() -> int:
     from helpers import PAPER_A_PAGES, REPORT_B_TEXT, UNRELATED_HTML, make_pdf
 
     from enlens_claims import claimcheck, embed, home, ingest
-    from enlens_claims.gui.server import make_server
+    from enlens_claims.gui.server import App, make_server
     from enlens_claims.llm import OllamaBackend
 
     if a.low_memory:  # 0.13.11: the memory figures of the user test that all but froze a 16 GB Mac
@@ -323,19 +323,22 @@ def main() -> int:
     if a.update:
         stand_in_update(a.update)
     port = a.port
+    token = None  # 0.17.2: a restart keeps the token, as the real one does (the open tab keeps it)
     try:
         while True:
-            srv, app = make_server("127.0.0.1", port)
+            srv, app = make_server("127.0.0.1", port, App(token=token))
+            token = app.token
             app.stop = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()  # "Quit ENLENS" works too
             app.launcher = a.fresh_user  # a new user starts it from the ENLENS icon
             again = threading.Event()
             drop = None
-            if a.update:  # 0.13.1: "Update ENLENS" restarts the app in this process, with a new token
+            if a.update:  # 0.13.1: "Update ENLENS" restarts the app in this process
                 app.restart = lambda: (again.set(), app.stop())
                 drop = track_connections(srv)
             port = srv.server_address[1]
+            # 0.17.2: the page carries no token: open the link
             print(f"data folder: {home_dir}\nfake Ollama: {fake_url}\napp: http://127.0.0.1:{port}/\n"
-                  f"token: {app.token}", flush=True)
+                  f"token: {app.token}\nlink: http://127.0.0.1:{port}/#token={app.token}", flush=True)
             if not a.no_poller:
                 app.poller.start()  # 0.18 (L3): as serve() does (each app of a restart has its own)
             try:

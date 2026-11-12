@@ -87,6 +87,109 @@ def clear_info() -> None:
         pass
 
 
+# 0.17.2: the page no longer carries the access token (another account on the same computer could read it there). The
+# app opens its link with the token after `#`, which never reaches a server or a log, and keeps the token in a file
+# only this account can read, so a second double-click on the icon, `enlens post-install --open` and the quitting of
+# an older copy can open or reach it. On macOS and Linux the file is mode 0600 (home._write_whole, put in place whole).
+# Windows has no mode bits: there the file relies on the person's own profile folder (C:\Users\<name>), which other
+# accounts cannot read; with a data folder outside it (--home D:/enlens, where every account may read new folders) the
+# file goes to the profile's AppData\Local\ENLENS instead (token_dir).
+def token_dir(home_dir: Path, windows: bool | None = None, profile: str | None = None,
+              local_appdata: str | None = None) -> Path:
+    """Where the token files go: the data folder, except on Windows when the data folder is outside the person's
+    profile."""
+    if not (os.name == "nt" if windows is None else windows):
+        return home_dir
+    profile = profile if profile is not None else os.environ.get("USERPROFILE", "")
+    local = local_appdata if local_appdata is not None else os.environ.get("LOCALAPPDATA", "")
+    try:
+        inside = bool(profile) and os.path.normcase(os.path.abspath(home_dir)).startswith(
+            os.path.normcase(os.path.abspath(profile)).rstrip("\\/") + os.sep)
+    except (OSError, ValueError):
+        inside = False
+    if inside or not local:
+        return home_dir
+    return Path(local) / "ENLENS"
+
+
+def token_path(port: int) -> Path:
+    """The token file of the app on `port` (one per port: a copy started from the terminal can run beside the icon's;
+    a port is this computer's, so the name says which app it is wherever the file is)."""
+    from .. import home
+
+    folder = token_dir(home.home())
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"app-token-{int(port)}.json"
+
+
+def write_token(url: str, port: int, token: str) -> Path:
+    from .. import home
+
+    p = token_path(port)
+    home._write_whole(p, json.dumps({"url": url, "port": int(port), "pid": os.getpid(), "token": token}), private=True)
+    return p
+
+
+def read_token(port) -> str | None:
+    """The token of the app running on `port`, from its file; None when there is none."""
+    try:
+        tok = json.loads(token_path(int(port)).read_text(encoding="utf-8")).get("token")
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    return tok if isinstance(tok, str) and re.fullmatch(r"[A-Za-z0-9_-]{16,}", tok) else None
+
+
+def clear_token(port: int) -> None:
+    p = token_path(port)
+    try:
+        if json.loads(p.read_text(encoding="utf-8")).get("pid") == os.getpid():
+            p.unlink()
+            p.with_name(f"open-{int(port)}.html").unlink(missing_ok=True)
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+def browse(target: str) -> None:
+    """Open the app's link in the browser. On Linux (and other systems that are not macOS or Windows) Python hands the
+    address to a program (xdg-open, the browser) on its command line, which every account can read (/proc, ps), and a
+    browser it starts keeps it there while it runs: so the browser is given a file only this account can read, which
+    sends it on to the link (as Jupyter does). macOS passes the address on the input of osascript; Windows shows a
+    program's command line to its own account and administrators only."""
+    import webbrowser
+
+    if "#token=" in target and os.name == "posix" and sys.platform != "darwin":
+        port = _port_of(target)
+        page = token_path(port).with_name(f"open-{port}.html")
+        from .. import home
+
+        home._write_whole(page, "<!doctype html><meta charset=utf-8><title>ENLENS</title><script>location.replace("
+                          + json.dumps(target) + ")</script><a href=" + json.dumps(target) + ">Open ENLENS</a>\n",
+                          private=True)
+        target = page.resolve().as_uri()
+    webbrowser.open(target)
+
+
+def link(url: str, token: str | None) -> str:
+    """The address that opens the app: `url` with the token after `#` (the page keeps it for the tab and takes it out
+    of the address bar). Without a token, the bare address, which shows how to open ENLENS."""
+    base = url.split("#", 1)[0]
+    return f"{base}#token={token}" if token else base
+
+
+def open_link(live: dict) -> str:
+    """The link that opens the running copy `live` (as running() gives it)."""
+    return link(str(live["url"]), read_token(live.get("port") or _port_of(str(live["url"]))))
+
+
+def _port_of(url: str) -> int:
+    from urllib.parse import urlparse
+
+    try:
+        return int(urlparse(url).port or 0)
+    except ValueError:
+        return 0
+
+
 # 0.10.2: after an update, the copy still running is the old version, and double-clicking the icon showed it again
 def is_older(live: dict) -> bool:
     """Whether the running copy is an older version than this one (a copy that does not say counts as older, and so
@@ -102,6 +205,7 @@ def is_older(live: dict) -> bool:
 def stop_older(live: dict, wait: float = 25.0, fetch=None) -> str:
     """Quit the running copy so this version can start, as "Quit ENLENS" would. Returns "stopped"; "busy" when a
     check or another job runs in it (it is left alone: quitting would stop that work); "failed" otherwise."""
+    from urllib.error import HTTPError
     from urllib.request import Request, urlopen
 
     def call(method: str, path: str, token: str | None = None) -> bytes:
@@ -111,13 +215,23 @@ def stop_older(live: dict, wait: float = 25.0, fetch=None) -> str:
             return r.read()
 
     call = fetch or call
+
+    def from_page() -> str | None:  # a copy older than 0.17.2 writes no token file, but its page carries the token
+        m = re.search(r'name="enlens-token" content="([^"]+)"', call("GET", "/").decode("utf-8", errors="replace"))
+        return m.group(1) if m else None
+
     try:
-        page = call("GET", "/").decode("utf-8", errors="replace")
-        m = re.search(r'name="enlens-token" content="([^"]+)"', page)
-        if not m:
+        # 0.17.2: from the token file; refused (a file left by a copy that could not write its own), from the page
+        token = read_token(live.get("port") or _port_of(str(live["url"]))) or from_page()
+        if not token:
             return "failed"
-        token = m.group(1)
-        jobs = json.loads(call("GET", "/api/jobs", token)).get("jobs", [])
+        try:
+            got = call("GET", "/api/jobs", token)
+        except HTTPError as e:
+            if e.code != 401 or not (token := from_page()):
+                return "failed"
+            got = call("GET", "/api/jobs", token)
+        jobs = json.loads(got).get("jobs", [])
         if any(j.get("state") in ("queued", "running") for j in jobs):
             return "busy"
         call("POST", "/api/quit", token)
@@ -166,7 +280,8 @@ def start_ollama(settings: dict) -> str | None:
     """Start the Ollama app when the model service is Ollama on this computer and it is not running. Returns what
     was started, or None (nothing needed, or Ollama is not installed)."""
     from urllib.parse import urlparse
-    from urllib.request import urlopen
+
+    from ..llm import ollama_version
 
     # the main AI, the local model for restricted documents (0.11) or search by meaning may be Ollama (0.11.1: with
     # Claude as the main AI, Ollama was not started, so "Only a local AI" excerpts fell to the person's judgement)
@@ -177,11 +292,8 @@ def start_ollama(settings: dict) -> str | None:
     url = (settings.get("ollama_url") or "http://localhost:11434").rstrip("/")
     if urlparse(url if "//" in url else "http://" + url).hostname not in ("localhost", "127.0.0.1", "::1"):
         return None
-    try:
-        with urlopen(f"{url}/api/version", timeout=1.0):
-            return None  # running
-    except OSError:
-        pass
+    if ollama_version(url, 1.0) is not None:   # 0.17.2: the one probe (llm.ollama_version)
+        return None  # running
     from .. import ollama_setup   # 0.15.6: the same start as the page's Start Ollama button
 
     if not ollama_setup.app_path():

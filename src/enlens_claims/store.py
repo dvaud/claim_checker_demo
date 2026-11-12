@@ -10,6 +10,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+# 0.17.2: the glossary's places. A passage id names its document (`passage_range`), so a document's places are a range
+# of passage ids and `doc_id` stays empty. It is kept, with the table's name and the order of its columns, for an
+# ENLENS before 0.17.2 that opens this file: it makes its indexes on `doc_id` (store.INDEXES of then) and writes its
+# glossary here, and it never sends this table to a colleague nor reads it as the project's rows (its sync.LOCAL_ONLY).
+PLACES_TABLE = ("CREATE TABLE IF NOT EXISTS term_mentions(term_id TEXT NOT NULL, passage_id TEXT NOT NULL, doc_id TEXT, "
+                "start INT NOT NULL, end INT NOT NULL, PRIMARY KEY(term_id, passage_id, start, end)) WITHOUT ROWID;")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 
@@ -89,7 +96,10 @@ CREATE TABLE IF NOT EXISTS code_vectors(model TEXT, framework TEXT, code TEXT, t
 -- 0.7: the term index (F3, F6): a glossary of the corpus, rebuilt when the documents change
 CREATE TABLE IF NOT EXISTS terms(term_id TEXT PRIMARY KEY, label TEXT, stems TEXT, n_words INT, df INT, tf INT,
   passages INT, cvalue REAL);
-CREATE TABLE IF NOT EXISTS term_mentions(term_id TEXT, passage_id TEXT, doc_id TEXT, start INT, end INT);
+-- every place a term occurs: its passage and the document offsets of its words. 0.17.2: WITHOUT ROWID (the rows are
+-- their own key, kept once) with one index in passage order, where the table had a rowid, the document of each place
+-- and three indexes (70 % of a project's file); see PLACES_TABLE.
+{PLACES_TABLE}
 -- concepts: terms joined by 'same' links (a person, the model, the abbreviation rule); links may name terms that
 -- are not in the index any more (they come back when the term does)
 CREATE TABLE IF NOT EXISTS concepts(concept_id TEXT PRIMARY KEY, label TEXT);
@@ -222,6 +232,7 @@ CREATE TABLE IF NOT EXISTS canon(doc TEXT, by TEXT, owner_seq INT, n INT, state 
 CREATE TABLE IF NOT EXISTS canon_seen(doc TEXT PRIMARY KEY, state_n INT, read_n INT, ai_n INT, ai_level TEXT,
   blocks_n INT, blocks_json TEXT, gone INT, came_from TEXT, read_tried INT, read_note TEXT, read_from TEXT);
 """
+SCHEMA = SCHEMA.replace("{PLACES_TABLE}", PLACES_TABLE)
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
 # 0.11.1: the label lookups per passage (`WHERE framework=? AND passage_id=?`) and per task were planned over the
@@ -230,6 +241,8 @@ CREATE TABLE IF NOT EXISTS canon_seen(doc TEXT PRIMARY KEY, state_n INT, read_n 
 # The task queue asks every few seconds what waits and what a claim holds: ix_tasks_waiting holds only the tasks that
 # wait (its WHERE is taskqueue.WAITING word for word: SQLite uses a partial index only for a query that repeats its
 # condition), ix_tasks_claimed only the tasks a claim holds. Both stay small however many tasks were answered.
+# ix_results_route: taskqueue._last_answer (every queue status poll) asks for the newest answer of a route, which
+# otherwise reads the text of every answer ever given (about 0.1 s for 200,000 answers).
 INDEXES = """
 CREATE INDEX IF NOT EXISTS ix_ver_subject ON verifications(subject_kind, subject_id);
 CREATE INDEX IF NOT EXISTS ix_ver_passage ON verifications(passage_id);
@@ -246,9 +259,10 @@ CREATE INDEX IF NOT EXISTS ix_labels_passage_fw ON labels(passage_id, framework)
 CREATE INDEX IF NOT EXISTS ix_labels_task ON labels(task_id);
 CREATE INDEX IF NOT EXISTS ix_labels_doc ON labels(framework, doc_id);
 CREATE INDEX IF NOT EXISTS ix_labels_code ON labels(framework, code);
-CREATE INDEX IF NOT EXISTS ix_term_mentions_term ON term_mentions(term_id);
-CREATE INDEX IF NOT EXISTS ix_term_mentions_passage ON term_mentions(passage_id);
-CREATE INDEX IF NOT EXISTS ix_term_mentions_doc ON term_mentions(doc_id, term_id);
+DROP INDEX IF EXISTS ix_term_mentions_term;
+DROP INDEX IF EXISTS ix_term_mentions_passage;
+DROP INDEX IF EXISTS ix_term_mentions_doc;
+CREATE INDEX IF NOT EXISTS ix_term_mentions_at ON term_mentions(passage_id, start, end, term_id);
 CREATE INDEX IF NOT EXISTS ix_concept_terms_term ON concept_terms(term_id);
 CREATE INDEX IF NOT EXISTS ix_theme_members_theme ON theme_members(run_id, theme_id);
 CREATE INDEX IF NOT EXISTS ix_mentions_chain ON mentions(doc_id, chain_id);
@@ -257,6 +271,7 @@ CREATE INDEX IF NOT EXISTS ix_tasks_queued ON tasks(queued, kind, status);
 CREATE INDEX IF NOT EXISTS ix_tasks_waiting ON tasks(kind, queued_at) WHERE COALESCE(queued, 0)=1 AND
   COALESCE(access, 'cloud')='cloud' AND (status IN ('pending', 'retry') OR (status='done' AND again=1));
 CREATE INDEX IF NOT EXISTS ix_tasks_claimed ON tasks(claimed_by) WHERE claimed_by IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_results_route ON results(route, received_at);
 """
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -388,6 +403,77 @@ def _migrate(cx: sqlite3.Connection) -> None:
                "framework=CASE WHEN COALESCE(target, '') != '' THEN 'sdg' END WHERE hyp_id IS NULL")
 
 
+# 0.17.2: the glossary's state as a build notes it. The corpus version it was made from has a new name: an ENLENS before
+# 0.17.2 reads `terms_corpus_version`, finds none and says its glossary is not made, rather than showing one whose places
+# it cannot read (it reads them by `doc_id`); and when it makes its own, its note tells this version so
+GLOSSARY_META = ("glossary_corpus_version", "terms_corpus_version", "terms_built_at", "terms_build_id")
+
+
+def passage_range(doc_id: str) -> tuple[str, str]:
+    """The ids of a document's passages, as a range [low, high) to compare passage ids with. A passage id is
+    f"{doc_id}:{seq:04d}" and a document id has no colon (ingest: "d" and hex digits; a colleague's: sync.common.DOC_ID;
+    the ids of answers kept from an earlier reading, "<doc>:r1-0005", never name a passage row), so exactly the
+    passages of this document have ids that start with its id and a colon; ';' is the character after ':'."""
+    return f"{doc_id}:", f"{doc_id};"
+
+
+# a passage id's document, in SQL (see `passage_range`): the part before the colon
+DOC_OF = "substr({0}, 1, instr({0}, ':') - 1)"
+
+
+def _drop_old_places(cx: sqlite3.Connection) -> bool:
+    """0.17.2: the glossary's places in their new shape (PLACES_TABLE). A table of the old shape (with a rowid) is
+    derived, so it is dropped rather than copied, and the glossary is made again, as for a project whose glossary was
+    never made ("No glossary yet", Make the glossary). A glossary an ENLENS before 0.17.2 made in this file (its note
+    `terms_corpus_version`: the project of an earlier version, or such an ENLENS that opened the file since) is
+    dropped too: its terms are not this version's places. Indexes such an ENLENS made go in store.INDEXES. Returns
+    whether anything was dropped."""
+    row = cx.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='term_mentions'").fetchone()
+    old_shape = row is not None and "WITHOUT ROWID" not in (row[0] or "").upper()
+    if old_shape:
+        cx.execute("DROP TABLE term_mentions")  # its indexes go with it
+        cx.execute(PLACES_TABLE)
+    old_build = cx.execute("SELECT 1 FROM meta WHERE key='terms_corpus_version'").fetchone() is not None
+    if old_build:
+        cx.execute("DELETE FROM term_mentions")
+        cx.execute("DELETE FROM terms")
+        cx.execute(f"DELETE FROM meta WHERE key IN ({','.join('?' * len(GLOSSARY_META))})", GLOSSARY_META)
+    return old_shape or old_build
+
+
+# 0.17.2: the file is made smaller (VACUUM) after the old places were dropped only when that frees at least this much and
+# this share of it; less is left as free pages, which SQLite fills before the file grows
+VACUUM_MIN_FREE = 32 * 1024 * 1024
+VACUUM_MIN_SHARE = 0.25
+VACUUM_WAIT_MS = 2000   # how long it waits for another connection to let go of the file before it leaves it as it is
+
+
+def _vacuum_after_drop(cx: sqlite3.Connection, folder: Path) -> bool:
+    """Once, right after the old places were dropped: then the copy VACUUM makes holds only what is left (here 94 MB of a
+    460 MB file, under a second), where later it would hold the glossary again too. It needs free disk space for that
+    copy and for the write-ahead log, which holds it once more, so it is done only when twice that is free; and only
+    when no other program is writing to the file (it waits VACUUM_WAIT_MS for one; readers do not stop it). Otherwise
+    the freed pages stay in the file and the next glossary is written into them. Returns whether it ran."""
+    import shutil
+
+    size = cx.execute("PRAGMA page_size").fetchone()[0]
+    pages, free = cx.execute("PRAGMA page_count").fetchone()[0], cx.execute("PRAGMA freelist_count").fetchone()[0]
+    if free * size < VACUUM_MIN_FREE or free < VACUUM_MIN_SHARE * pages:
+        return False
+    try:
+        if shutil.disk_usage(folder).free < 2 * (pages - free) * size + VACUUM_MIN_FREE:
+            return False
+    except OSError:
+        return False
+    cx.execute(f"PRAGMA busy_timeout={int(VACUUM_WAIT_MS)}")
+    try:
+        cx.execute("VACUUM")
+        cx.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # the log held the whole new copy: give the space back
+    except sqlite3.OperationalError:   # another connection reads or writes the file: left as it is
+        return False
+    return True
+
+
 def _setup_addons(cx: sqlite3.Connection) -> None:
     """0.13.6: each add-on's tables, columns and indexes, after ENLENS's own and in the add-ons' order, the same
     idempotent way (docs/EXTENDING.md)."""
@@ -462,6 +548,7 @@ class Workspace:
             before_018 = not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone()
             cx.executescript(SCHEMA)
             _migrate(cx)
+            dropped = _drop_old_places(cx)
             cx.executescript(INDEXES)
             _setup_addons(cx)
             if before_018:  # 0.18 (L1): a project exchanged before counts as shared; one never sent starts private
@@ -469,6 +556,8 @@ class Workspace:
 
                 upgrade(cx, self.root)
             cx.commit()
+            if dropped:
+                _vacuum_after_drop(cx, self.root)
         finally:
             cx.close()
         if before_011:
@@ -677,7 +766,7 @@ class Workspace:
             # 0.7: what was derived from the document (the term index is rebuilt when the corpus version changes)
             out["labels"] = cx.execute("DELETE FROM labels WHERE doc_id=?", (doc_id,)).rowcount
             out["mentions"] = cx.execute("DELETE FROM mentions WHERE doc_id=?", (doc_id,)).rowcount
-            cx.execute("DELETE FROM term_mentions WHERE doc_id=?", (doc_id,))
+            cx.execute("DELETE FROM term_mentions WHERE passage_id >= ? AND passage_id < ?", passage_range(doc_id))
             for tbl in ("blocks", "doc_tables", "block_choices"):  # 0.15
                 cx.execute(f"DELETE FROM {tbl} WHERE doc_id=?", (doc_id,))
             # 0.15: answers kept as records when the document moved to the new reader name passages that no longer
