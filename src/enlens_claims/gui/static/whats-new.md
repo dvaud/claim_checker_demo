@@ -1,8 +1,4 @@
-# 0.18.0rc2: A storage space of your team's own
+# 0.18.0rc3: Signing up at Backblaze in any browser
 *A release candidate: try it on a test project first.*
-- Work together through a private storage space online, free at a team's size; colleagues join from a link
-- Everything is locked on your computer before it leaves it
-- The shared folder is easier to choose: your cloud folders by name, or a folder window
-- Search by meaning can be set up from the Search page
-- Moving many documents to the new reader says first what will happen
-- A local model starts by itself, and the one offered fits your computer
+- The storage space's set-up gives the sign-up address to copy, so you choose the browser
+- If Backblaze keeps asking whether you are a robot, the dialog says to use another browser

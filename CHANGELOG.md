@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.18.0rc3 (November 2026): signing up at Backblaze in any browser
+
+A release candidate with one fix from use: making the Backblaze account for a team's storage space could get stuck on
+Backblaze's robot check. Nothing in it changes results.
+
+- **Backblaze's robot check that never ends.** On some browsers (strict tracking protection, privacy browsers such as
+  Zen or Brave, a VPN) Backblaze's sign-up page shows *Not so fast!* and asks again each time the *I'm not a robot*
+  box is ticked. The set-up dialog opened the sign-up page as a link, so always in the default browser. It now gives
+  Backblaze's and Cloudflare's sign-up addresses with a *Copy* button, to paste in the browser you choose, and says to
+  use another browser, such as Safari, Chrome or Edge, if Backblaze keeps asking. The *Application Keys* step names
+  the page in Backblaze's menu instead of linking to it, so it is opened where you are signed in. The manual's *A
+  storage space of your team's own* page says the same.
+
+### For developers
+
+- `lib.copyLine(text, label, where, lead)` takes the icon before the text (`"terminal"` by default; `"link"` for a web
+  address). `team-space.js`'s `typeAddress` shows a service's address that way; `GET /api/space/links` still gives
+  `b2_keys`, which the dialog no longer links to.
+- A test on `main` after 0.18.0rc2 (a8f26b2) names the computer it means: GitHub's Mac runner has 7 GB, so it was
+  offered a smaller model.
+
+### Tests
+
+- `tests/test_0_18_0_signup_addresses.py`: the set-up dialog gives both sign-up addresses to copy, with no link to a
+  sign-up page, and says what to do about Backblaze's robot check.
+
+### Not yet done
+
+- Not tried with a real Backblaze account in another browser: whether Backblaze's check passes in Safari or Chrome
+  where it loops in Zen was not seen here.
+
 ## 0.18.0rc2 (November 2026): a storage space of your team's own
 
 A release candidate. Working together through a shared folder means everyone needs the folder's app, finds the folder

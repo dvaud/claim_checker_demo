@@ -27,16 +27,23 @@ Two are built in, each free up to 10 GB (a corpus of a few hundred PDFs is 1 to 
 
 Open the **Team** tab and choose *Backblaze…* or
 *Cloudflare…* under *Work together through a storage space*. The dialog walks you through it:
-- *Backblaze:* make a free account (choose **EU Central** as the region on the sign-up form: it cannot be changed
-  later), open *Application Keys*, choose *Generate New Master Application Key*, and paste its *keyID* and
+- *Backblaze:* make a free account (paste the address in your browser; choose **EU Central** as the region on the
+  sign-up form: it cannot be changed later; if Backblaze's *Not so fast!* page keeps asking whether you are a robot, see
+  below), open *Application Keys*, choose *Generate New Master Application Key*, and paste its *keyID* and
   *applicationKey*. ENLENS checks where the storage is (and says so when it is not in the EU), makes a key of its own
   with only the rights it needs, forgets the one you pasted, makes a private storage space and tries it. Afterwards,
   generate a new master key in Backblaze: that makes the pasted one useless.
-- *Cloudflare:* make an account (type `dash.cloudflare.com/sign-up`), switch *R2 Object Storage* on, tick *I am signed
-  in*, open *Make the token ENLENS needs*, choose *Create Token*, and paste the token. ENLENS makes a storage space in
-  Cloudflare's EU area and tries it.
+- *Cloudflare:* make an account (paste `dash.cloudflare.com/sign-up` in your browser), switch *R2 Object Storage* on,
+  tick *I am signed in*, open *Make the token ENLENS needs*, choose *Create Token*, and paste the token. ENLENS makes a
+  storage space in Cloudflare's EU area and tries it.
 
 If the company says it is down for maintenance, try again later: nothing is set up until the end.
+
+The dialog gives each company's sign-up address with a *Copy* button rather than a link, so you choose the browser.
+If Backblaze's sign-up page keeps showing *Not so fast!* and the *I'm not a robot* box comes back each time you tick
+it, its check does not work in that browser: strict tracking protection, a privacy browser (Firefox's strictest
+setting, Brave, Zen, LibreWolf) or a VPN can cause it. Paste the address in another browser, such as Safari, Chrome
+or Edge, and open *Application Keys* there too, where you are signed in.
 
 ## Inviting a colleague
 

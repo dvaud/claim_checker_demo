@@ -1763,14 +1763,15 @@ export function tabs(opts = {}) {
 // ---------------------------------------------------------------------------------------------
 // A command to type, with a button that copies it.
 // `where`: where it is pasted, for the confirmation ("Claude Code", or "a terminal" for a command line).
-export function copyLine(text, label = "Copy", where = "Claude Code") {
+// `lead`: the icon before it ("link" for a web address to type in a browser).
+export function copyLine(text, label = "Copy", where = "Claude Code", lead = "terminal") {
   const btn = button({ kind: "quiet", sm: true, class: "copy-btn", "aria-label": `${label}: ${text}` }, icon("copy", { size: 13 }), label);
   btn.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(text); toast(`Copied. Paste it in ${where}.`, "ok", { ttl: 2000 }); }
     catch (_) { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Selected: copy it with Ctrl+C (or Cmd+C).", "info"); }
   });
   const code = h("code", { class: "copy-code" }, text);
-  return h("div", { class: "copy-line" }, icon("terminal", { size: 13 }), code, btn);
+  return h("div", { class: "copy-line" }, icon(lead, { size: 13 }), code, btn);
 }
 
 // What waits for Claude Code, for a page that waits on it: the line, the estimate, a button that starts Claude Code

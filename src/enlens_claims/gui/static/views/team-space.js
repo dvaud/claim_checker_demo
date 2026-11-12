@@ -5,7 +5,7 @@
 // gui/api_space.py; the round itself is the shared folder's (*Sync now*, team.js). Placed in views.css ("Working
 // together"); the set-up runs in a dialog, the panel being narrow.
 import { App, api, h, toast, showError, P, plural, field, button, link, input, select, fold, noticeList, notice, dialog,
-  confirmDialog, listRow, listGroup, watchJob, navigate, personMark, textarea } from "../lib.js";
+  confirmDialog, listRow, listGroup, watchJob, navigate, personMark, textarea, copyLine } from "../lib.js";
 
 const S = (project) => `/api/projects/${P(project)}/space`;
 let LINKS = null;
@@ -19,6 +19,13 @@ function section(key, title, ...children) {
 }
 
 const outLink = (href, text, id) => link({ href, target: "_blank", rel: "noopener noreferrer", id }, text);
+// A sign-up page's address to type or paste in a browser of the person's choosing, with a Copy button: a link would
+// open the default browser, where Backblaze's robot check can loop for ever and Cloudflare's sign-up can fail.
+const typeAddress = (href, id) => {
+  const row = copyLine(String(href || "").replace(/^https?:\/\//, ""), "Copy", "your browser's address bar", "link");
+  row.id = id;
+  return row;
+};
 
 // ---------------------------------------------------------------------------------------------
 // no way of working together yet: a storage space (recommended), or an invite link
@@ -51,8 +58,11 @@ export async function setupDialog(ctx, service, { move = false } = {}) {
     const keyId = input({ mono: true, id: "space-b2-key-id", autocomplete: "off", spellcheck: "false" });
     const appKey = input({ mono: true, id: "space-b2-app-key", type: "password", autocomplete: "off", spellcheck: "false" });
     fields = h("ol", { class: "team-steps" },
-      h("li", {}, outLink(L.b2_signup, "Make a free Backblaze account", "space-b2-signup"), ". On the form, choose ", h("strong", {}, "EU Central"), " as the region before Create Account: it cannot be changed afterwards. No card is needed."),
-      h("li", {}, "In Backblaze, open ", outLink(L.b2_keys, "Application Keys", "space-b2-keys"), " and choose ", h("strong", {}, "Generate New Master Application Key"), "."),
+      h("li", {}, "Make a free Backblaze account: open this address in your browser.",
+        typeAddress(L.b2_signup || "https://www.backblaze.com/sign-up/b2-cloud-storage-backup-archive", "space-b2-signup"),
+        "On the form, choose ", h("strong", {}, "EU Central"), " as the region before Create Account: it cannot be changed afterwards. No card is needed.",
+        h("p", { class: "muted small", id: "space-b2-robot" }, "If Backblaze keeps asking whether you are a robot, use another browser, such as Safari, Chrome or Edge.")),
+      h("li", {}, "Signed in to Backblaze in that browser, open ", h("strong", {}, "Application Keys"), " in the menu and choose ", h("strong", {}, "Generate New Master Application Key"), "."),
       h("li", {}, "Paste the two parts it shows:",
         field("keyID", keyId), field("applicationKey", appKey, { help: "ENLENS uses it once, to make a key of its own, and then forgets it." })));
     read = () => ({ key_id: keyId.value.trim(), app_key: appKey.value.trim() });
@@ -63,7 +73,8 @@ export async function setupDialog(ctx, service, { move = false } = {}) {
       ", then choose ", h("strong", {}, "Create Token"), " at the bottom of the page, and paste the token here:", field("Token", token));
     signedIn.addEventListener("change", () => { tokenStep.hidden = !signedIn.checked; });
     fields = h("ol", { class: "team-steps" },
-      h("li", {}, "Make a Cloudflare account: type ", h("code", {}, "dash.cloudflare.com/sign-up"), " in your browser."),
+      h("li", {}, "Make a Cloudflare account: open this address in your browser.",
+        typeAddress(L.r2_signup || "https://dash.cloudflare.com/sign-up", "space-r2-signup")),
       h("li", {}, "In the dashboard, open ", h("strong", {}, "R2 Object Storage"), " and switch it on. Cloudflare asks for a card; nothing is charged within the free amount."),
       h("li", {}, h("label", { for: "space-r2-signed-in", class: "team-check" }, signedIn, " I am signed in to Cloudflare")),
       tokenStep);
