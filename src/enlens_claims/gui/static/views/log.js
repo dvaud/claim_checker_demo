@@ -5,6 +5,7 @@ import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, clear, toast, showError, failedLoad, fmt, pageHead, P, confirmDialog, download, downloadLinks,
   debounce, session, dialog, button, card, input, textarea, choice, link, personMark, emptyState } from "../lib.js";
 import { compareVersion } from "./versions.js";
+import { shareInline, sharingOf } from "./share.js";   // 0.18 (L1)
 
 const GROUP_ICON = { entries: "note", documents: "book-open", checks: "flask", themes: "shapes", codebooks: "book-marked",
   history: "undo", together: "users", other: "circle" };
@@ -19,19 +20,29 @@ export function subjectHref(e) {
 }
 
 // One entry's words and what it is about, the same on the page and in the drawer (docs/DESIGN.md 4.20): the item's
-// name is its title link, with no separate "Open". An entry ENLENS wrote is itself the link to its item; your own
-// entry stays your words (in serif) and names its item after "About:".
+// name is its title link, with no separate "Open". In an entry ENLENS wrote, the item's quoted name is the link
+// ("Checked the hypothesis “Working from home…”"); where the words do not quote it, the item is named after "About:",
+// as under your own entries, which stay your words (in serif).
 const SUBJECT_WORD = { document: "the document", check: "the hypothesis", themes: "the themes", codebook: "the codebook" };
+function quotedName(e) {
+  const m = /“([^”]+)”/.exec(e.text || "");
+  const name = (e.title || "").replace(/[.…]+$/, "").trim();
+  return m && name && (name.startsWith(m[1].replace(/…$/, "")) || m[1].startsWith(name)) ? m : null;
+}
 export function entryText(e, href) {
   if (e.kind === "entry") return h("div", { class: "log-text log-own-text" }, e.text);
-  return h("div", { class: "log-text" }, href ? link({ kind: "title", href }, e.text) : e.text);
+  const m = href ? quotedName(e) : null;
+  if (!m) return h("div", { class: "log-text" }, e.text);
+  const t = e.text;
+  return h("div", { class: "log-text" }, t.slice(0, m.index), "“", link({ kind: "title", href }, m[1]), "”", t.slice(m.index + m[0].length));
 }
 export function entrySubject(e, href) {
-  if (e.kind !== "entry" || !href) return null;
+  if (!href || (e.kind !== "entry" && quotedName(e))) return null;
   return h("span", { class: "log-subject" }, "About: ", link({ kind: "title", href }, e.title || SUBJECT_WORD[e.subject_kind] || "its item"));
 }
+// a colleague's entry: a person mark that stands alone (nothing else in the entry names them), so with the name
 export function entryWho(e) {
-  return e.mine ? null : personMark([e.who]);
+  return e.mine ? null : personMark([e.who], { name: "short" });
 }
 
 export async function renderLog(view) {
@@ -49,13 +60,14 @@ export async function renderLog(view) {
   let group = session(`log-group:${project}`) || "";
   let q = "";
   let shown = PAGE;
+  let shares = new Map();   // 0.18 (L1): the sharing state of entries people wrote, by entry id
 
   // ---- a new entry
   const ta = textarea({ rows: 3, maxlength: 10000, "aria-label": "A new entry",
     placeholder: "A decision, a reason, a field note… (dated and kept with the project)" });
   const addBtn = button({ kind: "main", sm: true, onClick: add }, icon("plus", { size: 14 }), "Add to the log");
   ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) add(); });
-  view.appendChild(card({ class: "log-new" }, h("h2", { class: "card-title" }, "New entry"), ta,
+  view.appendChild(card({ class: "log-new", title: "New entry" }, ta,
     h("div", { class: "log-new-foot" }, h("span", { class: "muted" }, "Ctrl/⌘ + Enter adds it."), addBtn)));
 
   async function add() {
@@ -79,7 +91,7 @@ export async function renderLog(view) {
       const qs = new URLSearchParams({ limit: String(shown) });
       if (group) qs.set("group", group);
       if (q) qs.set("q", q);
-      data = await api("GET", `${base}?${qs}`);
+      [data, shares] = await Promise.all([api("GET", `${base}?${qs}`), sharingOf("log")]);
     } catch (e) { failedLoad(listBox, e); return; }
     drawChips(data);
     drawList(data);
@@ -126,7 +138,9 @@ export async function renderLog(view) {
     const time = h("time", { class: "log-time", datetime: e.at, title: fmt.date(e.at) }, new Date(e.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }));
     const text = entryText(e, href);
     const who = entryWho(e), about = entrySubject(e, href);
-    const meta = who || about || e.edited_at ? h("div", { class: "log-meta" }, who, about,
+    // 0.18 (L1): an entry you wrote has its sharing state, and Share / Unshare
+    const share = e.kind === "entry" && shares.get(e.entry_id) ? shareInline(shares.get(e.entry_id), () => load(), { owner: false }) : null;
+    const meta = who || share || about || e.edited_at ? h("div", { class: "log-meta" }, who, share, about,
       e.edited_at ? h("span", { class: "muted" }, `edited ${fmt.dateShort(e.edited_at)}`) : null) : null;
     const why = e.why ? h("p", { class: "log-why" }, h("strong", {}, "Why: "), e.why) : null;
     const actions = h("div", { class: "log-actions" });

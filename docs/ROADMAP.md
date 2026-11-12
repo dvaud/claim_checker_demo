@@ -31,16 +31,15 @@ by `--local-only`.
 release with its sync (`tools/sync_enlens.py` in Margin), so a feature both apps need, or one that changes code they
 share (`ingest.py`, `terms.py`, `routing.py`, `llm.py`, the task queue), is built here once and never twice.
 
-## Where things stand (10 November 2026)
+## Where things stand (12 November 2026)
 
 | Release | What it built, and what waits |
 | --- | --- |
 | **0.15** | Released as 0.15.0 (8 November 2026), with patches up to 0.15.7: A0 to A5, H1, CI on three systems and the beta channel (J1 items 1 and 6), the rollback runbook (J1 item 10), versions on results (J4.2), issue forms and `SECURITY.md` (J4.5), and the half of the validation report that needs no AI (J4.3). J4.1 is dropped: ENLENS gives no citation file or DOI, by choice. |
 | **0.16** | Released as 0.16.0 (9 November 2026) and 0.16.1: H3, H2, H6 for `gui/server.py`, F4, F2, F5 and K1. Not built yet, and waiting for a later release: A6, D1 to D4, B5, G5, the AI mix (I5, H4, I1, I2, I4), H5, and `docs/METHODS.md` and `docs/PRIVACY.md` (J4.4). |
-| **0.17** | Release candidates: 0.17.0rc1, the sidebar of seven places; 0.17.0rc2, key terms without each language's common words; 0.17.0rc3 and rc4, small fixes from use (M); 0.17.0rc5, the design guide (`docs/DESIGN.md`) and one look on every page, a first version. 0.17.0 follows. |
-| **0.18** | Proposed: working together, live (L). |
+| **0.17** | Released as 0.17.0 (12 November 2026): the sidebar of seven places, key terms without each language's common words, small fixes from use (M1, M2, M4, M6), the design guide (`docs/DESIGN.md`) with one look on every page, and working together, live: L1 to L5 (private until shared, one owner, a shared folder looked at every couple of minutes, the Team tab). Its release candidates were 0.17.0rc1 to rc5. Not tried yet between two computers on a real OneDrive, Dropbox or network drive, nor on a real Windows PC; four smaller points wait for a later release ([below](#017-working-together-live)). |
 
-## Releases 0.15 to 0.18
+## Releases 0.15 to 0.17
 
 The ENLENS candidates in two releases (agreed 8 November 2026). 0.15 changes how documents are read; 0.16 builds on
 that text and changes how the AI is used. Each has one main change to results, so its test and its validation report
@@ -102,11 +101,34 @@ right-hand panel, the feature finder, the design guide) reworks how the whole ap
 first release candidate, `0.17.0rc1`, went out on 9 November 2026 to try the navigation; the design guide's styling
 came in `0.17.0rc5` (11 November 2026), as a first version that 0.17.0 refines.
 
-### 0.18 (proposed 9 November 2026): working together, live
+### 0.17: working together, live
 
-The owner's call (9 November 2026): sharing and sync is a release of its own, after the navigation redesign (0.17),
-which gives it its home: the right-hand panel. Its items are in **L. Working together, live**, below. One decision
-comes before any design: how the copies reach each other (L5).
+The owner's call (9 November 2026): sharing and sync is a release of its own, after the navigation redesign (0.17.0rc1 to rc5),
+which gives it its home: the right-hand panel. Its items are in **L. Working together, live**, below. The first
+decision, how the copies reach each other (L5): through a folder the team already shares, with no server. Built in this
+order, each step tested before the next:
+
+1. **Groundwork and L1**: private until shared; a codebook changed in two copies merged code by code; a document read
+   with the new reader stays one document across copies; a format number on what copies exchange, so a newer file is
+   refused in words instead of merged wrongly.
+2. **L5**: the exchange through a shared folder, with the switch that keeps documents marked *Only a local AI* or *No
+   AI* out of it.
+3. **L3 with M6** (the folder looked at by itself; jobs that wait their turn), then **L4** (the Team tab, *Share* and
+   *Unshare* on each item's page).
+4. **L2**: one owner, and proposals by severity.
+5. **Finishing**: a round that stops part-way when ENLENS quits, the work box, and the manual's pages.
+
+Built in 0.17.0 (November 2026). Still to do, after 0.17.0:
+
+- Try it between two computers through a real OneDrive, Dropbox and network drive, and on a real Windows PC.
+- A collaborator's own removal of a document can, in one case, be undone without a word: count it as done only when
+  their proposal for it is older than the owner's last change.
+- *Become the owner* on a project shared before 0.17.0 turns every earlier removal into a proposal at once: propose only
+  those made after the project has an owner, or say so before it is claimed.
+- After a take-over, a former owner's late answer to a proposal the new owner has not answered still shows as
+  *Accepted* on its card, although it changes no document (the same fix as the point before).
+- The randomised test of L2 does not yet try take-overs, zips, the documents switch or the Team tab opened offline;
+  add them, with the rule that no setting loosens and no document leaves without the current owner's word.
 
 ### Fixed before 0.15 (done)
 
@@ -547,33 +569,51 @@ its own)
 
 ## L. Working together, live
 
-The owner's model (9 November 2026). Today (0.14, `sync.py`) colleagues exchange a project as one zip file by hand:
-what is new comes in, each person's judgements are kept under their name, and nothing decided is replaced. L keeps
-those merge rules and makes the exchange continuous and selective.
+The owner's model (9 November 2026). Until 0.17.0 (0.14, `sync.py`) colleagues exchanged a project as one zip file by
+hand: what is new comes in, each person's judgements are kept under their name, and nothing decided is replaced. L
+keeps those merge rules and makes the exchange continuous and selective. **L1 to L5 are built in 0.17.0**; each item
+ends with what was decided. The known limits are in the 0.17.0 changelog entry, under *Not yet done*.
 
-**L1. Private until shared** · Level 0 · ENLENS candidate (the right-hand panel, `sync.py`)
+**L1. Private until shared** · Level 0 · built in 0.17.0 (`sharing.py`, the `sync/` package)
 - Everything a person makes is theirs alone until they share it: checks of hypotheses, notes and highlights, research
   log entries, codes and codebooks, sets of themes, concepts and their links. "I could check five hypotheses, but
   until I find an interesting one there is no reason for others to see it."
 - Sharing is a deliberate act, from the right-hand panel and from the item's own page, and can be taken back
   (unshared items stop syncing; what a colleague already has stays with them, marked as withdrawn).
+- *Decided:* per item, and only its maker shares or takes it back; sharing a check shares its codebook. What is no
+  one's own (the documents, their AI settings, the bibliography, the AI's work on the documents) stays shared. A
+  project exchanged before 0.17.0 counts as shared, item by item. The zip for a colleague holds only what was shared;
+  the whole-project zip, for moving, says whose each item is.
 
-**L2. One owner, several collaborators** · Level 0
+**L2. One owner, several collaborators** · Level 0 · built in 0.17.0 (`ownership.py`)
 - Each shared project has one owner. Collaborators may change the corpus: add documents, change how one is read,
   remove one. Such a change is a proposal; the owner accepts it according to its severity, for example: adding a
   document, low (accepted at once or with one click); reading a document again or changing its passages, medium;
   removing a document or changing who may read it with AI, high (always the owner's decision).
 - Everyone keeps their own working version of the project; accepted corpus changes reach every copy.
+- *Decided:* the owner is the project's maker; a project exchanged before 0.17.0 has none until someone chooses *Become
+  the owner*. An added document reaches every copy at once, provisionally (the owner's setting accepts it at once, on
+  by default), and leaves the others when declined; reading again and *Leave out* / *Restore* wait for the owner;
+  removing a document and letting more AI read one are always the owner's word. A stricter AI setting is never a
+  proposal, and a looser one takes effect nowhere until the owner accepts it. The owner hands over; a colleague may
+  take over when the owner left the folder or was not heard of for 14 days. Proposals and answers travel in zips too.
 
-**L3. Near-live, and light** · Level 0
+**L3. Near-live, and light** · Level 0 · built in 0.17.0 (`gui/poller.py`)
 - Each copy looks for new shared items every couple of minutes (adjustable; off while offline), brings them in with
   `sync.py`'s rules, and says what came in, in the right-hand panel. No constant connection and no heavy process.
+- *Decided:* every 2 minutes (1 to 60, for all projects), soon after ENLENS starts and about 20 seconds after a change;
+  paused per project or for all; offline, it tries less and less often (up to every 30 minutes). What came in is kept
+  until marked seen. A round runs as a job of the project's queue (M6) and stops between two steps when ENLENS quits.
 
-**L4. The right-hand panel as the place for it** · Level 0
+**L4. The right-hand panel as the place for it** · Level 0 · built in 0.17.0 (`views/team.js`)
 - The panel built with the navigation redesign (the research log beside any page) becomes the home of personal notes
   and of the team: what I shared, what came in, proposals waiting for the owner, and Share / Unshare on any item.
+- *Decided:* a *Team* tab beside the *Research log*: the folder and its state, *Sync now* and *Pause*, what came in
+  with *Mark as seen*, the people, what you shared, documents not on this computer, proposals, the two downloads.
+  *Share* and *Unshare* also sit on each item's page and card; codes both people changed are compared in the codebook
+  editor.
 
-**L5. How the copies reach each other** (decide first)
+**L5. How the copies reach each other** (decide first) · built in 0.17.0 (`sync/folder.py`)
 - A shared folder the team already has (OneDrive, Dropbox, a university network drive): no server, nothing new to
   run, the documents stay within the institution's storage; each copy writes its shared items there and reads the
   others'. Fits ENLENS's privacy promise best.
@@ -582,13 +622,19 @@ those merge rules and makes the exchange continuous and selective.
 - The zip exchange stays, for one-off sharing and for colleagues without the shared folder.
 - Privacy carries over: a document marked *Only a local AI* or *No AI* keeps that setting in every copy (the stricter
   setting wins, as in `sync.py` today), and a shared item never carries text a colleague's settings would not allow.
+- *Decided:* the shared folder; no server. Each copy writes what its person shared, as numbered files, into a folder
+  of its own there and brings in the others' through the same merge as a zip; each document's text and file are
+  stored once for the team. A switch per project (off by default; once anyone turns it on, it holds for all) keeps the
+  documents marked *Only a local AI* or *No AI* out of the folder; shared items still carry the words they quote.
+  What is written is not signed: the folder is shared only with the team.
 
 ## M. Small fixes from use (November 2026)
 
 Seen while using 0.17.0rc2, and small enough to come before the next feature. Built in 0.17.0rc3: the Overview's
 cards and footers in one layout, without its AI box; one AI mark under the hypothesis box; the Evidence map's download
 as a small icon; a gap above a running check; the Search page's titles, with every searched word marked, in search by
-meaning too; and search by meaning set up only once per project. Built in 0.17.0rc4: M1, M2 and M4. Still to do:
+meaning too; and search by meaning set up only once per project. Built in 0.17.0rc4: M1, M2 and M4. Built in
+0.17.0: M6. Still to do:
 
 **M1. The research log panel makes room for the page** · Level 0 · built in 0.17.0rc4
 - With the panel open, the page's content runs right up to it, and at 90% zoom the panel covers the page and cuts the
@@ -611,11 +657,14 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - The active page tab without the white folder tab (an underline or a tinted pill); a document icon before each title
   in a theme's *Mostly from* line; *reviewed by you* beside a verdict as a small badge, with the words as its tooltip.
 
-**M6. Jobs wait their turn** · Level 0
+**M6. Jobs wait their turn** · Level 0 · built in 0.17.0
 - Reading documents with the new reader while another job of the project runs is refused with "Wait until … has
   finished". It should wait in a queue, say so plainly, and be cancellable. When both are asked for, the new reader
   runs before search by meaning, so nothing is prepared twice. Until then, setting up search by meaning while the new
   reader runs is not stopped.
+- *Decided:* each project has a queue (*Queued: starts when … has finished*, with *Cancel*). The new reader runs alone
+  in its project; adding documents, search by meaning and rounds of the shared folder wait for each other; checks,
+  codes, themes and the glossary run beside each other. A job that waits holds no AI model.
 
 **M7. Moving many documents to the new reader** · Level 0
 - Say beforehand how many can move cleanly; report in one line and a compact table instead of one sentence per

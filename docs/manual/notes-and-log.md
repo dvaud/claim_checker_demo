@@ -22,7 +22,8 @@ the words of the notes and of the passages they mark, filter by document and by 
 - **A document read again.** When a document is read with the new reader ([How documents are read](reading.md)), each
   note follows its words. One whose words are no longer in the text says so, and is kept.
 - **A removed document.** Its notes are kept, marked *removed from the project*.
-- **Yours and a colleague's.** You can change only your own notes; a colleague's are shown with their name.
+- **Yours and a colleague's.** A note is yours alone until you share it (0.17.0). You can change only your own notes; a
+  colleague's are shown with their name.
 
 ### Use a note as evidence
 
@@ -61,8 +62,9 @@ Filter the log by group, search it, and download it as Markdown (.md), oldest fi
 Excel (.xlsx): for an appendix or an audit. An entry about a change has *Compare with before*, which opens the version
 from before the change ([below](#earlier-versions)).
 
-The log is part of the project. When you share it ([Work together](together.md)), your colleague sees your entries
-under your name, and yours come to them; an entry you removed does not come back.
+The log is part of the project. An entry you write is yours alone until you press *Share* on it (0.17.0;
+[Work together](together.md#private-until-you-share-it)); a shared one reaches your colleagues under your name, and an
+entry you removed does not come back. What ENLENS itself writes about the documents is shared with the project.
 
 ## Earlier versions
 

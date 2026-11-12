@@ -1,10 +1,10 @@
 // Projects: create, link an existing workspace folder, switch, remove.
 import { quickLookButton } from "./quicklook.js";
 import { App, api, h, icon, replace, append, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download, button, downloadButton, card, input, tag, emptyState } from "../lib.js";
-import { projectZipLink } from "./result.js";
+import { zipButton } from "./share.js";   // 0.18: the two downloads, what you shared or the whole project
 import { FEATURES } from "../features.js";
 
-// Import a project from a zip made with "Download as a zip" (on this or another computer). 0.10: the same dialog takes
+// Import a project from a zip made with "Send what you shared" or "Download the whole project" (on this or another computer). 0.10: the same dialog takes
 // the zip of "Move ENLENS to another computer" (every project and the settings); its projects keep their names.
 const MOVE_NAME = /^ENLENS - all projects and settings - .*\.zip$/i;
 export function importProjectDialog(opts = {}) {
@@ -33,7 +33,7 @@ export function importProjectDialog(opts = {}) {
     title: opts.move ? "Bring ENLENS from another computer" : "Import a project (.zip)",
     body: h("div", {},
       opts.move ? h("p", { class: "muted" }, "On the other computer, open Projects and choose “Download everything (.zip)” under Move ENLENS to another computer. Bring that file here (a USB stick, a shared folder, an e-mail to yourself), then choose it below.")
-        : h("p", { class: "muted" }, "A zip made with “Download as a zip”, from this or another computer: the documents, the results and the notes come with it, as a new project. A project folder zipped by hand works too, and so does a zip of everything (from “Move ENLENS to another computer”)."),
+        : h("p", { class: "muted" }, "A zip made with “Send what you shared” or “Download the whole project”, from this or another computer: the documents, the results and the notes in it come with it, as a new project. A project folder zipped by hand works too, and so does a zip of everything (from “Move ENLENS to another computer”)."),
       field("Zip file", file), status, moveNote, nameField, err),
     actions: [{ text: "Cancel", value: null }, {
       text: "Import", value: true, primary: true, id: "dlg-confirm",
@@ -73,8 +73,9 @@ export function importProjectDialog(opts = {}) {
   });
 }
 
-// 0.14: shared projects (sync.py). Each person keeps their own copy of a project; "Download as a zip" carries their
-// work, and "Bring in a colleague's work" merges a colleague's zip into this copy.
+// 0.14: shared projects (sync.py). Each person keeps their own copy of a project; "Send what you shared" (0.18; before,
+// one zip of the whole project) carries their work, and "Bring in a colleague's work" merges a colleague's zip into this copy.
+// 0.18: the shared folder (the Team tab of the right-hand panel) does the same by itself.
 const whose = (name) => (name === "you" ? "your" : `${name}’s`);
 
 export function bringInDialog(project) {
@@ -92,7 +93,7 @@ export function bringInDialog(project) {
     lock,
     title: "Bring in a colleague’s work",
     body: h("div", {},
-      h("p", { class: "muted" }, `Choose the zip your colleague made with “Download as a zip” in their copy of “${project}”. What is new comes in. Where you both changed the same thing, their version comes in beside yours, marked “sync clash”. Nothing you decided is replaced.`),
+      h("p", { class: "muted" }, `Choose the zip your colleague made with “Send what you shared” in their copy of “${project}”. What is new comes in. Where you both changed the same thing, their version comes in beside yours, marked “sync clash”. Nothing you decided is replaced.`),
       field("Zip file", file), status, err),
     actions: [{ text: "Cancel", value: null }, {
       text: "Bring in", value: true, primary: true, id: "dlg-confirm",
@@ -151,8 +152,14 @@ function togetherCard() {
     h("p", { class: "muted small" }, FEATURES.together.what),
     h("div", { class: "tg-name" }, h("label", { class: "small", for: "tg-your-name" }, "Your name"), Object.assign(name, { id: "tg-your-name" }), save,
       h("span", { class: "muted small" }, "Colleagues see your judgements under this name.")),
+    // 0.18: the shared folder first (the Team tab), the file by hand as before
+    // the action after its sentence, never inside it (docs/DESIGN.md 6): it opens the Team tab beside the page
+    h("p", { class: "small tg-folder" }, h("strong", {}, "Through a shared folder: "), "your copies keep in step by themselves. ",
+      "In the Team tab beside any page, choose a folder your team shares (OneDrive, Dropbox, a network drive). ",
+      button({ kind: "quiet", sm: true, icon: "users", onClick: (e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("enlens-drawer", { detail: { tab: "team" } })); } }, "Open the Team tab")),
+    h("p", { class: "small" }, h("strong", {}, "Or as a file:")),
     h("ol", { class: "small move-steps" },
-      h("li", {}, "Choose “Download as a zip” on the project and send the file to your colleague (e-mail, a shared folder)."),
+      h("li", {}, "Choose “Send what you shared” on the project and send the file to your colleague (e-mail, a shared folder). Only what you shared goes in it."),
       h("li", {}, "The first time, they choose “Import a project (.zip)”. After that, “Bring in a colleague’s work” on the same project."),
       h("li", {}, "Do the same the other way round, as often as you like. A file brought in twice changes nothing.")),
     now);
@@ -259,7 +266,7 @@ export async function renderProjects(view) {
     button({ onClick: () => importProjectDialog() }, icon("upload", { size: 14 }), "Import a project (.zip)"),
     button({ onClick: () => linkProjectDialog() }, icon("link", { size: 14 }), "Open an existing ENLENS project folder"),
     quickLookButton()] }));
-  view.appendChild(h("p", { class: "muted small pj-zip-note" }, "“Download as a zip” gives a project to a colleague or moves it to another computer: one file with the documents, the results, your judgements and notes. “Import a project” brings such a zip in as a new project; “Bring in a colleague’s work” merges it into the copy you have."));
+  view.appendChild(h("p", { class: "muted small pj-zip-note" }, "“Send what you shared” gives a colleague the documents and the work you shared, nothing private. “Download the whole project” moves it to another computer of yours: everything, your private work too. “Import a project” brings such a zip in as a new project; “Bring in a colleague’s work” merges it into the copy you have."));
   const list = h("div", { class: "stack" });
   view.appendChild(list);
   const together = (App.state.projects || []).some((p) => !p.temporary) ? togetherCard() : null;
@@ -279,7 +286,8 @@ export async function renderProjects(view) {
             h("div", { class: "muted small mono pj-path" }, p.path)),
           h("div", { class: "btn-row" },
             !current ? button({ sm: true, onClick: async () => { try { await api("PUT", "/api/settings", { project: p.name }); await App.refresh(); toast(`Project: ${p.name}`, "ok", { ttl: 2000 }); draw(); } catch (e) { showError(e); } } }, "Switch to") : null,
-            p.ok ? projectZipLink(p.name, { text: "Download as a zip" }) : null,
+            p.ok ? zipButton(p.name, "shared", { text: "Send what you shared" }) : null,
+            p.ok ? zipButton(p.name, "all", { text: "Download the whole project" }) : null,
             p.ok && !p.temporary ? button({ sm: true, title: "Merge the zip of a colleague’s copy of this project into yours", onClick: () => bringInDialog(p.name).then(() => { draw(); if (together) together.reload(); }) }, icon("users", { size: 13 }), "Bring in a colleague’s work") : null,
             p.ok && p.documents ? downloadButton({ title: "One SQLite file in the FlexiConc layout of the Cross-Doc SDG Explorer: the documents, their sentences with codes, reference chains, themes and (if set up) embeddings",
               onClick: (e) => { const b = e.currentTarget; b.disabled = true; toast("Preparing the FlexiConc file…", "info", { small: true, ttl: 3000 }); download(`/api/projects/${P(p.name)}/flexiconc.sqlite`).catch(showError).finally(() => { b.disabled = false; }); } },

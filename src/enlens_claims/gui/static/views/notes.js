@@ -3,7 +3,8 @@
 // check: the passage holding its words becomes an excerpt you judged, with the note's words as your sentence.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
-  downloadLinks, debounce, dialog, shortTitle, GRADE_TEXT, button, link, choice, input, select, textarea, card, optionCards, emptyState } from "../lib.js";
+  downloadLinks, debounce, dialog, shortTitle, GRADE_TEXT, button, link, choice, input, select, textarea, card, optionCards, emptyState, notice, personMark } from "../lib.js";
+import { shareInline, sharingOf } from "./share.js";   // 0.18 (L1)
 
 export const COLOUR_NAME = { yellow: "Yellow", green: "Green", blue: "Blue", pink: "Pink" };
 const COLOURS = ["yellow", "green", "blue", "pink"];
@@ -131,7 +132,9 @@ export async function renderNotes(view, _params, query) {
     if (q) qs.set("q", q);
     if (doc) qs.set("doc", doc);
     if (colour) qs.set("colour", colour);
-    try { data = await api("GET", `${base}?${qs}`); } catch (e) { failedLoad(listBox, e); return; }
+    let shares;   // 0.18 (L1): each note's sharing state, by note id
+    try { [data, shares] = await Promise.all([api("GET", `${base}?${qs}`), sharingOf("note")]); } catch (e) { failedLoad(listBox, e); return; }
+    data.shares = shares;
     clear(docSel);
     docSel.appendChild(h("option", { value: "" }, "All documents"));
     for (const d of data.documents) docSel.appendChild(h("option", { value: d.doc_id, selected: d.doc_id === doc }, `${shortTitle(d.title || d.doc_id, 60)} (${d.notes})${d.present ? "" : " · removed"}`));
@@ -157,7 +160,7 @@ export async function renderNotes(view, _params, query) {
       const first = ns[0];
       listBox.appendChild(h("h2", { class: "notes-doc-title" }, first.present ? link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(did)}?tab=notes` }, first.title || did) : h("span", {}, first.title || did, h("span", { class: "muted" }, " · removed from the project"))));
       const ul = h("ul", { class: "notes-cards" });
-      for (const n of ns) ul.appendChild(noteCard(n, load));
+      for (const n of ns) ul.appendChild(noteCard(n, load, { share: data.shares && data.shares.get(n.note_id) }));
       listBox.appendChild(ul);
     }
   }
@@ -166,10 +169,12 @@ export async function renderNotes(view, _params, query) {
 }
 
 // One note as a card: its words, the note, where it is, and what can be done with it. `onChange()` after a change.
+// 0.18: a colleague's note shows whose it is (a person mark); `opts.share` (its sharing state) adds the tag and Share /
+// Unshare.
 export function noteCard(n, onChange, opts = {}) {
   // a note: a small card in a list of many (docs/DESIGN.md 4.11)
   const li = card({ as: "li", sm: true, class: "note-card" + (n.lost ? " note-lost" : "") });
-  const where = [n.page !== null && n.page !== undefined ? `p. ${n.page}` : null, n.mine ? null : n.who, fmt.dateShort(n.edited_at || n.created_at)].filter(Boolean).join(" · ");
+  const where = [n.page !== null && n.page !== undefined ? `p. ${n.page}` : null, fmt.dateShort(n.edited_at || n.created_at)].filter(Boolean).join(" · ");
   const actions = h("div", { class: "note-actions" });
   if (n.present && !n.lost && !opts.inDocument) {
     actions.appendChild(link({ href: `#/doc/${encodeURIComponent(n.doc_id)}?at=${n.start}&tab=notes` }, icon("book-open", { size: 12 }), "In the document"));
@@ -183,8 +188,9 @@ export function noteCard(n, onChange, opts = {}) {
   }
   li.append(...[h("blockquote", { class: `note-quote hl-${n.colour || "yellow"}` }, n.quote),
     n.text ? h("p", { class: "note-text" }, n.text) : null,
-    n.lost ? h("p", { class: "note-warn" }, icon("alert-triangle", { size: 13 }), "These words are not in the document's text now (it was read again). The note is kept.") : null,
-    h("div", { class: "note-foot" }, h("span", { class: "muted" }, where), actions)].filter(Boolean));   // append(null) writes "null"
+    n.lost ? notice({ kind: "attention", class: "note-warn" }, h("p", {}, "These words are not in the document's text now (it was read again). The note is kept.")) : null,
+    h("div", { class: "note-foot" }, n.mine ? null : personMark([n.who], { name: "short" }), h("span", { class: "muted" }, where),
+      opts.share ? shareInline(opts.share, () => (onChange ? onChange() : null), { owner: false }) : null, actions)].filter(Boolean));   // append(null) writes "null"
   return li;
 }
 

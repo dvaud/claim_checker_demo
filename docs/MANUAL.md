@@ -54,8 +54,8 @@ Three things hold everywhere:
 | | [How documents are read](manual/reading.md) | What is read and what is left out, the reading view, moving to a new reader |
 | | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find |
 | | [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights and notes, the dated record of decisions, compare and restore |
-| | [Work together](manual/together.md) | Sharing a project with colleagues, sync clashes, moving to another computer |
-| **The AI and your privacy** | [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI, how it is enforced |
+| | [Work together](manual/together.md) | Sharing a project with colleagues (a shared folder, the Team tab, the owner), sync clashes, moving to another computer |
+| **The AI and your privacy** | [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI, working together, how it is enforced |
 | | [Claude Code](manual/claude-code.md) | Starting it, its speed and helpers, the queue; Claude in a chat (the connector) |
 | | [A model on your own computer](manual/local-models.md) | Getting one, choosing and tuning it, testing it |
 | | [Which model does what](manual/models.md) | The model of each task and of each Claude plan; what every answer records |
@@ -84,6 +84,8 @@ Three things hold everywhere:
 | see what was decided in a project, and when | [The research log](manual/notes-and-log.md#the-research-log) |
 | go back to an earlier version of my themes, judgements or codebook | [Earlier versions](manual/notes-and-log.md#earlier-versions) |
 | share a project with a colleague | [Work together](manual/together.md) |
+| work through a folder the team shares | [Through a shared folder](manual/together.md#through-a-shared-folder) |
+| know what a shared folder holds | [Privacy: working together](manual/privacy.md#working-together) |
 | move ENLENS to a new computer | [Moving to another computer](manual/together.md#moving-to-another-computer) |
 | make Claude Code go faster, or easier on my plan's limits | [How fast it works](manual/claude-code.md#how-fast-it-works) |
 | update ENLENS | [Update](manual/install.md#update) |

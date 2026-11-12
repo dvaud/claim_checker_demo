@@ -121,6 +121,12 @@ def set_default(ws: Workspace, value: str) -> str:
             researchlog.record(cx, "ai-access", f"New documents of this project: {researchlog.access_words(v, True)} "
                                                 f"(before: {researchlog.access_words(before, True)}).",
                                data={"default": v})
+    try:  # 0.18 L2: a looser default opens no document of the project to more AI than its owner accepted
+        from .ownership import settle
+
+        settle(ws, apply=False)
+    except ImportError:
+        pass
     return v
 
 
@@ -390,10 +396,18 @@ def set_documents(ws: Workspace, doc_ids: list[str], setting: Any = _KEEP, note:
         unknown = [d for d in doc_ids if d not in found]
         if unknown:
             raise KeyError(unknown[0])
+        held: dict[str, str] = {}
+        if setting is not _KEEP:
+            try:  # 0.18 L2: in a collaborator's copy a setting looser than the project's is proposed to the owner
+                from .ownership import hold_loosening
+
+                held = hold_loosening(ws, cx, doc_ids, lv)
+            except ImportError:  # an app without shared projects
+                pass
         if setting is not _KEEP:  # 0.16: a decision about privacy goes into the research log
             was = {r[0]: r[1] for r in cx.execute(f"SELECT doc_id, ai_access FROM documents WHERE doc_id IN "
                                                   f"({','.join('?' * len(doc_ids))})", list(doc_ids))}
-            moved = [d for d in doc_ids if was.get(d) != lv]
+            moved = [d for d in doc_ids if was.get(d) != lv and d not in held]
             if moved:
                 from . import researchlog
 
@@ -408,14 +422,18 @@ def set_documents(ws: Workspace, doc_ids: list[str], setting: Any = _KEEP, note:
                                    titles.get(moved[0]) if one else None,
                                    data={"documents": moved, "setting": lv})
         for d in doc_ids:
-            if setting is not _KEEP:
+            if d in held:  # no looser than the project's setting until the owner accepts
+                now_lv = levels(cx, [d], budget=False).get(d) or "cloud"
+                if RANK[now_lv] > RANK[held[d]]:
+                    cx.execute("UPDATE documents SET ai_access=? WHERE doc_id=?", (held[d], d))
+            elif setting is not _KEEP:
                 cx.execute("UPDATE documents SET ai_access=? WHERE doc_id=?", (lv, d))
             if note is not _KEEP:
                 cx.execute("UPDATE documents SET ai_note=? WHERE doc_id=?", ((str(note or "").strip()[:300] or None), d))
             if budget is not _KEEP:
                 cx.execute("UPDATE documents SET ai_budget=? WHERE doc_id=?", (budget, d))
         changed = relabel(cx)
-    return {"documents": len(doc_ids), "tasks_changed": changed}
+    return {"documents": len(doc_ids), "tasks_changed": changed, "proposed": sorted(held)}
 
 
 def documents_view(ws: Workspace) -> dict[str, dict]:

@@ -1,7 +1,7 @@
 // 0.9: one description of every feature, used by the sidebar, the Overview page and the page heads, so each feature
 // says the same thing wherever it is shown: what it does, which part of the app it belongs to, and whether it needs
 // the AI.
-import { h, icon } from "./lib.js";
+import { h, aiTag, tabs } from "./lib.js";
 
 // 0.13.6: `sub` and `compact`: the section's line and card size on the Overview (registry.js builds it from these)
 export const SECTIONS = {
@@ -31,7 +31,7 @@ export const FEATURES = {
     overview: false,
   },
   codebooks: {
-    section: "project", title: "Codebooks", icon: "book-marked", href: "#/codebooks", ai: "none",
+    section: "project", title: "Codebooks", icon: "book-marked", href: "#/codebooks", ai: "optional",
     what: "Make and change your own codebooks: codes with a definition, when to use them and when not, the words they are matched by and examples from the documents. Start fresh or from the themes found.",
     use: "To code the documents with your own categories, and see before any AI labels what each code would pick.",
     overview: false,   // 0.17.0: a view of Codes, named on its card
@@ -84,19 +84,9 @@ export const FEATURES = {
   },
 };
 
-// The one AI mark (0.17.0): the chip icon says whether something uses the AI, everywhere in the same words (the
-// sidebar's groups, a page's top line, beside an action). The cloud icon is kept for where text goes (which AI reads
-// it): the AI line at the foot of the sidebar and "Claude, on your plan, reads…" beside a check.
-const AI_TEXT = {
-  none: ["No AI", "Never uses the AI: it runs on this computer."],
-  optional: ["AI on request", "Works without the AI; the AI adds to it only when you ask."],
-  uses: ["Uses the AI", "The AI does this work: it reads the passages it needs."],
-};
-
-export function aiTag(ai) {
-  const [text, plain] = AI_TEXT[ai] || AI_TEXT.none;
-  return h("span", { class: `ai-tag ai-${ai}`, title: plain }, icon("cpu", { size: 12 }), text);
-}
+// The one AI mark (aiTag()) and a row's buttons with it (withAI()) are components: they live in lib.js with the other
+// helpers (lib.js's own queue notice uses them), and are offered here too, where the pages have always found them.
+export { aiTag, withAI } from "./lib.js";
 
 // 0.17.0: the places of the sidebar, in its order, and the views each place has (tabs on its pages). A view is
 // [key, label, href, icon]; its key is the FEATURES key of the page when there is one. `section` is the sidebar group
@@ -126,8 +116,7 @@ export const PLACES = {
 export function viewTabs(place, current) {
   const p = PLACES[place];
   if (!p || !p.views.length) return null;
-  return h("nav", { class: "settings-tabs view-tabs", "aria-label": `${p.title}: views` },
-    p.views.map(([key, label, href, ic]) => h("a", { href, "aria-current": key === current ? "page" : null }, icon(ic, { size: 14 }), label)));
+  return tabs({ class: "view-tabs", label: `${p.title}: views`, items: p.views, current });
 }
 
 // The line above a page title: which part of the app the page belongs to, and whether it needs the AI.

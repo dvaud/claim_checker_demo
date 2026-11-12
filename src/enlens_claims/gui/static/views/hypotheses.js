@@ -5,8 +5,8 @@
 // before checking", a codebook tag); two lines or more, or a CSV with a "hypothesis" column, are a list checked one
 // after the other. The progress of the check the page follows is under the box, then every answer (history.js), with
 // the checks still running or waiting their turn at the top. The evidence map is the place's other view (map.js).
-import { featureEyebrow, aiTag, viewTabs } from "../features.js";
-import { App, api, h, icon, replace, clear, append, toast, showError, fmt, pageHead, navigate, watchJob, P, debounce, session, emptyState, statusBadge, download, downloadLinks, button, iconButton, link, notice, tag, card, fold, fileButton, select, textarea, input as fieldInput, choice } from "../lib.js";
+import { featureEyebrow, withAI, viewTabs } from "../features.js";
+import { App, api, h, icon, readsLine, replace, clear, append, toast, showError, fmt, pageHead, navigate, watchJob, P, debounce, session, emptyState, statusBadge, download, downloadLinks, button, iconButton, link, notice, tag, card, fold, fileButton, select, textarea, input as fieldInput, choice } from "../lib.js";
 import { checkOptions, pickCode } from "./options.js";
 import { ProgressPanel } from "./progress.js";
 import { answersList } from "./history.js";
@@ -18,18 +18,6 @@ const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || 
 // One non-empty line is one hypothesis; two or more are a list (a CSV has its header and at least one row).
 export function composerMode(text) {
   return String(text || "").split(/\r?\n/).filter((l) => l.trim()).length >= 2 ? "list" : "single";
-}
-
-// Which AI reads the excerpts of a check, in one line from the settings (App.privacy()), with the sidebar's icon.
-export function readsLine() {
-  const p = App.privacy();
-  const s = App.settings();
-  let text;
-  if (s.backend === "claude_code") text = `${p.label}, reads the excerpts it needs.`;   // "Claude, on your plan, reads…"
-  else if (p.where === "cloud") text = `Claude, through the Claude API${s.anthropic_model ? ` (${s.anthropic_model})` : ""}, reads the excerpts it needs: they are sent to Anthropic.`;
-  else if (p.where === "local") text = `The AI on this computer (${p.detail}) reads the excerpts it needs: your documents never leave it.`;
-  else text = "Demo mode: no AI reads the excerpts. A simple word-overlap stand-in answers, so the answers are not findings.";
-  return h("p", { class: "muted small hyp-reads" }, icon(p.icon || "cloud", { size: 13 }), h("span", {}, text));
 }
 
 export async function renderHypotheses(view, params, query) {
@@ -162,8 +150,8 @@ export async function renderHypotheses(view, params, query) {
 
   const form = card({ as: "form", class: "hyp-form hyp-compose" },
     h("div", { class: "field" }, label, ta, hint, listFold, splitHint),
-    h("div", { class: "btn-row hyp-actions" }, runBtn, lookWrap, aiTag("uses")),
-    readsLine(),
+    h("div", { class: "btn-row hyp-actions" }, withAI(runBtn, lookWrap)),
+    readsLine("the excerpts it needs", { class: "hyp-reads" }),
     prepBox,
     tagRow,
     options);
@@ -247,10 +235,10 @@ export async function renderHypotheses(view, params, query) {
 
   function drawList() {
     const { items, ready, short, error } = list;
-    if (error) replace(listLine, h("span", { class: "hyp-list-warn" }, icon("alert-triangle", { size: 13 }), ` ${error}`));
+    if (error) replace(listLine, tag({ kind: "attention" }, error));
     else if (!items.length) replace(listLine, icon("list-checks", { size: 13 }), " No hypothesis found yet: write one per line, or load a CSV with a column called “hypothesis”.");
     else replace(listLine, icon("list-checks", { size: 13 }), ` ${ready} ${ready === 1 ? "hypothesis" : "hypotheses"}, checked one after the other`,
-      short ? h("span", { class: "hyp-list-warn" }, ` · ${short} ${short === 1 ? "line is" : "lines are"} too short and will be skipped`) : null);
+      short ? [" · ", tag({ kind: "attention" }, `${short} ${short === 1 ? "line is" : "lines are"} too short and will be skipped`)] : null);
     listFold.hidden = mode !== "list" || !items.length;
     const tooShort = (it) => it.text.length < MIN_CHARS;
     const coded = items.some((it) => it.code);
@@ -289,7 +277,7 @@ export async function renderHypotheses(view, params, query) {
   function discardPrepared(why) {
     prepared = null;
     if (prepareWatcher) { prepareWatcher.stop(); prepareWatcher = null; looking = false; }
-    if (why) { replace(prepBox, notice({ kind: "info" }, h("p", {}, why))); prepBox.hidden = false; }
+    if (why) { replace(prepBox, notice({ kind: "info", live: "status" }, h("p", {}, why))); prepBox.hidden = false; }
     else { clear(prepBox); prepBox.hidden = true; }
     drawButtons();
   }
@@ -303,7 +291,7 @@ export async function renderHypotheses(view, params, query) {
     const changed = o.decompose !== prepared.decompose ? (o.decompose ? "“Check each part separately” is now on" : "“Check each part separately” is now off") : (o.expand ? "“Also search for other words” is now on" : "“Also search for other words” is now off");
     const again = button({ kind: "main", sm: true, onClick: () => lookBtn.click() }, icon("eye", { size: 13 }), "Look again");
     prepared = null;
-    replace(prepBox, notice({ kind: "attention" }, h("p", {}, `${changed}, so the parts and words you looked at no longer apply. Look again to see the new ones, or check it as usual with the new options.`), h("div", { class: "hyp-prepared-again" }, again)));
+    replace(prepBox, notice({ kind: "attention", live: "status" }, h("p", {}, `${changed}, so the parts and words you looked at no longer apply. Look again to see the new ones, or check it as usual with the new options.`), h("div", { class: "hyp-prepared-again" }, again)));
     prepBox.hidden = false;
     drawButtons();
   });
@@ -355,7 +343,7 @@ export async function renderHypotheses(view, params, query) {
       const chips = h("div", { class: "chips term-chips", role: "group", "aria-label": `Extra search words for ${many ? `part ${i + 1}` : "the hypothesis"}` });
       const drawChips = () => {
         replace(chips, pr.terms[i].map((t, j) => tag({ class: "chip-term" }, h("span", {}, t),
-          h("button", { class: "chip-x", type: "button", "aria-label": `Remove the word ${t}`, onClick: () => { pr.terms[i].splice(j, 1); pr.editedTerms = true; drawChips(); } }, icon("x", { size: 11 })))),
+          iconButton({ icon: "x", sm: true, size: 11, class: "chip-x", label: `Remove the word ${t}`, onClick: () => { pr.terms[i].splice(j, 1); pr.editedTerms = true; drawChips(); } }))),
         pr.terms[i].length ? null : h("span", { class: "muted small" }, "No extra words: only the words of the sentence itself are searched for."));
       };
       drawChips();
@@ -464,17 +452,16 @@ export async function renderHypotheses(view, params, query) {
     let rows = [];
     if (r.batch_id) { try { rows = (await api("GET", `/api/projects/${P(project)}/hypotheses?batch=${encodeURIComponent(r.batch_id)}`)).hypotheses || []; } catch (_) { rows = []; } }
     const show = r.batch_id ? button({ kind: "main", sm: true, onClick: async () => { if (answers) await answers.showBatch(r.batch_id); answersBox.scrollIntoView({ block: "start", behavior: "smooth" }); } }, icon("history", { size: 14 }), "Show only these answers") : null;
-    const sumCard = card({ as: "div", class: "hyp-summary-card" },
-      h("div", { class: "card-head" }, h("h2", {}, job.state === "done" ? "All done" : job.state === "cancelled" ? "Stopped" : "Something went wrong"), show),
+    const sumCard = card({ as: "div", class: "hyp-summary-card", title: job.state === "done" ? "All done" : job.state === "cancelled" ? "Stopped" : "Something went wrong", action: show },
       h("div", { class: "kv-grid" },
         h("div", { class: "kv" }, h("dt", {}, "Checked"), h("dd", {}, `${checked.length} of ${r.total ?? "?"}`)),
         errors.length ? h("div", { class: "kv" }, h("dt", {}, "Could not be checked"), h("dd", {}, String(errors.length))) : null,
         h("div", { class: "kv" }, h("dt", {}, "Time"), h("dd", {}, fmt.secs(job.seconds)))),
       rows.length ? h("ul", { class: "batch-answers" }, rows.map((x) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(x.hyp_id)}` }, x.text || x.claim), " ", statusBadge(x.status, { short: true })))) : null,
-      r.stopped ? notice({ kind: "attention", class: "hyp-summary-notice" }, h("p", {}, r.stopped)) : null,
+      r.stopped ? notice({ kind: "attention", live: "status", class: "hyp-summary-notice" }, h("p", {}, r.stopped)) : null,
       job.state === "error" ? notice({ kind: "error", class: "hyp-summary-notice" }, h("p", {}, job.error_kind === "backend" ? "The AI model stopped answering." : "The checks could not continue."), fold({}, "Technical details", h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? link({ href: "#/settings" }, "Check the AI model in Settings") : null) : null,
       errors.length ? fold({ open: true, class: "hyp-errors-fold" }, `Hypotheses that could not be checked (${errors.length})`,
-        h("ul", { class: "batch-errors" }, errors.map((e) => h("li", {}, h("span", { class: "muted" }, `#${e.index ?? "?"} `), h("span", { class: "serif" }, e.text), " — ", h("span", { class: "batch-error" }, e.error))))) : null);
+        h("ul", { class: "batch-errors" }, errors.map((e) => h("li", {}, h("span", { class: "muted" }, `#${e.index ?? "?"} `), h("span", { class: "serif" }, e.text), " — ", e.error)))) : null);
     progressBox.appendChild(sumCard);
     progressBox.hidden = false;
     if (job.state === "done") toast(`All done: ${checked.length} checked${errors.length ? `, ${errors.length} could not be checked` : ""}.`, errors.length ? "warn" : "ok");

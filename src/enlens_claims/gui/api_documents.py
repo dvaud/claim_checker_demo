@@ -192,10 +192,7 @@ class DocumentsApi:
         ok = reread.check(ws, doc_id)
         if not ok.get("ok"):
             raise ApiError(409, ok.get("reason") or "This document cannot be read again now.")
-        busy = [j for j in self.app.jobs.jobs.values() if j.project == name and j.state in ("queued", "running")]
-        if busy:
-            raise ApiError(409, f"Wait until “{busy[0].title}” has finished in this project, then read the document "
-                                "with the new reader.")
+        # 0.18 (M6): while another job of the project runs, the move waits for its turn (`waiting_for`), cancellable
         return {"job": self.app.start_new_reader(name, doc_id, people.me()).view()}
 
     def post_new_reader_many(self, name, q):
@@ -216,10 +213,7 @@ class DocumentsApi:
             ids = older
         if not ids:
             raise ApiError(409, "Every document here was read by the current reader already: there is nothing to do.")
-        busy = [j for j in self.app.jobs.jobs.values() if j.project == name and j.state in ("queued", "running")]
-        if busy:
-            raise ApiError(409, f"Wait until “{busy[0].title}” has finished in this project, then read the documents "
-                                "with the new reader.")
+        # 0.18 (M6): while another job of the project runs, the moves wait for their turn (`waiting_for`), cancellable
         return {"job": self.app.start_new_reader_many(name, ids, people.me()).view()}
 
     def put_reading_checked(self, name, doc_id, q):

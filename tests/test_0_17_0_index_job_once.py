@@ -76,4 +76,5 @@ def test_the_documents_page_follows_the_running_job():
 
 def test_the_sidebar_does_not_call_the_index_job_claude():
     js = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'LOCAL_JOB_KINDS = new Set(["index"])' in js and "w.local" in js
+    # (0.18: a round of the shared folder and a new reading run on this computer too)
+    assert 'LOCAL_JOB_KINDS = new Set(["index", ' in js and "w.local" in js

@@ -44,7 +44,7 @@ checklist then shows three ticks.
 
 ## Start Claude Code
 
-<img src="../images/manual/waiting.png" alt="A check waiting for Claude Code, with the Start Claude Code button and the speed choice" width="800">
+<img src="../images/manual/waiting.png" alt="A check waiting for Claude Code, with the Start Claude Code button and the speed it runs at" width="800">
 
 Press an AI button in ENLENS. The page says what waits, for example *Waiting for Claude Code: 120 passages to label ·
 about 25 minutes*, with **Start Claude Code**. ENLENS then starts Claude Code in the background for that project,
@@ -72,8 +72,8 @@ of a follow-up on a result (reading an excerpt again, reading new documents, a s
 
 ### How fast it works
 
-**Speed: Slower · Normal · Faster** is how many helpers work at once. It is in *Settings → AI → Work waiting for
-Claude Code*.
+**Speed: Slower · Normal · Faster** is how many helpers work at once. You choose it in *Settings → AI*, under *Speed of
+Claude Code*; each *Start Claude Code* says the speed it runs at (*Normal speed: 2 helpers at a time*) with a link there.
 
 | Speed | Helpers at once | Trade-off |
 | --- | --- | --- |
@@ -84,10 +84,10 @@ Claude Code*.
 The choice is kept and is the same for every run. A run already working keeps the speed it started with; the line *Claude Code is working on it* says how many
 helpers it has (*· 4 helpers at once*).
 
-**Choose the helpers for this run**, folded under the speed in the same place, lists each helper that has work waiting, with its model,
+**Choose the helpers for this run**, folded under that line beside *Start Claude Code*, lists each helper that has work waiting, with its model,
 what it would answer and how much waits (*Labeller haiku · Codebook labels · 7,868 waiting*). Set how many of each
 work at once (0 leaves that work for a later run) and **Helpers at once, in all** (1 to 8). The fold then says
-*changed* and the speed greys out; *Use the speed again*, or picking a speed, undoes it. Work that comes in during the
+*changed* and the speed line greys out; *Use the speed again* undoes it. Work that comes in during the
 run for a helper not listed (an unsure answer for the auditor, a check's excerpts after its search words) gets one
 helper. The choice is for that run only.
 

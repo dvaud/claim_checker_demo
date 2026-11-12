@@ -28,6 +28,8 @@ the model service chosen in Settings.
   a link to Settings. 401 means the token is wrong: ask to reload.
 - **Jobs.** Long work returns `{"job": Job}` at once; poll `GET /api/jobs/<id>` (about every 500 ms while
   `state` is `queued` or `running`). Jobs that use the chat model run one at a time; others wait in `queued`.
+  0.17.0: jobs of one project that change the same things wait their turn in `queued` too, with `waiting_for` saying
+  for which job (see Jobs below).
 - Times: hypotheses and documents carry ISO 8601 UTC strings (`created_at`); jobs carry Unix seconds.
 - Ids are opaque strings. URL-encode project names (they may contain spaces).
 
@@ -288,6 +290,11 @@ document the project has (at its place in `uploads/` or `inputs/`, or as `origin
 from outside the project folder). 0.14.3: nothing else of `uploads/` (before, the whole folder, so the file of a
 removed document went along).
 Built in a temporary file and sent in chunks; the file name is readable ("ENLENS project - Demo - 2026-10-28.zip").
+0.17.0: `?scope=shared` → only what you shared, to send to a colleague ("ENLENS shared work - …zip"): every private item
+is taken out of the copy of the database (`sharing.strip`, then VACUUM), a withdrawn item leaves only its mark, the
+codebooks not shared stay here, and the tables about this copy only (versions, the log of work brought in, the
+glossary) are empty; the documents and their files go along. `?scope=all` (the default) is the whole project, as
+before; either way each item says whose it is. Another `scope` → 400.
 `POST /api/projects/import?name=<name>` with the zip as the raw body → `{"project": summary}` (it becomes the
 current project). Without `name` the project keeps the name it had, with " (2)" added when that is taken; a `name`
 that is taken → 409. 400 for a file that is not a zip, or a zip without a project (`enlens.sqlite`). Paths in the zip
@@ -301,18 +308,212 @@ is left in `projects/`.
 `POST /api/projects/<p>/bring-in` with a colleague's project zip as the raw body merges it into this copy
 (`sync.bring_in`) → `{"report": …, "project": summary}`. The report: `{"from": {"id", "name"}, "project", "version",
 "at", "lines": ["From Anna: 1 new result.", …], "documents": {"new": [titles], "clash": [{"title", "doc_id"}],
-"removed_here", "removed_there"}, "checks": {"new", "updated", "same", "yours_newer", "clash": [{"hyp_id", "of",
+"removed_here", "removed_there", "other_reading": [{"title", "doc_id", "placed", "not_placed", "notes_lost"}] (0.17.0: a
+reading known as an earlier or later one of a document here: the colleague's results placed on yours)}, "checks": {"new", "updated", "same", "yours_newer", "clash": [{"hyp_id", "of",
 "text"}], "running": [texts], "running_here": [texts], "removed_here", "removed_there"}, "themes": {"new", "updated",
 "clash": [{"run_id", "of"}], "removed_here", "running_here": [run ids]}, "codebooks": {"new", "updated", "clash":
-[{"name", "of"}]}, "judgements", "reviews", "labels", "labels_kept_yours", "links", "other_rows", "bibliography":
+[{"name", "of"}], "merged": [{"name", "theirs", "added", "removed", "clash", "kept_removed"}] (0.17.0: code names)},
+"judgements", "reviews", "labels", "labels_kept_yours", "links", "other_rows", "bibliography":
 null | "new" | "merged" | "kept_yours", "ai_access": [{"title", "doc_id", "yours", "theirs", "now", "why": "theirs" |
 "yours" | "default", "claude_read_here" | "claude_read_there"}]}`; it is kept in `sync_log`. `running_here`
 (0.14.3): results and theme runs the colleague changed whose work in this copy is not done yet (waiting for Claude
 Code, taken by a helper, a part for the local model): this copy's version stays as it is (before, it was replaced and
-that work deleted). A file not known to be a copy of this project (another project's, or one made before 0.14) →
+that work deleted). 0.17.0: a file of a newer sync format than this copy knows (`bundle.json`'s `sync_needs` above
+this ENLENS's format, `sync/formats.py`) → 400 with a plain message, also with `?anyway=1`. A file not known to be a
+copy of this project (another project's, or one made before 0.14) →
 409 with `"not_this_project": {"project_uid", "from", "name", "version"}`; `?anyway=1` brings it in all the same (and remembers that project's id). 400 for a file that is not a project zip, or
 the zip of *Move ENLENS to another computer*. Before the merge the database is copied to
 `backups/before-bringing-in.sqlite`.
+**Private until shared (0.17.0, `sharing.py`, `gui/api_sharing.py`).** What a person makes is an *item*: `kind` one of
+`check` (key: the hypothesis id), `themes` (the theme run's id), `codebook` (its name), `note` (the note's id), `log`
+(an entry a person wrote), `link` (two terms' ids, `a|b`). Each is `private`, `shared` or `withdrawn` (shared once,
+taken back); only its owner (who made it) shares it or takes it back.
+- `GET /api/projects/<p>/sharing[?kind=&state=]` → `{"items": [{"kind", "key", "title", "state", "mine", "owner":
+  {"id", "name"} | null (made before 0.17.0, maker not known), "can_change", "at", "by", "here" (false: withdrawn and no
+  longer in the project), "needs": [{"kind", "key"}] (shared with it)}], "counts": {kind: {state: n}}, "me": {"id",
+  "name"}, "kinds": {kind: {"one", "many"}}}`. An unknown kind or state → 400.
+- `GET /api/projects/<p>/sharing/<kind>/<key>` → `{"item": {…as above…}}` (404 when the project holds no such item).
+- `POST /api/projects/<p>/sharing/share {"items": [{"kind", "key"}], "why"?}` (or one item as `{"kind", "key"}`) →
+  `{"shared": [{"kind", "key", "title"}], "also": [...] (shared because a shared item needs it: a check's codebook),
+  "already": [...]}`. `POST …/sharing/unshare` (same body) → `{"withdrawn": [...], "not_shared": [...]}`. Both write a
+  research log entry (kinds `shared`, `unshared`, group `together`) with `why`. 404 for an item the project does not
+  hold, 403 for a colleague's, 400 for a body without items.
+When a colleague's work comes in, the report says what its owner took back (`"shares": {"shared": [titles],
+"withdrawn": [titles], "withheld": [titles]}`: `withheld`, items its owner had taken back that this copy did not hold,
+which do not come in).
+
+**The shared folder (0.17.0, roadmap L5: `sync/folder.py`, `gui/api_folder.py`).** A folder the team already shares
+(OneDrive, Dropbox, a network drive), chosen once per project and kept in the project's `config.json`
+(`shared_folder`; never in the database or a zip). Each copy writes what its person shared into its own subfolder
+(`<folder>/ENLENS-<project id, 8>/<person id>/`) as numbered bundles that are never rewritten, and brings in what the
+others wrote with the merge rules of `bring-in`. The project's database never goes into the folder; documents' readings
+and original files are stored there once for the whole team.
+- `GET /api/projects/<p>/shared-folder` → `{"folder": path | null, "team_folder": path | null, "reachable": bool |
+  null, "keep_out": {"mine", "colleagues": [names], "in_force", "last_known": true (only while the folder cannot be
+  read: the colleagues who had the switch on when it last was)}, "me": {"id", "name", "last_written": n | null,
+  "last_written_at"}, "people": [{"id", "name", "app_version", "sync_format", "keep_out", "last_bundle",
+  "read_up_to", "last_read_at", "waiting" (their bundles not brought in yet), "has_read_mine" (how far they read
+  yours)}], "problems": [{"kind", "person": {"id", "name"} | null, "message", "seq"}], "not_here": [{"doc_id",
+  "title", "from"}] (documents colleagues keep out of the folder that this copy does not hold: add the file yourself),
+  "job": the round running now (a job view) | null, "last_round": the last round since the app started (a job view
+  with `result` or `error`) | null}`. Nothing is changed or written. `kind` of a problem: `unreachable` (the folder
+  cannot be reached: a drive not connected, a folder moved), `other_project` (the folder of that name holds another
+  project), `gap` (a colleague's bundle the cloud service has not brought yet), `arriving` (one still being copied, or
+  the project's own `project.json` not brought yet), `damaged` (not what its name says, or its database cannot be read:
+  left aside, and that colleague's later work waits behind it), `newer_format` (made by a newer ENLENS: update; that
+  colleague's work waits, the others' comes in), `documents` (documents their work reads have not arrived yet),
+  `failed` (their work could not be merged: nothing of it changed, the others' came in). Each `message` is in plain
+  words, ready to show; every one except `other_project` goes away by itself on a later round. A copy held up at a
+  colleague's bundle says so in its own subfolder (`waiting.json`); when that bundle is damaged or gone on its
+  writer's computer too, or names a reading no copy can write again, the writer's copy starts afresh at its next round
+  (one bundle with everything it shares), and the colleague goes on from there.
+- `PUT /api/projects/<p>/shared-folder {"path", "keep_out"?}` → the status above. The folder must exist, be writable,
+  not be inside the project's own folder, and not hold the project nor ENLENS's own folder (the cloud service would
+  copy the project's database to the team): 400 in plain words otherwise. The project's folder in it (`ENLENS-…`)
+  chosen by mistake stands for the folder that holds it. The research log notes the choice (kind `sync`).
+- `DELETE /api/projects/<p>/shared-folder` → the status: the project stops using the folder (nothing in it is
+  removed; what came in stays).
+- `PUT /api/projects/<p>/shared-folder/keep-out {"keep_out": bool}` → the status. On: documents marked *Only a local
+  AI* or *No AI* stay out of the folder (their readings, files, the AI work on them, and their passages in what a
+  shared check handed to the AI); colleagues add those files themselves, and checks that read them still come in
+  (their excerpts, with the words they quote, kept as records until the file is added). It holds in every copy once
+  anyone in the team has it on (`keep_out.in_force`). Off by default. 400 without a boolean. What a copy wrote of
+  such a document before (the switch turned on later, or the document marked later) is removed from its own subfolder
+  at its next round, and it starts afresh there with one bundle; what colleagues brought in already stays with them,
+  and the cloud service may keep earlier versions of files. An item taken back (*Unshare*) leaves the folder the same
+  way, in the copy of its owner and of any colleague who wrote it too. A document a colleague keeps out, whose file
+  this copy's person adds themselves, takes the colleague's setting at once (research log kind `ai-access`,
+  `data.from: "colleague"`).
+- `POST /api/projects/<p>/shared-folder/sync` → `{"job": view}` (kind `folder-sync`): *Sync now*, one round (bring in
+  what colleagues wrote, then write what changed: a copy writes with its colleagues' decisions already in force). One round per
+  project at a time: a second request returns the running job. 400 when no folder is chosen. The job's `progress`
+  is `{"step": "write" | "read" | "files", "message", "index"?, "total"?}`; its `result`: `{"at", "folder", "wrote":
+  {"seq" (null: nothing changed), "snapshot", "items": [{"kind", "key", "state", "title"}], "documents", "readings",
+  "files", "rows", "waiting": [{"kind", "key", "title"}] (shared items with work under way: written when done),
+  "kept_out", "taken_out" (documents whose words this round removed from this copy's subfolder: the switch)}, "read":
+  [{"id", "name", "bundles": [first, last] | null, "report": the bring-in report (above, with
+  `"via": "folder"`, `"bundles"` and `documents.not_here: [{"title", "doc_id", "kept_out"}]`) | null}], "files" (original
+  files fetched that arrived after their documents), "problems": [as above]}`. A folder that cannot be reached is a
+  problem in the result, not an error: nothing changed. Each colleague's work brought in is logged as from a zip
+  (`sync_log`, research log kind `sync`). 0.17.0 (M6): a round never runs beside adding documents, the new reader or
+  another round of the project: it waits its turn (`waiting_for`); it runs beside checks.
+
+**Looking by itself every couple of minutes (0.17.0, roadmap L3: `gui/poller.py`, `gui/api_poller.py`).** A thread of
+the app starts a round (`folder.sync_now`, the job above, marked `"background": true`) for each project with a shared
+folder: about 15 s after the app starts, then every `sync_every_minutes` (default 2) after the last round ended (a round
+by hand counts), and about 20 s after the last change made through the app in that project (any POST, PUT or DELETE
+under `/api/projects/<p>/` except uploads, *Sync now* and the poller's own routes, and the end of any other job of the
+project; each change starts the 20 s again). Never while paused, never without a folder, never two rounds at once for
+one project, and never beside adding documents or the new reader (running): then the round waits, without a job in the
+queue, and starts at the first look after that job ended. Its own rounds show in the sidebar only when one takes
+longer than 20 s. A round whose problems are all `unreachable` means offline: the
+next try waits 1, 2, 4, 8 … times the interval, at most 30 minutes (or the interval, if longer), and changes do not
+bring it forward; a round that reaches the folder (the poller's or one by hand) brings the interval back. The thread
+stops when the app quits (no round starts once quitting has begun).
+- `GET /api/projects/<p>/sync-poller` → `{"project", "folder": bool (a shared folder is chosen), "paused": bool (this
+  project, on this computer), "paused_all": bool (the whole app), "state", "every_seconds", "next_round_at": ISO UTC |
+  null, "next_round_in": seconds | null (null while paused, without a folder, or while a round runs), "offline": null |
+  {"since": ISO, "failures": n (rounds in a row), "retry_seconds": the back-off}, "busy": null | {"id", "kind", "title",
+  "message"} (the job that holds a due round back), "round": the round queued or running now (a job summary, by hand
+  or not) | null, "last_round": null | {"job", "background", "state": "done" | "error" | "cancelled", "finished_at":
+  ISO, "offline": bool, "problems": [as above], "came_in": n (as `came_in.count` counts), "error"}, "came_in":
+  {"count", "seen_through", "rounds": [{"id", "at", "from": {"id", "name"}, "bundles": [first, last], "lines":
+  [sentence], "count"}]}}`. `state`: `off` (no shared folder), `paused`, `waiting` (until `next_round_at`), `due`
+  (starting at the next look, within seconds), `busy`, `running`, `offline`. `came_in`: what came in through the
+  folder since the person last looked, newest first (at most 30 rounds listed; `count` covers all): each colleague's
+  merge from the folder (by the poller or by hand, kept in the project's `sync_log`, so it survives a restart) that
+  brought something to count: new and updated documents, results, sets of themes and codebooks, judgements, notes,
+  research log entries, items withdrawn by their owner, and sync clashes (labels and links are not counted). 404 for
+  a project that is not there.
+- `PUT /api/projects/<p>/sync-poller {"paused": bool}` → the state. Paused, no round starts by itself (*Sync now*
+  still works); resumed, a round comes soon. 400 without a boolean.
+- `POST /api/projects/<p>/sync-poller/seen {"through"?: id}` → the state: what came in up to the entry `through` of
+  `came_in.rounds` (all of it without `through`) is seen. The mark is kept in the project's `meta`
+  (`sync_came_in_seen`, never sent to a colleague) and never goes back. 400 when `through` is not a whole number.
+- `GET /api/sync-poller` → `{"every_minutes", "paused", "running": bool (the thread runs), "projects": [the state of
+  each project with a shared folder]}`.
+- `PUT /api/sync-poller {"paused"?: bool, "every_minutes"?: 1–60}` → the same. 400 for anything else.
+- Settings (also through `PUT /api/settings`): `sync_every_minutes` (1–60, default 2), `sync_paused` (default false),
+  `sync_paused_projects` (a list of project names). They belong to this computer.
+
+**One owner, several collaborators (0.17.0, roadmap L2: `ownership.py`, `sync/owner_merge.py`, `gui/api_owner.py`).**
+A shared project has one owner. What its documents *are* (which documents, how each is read, who may read each with
+AI) is the owner's to decide; the owner's own changes are the project's at once. A collaborator may still change the
+documents in their own copy: each such change is a *proposal* (kind, severity): `add` (a document added, low:
+accepted at once by the owner's setting, on by default), `reread` (read with the new reader, medium), `blocks` (*Leave
+out* / *Restore*, where the text starts or ends, medium), `remove` (high), `loosen` (more AI may read a document,
+high). The proposer's copy keeps the change, except a looser AI setting, which waits in every copy, theirs too. A
+document a collaborator adds reaches every copy at once, provisionally, and leaves the others when the owner declines
+it; every other proposal changes nothing elsewhere until the owner accepts it. A *stricter* AI setting is never a
+proposal: it holds in every copy at once. Who the owner is travels as a chain of records (`ownership`), with the
+proposals, the owner's decisions and the documents as the owner accepted them (`canon`), in zips and through the
+shared folder; `canon_seen` (how far this copy followed) stays in the copy. A project made with 0.17.0 is its maker's
+(the record is written when it first leaves the computer: a zip or the shared folder); a project exchanged before
+0.17.0 has no owner, and works as before, until someone says *Become the owner*. All routes are under
+`/api/projects/<p>/`; errors: 403 (only the owner, or only the proposer, in words), 404 (no such proposal, person or
+document), 409 (a proposal that no longer waits; nothing to make here), 400 (a body that says nothing usable).
+- `GET owner` → the view:
+  `{"owner": {"id", "name", "me"} | null, "me": person id, "is_owner", "since": ISO | null (when the record that made
+  the owner was written), "how": "made" | "claim" | "handover" | "takeover" | null, "can_claim" (no owner yet: *Become
+  the owner*), "can_take_over": words why | null (the owner has left the shared folder, or was not heard of for 14
+  days), "accept_adds" (the owner's setting; true in a collaborator's copy), "people": [{"id", "name", "me",
+  "owner"}] (this copy's person first), "proposals": [{"id", "kind", "severity": "low" | "medium" | "high", "doc",
+  "title", "what" (the change in words: "removing “Annual report 2024” from the project"), "by": {"id", "name",
+  "me"}, "at", "state": "waiting" | "accepted" | "declined" | "taken_back" | "replaced" | "moot", "note" (why it needs
+  no answer any more, in words) | null, "reason" (the owner's) | null, "decided_by": {…} | null, "decided_at",
+  "auto" (accepted at once by the setting), "mine", "can_decide", "can_take_back", "here" (the document is in this
+  copy), "conflicts": [ids of the other waiting proposals for the document], "detail"}] (newest first), "waiting": n
+  (in the owner's copy all that wait; otherwise this person's own), "to_apply": [{"doc", "title", "kind": "reread",
+  "note", "can_force"}] (a new reading the owner accepted that this copy did not make by itself: some of its results
+  would find no place, or it cannot be read now), "documents": {doc id: {"state": "proposed" | "declined" | "waiting",
+  "text"}}, "job": the move job of the project queued or running (a job view) | null}`. `detail` by kind: `add`
+  `{sha1, text_fp, reader, ai_access, state_n, again}`; `reread` `{from_fp, from_reader, to_fp, to_reader}`; `blocks`
+  `{digest, blocks_n, left_out, restored, undone, bounds}`; `remove` `{removed_at, state_n}`; `loosen` `{from, to,
+  ai_n}`. A copy names its own person "you". Before it answers, what this copy's person changed since the last look is
+  written down as proposals (and, in the owner's copy, as the project's); when other work holds the project's
+  database just then (a move, a merge) that waits for the next look, and the view shows what stands.
+- `POST owner/claim {}` → the view: *Become the owner* of a project with none. 403 when it has one, and for a project
+  never exchanged (its maker is its owner already). Two claims made at once: the earlier counts, then the smaller id.
+- `POST owner/hand-over {"to": person id, "why"?}` → the view. Only the owner (403); `to` missing or oneself → 400; a
+  person the project does not know → 404. The owner's own changes up to that moment become the project's first.
+  Proposals that wait are then the new owner's to answer; the new owner's own earlier proposals stay proposals.
+- `POST owner/take-over {"why"?}` → the view, when `can_take_over` says why; 403 otherwise (in words), and for the
+  owner. A hand-over and a take-over written at the same time: the hand-over counts.
+- `PUT owner/settings {"accept_adds": bool}` → the view. Only the owner (403); not a boolean → 400. Turned on, the
+  additions that wait are accepted at once. It is this copy's own and holds for one time as the owner: a new owner,
+  and an owner who has the project back, start at the default (on).
+- `POST owner/proposals/<id>/accept {"reason"?}` and `…/decline {"reason"?}` → the view. Only the owner (403); an
+  unknown id → 404; one that no longer waits → 409. Accepted, the change is made in the owner's copy at once (a
+  document not here is fetched from the shared folder; a new reading is made by a job, below) and reaches every copy
+  with its next round or zip. Declined, nothing changes in the project; the proposer's copy keeps its change (a
+  document they added stays in their copy only). `POST …/take-back {}` → the view: only the proposer (403); one that no
+  longer waits → 409.
+- `POST owner/apply {"doc", "force"?: bool}` → the view with `"job"`: make here now the new reading the owner accepted
+  (`to_apply`). `force`: results that find no place in the new reading are kept as records (as when a person moves a
+  document from its own page); without it the document moves only when every result finds its place. 400 without
+  `doc`, 404 for a document not here, 409 when it is read as the project reads it already.
+- **The move job:** a new reading the owner accepted is made in each copy by one job of kind `new_reader` (lane
+  `reader`: alone in its project, see Jobs), started when the owner accepts it, when a round of the shared folder that
+  brought the decision in ends, and after `bring-in` of a zip; `"background": true` unless started by `apply`. Only
+  documents whose file is here and on which no work runs are started; a document a waiting move covers already is not
+  started twice. Its `result`: `{"moved": [{"doc_id", "title", "reason", "not_placed"}], "kept": [the same, with the
+  reason it stayed as it is], "stopped", "owner": true, …}` and what adding documents does after it.
+- Added fields elsewhere (nothing else changed): `GET documents` → each document has `"proposal": {"state", "text"} |
+  null` (the view's `documents`, without a look at the shared folder); `PUT documents/ai-access` → `"proposed": [doc
+  ids]` (in a collaborator's copy, a setting looser than the project's is not made but proposed; the same again while
+  one waits proposes nothing more, again after a decline it is a new proposal); `bring-in`'s report → `"owner"` (what
+  this copy then did: `{"owner", "proposed", "accepted", "applied", "moves", "fetch", "notes"}`) and `"proposals":
+  {"new": [{"id", "kind", "title", "by"}], "decided": n, "owner": id | null (it changed)}`; its `documents` gain
+  `"not_wanted": [titles]` (the owner removed them from the project or did not accept them: they did not come in) and
+  `"removals": {"proposed" | "owner" | "declined" | "taken_back": [titles]}` (a colleague's removal, as what it is:
+  `removed_there` still lists them all); a folder round's `result` → `"moves_due": [doc ids]`; a document's stub in the
+  shared folder may carry `"canon_ai"` (how far that copy followed the owner's AI setting of it). A copy made with
+  *Import* from a colleague's zip starts as the project has its documents: what the colleague changed and the owner has
+  not accepted stays theirs.
+- Research log kinds (group `together`): `proposal`, `proposal-accepted`, `proposal-declined`, `proposal-taken-back`,
+  `owner`; each written once, by the copy of the person who acted, and it travels. A removal or an AI setting made in a
+  copy because the owner said so is `document-removed` (with `why`) or `ai-access` (`data.from: "owner"`).
+
 `GET /api/projects/<p>/together` → `{"uid", "me": {"id", "name"}, "people": [{"id", "name"}], "history": [{"at",
 "from", "lines"}] (newest first, 5), "clashes": [{"kind": "check" | "document" | "themes" | "codebook", "key",
 "of_key", "name", "at"}] (only those whose two versions are both still here: deleting one settles it), "agreement": [{"person_id", "name", "both", "agreed", "rate", "kappa"}]}`
@@ -463,7 +664,9 @@ out; page in the new reading), `"remade"`, `"tasks": {"asked_again", "moved", "k
 report), `"warnings": [sentence]}` (`reread.py`). `POST …/reread` → `{"job"}` (kind `reread`): the move in one
 transaction (all or nothing), then the document's search by meaning, the glossary and the keyword pass, as after adding
 a document; the job's result is `{"report": {… "moved": true}, "glossary", "codes", …}`. 409 with the reason when it
-cannot be done, or while another job of the project runs.
+cannot be done. 0.17.0: while another job of the project runs, the move waits its turn (`waiting_for`) instead of a 409;
+the same document asked for again returns the job already there. A move that finds, once its turn comes, that it can no
+longer be done ends with `error_kind: "request"` and the reason; nothing changed.
 
 `POST /api/projects/<p>/new-reader` `{"doc_ids"?: [doc_id]}` (0.15.7) → `{"job"}` (kind `new_reader`): the documents an
 earlier reader read (only those of `doc_ids`, when given; others are ignored) moved one after the other, each as `POST
@@ -471,8 +674,8 @@ earlier reader read (only those of `doc_ids`, when given; others are ignored) mo
 meaning, the glossary and the keyword pass. The job's result is `{"moved": [{"doc_id", "title", "results",
 "left_out"}], "kept": [{"doc_id", "title", "reason", "not_placed"?}], "stopped", "glossary", "codes", …}`: `kept` are
 left as they were, `not_placed` (how many results would have had no place) when that is the reason. Stopping it keeps
-the documents moved so far. 400 for `doc_ids` that is not a list; 409 when none is left to move, or while another job
-of the project runs. The list of documents (`GET …/documents`) gives `new_reader` (`ingest.READER`) beside each
+the documents moved so far. 400 for `doc_ids` that is not a list; 409 when none is left to move. 0.17.0: while another
+job of the project runs, it waits its turn (`waiting_for`) instead of a 409. The list of documents (`GET …/documents`) gives `new_reader` (`ingest.READER`) beside each
 document's `reader`.
 
 `PUT /api/projects/<p>/documents/<doc_id>/reading-checked` `{"checked": bool}` (0.15.7) → `{"checked": {"by", "name",
@@ -917,8 +1120,9 @@ every answer they store records the model, its digest, the prompt version, the s
 - `POST /api/projects/<p>/themes/<run>/new {replaces: <theme_id>}` → job (`theme-new`, scope: the run): a new theme
   in place of a removed one, on this computer and without AI (one more k-means step with the other centres fixed;
   it takes only passages closer to it than to their own theme and to every removed theme). Its result is
-  `{theme_id, replaces}`. A theme that is not removed, or already has a new theme in its place, is a 400; while
-  another new theme is being found for the same set, a 409.
+  `{theme_id, replaces}`. A theme that is not removed, or already has a new theme in its place, is a 400. 0.17.0: while
+  another new theme is being found for the same set, it waits its turn (`waiting_for`) instead of a 409; the same
+  removed theme asked for again returns the job already there.
 - `POST /api/projects/<p>/themes/<run>/name` → job: the AI names the themes (task `theme`, quotes checked).
 - `GET /api/projects/<p>/themes/<run>/export.xlsx`.
 
@@ -1252,8 +1456,15 @@ codes, where each example was found, the groups and their order. The old routes 
   "group_name"}], "codes": [{"code", "uid", "description", "group", "include", "exclude", "keywords", "examples":
   [{"quote", "doc_id", "title", "page"}]}], "where", "editable", "shadows_home", "in_home", "used": {"labels",
   "by_code", "checks"}, "removed": [{"code", "uid", "labels", …}], "stale": {code: {"since", "passages"}},
-  "versions", "profile_default"}}`. `include` is *When to use it*, `exclude` *When not to use it*, `keywords` *Words it
-  is matched by*. A code's `uid` is empty for a code not saved yet.
+  "versions", "profile_default", "clashes"}}`. `include` is *When to use it*, `exclude` *When not to use it*, `keywords`
+  *Words it is matched by*. A code's `uid` is empty for a code not saved yet. `clashes` (0.17.0): codes you and a
+  colleague both changed since you last exchanged the codebook, merged code by code when their work came in: `[{"uid",
+  "code" (yours now; null when you had removed it), "removed_here", "theirs": {"code", "description", "group",
+  "group_name", "include", "exclude", "keywords", "examples"}, "person_id", "name", "at"}]`.
+- `POST /api/projects/<p>/codebooks/<name>/clashes/<uid> {"keep": "mine" | "theirs", "why"?}` → `{"codebook"}` (0.17.0):
+  keep your version (theirs is set aside) or theirs (it replaces yours, or comes back when you had removed it; labels
+  follow a new name as after any edit). A version is kept and the research log says so. 404 when there is no such
+  clash.
 - `POST /api/projects/<p>/codebooks {"name", "title"?, "where"?: "project" | "home", "start"?: "fresh" | "themes" |
   "copy" | "csv", "source"?, "label"?}` → `{"codebook"}`. `source`: `{"codes": [...]}` (drafts from
   `GET …/codebooks/sources`, the ones kept), `{"of": "<codebook name>"}` or `{"csv": "<text>"}`. The columns of a CSV
@@ -1284,14 +1495,39 @@ codes, where each example was found, the groups and their order. The old routes 
 ```json
 {"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "second-opinion" |
          "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
-         "claude-install" | "bibliography" | …,
+         "claude-install" | "bibliography" | "new_reader" | "theme-new" | "folder-sync" | …,
  "title": "…", "queue": false,
  "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
  "created_at": 1793136448.87, "started_at": … | null, "finished_at": … | null, "seconds": 19.9,
  "error": null | "message", "error_kind": null | "backend" | "memory" | "request" | "internal",
+ "waiting_for": null | {"id", "kind", "title", "message": "Queued: starts when “…” has finished"},
+ "background": false,
  "progress": {…kind-specific…}, "result": {…} | null}
 ```
-Summaries (in lists) omit `progress` and `result`. Jobs live until the app is closed.
+Summaries (in lists) omit `progress` and `result`. Jobs live until the app is closed. `background`: started by the app
+itself (a round of the shared folder by the poller), not by the person.
+
+**Jobs wait their turn (0.17.0, roadmap M6: `api_common.Jobs`, `LANES`).** Jobs of one project that change the same
+things never run at the same time: the later one stays `queued`, with `waiting_for` naming the job it waits for (the
+one just ahead of it in the project's queue, else the one running), and starts when its turn comes, first come first
+served. It can be cancelled while it waits (`POST /api/jobs/<id>/cancel`: it leaves at once, `cancelled`, and the ones
+behind it move up). Which jobs wait for which:
+- *the new reader* (`new_reader`, and `reread` of one document, not of an excerpt) runs alone in its project: it waits
+  until no other job of the project runs, and while it runs every other job waits for it (a job holding passage ids
+  from before the move would put its results on passages that are gone). While it still waits, it (and search by
+  meaning or another move waiting behind it) holds back only search by meaning and other moves, so a move waiting
+  behind a check that waits for Claude Code never stalls the rest of the project;
+- *adding documents* (`ingest`), *search by meaning* (`index`) and *a round of the shared folder* (`folder-sync`):
+  adding waits for the other three and they for it; two of the same kind never run together; search by meaning and a
+  round run beside each other;
+- *new themes for one set of themes* (`theme-new`) run one after the other (two would take the same passages);
+- everything else (checks, labels, themes, the glossary, codebooks tried out, the bibliography …) runs beside the
+  others, except the new reader, as before; jobs that use the chat model still take turns for it, and a job waiting
+  for its project's turn does not hold the model.
+When both are asked for, the new reader goes first: search by meaning that still waits moves behind it (the other
+waiting jobs keep their places), so no passage is prepared twice; search by meaning asked for while the new reader
+waits or runs waits for it. `waiting_for` is null once the job has its
+turn (a job that then waits only for the chat model is `queued` with `waiting_for` null, as before).
 
 ### Testing a model
 

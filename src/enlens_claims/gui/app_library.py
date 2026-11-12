@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import traceback
 
-from .api_common import ApiError, Job, _usable_embedder
+from .api_common import ONE_START, ApiError, Job, _usable_embedder
 from .. import bibliography, embed, frameworks, home
 from ..llm import BackendError
 from ..store import now as _now
@@ -104,10 +104,11 @@ class LibraryMixin:
 
         def run(job: Job):
             job.progress = {"done": 0, "total": 0, "file": title, "phase": "reading"}
-            try:
-                report = reread.move(ws, doc_id, person)
-            except ValueError as e:  # said in words for a researcher; nothing changed
-                raise ApiError(409, str(e)) from None
+            if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):  # removed while the move waited
+                raise ValueError("This document was removed while its move waited its turn: nothing was moved.")
+            # said in words for a researcher, and nothing changed, when it cannot be done now (0.18: a ValueError, so
+            # the job's error is these words, also after the move waited its turn and something changed meanwhile)
+            report = reread.move(ws, doc_id, person)
             stats = {"report": report}
             emb = home.make_embedder(s)
             if emb is not None and not job.cancel.is_set():
@@ -121,7 +122,13 @@ class LibraryMixin:
                 self._after_adding(ws, job, stats, [doc_id], s)
             return stats
 
-        return self.jobs.start("reread", f"Reading “{title[:60]}” with the new reader", name, run, uses_model=False)
+        with ONE_START:  # 0.18 (M6): this document's move waits or runs already: that one, not a second
+            same = [j for j in self.jobs.all() if j.kind == "reread" and j.lane == "reader" and j.project == name
+                    and j.scope == doc_id and j.state in ("queued", "running")]
+            if same:
+                return same[0]
+            return self.jobs.start("reread", f"Reading “{title[:60]}” with the new reader", name, run,
+                                   uses_model=False, lane="reader", scope=doc_id)  # it runs alone in its project
 
     def start_new_reader_many(self, name: str, doc_ids: list[str], person: str) -> Job:
         """0.15.7: several documents moved to the new reader in one job, from the Documents page, each all or nothing

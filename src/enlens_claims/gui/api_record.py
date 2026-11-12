@@ -141,6 +141,12 @@ class RecordApi:
         merges = body.get("merges") if isinstance(body.get("merges"), list) else []
         return codebooks.save(self.app.ws(name), cb, state, merges, str(body.get("why") or "") or None)
 
+    def post_codebook_clash(self, name, cb, uid, q):
+        """0.18: keep your version of a code you and a colleague both changed, or theirs (sync/codebook_merge.py)."""
+        body = self._body()
+        return {"codebook": codebooks.settle_clash(self.app.ws(name), cb, uid, str(body.get("keep") or ""),
+                                                   str(body.get("why") or "") or None)}
+
     def delete_codebook(self, name, cb, q):
         why = _str(q, "why") or self._body().get("why")
         codebooks.remove(self.app.ws(name), cb, str(why or "") or None)

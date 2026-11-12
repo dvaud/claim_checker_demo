@@ -1,6 +1,6 @@
 // Quick look (F8): drop one document and read it at once (search, key terms, codes), in a temporary project that is
 // moved to the trash after a week unless it is kept.
-import { App, api, h, icon, replace, toast, showError, dialog, confirmDialog, watchJob, P, navigate, fmt, button } from "../lib.js";
+import { App, api, h, icon, replace, toast, showError, dialog, confirmDialog, watchJob, P, navigate, fmt, button, notice } from "../lib.js";
 import { simpleProgress } from "./progress.js";
 
 const OK = /\.(pdf|docx|html?|txt|md)$/i;   // 0.14.3: Word too (the app reads it, and the file chooser offers it)
@@ -33,9 +33,9 @@ export function quickLookBanner(box) {
       navigate("#/");
     } catch (e) { showError(e); discard.disabled = false; }
   });
-  replace(box, h("div", { class: "ql-banner", role: "status" }, icon("eye", { size: 16 }),
-    h("span", { class: "grow" }, h("strong", {}, "A quick look"), ` at ${t.file || "one document"}, in a temporary project of its own. It is moved to the trash on ${fmt.dateShort(until.toISOString())} unless you keep it.`),
-    keep, discard));
+  replace(box, notice({ kind: "info", icon: "eye", class: "ql-banner", role: "status" },
+    h("p", {}, h("strong", {}, "A quick look"), ` at ${t.file || "one document"}, in a temporary project of its own. It is moved to the trash on ${fmt.dateShort(until.toISOString())} unless you keep it.`),
+    h("div", { class: "btn-row" }, keep, discard)));
 }
 
 // "Quick look at one document": choose a file, it is read into a temporary project and opened.

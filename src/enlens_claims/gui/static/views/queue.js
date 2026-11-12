@@ -2,7 +2,7 @@
 // this project, kind by kind: do first, hold or go on, remove; Start Claude Code with its speed and helpers; or answer
 // it with the AI model of Settings. (Until 0.16.1 this was the queue panel at the foot of the sidebar; the sidebar now
 // shows only the work's essentials, in its status area, and links here.)
-import { App, api, h, icon, replace, toast, showError, confirmDialog, P, watchJob, startClaude, button, card, tag } from "../lib.js";
+import { App, api, h, icon, replace, toast, showError, confirmDialog, P, watchJob, startClaude, button, card, tag, withAI, readsLine, aiWhere } from "../lib.js";
 
 export function queueSection() {
   const body = h("div", { class: "queue-section", "aria-live": "polite" });
@@ -36,8 +36,7 @@ export function queueSection() {
     const head = q.runner && q.runner.running ? `Claude Code is working: ${(q.waiting + q.being_answered).toLocaleString()} to go`
       : q.waiting ? (q.paused ? `Paused: ${q.waiting.toLocaleString()} waiting` : `${(q.waiting + q.being_answered).toLocaleString()} waiting for Claude Code`)
       : q.being_answered ? `Claude Code is answering ${q.being_answered}` : "Nothing waits.";
-    const parts = [h("p", { class: "qp-head" }, icon(q.paused ? "pause" : "inbox", { size: 14 }), " ", h("strong", {}, head)),
-      h("p", { class: "muted small qp-privacy" }, icon("cloud", { size: 12 }), " ", q.privacy || "")];
+    const parts = [h("p", { class: "qp-head" }, icon(q.paused ? "pause" : "inbox", { size: 14 }), " ", h("strong", {}, head))];
     if (q.paused && q.paused_text) parts.push(h("p", { class: "small qp-paused" }, q.paused_text));
     if (!kinds.length) parts.push(h("p", { class: "muted small" }, "Press an AI button (a check, Label with the AI, Name the themes…): its work waits here for Claude Code."));
     for (const k of kinds) {
@@ -51,10 +50,14 @@ export function queueSection() {
           button({ kind: "danger", sm: true, onClick: () => remove(k) }, icon("trash", { size: 12 }), "Remove"))));
     }
     if (kinds.length || s.backend === "claude_code") parts.push(h("div", { class: "qp-start" }, startClaude(App.project, { command: q.command })));
+    // where the tasks' text goes (docs/DESIGN.md 4.4): under the card's AI actions. With Claude Code, under Start Claude
+    // Code; with another AI, under "Answer them here instead"
+    if (s.backend === "claude_code") parts.push(aiWhere(q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic.", "cloud"));
     if (kinds.length && s.backend !== "claude_code") {
-      parts.push(h("div", { class: "qp-here" }, button({ sm: true, onClick: async () => {
+      parts.push(h("div", { class: "qp-here" }, ...withAI(button({ sm: true, onClick: async () => {
         try { const r = await api("POST", `/api/projects/${P(App.project)}/queue/run`, {}); toast("The AI model of Settings answers the queue now.", "ok"); watchJob(r.job.id, () => {}).promise.then(() => draw()); } catch (e) { showError(e); }
-      } }, icon("play", { size: 13 }), "Answer them here instead"), h("span", { class: "muted small" }, ` with ${App.state.backend_label}`)));
+      } }, icon("play", { size: 13 }), "Answer them here instead")), h("span", { class: "muted small" }, ` with ${App.state.backend_label}`)),
+        readsLine("the tasks waiting"));
     }
     replace(body, ...parts);
     if (q.waiting || q.being_answered || (q.runner && q.runner.running)) timer = setTimeout(draw, 5000);

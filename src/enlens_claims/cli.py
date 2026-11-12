@@ -135,6 +135,7 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--report", metavar="FILE.md", help="write the report to this file instead of printing it")
     p = sub.add_parser("export-project", help="write the whole project (database, uploads, original files) to one zip")
     p.add_argument("zip")
+    p.add_argument("--shared", action="store_true", help="only what you shared, to send to a colleague")
     p = sub.add_parser("import-project", help="unpack a project zip into the folder given by --ws (new or empty)")
     p.add_argument("zip")
     p = sub.add_parser("bring-in", help="0.14: merge a colleague's project zip into this copy of the project")
@@ -483,7 +484,7 @@ def _main(argv: list[str] | None = None) -> int:
     if a.cmd == "export-project":
         from . import bundle
 
-        _print(bundle.export_project(ws, a.zip))
+        _print(bundle.export_project(ws, a.zip, scope="shared" if a.shared else "all"))
         return 0
     if a.cmd == "bring-in":
         from . import sync

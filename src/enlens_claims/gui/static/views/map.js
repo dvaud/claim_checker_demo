@@ -2,13 +2,13 @@
 // (judgements that count at the strictness; a person's always count), with symbols as well as colours. 0.17.0: a view
 // of the Hypotheses page (its tab beside Answers), with the page's head.
 import { featureEyebrow, viewTabs } from "../features.js";
-import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks, link, iconButton, tag } from "../lib.js";
+import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks, link, iconButton, tag, notice } from "../lib.js";
 
 const SIDE = {
-  supports: { symbol: "+", word: "supports", cls: "m-sup", icon: "circle-check" },
-  partly: { symbol: "(+)", word: "partly supports", cls: "m-part", icon: "circle-half" },
-  refutes: { symbol: "−", word: "contradicts", cls: "m-ref", icon: "circle-x" },
-  both: { symbol: "±", word: "both supports and contradicts", cls: "m-both", icon: "arrows-opposed" },
+  supports: { symbol: "+", word: "supports", cls: "m-sup" },
+  partly: { symbol: "(+)", word: "partly supports", cls: "m-part" },
+  refutes: { symbol: "−", word: "contradicts", cls: "m-ref" },
+  both: { symbol: "±", word: "both supports and contradicts", cls: "m-both" },
 };
 
 export async function renderMap(view, params, query) {
@@ -34,7 +34,7 @@ export async function renderMap(view, params, query) {
     if (answersTab && batch) answersTab.setAttribute("href", `#/hypotheses?batch=${encodeURIComponent(batch)}`);
     view.appendChild(tabs);
   }
-  if (batch) view.appendChild(h("div", { class: "batch-banner map-batch-banner" }, icon("list-checks", { size: 14 }), h("span", {}, `Showing the ${hyps.length} ${hyps.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together.`), link({ kind: "back", href: "#/map" }, "Show all hypotheses")));
+  if (batch) view.appendChild(notice({ kind: "info", icon: "list-checks", class: "map-batch" }, h("p", {}, `Showing the ${hyps.length} ${hyps.length === 1 ? "hypothesis" : "hypotheses"} of one set checked together. `, link({ kind: "back", href: "#/map" }, "Show all hypotheses"))));
 
   if (!hyps.length) {
     view.appendChild(emptyState("layers", "Nothing to map yet", "Check a hypothesis and it appears here with the documents behind its answer.", link({ kind: "next", href: "#/hypotheses" }, "Check a hypothesis")));
@@ -50,7 +50,7 @@ export async function renderMap(view, params, query) {
   const single = hyps.filter((x) => x.single_document).length;
   const key = docs.filter((d) => d.key);
   const notes = [];
-  if (single) notes.push(h("p", {}, icon("alert-triangle", { size: 13, class: "map-note-attention" }), ` ${single === 1 ? "1 answer rests" : `${single} answers rest`} on one document only (marked “rests on one document”): a second source would make ${single === 1 ? "it" : "them"} more solid.`));
+  if (single) notes.push(h("p", {}, icon("info", { size: 13 }), ` ${single === 1 ? "1 answer rests" : `${single} answers rest`} on one document only (marked “rests on one document”): a second source would make ${single === 1 ? "it" : "them"} more solid.`));
   if (key.length) notes.push(h("p", {}, icon("star", { size: 13 }), ` ${key.length === 1 ? "1 document is a key document" : `${key.length} documents are key documents`} (marked “decides N answers”): leaving it out would change those answers, so it deserves a careful read.`));
   if (m.documents_without_evidence) notes.push(h("p", { class: "muted" }, `${m.documents_without_evidence} ${m.documents_without_evidence === 1 ? "document has" : "documents have"} no excerpt that counts in any answer, so ${m.documents_without_evidence === 1 ? "it is" : "they are"} not shown as a column.`));
   if (notes.length) view.appendChild(h("div", { class: "map-notes" }, notes));
@@ -75,7 +75,7 @@ export async function renderMap(view, params, query) {
       h("th", { scope: "row", class: "map-hyp" },
         link({ kind: "title", href, serif: true }, x.text),
         h("div", { class: "map-hyp-meta" }, statusBadge(x.status, { short: true, text: x.status_text }),
-          x.single_document ? tag({ kind: "attention" }, "rests on one document") : null,
+          x.single_document ? tag({ icon: "info" }, "rests on one document") : null,
           x.docs_counted ? h("span", { class: "muted small" }, `${x.docs_counted} ${x.docs_counted === 1 ? "document" : "documents"}`) : h("span", { class: "muted small" }, "no document counts"))),
       docs.map((d) => {
         const c = row[d.doc_id];

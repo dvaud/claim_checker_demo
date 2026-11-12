@@ -67,6 +67,23 @@ and others, and changed the light `--muted` and `--sidebar-w`). `site.css` may a
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --accent: #f0a46c; } }
 ```
 
+**Classes removed in 0.17.0.** A `site.css` rule for one of these styles nothing any more: each was a component drawn
+by one page (an action drawn as a link, a page's own badge, chip, banner or message box), and its look is now its
+helper's, in that helper's section of `components.css` (`docs/DESIGN.md` 9 lists the helpers). A test reads this list
+and keeps every class in it gone:
+
+<!-- removed-classes -->
+```text
+link-btn danger-link btn-lg seg-on chip-btn seg-pick seg-choice so-seg nav-ai nav-ai-uses nav-ai-optional
+nav-legend badge-accent badge-warn badge-provisional badge-job status-prefix chip-weak chip-counted chip-yours
+chip-scope chip-second chip-agrees chip-disagrees chip-flag chip-wait-you new-badge access-option route-card
+rc-badge cb-start-opt note-pick-item ps-item ps-sep logdrawer-seg logdrawer-entry logdrawer-entry-link
+card-verdict person-mark-partly bc-sup bc-part bc-ref map-key-doc ev-words result-meta update-ready
+res-code-line th-title-meta dv-file-meta card-title hero th-num pf-where-note batch-banner map-batch-banner
+run-summary moved-note user-note whats-new tag-disagree hyp-list-warn map-note-attention cb-unsaved dv-q-good
+dv-q-fair dv-q-poor tag-clash warn-text batch-error bib-tiles bib-tile bib-tile-n bib-tile-label
+```
+
 A **package** puts its page files in a folder and names it in its add-on module:
 
 ```python
@@ -99,8 +116,8 @@ BRAND = {"name": "Fieldnotes", "tagline": "notes from the field", "logo": "/stat
 
 Page code names the app with `appName()` (or `brand()`) from `lib.js`, never with a fixed "ENLENS".
 
-An add-on's pages build with the same helpers as ENLENS's (`button()`, `link()`, `card()`, `notice()`, `tag()`,
-`choice()`, `field()` and the rest of [DESIGN.md](DESIGN.md), section 9.3) from `/static/lib.js`, never by spelling
+An add-on's pages build with the same helpers as ENLENS's (`button()`, `link()`, `card()`, `inset()`, `notice()`,
+`tag()`, `choice()`, `field()` and the rest of [DESIGN.md](DESIGN.md), section 9.3) from `/static/lib.js`, never by spelling
 ENLENS's classes, so they look native and follow every change of a component. `#/design` shows each one as it renders
 in this installation.
 

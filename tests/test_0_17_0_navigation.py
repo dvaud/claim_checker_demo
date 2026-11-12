@@ -43,7 +43,8 @@ def test_places_and_their_views():
                        ("profile", "#/profile"), ("codebooks", "#/codebooks"), ("answers", "#/hypotheses"), ("map", "#/map")):
         assert re.search(rf'\["{view}", "[^"]+", "{re.escape(href)}"', features), view
     assert '["profile", "By document", "#/profile", "tag"]' in features  # Profile's new name, under Codes
-    assert "export function viewTabs(place, current)" in features and 'class: "settings-tabs view-tabs"' in features
+    # 0.17.0 (design guide): every row of tabs is made by tabs() (lib.js), the view tabs of a place too
+    assert "export function viewTabs(place, current)" in features and 'tabs({ class: "view-tabs",' in features
     # each view's page shows its place's title and the tabs
     for f, place, view in (("views/sources.js", "documents", "sources"), ("views/notes.js", "documents", "annotations"),
                            ("views/bibliography.js", "documents", "bibliography"), ("views/profile.js", "codes", "profile"),
@@ -53,7 +54,9 @@ def test_places_and_their_views():
 
 
 def test_one_ai_mark():
-    features = _read("features.js")
+    # 0.17.0 (design guide): the AI mark is a component, so it lives in lib.js with the other helpers (features.js
+    # offers it too); lib.js's queue notice puts it beside Start Claude Code
+    features = _read("lib.js")
     marks = features[features.index("const AI_TEXT = {"):features.index("export function aiTag(")]
     assert '"No AI"' in marks and '"AI on request"' in marks and '"Uses the AI"' in marks
     fn = features[features.index("export function aiTag("):features.index("\n}\n", features.index("export function aiTag("))]

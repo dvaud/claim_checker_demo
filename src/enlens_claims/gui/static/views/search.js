@@ -143,7 +143,7 @@ export async function renderSearch(view, params, query) {
     if (st.meaning) return meaningResults();
     let r;
     try { r = await api("GET", `/api/projects/${P(project)}/search?${apiQs({ offset: st.offset, limit: PAGE })}`); }
-    catch (e) { replace(out, notice({ kind: "error" }, h("p", {}, e.message))); return; }
+    catch (e) { replace(out, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
     drawLines(r);
   }
 
@@ -189,9 +189,9 @@ export async function renderSearch(view, params, query) {
     const rows = r.lines.map((x) => {
       const node = h("mark", {}, ...wordSpans(x.node, addWord));
       const docHref = `#/doc/${encodeURIComponent(x.doc_id)}?q=${x.start}-${x.end}`;
-      const check = button({ kind: "quiet", sm: true, title: "Check a hypothesis about what this line says",
-        onClick: () => navigate(`#/hypotheses?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`) }, icon("flask", { size: 13 }), "Check");
-      check.setAttribute("aria-label", "Check a hypothesis about this line");
+      // it only takes the line to the Hypotheses page (nothing is checked yet): a place, so a link (DESIGN.md 6)
+      const check = link({ href: `#/hypotheses?text=${encodeURIComponent(starterSentence(x.left, x.node, x.right))}`, class: "kw-check",
+        title: "Write a hypothesis about what this line says, on the Hypotheses page", "aria-label": "Check a hypothesis about this line, on the Hypotheses page" }, "Check this");
       // 0.17: the title is what a person looks for; "paragraph N of M" sits in the tooltip and the accessible name
       // 0.17.0rc4: the title is the one way to open the document at these words, so it looks like a link
       const title = x.title || "untitled";
@@ -209,7 +209,7 @@ export async function renderSearch(view, params, query) {
       h("span", { class: "muted small" }, `Lines ${fmt.num(st.offset + 1)}–${fmt.num(st.offset + r.lines.length)} of ${fmt.num(r.total)}`),
       button({ sm: true, disabled: st.offset + PAGE >= r.total, onClick: () => { st.offset += PAGE; go_(); window.scrollTo(0, 0); } }, "Next", icon("chevron-right", { size: 13 })));
     out.appendChild(pages);
-    out.appendChild(h("p", { class: "muted small" }, "Click a word in a line to add it to the search; Shift-click to make a phrase with the words you searched for. Click the title to open the document at those words. ", icon("flask", { size: 12 }), " Check starts a check of what the line says."));
+    out.appendChild(h("p", { class: "muted small" }, "Click a word in a line to add it to the search; Shift-click to make a phrase with the words you searched for. Click the title to open the document at those words. “Check this” takes the line to the Hypotheses page, to check what it says."));
     // the words around the hits
     const colBox = card({ as: "div", class: "sr-colloc-card", hidden: true });
     const colBtn = button({ sm: true }, icon("network", { size: 13 }), "Words that often appear nearby");
@@ -240,7 +240,7 @@ export async function renderSearch(view, params, query) {
   async function meaningResults() {
     let r;
     try { r = await api("GET", `/api/projects/${P(project)}/search?${apiQs({ mode: "meaning", limit: 30 })}`); }
-    catch (e) { replace(out, notice({ kind: "error" }, h("p", {}, e.message))); return; }
+    catch (e) { replace(out, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
     clear(out);
     out.appendChild(h("div", { class: "section-title" }, h("h2", {}, `The ${r.passages.length} passages closest in meaning`), h("span", { class: "muted" }, "whole passages, by keywords and meaning together")));
     if (!r.passages.length) { out.appendChild(emptyState("search-x", "Nothing found", "No passage is close to these words.")); return; }

@@ -98,7 +98,9 @@ def test_the_sidebar_says_not_running_in_its_own_colour():
     # on hold and running are told apart, with their own class, words and mark
     assert "const hold = active.filter((j) => j.on_hold);" in draw and "const going = active.filter((j) => !j.on_hold);" in draw
     assert 'kind: "stalled"' in draw and '"Not running"' in draw and 'icon: "pause"' in draw
-    assert "for Claude`" in draw   # "2 tasks wait for Claude" (the tooltip says Claude Code)
+    # 0.17.0 (design guide): "2 tasks waiting" fits the status area beside Start ("2 tasks wait for Clau…" was cut);
+    # the tooltip says for whom
+    assert "sub: `${tasksWord(n)} waiting`," in draw and "wait\"} for Claude Code. Start it" in draw
     # the pulsing dot is only for work that runs
     assert 'w.kind === "running" ? h("span", { class: "running-dot"' in draw
     # it offers to start Claude Code for the current project's work on hold, in one button
@@ -125,9 +127,10 @@ def test_the_result_page_reads_in_one_order():
     card = js[js.index("  function answerCard("):js.index("  function whatsNewText(")]
     assert "whoSaysWhat(parts[0])" in card and "followUpsCard" not in js
     # one caution at most, in the same paragraph as the next step; no prefix that reads as a history
-    assert "The AI's first reading:" not in js and card.count('" answer-caution"') == 1
+    # 0.17.0 (design guide, changed on purpose): the one caution is a notice, attention or info (docs/DESIGN.md 3.3, 4.12)
+    assert "The AI's first reading:" not in js and card.count('class: "answer-caution"') == 1
     # 0.14.3: the one caution paragraph may also name the excerpts that wait for your judgement (baseCaution + forYouLine)
-    assert "const baseCaution = r.incomplete ?" in card and "const caution = [baseCaution, forYouLine]" in card and 'h("p", { class: "answer-next-text" + (caution ? " answer-caution" : "") }' in card
+    assert "const baseCaution = r.incomplete ?" in card and "const caution = [baseCaution, forYouLine]" in card and 'text && caution ? notice({ kind: r.incomplete || unchecked || forYou ? "attention" : "info", class: "answer-caution" }, h("p", {}, text))' in card
     # strictness is said once, beside what counts, explained behind its help mark (which says where to try another)
     assert "function strictnessLine(" not in js
     head = js[js.index("  function evidenceHead("):js.index("  // One compact row per excerpt read")]
@@ -181,7 +184,9 @@ def test_an_excerpt_card_is_compact_and_can_be_dismissed():
     assert "judgeControl(p, part, passageEl, extras)" in card and 'panelToggle(`tech:${p.passage_id}`, "Details", morePanel, false)' in card
     # five actions in the row; reading again is under Details, the original file with the whole excerpt (In context);
     # one panel open at a time
-    assert "rereadBtn ? h(\"div\", { class: \"ev-more-actions\" }, rereadBtn) : null," in card and '"the original file"' in card
+    # 0.17.0 (design guide): reading again sends the excerpt to the AI, so it carries the AI mark (withAI())
+    # 0.17.0 (design guide 4.4): the reread button's panel says where the excerpt goes, under the button
+    assert "rereadBtn ? h(\"div\", { class: \"ev-more-actions\" }, withAI(rereadBtn), readsLine(\"this excerpt again, with your comment\")) : null," in card and '"the original file"' in card
     assert "if (other !== btn) other.click();" in js
     assert 'wrap.append(judgePanel, ...(extras.panels || []));' in judge
     assert "Sentence highlighted by the AI" not in js  # the section head says it once

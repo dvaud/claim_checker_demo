@@ -1,6 +1,6 @@
 // First run. When the AI model is already set up (someone installed the app), the user starts by naming a project
 // and adding documents. The model step appears only when no model works yet.
-import { App, api, h, icon, replace, clear, toast, showError, field, navigate, store, brand, appName, button, card, fold, link, notice, select, input as fieldInput } from "../lib.js";
+import { App, api, h, icon, setButtonKind, replace, clear, toast, showError, field, navigate, store, brand, appName, pageHead, aiWhere, button, card, fold, link, notice, select, input as fieldInput, inset } from "../lib.js";
 import { plainTestResult, claudeSetupCard } from "./settings.js";
 import { linkProjectDialog, importProjectDialog } from "./projects.js";
 import { WELCOME_CARDS } from "../registry.js";
@@ -22,15 +22,15 @@ export async function renderSetup(view) {
   const idx = stepsAll.findIndex((x) => x[1] === current);
 
   const steps = h("ol", { class: "setup-steps", "aria-label": "Steps" },
-    stepsAll.map(([t, key], i) => h("li", { class: `setup-step ${i === idx ? "active" : i < idx ? "done" : ""}`, "aria-current": i === idx ? "step" : null }, h("span", { class: "n" }, i < idx ? icon("check", { size: 12 }) : String(i + 1)), t)));
+    stepsAll.map(([t, key], i) => h("li", { class: "setup-step", "data-state": i < idx ? "done" : null, "aria-current": i === idx ? "step" : null }, h("span", { class: "n" }, i < idx ? icon("check", { size: 12 }) : String(i + 1)), t)));
   const wrap = h("div", { class: "setup" },
-    h("div", { class: "hero" }, h("p", { class: "eyebrow" }, "Welcome"), h("h1", { id: "page-title", tabindex: "-1" }, brand().welcome_title),
-      h("p", {}, brand().welcome_text),
-      // 0.13.6: an add-on's cards (registry.js), under the welcome text
-      WELCOME_CARDS.length ? h("div", { class: "ov-grid ov-grid-small welcome-cards" }, WELCOME_CARDS.map((c) =>
-        h("div", { class: "ov-card" }, h("div", { class: "ov-card-head" }, h("span", { class: "ov-card-icon" }, icon(c.icon || "grid", { size: 15 })), h("h3", {}, c.title)),
-          c.text ? h("p", {}, c.text) : null))) : null,
-      modelOk && !cc ? h("p", { class: "it small" }, icon("house", { size: 14 }), h("span", {}, "The AI model is set up and runs on this computer: your documents never leave it.")) : null),
+    pageHead(brand().welcome_title, { eyebrow: "Welcome", sub: brand().welcome_text, class: "su-head",
+      meta: [
+        // 0.13.6: an add-on's cards (registry.js), under the welcome text
+        WELCOME_CARDS.length ? h("div", { class: "ov-grid ov-grid-small welcome-cards" }, WELCOME_CARDS.map((c) =>
+          h("div", { class: "ov-card" }, h("div", { class: "ov-card-head" }, h("span", { class: "ov-card-icon" }, icon(c.icon || "grid", { size: 15 })), h("h3", {}, c.title)),
+            c.text ? h("p", {}, c.text) : null))) : null,
+        modelOk && !cc ? aiWhere("The AI model is set up and runs on this computer: your documents never leave it.", "local") : null] }),
     steps);
   view.appendChild(wrap);
   const body = h("div", {});
@@ -44,9 +44,9 @@ export async function renderSetup(view) {
 function claudeStep(body) {
   const next = () => { store("setup-ai", "done"); rerender(); };
   const nextBtn = button({ onClick: next }, "Next: your project", icon("arrow-right", { size: 14 }));
-  replace(body, card({ as: "div" }, h("h2", {}, "The AI: Claude, on your own Claude plan"),
+  replace(body, card({ as: "div", title: "The AI: Claude, on your own Claude plan" },
     h("p", { class: "muted" }, `${appName()} uses Claude Code, signed in with your Claude subscription, for the AI parts (labels, theme names, checks). Search, keyword profiles, the glossary and themes work without any AI. Your documents stay on this computer; only the passages inside the AI's tasks are sent to Anthropic.`),
-    claudeSetupCard({ onReady: () => { nextBtn.classList.add("btn-primary"); } }),
+    claudeSetupCard({ onReady: () => setButtonKind(nextBtn, "main") }),
     h("div", { class: "btn-row su-next-actions" }, nextBtn),
     fold({ class: "su-others-fold" }, "No Claude plan? Other options",
       h("div", { class: "stack su-others-body" },
@@ -78,25 +78,25 @@ function projectStep(body) {
     err,
     h("div", { class: "btn-row" }, btn, button({ kind: "quiet", wrap: true, onClick: () => linkProjectDialog() }, `Open an existing ${appName()} project folder (advanced)`)));
   // 0.10: a new computer can take everything from the old one instead
-  const moving = card({ as: "div", class: "move-in" }, h("div", { class: "it" }, icon("monitor", { size: 16 }), h("strong", {}, `Used ${appName()} on another computer?`)),
+  const moving = card({ as: "div", class: "move-in", title: `Used ${appName()} on another computer?` },
     h("p", { class: "muted small" }, `Bring all your projects and settings here in one go, from the file made with “Move ${appName()} to another computer” on the old one.`),
     button({ sm: true, onClick: () => importProjectDialog({ move: true }) }, icon("upload", { size: 13 }), "Import from another computer"));
-  replace(body, card({ as: "div" }, h("h2", {}, "Give your project a name"), form), moving);
+  replace(body, card({ as: "div", title: "Give your project a name" }, form), moving);
   setTimeout(() => input.focus(), 50);
 }
 
 function sourcesStep(body) {
-  replace(body, card({ as: "div" }, h("h2", {}, "Add your documents"), h("p", { class: "muted" }, `Project “${App.project}” is ready. Add the reports, papers and web pages you want to explore: PDF, Word, text, Markdown or saved web pages (HTML).`),
+  replace(body, card({ as: "div", title: "Add your documents" }, h("p", { class: "muted" }, `Project “${App.project}” is ready. Add the reports, papers and web pages you want to explore: PDF, Word, text, Markdown or saved web pages (HTML).`),
     h("div", { class: "btn-row" }, link({ kind: "next", href: "#/sources" }, "Add documents on the Documents page"), link({ href: "#/overview" }, "Skip for now"))));
 }
 
 async function modelStep(body, opts = {}) {
   const s = App.settings();
-  replace(body, card({ as: "div" }, h("h2", {}, "A model on this computer"), h("p", { class: "muted" }, "Looking for AI model services on this computer…")));
+  replace(body, card({ as: "div", title: "A model on this computer" }, h("p", { class: "muted" }, "Looking for AI model services on this computer…")));
   const info = await lookForServers();
   const servers = (info.servers || []).filter((x) => (x.chat_models || []).length);
   clear(body);
-  const stepCard = card({ as: "div" }, h("h2", {}, "A model on this computer"),
+  const stepCard = card({ as: "div", title: "A model on this computer" },
     h("p", { class: "muted" }, "Free and private: the model runs on this computer, so your documents never leave it. It needs a fairly recent computer, and judges less well than Claude."),
     App.state.local_only ? null : h("p", { class: "small" }, "Have a Claude plan? ", button({ kind: "quiet", sm: true, onClick: async () => { try { await api("PUT", "/api/settings", { backend: "claude_code", allow_claude_code: true }); await App.refresh(); rerender(); } catch (e) { showError(e); } } }, "Use Claude Code instead")));
   body.appendChild(stepCard);
@@ -111,8 +111,8 @@ async function modelStep(body, opts = {}) {
     stepCard.appendChild(help);
     const alt = fold({}, "Other options: the Claude API, or trying the app without an AI",
       h("div", { class: "stack su-servers-body" },
-        h("div", { class: "cloud-box" }, h("p", { class: "su-cloud-title" }, h("strong", {}, "Claude API (cloud).")), h("p", {}, "Excerpts of your documents are sent to Anthropic's servers. Needs an account key and an explicit opt-in."), link({ kind: "next", href: "#/settings/model", class: "su-cloud-link" }, "Set up in Settings → AI")),
-        notice({ kind: "info", icon: "cpu" }, h("p", {}, h("strong", {}, "Demo mode"), " uses a simple word-overlap stand-in instead of an AI. Good for seeing how the app works; its results are not findings."),
+        inset({ class: "cloud-box" }, h("p", { class: "su-cloud-title" }, h("strong", {}, "Claude API (cloud).")), h("p", {}, "Excerpts of your documents are sent to Anthropic's servers. Needs an account key and an explicit opt-in."), link({ kind: "next", href: "#/settings/model", class: "su-cloud-link" }, "Set up in Settings → AI")),
+        notice({ kind: "info" }, h("p", {}, h("strong", {}, "Demo mode"), " uses a simple word-overlap stand-in instead of an AI. Good for seeing how the app works; its results are not findings."),
           button({ sm: true, onClick: async () => { try { await api("PUT", "/api/settings", { backend: "baseline" }); await App.refresh(); toast("Demo mode selected.", "ok"); rerender(); } catch (e) { showError(e); } } }, "Use demo mode"))));
     if (App.state.local_only) alt.querySelector(".cloud-box").remove();
     stepCard.appendChild(alt);
@@ -148,7 +148,7 @@ async function modelStep(body, opts = {}) {
       const r = await api("POST", "/api/servers/test");
       replace(out, plainTestResult(r));
       if (r.model_available) { next.hidden = false; next.focus(); }
-    } catch (e) { replace(out, notice({ kind: "error" }, h("p", {}, "The AI model did not answer."), fold({}, "Technical details", h("div", { class: "mono small" }, e.message)))); }
+    } catch (e) { replace(out, notice({ kind: "error", live: false }, h("p", {}, "The AI model did not answer."), fold({}, "Technical details", h("div", { class: "mono small" }, e.message)))); }
     testBtn.disabled = false;
   });
   stepCard.append(

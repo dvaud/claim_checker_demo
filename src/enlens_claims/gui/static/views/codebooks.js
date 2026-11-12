@@ -4,11 +4,12 @@
 // remove codes. *Try it* counts what the keyword pass would pick, without AI. Saving keeps the codebook as it was
 // (History) and writes the changes in the research log; labels follow renames and merges, and wait under *Removed
 // codes* when a code is removed. An edit changes no result by itself.
-import { featureEyebrow, viewTabs } from "../features.js";
+import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
-  dialog, field, switchControl, watchJob, emptyState, shortTitle, session, button, iconButton, downloadButton, link, menu, notice, card, tag, input, select, textarea, choice, optionCards } from "../lib.js";
+  dialog, field, switchControl, watchJob, emptyState, shortTitle, session, button, iconButton, downloadButton, link, menu, notice, card, tag, input, select, textarea, choice, optionCards, readsLine, inset, workState, personMark, compare } from "../lib.js";
 import { forgetFrameworks } from "./options.js";
 import { showHistory, askWhy } from "./versions.js";
+import { shareBar } from "./share.js";   // 0.18 (L1)
 
 const WHERE = { project: ["This project", "folder"], home: ["All projects", "layers"], bundled: ["Ships with ENLENS", "library"] };
 const drafts = new Map();   // unsaved edits, kept while you look at another page: `${project}:${name}` -> {st, merges}
@@ -59,7 +60,7 @@ export async function renderCodebooks(view) {
         c.profile_default ? tag({}, icon("tag", { size: 11 }), "Profile uses it") : null)),
     h("span", { class: "cb-card-go", "aria-hidden": "true" }, icon("chevron-right", { size: 16 })));
   if (!own.length) {
-    box.appendChild(card({ as: "div", class: "cb-start" }, h("h2", { class: "card-title" }, "Make a codebook of your own"),
+    box.appendChild(card({ as: "div", class: "cb-start", title: "Make a codebook of your own" },
       h("p", {}, "Start fresh, from the themes already found in the documents, as a copy of the SDG targets, or from a spreadsheet. Each code gets a definition, when to use it and when not, the words it is matched by and examples from the documents."),
       h("div", { class: "btn-row" }, button({ kind: "main", onClick: () => newCodebook("themes") }, icon("shapes", { size: 14 }), "Start from the themes"),
         button({ onClick: () => newCodebook("fresh") }, icon("plus", { size: 14 }), "Start fresh"))));
@@ -238,10 +239,12 @@ export async function renderCodebook(view, [name]) {
   const fresh = () => { st = JSON.parse(JSON.stringify(cb)); merges = []; dirty = false; };
   if (saved) { st = saved.st; merges = saved.merges; dirty = true; } else fresh();
   const head = h("div");
+  const sharing = cb.where === "bundled" ? null : shareBar("codebook", cb.name);   // 0.18 (L1): made once, put back on every draw
+  const clashBox = h("div", { class: "cb-clashes" });   // 0.18: codes you and a colleague both changed
   const notices = h("div");
   const body = h("div", { class: "cb-editor" });
   const saveBar = h("div", { class: "cb-savebar", hidden: true, role: "region", "aria-label": "Unsaved changes" });
-  view.append(head, notices, body, saveBar);
+  view.append(head, clashBox, notices, body, saveBar);
 
   function touch() {
     dirty = true;
@@ -260,7 +263,7 @@ export async function renderCodebook(view, [name]) {
     }
     const more = moreItems.length ? menu({ class: "cb-more", items: moreItems.map(([ic, t, fn, danger]) => ({ icon: ic, text: t, onClick: () => fn(), danger: !!danger })) }) : null;
     replace(head, pageHead(cb.title || cb.name, {
-      eyebrow: h("span", {}, link({ kind: "back", href: "#/codebooks", class: "it" }, "All codebooks")),
+      back: { href: "#/codebooks", text: "All codebooks" },
       sub: h("span", { class: "cb-meta" }, whereBadge(cb.where), `${plural(st.codes.length, "code")} · each is called “${st.label}”`,
         cb.used.labels ? ` · ${plural(cb.used.labels, "label")} in this project` : "", cb.used.checks ? ` · ${plural(cb.used.checks, "check")}` : "",
         cb.shadows_home ? h("span", { class: "muted" }, " · this project's own copy of a codebook kept with all projects") : null),
@@ -272,7 +275,70 @@ export async function renderCodebook(view, [name]) {
           icon("history", { size: 14 }), "History"),
         downloadButton({ onClick: () => download(`${base}.csv`).catch(showError) }, "CSV"),
         more),
-    }));
+    }), sharing);
+  }
+
+  // ---- 0.18: codes you and a colleague both changed since you last exchanged the codebook (sync/codebook_merge.py).
+  // Yours is in the codebook; theirs waits beside it until you keep one of the two (POST …/clashes/<uid>).
+  const CLASH_FIELDS = [["code", "Name"], ["description", "Definition"], ["group", "Group"], ["include", "When to use it"],
+    ["exclude", "When not to use it"], ["keywords", "Words it is matched by"], ["examples", "Examples"]];
+  function clashValue(c, k) {
+    if (!c) return "";
+    if (k === "group") return c.group_name || (st.groups.find((g) => g.group === c.group) || {}).group_name || c.group || "";
+    if (k === "keywords") return (c.keywords || []).join(", ");
+    if (k === "examples") return (c.examples || []).map((e) => (typeof e === "string" ? e : e && e.quote) || "").filter(Boolean).map((q) => `“${q}”`).join(" ");
+    return c[k] || "";
+  }
+  // one side of the comparison (compare(), docs/DESIGN.md 4.27): who, and the code's fields, what differs said in words
+  function clashSide(title, who, c, other, removed, meta) {
+    return { title: h("h4", { class: "cb-clash-side-h" }, who ? personMark([who]) : personMark(["you"]), " ", title), meta: meta || null,
+      body: removed ? h("p", { class: "cb-removed-here" }, "You removed this code.")
+        : h("dl", {}, CLASH_FIELDS.map(([k, label]) => {
+          const v = clashValue(c, k), differs = !!other && v !== clashValue(other, k);
+          return v || differs ? h("div", { class: "cb-field" + (differs ? " cb-differs" : "") },
+            h("dt", {}, label, differs ? h("span", { class: "cb-differs-word" }, " · differs") : null),
+            h("dd", {}, v || h("span", { class: "muted" }, "none"))) : null;
+        })) };
+  }
+  function drawClashes() {
+    clear(clashBox);
+    const list = cb.clashes || [];
+    if (!list.length) return;
+    const names = [...new Set(list.map((x) => x.name || "a colleague"))];
+    clashBox.appendChild(notice({ kind: "attention", icon: "copy", role: "note" },
+      h("p", {}, h("strong", {}, list.length === 1 ? "A code you and a colleague both changed. " : `${list.length} codes you and a colleague both changed. `),
+        `Since you last exchanged this codebook, you and ${names.join(" and ")} changed the same ${list.length === 1 ? "code" : "codes"}. Yours is in the codebook; theirs waits here. Keep one of the two${list.length === 1 ? "" : " for each"}; the codebook as it was before is kept in History.`)));
+    for (const x of list) {
+      const mine = st.codes.find((c) => c.uid === x.uid) || cb.codes.find((c) => c.uid === x.uid) || null;
+      const name = (mine && mine.code) || x.code || (x.theirs && x.theirs.code) || "a code";
+      const who = x.name || "a colleague";
+      const keep = (which, btn) => settle(x, which, btn, name, who);
+      const mineBtn = button({ sm: true, icon: "check", "aria-label": x.removed_here ? `Keep mine: “${name}” stays removed` : `Keep mine: your version of “${name}”` }, "Keep mine");
+      const theirsBtn = button({ sm: true, icon: "users", "aria-label": `Keep theirs: ${who}’s version of “${name}”` }, "Keep theirs");
+      mineBtn.addEventListener("click", () => keep("mine", mineBtn));
+      theirsBtn.addEventListener("click", () => keep("theirs", theirsBtn));
+      // a card per code, the two versions side by side (yours and theirs), Keep mine / Keep theirs under both
+      clashBox.appendChild(card({ class: "cb-clash", "aria-label": `Both changed: ${name}`, title: name, level: "h3" },
+        compare({ label: `Your version and ${who}’s of “${name}”`,
+          left: clashSide("Yours", null, mine, x.theirs, !!x.removed_here),
+          right: clashSide(`${who}’s`, who, x.theirs, x.removed_here ? null : mine, false,
+            [personMark([who], { name: "short", prefix: "Changed by" }), x.at ? ` ${fmt.dateShort(x.at)}` : null]),   // a changed-by line: the name shown
+          actions: ro ? null : [mineBtn, theirsBtn] })));
+    }
+  }
+  async function settle(x, which, btn, name, who) {
+    if (dirty) { toast("Save or discard your changes first: keeping a version changes the codebook.", "info"); return; }
+    btn.disabled = true;
+    try {
+      const r = await api("POST", `${base}/clashes/${P(x.uid)}`, { keep: which });
+      cb = r.codebook;
+      fresh();
+      forgetFrameworks();
+      toast(which === "mine" ? `Kept your version of “${name}”; ${who}’s is set aside.` : `Kept ${who}’s version of “${name}”; yours is in History.`, "ok");
+      draw();
+      const next = clashBox.querySelector(".cb-clash button") || head.querySelector("h1");
+      if (next) next.focus();
+    } catch (e) { showError(e); btn.disabled = false; }
   }
 
   // ---- notices: removed codes whose labels wait, codes labelled with an earlier wording
@@ -285,7 +351,8 @@ export async function renderCodebook(view, [name]) {
       notices.appendChild(notice({ kind: "attention", class: "cb-stale" }, h("div", {},
         h("p", {}, h("strong", {}, "The AI labelled with an earlier wording. "), "These codes changed after the AI used them. Their labels stay as they are until you ask for these passages to be labelled again (only those passages)."),
         h("ul", {}, stale.map(([code, s]) => h("li", {}, h("strong", {}, code), ` · ${plural(s.passages, "passage")} labelled before ${fmt.date(s.since)} `,
-          button({ sm: true, onClick: () => relabel(code) }, icon("refresh", { size: 13 }), "Label them again")))))));
+          withAI(button({ sm: true, onClick: () => relabel(code) }, icon("refresh", { size: 13 }), "Label them again"))))),
+        readsLine("the passages of these codes again"))));
     }
     if ((cb.removed || []).length) {
       notices.appendChild(card({ as: "details", class: "cb-removed" }, h("summary", {}, icon("inbox", { size: 15 }), plural(cb.removed.length, "removed code"), h("span", { class: "muted small" }, " · their labels wait here, not deleted")),
@@ -303,6 +370,7 @@ export async function renderCodebook(view, [name]) {
   }
   function draw() {
     drawHead();
+    drawClashes();
     drawNotices();
     clear(body);
     if (!ro) {
@@ -319,7 +387,8 @@ export async function renderCodebook(view, [name]) {
     for (const g of groupsInOrder()) {
       const codes = st.codes.filter((c) => c.group === g.group);
       if (!codes.length && ro) continue;
-      const sec = h("section", { class: "cb-group", dataset: { group: g.group } });
+      // a group is a card; its codes are rows divided by lines (two levels of boxes at most, DESIGN 4.11)
+      const sec = card({ as: "section", class: "cb-group", dataset: { group: g.group } });
       const gName = ro ? h("h2", { class: "cb-group-name" }, g.group_name || g.group || "Codes without a group")
         : textField(g.group_name, (v) => { const x = st.groups.find((y) => y.group === g.group); if (x) x.group_name = v; else st.groups.push({ group: g.group, group_name: v }); },
           { class: "cb-group-input", placeholder: g.group ? `Group ${g.group}` : "Codes without a group", "aria-label": "Group name" });
@@ -381,9 +450,9 @@ export async function renderCodebook(view, [name]) {
     return li;
   }
   function dropZone(sec, group) {
-    sec.addEventListener("dragover", (e) => { e.preventDefault(); sec.classList.add("cb-drop-group"); });
-    sec.addEventListener("dragleave", (e) => { if (!sec.contains(e.relatedTarget)) sec.classList.remove("cb-drop-group"); });
-    sec.addEventListener("drop", (e) => { e.preventDefault(); sec.classList.remove("cb-drop-group"); moveCode(e.dataTransfer.getData("text/plain"), null, group); });
+    sec.addEventListener("dragover", (e) => { e.preventDefault(); sec.dataset.drop = "true"; });
+    sec.addEventListener("dragleave", (e) => { if (!sec.contains(e.relatedTarget)) delete sec.dataset.drop; });
+    sec.addEventListener("drop", (e) => { e.preventDefault(); delete sec.dataset.drop; moveCode(e.dataTransfer.getData("text/plain"), null, group); });
   }
   const find = (id) => st.codes.find((x) => (x.uid || x.code) === id);
   function moveCode(id, before, group) {
@@ -413,7 +482,7 @@ export async function renderCodebook(view, [name]) {
   }
   function triedExamples(t) {
     if (!t) return null;
-    return h("div", { class: "cb-tried" }, h("p", { class: "small" }, h("strong", {}, "Try it: "), `${plural(t.passages, "passage")} in ${plural(t.documents, "document")}`, t.note ? h("span", { class: "warn-text" }, ` · ${t.note}`) : null),
+    return inset({ class: "cb-tried" }, h("p", { class: "small" }, h("strong", {}, "Try it: "), `${plural(t.passages, "passage")} in ${plural(t.documents, "document")}`, t.note ? [" ", tag({ kind: "attention" }, t.note)] : null),
       t.examples.length ? h("ul", { class: "cb-tried-list" }, t.examples.map((x) => h("li", {}, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(x.doc_id)}` }, shortTitle(x.title || x.doc_id, 60)), x.page ? h("span", { class: "muted" }, ` p. ${x.page}`) : null, ": ", h("span", { class: "serif" }, `“${x.text}”`)))) : null);
   }
 
@@ -444,7 +513,7 @@ export async function renderCodebook(view, [name]) {
       } catch (e) { showError(e); } finally { exBtn.disabled = false; }
     } }, icon("quote", { size: 13 }), "Add the example");
     const others = st.codes.filter((x) => x !== c && x.uid);  // a code saved already (a new one has no labels to take)
-    const mergeSel = select({ class: "cb-merge", "aria-label": `Merge ${c.code} into another code` }, h("option", { value: "" }, "Merge into…"), others.map((x) => h("option", { value: x.uid }, x.code)));
+    const mergeSel = select({ sm: true, class: "cb-merge", "aria-label": `Merge ${c.code} into another code` }, h("option", { value: "" }, "Merge into…"), others.map((x) => h("option", { value: x.uid }, x.code)));
     mergeSel.addEventListener("change", () => mergeInto(c, find(mergeSel.value)));
     return h("div", { class: "cb-detail" },
       h("div", { class: "fields-2" },
@@ -519,7 +588,7 @@ export async function renderCodebook(view, [name]) {
   // the bar is made once, so what is typed in "Why?" stays while other fields change
   const whyInput = input({ class: "cb-why", maxlength: 2000, placeholder: "Why? (optional, for the research log)", "aria-label": "Why" });
   const saveBtn = button({ kind: "main", sm: true, onClick: () => save(saveBtn, whyInput.value.trim()) }, icon("check", { size: 14 }), "Save");
-  replace(saveBar, h("span", { class: "cb-unsaved" }, icon("alert-circle", { size: 14 }), "Unsaved changes"), whyInput,
+  replace(saveBar, workState("attention", "Unsaved changes"), whyInput,
     button({ kind: "quiet", sm: true, onClick: discard }, "Discard"), saveBtn);
   function drawSaveBar() {
     saveBar.hidden = !dirty || ro;

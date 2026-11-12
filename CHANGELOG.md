@@ -1,347 +1,617 @@
 # Changelog
 
-## 0.17.0rc5 (November 2026): one look on every page
+## 0.17.0 (November 2026): working together through a shared folder, and one look on every page
 
-The fifth release candidate of 0.17 brings the design guide that rc1 promised. ENLENS had grown sixteen stylesheets,
-one per release, and each page drew its buttons, links, tags and cards its own way. A grey button could mean "press
-me" on one page and "chosen" on the next. Amber meant a warning, an AI in the cloud or a key document, and a green
-circle meant both a judgement and a count. Now [`docs/DESIGN.md`](https://github.com/dvaud/claim_checker_demo/blob/main/docs/DESIGN.md)
-says which element to use for what, every page is built from those elements, and a new reference page in the app
-(`#/design`) draws each of them in the guide's order. **Nothing here changes results**: no check, reading or code is
-made differently, only how the pages look.
+0.17 has two big parts. The first is working with colleagues. Until now, colleagues exchanged a project as a zip file
+by hand, and everything in it went to them. Now a team can work through a folder it already shares (OneDrive, Dropbox,
+a university network drive): each copy writes what its person shared there and brings in the others' by itself, every
+couple of minutes. There is no server and nothing new to run, and the project's database never goes into the folder.
+What you make is private until you share it, item by item, so you can try five hypotheses and show your colleagues only
+the one worth showing. A shared project has one owner, who decides which documents it holds: a colleague's change to
+the documents is a proposal, answered according to how much it matters. A *Team* tab beside the research log brings
+this together, and jobs of a project now wait their turn instead of being refused (roadmap L1 to L5, and M6). The
+second part is how ENLENS looks and is reached: a sidebar of seven places, a design guide
+([`docs/DESIGN.md`](https://github.com/dvaud/claim_checker_demo/blob/main/docs/DESIGN.md)) that says which element to
+use for what, a reference page for it in the app (`#/design`), and every page built from those elements, so the same
+thing looks and behaves the same everywhere. It also brings the glossary and the key terms of themes without each
+language's common words, and a set of small fixes from use. It replaces the release candidates of 0.17
+(0.17.0rc1 to rc5).
 
-This is a first version of the guide. An independent review found it clearly better than rc4 but not yet finished,
-and 0.17.0 refines it (see *Not yet done*). It is a release candidate: only copies with *Try new versions early*
-(Settings) get it.
+Nothing here changes how a check is answered, and no check, reading or code is made differently by the new pages. Two
+things can change what you see. In a shared project, what the owner accepts (a new reading, a passage left out, a
+document removed) changes the documents in your copy, as the same change of your own would. And the glossary and the
+key terms of themes found from now on leave out each language's common words, so they differ from those made before;
+search still finds every word, and themes found before keep their key terms until you find them again.
+
+### New
+
+#### Working together
+
+- **What you make is private until you share it** (roadmap L1). Checks, sets of themes, your own codebooks, notes and
+  highlights, the entries you write in the research log, and the links you decide between terms are yours alone until
+  you choose *Share*. A check, a set of themes and a codebook show a small tag under their title (*Private*, *Shared*
+  or *Withdrawn by …*) with *Share* or *Unshare* beside it; each note and highlight, each entry you wrote and each link
+  you decided has the same in its card. Sharing a check also shares the codebook it is tagged with, since a colleague
+  could not read the check without it, and ENLENS says so. *Unshare* asks first, with room for why: the item is no
+  longer sent, it leaves what your copy and your colleagues' copies wrote into the shared folder, and a colleague who
+  already has it keeps it, marked as withdrawn, without passing it on to anyone else. A shared check or set of themes
+  you remove is treated the same way. Only the person who made an item can share it or take it back; a colleague's
+  item says whose it is ("by Ben Okafor"). Both are written in the research log, with your reason if you give one.
+  What is not anyone's own stays shared as before: the documents, who may read each with AI (the stricter setting
+  still wins), the bibliography, and the AI's work on the documents.
+- **Work together through a folder your team already shares** (roadmap L5). Choose, once per project, a folder the
+  team shares. Each round brings in what your colleagues wrote, then writes what you shared that changed into a folder
+  of your own inside it, with the same rules as bringing in a colleague's zip: what is new comes in, the newer version
+  of what only one of you changed is kept, what you both changed is kept twice (a sync clash, nothing lost), each
+  person's judgements stay under their name, the stricter AI setting wins, and what you removed does not come back.
+  Bringing in first means your copy writes with your colleagues' decisions already in force (a stricter AI setting,
+  something taken back). Each colleague's work brought in is in the research log, as from a zip. ENLENS refuses a
+  shared folder that holds the project itself or ENLENS's own folder, since the cloud service would then copy your
+  database, with everything you keep private, to the team.
+- **Only what you shared goes into the folder.** A shared item goes there whole, and again whenever it changes; what
+  you take back goes as a mark that it was taken back, without its words. Nothing private goes, not even a colleague's
+  private item that reached you in their whole-project zip; neither does a check still being read (no queued work ever
+  travels), the earlier versions you keep, your search index or glossary, nor any path on your computer (also not
+  where your Zotero attachments are). Before writing, ENLENS checks what it is about to write: a round that would
+  carry anything not shared writes nothing. The documents go as they go in a zip: each document's text and original
+  file are stored once for the whole team, and only new documents are copied, so a large corpus is not copied every
+  round. A file changed since you added it is not copied under its old name.
+- **Keep documents marked *Only a local AI* or *No AI* out of the shared folder.** A switch per project, off by
+  default. With it on, the text and files of those documents, the AI's work on them (also your reviews of the SDG
+  pack's claims and of labels on them, and the links ENLENS found between terms whose quote comes from them), and the
+  passages of them a check handed to the AI stay on your computer; colleagues add those files themselves. Your shared
+  checks that read them still reach your colleagues, with the words their excerpts quote, kept as records until the
+  file is added, and nothing clashes because a colleague has the document and you do not. A document's title still
+  goes, so colleagues know which file to add. Once anyone in the team has the switch on, every copy keeps those
+  documents out, as the stricter AI setting wins too. Turning it on later (or marking a document so while it is on)
+  takes out of your part of the folder, at the next round, what your copy had written of those documents; your
+  colleagues' copies do the same, and no copy puts back what a colleague has just taken out. What a colleague had
+  already brought into their own project stays with them, and a cloud service may keep earlier versions of files for
+  a while. The switch also holds for a document you once had and removed, and does not lapse for a round when a
+  colleague's file in the folder cannot be read at that moment. When a colleague keeps a document out and you add its
+  file yourself, or it reaches you in another colleague's zip, it takes their setting at once, and the research log
+  says so.
+- **Your colleagues' shared work comes in by itself** (roadmap L3). Once a project has a shared folder, ENLENS looks in
+  it every couple of minutes, as if you pressed *Sync now*. It looks soon after ENLENS starts, and about 20 seconds
+  after you change something in the project (sharing an item, taking it back, editing a shared note), so what you
+  share reaches your colleagues soon; while you keep working it waits until you pause, never at every keystroke. It is
+  light: nothing runs between two looks, no connection is kept open, and a look when nothing changed writes nothing.
+  A project without a shared folder is left alone. A small note says when something came in by itself, and the
+  project keeps what came in since you last looked, also across a restart, until you mark it seen.
+- **Pause it, or look less often.** How often it looks is a setting (2 minutes unless you change it, from 1 to 60, for
+  all projects). You can pause it for one project or for the whole app; *Sync now* still works while it is paused,
+  and when you resume, it looks soon.
+- **Offline is not a problem.** When the shared folder cannot be reached (a network drive not connected, a laptop away
+  from the office), ENLENS says it is offline and looks less and less often (after 2, 4, 8, 16, then every 30
+  minutes) instead of trying again and again; the first look that reaches the folder brings the usual rhythm back,
+  and so does a *Sync now* that works. Offline, the Team tab still names the colleagues who had the documents switch
+  on when the folder could last be reached.
+- **The Team tab, beside the research log** (roadmap L4). The panel on the right of every page has two tabs now,
+  *Research log* and *Team*. Without a shared folder, the Team tab is where you choose one: a few sentences on what
+  working together does, the path of the folder your team shares (with an example for a Mac and for Windows, and how
+  to copy a folder's path), your name if colleagues do not know it yet, and the documents switch. It says plainly that
+  the folder will hold the documents' text and files, and only what you share of your own work. If ENLENS cannot use
+  the folder you typed, it says why, under the field. With a folder, the tab shows when the last round ran and when
+  the next one runs (or that it is offline, paused, or waiting for other work to finish), *Sync now*, *Pause* and
+  *Resume*, and how often ENLENS looks; anything in the folder that needs your attention, in plain words; **what came
+  in** since you last looked, by colleague, with *Mark as seen* (the tab shows how many things are new); the people in
+  the folder, with their ENLENS version and whether their newest work is in; **what you shared**, by kind, each with
+  *Unshare*; documents a colleague's work names that are not on this computer (they keep them out of the folder),
+  with where to add the file; the switch, saying so when it is on because a colleague turned it on; and *Stop using
+  this folder*. The tab works with the keyboard (arrow keys move between the two tabs) and with a screen reader.
+- **Whose is what, at a glance.** A colleague's judgement of an excerpt, their notes and their research log entries
+  carry a small mark with their initials beside their name.
+- **Codes you and a colleague both changed, side by side.** Where you both changed the same code of a codebook since
+  you last exchanged it, the codebook editor shows the two versions next to each other (name, definition, when to use
+  it and when not, the words it is matched by, examples), marks in words what differs, and offers *Keep mine* or
+  *Keep theirs*. The codebook as it was before is kept in History, and the research log says whose version was kept.
+  A code you had removed shows as removed, and *Keep theirs* brings it back as they have it.
+- **One owner, several collaborators** (roadmap L2). A project that people work on together has one owner: the person
+  who made it. Everyone still works in their own copy, and a colleague may still add a document, read one again with
+  the new reader, leave passages out, remove a document or change who may read one with AI. But what the project's
+  documents *are* is now the owner's decision: a colleague's change to the documents is a **proposal**, and the owner
+  accepts or declines it. Checks, themes, codes, notes and the research log are not affected: they are shared as
+  above.
+- **How much a proposal matters decides how it is answered.**
+  - *Adding a document* (low): it reaches every copy at once, so the team can go on working while the owner is away,
+    and the owner's copy accepts it at once. The owner can switch that off (*Accept documents collaborators add, at
+    once*); each added document then waits for one click. A declined document stays in the copy of whoever added it
+    and leaves the others.
+  - *Reading a document again with the new reader* and *Leave out / Restore* (medium): nothing changes in the other
+    copies until the owner accepts. Then every copy reads the document the same way, and each copy's results move
+    with it. Where some of your results would find no place in the new reading, your copy waits and tells you; *Move
+    it anyway* keeps those results as records.
+  - *Removing a document* and *letting more AI read a document* (high): always the owner's decision. An accepted
+    removal takes the document out of every copy, after a backup; checks keep what they read of it.
+- **Privacy first.** Making a document stricter (*Only a local AI*, *No AI*) is never a proposal: it holds in every
+  copy at once, as before. A looser setting takes effect nowhere, not even in the copy of the person who asked for
+  it, until the owner accepts it. If a colleague made the document stricter in the meantime, the stricter setting
+  stays. Accepting a looser setting for a document the switch keeps out of the folder asks first, and says that its
+  text and file will then go into the folder too.
+- **What the owner sees.** The Team tab has a section *Waiting for you*: one card for each proposal, saying who proposes
+  what and when, with a tag *Low*, *Medium* or *High*, what accepting would do, and *Accept* and *Decline…*. *Decline…*
+  asks for an optional reason; accepting a removal or a looser AI setting asks first and can take one too. Two proposals
+  for the same document say so on each other's card. Answered proposals are listed underneath.
+- **What a collaborator sees.** The same section is called *Waiting for the owner*: your own proposals with *Take
+  back*, and the owner's answer when it comes (*Declined: …* with the reason, shown until you have read it). On the
+  Documents page a document that is only proposed carries the mark *Waiting for the owner*, and one the owner
+  declined *In your copy only*. Removing a document, or choosing a looser AI setting, tells you that it is a proposal.
+- **Who the owner is, and handing over.** The people list marks the owner. The owner can hand the project over to a
+  colleague (*Make owner…*); proposals that wait are then theirs to answer. If the owner has left the shared folder,
+  or nothing was heard of them for 14 days, a colleague can take the project over. A project that was exchanged with
+  earlier ENLENS (0.17.0rc5 or older) has no owner and works as before, until someone chooses *Become the owner* in the
+  Team tab.
+- **In the research log.** Every proposal, every acceptance and decline with its reason, every proposal taken back
+  and every change of owner is an entry, in every copy.
+
+#### The rest of 0.17
+
+- **One look on every page, and a guide that says why.**
+  [`docs/DESIGN.md`](https://github.com/dvaud/claim_checker_demo/blob/main/docs/DESIGN.md)
+  says which element to use for what: every entry has what it means, when to use it, when not, how it looks, how to
+  make it and where it lives in the code. The reference page `#/design` draws each element in the guide's order, in
+  light and dark, with the person marks, proposal cards, tabs and work states the team pages use. Every page is built
+  from those elements, and a test fails when a page restyles one, draws a box of its own, paints an amber or red of
+  its own, or uses a reserved icon outside its meaning.
+- **A seven-place sidebar** (*Overview*, *Documents*, then *Explore*: *Search*, *Codes*, *Concepts*, *Themes*, then
+  *Check*: *Hypotheses*), with each place's other views as tabs under its title. Every old address still opens its new
+  home.
+- **Find** (a button under the project switch, Ctrl+K or ⌘K on a Mac, and a box on the Overview) finds any page, view
+  or setting by name, without AI, and copes with typos. It is hidden where there is likely no keyboard (a phone).
+- **The research log beside every page**, in a panel on the right with *This page* and *All* (and *Team*, above).
+- **Words the glossary leaves out** (Concepts page): the languages found, with their passages, each of which can be
+  switched off (its passages are then read as English), and a box for your own words, such as a speaker label
+  ("Interviewer", "R1"). Saving updates the glossary and is written in the research log. The Themes page names the key
+  terms now left out.
+- **`docs/ROADMAP.md`**: what each release builds and what waits, with the small fixes still to do (M) and ideas for
+  later (N).
+- **Update gets the new version when GitHub's download links are busy.** Each file is fetched from the download link,
+  else through GitHub's API, and both are tried again a few seconds later; if it still cannot be downloaded, the app
+  says so in plain words and changes nothing. This works from the version that has it on.
 
 ### Changed
 
+#### Working together
+
+- **Jobs wait their turn instead of being refused** (roadmap M6). Reading documents with the new reader while another
+  job of the project runs no longer says "Wait until … has finished": it waits in the project's queue, says plainly
+  "Queued: starts when … has finished", and starts by itself when its turn comes. You can cancel it while it waits.
+  The same holds for finding a new theme in place of a removed one while another is being found for the same set of
+  themes, and for *Sync now* while documents are being added or read again.
+- **Which work waits for which.** Reading documents with the new reader runs on its own in the project, because it
+  moves every result onto the new passages: it starts at the first moment nothing else of the project runs, and while
+  it runs, other work of the project waits for it. While it waits, your other work goes on as usual. Adding
+  documents, setting up search by meaning and rounds of the shared folder wait for each other where they would get in
+  each other's way (the same passages prepared twice, colleagues' documents merged while yours are being added).
+  Checks, codes, themes and the glossary run beside each other, as before. When you ask for both, the new reader goes
+  before search by meaning, so no passage is prepared twice; setting up search by meaning while the new reader waits
+  or runs now waits for it. A job that waits for another job of its project no longer holds the AI model: work in
+  your other projects goes on.
+- **Two downloads of a project, each saying what it is for.** *Send what you shared* gives a colleague the documents
+  and the work you shared, nothing private: not even in the parts of the database a program could still read after a
+  deletion, and not the names of the folders your documents' files are in. *Download the whole project* is for moving
+  the project to another computer of yours: everything, your private work too, and it says whose each check, note or
+  codebook in it is: a colleague's private item that reaches you that way stays theirs, and is never passed on from
+  your copy. Before the whole project downloads, ENLENS asks, and warns that a colleague who opens it with earlier
+  ENLENS (0.17.0rc5 or older) would see all your private work (that version cannot keep it private). Both are on the
+  Projects page
+  (where *Download as a zip* was), under *Download* on a check's page and in the Team tab. *Work together* on the
+  Projects page now starts with the shared folder (*Open the Team tab*), then the file by hand as before. (The command
+  line has `enlens export-project --shared`.)
+- **Projects you already share keep working as before.** A project you shared with colleagues with earlier ENLENS
+  (0.17.0rc5 or older) (you
+  brought in a colleague's work, or it came to you from a colleague) counts as shared, item by item, the first time
+  this version opens it; a project you only kept to yourself starts private, even if you made zips of it to back it up
+  or
+  move it.
+- **A codebook you both changed is merged code by code.** Before, a codebook changed in two copies came in whole, as a
+  sync-clash copy beside yours. Now, for a codebook you have exchanged before, each code is looked at on its own: a
+  code only your colleague changed comes in, one only you changed stays as it is, a new code comes in, and a code
+  removed in one copy and left alone in the other is removed. Where you both changed the same code, yours stays and
+  your colleague's version is kept beside it (*Keep mine* / *Keep theirs*, above). Two codes you each added under the
+  same name both stay: your colleague's gets their name added to it, and their labels go with it. Labels follow
+  renames and merges made in either copy. Your codebook as it was before is kept, so you can compare and restore it.
+  Two codebooks that only share a name (made separately in each copy) are still kept side by side, as before.
+- **A document read with the new reader stays one document when you work together.** When you or a colleague had
+  moved a document to the new reader, the other's next file brought their older (or newer) reading in as a second
+  document, marked "sync clash". Now the two readings are known as one document. Each of you keeps the reading you
+  have, and your colleague's results (checks, judgements, notes) are placed on your reading by their words. A result
+  whose words are not in your reading is kept as a record, with its excerpt and judgement, and the report says how
+  many. Your own results never lose their place because of a colleague's reading: when their version of a check could
+  not be placed in full, it comes in beside yours instead of replacing it. What Claude had read of the other reading
+  still counts toward what Claude has read of the document in your copy, once.
+- **A file from a newer ENLENS is refused in plain words.** What copies exchange now says which format it is written
+  in. A copy refuses, with a message to update, a file that a newer ENLENS made in a way it would merge wrongly,
+  instead of merging it badly; it reads every older file. The ENLENS version itself never decides, so a release
+  candidate and the stable release sync with each other. Through the shared folder, a colleague on a newer ENLENS
+  stops only their own work, while the others' comes in.
+- **Bringing in from the folder copes with a cloud service.** A file still arriving, one the cloud has not brought
+  yet, or one of a colleague's later files before an earlier one: their work waits for the next round, and the rest
+  comes in. A colleague's file that is damaged, or whose work cannot be brought in, holds up only that colleague. When
+  a colleague cannot read one of your files because it is damaged or missing on your computer too, or it names a
+  document's text that no copy can write again, your copy notices at its next round and writes everything you share
+  once more, in one file: nobody waits for ever, and nobody has to remove a folder by hand. Copies the cloud service
+  makes when two computers write at once (`000041 (1).zip`) and files not finished are never read. A folder that
+  cannot be reached changes nothing and is tried again; so does one that goes away in the middle of a round. Paths
+  with spaces and accents work (`C:\Users\Dávid\OneDrive - …`), and every name ENLENS writes in the folder is short,
+  in lower case, and never differs from another only in letter case. Files nobody reads again are removed from your
+  part of the folder when your copy starts afresh there.
+- **Quitting or updating ENLENS during a round no longer waits for the round.** The round stops between two of its
+  steps: what already came in from a colleague stays, nothing half-written is counted as sent, and the next round
+  carries on from there.
+- **A round shows in the sidebar as *Working together*** and opens the Team tab. A round ENLENS starts by itself stays
+  out of the way for its first 20 seconds, and shows at 20 seconds if it takes longer.
+- **One definition of what sharing an item covers.** A zip for a colleague and the shared folder read which parts of
+  the project belong to a check, a set of themes, a codebook, a note, an entry or a link from one place, so the two
+  ways of sending can never disagree about what is private.
+- **A project's zip no longer carries the path of a shared folder**, and a copy made from a colleague's whole-project
+  zip starts with no record of what they wrote to or read from the folder. A zip for a colleague no longer says where
+  your Zotero attachments are on your computer.
+- **A document the owner removes now leaves every copy.** Before, a removal stayed in the copy of whoever removed it.
+  A collaborator's removal still stays in their own copy, as a proposal to the owner.
+- **Leave out and Restore no longer travel on their own.** They reach colleagues when the owner makes them or accepts
+  them. In a project without an owner they stay in your copy.
+- **Colleagues who exchange zips get the same rules:** proposals and the owner's answers travel in the zip. A zip from
+  earlier ENLENS (0.17.0rc5 or older) still comes in; a document it adds becomes a proposal by whoever brought the file
+  in (in the owner's
+  copy, the owner's own addition).
+- A document that cannot be moved to the new reader once its turn comes (because it was moved meanwhile, say) now
+  says why in plain words, instead of "Unexpected problem".
+
+#### One look on every page
+
 - **One look for each kind of element, in light and dark.** Every quiet button has an edge. Names in lists are teal
-  links. Filters, *Cards | Table*, the speed, the judging options, *Count by* and a document's side panels are all one
-  kind of choice, and the chosen one now shows. Before, several of these never showed which was on. View tabs mark
-  the current tab with a line under it.
-- **Colours keep one meaning each.** Amber with the warning triangle means only that something needs you: an
-  unfinished set-up, no AI that can run, or Demo mode. The sidebar's AI line is grey otherwise. Information and done
-  notices are grey. Only a judgement is a coloured pill, so the answers' counts read as grey words (*3 support ·
-  1 contradict*). The evidence map's key document is a grey tag with a star.
-- **A dashed edge means only "not counted, or nothing yet"**: a judgement that does not count, an empty frame, the
-  drop zone, a proposed link, a quote waiting to be confirmed.
-- **A check's result page.** *Next to review* is the page's main button, with an arrow. *In context*, *Details* and
-  *Judge differently…* are toggles with a chevron that turns, and each button is as wide as its words. Counts say what
-  they count (*4 passages*). *Partly reviewed* reads *You · partly*. The notes and download cards take the card's own
-  head.
-- **The research log, on its page and in the panel.** An entry ENLENS wrote is itself the link to its item, so there
-  is no separate *Open*. Your own entry about an item names it after *About:*. The filters show which one is on, and
-  the panel's head has its icon.
-- **One type scale.** Every font size and weight comes from a short scale. Document titles and a concept's title are
-  in the serif.
-- **Labels.** The AI line says *A model on this computer* (was *Private*) and *Claude, through an API key* (was
-  *Cloud AI*). Without any AI it says *No AI model set up yet · Exploring works; checking needs one*. Demo mode says
-  *A stand-in, not an AI: results are not findings*. The Overview's *Add documents* is now *Add more on the Documents
-  page*, under the title. Settings shows its version under the title.
-- **Set-up's steps** are numbers and words, with the current step in teal, instead of boxes that looked pressable.
-  A step still to do shows the triangle.
+  links, all in one weight. Filters, *Cards | Table*, the speed, the judging options, *Count by* and a document's side
+  panels are one kind of choice, and the chosen one shows. *Stop* is one small quiet button everywhere.
+- **Colours keep one meaning each.** Amber with the warning triangle means only that something needs you (an
+  unfinished set-up, no AI that can run, Demo mode, a sync clash, a code that matches nothing, a poor reading), and the
+  triangle and the alert circle come only with that look. Information and done notices are grey. Only a judgement is a
+  coloured pill, so the answers' counts read as grey words, one grade a line. The quote's yellow is the quote's only.
+  A dashed edge means only "not counted, or not in force": a judgement that does not count, an empty frame, a proposed
+  link, a removed theme. Reserved icons (the circle family for judgements, the chip for the AI) appear only in their
+  own meaning; a tick means done.
+- **Every AI action says so.** Each button that sends text to the AI has the *Uses the AI* mark beside it (one mark for
+  a row of such buttons), and each card with AI actions ends with a line saying where the text goes: Claude, a model on
+  this computer, or the Claude API. Codebooks' AI value is *AI on request*.
+- **Messages are notices.** What comes of an action is announced to a screen reader once; a notice that stands with its
+  page is read with the page, and only a failure of something you did interrupts.
+- **A check's result page.** *Next to review* is the main button. *In context*, *Details* and *Judge differently…* are
+  toggles. Counts say what they count (*4 passages*). A judged excerpt offers one way back, named by where it goes
+  (*Back to "Not about this"*), and only where its row does not already give it; focus lands on the way back. The
+  result's foot is one
+  column on a phone.
+- **Heads and rows.** The result, a document, a theme, a concept and the first screen share one page head with its facts
+  line; a head's actions start from the left on a narrow page, with the AI line last, and a head holds no next-step
+  link. List rows share columns, with a column for who, and names of research items in the serif. Headings no longer
+  carry counts in parentheses: the count follows in words (*The documents it comes from · 4 documents*).
+- **Tables stack by their frame, not by the window.** A table turns to rows when its frame is under 900 px, which is
+  what an open research log panel or a window of 861 to about 1,250 px gives. Short facts stay on one line.
+- **Documents.** *Sent to Claude* is a fact with *See what it read*. *Remove…* is in the row's *More* menu. A list of
+  documents that need a look is one notice, the title column keeps room for two lines, and a file name breaks after
+  `_` or `-` only. *Add to the project* says beside it why it cannot be pressed yet.
+- **Menus.** A menu in a scrolling frame floats over the page instead of being cut by it, and the project switch is as
+  wide as the sidebar.
+- **Fields** are as tall as a button of their size (36 and 29 px, were 40 and 33): one line height for all fields.
+- **Claude Code's speed.** One control, in *Settings › AI*; each *Start Claude Code* says the speed in use and links
+  there.
+- **Smaller changes.** The Bibliography's lists are a filter with counts. Set-up's steps are numbers and words, the
+  first screen's head is a page head. The codebook editor's groups are cards with their codes as rows, and the open
+  code is on the soft teal ground. A quick look's banner sits in the page's column. A theme's card has *Rename* and a
+  *More* menu (*Merge into…*, *Remove…*). Start from the themes shows each run as a group. A sticky band keeps scrolled
+  content from running under the *Research log* button. Corners come from the guide's tokens (small corners are 4 px,
+  the Overview's icon tile 10 px). Page spacing moved onto the guide's steps (by up to 4 px). Labels: *Check this*
+  (Search), *Pick from a list*, *Download a highlighted copy*, *2 tasks waiting*, *6 documents · 3 answers* in the
+  project menu, *Theme 5*, *Look at its reading*.
+- **Names and the AI line.** *A model on this computer* and *Claude, through an API key*;
+  a set-up step still to do shows the triangle; *Next to review* with an arrow.
+
+#### The sidebar, Find and the research log panel
+
+- **Seven places.** No counts and no tagline. *Hypotheses* is one page: one box takes one hypothesis or a list, one per
+  line, and the button counts them (*Check 3*); the answers are listed under it, the running checks at the top.
+- **One AI mark.** The chip icon with *Uses the AI*, *AI on request* or *No AI* stands on the sidebar's groups, on each
+  page's top line and beside actions.
+- **The sidebar's foot stays in the window, at a fixed size.** Work that runs takes the AI line's place; work that
+  waits with nothing answering turns the box amber with a *Start* button. *Update* takes Quit's place. The queue
+  panel's controls moved to *Settings › AI › Work waiting for Claude Code*. Only the list of places scrolls, and a
+  wheel turn over the sidebar never scrolls the page behind it.
+- **The research log panel makes room for the page.** From 1,000 pixels (at any zoom) the open panel is a column of
+  its own, flush right; only smaller windows show it over the page.
+- **The research log, on its page and in the panel.** An entry ENLENS wrote is itself the link to its item; your own
+  entry about an item names it after *About:*. The filters show which one is on.
+
+#### Search, themes and key terms
+
+- **Search marks every word you searched for**, in a lighter tint for the others, endings included unless *exact words
+  only* is on; passages found by meaning mark their matching words too. A line's title is the one link that opens the
+  document at those words, shown in full on up to two lines.
+- **The glossary and the key terms of themes leave out each language's common words.** Lists for 58 languages come
+  with ENLENS (stopwords-iso 1.1.0, MIT licence); English and Dutch are edited by hand. A passage's language is told by
+  its common words; a Dutch word that is also English ("net") is left out only in Dutch passages, so "net zero" stays
+  a term. A glossary made before is made again when next needed, or with *Update the glossary*.
+- **The Overview, tidied.** Every card has the same height and footer. The AI box at the top is gone: the sidebar's line
+  says which AI is in use. The evidence map's download is a small arrow beside each document.
+- **A quick look uses its project's codebooks**, read-only.
 
 ### Fixed
 
-- *Settings* was cut to *Settin…* in the sidebar while an update waited.
-- Search did not fit a 390-pixel window. It now fits at 390 and 320 pixels.
-- Cards with a box between them touched: the spacing rule meant for them never applied.
-- The new codebook's *Kept* choice had lost its look.
-- *Judge differently…* lost its padding on every excerpt card.
-- A card inside a card drew a second box. The Notes page's note padding pushed the result page's notes card 8 pixels
-  out of line.
+- **A shared check could lose an excerpt.** When a colleague's newer reading of a file had come in as a sync-clash
+  copy and you then read your own document again with the new reader, a check of yours with an excerpt on both the
+  document and its copy could come back from a third colleague with one excerpt fewer. Every copy now keeps both
+  excerpts.
+- Found and fixed while building, each proved by a test that failed before its fix: removed and withdrawn
+  items left words in a zip for a colleague; a colleague's file from earlier ENLENS could make a third person's
+  withdrawn or private
+  items shared; a round trip between two readings could replace your check with one that lost places; codes of one
+  name added in both copies mixed their labels; the switch let the passages of kept-out documents into shared work and
+  the SDG pack's tasks; a damaged file or a failing merge stopped every colleague instead of only its writer; a
+  colleague's edit could take the text out of the writer's own check; a former owner's late changes after a take-over
+  could still spread, and a former owner's late answer could count over the new owner's.
+- **Search by meaning was set up twice** after a reload during set-up: pressing the button again started a second job
+  on the same passages. Now the card shows the running job and a second press gets the job already running.
+- **"Unknown framework" in a document's Codes tab** for a codebook kept in another project or with no project open: the
+  tab shows the SDG targets with a one-line note.
+- **The research log panel covered the page at 90% zoom** and cut the *Research log* button in half.
+- Interface defects: *Settings* cut to *Settin…* while an update waited; Search not fitting a 390-pixel window; the
+  page overflowing sideways at 312 px (a long project name, a long file name in a notice, a long title, long button
+  labels); the project switch shrinking to its words; columns hidden behind a sideways scroll with the log panel open;
+  titles cut to 20 characters in Documents; a select taller than the buttons beside it; a menu cut by its table and a
+  long project list that closed when scrolled; focus lost after judging an excerpt, and hidden by the codebook's save
+  bar; the speed's three Tab stops; four undo controls on one judged card; a stale `?batch=` address; notices read
+  twice, or never, by a screen reader; the Claude Code set-up's error read as a status; a link inside a tag; amber text
+  on the evidence map's note; the Bibliography's naming words in the quote's yellow; initials *AD* for *Anna de Vries*
+  (now *AV*); a theme's document titles in the text colour.
 - `tools/dev_server.py --update` failed on a release candidate.
 
 ### For developers
 
-- The sixteen per-release stylesheets are folded into `tokens.css`, `app.css`, `components.css` (one numbered section
-  per component, as in `docs/DESIGN.md`) and `views.css` (each page's placement), with `site.css` last. About 160 dead
-  rules are gone. `docs/DEVELOPING.md` gains a table, *Where new CSS goes*.
-- `lib.js` makes each component from one table of classes. New helpers: `listRow()`, `listGroup()`, `shareState()`,
-  `absentDocument()`, `noticeList()` and `optionCards()`, plus small and folding cards and small folds. 0.18 builds its
-  team pages from them.
-- **A fork's `site.css` may need changes** (the promise in `docs/DESIGN.md`, 9.4: changed values and removed
-  classes are named here).
+- **The design guide.** ENLENS's sixteen per-release stylesheets are folded into `tokens.css`, `app.css`,
+  `components.css` (one numbered section per component, as in `docs/DESIGN.md`) and `views.css` (each page's
+  placement), with `site.css` last; about 160 dead rules are gone. `docs/DEVELOPING.md` has a table, *Where new CSS
+  goes*. Pages place components and never restyle them; the guard tests in `tests/test_0_17_0_design.py` say how.
+  `docs/DESIGN.md` 9.5 lists the few named exceptions (boxes a page draws, soft teal in a page's block, dashed edges),
+  held equal to the tests' lists.
+- **Helpers** (`lib.js`, one table of classes). New: `listRow({ serif })`, `listGroup({ text, action })`,
+  `shareState()`,
+  `absentDocument()`, `noticeList()`, `optionCards()`, `withAI()` (one wrapping group of buttons and one AI mark),
+  `readsLine()`, `aiWhere()`, `aiTag()` (now in `lib.js`), `judgementIcon()`, `tabs({ label, items, current, onTab,
+  panel })` (the whole tab pattern: ids, roving focus, arrows, Home and End; items take `count`), `setButtonKind()`,
+  `stopButton()`, `inset({ as, tentative })`, `proposalCard()`, `foundWords()`, `initials()`, `personMark(…, { name:
+  "short" | "full", prefix })`, `switchControl({ disabled, help })`, `workState()` with `"paused"` and `"ended"`,
+  `iconButton({ sm })`, `downloadLinks()` as one wrapping group. New options: `card({ titleId, level, help, action,
+  sm, as })`, `pageHead({ eyebrow | back, display, facts, sub, meta, actions, ai })`, `menu({ trigger, listClass, items:
+  [{ href, meta, title }] })` (its list floats out of a scrolling frame, `data-float`), `drawer().tabs`,
+  `fold({ sm })`. Small cards, small folds and cards that fold exist too.
+- **`notice({ live })`** takes `"status"`, `"alert"` or `false`. **A notice no longer announces itself unless asked:**
+  an error is still an alert by default, but an attention notice is not (`role="alert"` went). A fork that relied on
+  that passes `live: "alert"`. A notice inside a live container passes `live: false`. `noticeList()` rows are silent
+  by default.
+- **Page spacing and corners.** About 230 inline margins moved into `views.css`; the only inline styles left are values
+  computed at run time (a string style is refused). Margins and gaps in `views.css` are on the guide's six steps (6, 2
+  and 1 px stay, and the guide says so). Every `border-radius` is a token, `0` or `50%`. `.input, .select` have line
+  height 1.2 and a select's height is set to match.
+- **A fork's `site.css` may need changes** (the promise in `docs/DESIGN.md`, 9.4: changed values and removed classes are
+  named here, and `docs/EXTENDING.md` keeps the list of removed classes, which a test reads).
   - **Tokens added:** `--attention`, `--attention-soft`, `--attention-line`, `--danger`, `--danger-soft`,
     `--danger-line`, `--on-danger`, `--quote-ok`, `--quote-partly`, `--quote-bad`, `--quote-none`, `--radius-xs`,
     `--radius-ctl`, `--radius-lg`, `--radius-pill`, `--fs-display`, `--fs-title`, `--fs-title-sm`, `--fs-lead`,
     `--fs-section`, `--fs-body`, `--fs-doc`, `--fs-small`, `--fs-xs`, `--fs-label`, `--fw-regular`, `--fw-strong`,
     `--space-1` to `--space-6`, `--drawer-w` and `--paper`. `--logdrawer-w` is now set in `tokens.css` (as
     `var(--drawer-w)`).
-  - **Values changed:** light `--muted` #736e64 → #6b665c. `--sidebar-w` 248px → 264px, the width everyone already
-    saw. Font sizes moved to the nearest step of the scale, and weights 500 → 400 and 550/650/700 → 600.
-  - **Classes removed:** `.link-btn`, `.danger-link`, `.btn-lg`, `.seg-on`, `.chip-btn`, `.seg-pick`, `.seg-choice`,
-    `.so-seg`, `.nav-ai`, `.nav-ai-uses`, `.nav-ai-optional`, `.nav-legend`, `.badge-accent`, `.badge-warn`,
-    `.badge-provisional`, `.badge-job`, `.status-prefix`, `.chip-weak`, `.chip-counted`, `.chip-yours`, `.chip-scope`,
-    `.chip-second`, `.chip-agrees`, `.chip-disagrees`, `.chip-flag`, `.chip-wait-you`, `.chip-term`, `.cert*`,
-    `.new-badge`, `.term`, `.access-option*`, `.rc-*`, `.cb-start-opt`, `.note-pick-item`, `.card-plain`,
-    `.card-verdict` (and its `.v-*` edges), `.person-mark-partly`, `.basis*`, `.bc-sup`, `.bc-part`, `.bc-ref`,
-    `.ev-words`, `.map-key-doc` and `.option-card-text`.
-  - **Classes renamed:** `.ps-item`, `.ps-sep` → `.menu-item`, `.menu-sep`. `.logdrawer*` → `.drawer`,
+  - **Values changed:** light `--muted` #736e64 to #6b665c. `--sidebar-w` 248px to 264px, the width everyone already
+    saw. Font sizes moved to the nearest step of the scale, and weights 500 to 400 and 550/650/700 to 600. The
+    Overview's icon tile and the Bibliography's source icon use `--surface-3` instead of `--accent-soft`. No token was
+    added or changed after these.
+  - **Classes removed** (a rule gone and the class no longer set): `.link-btn`, `.danger-link`, `.btn-lg`, `.seg-on`,
+    `.chip-btn`, `.seg-pick`, `.seg-choice`, `.so-seg`, `.nav-ai`, `.nav-ai-uses`, `.nav-ai-optional`, `.nav-legend`,
+    `.badge-accent`, `.badge-warn`, `.badge-provisional`, `.badge-job`, `.status-prefix`, `.chip-weak`,
+    `.chip-counted`, `.chip-yours`, `.chip-scope`, `.chip-second`, `.chip-agrees`, `.chip-disagrees`, `.chip-flag`,
+    `.chip-wait-you`, `.chip-term`, `.cert*`, `.new-badge`, `.term`, `.access-option*`, `.rc-*`, `.cb-start-opt`,
+    `.note-pick-item`, `.card-plain`, `.card-verdict` (and its `.v-*` edges), `.person-mark-partly`, `.basis*`,
+    `.bc-sup`, `.bc-part`, `.bc-ref`, `.ev-words`, `.map-key-doc`, `.option-card-text`, `.update-ready`,
+    `.res-code-line`, `.th-title-meta`, `.dv-file-meta`, `.card-title`, `.hero`, `.th-num`, `.pf-where-note`,
+    `.batch-banner`, `.map-batch-banner`, `.run-summary`, `.moved-note`, `.user-note`, `.whats-new`, `.dv-prov`,
+    `.ct-proposed`, `.cb-drop-group`, `.round-new`, `.round-tried`, `.round-row`, `.answer-next`, `.qp-privacy`,
+    `.tag-disagree`, `.hyp-list-warn`, `.map-note-attention`, `.cb-unsaved`, `.dv-q-good`, `.dv-q-fair`, `.dv-q-poor`,
+    `.tag-clash`, `.warn-text`, `.batch-error`, `.bib-tiles`, `.bib-tile`, `.bib-tile-n`, `.bib-tile-label`, and the
+    modifiers `.terms-result.ok` and `.terms-result.none`.
+  - **Classes renamed:** `.ps-item`, `.ps-sep` to `.menu-item`, `.menu-sep`. `.logdrawer*` to `.drawer`,
     `.drawer-head`, `.drawer-title`, `.drawer-body`, `.drawer-section`, `.drawer-foot`, `.drawer-btn`.
-    `body.logdrawer-open` → `body[data-drawer="open"]`. `.logdrawer-entry*` → the log's own `.log-entries`.
-    `.th-l*`/`.pf-l*` → `.heat-l1` to `.heat-l4`. `details.fold.small` → `.fold-sm`. The `.note-card` look →
-    `.card.card-sm`. `.log-day` → `.list-head`. `.finder-row.is-active` → `[aria-selected]`. `.jobs*`, `.job-row` →
-    `.work-*`.
+    `body.logdrawer-open` to `body[data-drawer="open"]`. `.logdrawer-entry*` to the log's own `.log-entries`.
+    `.th-l*`/`.pf-l*` to `.heat-l1` to `.heat-l4`. `details.fold.small` to `.fold-sm`. The `.note-card` look to
+    `.card.card-sm`. `.log-day` to `.list-head`. `.jobs*`, `.job-row` to `.work-*`. `.result-meta` to `.page-facts`.
+    States as attributes: `.finder-row.is-active` to `[aria-selected]`, `.sidebar.open` to
+    `.sidebar[data-open="true"]`, `.dropzone.over` to `[data-over]`, `.passage-row.hit` to `[data-found]`,
+    `.setup-step.done` and `.active` to `[data-state]`, `.cc-step.ok` and `.bad` to `[data-state="done"]` and
+    `[data-state="todo"]`, and a drop target to `data-drop="true"` on an `inset()` or a `card()`.
   - **Classes that lost their own look** and now take their component's: `.access-badge`, `.route-card`,
     `.version-tag`, `.was-mark`, `.cb-more`, `.privacy-local`, `-cloud`, `-none` and `-plan`, `.queue-notice` (now a
-    notice), `.answer`, `.part-card`, `.dl-links` and `.judge-opt(s)`.
+    notice), `.answer`, `.part-card`, `.dl-links`, `.judge-opt(s)`, `.ql-banner`, `.reread-line`, `.cc-now`,
+    `.cloud-box`, `.server` and `.moved-ph` (these keep placement only), `.dv-side`, `.dv-item`, `.ct-link`,
+    `.cb-group`, `.cal-box`, `.pf-compare` and `.hist-actions` (now `card()` or `inset()`), `.cb-card-main`,
+    `.th-item-head`, `.hyp-job-row`, `.pending-quote` and `.cb-run` (no frame), and the rule `.bib-excerpt mark`.
   - **Classes added:** `.link-title`, `.link-back`, `.link-next`, `.link-external`, `.link-jump`, `.btn-toggle`,
     `.btn-opens`, `.icon-btn-sm`, `.seg-sm`, `.option-card*`, `.search-field`, `.chip-count`, `.person-mark*`,
-    `.notice-body`, `.notice-list`, `.menu`, `.menu-item-danger`, `.work-state`, `.ai-where`, `.with-ai`,
-    `.title-display`, `.compare*`, `.list-row*`, `.list-group`, `.list-rows`, `.share-state`, `.doc-absent*`,
-    `.card-sm`, `details.card`. A new icon: `file-x`.
-- About 230 inline margins moved into `views.css`. The only inline styles left are values computed at run time.
-
-### Not yet done
-
-- The result page's AI actions (*Read more excerpts*, *Get a second opinion*, *Ask a stronger model*) don't carry
-  the *Uses the AI* mark yet.
-- A few icons with a fixed meaning are also used for "done".
-- The sidebar's work box cuts long lines ("2 tasks wait for Clau…").
-- About 220 one-use spacing classes in `views.css` still wait to become fewer.
-- A few sentences in `docs/DESIGN.md` are not yet true on screen.
-- Not seen on screen, only checked in the code:
-  - a concept's page and a theme's page;
-  - the codebook editor's *More* menu;
-  - Bibliography with a Zotero library;
-  - a stalled work box.
-- Hover and keyboard focus were checked on `#/design`, the panel and some pages, not on every page. Some pages'
-  spacing moved by up to 2 pixels when margins snapped to the scale.
-- The manual's pictures still show the older screens.
-- Three choices are left to the owner:
-  - title links in the accent colour alone, or also underlined;
-  - *Next to review* as the main button;
-  - the word *You* on a person's mark.
-
-### Tests
-
-- `tests/test_0_17_0_design.py` (new): guards for the guide. Pages place components and never restyle them. Type
-  comes only from the scale. Removed classes stay gone. Inline styles hold only values computed at run time. Every
-  next-step link has an address. A button's width is never fixed below its words. A helper a script imports is never
-  used as an object.
-- Some 35 older test files read the stylesheet cascade instead of sheets by name, or follow a changed look on
-  purpose. Each says why in a comment.
-- Full suite on macOS with every extra: 1,128 passed, 17 skipped.
-
-## 0.17.0rc4 (November 2026): more small fixes from use
-
-The fourth release candidate of 0.17, with three more of the small fixes on the roadmap (M1, M2 and M4): the research
-log panel covered the page at 90% zoom, a quick look said "Unknown framework" for a codebook kept in the project it
-was opened from, and Search had two ways to open a document, neither of which looked like one. Nothing here changes
-results.
-
-It is a release candidate: only copies with *Try new versions early* (Settings) get it.
-
-### Changed
-
-- **One way to open a document from Search.** A line's title is the link, in the accent colour, and opens the
-  document at these words; the bare book icon beside it is gone, and the other action reads *Check*. In narrow
-  windows the title stays, so a line can still be opened there.
-- **A quick look uses its project's codebooks.** A quick look opened while a project is open can use that project's
-  own codebooks, read-only: the labels stay in the quick look, the codebook is not copied or changed.
-
-### Fixed
-
-- **The research log panel makes room for the page.** With the panel open, the page ran right up to it, and at 90%
-  zoom the panel covered the page and cut the *Research log* button in half. The panel only became a column of its
-  own in windows 1,200 pixels wide, and zooming makes a window narrower in the page's own pixels. Now, from 1,000
-  pixels (at any zoom), the open panel is a column of its own, flush right, and the page keeps its margin beside it;
-  only smaller windows still show it over the page. The page also no longer slips down 3 pixels when the panel opens
-  (a style meant for the panel's *Open* links reached the whole page).
-- **"Unknown framework" in a document's Codes tab.** Where the codebook chosen for the whole app is still not there
-  (a quick look opened with no project, or a codebook kept in another project), the tab shows the SDG targets with a
-  one-line note on where the codebook is kept, instead of the error.
-
-### Not yet done
-
-- The rest of the small fixes (roadmap M3, M5, M6, M7): search by meaning set up from the Search page, the marks to
-  try in mockups, jobs that wait their turn, and moving many documents to the new reader.
-- Other pages (Search, Profile) still show "Unknown framework" for a codebook that is not there.
-- Below 1,000 pixels the research log panel still lies over the page, and the page's scrollbar stays at the window's
-  edge, beside the panel.
-- The panel was checked in a browser at the window widths that 80% to 125% zoom give, not by zooming the app itself;
-  the Codes tab's note was checked through the API, not watched in the app.
-- From rc1 and rc2: the design guide's styling, and the manual's pictures of the old screens.
-
-### Tests
-
-`tests/test_0_17_0_quicklook_codebooks.py` (4 tests): a quick look sees its project's codebook, copies nothing and
-changes none of its files, and cannot edit it, while another project still cannot use it; a quick look with no
-project, or whose project is gone, falls back without an error; a quick look opened from another keeps the first
-project; the document's profile with that codebook, and the error the Codes tab falls back on. New checks in
-`tests/test_0_17_0_log_drawer.py` (no style for the panel's open state alone; the column from 1,000 pixels) and
-`tests/test_0_17_0_search_marks.py` (the title is the one way to open a line). 1,105 passed, 17 skipped.
-
-## 0.17.0rc3 (November 2026): small fixes from use, and a roadmap
-
-The third release candidate of 0.17. Using rc2 turned up small things that got in the way: a Search for "fight
-dementia" marked only "fight", although "dementia" stood right beside it; the Overview's cards had three heights and
-two kinds of footer; pressing *Set up search by meaning* again after a reload started a second job on the same
-passages. This candidate fixes those, and ENLENS gets a roadmap of its own, in public: [`docs/ROADMAP.md`](https://github.com/dvaud/claim_checker_demo/blob/main/docs/ROADMAP.md).
-Nothing here changes results.
-
-It is a release candidate: only copies with *Try new versions early* (Settings) get it.
-
-### Changed
-
-- **Search marks every word you searched for.** With *all the words, in one passage*, each line marked only the
-  rarest word; now the others are marked too (in a lighter tint), exactly where the search found them, endings
-  included unless *exact words only* is on. Passages found by *search by meaning* mark their matching words as well
-  (every form and every occurrence); a passage found by meaning alone has nothing to mark and keeps its note.
-- **Search lines show the document's title**, in full on up to two lines instead of cut at 28 characters; the place
-  (*paragraph 832 of 1407*) is in the line's tooltip.
-- **The Overview, tidied.** Every card has the same height and the same footer: the AI mark on the left, the state
-  on the right on one line (*Not made yet*; how long it takes is in its tooltip). A section's subtitle sits under
-  its heading. The AI box at the top is gone: the sidebar's line at its foot already says which AI is in use, and
-  now also *Set up Claude Code* or *Finish the set-up* when Claude Code is not ready.
-- **Hypotheses:** *Check* and *Look before checking* sit side by side with one *Uses the AI* mark after them.
-- **The evidence map's download** under each document is a small download arrow (*Download this PDF with the quotes
-  highlighted*), not a button as big as the title that said "highlighted".
-- The *Research log* button is as tall as the page's other buttons, and a running check's progress no longer touches
-  the buttons above it.
-
-### Fixed
-
-- **Search by meaning was set up twice.** After a reload during *Set up search by meaning*, the button came back,
-  the count under it was out of date, and pressing it started a second job on the same passages. Now the card says
-  *Setting up search by meaning…* with the job's own count, the button waits, and the app gives a second press the
-  job already running (building the glossary too). The sidebar shows this job as running on this computer, not as
-  Claude.
-
-### New
-
-- **`docs/ROADMAP.md`:** what each release builds and what waits, with the small fixes still to do (M) and ideas for
-  later (N). It was kept with Margin's plans until now; Margin keeps only its own.
-
-### Not yet done
-
-- Setting up search by meaning while the new reader runs is not stopped yet (roadmap M6), and the rest of the small
-  fixes (roadmap M1 to M7): the research log panel at other zoom levels, a quick look's codebooks, one way to open a
-  document from Search.
-- The running-check spacing and the set-up card's waiting state were checked in the code and with markup put in the
-  page by hand; a real long check and a real set-up of search by meaning were not watched in the app.
-- From rc1 and rc2: the design guide's styling, and the manual's pictures of the old screens.
-
-### Tests
-
-`tests/test_0_17_0_search_marks.py` (4 tests): the other word and its other ending marked for "fight dementia", not
-with exact words; marks in *near* mode stay in the line; meaning results mark every form and occurrence, and nothing
-when no word matched; the page uses the marks. `tests/test_0_17_0_index_job_once.py` (3 tests): a second set-up
-gives the same job and prepares the passages once, another project gets its own, a press after the end starts anew;
-the card follows the running job; the sidebar's mark. New checks in `tests/test_0_17_0_navigation.py` (the
-Overview's layout, the short state) and `tests/test_0_17_0_hypotheses.py` (one AI mark, the map's arrow, the room
-above a running check). 1,099 passed, 17 skipped.
-
-## 0.17.0rc2 (November 2026): key terms without each language's common words
-
-The second release candidate of 0.17. In a project with Dutch interviews beside English papers, the most frequent
-glossary terms were "ik", "ja", "je", "dan", "die", "wel" and "maar"; a theme's key terms were the same words, and
-themes found by words held the interviews together by them (370 of one theme's 371 passages came from the
-interviews). The glossary now reads each passage in its own language. **Search is not changed**: it still finds every
-word. Themes found before keep their key terms until you find them again.
-
-It is a release candidate: only copies with *Try new versions early* (Settings) get it.
-
-### Changed
-
-- **The glossary and the key terms of themes leave out each language's common words.** No term starts or ends with
-  one. Lists for 58 languages come with ENLENS (stopwords-iso 1.1.0, MIT licence); English and Dutch are edited by
-  hand (Dutch with the words of speech: "nou", "oké", "allee", "denk"; English adds "because", "themselves", "yeah"
-  and the like). A passage's language is told by its common words; words that are also English ("care", "global")
-  tell nothing, so an English heading or table is never read as Romanian or Malay, and a short passage ("Ja.") takes
-  the language of the passage before it. A Dutch word that is also English ("net", "door", "die") is left out only in
-  Dutch passages, so "net zero" stays a term of an English report.
-- A glossary made before is out of date after the update (what it leaves out changed): it is made again when next
-  needed, or with *Update the glossary* on the Concepts page.
-
-### New
-
-- **Words the glossary leaves out** (Concepts page): the languages found, with their passages, each of which can be
-  switched off (its passages are then read as English), and a box for your own words, such as a speaker label
-  ("Interviewer", "R1"); a phrase there leaves out just that term. Saving updates the glossary and is written in the
-  research log. Like the glossary, these belong to this copy of a project.
-- **The Themes page names the key terms now left out** and says that finding the themes again gives key terms
-  without them (themes found by words were also grouped by them). The themes found before are kept as they were.
+    `.notice-body`, `.notice-list`, `.menu`, `.menu-item-danger`, `.menu-text`, `.menu-meta`, `.menu-list[data-float]`,
+    `.work-state`, `.work-paused`, `.work-ended`, `.ai-where`, `.with-ai`, `.title-display`, `.compare*`, `.list-row*`,
+    `.list-group`, `.list-group-head`, `.list-rows`, `.share-state`, `.doc-absent*`, `.card-sm`, `details.card`,
+    `.card[data-drop]`, `.inset`, `.inset-tentative`, `.page-facts`, `.proposal`, `.proposal-by`, `.proposal-why`,
+    `.proposal-foot`, `.dl-pair`, `.dl-files`, `.th-doc`, `.kw-place`, `td.fact`, `.answer-note`, `.ev-moved`,
+    `.ev-comment`, `.dv-note`, `.dv-refs-reads`, `.ask-reads`, `.ex-table-note`, `.kw-check`, `.map-batch`, `.dz-list`,
+    `.sent-cell`, `.more-notes`, `.set-key`, `.cb-codes`, `.bib-lists`, `.docs-warned`, `mark.found`. A new icon
+    `eye-off` (a document with *No AI*) and `file-x`; a test keeps each reserved icon to its own helper.
+- **Team pages.** The pieces for them are the helpers above. The code that merges a colleague's work is now a package
+  split by what each part does (`sync/`); every earlier test of it passes unchanged. The app's server has the endpoints
+  `/api/projects/<p>/sharing` and `/api/projects/<p>/shared-folder` (`docs/API.md`). The command line has `enlens
+  export-project --shared`. What copies exchange now says its
+  format, and a copy refuses a newer one it would merge wrongly.
 - `GET`/`PUT /api/projects/<p>/terms/words`; `tools/make_stopwords.py` makes the lists' file again.
 
 ### Not yet done
 
-- A few words of another language can still be glossary terms when they stand in passages read as English (in the
-  Tovertafel project "ik" 8 times and "ja" 6 times, of 4,136 terms).
-- From rc1: the design guide's styling, and the manual's pictures of the old screens.
+#### Working together
+
+- **Not tried between two real computers.** The shared folder was tested with several copies on one computer, each
+  with its own person and ENLENS folder, through one folder (with spaces and accents in its path). It has not been
+  tried between two computers through a real OneDrive, Dropbox or network drive, where files arrive late, in pieces,
+  or as the cloud service's own copies.
+- **Not tried on a real Windows PC.** The tests imitate Windows paths and names (accents, spaces, letter case), but
+  nobody has used the shared folder, the Team tab or the owner's cards on a Windows PC.
+- **Left open in the owner's part:**
+  - A collaborator's own removal of a document can, in one case, be undone without a word.
+  - *Become the owner* on a project shared with earlier ENLENS turns every earlier removal into a proposal at once.
+  - After a take-over, a former owner's late answer to a proposal the new owner has not answered still shows as
+    *Accepted* on its card, although it changes no document.
+  - The randomised test of L2 does not yet try take-overs, zips, the documents switch or the Team tab opened offline.
+- **Left open in the shared folder:**
+  - A document removed from the project leaves every copy but not yet the shared folder: its reading and file stay
+    there (the remove dialog and the privacy page say so).
+  - The same person on two computers shares one subfolder, and the two copies never see each other's work. The manual
+    says to use one computer per person; a warning in the app is to come.
+  - A busy database ends a round after about a minute with "database is locked" in place of plain words (nothing is
+    lost; the next round works).
+  - In a project shared with earlier ENLENS, the owner line can change from *You are the owner* to *No owner yet* once a
+    colleague's zip from earlier ENLENS comes in.
+  - *What came in* says "1 new result" without its title, and a third copy shows "The owner removed …" under each
+    colleague's entry.
+- **Known limits:**
+  - What is written in the folder is not signed: anyone who can write in the shared folder could write in a
+    colleague's name, or as the project's owner. Share the folder only with your team.
+  - The folder only grows while every copy keeps going: old files are removed only when a copy starts afresh there,
+    and nothing yet makes a copy start afresh because its files have piled up.
+  - When a colleague leaves and their folder is removed, what came from them (checks, notes and the like) is not
+    written again by the others, so someone joining later does not get it; the documents and their files are.
+  - A file whole on its writer's computer but damaged on yours waits until your cloud service delivers it whole.
+  - When a colleague keeps a document out of the folder and you hold another reading of the same file, their excerpts
+    from it stay records and are not placed on your reading. A set of themes over documents you do not have leaves
+    those passages out, so a later change of it in their copy can come in as a sync clash.
+  - With the switch on, a colleague who adds a kept-out file and asks a stronger model to read an excerpt of a check
+    that came through the folder finds no passage text in that task.
+  - When you moved a document to the new reader and your colleague then changed a check on it, that check still comes
+    in as a sync clash (both versions are kept).
+  - When a document and its sync-clash copy hold the same text, a third colleague's copy shows a check's two excerpts
+    on the same passage, twice, and their second opinions and judgements there become one (the check's maker loses
+    nothing).
+  - A running round has no *Stop* button (a waiting one has *Cancel*); quitting or updating ENLENS stops it.
+  - Two projects combined into one (*Bring in a colleague's work* with a file from another project) use the shared
+    folder of the project they were combined into only.
+  - Every round looks again at every shared item and the project's other parts: fine for hundreds of checks; a
+    project far larger may find rounds slow.
+  - Items made before 0.16 in a project shared with earlier ENLENS do not say who made them: anyone in the team may
+    share or
+    take them back.
+  - A whole-project zip sent to a colleague still on earlier ENLENS gives them everything, and their copy cannot keep it
+    private.
+  - Your labels and reviews with the SDG codebooks that come with ENLENS are shared as before, not kept private.
+
+#### The design guide and the pages
+
+- **No screen reader was used.** Roles, names and focus were checked in the page's structure, not heard. Whether a
+  notice that is created with its text already in it is spoken varies by screen reader; a status box that exists
+  before the outcome arrives would be surer. The tab pattern, the menus and the Team tab were tried with the keyboard
+  only in a browser.
+- **The design guide's last open points:**
+  - the result page's links to a part are drawn in the text colour and in the sans, not as teal links;
+  - a part's claim is in the sans, not the serif;
+  - the research log's item names are in the sans, not the serif;
+  - notices announced to a screen reader are created already holding their text.
+- **Boxes a page still draws.** Nineteen boxes in `views.css` are named, not converted to the guide's cards and
+  insets, each with what it is (several have hover, open or sticky states that need a look of their own on screen).
+  Components still have a few lengths off the six steps inside them, and a test does not hold them.
+- **Not seen on screen, only checked in the code:** the Ollama install and download outcomes, a scanned PDF's *no text*
+  notice, a second-opinion run's tags, a stronger model's re-read note, a missing original's note, a sync clash on a
+  list, the Claude Code set-up's failure notice, the AI's proposed wordings on a concept, a concept's links, the codes
+  comparison, dragging a code onto a group, Settings › Technical with a local model, Bibliography with Zotero on
+  every width, and a removed theme.
+- **Checked only partly:** 80% and 125% zoom were not measured again after the last changes; the judging row's second
+  line starts about 45 px in on a card with a pending sentence; the search field's clear button is the system's own;
+  the list rows' shared columns need a browser from 2023 or later.
+- **The manual's pictures show older screens**, among them *Claude Code waiting* with the old speed picker. Its text is
+  updated. It has no pictures of the Team tab or the owner's cards yet.
+- Some older tests pin source strings and are brittle (`test_0133_app_wide_polish`, `test_0120_results_page`); they
+  were not rewritten.
+
+#### Other
+
+- The rest of the small fixes (roadmap M3, M5 and M7): search by meaning set up from the Search page, the marks to try
+  in mockups, and moving many documents to the new reader at once.
+- Other pages (Search, Profile) still show "Unknown framework" for a codebook that is not there.
+- Below 1,000 pixels the research log panel still lies over the page.
+- A few words of another language can still be glossary terms when they stand in passages read as English (in one
+  project "ik" 8 times and "ja" 6 times, of 4,136 terms).
 
 ### Tests
 
-`tests/test_0_17_0_glossary_languages.py` (13 tests): Dutch common words are no terms while "net zero", "care home"
-and "eigen regie" stay; a passage's language and the passages that do not tell; English headings and tables not read
-as another language; own words and phrases, languages switched off, and the research log; readings made under other
-rules not used, a phrase not reading every document again; a build by an older ENLENS noticed; the Themes page's
-left-out key terms (not a term that left for another reason); the API. An Opus review found six defects, all fixed
-with tests. 1,089 passed, 17 skipped.
+Full suite on macOS with every extra: 1,493 passed, 17 skipped.
 
-## 0.17.0rc1 (November 2026): a sidebar of seven places
+New, for the design guide, the sidebar and the small fixes:
 
-The first release candidate of 0.17: the app is reached in a new way. The sidebar had grown to fifteen entries and a
-foot that needed scrolling; scrolling it scrolled the page behind it, and it was less and less clear what each entry
-was for. Now the sidebar has seven places, each page's other views are tabs under its title, everything a page can do
-says in the same words whether it uses the AI, and the sidebar's top and foot always stay in the window. **Nothing
-changes for results**: no check, reading or code is made differently; only where things are.
-
-It is a release candidate: only copies with *Try new versions early* (Settings) get it. The design guide's styling
-(one look for each kind of button, link and tag) comes in the next candidates.
-
-### Changed
-
-- **Seven places.** The sidebar lists *Overview* and *Documents*, then **Explore**: *Search*, *Codes*, *Concepts*,
-  *Themes*, then **Check**: *Hypotheses*. No counts and no tagline. Each place's other views are tabs under its title:
-  - *Overview* | *Research log*
-  - *Documents* | *Notes* | *Bibliography*
-  - *Codes*: *By document* (the old *Profile*) | *Codebooks*
-  - *Hypotheses*: *Answers* | *Evidence map*
-
-  Every old address (a bookmark, a link in a note, `#/check`, `#/batch`, `#/history`) still opens its new home.
-- **Hypotheses.** *Check a hypothesis*, *Check several* and *Results* are one page. One box takes one hypothesis or a
-  list, one per line, and the button counts them (*Check 3*). The answers are listed under it, the running checks at
-  the top.
-- **One AI mark.** The chip icon with *Uses the AI*, *AI on request* or *No AI* stands on the sidebar's groups, on each
-  page's top line and beside actions. *AI on request* replaces "Works without AI; the AI can add to it": it says what
-  happens by default. The cloud icon is kept only where it says which AI reads your text.
-- **The sidebar's foot stays in the window, at a fixed size.** Work that runs takes the AI line's place and keeps the
-  AI's name; work that waits with nothing answering turns the box amber with a *Start* button. *Update*, when there is
-  one, takes Quit's place; *Quit* is also in Settings › Technical. The queue panel's controls moved to Settings › AI ›
-  *Work waiting for Claude Code*. Everything fits a window 640 px high, even while work runs.
-- **The sidebar scrolls on its own.** The brand and the project stay at the top and the foot at the bottom; only the
-  list of places scrolls when the window is short, with a soft shadow at an edge while there is more beyond it. A
-  wheel or touchpad turn over the sidebar never scrolls the page behind it.
-
-### New
-
-- **Find.** A button under the project switch, Ctrl+K (⌘K on a Mac), and a box on the Overview find any page, view or
-  setting by name, without AI, and cope with typos (*bibliografy* finds *Bibliography*). The old names (*Profile*,
-  *Results*, *Check several*) find their new homes.
-- **The research log beside every page.** A button on every page opens the log in a panel on the right, with *This
-  page* and *All*.
-- **Update gets the new version when GitHub's download links are busy.** On 9 November 2026 *Update* from 0.15.6 to
-  0.15.7 stopped with *Something went wrong inside the app* and *HTTP Error 504: Gateway Time-out*: GitHub's download
-  links timed out for everyone, while GitHub's API still handed out the same files. Now each file is fetched from the
-  download link, else through the API, and both are tried again a few seconds later. If the file still cannot be
-  downloaded, the app says so in plain words (*could not be downloaded from GitHub … Nothing was changed … try again
-  in a few minutes*) instead of an unexpected problem. The checksum is checked as before. This works from the
-  version that has it on: the update *to* that version still downloads the old way.
-
-### Not yet done
-
-- The design guide's styling: one look for each kind of button, link, tag and card, and the fixes it lists (headings
-  turn teal while the log panel is open).
-- The manual's pictures still show the old screens; its text is updated.
-
-### Tests
-
+- `tests/test_0_17_0_design.py`: guards for the guide. Pages place components and never restyle them; type comes only
+  from the scale; removed classes stay gone (the list is read from `docs/EXTENDING.md`); inline styles hold only
+  values computed at run time; every link has an address and no next-step link is in a page head; a button's width is
+  never fixed below its words; reserved icons keep their meaning; no page draws a box of its own, paints an amber or
+  red of its own, or uses the quote's yellow; corners are tokens; spacing is on the scale; dashed edges and soft teal
+  are listed with their meaning; every AI button has its mark and every card with AI actions its line; tables stack by
+  their frame; one *Stop*; a judged excerpt names each way back; fields are as tall as their buttons; every entry of
+  the guide has its labelled parts; the guide's list of exceptions equals the tests'. Each was shown failing on the
+  code before its fix.
+- `tests/test_0_17_0_menu.py`, `tests/test_0_17_0_notice_live.py` (no live notice inside a live container),
+  `tests/test_0_17_0_person_mark.py`, `tests/test_0_17_0_tabs.py` and `tests/test_0_17_0_place_pieces.py`, with
+  `tests/_fakedom.py` for the ones that run the pages' code in Node.
 - `test_0_17_0_navigation.py`, `test_0_17_0_hypotheses.py`, `test_0_17_0_finder.py`, `test_0_17_0_log_drawer.py`,
-  `test_0_17_0_sidebar.py`, `test_0_17_0_update_download.py`. Fourteen older tests follow the new places on purpose;
+  `test_0_17_0_sidebar.py` and `test_0_17_0_update_download.py`: the seven places, the Hypotheses page, Find, the log
+  panel (the column from 1,000 pixels), the sidebar's foot, and the fallback for a download.
+- `tests/test_0_17_0_glossary_languages.py` (13): Dutch common words are no terms while "net zero" and "care home"
+  stay; a passage's language; own words and languages switched off; the Themes page's left-out key terms; a build by an
+  older ENLENS noticed; the API.
+- `tests/test_0_17_0_search_marks.py` (the other word and its other ending marked, not with exact words; the title is
+  the one way to open a line), `tests/test_0_17_0_index_job_once.py` (a second set-up gives the same job) and
+  `tests/test_0_17_0_quicklook_codebooks.py` (a quick look sees its project's codebook, copies nothing, changes none).
+- Some 35 older test files read the stylesheet cascade instead of sheets by name, or follow a changed look on purpose;
   each says why in a comment.
+
+New, for working together (306 tests in 26 files, each copy of a project with its own person and ENLENS folder):
+
+- **Private until shared:** `tests/test_0_18_0_private_until_shared.py` (11): what you make starts private, sharing and
+  taking back are logged, a check shares its codebook, a zip for a colleague holds only shared items (nothing private
+  in the file's bytes), the whole-project zip says whose each item is, a withdrawn item does not reach a third copy,
+  only an item's maker decides, projects shared with earlier ENLENS count as shared.
+  `tests/test_0_18_0_sharing_review.py`
+  (8), each failing before its fix. `tests/test_0_18_0_codebook_merge.py` (7): codes merged one by one,
+  a code both changed, renames followed by both copies' labels. `tests/test_0_18_0_old_readings.py` (6): one document
+  with two readings. `tests/test_0_18_0_sync_formats.py` (9): the format of what is exchanged, a newer one refused in
+  words. `tests/test_0_18_0_rows_of.py` (3): taking an item out removes exactly its parts, and the folder writes
+  nothing a zip for a colleague would not carry.
+- **The shared folder:** `tests/test_0_18_0_shared_folder.py` (13): two and three copies over several rounds, through
+  a folder with spaces and accents in its path. `tests/test_0_18_0_folder_robustness.py` (14): files still arriving,
+  out of order, missing, damaged or copied by the cloud service; a folder that goes away while reading and while
+  writing; a large corpus not copied every round. `tests/test_0_18_0_folder_privacy.py`: every byte of every file
+  written over several rounds by two copies holds no private item, no private words and no path of either computer.
+  `tests/test_0_18_0_folder_review.py` (18), each failing before its fix.
+  `tests/test_0_18_0_polish.py` (23), each failing before its fix: the switch
+  turned on later, a damaged or missing file mended by its writer, a check its maker removed.
+  `tests/test_0_18_0_folder_api.py`: the endpoints. `tests/test_0_18_0_round_stops.py` (8): a round stopped part-way
+  ends as it would have without the stop. `tests/test_0_18_0_clash_copy_checks.py`: a check with excerpts on a
+  document and its sync-clash copy keeps both, through three copies (failed before its fix).
+- **By itself, and jobs that wait:** `tests/test_0_18_0_poller.py` (17), on the test's own clock: rounds after a
+  start, a change, a pause and a resume; offline backing off and coming back; what came in kept until seen.
+  `tests/test_0_18_0_job_queue.py` (17): which jobs wait for which, *Cancel* while waiting, the new reader before
+  search by meaning. `tests/test_0_18_0_app_rounds.py` (10): the real app starts and stops the poller, a long round
+  shows in the sidebar at 20 seconds.
+- **The pages:** `tests/test_0_18_0_team_tab.py` (16), `tests/test_0_18_0_share_actions.py` (9),
+  `tests/test_0_18_0_codebook_clash_ui.py` (2) and `tests/test_0_18_0_owner_ui.py` (15): the files and their wiring,
+  the words, keyboard and screen reader, what each page works out (in Node where it is installed), and the answers the
+  pages read.
+- **One owner:** `tests/test_0_18_0_owner.py` (31): every kind of proposal proposed, accepted and declined across three
+  copies; `tests/test_0_18_0_owner_api.py` (17): the endpoints, each person with their own app;
+  `tests/test_0_18_0_owner_more.py` (34): the owner offline for twelve rounds, late joiners, zips only, projects from
+  earlier ENLENS, zips from earlier ENLENS, hand-overs and take-overs, Windows-like homes and names;
+  `tests/test_0_18_0_owner_random.py`
+  (10 seeds of 40 rounds with three copies; a longer run of 30 seeds of 80 rounds with four copies on request);
+  `tests/test_0_18_0_owner_takeover.py` (5): a former owner's late changes after a take-over.
+
+The code that merges a colleague's work is now a package split by what each part does (`sync/`); every earlier test of
+it passes unchanged.
 
 ## 0.16.1 (November 2026): short code names from the themes
 

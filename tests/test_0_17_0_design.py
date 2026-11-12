@@ -8,6 +8,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from _static import STATIC, all_css, css_blocks, index_html, js_code, release_sheets, rule
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +34,7 @@ RC4_TOKENS = """--accent --accent-soft --accent-strong --accent-text --bad --bad
 PLACEMENT = re.compile(r"^(display|position|top|right|bottom|left|inset|z-index|order|flex(-[a-z]+)?|grid(-[a-z]+)*|gap|"
                        r"row-gap|column-gap|align-[a-z]+|justify-[a-z]+|place-[a-z]+|margin(-[a-z]+)?|width|min-width|"
                        r"max-width|height|min-height|max-height|overflow(-[xy])?|vertical-align|white-space|text-align|"
-                       r"visibility|text-overflow|overflow-wrap|scroll-margin(-[a-z]+)*)$")
+                       r"visibility|text-overflow|overflow-wrap|overscroll-behavior(-[xy])?|scroll-margin(-[a-z]+)*)$")
 # class names that are parts or utilities, not components, though a component's section mentions them
 NOT_COMPONENTS = {"icon", "small", "muted", "mono", "serif", "count", "title", "page", "pn", "num", "actions", "spacer",
                   "current", "grow", "it", "sep", "msg", "elapsed", "spinner", "passage"}
@@ -92,8 +94,37 @@ def test_a_component_is_styled_in_one_section_only():
 # placement"); a page may import one under another name (card as cardBox)
 COMPONENT_HELPERS = {"button", "iconButton", "downloadButton", "fileButton", "link", "tag", "notice", "card", "fold",
                      "choice", "optionCards", "input", "select", "textarea", "searchField", "menu", "drawer", "statusBadge",
-                     "personMark", "listRow", "listGroup",
+                     "personMark", "listRow", "listGroup", "inset", "stopButton", "switchControl", "absentDocument",
+                     "field", "helpMark", "downloadLinks", "pageHead", "tabs", "strongerMark",
+                     # the AI line: its attributes come after its sentence, aiWhere(text, where, { class })
+                     "aiWhere", "readsLine",
                      "keptFold"}   # views/result.js's fold whose open state survives a redraw: keptFold(key, { class }, …)
+
+
+def _option_objects(js: str, name: str):
+    """Every object literal passed to name(…) at the call's top level, in any position (aiWhere(text, "cloud",
+    { class }) as well as button({ class }, …)). Strings are skipped while matching brackets."""
+    for m in re.finditer(rf"(?<![\w.]){re.escape(name)}\(", js):
+        depth, quote, start = 0, None, None
+        for j in range(m.end() - 1, len(js)):
+            ch = js[j]
+            if quote:
+                if ch == quote and js[j - 1] != "\\":
+                    quote = None
+                continue
+            if ch in "\"'`":
+                quote = ch
+            elif ch in "([{":
+                depth += 1
+                if ch == "{" and depth == 2:
+                    start = j
+            elif ch in ")]}":
+                depth -= 1
+                if ch == "}" and depth == 1 and start is not None:
+                    yield js[start:j + 1]
+                    start = None
+                if depth == 0:
+                    break
 
 
 def _calls(js: str, name: str):
@@ -150,7 +181,7 @@ def _placement_hooks() -> set[str]:
     out: set[str] = set()
     for js in ALL_JS.values():
         for name in _helper_names(js):
-            for obj in _calls(js, name):
+            for obj in _option_objects(js, name):
                 out |= _classes_given(obj)
         # a class added later to an element a helper made (moreBtn.classList.add("more-toggle"))
         for m in re.finditer(r"(\w+)\s*=\s*(?:button|iconButton|link|tag|card|notice|panelToggle)\(", js):
@@ -253,8 +284,73 @@ def test_pages_never_restyle_a_link():
         for sel in sels:
             last = re.split(r"[\s>+~]+", sel.strip())[-1]
             if re.match(r"^a(\b|:|\[|$)", last):
-                bad = {"color", "text-decoration", "font-weight", "font-family"} & set(decls)
+                bad = {"color", "text-decoration", "font-weight", "font-family", "font-style"} & set(decls)
                 assert not bad, f"{media} {sel}: {bad}"
+
+
+def title_link_classes(scripts: dict[str, str]) -> set[str]:
+    """The classes the scripts give to title links (link({ kind: "title", class: … }))."""
+    out: set[str] = set()
+    for js in scripts.values():
+        for name in _helper_names(js) & ({"link"} | set(re.findall(r"\blink\s+as\s+(\w+)", js))):
+            for obj in _calls(js, name):
+                if re.search(r'\bkind:\s*"title"', obj):
+                    out |= _classes_given(obj) | {c for c in re.findall(r'\bclass:\s*"([^"]*)"', obj) for c in c.split()}
+    return out
+
+
+def colours_on_title_links(css: str, classes: set[str]) -> list[str]:
+    """Rules that set a colour on an element that may be a title link: their subject names a class some title link
+    has, and is not some other element (span.title)."""
+    bad = []
+    for media, sels, decls in css_blocks(css):
+        if "color" not in decls:
+            continue
+        for sel in sels:
+            last = re.split(r"[\s>+~]+", re.sub(r":(not|has|is|where)\([^)]*\)", "", sel).strip())[-1]
+            if re.match(r"^[a-z]", last) and not last.startswith("a"):
+                continue
+            if set(re.findall(r"\.([\w-]+)", last)) & classes:
+                bad.append(f"{media} {sel}: color {decls['color']}".strip())
+    return bad
+
+
+def test_a_title_link_keeps_its_colour():
+    """docs/DESIGN.md 4.3: a name that opens its item is teal at rest. A rule that colours a class some title link
+    carries (`.ev-src .title { color: var(--text) }` painted a theme's documents in the text colour) is caught."""
+    classes = title_link_classes(ALL_JS)
+    assert "ct-wording" in classes
+    bad = colours_on_title_links(COMPONENTS, classes) + colours_on_title_links(VIEWS, classes)
+    assert not bad, "\n".join(bad)
+    assert colours_on_title_links(".ev-src .title { color: var(--text); }", {"title"}) == [".ev-src .title: color var(--text)"]
+    assert colours_on_title_links(".ev-src span.title { color: var(--text); }", {"title"}) == []
+
+
+# the space between elements on a page (docs/DESIGN.md 3.3): the six steps (--space-*), and 6, 2 and 1 px for small
+# things on a line and hairline nudges; a length relative to the text (em) or the window (vh) is allowed
+SPACE_PX = {0, 1, 2, 4, 6, 8, 12, 16, 24, 32}
+
+
+def spaces_off_the_scale(css: str) -> list[str]:
+    bad = []
+    for media, sels, decls in css_blocks(css):
+        for k, v in decls.items():
+            if not re.match(r"^(margin(-[a-z]+)?|gap|row-gap|column-gap)$", k):
+                continue
+            for num, unit in re.findall(r"(?<![\w(*-])-?([\d.]+)(px|rem)\b", re.sub(r"calc\([^;]*\)|var\([^)]*\)", " ", v)):
+                if unit == "rem" or float(num) not in SPACE_PX:
+                    bad.append(f"{media} {sels[0]}: {k}: {v}".strip())
+                    break
+    return bad
+
+
+def test_pages_space_their_pieces_on_the_scale():
+    """views.css places pieces with the steps of the spacing scale; a component's own inside (its padding) is set in
+    its section of components.css."""
+    bad = spaces_off_the_scale(VIEWS)
+    assert not bad, "\n".join(bad)
+    assert spaces_off_the_scale(".a { margin: 10px 0 14px; } .b { gap: .35rem; }") == [".a: margin: 10px 0 14px", ".b: gap: .35rem"]
+    assert spaces_off_the_scale(".a { margin: 6px 0 var(--space-3); gap: 4px 12px; margin-left: -2px; } .b { gap: .7em; }") == []
 
 
 def test_app_css_holds_no_component():
@@ -301,6 +397,11 @@ def test_no_inline_visual_styles():
     visual = re.compile(r"style:\s*\{[^}]*\b(color|background|font\w*|border\w*|padding\w*|borderRadius|boxShadow|textDecoration)\s*:")
     for name, js in ALL_JS.items():
         assert not visual.search(js), f"an inline visual style in {name}: {visual.search(js).group(0)}"
+    # Changed on purpose in 0.17.0: a style written as a string or a template string slipped past the check above, so
+    # none is allowed at all (a value computed at run time goes in style: { … })
+    as_text = re.compile(r"\bstyle:\s*[\"'`]")
+    bad = [f"{n}:{js.count(chr(10), 0, m.start()) + 1}" for n, js in ALL_JS.items() for m in as_text.finditer(js)]
+    assert not bad, "an inline style written as a string: " + ", ".join(bad)
 
 
 def test_inline_styles_hold_only_values_computed_at_run_time():
@@ -312,25 +413,117 @@ def test_inline_styles_hold_only_values_computed_at_run_time():
     assert not bad, "\n".join(bad)
 
 
-# the classes a page must never spell: they are made by the helpers of lib.js (docs/DESIGN.md, section 8.5)
-SPELLED = re.compile(r"""class:\s*[`"']([^`"']*)[`"']""")
+# the classes a page must never spell: they are made by the helpers of lib.js (docs/DESIGN.md, 9.2 rule 4). The parts
+# of a component count too: a card's head (card({ title, help, action })), a page head and its parts (pageHead()), a
+# row of tabs (tabs(), viewTabs()), a button with its AI mark (withAI()), the Display title (pageHead({ display }))
+SPELLED = re.compile(r"""\b(?:class|titleClass):\s*[`"']([^`"']*)[`"']|\.className\s*=\s*[`"']([^`"']*)[`"']|"""
+                     r"""\.classList\.(?:add|remove|toggle)\(\s*((?:[`"'][^`"']*[`"']\s*,?\s*)+)""")
 HELPER_CLASSES = {"btn", "btn-primary", "btn-ghost", "btn-danger", "btn-outline-danger", "btn-sm", "btn-lg", "link-btn",
                   "danger-link", "icon-btn", "chip", "chip-code", "warn-chip", "chip-btn", "badge", "badge-accent",
                   "badge-warn", "notice", "notice-info", "notice-ok", "notice-warn", "notice-error", "card", "seg-on",
                   "fold", "menu-item", "menu-list", "input", "select", "textarea", "link-title", "link-next", "link-back",
                   "link-external", "link-jump", "card-sm", "fold-sm", "empty", "seg", "seg-btn", "option-card", "option-cards",
-                  "badge", "work-state", "ai-where", "ai-tag", "chip-count", "person-mark", "search-field", "drawer"}
+                  "badge", "work-state", "ai-where", "ai-tag", "chip-count", "person-mark", "search-field", "drawer",
+                  "card-head", "page-head", "page-head-main", "page-head-actions", "page-facts", "settings-tabs", "with-ai",
+                  "title-display"}
+# the scripts that make the components: they may spell their classes
+MAKERS = {"lib.js"}
+
+
+def hand_spelled(scripts: dict[str, str]) -> list[str]:
+    """Each place where a script other than lib.js spells a helper's class: in `class:` or `titleClass:`, in a
+    `.className =`, or in `classList.add/remove/toggle("…")` ("views/x.js:12: class: \"card-head\"")."""
+    bad = []
+    for name, js in scripts.items():
+        if name in MAKERS:
+            continue
+        for m in SPELLED.finditer(js):
+            text = " ".join(g for g in m.groups() if g)
+            words = set(re.sub(r"\$\{[^}]*\}|[`\"',]", " ", text).split())
+            if words & HELPER_CLASSES:
+                line = js.count("\n", 0, m.start()) + 1
+                bad.append(f"{'views/' if name in VIEW_JS else ''}{name}:{line}: {' '.join(m.group(0).split())}")
+    return bad
 
 
 def test_pages_use_the_helpers_instead_of_spelling_component_classes():
-    bad = []
-    for name, js in VIEW_JS.items():
-        for m in SPELLED.finditer(js):
-            words = set(re.sub(r"\$\{[^}]*\}", " ", m.group(1)).split())
-            if words & HELPER_CLASSES:
-                line = js.count("\n", 0, m.start()) + 1
-                bad.append(f"views/{name}:{line}: {m.group(0)}")
+    bad = hand_spelled(ALL_JS)
     assert not bad, "\n".join(bad)
+
+
+def test_the_guard_sees_a_part_spelled_by_hand():
+    # the slips this guard is for: a card's head, a page head, a row of tabs, a button's kind and the AI mark's span,
+    # spelled by a page; the same made by the helpers passes
+    slips = {
+        "views/a.js": 'card({}, h("div", { class: "card-head" }, h("h2", {}, "Testing"), stop));',
+        "views/b.js": 'h("header", { class: "page-head result-head" }, h("div", { class: "page-head-main" }, title));',
+        "views/c.js": 'h("nav", { class: "settings-tabs", "aria-label": "Settings" }, links);',
+        "views/d.js": 'nextBtn.classList.add("btn-primary");',
+        "views/e.js": 'btn.className = "btn btn-primary btn-sm update-ready";',
+        "views/f.js": 'h("span", { class: "with-ai" }, btn, aiTag("uses"));',
+        "views/g.js": 'pageHead(c.label, { titleClass: "title-display ct-title" });',
+    }
+    found = hand_spelled(slips)
+    assert sorted({f.split(":")[0] for f in found}) == sorted(slips), found
+    fine = {"views/a.js": 'card({ title: "Testing", action: stop }, pb); el.classList.add("ev-flash");',
+            "views/b.js": 'pageHead(r.text, { class: "result-head", display: true, titleClass: "result-hyp" });',
+            "views/c.js": 'tabs({ label: "Settings", items, current }); h("div", { class: "btn-row" }, withAI(btn));',
+            "lib.js": 'h("div", { class: "card-head" });'}
+    assert hand_spelled(fine) == []
+
+
+# Icons with a reserved meaning (docs/DESIGN.md 3.3): the circle family is a judgement's own (an answer, a grade), and
+# the chip is the AI mark's. A script names them only inside the helpers that draw those: the badges and
+# judgementIcon() (lib.js), aiTag() (lib.js); icons.js draws every icon and keeps STATUS_ICON.
+RESERVED_ICONS = {"circle-check", "circle-half", "circle-x", "circle-minus", "circle-dashed", "circle-dot", "arrows-opposed", "cpu"}
+ICON_KEEPERS = {"lib.js": ("GRADE_ICON", "judgementIcon", "gradeBadge", "statusBadge", "aiTag")}
+
+
+def _spans_of(js: str, names) -> list[tuple[int, int]]:
+    """Where each named function or const of a script begins and ends (to the first line that closes it)."""
+    out = []
+    for n in names:
+        for m in re.finditer(rf"^(?:export\s+)?(?:function\s+{n}\(|const\s+{n}\s*=)", js, flags=re.M):
+            end = js.find("\n}\n", m.start())
+            line_end = js.find("\n", m.start())
+            end = line_end if js[m.start():line_end].rstrip().endswith(";") else end
+            out.append((m.start(), end if end > 0 else len(js)))
+    return out
+
+
+def reserved_icons_out_of_place(scripts: dict[str, str]) -> list[str]:
+    bad = []
+    names = "|".join(re.escape(n) for n in sorted(RESERVED_ICONS))
+    literal = re.compile(rf"""[`"']({names})[`"']|[`"']circle-\$\{{""")
+    for name, js in scripts.items():
+        if name == "icons.js":
+            continue
+        spans = _spans_of(js, ICON_KEEPERS.get(name, ()))
+        for m in literal.finditer(js):
+            if any(a <= m.start() < b for a, b in spans):
+                continue
+            bad.append(f"{name}:{js.count(chr(10), 0, m.start()) + 1}: {m.group(0)}")
+        # STATUS_ICON is the answers' icons: only lib.js's helpers read it
+        if name not in ICON_KEEPERS and re.search(r"\bSTATUS_ICON\b", js):
+            bad.append(f"{name}: reads STATUS_ICON")
+    return bad
+
+
+def test_reserved_icons_keep_their_meaning():
+    """docs/DESIGN.md 3.3: circle-check means "supports", never "done" (that is `check`); arrows-opposed is mixed
+    evidence, never a button's icon; the chip is the AI mark's, never a button's, a tab's or a model line's."""
+    bad = reserved_icons_out_of_place({**ALL_JS, "index.html": index_html()})
+    assert not bad, "\n".join(bad)
+    # the slips it is for: "done" drawn with the judgement's circle, a button with the chip or the mixed arrows; the
+    # same icons drawn by the badge helpers and the AI mark pass
+    slips = {"views/a.js": 'h("p", {}, icon("circle-check", { size: 14 }), "Zotero is open on this computer.")',
+             "views/b.js": 'button({ sm: true }, icon("cpu", { size: 13 }), "Get a second opinion")',
+             "views/c.js": 'button({ sm: true }, icon("arrows-opposed", { size: 13 }), "Get a second opinion for all answers")',
+             "views/d.js": 'import { STATUS_ICON } from "../icons.js"; icon(STATUS_ICON[k])'}
+    assert [b.split(":")[0] for b in reserved_icons_out_of_place(slips)] == list(slips)
+    lib = ALL_JS["lib.js"]
+    assert reserved_icons_out_of_place({"lib.js": lib}) == []
+    assert reserved_icons_out_of_place({"lib.js": lib + '\nexport function doneLine() { return icon("circle-check"); }\n'}) != []
 
 
 def test_no_action_is_drawn_as_a_link_and_no_link_as_a_button():
@@ -371,16 +564,21 @@ def test_a_next_step_has_an_address_and_stepping_through_a_page_is_a_button():
 
 # the classes 0.17.0 removed (named in CHANGELOG.md for forks): a look merged into a component, so none may come back,
 # neither styled nor spelled in the JavaScript
-REMOVED_CLASSES = """link-btn danger-link btn-lg seg-on chip-btn seg-pick seg-choice so-seg nav-ai nav-ai-uses nav-ai-optional
-nav-legend badge-accent badge-warn badge-provisional badge-job status-prefix chip-weak chip-counted chip-yours chip-scope
-chip-second chip-agrees chip-disagrees chip-flag chip-wait-you new-badge access-option route-card rc-badge cb-start-opt
-note-pick-item ps-item ps-sep logdrawer-seg logdrawer-entry logdrawer-entry-link card-verdict person-mark-partly bc-sup
-bc-part bc-ref map-key-doc ev-words""".split()
+def _removed_classes() -> list[str]:
+    """The classes 0.17.0 removed, as docs/EXTENDING.md lists them for forks (the block after <!-- removed-classes -->)."""
+    text = (ROOT / "docs" / "EXTENDING.md").read_text(encoding="utf-8")
+    block = re.search(r"<!-- removed-classes -->\s*```text\n(.*?)```", text, re.S)
+    assert block, "docs/EXTENDING.md lists no removed classes"
+    return block.group(1).split()
+
+
+REMOVED_CLASSES = _removed_classes()
 
 
 def test_the_removed_classes_stay_gone():
     code = all_css() + "".join(ALL_JS.values()) + index_html()
-    left = [c for c in REMOVED_CLASSES if re.search(r"(?<![\w-])" + re.escape(c) + r"(?![\w-])", code)]
+    # a class, not part of an address (app.js asks /api/whats-new)
+    left = [c for c in REMOVED_CLASSES if re.search(r"(?<![\w/-])" + re.escape(c) + r"(?![\w-])", code)]
     assert not left, f"classes the guide removed are back: {left}"
 
 
@@ -644,3 +842,674 @@ export function renderDocument(view, blocks) {
     alias = 'import { card as cardBox } from "../lib.js";\nconst f = () => { const card = cardBox({}); card.appendChild(x); return cardBox.name; };\n'
     assert helpers_used_as_objects(alias, functions) == []
     assert helpers_used_as_objects(alias.replace("card.appendChild", "cardBox.appendChild"), functions) == ["line 2: cardBox.appendChild"]
+
+
+def test_the_project_switch_spans_the_sidebar():
+    """docs/DESIGN.md 5.1: the project switch is a field-like box as wide as Find. It is the menu component (4.17),
+    which is an inline-block that hugs its button; in the sidebar it is a block, and its summary fills it."""
+    assert rule(".project-switch > .menu").get("display") == "block"
+    assert rule(".project-switch summary").get("width") == "100%"
+    ref = VIEW_JS["design.js"]
+    sample = ref[ref.index('sample("The project switch"'):ref.index('sample("Entries')]
+    assert "menu(" in sample and 'listClass: "ps-menu"' in sample   # the reference draws it as the sidebar does
+
+
+# a helper that draws an AI button for a card drawn elsewhere: the functions that draw that card's AI line
+AI_LINE_DRAWN_BY = {
+    ("result.js", "secondModelPicker"): ["modelsCard"],
+    ("result.js", "readLocalButton"): ["partView", "readLocalNotice"],
+    ("concepts.js", "linkRow"): ["relatedCard"],
+    ("sources.js", "lookup"): ["refsPanel"],
+}
+
+
+def _functions(code):
+    for m in re.finditer(r"\bfunction\s+(\w+)\s*\([^)]*\)\s*\{", code):
+        i, depth = m.end() - 1, 0
+        for j in range(i, len(code)):
+            depth += {"{": 1, "}": -1}.get(code[j], 0)
+            if depth == 0:
+                yield m.group(1), i, j
+                break
+
+
+def ai_actions_without_their_line(scripts: dict[str, str]) -> list[str]:
+    says = lambda body: re.search(r"\b(readsLine|aiWhere)\(", body) is not None
+    missing = []
+    for name, js in scripts.items():
+        if name == "design.js":
+            continue
+        code = js_code(js)
+        funcs = list(_functions(code))
+        # a file may hold several inner functions of one name (each page's own draw()): the AI line is looked for in
+        # the function that holds the button; a helper named in AI_LINE_DRAWN_BY counts if any function of each
+        # named drawer says it
+        bodies = lambda f: [code[a:b] for g, a, b in funcs if g == f]
+        for m in re.finditer(r"(?<![\w$])(?<![\w$]\.)withAI\(", code):   # also `...withAI(`
+            inner = min((f for f in funcs if f[1] < m.start() < f[2]), key=lambda f: f[2] - f[1], default=None)
+            fname = inner[0] if inner else "<top>"
+            drawn_by = AI_LINE_DRAWN_BY.get((name, fname))
+            # the line comes after the action in the source as on the screen: a line written before the action is
+            # one that sits above it
+            ok = (all(any(says(b) for b in bodies(c)) for c in drawn_by) if drawn_by
+                  else bool(inner) and says(code[m.end():inner[2]]))
+            if not ok:
+                missing.append(f"{name}:{code[:m.start()].count(chr(10)) + 1} {fname}()")
+    return missing
+
+
+def test_a_card_with_ai_actions_says_where_text_goes():
+    """docs/DESIGN.md 4.4: every button that sends text to an AI has its mark (withAI()), and the card or section that
+    holds it says once, under its AI actions, where the text goes (readsLine() or aiWhere())."""
+    missing = ai_actions_without_their_line(VIEW_JS)
+    assert not missing, "AI actions whose card does not say where text goes:\n" + "\n".join(missing)
+
+
+def test_a_table_stacks_by_the_width_of_its_frame():
+    """docs/DESIGN.md 4.20: the rows of .table-responsive stack when their frame (.table-wrap) is narrower than 900 px,
+    whether a small window or the open drawer narrows it, so no column hides behind a sideways scroll."""
+    assert rule(".table-wrap").get("container-type") == "inline-size"
+    stacking = [(med, sels) for med, sels, _ in css_blocks(all_css()) if any("table-responsive" in s for s in sels)]
+    assert any(med == "@container (max-width: 899px)" for med, _ in stacking)
+    assert not [sels for med, sels in stacking if "@media" in med], "a table still stacks by the window's width"
+    for name, js in VIEW_JS.items():   # every responsive table sits in a frame, which is what the rule measures
+        tables = len(re.findall(r'class:\s*"[^"]*\btable-responsive\b', js))
+        assert len(re.findall(r'class:\s*"table-wrap\b', js)) >= tables, f"a responsive table outside .table-wrap in {name}"
+
+
+def stops_drawn_by_hand(scripts: dict[str, str]) -> list[str]:
+    """Stop buttons not made by stopButton(): the stop icon named outside it, or a button whose words are Stop."""
+    out = []
+    for name, js in scripts.items():
+        # the strings matter here ("stop", "Stop"), so only comments are taken out
+        code = re.sub(r"/\*.*?\*/", "", re.sub(r"(?m)^\s*//.*$", "", js), flags=re.S)
+        if name == "lib.js":   # the stop icon only inside stopButton() itself
+            m = re.search(r"export function stopButton\([^)]*\)\s*\{.*?\n\}", code, re.S)
+            code = code.replace(m.group(0), "") if m else code
+        if re.search(r"""icon\(\s*["']stop["']|icon:\s*["']stop["']""", code):
+            out.append(f"{name}: the stop icon outside stopButton()")
+        if re.search(r"""\bbutton\([^;]*?["']Stop["']\s*\)""", code):
+            out.append(f"{name}: a Stop made with button()")
+    return out
+
+
+def test_a_jobs_stop_is_one_small_quiet_button():
+    """docs/DESIGN.md 4.1 and 4.21: a job's Stop is a small quiet button with the stop icon (stopButton()). It ends
+    work and removes nothing, so it is never a danger button."""
+    assert not stops_drawn_by_hand(ALL_JS)
+    assert re.search(r'export function stopButton[^\n]*\n[^\n]*\n\s*return button\(\{ \.\.\.attrs, kind: "quiet", sm: true, icon: "stop" \}', LIB)
+
+
+def test_the_guard_sees_a_stop_drawn_by_hand():
+    slips = ['const s = button({ kind: "danger", sm: true }, icon("stop", { size: 13 }), "Stop");',
+             'const s = button({ kind: "quiet", sm: true, icon: "stop" }, "Stop");',
+             'const s = button({ kind: "danger", sm: true, onClick: go }, "Stop");']
+    for slip in slips:
+        assert stops_drawn_by_hand({"x.js": slip}), slip
+    assert not stops_drawn_by_hand({"x.js": 'const s = stopButton({ onClick: go });'})
+
+
+def test_a_page_head_holds_no_next_step_link():
+    """docs/DESIGN.md 4.3 and 6: the next-step link is the one way on from an empty state or a notice. A way to another
+    page in a page head is a plain link in the line under the title."""
+    found = []
+    for name, js in VIEW_JS.items():
+        code = js_code(js)   # brackets balance here; the strings are blanked, so kind: "next" is read from js itself
+        for m in re.finditer(r"(?<![\w.])pageHead\(", code):
+            depth, j = 0, m.end() - 1
+            for j in range(m.end() - 1, len(code)):
+                depth += {"(": 1, ")": -1}.get(code[j], 0)
+                if depth == 0:
+                    break
+            if re.search(r'kind:\s*"next"', js[m.start():j]):
+                found.append(f"{name}:{code[:m.start()].count(chr(10)) + 1}")
+    assert not found, f"a next-step link in a page head: {found}"
+
+
+INHERITED_LOOK = {"color", "font-weight", "font-family", "font-style"}
+
+
+def title_link_wrappers(scripts: dict[str, str]) -> set[str]:
+    """The classes of the element that holds a title link: the h(…) call it is written in."""
+    out: set[str] = set()
+    for js in scripts.values():
+        code = js_code(js)
+        for m in re.finditer(r"(?<![\w.])link\(\s*\{", code):
+            if not re.match(r'\{[^{}]*\bkind:\s*"title"', js[m.end() - 1:m.end() + 200]):
+                continue
+            depth, i = 0, m.start() - 1
+            while i >= 0:   # back to the "(" of the call this link is an argument of
+                ch = code[i]
+                if ch in ")]}":
+                    depth += 1
+                elif ch in "([{":
+                    if depth == 0 and ch == "(":
+                        break
+                    depth = max(0, depth - 1) if ch != "(" or depth else depth
+                i -= 1
+            if i > 0 and re.search(r"(?<![\w.])h\s*$", code[:i]):
+                first = re.match(r'\(\s*"[\w-]+"\s*,\s*\{[^{}]*?\bclass:\s*"([^"]*)"', js[i:i + 300])
+                if first:
+                    out |= set(first.group(1).split())
+    return out - NOT_COMPONENTS - {"grow", "it"}
+
+
+def looks_set_on_title_link_wrappers(css: str, classes: set[str]) -> list[str]:
+    bad = []
+    for media, sels, decls in css_blocks(css):
+        props = INHERITED_LOOK & set(decls)
+        if not props:
+            continue
+        for sel in sels:
+            last = re.split(r"[\s>+~]+", re.sub(r":(not|has|is|where)\([^)]*\)", "", sel).strip())[-1]
+            if set(re.findall(r"\.([\w-]+)", last)) & classes:
+                bad.append(f"{media} {sel}: {sorted(props)}".strip())
+    return bad
+
+
+def test_a_title_links_look_never_comes_from_its_wrapper():
+    """docs/DESIGN.md 4.3: a title link's weight, face and colour are its own (components.css 4.3). views.css may set the
+    size of the place that holds one, never a look that it would inherit (`.doc-title { font-weight: 600 }` made the
+    Documents list's titles bold and no other list's)."""
+    classes = title_link_wrappers(VIEW_JS)
+    assert {"doc-title", "notes-doc-title"} <= classes, classes
+    bad = looks_set_on_title_link_wrappers(VIEWS, classes)
+    assert not bad, "\n".join(bad)
+    assert looks_set_on_title_link_wrappers(".doc-title { font-weight: var(--fw-strong); }", {"doc-title"})
+
+
+def _object_at(js: str, i: int) -> str:
+    """The object literal that starts at js[i] == "{", to its matching "}" (strings skipped)."""
+    code = js_code(js)
+    depth = 0
+    for j in range(i, len(code)):
+        depth += {"{": 1, "}": -1}.get(code[j], 0)
+        if depth == 0:
+            return js[i:j + 1]
+    return js[i:]
+
+
+def links_without_an_address(scripts: dict[str, str]) -> list[str]:
+    """An <a> or a link() with no href: an action drawn as a link. link({ kind: "jump" }) is the one link without one
+    (a move on this page, drawn as a <button>)."""
+    bad = []
+    for name, js in scripts.items():
+        if name == "lib.js":
+            continue
+        for helper in _helper_names(js) & ({"link"} | set(re.findall(r"\blink\s+as\s+(\w+)", js))):
+            for m in re.finditer(rf"(?<![\w.]){helper}\(\s*\{{", js):
+                obj = _object_at(js, m.end() - 1)
+                if not re.search(r"\bhref\b", obj) and not re.search(r'\bkind:\s*"jump"', obj):
+                    bad.append(f"{name}: {js[m.start():m.start() + 70]}")
+            for m in re.finditer(rf"(?<![\w.]){helper}\(\s*\)", js):
+                bad.append(f"{name}: {m.group(0)}")
+        for m in re.finditer(r'(?<![\w.])h\(\s*"a"\s*(?:,\s*\{|\))', js):
+            obj = _object_at(js, m.end() - 1) if m.group(0).endswith("{") else ""
+            if not re.search(r"\bhref\b", obj):
+                bad.append(f"{name}: {js[m.start():m.start() + 70]}")
+    return bad
+
+
+def test_every_link_has_an_address():
+    """docs/DESIGN.md 4.3 and 10: no action drawn as a link. A link (an <a>, or link()) goes somewhere, so it has an
+    href; the one exception is link({ kind: "jump" }), a move on this page."""
+    bad = links_without_an_address(ALL_JS)
+    assert not bad, "\n".join(bad)
+    for slip in ['h("a", { onClick: go, role: "button" }, "Remove")', 'link({ onClick: go }, "Delete")', 'h("a", {}, "x")']:
+        assert links_without_an_address({"x.js": 'import { link } from "../lib.js";\n' + slip}), slip
+    assert not links_without_an_address({"x.js": 'import { link } from "../lib.js";\nlink({ kind: "jump", onClick: go }, "Up")'})
+
+
+JUDGEMENT_TOKENS = re.compile(r"var\(--(ok|partly|mixed|bad|none)(-[a-z]+)?\)")
+# where a judgement colour may be used: the judgement badges, quotes and highlights, the heat grid, the excerpt cards
+JUDGEMENT_SECTIONS = {"4.9", "4.23", "4.25", "4.26"}
+
+
+def judgement_colours_out_of_place(components: str, views: str, app: str) -> list[str]:
+    bad = []
+    for num, body in re.findall(r"/\* ==== (\d+\.\d+)[^\n]*\*/(.*?)(?=/\* ==== |\Z)", components, re.S):
+        if num not in JUDGEMENT_SECTIONS and JUDGEMENT_TOKENS.search(body):
+            bad += [f"components.css § {num}: {m.group(0)}" for m in JUDGEMENT_TOKENS.finditer(body)]
+    for name, css in (("views.css", views), ("app.css", app)):
+        for media, sels, decls in css_blocks(css):
+            if any(JUDGEMENT_TOKENS.search(v) for v in decls.values()):
+                # the result page's own evidence says judgements: the answer block, the documents' and the second
+                # opinion's dots (.result .who-dot), the excerpt table's edge (.ex-supports …)
+                if not all(s.startswith((".answer", ".result .who-dot", ".ex-")) for s in sels):
+                    bad.append(f"{name}: {', '.join(sels)}")
+    return bad
+
+
+def test_judgement_colours_mean_a_judgement_only():
+    """docs/DESIGN.md 3.1: the five judgement colours (--ok*, --partly*, --mixed*, --bad*, --none*) say a judgement of
+    the evidence and nothing else: they appear only in the judgement badges (4.9), quotes and highlights (4.23), the
+    heat grid (4.25), the excerpt cards (4.26) and the result page's own evidence (its answer block, the documents'
+    dots, the excerpt table's edge)."""
+    bad = judgement_colours_out_of_place(COMPONENTS, VIEWS, APP)
+    assert not bad, "\n".join(bad)
+    assert judgement_colours_out_of_place("", ".foo-thing { background: var(--ok-soft); }", "")
+    assert judgement_colours_out_of_place("/* ==== 4.1 Buttons */\n.btn { color: var(--bad); }", "", "")
+
+
+# every dashed edge, and what is not in force or not there yet about it (docs/DESIGN.md 3.3)
+DASHED = {
+    ".badge-weak": "a judgement that does not count",
+    ".empty": "nothing here yet",
+    ".passage-pending mark.quote": "a quote you picked, not saved yet",
+    ".dropzone": "files not there yet",
+    ".inset-tentative": "not in force: a reading the AI proposed and nobody confirmed, a proposed link, a removed theme",
+    ".doc-view .dv-fold .passage-row": "passages left out of the reading",
+    ".dv-pbox-out": "a part left out of the reading",
+    ".cal-bar.cal-empty": "no excerpts in this band yet",
+}
+
+
+def test_a_dashed_edge_means_not_in_force_or_not_there_yet():
+    """docs/DESIGN.md 3.3: a dashed edge has one meaning. Each one is named here with what is not in force or not there
+    yet about it; a new one (a sample frame on #/design was dashed) must be argued for here first."""
+    found = {sel for _, sels, decls in css_blocks(all_css()) if any("dashed" in v for v in decls.values()) for sel in sels}
+    assert found <= set(DASHED), sorted(found - set(DASHED))
+
+
+# soft teal means here, chosen or found; a message is notice() (docs/DESIGN.md 3.1, 4.12)
+SOFT_TEAL_MEANS = {
+    '.dropzone[data-over="true"]': "chosen: files about to land here",
+    ".bulk-bar": "chosen: the rows you ticked",
+    '.doc-view .passage-row[data-found="true"]': "found by words",
+    "mark.kt-pin": "chosen: a key term you pinned",
+    ".dv-code-id": "found by a code: its mark in the reading view",
+    ".dv-term.dv-pinned": "chosen: a term you pinned",
+    '.dv-chain-btn[aria-pressed="true"]': "chosen: the chain shown",
+    '.picker-item[aria-selected="true"]': "chosen: the row picked",
+    '.cb-code-row:has(> .cb-code-sum[aria-expanded="true"])': "here: the code open in the codebook editor",
+}
+
+def test_soft_teal_means_here_chosen_or_found():
+    """docs/DESIGN.md 3.1: in views.css --accent-soft grounds only what is here, chosen or found; never a notice."""
+    bad = [f"{m} {s}" for m, sels, d in css_blocks(VIEWS) for s in sels
+           if any("--accent-soft" in str(v) for v in d.values()) and s not in SOFT_TEAL_MEANS]
+    assert not bad, "soft teal with no meaning of its own:\n" + "\n".join(bad)
+
+HAND_NOTICES = ["batch-banner", "map-batch-banner", "run-summary", "moved-note", "user-note", "whats-new"]
+
+def test_messages_are_notices():
+    code = VIEWS + "".join(VIEW_JS.values())
+    left = [c for c in HAND_NOTICES if re.search(r"(?<![\w-])" + c + r"(?![\w-])", code)]
+    assert not left, f"hand-drawn notices are back: {left}"
+
+# the page head: its AI line after its actions; a narrow head lays its actions out from the left (4.4, 4.14)
+def _call_args(code, name):
+    for m in re.finditer(r"\b" + name + r"\(", code):
+        i, depth = m.end() - 1, 0
+        for j in range(i, len(code)):
+            depth += {"(": 1, ")": -1}.get(code[j], 0)
+            if depth == 0:
+                yield code[i:j + 1]
+                break
+
+def test_a_page_heads_ai_line_comes_after_its_actions():
+    """docs/DESIGN.md 4.4 and 4.14: a page head's AI line is pageHead({ ai }), drawn after the actions; never meta."""
+    bad = []
+    for name, js in VIEW_JS.items():
+        for args in _call_args(js_code(js), "pageHead"):
+            m = re.search(r"\bmeta:\s*", args)
+            if m and re.search(r"\b(readsLine|aiWhere)\(", args[m.end():m.end() + 400].split("actions:")[0]):
+                bad.append(name)
+    body = LIB.split("export function pageHead", 1)[1].split("\nexport function", 1)[0]
+    assert "opts.ai" in body and body.index("opts.ai") > body.index("page-head-actions"), "pageHead() draws no ai line after the actions"
+    assert not bad, f"an AI line passed as a page head's meta: {bad}"
+
+def test_a_stacked_page_head_lays_its_actions_from_the_left():
+    """docs/DESIGN.md 4.14: when the head is too narrow for two columns, its actions are one row from the left."""
+    heads = [d for m, s, d in css_blocks(COMPONENTS) if ".page-head" in s and not m]
+    assert any("page-head" in str(d.get("container", "")) or d.get("container-type") == "inline-size" for d in heads)
+    stacked = [(m, s, d) for m, s, d in css_blocks(COMPONENTS) if m.startswith("@container") and "page-head" in m
+               and any(x.startswith(".page-head-actions") for x in s)]
+    assert stacked and all(d.get("justify-content") == "flex-start" and d.get("flex-direction", "row") == "row"
+                           and d.get("align-items") != "flex-end" for m, s, d in stacked), stacked
+
+# stacked tables share their facts' lines; a concordance line's document is the title column (4.20, 4.24)
+def test_a_concordance_title_is_the_title_column():
+    """docs/DESIGN.md 4.24: a line's document is the title column (kw-where-title, two lines at most), never a one-line
+    column that grows and squeezes the words around the hit."""
+    bad = [n for n, js in VIEW_JS.items() for m in re.finditer(r'class: "kw-where"\s*\},\s*link\(\{\s*kind: "title"', js)]
+    assert not bad, bad
+
+def test_stacked_facts_share_a_line():
+    """docs/DESIGN.md 4.20: in a stacked table a short fact (td.fact, td.num) flows on one line with the others."""
+    rules = [d for m, s, d in css_blocks(COMPONENTS) if m.startswith("@container") and "899px" in m
+             and any("td.fact" in x for x in s)]
+    assert rules and any(d.get("display", "").startswith("inline") for d in rules)
+    # a page's column width (td.num { width: 1% }) must not squeeze a stacked cell to its label's first letters
+    cells = [d for m, s, d in css_blocks(COMPONENTS) if m.startswith("@container") and "899px" in m and ".table-responsive td" in s]
+    assert cells and all(d.get("width") == "auto !important" for d in cells), cells
+    pages = [d for m, s, d in css_blocks(VIEWS) if m.startswith("@container") and any(re.search(r"td\.num$", x) for x in s)
+             and d.get("display", "").startswith("inline")]
+    assert not pages, "a page makes its own stacked facts inline: that is the table's (components.css 4.20)"
+
+
+def test_list_rows_line_up_and_name_research_items_in_the_serif():
+    """docs/DESIGN.md 4.20 (Lists of rows): the rows of a group share their columns, so names start at one x whatever
+    the person marks say; listRow() can draw a research item's name in the serif (3.2)."""
+    body = LIB.split("export function listRow", 1)[1].split("\nexport function", 1)[0]
+    assert re.search(r"link\(\{[^}]*\bserif\b", body), "listRow() cannot pass serif to its title link"
+    assert rule(".list-row").get("grid-template-columns") == "subgrid"
+    assert "grid-template-columns" in rule(".list-rows")
+
+
+def test_corners_are_tokens():
+    """docs/DESIGN.md 3 and 9: a corner is one of the radius tokens (or 0, or a circle's 50%), never a page's own px."""
+    bad = []
+    for name, css in (("app.css", APP), ("components.css", COMPONENTS), ("views.css", VIEWS)):
+        for media, sels, decls in css_blocks(css):
+            for k, v in decls.items():
+                if "radius" in k and re.sub(r"var\(--radius[\w-]*\)|\b0\b|50%|\s", "", v):
+                    bad.append(f"{name} {', '.join(sels)} {k}: {v}")
+    assert not bad, "\n".join(bad)
+
+
+# The boxes views.css still draws, each with what it is: a piece no component means (a page frame, a floating toolbar,
+# a bar). A page draws no new one: a box in a card is inset(), a box of its own is card({ sm }),
+# a message is notice() (docs/DESIGN.md 4.11, 4.12, 9.2). A box is any rule with a ground (a surface, the soft teal,
+# the quote's yellow, a mixed tint) and padding or an edge of any kind; a state of a listed box (:hover,
+# [aria-selected]) and a chosen state named in SOFT_TEAL_MEANS count as listed.
+PAGE_BOXES = {
+    ".ov-card": "the Overview's place cards: a page's link card, the whole card its link (DESIGN 4.11)",
+    ".dv-selbar": "the reading view's floating bar over a selection (a toolbar, with its shadow)",
+    ".dv-chain-btn": "a reference chain's chooser in the reading view, pressed when shown",
+    ".doc-view .dv-act": "the floating actions beside a selected passage in the reading view",
+    ".dv-page-frame": "the reading view's page frame: the document's own page",
+    ".refers": "the reading view's 'refers to' box beside a passage",
+    ".pf-top li": "the Codes profile's ranked codes, a bar in each row",
+    ".cb-card": "a codebook in the list of codebooks: the whole card opens it",
+    ".cb-savebar": "the codebook editor's save bar, sticky at the foot",
+    ".doc-pick": "a scrolling list of documents to tick, inside a dialog",
+    ".dropzone": "the drop zone that waits for files: its dashed frame (not there yet)",
+    ".bib-excerpt": "Bibliography: the passage where a document names a work, with its edge as a quote",
+    ".picker-group": "the code picker's sticky group head, on the list's ground so rows scroll under it",
+    ".copy-code": "a command to copy, in mono on a grey ground (code in running text)",
+    ".dz-side": "#/design: a piece of the sidebar on the sidebar's ground",
+    ".dz-corner": "#/design: the sample of a corner token",
+    ".dz-shadow": "#/design: the sample of a shadow token",
+    ".doc-view .dv-table th, .doc-view .dv-table td": "a table inside a document's own text, drawn as the document has it",
+    ".dz-frame": "#/design: the frame of a sample",
+}
+
+
+def test_a_page_draws_no_box_of_its_own():
+    """docs/DESIGN.md 9: views.css places components; a box with a component's ground and edge drawn by a page is named
+    in PAGE_BOXES with what it is, and a new one is inset() or card() instead."""
+    found = set()
+    for media, sels, decls in css_blocks(VIEWS):
+        ground = decls.get("background") or decls.get("background-color") or ""
+        if not re.search(r"var\(--(surface|surface-2|surface-3|bg-2|paper|accent-soft|mark)\)|color-mix\(", ground):
+            continue
+        if any(k.startswith("padding") for k in decls) or any(k.startswith("border") and "radius" not in k for k in decls):
+            found |= set(sels)
+    # Changed on purpose in 0.17.0: an edge all round with padding is a box too, ground or not (a framed fieldset slipped
+    # past the check above)
+    for media, sels, decls in css_blocks(VIEWS):
+        edge = any(k in ("border", "outline") and not re.match(r"\s*(0|none)\b", v) for k, v in decls.items())
+        if edge and any(k.startswith("padding") and not re.fullmatch(r"\s*0\s*", v) for k, v in decls.items()):
+            found |= {", ".join(sels)} if len(sels) > 1 else set(sels)
+    state = re.compile(r"(:hover|:focus(-visible|-within)?|\[[^\]]*\])+$")
+    left = sorted(s for s in found if s not in PAGE_BOXES and s not in SOFT_TEAL_MEANS and state.sub("", s) not in PAGE_BOXES)
+    assert not left, "a page draws a box of its own (inset(), card({ sm }) or notice() instead): " + ", ".join(left)
+    # and the list holds only boxes still drawn: a piece that became a component leaves it
+    stale = sorted(set(PAGE_BOXES) - found)
+    assert not stale, "PAGE_BOXES names pieces views.css no longer draws as boxes: " + ", ".join(stale)
+
+
+# The needs-you and went-wrong icons (docs/DESIGN.md 3.3): each has one meaning and one look, amber or red, so only the
+# helpers that give them that look draw them (tag() and notice() of kind attention or error, workState(), aiWhere(),
+# field errors; app.js's status area). A page never names them; it says "needs you" with tag({ kind: "attention" }),
+# notice({ kind: "attention" }) or workState("attention", …), and a caution that asks nothing of you with the info icon.
+# The places below draw the icon themselves, each counted, with what it is.
+STATE_ICON_PLACES = {
+    "design.js": (3, "the reference: the legend of the reserved icons (3.3, two) and the sidebar's attention card"),
+    "settings.js": (1, "the Claude Code set-up's step still to do: its mark in --attention (.cc-step[data-state=todo] .cc-mark)"),
+}
+
+
+def state_icons_out_of_place(scripts: dict[str, str]) -> list[str]:
+    """The view scripts (views/*.js, by file name) that name the triangle or the alert circle more often than allowed."""
+    bad = []
+    for name, js in scripts.items():
+        hits = [m for m in re.finditer(r"""[`"'](alert-triangle|alert-circle)[`"']""", js)]
+        allowed = STATE_ICON_PLACES.get(name, (0, ""))[0]
+        if len(hits) > allowed:
+            bad += [f"{name}:{js.count(chr(10), 0, m.start()) + 1}: {m.group(1)}" for m in hits]
+    return bad
+
+
+def test_needs_you_and_went_wrong_icons_come_with_their_look():
+    """docs/DESIGN.md 3.3 and 4.12: the triangle is "needs you" in amber, the alert circle "went wrong" in red; a grey
+    triangle beside a caution, or an alert circle beside "Unsaved changes", is a misfit."""
+    bad = state_icons_out_of_place(VIEW_JS)
+    assert not bad, "a page draws a needs-you or went-wrong icon by hand (tag/notice/workState of its kind instead):\n" + "\n".join(bad)
+    slips = {"a.js": 'h("p", { class: "answer-next-text" }, icon("alert-triangle", { size: 14 }), "It rests on a single document.")',
+             "b.js": 'h("span", { class: "cb-unsaved" }, icon("alert-circle", { size: 14 }), "Unsaved changes")'}
+    assert [b.split(":")[0] for b in state_icons_out_of_place(slips)] == list(slips)
+
+
+def test_a_judged_excerpt_names_each_way_back():
+    """docs/DESIGN.md 4.26: after a judgement the toast has Undo for a few seconds; on the card, Take back goes to the AI's
+    judgement, and its moved note offers Back to “…” only when your earlier judgement was your own, so no two buttons
+    on a card go to the same place and each says where it goes. The place the card left has only Show it."""
+    js = VIEW_JS["result.js"]
+    ph = js[js.index("const ph = "):js.index("if (oldList)")]
+    assert "button(" not in ph and '"Show it"' in ph, "the place a moved card left offers an action besides Show it"
+    # the note's way back comes from noteWayBack() (tested below), and sits in its sentence (one line)
+    assert "fa.undoText = noteWayBack(prev.verdict, verdict, p.read_by);" in js and "fa.undo = fa.undoText ? undo : null;" in js
+    assert 'f.undo ? [" ", button({ kind: "quiet", sm: true, onClick: f.undo }, f.undoText)] : null)), el.firstChild);' in js
+    start = js.index('el.insertBefore(notice({ kind: "info", icon: "arrow-right"')
+    note = js[start:js.index("el.firstChild);", start)]
+    assert '"Undo"' not in note, "the moved note's button says Undo, which does not say where it goes beside Take back"
+
+
+# The amber and the red mean "needs you" and "went wrong" (docs/DESIGN.md 3.1, 3.3). Only their components wear them
+# (tag({ kind: "attention" }), notice(), workState(), a field's error): a page that wants to say "needs you" uses one
+# of those, and a fact (a count still to review, nothing found by these words, no AI read it) stays grey. views.css
+# names neither colour except here, each with what it is.
+PAGE_STATE_COLOURS = {
+    '.cc-step[data-state="todo"] .cc-mark': "the Claude Code set-up's step still to do: its mark, the triangle, in amber",
+}
+
+
+def page_state_colours(css: str) -> list[str]:
+    """The views.css selectors that paint with the attention or danger colours (any of their tokens), not listed."""
+    bad = []
+    for media, sels, decls in css_blocks(css):
+        if any(re.search(r"var\(--(attention|danger)", v) for v in decls.values()):
+            bad += [s for s in sels if s not in PAGE_STATE_COLOURS]
+    return bad
+
+
+def test_a_page_paints_no_amber_or_red_of_its_own():
+    bad = page_state_colours(VIEWS)
+    assert not bad, "a page paints the attention or danger colour itself (tag/notice/workState instead): " + ", ".join(bad)
+    slips = ".to-review { color: var(--attention); }\n.batch-error { color: var(--danger); }\n.x { border-left: 3px solid var(--attention-line); }"
+    assert page_state_colours(slips) == [".to-review", ".batch-error", ".x"]
+
+
+# A caution that asks nothing of you says what an answer rests on: it takes the info icon, grey, wherever it shows
+# (docs/DESIGN.md 3.3, 4.10, 4.12). Amber with the triangle is for what needs you, so these words never wear it.
+CALM_CAUTIONS = ("rests on one document", "rests on a single document")
+
+
+def calm_cautions_in_amber(scripts: dict[str, str]) -> list[str]:
+    """The tags and notices of kind attention whose own words are a calm caution."""
+    pat = re.compile(r"""(?:tag|notice)\(\{\s*kind:\s*"attention"[^}]*\}\s*,\s*(?:h\("p",\s*\{\}\s*,\s*)?[`"']([^`"']*)""")
+    return [f"{name}:{js.count(chr(10), 0, m.start()) + 1}: {m.group(1)}" for name, js in scripts.items()
+            for m in pat.finditer(js) if any(c in m.group(1).lower() for c in CALM_CAUTIONS)]
+
+
+def test_a_calm_caution_is_never_amber():
+    bad = calm_cautions_in_amber(VIEW_JS)
+    assert not bad, "a caution that asks nothing of you wears the attention look (tag({ icon: \"info\" }) instead):\n" + "\n".join(bad)
+    slips = {"m.js": 'x.single_document ? tag({ kind: "attention" }, "rests on one document") : null',
+             "r.js": 'notice({ kind: "attention" }, h("p", {}, "It rests on a single document."))',
+             "ok.js": 'tag({ icon: "info" }, "rests on one document"), tag({ kind: "attention" }, "very short: is this the whole text?")'}
+    assert [b.split(":")[0] for b in calm_cautions_in_amber(slips)] == ["m.js", "r.js"]
+
+
+# The moved note's way back never repeats a button of the card's own row (docs/DESIGN.md 4.26). Changed on purpose in
+# 0.17.0: after "Not about this" then another judgement, the note offered Back to “Not about this” beside the row's own
+# "Not about this". The function is run in Node with a stand-in for GRADE_TEXT.
+def _note_way_back_cases() -> dict:
+    import json
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    js = VIEW_JS["result.js"]
+    m = re.search(r"export function noteWayBack\([\s\S]*?\n}\n", js)
+    assert m, "views/result.js has no noteWayBack(): the moved note's way back is decided inline"
+    src = 'const GRADE_TEXT = { supports: "Supports", partially_supports: "Partly supports", refutes: "Contradicts" };\n'
+    src += m.group(0).replace("export function", "function")
+    src += """
+const cases = {
+  fromNotAbout: noteWayBack("not_relevant", "refutes", "ai"),
+  fromNotAboutTakeBack: noteWayBack("not_relevant", null, "ai"),
+  fromNotAboutReadByYou: noteWayBack("not_relevant", "refutes", "you"),
+  fromSupports: noteWayBack("supports", "refutes", "ai"),
+  fromAI: noteWayBack(null, "refutes", "ai"),
+};
+console.log(JSON.stringify(cases));
+"""
+    out = subprocess.run([node, "-e", src], capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
+def test_the_moved_note_never_repeats_a_row_button():
+    c = _note_way_back_cases()
+    # the row of an excerpt the AI read has its own "Not about this": the note offers none
+    assert c["fromNotAbout"] is None and c["fromNotAboutTakeBack"] is None
+    # an excerpt only you read has no "Not about this" in its row: the note is its one way back there
+    assert c["fromNotAboutReadByYou"] == "Back to “Not about this”"
+    # another earlier judgement of yours is not in the row: the note names it
+    assert c["fromSupports"] == "Back to “Supports”"
+    # your earlier judgement was not your own: the row's Take back is the way back
+    assert c["fromAI"] is None
+
+
+# A tab's count (docs/DESIGN.md 4.5, 5.5): a drawer tab may carry one count tag in words; a page's view tabs and
+# Settings' tabs carry none. The guide says so in 4.5, where tabs() is described, and no page passes a count to tabs.
+def test_the_guide_and_tabs_agree_on_counts():
+    guide = (ROOT / "docs" / "DESIGN.md").read_text(encoding="utf-8")
+    s45 = guide[guide.index("### 4.5 View tabs"):guide.index("### 4.6 Choices")]
+    assert "No counts in tabs." not in s45, "4.5 forbids every count in tabs, but 5.5 and tabs() give a drawer tab one"
+    assert "count" in s45 and "drawer tab" in s45, "4.5 does not say which tabs may carry a count"
+    assert "t.count" in (STATIC / "lib.js").read_text(encoding="utf-8"), "tabs() no longer draws a tab's count: 5.5 needs it"
+    pages = {n: js for n, js in VIEW_JS.items() if n not in ("design.js",)}
+    bad = [n for n, js in pages.items() for m in re.finditer(r"(?:viewTabs|tabs)\(\{[^)]*?count:", js)]
+    assert not bad, "a page passes a count to its view tabs or Settings' tabs: " + ", ".join(bad)
+
+
+# The Documents table keeps its titles readable (docs/DESIGN.md 4.20): the title column holds a min-width in em, and a
+# long file name under the title breaks only after _ or -, so neither squeezes the title nor cuts off its extension.
+# Changed on purpose in 0.17.0: overflow-wrap: anywhere on .doc-file let the table narrow the title column to ~20
+# characters at 1,280 px.
+def test_the_documents_title_column_keeps_its_room():
+    assert rule(".doc-file").get("overflow-wrap") != "anywhere", ".doc-file breaks anywhere: the table squeezes the title column"
+    assert re.fullmatch(r"\d+(\.\d+)?em", rule(".docs-table .doc-cell").get("min-width", "")), \
+        "the Documents title cell has no min-width in em"
+    js = VIEW_JS["sources.js"]
+    assert 'h("td", { class: "doc-cell" }, h("div", { class: "doc-title"' in js, "the Documents title cell has no doc-cell class"
+    assert ".split(/(?<=[_.-])/)" not in js, "a file name breaks after its dot, before its extension"
+
+
+# The quote's yellow is the quote's only (docs/DESIGN.md 2 step 4, 3.1, 4.23): its look lives in components.css § 4.23,
+# and no page or shell rule paints with --mark or --mark-line. Changed on purpose in 0.17.0: the Bibliography's naming
+# words (now foundWords(), soft teal) and the pending sentence's message (now a notice) were yellow page boxes.
+def test_the_quote_yellow_is_only_the_quotes():
+    bad = [f"{name}: {', '.join(sels)}" for name in ("views.css", "app.css")
+           for media, sels, decls in css_blocks((STATIC / name).read_text(encoding="utf-8"))
+           if any(re.search(r"var\(--mark(-line)?\)", v) for v in decls.values())]
+    assert not bad, "the quote's yellow outside components.css § 4.23: " + "; ".join(bad)
+
+
+# A tag is a fact and is never pressed, so it holds no link; a link is teal, never muted grey (docs/DESIGN.md 1, 4.2,
+# 4.10). Changed on purpose in 0.17.0: Documents' Note column drew "read badly" as a link inside an amber tag, and two
+# grey links.
+def links_in_tags_or_muted(js: str) -> list[int]:
+    bad = [m.start() for m in re.finditer(r'tag\(\{[^}]*\}\s*,\s*(?:link\(|h\("a")', js)]
+    bad += [m.start() for m in re.finditer(r'h\("a", \{[^}]*\bclass: "[^"]*\bmuted\b', js)]
+    bad += [m.start() for m in re.finditer(r'link\(\{[^}]*\bclass: "[^"]*\bmuted\b', js)]
+    return [js.count("\n", 0, i) + 1 for i in bad]
+
+
+def test_no_link_inside_a_tag_and_no_muted_link():
+    bad = [f"{n}:{line}" for n, js in VIEW_JS.items() for line in links_in_tags_or_muted(js)]
+    assert not bad, "a link inside a tag, or a grey link: " + ", ".join(bad)
+    slips = ['tag({ kind: "attention" }, link({ href }, "x"))', 'h("a", { class: "it muted small", href }, "x")',
+             'link({ href, class: "muted" }, "x")', 'tag({ kind: "attention" }, "x"), " ", link({ href }, "Look")']
+    assert [bool(links_in_tags_or_muted(j)) for j in slips] == [True, True, True, False]
+
+
+# A field in a row of small buttons is small too (docs/DESIGN.md 4.8): the open code's foot in the codebook editor
+# (Up, Down, Split, Remove, Merge into…) has one height.
+def test_the_codebook_merge_select_is_small():
+    m = re.search(r"const mergeSel = select\(\{([^}]*)\}", VIEW_JS["codebooks.js"])
+    assert m and "sm: true" in m.group(1), "the codebook editor's Merge into… is a full-height select among small buttons"
+
+
+# Every entry of the guide has the parts its head promises (docs/DESIGN.md 4, 5), so a builder with one question finds
+# Not for where a misfit is prevented. A kinds table (its first column Kind, Field, Mark, State, Value or Piece) stands
+# for Looks. Section 5's pieces each have one use, their place: they say Means, Looks and Lives in.
+ENTRY_PARTS = {"4": ("Means", "Use", "Not for", "Looks", "Make it", "Lives in"), "5": ("Means", "Looks", "Lives in")}
+
+
+def missing_entry_parts(guide: str) -> dict[str, list[str]]:
+    out = {}
+    parts = re.split(r"^### ([45])\.(\d+) .*$", guide, flags=re.M)
+    for i in range(1, len(parts), 3):
+        sec, body = parts[i], parts[i + 2].split("\n## ")[0]
+        miss = [p for p in ENTRY_PARTS[sec] if f"**{p}:**" not in body and f"**{p}**" not in body]
+        if "Looks" in miss and re.search(r"^\| (Kind|Field|Mark|State|Value|Piece) \|", body, re.M):
+            miss.remove("Looks")
+        if "Means" in miss and re.search(r"^\| [^|]+\| Means \|", body, re.M):
+            miss.remove("Means")
+        if miss:
+            out[f"{sec}.{parts[i + 1]}"] = miss
+    return out
+
+
+def test_every_entry_has_its_parts():
+    guide = (ROOT / "docs" / "DESIGN.md").read_text(encoding="utf-8")
+    bad = missing_entry_parts(guide)
+    assert not bad, "entries without the parts the guide promises: " + "; ".join(f"{k}: {', '.join(v)}" for k, v in bad.items())
+    # and the check notices a part taken out
+    assert missing_entry_parts(guide.replace("**Not for:** a message (a [notice]", "A message (a [notice]")) == {"4.11": ["Not for"]}
+
+
+# The named exceptions are listed in the guide (docs/DESIGN.md 9.5) as in this test, so a reviewer can check them
+# without reading Python: the guide's three tables and PAGE_BOXES, SOFT_TEAL_MEANS and DASHED name the same rules.
+def test_the_guide_lists_the_named_exceptions():
+    guide = (ROOT / "docs" / "DESIGN.md").read_text(encoding="utf-8")
+    s95 = guide[guide.index("### 9.5 Named exceptions"):guide.index("## 10 ")]
+    tables = re.split(r"^\*\*", s95, flags=re.M)
+    def named(title: str) -> set[str]:
+        block = next(b for b in tables if b.startswith(title))
+        return set(re.findall(r"^\| `([^`]+)` \|", block, re.M))
+    for title, listed in (("Boxes a page still draws", PAGE_BOXES), ("Soft teal in a page's block", SOFT_TEAL_MEANS), ("Dashed edges", DASHED)):
+        assert named(title) == set(listed), f"DESIGN 9.5 {title} and the test differ: {sorted(named(title) ^ set(listed))}"
+
+
+# A field under its label (field()) is the standard size; sm is for a field in a row of controls (docs/DESIGN.md 4.8).
+def small_fields_in_a_form(js: str) -> list[str]:
+    ctl = r"(?:input|select|fieldInput|selectField|inputField)"
+    bad = [m.group(0)[:60] for m in re.finditer(rf'field\("[^"]*", {ctl}\(\{{ sm: true', js)]
+    for m in re.finditer(rf"const (\w+) = {ctl}\(\{{ sm: true", js):
+        name = m.group(1)
+        nxt = re.compile(rf"\b(?:const|let) {name} =").search(js, m.end())   # until the name is used again for another
+        if re.search(rf'field\("[^"]*", {name}\b', js[m.end():nxt.start() if nxt else len(js)]):
+            bad.append(name)
+    return bad
+
+
+def test_a_field_under_its_label_is_the_standard_size():
+    bad = [f"{n}: {b}" for n, js in VIEW_JS.items() for b in small_fields_in_a_form(js)]
+    assert not bad, "a small field under its label: " + ", ".join(bad)
+    assert small_fields_in_a_form('const x = input({ sm: true });\nfield("Leave out", x, { help })') == ["x"]

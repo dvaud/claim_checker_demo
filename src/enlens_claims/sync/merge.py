@@ -1,463 +1,28 @@
-"""Shared projects (0.14): each person keeps their own copy of a project, on their own computer and Claude plan, and
-they exchange their work as a file.
-
-The file is the project zip of bundle.py (*Download as a zip*). Since 0.14 it says which project it is
-(`project_uid`) and who sent it, and its database holds the fingerprints of every check, theme run and codebook as
-they were whenever they were sent or brought in (`sync_seen`). `bring_in` merges such a file into this copy:
-
-- what is new comes in: documents, checks, theme runs, codebooks, AI work, links between terms, the bibliography;
-- what both copies have and only one of them changed since it was last exchanged: the newer version is kept;
-- what both changed (a *sync clash*): both are kept, the colleague's version as a copy beside yours, marked as such
-  (`sync_copies`), so nothing is lost and you choose later;
-- a document both of you added from the same file, but read into different text (another ENLENS version, text
-  recognition on one computer and not the other): every quote is a position in the text, so the colleague's reading
-  comes in as a document of its own, with their results attached to it;
-- what people decided is kept per person (judgements of excerpts, reviews of labels, links and themes: people.py):
-  yours count in your copy, a colleague's count where you decided nothing, and the two can be compared;
-- who may read a document with AI: the stricter setting of the two copies, with a warning where AI results exist that
-  the stricter setting would not have allowed;
-- what was removed from this copy (a document, a check, a theme run) does not come back.
-
-AI work on a document that both copies did (labels of a codebook, reference chains) is not doubled: yours is kept.
-Nothing is sent anywhere: the merge reads the file on this computer.
-
-How a version is told newer: a unit's fingerprint names documents by their content (file and text), not by their id
-in a copy, so both copies compute the same fingerprint. A unit whose fingerprint here is among the states the other
-copy has had (its `sync_seen` and its current one) is older here; the other way round, older there; neither: a clash.
-0.14.3: a fingerprint leaves out empty values, so copies on versions with other columns agree; the form 0.14.0 to
-0.14.2 made is worked out and written down too, so their states are recognised (see `_fingerprints`).
-"""
+"""The merge of a colleague's copy of a project into this one (0.18: split out of sync.py; the rules are in the
+package's notes, `enlens_claims.sync`). `_Merge(ws, inc, info).run()` merges the copy `inc` (a project opened from
+the colleague's file) into `ws` in one transaction, and returns the report."""
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 import shutil
 import sqlite3
-import tempfile
-import zipfile
 from pathlib import Path
-from typing import Any, Iterable
-
-from . import people
-from .store import Workspace, now
-
-FORMAT = "enlens-project"
-_TOKEN = re.compile(r"[A-Za-z0-9_\-]+")
-DOC_ID = re.compile(r"[A-Za-z0-9_]{1,64}(-[0-9a-f]{6})?")  # a document id ("d1a2b3c4d5e", a copy "…-0f1e2d"): never a path
-UNFINISHED = ("pending", "retry")
-_TEXT_COLS = {"text"}  # never rewritten (documents', passages' and hypotheses' own words)
-# the tables of a copy that are never merged: derived again from the documents, or about this copy only
-LOCAL_ONLY = {"meta", "embeddings", "code_vectors", "terms", "term_mentions", "concepts", "concept_terms", "task_claims",
-              "sync_log", "sqlite_sequence",
-              "versions"}  # 0.16: earlier versions of themes and checks are this copy's history (history.py)
-# merged by their own rules below; every other table (the SDG pack's, an add-on's) is merged row by row, keeping yours
-OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "blocks", "doc_tables", "labels", "mentions", "tasks", "results",
-             "ai_sent", "hypotheses", "user_claims", "second_opinions", "judgements", "people", "theme_runs", "themes",
-             "theme_members", "reviews", "concept_links", "bib_items", "bib_links", "sync_seen", "sync_copies",
-             "sync_removed", "verifications",
-             "research_log", "notes"}  # 0.16: merged entry by entry and note by note (researchlog.merge, notes.merge)
-# the columns that hold ids of documents, passages, tasks, checks, runs (rewritten when an id changes in a merge)
-ID_COLS = {"doc_id", "passage_id", "task_id", "claim_id", "subject_id", "ver_id", "hyp_id", "run_id", "item_id",
-           "label_id", "window", "payload_json", "options_json", "parts_json", "key", "of_key", "origin_id"}
-
-
-class NotThisProject(ValueError):
-    """The file comes from another project (or from an ENLENS before 0.14, which does not say)."""
-
-    def __init__(self, message: str, info: dict):
-        super().__init__(message)
-        self.info = info
-
-
-def _sha(*parts: Any) -> str:
-    h = hashlib.sha1()
-    for p in parts:
-        h.update((p if isinstance(p, bytes) else str(p).encode("utf-8")))
-        h.update(b"\0")
-    return h.hexdigest()
-
-
-def base_id(doc_id: str) -> str:
-    """The document id of a file, without the mark of a sync-clash copy ("d1a2b3c4d5e-0f1e2d" -> "d1a2b3c4d5e")."""
-    return doc_id.split("-", 1)[0]
-
-
-def text_fp(text: str | None) -> str:
-    """The fingerprint of a document's text (16 hex digits)."""
-    return _sha(text or "")[:16]
-
-
-def text_fps(db: sqlite3.Connection | Workspace, again: bool = False) -> dict[str, str]:
-    """{doc_id: fingerprint of its text}, computed once per document and kept (`documents.text_fp`); `again` works
-    every one out anew (a colleague's file: what it says about itself is not trusted)."""
-    cx = db._conn() if isinstance(db, Workspace) else db
-    out = {}
-    missing = []
-    for doc_id, fp in cx.execute("SELECT doc_id, text_fp FROM documents").fetchall():
-        if fp and not again:
-            out[doc_id] = fp
-        else:
-            missing.append(doc_id)
-    for doc_id in missing:
-        (text,) = cx.execute("SELECT text FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
-        out[doc_id] = text_fp(text)
-        cx.execute("UPDATE documents SET text_fp=? WHERE doc_id=?", (out[doc_id], doc_id))
-    return out
-
-
-def _tokens(s: str, mp: dict[str, str]) -> str:
-    return _TOKEN.sub(lambda m: mp.get(m.group(0), m.group(0)), s) if mp and s else s
-
-
-def _rows(cx: sqlite3.Connection, sql: str, args: Iterable = ()) -> list[dict]:
-    cur = cx.execute(sql, tuple(args))
-    cols = [c[0] for c in cur.description]
-    return [dict(zip(cols, r)) for r in cur.fetchall()]
-
-
-def _cols(cx: sqlite3.Connection, table: str) -> list[str]:
-    return [r[1] for r in cx.execute(f"PRAGMA table_info({table})")]
-
-
-def _pk(cx: sqlite3.Connection, table: str) -> list[str]:
-    return [r[1] for r in sorted(cx.execute(f"PRAGMA table_info({table})"), key=lambda r: r[5]) if r[5]]
-
-
-# ---------------------------------------------------------------------------------------------
-# units: a check, a theme run, a codebook; their rows and fingerprints
-# ---------------------------------------------------------------------------------------------
-_PERSONAL = {"user_verdict", "user_note", "user_at", "user_quote", "user_start", "user_end", "user_by"}
-# 0.15: how a row was made, not what it says: the ENLENS version (a colleague's older version has no such column)
-_HOW = {"rowid", "ver_id", "app_version"}
-
-
-def _check_unit(cx: sqlite3.Connection, hyp_id: str) -> dict[str, list[dict]]:
-    hyp = _rows(cx, "SELECT * FROM hypotheses WHERE hyp_id=?", (hyp_id,))
-    claims = _rows(cx, "SELECT * FROM user_claims WHERE hyp_id=? ORDER BY claim_id", (hyp_id,))
-    cids = [c["claim_id"] for c in claims]
-    q = ",".join("?" * len(cids))
-    ver = _rows(cx, f"SELECT * FROM verifications WHERE subject_kind='user_claim' AND subject_id IN ({q}) "
-                    "ORDER BY ver_id", cids) if cids else []
-    sec = _rows(cx, f"SELECT * FROM second_opinions WHERE subject_id IN ({q}) ORDER BY subject_id, passage_id, model",
-                cids) if cids else []
-    pats = [f"decompose:{hyp_id}"] + [p for c in cids for p in (f"expand:{c}", f"check:{c}")]
-    likes = [p for c in cids for p in (f"check:{c}:%", f"reread:{c}:%", f"second:check:{c}:%")]
-    where = " OR ".join(["task_id=?"] * len(pats) + ["task_id LIKE ?"] * len(likes))
-    tasks = _rows(cx, f"SELECT * FROM tasks WHERE {where} ORDER BY task_id", pats + likes)
-    tids = [t["task_id"] for t in tasks]
-    res = _rows(cx, f"SELECT * FROM results WHERE task_id IN ({','.join('?' * len(tids))}) ORDER BY task_id, attempt",
-                tids) if tids else []
-    return {"hypotheses": hyp, "user_claims": claims, "verifications": ver, "second_opinions": sec, "tasks": tasks,
-            "results": res}
-
-
-def _themes_unit(cx: sqlite3.Connection, run_id: str) -> dict[str, list[dict]]:
-    head = f"theme:{run_id}:"
-    tasks = _rows(cx, "SELECT * FROM tasks WHERE kind='theme' AND substr(task_id, 1, ?) = ? ORDER BY task_id",
-                  (len(head), head))
-    tids = [t["task_id"] for t in tasks]
-    return {"theme_runs": _rows(cx, "SELECT * FROM theme_runs WHERE run_id=?", (run_id,)),
-            "themes": _rows(cx, "SELECT * FROM themes WHERE run_id=? ORDER BY theme_id", (run_id,)),
-            "theme_members": _rows(cx, "SELECT * FROM theme_members WHERE run_id=? ORDER BY passage_id", (run_id,)),
-            "tasks": tasks,
-            "results": _rows(cx, f"SELECT * FROM results WHERE task_id IN ({','.join('?' * len(tids))}) ORDER BY "
-                                 "task_id, attempt", tids) if tids else []}
-
-
-def _fp(unit: dict[str, list[dict]], canon: dict[str, str], shape=None) -> str:
-    """A unit's fingerprint: what was found and read, with documents named by their content; not how it was produced
-    (tasks, results, the ids made from them) and not what people decided (kept per person). `shape(table, row)`
-    gives the fields of a row that count (see `_fingerprints`); without it, every column (as 0.14.0 to 0.14.2)."""
-    parts = []
-    for t in sorted(unit):
-        if t in ("tasks", "results"):
-            continue
-        # each row named by its content, in an order that does not depend on ids
-        rows = sorted(_tokens(json.dumps({k: v for k, v in (shape(t, r) if shape else r).items()
-                                          if k not in _PERSONAL and k not in _HOW},
-                                         sort_keys=True, ensure_ascii=False, default=str), canon) for r in unit[t])
-        parts.append(t + "\n" + "\n".join(rows))
-    return _sha("\n\n".join(parts))[:20]
-
-
-# 0.14.3: versions differ in their columns. A fingerprint over every column (`SELECT *`, as 0.14.0 to 0.14.2 made
-# them) changed whenever a version added one, even an empty one, so colleagues on different versions had a sync
-# clash on every check. Now a fingerprint is made of the columns this copy has and leaves out empty values (NULL, or
-# the column's declared default), so a column added later changes nothing until it holds something. The fingerprints
-# 0.14.0 to 0.14.2 made are inside the files people exchange: they are worked out too (`old`, over the columns those
-# versions had, plus any an add-on gives) and written down beside the new ones, so either is recognised.
-_FP_TABLES = ("hypotheses", "user_claims", "verifications", "second_opinions", "theme_runs", "themes", "theme_members")
-_COLS_0142 = {
-    "hypotheses": "hyp_id text framework code options_json decomposed rationale model created_at batch_id note parts_json "
-                  "docs_checked_at queue origin origin_id",
-    "user_claims": "claim_id text target terms_json rationale options_json model created_at hyp_id part role framework "
-                   "stage",
-    "verifications": "ver_id subject_kind subject_id passage_id doc_id verdict confidence quote start end page model "
-                     "prompt_version user_verdict user_note user_at user_quote user_start user_end scope_note "
-                     "ai_history_json reread_json refers_to refers_start refers_end refers_where user_by",
-    "second_opinions": "subject_id passage_id model verdict confidence quote start end scope_note at",
-    "theme_runs": "run_id mode k seed embed_model chat_model created_at passages run_key settings_json corpus_version",
-    "themes": "run_id theme_id name description terms_json size reps_json name_source quotes_json model removed_at "
-              "replaces",
-    "theme_members": "run_id theme_id passage_id similarity found_in"}
-_COLS_0142_SETS = {t: set(v.split()) for t, v in _COLS_0142.items()}
-_CORE: dict[str, set[str]] = {}
-_NO_DEFAULT = object()
-
-
-def _core_columns() -> dict[str, set[str]]:
-    """The columns this version of ENLENS itself gives the unit tables (not an add-on)."""
-    if not _CORE:
-        from .store import MIGRATIONS, SCHEMA, _add_columns
-
-        mem = sqlite3.connect(":memory:")
-        try:
-            mem.executescript(SCHEMA)
-            _add_columns(mem, MIGRATIONS)
-            for t in _FP_TABLES:
-                _CORE[t] = {r[1] for r in mem.execute(f"PRAGMA table_info({t})")}
-        finally:
-            mem.close()
-    return _CORE
-
-
-def _literal(sql: str | None) -> Any:
-    """A column's declared default as a value (`_NO_DEFAULT` for none, or an expression)."""
-    if sql is None:
-        return _NO_DEFAULT
-    s = sql.strip()
-    if s.upper() == "NULL":
-        return None
-    if len(s) >= 2 and s[0] == s[-1] == "'":
-        return s[1:-1].replace("''", "'")
-    for cast in (int, float):
-        try:
-            return cast(s)
-        except ValueError:
-            pass
-    return _NO_DEFAULT
-
-
-def _fingerprints(cx: sqlite3.Connection):
-    """For this copy's database: `fps(unit, canon) -> (new, old)`, a unit's fingerprints (the unit may come from a
-    colleague's database: only the columns this copy has count, the only ones it can keep)."""
-    cols, dflt = {}, {}
-    for t in _FP_TABLES:
-        info = cx.execute(f"PRAGMA table_info({t})").fetchall()
-        cols[t] = {r[1] for r in info}
-        dflt[t] = {r[1]: v for r in info if (v := _literal(r[4])) is not _NO_DEFAULT}
-    core = _core_columns()
-
-    def new(t: str, r: dict) -> dict:
-        have, d = cols.get(t), dflt.get(t, {})
-        return {k: v for k, v in r.items() if (have is None or k in have) and v is not None
-                and not (k in d and v == d[k])}
-
-    def old(t: str, r: dict) -> dict:
-        have, since = cols.get(t), core.get(t, set()) - _COLS_0142_SETS.get(t, set())
-        return {k: v for k, v in r.items() if (have is None or k in have) and k not in since}
-
-    return lambda unit, canon: (_fp(unit, canon, new), _fp(unit, canon, old))
-
-
-def _known(fps: tuple[str, str], seen: Iterable[str] | None) -> bool:
-    """Whether a unit's state (either form of its fingerprint) is among these states."""
-    return bool(seen) and (fps[0] in seen or fps[1] in seen)
-
-
-def _running(unit: dict[str, list[dict]]) -> bool:
-    """0.14.3: whether a check or theme run of this copy has work under way, as the result page counts it as waiting:
-    a check by queue not done yet, a task in the queue for Claude Code or taken by a helper (also one waiting for the
-    stronger model), or a part for the local model not read yet. A round only adds tasks, so its fingerprint does not
-    show it. (A task left unanswered by a run that crashed does not count: it would keep the older version forever.)"""
-    hyp = (unit.get("hypotheses") or [{}])[0]
-    if hyp.get("queue") == "waiting":
-        return True
-    for t in unit.get("tasks", []):
-        open_ = t["status"] in UNFINISHED or (t["status"] == "done" and t.get("again"))
-        if open_ and (t.get("queued") or t.get("claimed_by")):
-            return True
-        if t["status"] in UNFINISHED and t["task_id"].endswith(":local"):
-            return True
-    return False
-
-
-def _canon(cx: sqlite3.Connection) -> dict[str, str]:
-    """{doc_id: the document named by its content}: the same in every copy that has the same reading of a file, and
-    for a document removed since (checks keep what they read of it), from the note of its removal."""
-    out = {d: f"{base_id(d)}.{fp}" for d, fp in cx.execute("SELECT key, fp FROM sync_removed WHERE kind='document' "
-                                                            "AND fp IS NOT NULL").fetchall()}
-    out.update({d: f"{base_id(d)}.{fp}" for d, fp in text_fps(cx).items()})
-    return out
-
-
-def _codebook_fp(folder: Path, name: str) -> str | None:
-    """A codebook's fingerprint: its codes and settings, not its title (a sync-clash copy has its own title)."""
-    csv = folder / f"{name}.csv"
-    if not csv.is_file():
-        return None
-    side = folder / f"{name}.json"
-    try:
-        meta = json.loads(side.read_text(encoding="utf-8")) if side.is_file() else {}
-    except ValueError:
-        meta = {}
-    meta.pop("title", None)
-    return _sha(csv.read_bytes(), json.dumps(meta, sort_keys=True))[:20]
-
-
-def _plain(ids: Iterable[str], key: str, of: str) -> dict[str, str]:
-    """For a sync-clash copy `key` of `of` ("h1-0c5ab4" of "h1"): its ids without the copy's mark, so it can be
-    compared with the version it was copied from."""
-    tag = key[len(of) + 1:] if key.startswith(of + "-") else ""
-    return {i: i[:-len(tag) - 1] for i in ids if tag and i.endswith("-" + tag)}
-
-
-def _home_codebooks() -> Path:
-    from .home import home
-
-    return home() / "frameworks"
-
-
-def _used_codebooks(cx: sqlite3.Connection) -> set[str]:
-    from .frameworks import BUNDLED
-
-    names = {r[0] for r in cx.execute("SELECT DISTINCT framework FROM labels UNION SELECT DISTINCT framework FROM "
-                                      "hypotheses UNION SELECT DISTINCT framework FROM user_claims") if r[0]}
-    return names - set(BUNDLED)
-
-
-def record_seen(ws: Workspace, cx: sqlite3.Connection) -> None:
-    """Write down the fingerprint of every check, theme run and codebook as it is now (when sent or brought in)."""
-    canon = _canon(cx)
-    fps = _fingerprints(cx)
-    rows = []
-    for (hid,) in cx.execute("SELECT hyp_id FROM hypotheses").fetchall():
-        rows += [("check", hid, fp) for fp in fps(_check_unit(cx, hid), canon)]  # both forms (0.14.3)
-    for (rid,) in cx.execute("SELECT run_id FROM theme_runs").fetchall():
-        rows += [("themes", rid, fp) for fp in fps(_themes_unit(cx, rid), canon)]
-    folder = Path(ws.root) / "frameworks"
-    for name in sorted(_used_codebooks(cx)):
-        fp = _codebook_fp(folder, name)
-        if fp:
-            rows.append(("codebook", name, fp))
-    cx.executemany("INSERT OR IGNORE INTO sync_seen(kind, key, fp) VALUES (?,?,?)", rows)
-
-
-# ---------------------------------------------------------------------------------------------
-# sending
-# ---------------------------------------------------------------------------------------------
-def before_sending(ws: Workspace) -> dict:
-    """Ready this copy to be sent (called by bundle.export_project): its judgements and reviews from before 0.14 are
-    yours, your name is in it, and the state of every check, theme run and codebook is written down. Returns what
-    the file says about itself: {"project_uid", "from": {"id", "name"}, "sent_at"}."""
-    me, name = people.me(), people.my_name()
-    with ws.connect() as cx:
-        uid = ws.project_uid(cx)
-        people.adopt(cx, me)
-        people.remember(cx, me, name)
-        record_seen(ws, cx)
-    return {"project_uid": uid, "from": {"id": me, "name": name}, "sent_at": now()}
-
-
-def home_codebooks(ws: Workspace) -> list[Path]:
-    """The codebooks this project uses that are kept in the home folder (all projects), not in the project: they go
-    into the file too, or a colleague could not read the labels made with them."""
-    from .home import home
-
-    out = []
-    with ws.connect() as cx:
-        names = _used_codebooks(cx)
-    for name in sorted(names):
-        if not (Path(ws.root) / "frameworks" / f"{name}.csv").is_file():
-            for ext in ("csv", "json"):
-                p = home() / "frameworks" / f"{name}.{ext}"
-                if p.is_file():
-                    out.append(p)
-    return out
-
-
-# ---------------------------------------------------------------------------------------------
-# bringing a colleague's work in
-# ---------------------------------------------------------------------------------------------
-def peek(zip_path: str | Path) -> dict:
-    """What a project zip says about itself without unpacking it: {"project_uid", "from", "name", "version"}."""
-    try:
-        with zipfile.ZipFile(zip_path) as zf:
-            meta = json.loads(zf.read("bundle.json"))
-    except (KeyError, ValueError, zipfile.BadZipFile, OSError):
-        meta = {}
-    return {"project_uid": meta.get("project_uid"), "from": meta.get("from") or None, "name": meta.get("name"),
-            "version": meta.get("version")}
-
-
-def bring_in(ws: Workspace, zip_path: str | Path, anyway: bool = False) -> dict:
-    """Merge a colleague's project zip into this copy (see the module's notes). Raises NotThisProject when the file
-    is not known to be this project, unless `anyway`. Returns the report (see `_Merge.report`), also kept in
-    `sync_log`."""
-    from . import bundle
-
-    zip_path = Path(zip_path)
-    if not zipfile.is_zipfile(zip_path):
-        raise ValueError("This is not a zip file. Choose the file your colleague made with “Download as a zip”.")
-    if bundle.is_move_zip(zip_path):
-        raise ValueError("This file holds everything from another computer, not one project. Bring it in under "
-                         "Projects → Import a project (.zip).")
-    info = peek(zip_path)
-    mine = ws.meta("project_uid")
-    theirs = info["project_uid"]
-    known = set(ws.meta("project_uids_known") or [])
-    if not anyway and not (theirs and (theirs == mine or theirs in known)):
-        who = (info["from"] or {}).get("name") or "a colleague"
-        if not theirs:
-            msg = (f"This file was made with ENLENS {info['version'] or 'before 0.14'}, which does not say which project "
-                   "it is. Bring it in only if it is a copy of this project.")
-        else:
-            msg = (f"This file is the project “{info['name'] or '?'}” of {who}, which is not known as a copy of this "
-                   "project. Bring it in only if you mean to combine the two.")
-        raise NotThisProject(msg, info)
-    tmp = Path(tempfile.mkdtemp(prefix="enlens-bring-in-"))
-    inc = None
-    try:
-        inc = bundle.import_project(zip_path, tmp / "work")
-        _backup(ws)
-        report = _Merge(ws, inc, info).run()
-    finally:
-        if inc is not None:
-            inc.close()
-        shutil.rmtree(tmp, ignore_errors=True)
-    with ws.connect() as cx:
-        if theirs and not mine:
-            ws.set_meta("project_uid", theirs, cx)  # now the same project as the colleague's
-        elif theirs and theirs != mine and theirs not in known:
-            ws.set_meta("project_uids_known", sorted(known | {theirs}), cx)
-        cx.execute("INSERT INTO sync_log(at, person_id, report_json) VALUES (?,?,?)",
-                   (report["at"], report["from"]["id"], json.dumps(report, ensure_ascii=False)))
-        from . import researchlog  # 0.16: the research log says when whose work came in, and what it brought
-
-        who = report["from"]["name"] or "a colleague"
-        researchlog.record(cx, "sync", f"Brought in {who}'s work. " + " ".join(report.get("lines") or []),
-                           data={"from": report["from"], "version": report.get("version")})
-    return report
-
-
-def _backup(ws: Workspace) -> Path:
-    """The project's database as it was before the merge (one copy, replaced each time): backups/before-bringing-in."""
-    folder = Path(ws.root) / "backups"
-    folder.mkdir(exist_ok=True)
-    out = folder / "before-bringing-in.sqlite"
-    part = out.with_name(out.name + ".part")
-    src, dst = sqlite3.connect(ws.db_path, timeout=60), sqlite3.connect(part)
-    try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()
-    part.replace(out)
-    return out
-
-
-class _Merge:
+from typing import Any
+
+from .. import people
+from ..store import Workspace, now
+from .codebook_merge import CodebookRules
+from .common import (DOC_ID, ID_COLS, LOCAL_ONLY, OWN_RULES, UNFINISHED, _TEXT_COLS, _TOKEN, _cols, _pk, _rows, _sha,
+                     _tokens, base_id, text_fps)
+from .fingerprints import (_canon, _check_unit, _fingerprints, _known, _plain, _running, _themes_unit,
+                           record_seen)
+from .owner_merge import OwnerRules
+from .readings import ReadingRules
+from .share_merge import ShareRules
+from .report import summary
+
+
+class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
     def __init__(self, ws: Workspace, inc: Workspace, info: dict):
         self.ws, self.inc = ws, inc
         self.icx = inc._conn()
@@ -475,16 +40,36 @@ class _Merge:
         self.history: set[tuple[str, str]] = set()  # units whose states in the colleague's copy become this copy's
         self.files: list[tuple[Path, Path]] = []    # files to copy once the database is merged (source, destination)
         self.codebook_marks: list[tuple[str, str]] = []  # sync-clash copies of codebooks made here (name, of)
+        self.codebook_versions: list[tuple[Path, str]] = []  # 0.18: codebooks merged code by code (folder, name)
         self.new_labels: dict[str, set[str]] = {}  # 0.16: the labels that came in, per codebook here (their ids here)
         self.hyps_before: set[str] = set()          # 0.16: the checks this copy had before the merge
+        self.before_move: dict[tuple[str, str], tuple[str, str]] = {}  # 0.18: their units' states before readings.py
+        self.format_in = int(info.get("sync_format") or 1)  # 0.18: the sync format of their file (formats.py)
+        self.items_before: set[tuple[str, str]] = set()     # 0.18: the items this copy held before (share_merge.py)
+        self.placed_there: dict[tuple[str, str], dict[str, str]] = {}  # 0.18: their `placed:` states (readings.py)
+        self.lossy_move = False  # 0.18: a result of theirs found no place on your reading (readings.py)
+        self.payloads_here: dict[str, str] = {}  # 0.18: this copy's task payloads of units replaced (sync/folder.py)
+        # 0.18 (the shared folder, sync/folder.py): their documents known only by a stub, {doc_id: stub}: no reading of
+        # them came (this copy has the same reading, they keep the file out of the folder, or they removed it), only
+        # what names them, so checks that read them are compared by content
+        self.stubs: dict[str, dict] = {k: v for k, v in (info.get("stubs") or {}).items() if isinstance(v, dict)}
+        self.stubs_new: set[str] = set()  # those this copy had not heard of before
+        # 0.18 L2 (owner_merge.py): how far the sender followed the owner on each document's AI setting, and the
+        # documents this merge must not bring back (the owner removed or declined them)
+        self.canon_ai: dict = {k: v for k, v in (info.get("canon_ai") or {}).items()}
+        self.not_wanted: set[str] = set()
         self.r = {"from": self.sender, "project": info.get("name"), "version": info.get("version"), "at": self.at,
-                  "documents": {"new": [], "clash": [], "removed_here": [], "removed_there": []},
+                  "documents": {"new": [], "clash": [], "removed_here": [], "removed_there": [],
+                                "not_wanted": [],  # 0.18 L2: the owner removed it from the project, or declined it
+                                "other_reading": [],  # 0.18: their reading placed on yours (readings.py)
+                                "not_here": []},  # 0.18: theirs, kept out of the shared folder, not here yet
                   "checks": {"new": 0, "updated": 0, "same": 0, "yours_newer": 0, "clash": [], "running": [],
                              "running_here": [], "removed_here": [], "removed_there": []},
                   "themes": {"new": 0, "updated": 0, "clash": [], "removed_here": 0, "running_here": []},
-                  "codebooks": {"new": [], "updated": [], "clash": []},
+                  "codebooks": {"new": [], "updated": [], "clash": [], "merged": []},  # 0.18: merged code by code
                   "judgements": 0, "reviews": 0, "labels": 0, "labels_kept_yours": 0, "links": 0, "other_rows": 0,
                   "log": 0, "notes": 0,
+                  "shares": {"shared": [], "withdrawn": [], "withheld": []},  # 0.18 (share_merge.py)
                   "bibliography": None, "ai_access": []}
 
     # ---- ids --------------------------------------------------------------------------------
@@ -555,11 +140,23 @@ class _Merge:
         with self.inc.connect() as icx:
             people.adopt(icx, self.sender["id"])  # what the sender decided before 0.14 is theirs
             text_fps(icx, again=True)             # worked out here: what the file says about itself is not trusted
+            for d, stub in self.stubs.items():    # 0.18: no text of these came: what the folder says is all there is
+                icx.execute("UPDATE documents SET text_fp=? WHERE doc_id=?", (stub.get("text_fp"), d))
         with self.ws.connect() as cx:
             people.adopt(cx, self.me)            # and what you decided before 0.14 is yours
+            if self.stubs:
+                self._remember_stubs(cx)         # 0.18: before anything is compared (fingerprints._canon reads them)
             self.hyps_before = {r[0] for r in cx.execute("SELECT hyp_id FROM hypotheses")}
+            self._withhold(cx)                    # 0.18: what its owner took back and you do not have stays out
+            self._ownership(cx)                   # 0.18 L2: the owner, proposals, decisions (before the documents)
+            self._other_readings(cx)              # 0.18: first, so the rest finds one reading of each document
             self._codebooks(cx)
             self._documents(cx)
+            if self.new_docs:  # 0.18: one a colleague keeps out of the shared folder is as strict here (folder.py)
+                from .folder import hold_settings
+
+                hold_settings(self.ws, cx, [self.docs[i] for i in self.new_docs])
+                self._came_from(cx)               # 0.18 L2: they are the sender's additions, not this person's
             self._document_files(cx)
             self._ai_work(cx)
             self._checks(cx)
@@ -572,6 +169,7 @@ class _Merge:
             self._follow_codebooks(cx)
             self._other_tables(cx)
             self._removed(cx)
+            self._share_marks(cx)                 # 0.18: who shared what, by the owner's word
             self._people(cx)
             # the states the colleague's copy had of what this copy now holds as they do (not of a clash)
             cx.executemany("INSERT OR IGNORE INTO sync_seen(kind, key, fp) VALUES (?,?,?)",
@@ -579,18 +177,19 @@ class _Merge:
                             if (r["kind"], r["key"]) in self.history])
             if self.new_docs:
                 self.ws.bump_corpus(cx)
-            from .access import relabel
+            from ..access import relabel
 
             relabel(cx)
             record_seen(self.ws, cx)
             # last, so a failure undoes the merge: the files of new documents and codebooks
+            self._keep_codebook_versions()
             for src, dest in self.files:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest)
             for name, of in self.codebook_marks:
                 self._mark_codebook_title(name, of)
         if links:
-            from . import terms
+            from .. import terms
 
             if terms.status(self.ws)["built"]:
                 terms.rebuild_concepts(self.ws)
@@ -598,12 +197,42 @@ class _Merge:
         return self.r
 
     # documents ---------------------------------------------------------------------------------
+    def _remember_stubs(self, cx: sqlite3.Connection) -> None:
+        """0.18: what the shared folder says of each of their documents, kept here (`sync_folder_docs`): a document this
+        copy does not hold is then still named by its content (fingerprints._canon), and its file can be fetched once it
+        arrives. A document they removed is named by the note of its removal there: nothing to keep."""
+        from ..access import RANK
+
+        known = {r[0]: (r[1], r[2]) for r in cx.execute("SELECT doc_id, ai_access, ai_by FROM sync_folder_docs")}
+        sender = self.sender["id"]
+
+        def level(d: str, s: dict) -> tuple[str, str | None]:
+            """(who may read it with AI, who said so): the strictest word heard stands until whoever said it says
+            otherwise (their own later stub). A copy that passes on what it heard (`heard`) says nothing of the
+            setting: a document kept out of the folder is then at least for a local AI only."""
+            have, by = known.get(d, (None, None))
+            first_hand = not s.get("heard")
+            said = (s.get("ai_access") if first_hand else "local" if s.get("kept_out") else None) or "cloud"
+            if have not in RANK or RANK.get(said, 2) >= RANK[have] or (first_hand and by == sender):
+                return (said if said in RANK else "none"), (sender if first_hand else by)
+            return have, by
+
+        rows = [(d, s.get("text_fp"), s.get("sha1"), s.get("title"), s.get("reading"), s.get("file"), s.get("name"),
+                 int(bool(s.get("kept_out"))), sender, self.at, *level(d, s))
+                for d, s in self.stubs.items() if not s.get("removed") and DOC_ID.fullmatch(str(d))]
+        cx.executemany("INSERT OR REPLACE INTO sync_folder_docs(doc_id, text_fp, sha1, title, reading, file, name, "
+                       "kept_out, person_id, at, ai_access, ai_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        self.stubs_new = {r[0] for r in rows} - set(known)
+
     def _documents(self, cx: sqlite3.Connection) -> None:
-        from . import access
+        from .. import access
 
         here = text_fps(cx)
         by_content = {(base_id(d), fp): d for d, fp in here.items()}
         removed = {r[0] for r in cx.execute("SELECT key FROM sync_removed WHERE kind='document'")}
+        removed_here_by_me = {r[0] for r in cx.execute("SELECT key FROM sync_removed WHERE kind='document' AND "
+                                                       "person_id=?", (self.me,))}
+        removed |= self.not_wanted  # 0.18 L2: what the owner removed or declined does not come back either
         sha_here = {r[0] for r in cx.execute("SELECT sha1 FROM documents")}
         inc_docs = _rows(self.icx, "SELECT * FROM documents ORDER BY doc_id")
         inc_levels = access.levels(self.icx, budget=False)
@@ -614,12 +243,19 @@ class _Merge:
             if not isinstance(iid, str) or not DOC_ID.fullmatch(iid):  # never a path, whatever the file says
                 self.skip_docs.add(str(iid))
                 continue
+            stub = self.stubs.get(iid)
+            if stub is not None and stub.get("removed"):  # 0.18: one they removed, named by a check of theirs
+                self.skip_docs.add(iid)
+                continue
             key = (base_id(iid), fp)
             if key in by_content:
                 local = by_content[key]
             elif iid in removed or base_id(iid) in removed:
                 self.skip_docs.add(iid)
-                self.r["documents"]["removed_here"].append(title)
+                if stub is None:  # a stub only names it: you heard of its removal when it was removed
+                    # 0.18 L2: not one this person removed, but one the owner removed or did not accept
+                    owners = iid in self.not_wanted and iid not in removed_here_by_me
+                    self.r["documents"]["not_wanted" if owners else "removed_here"].append(title)
                 continue
             elif iid not in here:
                 local = iid
@@ -632,6 +268,16 @@ class _Merge:
                     continue
             if not DOC_ID.fullmatch(local):
                 self.skip_docs.add(iid)
+                continue
+            if stub is not None and local not in here:
+                # 0.18: no reading of it came (they keep the file out of the shared folder): it stays out until you
+                # add the file yourself; what of theirs names it keeps its excerpts as records
+                self.skip_docs.add(iid)
+                if local != iid:
+                    self.ids[iid] = local
+                if iid in self.stubs_new:
+                    self.r["documents"]["not_here"].append({"title": title, "doc_id": iid,
+                                                            "kept_out": bool(stub.get("kept_out"))})
                 continue
             self.docs[iid] = local
             if local != iid:
@@ -670,11 +316,13 @@ class _Merge:
 
     def _stricter(self, cx: sqlite3.Connection, local: str, theirs: str | None, d: dict, title: str) -> None:
         """A document both copies have: the stricter AI setting of the two, and the smaller share Claude may read."""
-        from . import access
+        from .. import access
 
         yours = access.levels(cx, [local], budget=False).get(local) or "cloud"
         theirs = theirs or "cloud"
-        if access.RANK[theirs] > access.RANK[yours]:
+        if access.RANK[theirs] > access.RANK[yours] and self._stale(cx, local, theirs, d["doc_id"]):
+            pass  # 0.18 L2: only the setting the owner has loosened since, in a copy that has not followed it yet
+        elif access.RANK[theirs] > access.RANK[yours]:
             cx.execute("UPDATE documents SET ai_access=? WHERE doc_id=?", (theirs, local))
             read = cx.execute("SELECT COUNT(DISTINCT passage_id) FROM ai_sent WHERE doc_id=?", (local,)).fetchone()[0]
             self.r["ai_access"].append({"title": title, "doc_id": local, "yours": yours, "theirs": theirs,
@@ -688,11 +336,16 @@ class _Merge:
             cx.execute("UPDATE documents SET ai_budget=MIN(COALESCE(ai_budget, ?), ?) WHERE doc_id=?",
                        (d["ai_budget"], d["ai_budget"], local))
 
+    def _stale(self, cx: sqlite3.Connection, local: str, theirs: str, iid: str) -> bool:
+        from ..ownership import stale_strict
+
+        return stale_strict(cx, local, theirs, self._their_ai_n(iid))
+
     def _document_files(self, cx: sqlite3.Connection) -> None:
         """The original file of each new document, copied into this project (originals/<doc_id>/) when it is in the
         colleague's file and is the file the document was read from; another reading of a file that is here already
         points at that file."""
-        from .ingest import _sha1
+        from ..ingest import _sha1
 
         root, src_root = Path(self.ws.root).resolve(), Path(self.inc.root).resolve()
         for iid in self.new_docs:
@@ -714,82 +367,11 @@ class _Merge:
             self.files.append((f, dest))
             cx.execute("UPDATE documents SET path=? WHERE doc_id=?", (str(dest), local))
 
-    # codebooks ---------------------------------------------------------------------------------
-    def _codebooks(self, cx: sqlite3.Connection) -> None:
-        """The colleague's codebooks: a new one comes in; one of yours they changed (and you did not) is brought up to
-        date; one you both changed comes in beside yours as `<name>-<mark>`, and their labels with it. Only decided
-        here: the files are written once the database is merged."""
-        from .frameworks import BUNDLED, NAME_RE, available
-
-        src, dest = Path(self.inc.root) / "frameworks", Path(self.ws.root) / "frameworks"
-        if not src.is_dir():
-            return
-        here = available(self.ws)
-        seen_here, seen_there = self._seen(cx, "codebook"), self._seen(self.icx, "codebook")
-        copies_here, copies_there = self._copies(cx, "codebook"), self._copies(self.icx, "codebook")
-
-        def fp_here(name: str) -> str | None:
-            return _codebook_fp(dest, name) or _codebook_fp(_home_codebooks(), name)
-
-        for csv in sorted(src.glob("*.csv")):
-            name = csv.stem
-            if name in BUNDLED or not NAME_RE.match(name):
-                continue
-            fp_in = _codebook_fp(src, name)
-            if name in copies_there and name not in here:  # their copy of a codebook: perhaps your own version
-                of = copies_there[name]["of"]
-                if of in here and (fp_in == fp_here(of) or fp_in in seen_here.get(of, set())):
-                    self.fw[name] = of
-                    continue
-                self._take_codebook(src, dest, name, name)
-                self._mark(cx, "codebook", name, of, copies_there[name]["person_id"], copies_there[name]["at"])
-                self.r["codebooks"]["clash"].append({"name": name, "of": of})
-                continue
-            if name not in here:
-                self._take_codebook(src, dest, name, name)
-                self.history.add(("codebook", name))
-                self.r["codebooks"]["new"].append(name)
-                continue
-            mine = fp_here(name)
-            held = [k for k, v in copies_here.items() if v["of"] == name and _codebook_fp(dest, k) == fp_in]
-            if fp_in == mine or fp_in in seen_here.get(name, set()):
-                self.history.add(("codebook", name))
-                continue  # the same, or an older version of yours
-            if held:  # their version is kept here already, beside yours: their labels go with it
-                self.fw[name] = held[0]
-                continue
-            if mine in seen_there.get(name, set()):  # yours is an older version of theirs
-                self._take_codebook(src, dest, name, name)
-                self.history.add(("codebook", name))
-                self.r["codebooks"]["updated"].append(name)
-                continue
-            new = f"{name}-{fp_in[:6]}"
-            self.fw[name] = new
-            self._take_codebook(src, dest, name, new)
-            self.codebook_marks.append((new, name))
-            self._mark(cx, "codebook", new, name)
-            self.r["codebooks"]["clash"].append({"name": new, "of": name})
-
-    def _take_codebook(self, src: Path, dest: Path, name: str, new: str) -> None:
-        for ext in ("csv", "json"):
-            if (src / f"{name}.{ext}").is_file():
-                self.files.append((src / f"{name}.{ext}", dest / f"{new}.{ext}"))
-
-    def _mark_codebook_title(self, name: str, of: str) -> None:
-        """A sync-clash copy of a codebook says whose version it is in its title."""
-        side = Path(self.ws.root) / "frameworks" / f"{name}.json"
-        try:
-            meta = json.loads(side.read_text(encoding="utf-8")) if side.is_file() else {}
-        except ValueError:
-            meta = {}
-        meta["title"] = f"{meta.get('title') or of} ({self.sender['name'] or 'a colleague'}'s version)"
-        side.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-
     # AI work per document ---------------------------------------------------------------------
     def _ai_work(self, cx: sqlite3.Connection) -> None:
         """Labels, reference chains and the tasks that made them, for documents this copy has: a person's own labels
         always; AI work on a document (per codebook) only where this copy has none."""
-        from .profile import label_id
+        from ..profile import label_id
 
         have_model = {(r[0], r[1]) for r in cx.execute("SELECT DISTINCT doc_id, framework FROM labels WHERE "
                                                        "source='model'")}
@@ -906,26 +488,37 @@ class _Merge:
                 rep["clash"].append({"hyp_id" if kind == "check" else "run_id": key, "of": of, "text": text})
                 continue
             fp_in = fps(unit, canon_in)
+            # 0.18 (readings.py): their unit as it was before it was placed on your reading, and what that state was
+            # itself a placement of (their copy placed your unit on their reading: `placed:` states)
+            pre = self.before_move.get((kind, key))
+            placed = pre is not None and pre[0] != fp_in[0]
+            alias = self.placed_there.get((kind, key), {}).get(pre[0]) if pre else None
             if key not in here:
                 self._put(cx, kind, unit)
                 self.history.add((kind, key))
+                self._placed(cx, kind, key, fp_in, pre)
                 rep["new"] += 1
                 continue
             mine = unit_of(cx, key)
             fp_here = fps(mine, canon_here)
-            if fp_in[0] == fp_here[0] or _known(fp_in, seen_here.get(key)):
+            if fp_in[0] == fp_here[0] or _known(fp_in, seen_here.get(key)) or \
+                    _known(pre or ("", ""), seen_here.get(key)) or \
+                    (alias is not None and (alias == fp_here[0] or alias in seen_here.get(key, set()))):
                 self.history.add((kind, key))
                 if kind == "check":
                     rep["same" if fp_in[0] == fp_here[0] else "yours_newer"] += 1
                     self.claims |= {c["claim_id"] for c in mine["user_claims"]}
                 continue
-            if _known(fp_here, seen_there.get(key)):  # yours is an older version of theirs
+            # 0.18: a version that lost places when it was placed on your reading never replaces yours (which has
+            # them): it comes in beside yours, as when both changed it
+            if _known(fp_here, seen_there.get(key)) and not (placed and self.lossy_move):  # yours is older
                 if _running(mine):  # 0.14.3: but a round of it runs here: it stays, and the report says so
                     rep["running_here"].append(text if kind == "check" else key)
                     continue
                 self._drop(cx, kind, mine)
                 self._put(cx, kind, unit)
                 self.history.add((kind, key))
+                self._placed(cx, kind, key, fp_in, pre)
                 rep["updated"] += 1
                 continue
             # both changed it: their version is kept here as a copy (made once, then brought up to date)
@@ -992,16 +585,25 @@ class _Merge:
     def _put(self, cx: sqlite3.Connection, kind: str, unit: dict[str, list[dict]]) -> None:
         tasks_ = [dict(t, queued=0, claimed_by=None, claimed_at=None) for t in unit["tasks"]]
         if kind == "check":
-            from .tasks import _h
+            from ..tasks import _h
 
             # an excerpt's id is made of the task that read it and its passage (tasks.py): made again from their
             # names here, so a later reading of it (a stronger model) finds the same row
             tids = [t["task_id"] for t in unit["tasks"]]
-            for v in unit["verifications"]:
+            made: dict[str, str] = {}  # an id made here -> the excerpt of theirs it was made for
+            # (those whose passage keeps its name here first: they keep the id it makes)
+            for v in sorted(unit["verifications"], key=lambda v: (self._id("passage_id", v["passage_id"]) !=
+                                                                  v["passage_id"], v["ver_id"])):
                 hit = next((t for t in tids if f"v{_h(t, v['passage_id'])}" == v["ver_id"]), None)
                 new = f"v{_h(self._id('task_id', hit), self._id('passage_id', v['passage_id']))}" if hit else \
                     (v["ver_id"] if self._id("subject_id", v["subject_id"]) == v["subject_id"]
                      else f"{v['ver_id']}-{_sha(self._id('subject_id', v['subject_id']))[:6]}")
+                if made.get(new, v["ver_id"]) != v["ver_id"]:
+                    # 0.18: two excerpts of theirs that only the naming here makes one (a document and its sync-clash
+                    # copy that hold the same text, one document here) stay two, as in their copy: one row would make
+                    # this copy's version of the check differ from theirs, and it would go back as a newer one
+                    new = f"{new}-{_sha(v['passage_id'])[:6]}"
+                made[new] = v["ver_id"]
                 if new != v["ver_id"]:
                     self.ids[v["ver_id"]] = new
             for table in ("hypotheses", "user_claims", "verifications", "second_opinions"):
@@ -1010,11 +612,20 @@ class _Merge:
         else:
             for table in ("theme_runs", "themes", "theme_members"):
                 self._insert(cx, table, unit[table], verb="OR REPLACE")
-        self._insert(cx, "tasks", tasks_, verb="OR REPLACE")
+        self._insert(cx, "tasks", tasks_, verb="OR REPLACE", fix=self._payload_here)
         self._insert(cx, "results", unit["results"], verb="OR REPLACE")
 
-    @staticmethod
-    def _drop(cx: sqlite3.Connection, kind: str, unit: dict[str, list[dict]]) -> None:
+    def _payload_here(self, t: dict) -> dict:
+        """0.18: a task of theirs whose payload came without the text of a document kept out of the shared folder
+        (sync/folder.py) keeps this copy's own payload, with the text, when this copy has the task."""
+        if '"kept_out": true' in (t.get("payload_json") or ""):
+            here = self.payloads_here.get(t["task_id"])
+            if here:
+                t = dict(t, payload_json=here)
+        return t
+
+    def _drop(self, cx: sqlite3.Connection, kind: str, unit: dict[str, list[dict]]) -> None:
+        self.payloads_here.update({t["task_id"]: t["payload_json"] for t in unit["tasks"] if t.get("payload_json")})
         if kind == "check":
             cids = [c["claim_id"] for c in unit["user_claims"]]
             q = ",".join("?" * len(cids))
@@ -1119,40 +730,10 @@ class _Merge:
             self.ws.set_meta("bibliography", theirs, cx)
         self.r["bibliography"] = "merged" if mine else "new"
 
-    def _follow_codebooks(self, cx: sqlite3.Connection) -> None:
-        """0.16 (codebooks.py): labels follow a codebook's renames and merges. Yours follow the changes your copy had not
-        followed yet; those that came in follow the changes the colleague's copy had not (its own record of them)."""
-        from . import codebooks
-        from .frameworks import available
-
-        here = Path(self.ws.root) / "frameworks"
-        taken = {Path(d).stem: Path(src) for src, d in self.files
-                 if Path(d).suffix == ".json" and Path(d).parent == here}
-        theirs_of = {v: k for k, v in self.fw.items()}
-        now_here = available(self.ws)
-        for name in sorted(set(self.new_labels) | set(taken)):
-            if name in taken:
-                try:
-                    meta = json.loads(taken[name].read_text(encoding="utf-8"))
-                except (OSError, ValueError):
-                    meta = {}
-            else:
-                meta = (now_here[name].meta if name in now_here else {}) or {}
-            if not isinstance(meta, dict):
-                continue
-            row = self.icx.execute("SELECT value FROM meta WHERE key=?",
-                                   (f"codebook_followed:{theirs_of.get(name, name)}",)).fetchone()
-            try:
-                theirs_done = set(json.loads(row[0])) if row else set()
-            except ValueError:
-                theirs_done = set()
-            codebooks.follow_merged(cx, self.ws, name, meta, theirs_done, self.new_labels.get(name, set()),
-                                    self.hyps_before)
-
     def _log_and_notes(self, cx: sqlite3.Connection) -> None:
         """0.16: the colleague's research log entries and notes: theirs come in (or are brought up to date), yours stay as
         they are, and what you removed stays removed."""
-        from . import notes, researchlog
+        from .. import notes, researchlog
 
         def fix(r: dict) -> dict | None:
             if not self._doc_ok(r):
@@ -1212,6 +793,9 @@ class _Merge:
             if present:
                 if r["kind"] == "document":
                     self.r["documents"]["removed_there"].append(r["title"] or key)
+                    why = self._removal_kind(cx, key)  # 0.18 L2: what the removal is in a project with an owner
+                    if why:
+                        self.r["documents"].setdefault("removals", {}).setdefault(why, []).append(r["title"] or key)
             else:
                 cx.execute("INSERT OR IGNORE INTO sync_removed(kind, key, title, at, person_id, fp) VALUES (?,?,?,?,?,?)",
                            (r["kind"], key, r["title"], r["at"], r["person_id"], r.get("fp")))
@@ -1223,115 +807,3 @@ class _Merge:
         if self.sender["id"] != self.me:
             people.remember(cx, self.sender["id"], self.sender["name"])
 
-
-# ---------------------------------------------------------------------------------------------
-# what it did, in words
-# ---------------------------------------------------------------------------------------------
-def _n(k: int, one: str, many: str | None = None) -> str:
-    return f"{k} {one if k == 1 else (many or one + 's')}"
-
-
-def summary(r: dict) -> list[str]:
-    """The report as a few plain sentences, most important first."""
-    who = r["from"]["name"] or "your colleague"
-    d, c, t, cb = r["documents"], r["checks"], r["themes"], r["codebooks"]
-    out = []
-    came = [x for x in (_n(len(d["new"]), "new document") if d["new"] else "",
-                        _n(c["new"], "new result") if c["new"] else "",
-                        _n(c["updated"], "result", "results") + " brought up to date" if c["updated"] else "",
-                        _n(t["new"], "new theme run") if t["new"] else "",
-                        _n(len(cb["new"]), "codebook") if cb["new"] else "") if x]
-    if came:
-        out.append(f"From {who}: " + ", ".join(came) + ".")
-    if r["judgements"]:
-        out.append(f"{_n(r['judgements'], 'judgement')} of excerpts came in, each under the name of who made it. "
-                   "Yours still count where you judged an excerpt yourself.")
-    extra = [x for x in (_n(r.get("log") or 0, "research log entry", "research log entries") if r.get("log") else "",
-                         _n(r.get("notes") or 0, "note") if r.get("notes") else "") if x]
-    if extra:  # 0.16
-        out.append(f"{' and '.join(extra)} of {who}'s came in or were brought up to date, under their name.")
-    both = [x for x in (_n(len(c["clash"]), "result") if c["clash"] else "",
-                        _n(len(t["clash"]), "set of themes", "sets of themes") if t["clash"] else "",
-                        _n(len(cb["clash"]), "codebook") if cb["clash"] else "") if x]
-    if both:
-        out.append(f"Sync clash: {' and '.join(both)} you both changed. {who}'s version came in beside yours, marked "
-                   "“sync clash”: nothing was replaced.")
-    for x in d["clash"]:
-        out.append(f"“{x['title']}” is a file you both added, but the two computers read it into different text. "
-                   f"{who}'s reading came in as a document of its own, marked “sync clash”, with what was made from it.")
-    for a in r["ai_access"]:
-        if a["why"] == "theirs":
-            out.append(f"“{a['title']}” is now kept from Claude ({_label(a['now'])}), as in {who}'s copy."
-                       + (f" Claude had read {_n(a['claude_read_here'], 'excerpt')} of it here before." if a.get("claude_read_here") else ""))
-        elif a["why"] == "yours" and a.get("claude_read_there"):
-            out.append(f"{who}'s copy let Claude read “{a['title']}” ({_n(a['claude_read_there'], 'excerpt')}); in yours it "
-                       f"stays {_label(a['now']).lower()}. What Claude made of it there came in with the rest.")
-        elif a["why"] == "yours":
-            out.append(f"“{a['title']}” came in as {_label(a['now']).lower()}, as you keep that file.")
-        else:
-            out.append(f"“{a['title']}” came in as {_label(a['now']).lower()}, the setting for new documents here.")
-    if c["running"]:
-        out.append(f"{_n(len(c['running']), 'check')} still running in {who}'s copy did not come in yet: bring in a later "
-                   "file when it is done.")
-    running_here = [x for x in (_n(len(c.get("running_here") or []), "result"),
-                                _n(len(t.get("running_here") or []), "set of themes", "sets of themes"))
-                    if not x.startswith("0 ")]
-    if running_here:
-        out.append(f"Still running in your copy, so kept as it is for now: {' and '.join(running_here)} that {who} "
-                   f"changed too. When the run is done, bring in {who}'s file again: {who}'s version then comes in "
-                   "beside yours.")
-    if d["removed_here"] or c["removed_here"]:
-        out.append(f"{_n(len(d['removed_here']) + len(c['removed_here']), 'thing')} you removed earlier did not come back.")
-    if d["removed_there"] or c["removed_there"]:
-        names = ", ".join(f"“{x}”" for x in (d["removed_there"] + c["removed_there"])[:3])
-        out.append(f"{who} removed {names}{' and more' if len(d['removed_there']) + len(c['removed_there']) > 3 else ''} "
-                   "from their copy. It stays in yours: remove it here too if you agree.")
-    if r["bibliography"] == "kept_yours":
-        out.append(f"{who}'s bibliography comes from another Zotero collection or file: yours was kept.")
-    if r["labels_kept_yours"]:
-        out.append(f"Where you both had the AI label a document, your labels were kept "
-                   f"({_n(r['labels_kept_yours'], 'document and codebook', 'documents and codebooks')}).")
-    if not out:
-        out.append(f"Nothing new: this copy already has everything in {who}'s file.")
-    return out
-
-
-def _label(level: str) -> str:
-    from .access import LABEL
-
-    return LABEL.get(level, level)
-
-
-def history(ws: Workspace, limit: int = 10) -> list[dict]:
-    """The colleagues' work brought in, newest first: [{"at", "from", "lines"}]."""
-    out = []
-    for r in ws.query("SELECT at, report_json FROM sync_log ORDER BY log_id DESC LIMIT ?", (limit,)):
-        rep = json.loads(r["report_json"])
-        out.append({"at": r["at"], "from": rep.get("from"), "lines": rep.get("lines") or summary(rep)})
-    return out
-
-
-def overview(ws: Workspace) -> dict:
-    """For the Projects page: who works on this project, the latest work brought in, and the open sync clashes."""
-    who = people.names(ws)
-    copies = [{"kind": kind, "key": k, "of_key": v["of"], "name": v["name"], "at": v["at"]}
-              for kind in ("check", "document", "themes", "codebook") for k, v in copies_of(ws, kind).items()]
-    copies.sort(key=lambda c: c["at"] or "", reverse=True)
-    return {"uid": ws.meta("project_uid"), "people": [{"id": k, "name": v} for k, v in who.items()
-                                                     if v != "you" and k != people.UNKNOWN],
-            "history": history(ws, 5), "clashes": copies, "agreement": people.agreement(ws)}
-
-
-_ORIGINALS = {"check": "SELECT hyp_id FROM hypotheses", "themes": "SELECT run_id FROM theme_runs",
-              "document": "SELECT doc_id FROM documents"}
-
-
-def copies_of(ws: Workspace, kind: str, settled: bool = False) -> dict[str, dict]:
-    """{key: {"of", "name", "at"}} of the sync-clash copies of one kind (check, themes, document, codebook) whose
-    other version is still here. A copy whose other version you removed is settled: it is simply yours now (`settled`
-    lists those too)."""
-    who = people.names(ws)
-    here = {r[0] for r in ws.query(_ORIGINALS[kind])} if kind in _ORIGINALS else None
-    return {r["key"]: {"of": r["of_key"], "name": who.get(r["person_id"], "a colleague"), "at": r["at"]}
-            for r in ws.query("SELECT key, of_key, person_id, at FROM sync_copies WHERE kind=?", (kind,))
-            if settled or here is None or (r["of_key"] in here and r["key"] in here)}

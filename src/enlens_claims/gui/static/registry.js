@@ -15,11 +15,11 @@ export const JOB_KINDS = {
   more: { icon: "search", text: "More evidence", link: "#/hypotheses", withJob: true },
   reread: { icon: "refresh", text: "Reading an excerpt again", link: "#/hypotheses" },
   "read-new": { icon: "book-open", text: "Reading the new documents", link: "#/hypotheses", withJob: true, label: (j, t) => j.title || t },
-  "second-opinion": { icon: "cpu", text: "Second opinion", link: "#/hypotheses", withJob: true,
+  "second-opinion": { icon: "scale", text: "Second opinion", link: "#/hypotheses", withJob: true,
     label: (j, t) => `${t}${/ on (\d+ hypothes\w+)$/.test(j.title || "") ? ` (${/ on (\d+ hypothes\w+)$/.exec(j.title)[1]})` : ""}` },
   ingest: { icon: "upload", text: "Adding documents", link: "#/sources" },
   index: { icon: "network", text: "Search by meaning set-up", link: "#/sources" },
-  benchmark: { icon: "cpu", text: "Model test", link: "#/settings/test" },
+  benchmark: { icon: "zap", text: "Model test", link: "#/settings/test" },
   keywords: { icon: "tag", text: "Codes by keywords", link: "#/profile" },
   label: { icon: "tag", text: "The AI labels passages", link: "#/profile" },
   "label-compare": { icon: "scale", text: "Comparing labels", link: "#/profile" },
@@ -36,6 +36,10 @@ export const JOB_KINDS = {
   "model-pull": { icon: "download", text: "Downloading a model", link: "#/settings/model" },   // 0.13.7
   "ollama-install": { icon: "download", text: "Installing Ollama", link: "#/settings/model" },   // 0.15.6
   bibliography: { icon: "library", text: "Bringing in the bibliography", link: "#/bibliography" },
+  // 0.18: a round of the shared folder (by hand or the poller's) opens the Team tab beside the page; a new reading
+  // the owner accepted, made in this copy, is on the Documents page
+  "folder-sync": { icon: "users", text: "Working together", link: "#/overview", drawer: "team" },
+  new_reader: { icon: "book-open", text: "Reading with the new reader", link: "#/sources" },
 };
 
 // A job's row: {href, icon, text, tooltip}. A kind no one registered shows its own title (an add-on's job).
@@ -44,7 +48,7 @@ export function jobRow(j) {
   if (!k) return { href: "#/overview", icon: "circle", text: j.title || j.kind, tooltip: j.title || j.kind };
   const text = k.label ? k.label(j, k.text) : k.text;
   const link = typeof k.link === "function" ? k.link(j) : k.link;  // a link may depend on the job (its scope)
-  return { href: link + (k.withJob ? `?job=${encodeURIComponent(j.id)}` : ""), icon: k.icon, text,
+  return { href: link + (k.withJob ? `?job=${encodeURIComponent(j.id)}` : ""), icon: k.icon, text, drawer: k.drawer,
     tooltip: k.tooltip && j.title && !text.includes(j.title) ? `${text}: ${j.title}` : text };
 }
 

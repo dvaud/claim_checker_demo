@@ -7,7 +7,7 @@
 // Ollama (after a dialog that says how big the download is on this computer and how much room it needs), with its
 // progress and Stop, or starts the Ollama that is installed but not running. On Linux, Ollama's installer asks for the
 // password, so the button opens a terminal window running Ollama's own line.
-import { api, h, icon, replace, showError, watchJob, TERMINAL, appName, confirmDialog, dialog, copyLine, button, link, notice } from "../lib.js";
+import { api, h, icon, replace, showError, watchJob, TERMINAL, appName, confirmDialog, dialog, copyLine, button, link, notice, stopButton } from "../lib.js";
 
 const OLLAMA_SITE = "https://ollama.com/download";
 const LOOK_EVERY = 3000;
@@ -152,7 +152,7 @@ function followInstall(job, area, btn) {
   if (btn) btn.hidden = true;
   const look = area.parentElement && area.parentElement.querySelector(".local-looking");
   if (look) look.hidden = true;   // it is being installed: not "looking for" it
-  const stop = button({ kind: "quiet", sm: true }, icon("stop", { size: 13 }), "Stop");
+  const stop = stopButton();
   stop.addEventListener("click", async () => { stop.disabled = true; try { await api("POST", `/api/jobs/${job.id}/cancel`); } catch (e) { showError(e); stop.disabled = false; } });
   const label = h("strong", {}, "Starting the download…");
   const amount = h("span", { class: "muted small" });
@@ -186,7 +186,7 @@ function followInstall(job, area, btn) {
     if (look) look.hidden = false;
     replace(area, j.state === "cancelled"
       ? h("p", { class: "muted small" }, "Stopped. Nothing was installed.")
-      : notice({ kind: "error" }, h("p", {}, j.error || "Ollama could not be installed.")));
+      : notice({ kind: "error", live: false }, h("p", {}, j.error || "Ollama could not be installed.")));
   }).catch(showError);
 }
 
@@ -233,7 +233,7 @@ function pullBox(ollama, chat, emb, opts) {
   const follow = (job) => {
     btn.hidden = true;
     if (alsoEmb) alsoEmb.disabled = true;
-    const stop = button({ kind: "quiet", sm: true }, icon("stop", { size: 13 }), "Stop");
+    const stop = stopButton();
     stop.addEventListener("click", async () => { stop.disabled = true; try { await api("POST", `/api/jobs/${job.id}/cancel`); } catch (e) { showError(e); stop.disabled = false; } });
     const label = h("strong", {}, "Starting the download…");
     const amount = h("span", { class: "muted small" });
@@ -269,7 +269,7 @@ function pullBox(ollama, chat, emb, opts) {
       btn.lastChild.textContent = `Download ${first.name} again`;
       replace(area, j.state === "cancelled"
         ? h("p", { class: "muted small" }, "Stopped. Ollama keeps what it has; the download goes on from there.")
-        : notice({ kind: "error" }, h("p", {}, j.error || "The download did not finish.")));
+        : notice({ kind: "error", live: false }, h("p", {}, j.error || "The download did not finish.")));
     }).catch(showError);
   };
   btn.addEventListener("click", async () => {

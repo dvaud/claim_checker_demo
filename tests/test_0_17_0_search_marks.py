@@ -79,7 +79,8 @@ def test_one_visible_way_to_open_a_document_from_search():
     # the book icon is gone: the title opens the document; the flask action has a visible label
     assert 'icon("book-open"' not in js
     assert js.count("Open the document at these words") == 2  # the title's tooltip and accessible name
-    assert 'icon("flask", { size: 13 }), "Check"' in js
+    # 0.17.0 (design guide): the line's way to Hypotheses is a link with a visible label (it moves, it checks nothing)
+    assert '"Check this");' in js and 'class: "kw-check"' in js
     assert "Open the document at this passage" in js  # search by meaning opens the same way
     from _static import all_css, rule  # 0.17.0: reads the cascade, so it holds when the rules move
 

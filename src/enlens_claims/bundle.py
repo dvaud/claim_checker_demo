@@ -12,7 +12,9 @@ The zip holds:
   0.14.3: nothing else of `uploads/` (the file of a document removed since stays on this computer);
 - `bundle.json`: what is where (the version that made it and, per document, its file in the zip); since 0.14 also
   which project it is (`project_uid`) and who sent it (`from`), so a colleague can bring the work into their copy of
-  the project (sync.py). Codebooks the project uses from the home folder come along in `frameworks/`.
+  the project (sync.py). Codebooks the project uses from the home folder come along in `frameworks/`. 0.18: its sync
+  format (`sync_format`, `sync_needs`: sync/formats.py) and `scope`: "all" (the whole project) or "shared" (only what
+  its sender shared, for a colleague: sharing.py).
 
 Everything is written to a temporary file on disk and copied in chunks, never held in memory. Importing unpacks
 with the same guards as adding a zip of sources (no path can leave the project folder, a size budget against zip
@@ -43,12 +45,21 @@ def _add(zf: zipfile.ZipFile, path: Path, arcname: str) -> None:
     zf.write(path, arcname, compress_type=kind)
 
 
-def export_project(ws: Workspace, out: str | Path) -> dict:
-    """Write the project to the zip file `out`; returns what it holds."""
+SCOPES = ("all", "shared")
+
+
+def export_project(ws: Workspace, out: str | Path, scope: str = "all") -> dict:
+    """Write the project to the zip file `out`; returns what it holds. `scope` (0.18, roadmap L1): "all", the whole
+    project (to keep, or to move it to another computer), or "shared", only what you shared (to send to a colleague:
+    sharing.strip takes every private item out of the copy of the database, and the codebooks not shared stay here).
+    Either way every item says whose it is (sharing.materialise), and the documents and their files go along."""
     from .sources import original_file
 
-    from . import sync
+    from . import sharing, sync
+    from .sync import formats as sync_formats
 
+    if scope not in SCOPES:
+        raise ValueError("A project zip holds the whole project or what you shared.")
     out = Path(out)
     root = ws.root.resolve()
     stamp = sync.before_sending(ws)  # 0.14: which project, who sends it, and the state of its checks and themes
@@ -63,21 +74,38 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
         finally:
             dst.close()
             src.close()
+        # 0.18: every item says whose it is; for a colleague, only what is shared (and nothing left in free pages)
+        cx = sqlite3.connect(db)
+        try:
+            with cx:
+                if scope == "shared":
+                    left_out = sharing.strip(cx, ws.root, stamp["from"]["id"])
+                    shared_books = sharing.shared_keys(cx, "codebook")
+                else:
+                    sharing.materialise(cx, ws.root, stamp["from"]["id"])
+                    left_out, shared_books = {}, None
+            if scope == "shared":
+                cx.execute("VACUUM")
+        finally:
+            cx.close()
         files: dict[str, str] = {}
         missing: list[str] = []
-        stats = {"documents": 0, "uploads": 0, "originals": 0, "missing": missing}
+        stats = {"documents": 0, "uploads": 0, "originals": 0, "missing": missing, "scope": scope,
+                 "left_out": left_out}
         part = out.with_name(out.name + ".part")
         with zipfile.ZipFile(part, "w", allowZip64=True) as zf:
             zf.write(db, "enlens.sqlite", compress_type=zipfile.ZIP_DEFLATED)
             if ws.config_path.exists():
-                zf.write(ws.config_path, "config.json")
+                zf.writestr("config.json", _config_for_zip(ws))
             base = root / "frameworks"  # the project's own codebooks
             if base.is_dir():
                 for f in sorted(base.rglob("*")):
-                    if f.is_file() and not f.is_symlink():
+                    if f.is_file() and not f.is_symlink() and (shared_books is None or (
+                            f.parent == base and f.suffix in (".csv", ".json") and f.stem in shared_books)):
                         _add(zf, f, f.relative_to(root).as_posix())
             for f in extra_codebooks:  # used here, kept in the home folder: a colleague needs them to read the labels
-                _add(zf, f, f"frameworks/{f.name}")
+                if shared_books is None or f.stem in shared_books:
+                    _add(zf, f, f"frameworks/{f.name}")
             written = {n for n in zf.namelist()}
             # 0.14.3: the file of each document the project has now, and nothing else of `uploads/`: the files of
             # documents removed since (one added by mistake), and uploads that failed or were already in the
@@ -100,12 +128,59 @@ def export_project(ws: Workspace, out: str | Path) -> dict:
                     stats["uploads"] += arc.startswith("uploads/")
                 files[r["doc_id"]] = arc
             zf.writestr("bundle.json", json.dumps({"format": "enlens-project", "version": __version__,
-                                                   "name": ws.root.name, **stamp, "files": files}, indent=1))
+                                                   "name": ws.root.name, **stamp, **sync_formats.stamp(),
+                                                   "scope": scope, "files": files}, indent=1))
         part.replace(out)
         stats["size"] = out.stat().st_size
         return stats
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _config_for_zip(ws: Workspace) -> str:
+    """The project's config.json as it goes into a zip: 0.18, without the path of the shared folder (a path on this
+    computer; each computer chooses its own, sync/folder.py)."""
+    raw = ws.config_path.read_text(encoding="utf-8")
+    try:
+        cfg = json.loads(raw)
+    except ValueError:
+        return raw
+    if not isinstance(cfg, dict) or "shared_folder" not in cfg:
+        return raw
+    cfg.pop("shared_folder", None)
+    return json.dumps(cfg, indent=2)
+
+
+def _forget_folder(ws: Workspace, sender: str | None) -> None:
+    """0.18: an imported project has no shared folder chosen (a project folder zipped by hand may still hold another
+    computer's path), and a copy of a colleague's project starts with no record of one (what the colleague wrote there
+    and read from it is theirs: sync/folder.py would take it for its own). A project the same person moved to another
+    computer keeps its record, and goes on where it was once the folder is chosen there."""
+    from .home import load_settings
+    from .sync.folder import FOLDER, _set_config
+
+    if ws.config.get(FOLDER) is not None:
+        _set_config(ws, **{FOLDER: None})
+    if sender and sender == (load_settings().get("person_id") or ""):
+        return
+    with ws.connect() as cx:
+        for t in ("sync_written", "sync_folder_read", "sync_folder_docs"):
+            cx.execute(f"DELETE FROM {t}")
+
+
+def _adopt(ws: Workspace, sender: str | None) -> None:
+    """0.18 L2: a copy of a colleague's project starts as the project has its documents: what the colleague changed of
+    them and the owner has not accepted stays theirs (ownership.adopt). A project the same person moved to another
+    computer is theirs as it was."""
+    from .home import load_settings
+
+    if not sender or sender == (load_settings().get("person_id") or ""):
+        return
+    try:
+        from .ownership import adopt
+    except ImportError:  # an app built without shared projects
+        return
+    adopt(ws, sender)
 
 
 def _project_folder(names: list[str]) -> str:
@@ -175,9 +250,10 @@ def _open_staged(folder: Path) -> bool:
     return before_011
 
 
-def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
+def import_project(zip_path: str | Path, dest: str | Path, merge_only: bool = False) -> Workspace:
     """Unpack a project zip into the folder `dest` (which must not exist yet, or be empty) and open it. The zip is one
-    made with export_project, or a project folder zipped by hand (0.13.5)."""
+    made with export_project, or a project folder zipped by hand (0.13.5). `merge_only` (0.18): unpacked only to be
+    merged into a copy (sync.bring_in), not a copy of its own: the sender's copy stays as it was."""
     from .ingest import ZIP_ERRORS, _safe_extract, zip_name, zip_problem
 
     zip_path, dest = Path(zip_path), Path(dest)
@@ -241,6 +317,10 @@ def import_project(zip_path: str | Path, dest: str | Path) -> Workspace:
     for sub in ("tasks", "results", "exports", "report"):
         (dest / sub).mkdir(exist_ok=True)
     (dest / "bundle.json").unlink(missing_ok=True)
+    sender = (meta.get("from") if isinstance(meta.get("from"), dict) else {}).get("id")
+    _forget_folder(ws, sender)
+    if not merge_only:
+        _adopt(ws, sender)
     return ws
 
 

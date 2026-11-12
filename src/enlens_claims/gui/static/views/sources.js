@@ -1,14 +1,15 @@
 // Documents: a big add area first, the document table, smart search in plain words, a document viewer, and the
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
-import { featureEyebrow, viewTabs } from "../features.js";
-import { tesseractHelp, App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
-  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice } from "../lib.js";
+import { featureEyebrow, viewTabs, withAI } from "../features.js";
+import { tesseractHelp, App, api, h, icon, readsLine, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
+  dialog, certainty, breakSegments, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
 import { aiLabelCard, startKeywordPass, keywordLabel, SOURCE_WORDS, RELEVANCE_WORDS, DIRECTION_WORDS } from "./profile.js";
 import { colourPicker, editNote, removeNote, useAsEvidence, noteCard } from "./notes.js";
 import { askWhy } from "./versions.js";
+import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
 const OK_EXT = ["pdf", "docx", "html", "htm", "txt", "md", "zip"];
@@ -30,12 +31,15 @@ export async function renderSources(view) {
   const fileInput = h("input", { type: "file", multiple: true, accept: ACCEPT, class: "visually-hidden", id: "src-files" });
   const fileList = h("ul", { class: "file-list", hidden: true });
   const addBtn = button({ kind: "main", disabled: true }, icon("upload", { size: 15 }), "Add to the project");
-  const excludeInput = input({ sm: true, placeholder: "e.g. draft*  *_old.pdf", id: "exclude" });
+  const addWhy = h("span", { class: "muted small" });   // why the button is off, beside it (DESIGN 4.1)
+  const excludeInput = input({ placeholder: "e.g. draft*  *_old.pdf", id: "exclude" });
   const drawFiles = () => {
     fileList.hidden = !files.length;
     replace(fileList, files.map((f, i) => h("li", {}, icon("file-text", { size: 13 }), h("span", { class: "grow docs-file-name" }, f.name), h("span", { class: "fs" }, fmt.bytes(f.size)),
       iconButton({ icon: "x", size: 12, label: `Remove ${f.name} from the list`, title: null, sm: true, onClick: () => { files.splice(i, 1); drawFiles(); } }))));
     addBtn.disabled = !files.length || needLevel() || adding;
+    addWhy.textContent = adding ? "" : !files.length ? "Choose or drop files first." : needLevel() ? "Choose who may read them with AI first." : "";
+    addBtn.title = addWhy.textContent;
     replace(addBtn, icon("upload", { size: 15 }), files.length ? `Add ${files.length === 1 ? "this document" : `these ${files.length} documents`} to the project` : "Add to the project");
   };
   const takeFiles = (list) => {
@@ -58,8 +62,8 @@ export async function renderSources(view) {
     h("p", { class: "muted small" }, "PDF, Word (.docx), text, Markdown and saved web pages (HTML), or a zip folder of them. ",
       ocrState().available === false ? ["Scanned PDFs cannot be read on this computer yet: they need Tesseract (", h("a", { href: "#/settings/ocr" }, "how to get it"), ")."] : ocrState().available && (App.settings().ocr || "auto") === "off" ? "Reading scanned PDFs is switched off in Settings." : ocrState().available ? "Scanned PDFs are read with text recognition (OCR), which is slow and can make mistakes." : ""),
     fileList);
-  for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); });
-  for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); });
+  for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.dataset.over = "true"; });
+  for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, (e) => { e.preventDefault(); delete drop.dataset.over; });
   drop.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files) takeFiles(e.dataTransfer.files); });
   // a click anywhere on the area (not on a chosen file's row or its remove button) opens the file chooser
   drop.addEventListener("click", (e) => { if (e.target.closest("a, label, button, input, .file-list")) return; fileInput.click(); });
@@ -71,6 +75,7 @@ export async function renderSources(view) {
   const needLevel = () => !chosenLevel;
   let ingesting = false;   // an ingest is being followed: the folder button stays off until it ends
   const accessPick = accessChoice({ value: chosenLevel, name: "add-access", onChange: (v) => { chosenLevel = v; drawFiles(); if (!ingesting) pathBtn.disabled = false; } });
+  drawFiles();   // the add button's state and its reason, before any file is chosen
   const pathInput = input({ placeholder: "e.g. C:\\Users\\me\\Documents\\Literature  or  /Users/me/Documents/Literature", id: "src-path" });
   const pathBtn = button({}, icon("folder-open", { size: 14 }), "Add this folder");
   const progressBox = h("div", { class: "section", hidden: true, "aria-live": "polite" });
@@ -78,7 +83,7 @@ export async function renderSources(view) {
   const addCard = card({ "aria-label": "Add documents" },
     drop,
     h("div", { class: "add-access" }, accessPick, acc.chosen ? null : h("p", { class: "muted small docs-access-note" }, "Choose once for this project; it becomes the default, and you can change single documents in the list below.")),
-    h("div", { class: "btn-row docs-add-actions" }, addBtn),
+    h("div", { class: "btn-row docs-add-actions" }, addBtn, addWhy),
     fold({ class: "docs-more-fold" }, "More ways to add",
       card({ as: "div", class: "docs-more-card" },
         h("div", { class: "field" }, h("label", { class: "field-label", for: "src-path" }, "Add a whole folder on this computer"), h("div", { class: "row docs-folder-row" }, pathInput, pathBtn),
@@ -99,15 +104,17 @@ export async function renderSources(view) {
   function followIngest(jobId, label) {
     ingesting = true;
     progressBox.hidden = false;
-    const holder = card({ as: "div" }, h("div", { class: "card-head" }, h("h2", {}, label || "Adding documents"), button({ kind: "danger", sm: true, onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
+    const stop = stopButton({ onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) });
+    const head = h("span", {}, label || "Adding documents");
+    const holder = card({ as: "div", title: head, action: stop }, h("div", { class: "pb" }));
     replace(progressBox, holder);
     const w = watchJob(jobId, (job) => {
       replace(holder.querySelector(".pb"), simpleProgress(job, (p) => p.phase === "embedding" ? `Setting up search by meaning for the new documents · ${p.done || 0} of ${p.total || "?"} excerpts` : p.phase === "glossary" ? "Updating the glossary of terms (Concepts)…" : p.phase === "codes" ? "Finding the codebook's codes by keywords (Profile)…" : p.file ? `Reading ${p.file} (${(p.done || 0) + 1} of ${p.total})` : p.total ? `${p.done} of ${p.total} files` : "Reading the files…"));
-      if (TERMINAL.has(job.state)) { const b = holder.querySelector(".btn-outline-danger"); if (b) b.hidden = true; }
+      if (TERMINAL.has(job.state)) stop.hidden = true;
     });
     watchers.push(w);
     w.promise.then(async (job) => {
-      const hd = holder.querySelector(".card-head h2"); if (hd) hd.textContent = job.state === "done" ? "Documents added" : job.state === "cancelled" ? "Stopped" : "Could not add the documents";
+      head.textContent = job.state === "done" ? "Documents added" : job.state === "cancelled" ? "Stopped" : "Could not add the documents";
       if (job.state === "done") ingestSummary(holder, job.result || {});
       else if (job.state === "error") replace(holder.querySelector(".pb"), notice({ kind: "error" }, h("div", {}, h("p", {}, "The documents could not be added."), fold({}, "Technical details", h("div", { class: "mono small" }, job.error || "")), job.error_kind === "backend" ? h("a", { href: "#/settings" }, "Check the AI model in Settings") : null)));
       else replace(holder.querySelector(".pb"), h("p", { class: "muted" }, "Stopped. The files read so far were kept."));
@@ -139,7 +146,7 @@ export async function renderSources(view) {
     const emptyOther = (st.empty_files || []).filter((f) => !noText.has(f));
     if (emptyOther.length) bits.push(notice({ kind: "attention" }, h("p", {}, `${emptyOther.length} ${emptyOther.length === 1 ? "file has" : "files have"} no readable text: ${emptyOther.join(", ")}`)));
     if (st.mostly_unreadable && st.mostly_unreadable.length) bits.push(notice({ kind: "attention" }, h("p", {}, "The text of these could mostly not be read: " + st.mostly_unreadable.join(", ") + ". Try another copy (for example from the publisher), or run OCR.")));
-    if (st.failed && st.failed.length) bits.push(notice({ kind: "error" }, h("div", {}, h("p", {}, "These could not be read:"), h("ul", { class: "errors-list" }, st.failed.map((f) => h("li", {}, f))))));
+    if (st.failed && st.failed.length) bits.push(notice({ kind: "error", live: false }, h("div", {}, h("p", {}, "These could not be read:"), h("ul", { class: "errors-list" }, st.failed.map((f) => h("li", {}, f))))));
     if (st.excluded && st.excluded.length) bits.push(h("p", { class: "muted small" }, `Left out: ${st.excluded.join(", ")}`));
     if (st.not_in_manifest && st.not_in_manifest.length) bits.push(h("p", { class: "muted small" }, `Not named in the manifest: ${st.not_in_manifest.slice(0, 10).join(", ")}${st.not_in_manifest.length > 10 ? "…" : ""}`));
     if (st.glossary_error || st.codes_error) bits.push(notice({ kind: "attention" }, h("div", {}, h("p", {}, "The documents were added, but " + (st.glossary_error ? "the glossary of terms" : "the codes found by keywords") + " could not be updated. Update them from the Concepts or Profile page."), fold({}, "Technical details", h("div", { class: "mono small" }, st.glossary_error || st.codes_error)))));
@@ -167,7 +174,7 @@ export async function renderSources(view) {
     addBtn.disabled = true;
     const batch = batchId();
     progressBox.hidden = false;
-    const holder = card({ as: "div" }, h("div", { class: "card-head" }, h("h2", {}, "Copying the files into the project")), h("div", { class: "pb" }));
+    const holder = card({ as: "div", title: "Copying the files into the project" }, h("div", { class: "pb" }));
     replace(progressBox, holder);
     let n = 0;
     try {
@@ -278,7 +285,8 @@ export async function renderSources(view) {
     if (!docs.length) { docsBox.appendChild(emptyState("book-open", "No documents yet", "Add the reports, papers and web pages you want to check hypotheses against. PDFs keep their page numbers.")); return; }
     newReader = r.new_reader || newReader;
     const warned = docs.filter((d) => d.check || (d.reading_quality === "poor" && !d.reading_checked)).length;
-    if (warned) docsBox.appendChild(h("p", { class: "muted small" }, icon("alert-triangle", { size: 12 }), ` ${warned} ${warned === 1 ? "document needs" : "documents need"} a look: see the note next to ${warned === 1 ? "it" : "them"}.`));
+    // a sentence that needs you is a one-line notice; the tag beside each document says what (docs/DESIGN.md 4.10, 4.12)
+    if (warned) docsBox.appendChild(notice({ kind: "attention", class: "docs-warned" }, h("p", {}, `${warned} ${warned === 1 ? "document needs" : "documents need"} a look: see the note next to ${warned === 1 ? "it" : "them"}.`)));
     shieldNote = shieldNode();
     docsBox.appendChild(shieldNote);
     nr.older = docs.filter((d) => (d.reader || 1) < newReader);
@@ -297,28 +305,32 @@ export async function renderSources(view) {
     const sentCell = (d) => {
       const pct = Math.round((d.sent || 0) * 1000) / 10;
       const label = d.ai_access !== "cloud" && !pct ? "never" : pct ? `${pct < 1 ? "<1" : Math.round(pct)}%` : "0%";
-      return button({ kind: "quiet", sm: true, title: "What Claude has read of this document", onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null);
+      // the share is a fact; the button that opens what Claude read is a verb (DESIGN 4.1: a number is never a button)
+      return h("div", { class: "sent-cell" }, h("span", {}, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null),
+        button({ kind: "quiet", sm: true, title: "What Claude has read of this document, and who may read it", onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, "See what it read"));
     };
     const rowFor = (d) => {
       const c = h("input", { type: "checkbox", class: "doc-pick", value: d.doc_id, "aria-label": `Select ${d.title || d.file}`, checked: picked.has(d.doc_id) });
       c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); });
       const row = h("tr", {},
         h("td", { class: "pick-col" }, c),
-        h("td", {}, h("div", { class: "doc-title", title: d.title || d.file }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
-          h("div", { class: "doc-file" }, d.file),
+        h("td", { class: "doc-cell" }, h("div", { class: "doc-title", title: d.title || d.file }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
+          proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
+          h("div", { class: "doc-file" }, ...String(d.file || "").split(/(?<=[_-])/).flatMap((seg) => [seg, h("wbr")])),   // may break after _ or -, never before its extension
           d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null,
-          // 0.14.3: Remove sits under the title, where it is always in view (the table was wider than the page
-          // and its last column, with them, was out of sight)
+          // 0.14.3: a row's actions sit under its title, where they are always in view (the table was wider than the
+          // page and its last column was out of sight). 0.17.0: the rare and lasting one, Remove, is in the row's menu,
+          // not a red button under every title (DESIGN 4.20)
           h("div", { class: "doc-actions" },
-            button({ kind: "danger", sm: true, class: "doc-remove", "aria-label": `Remove ${d.title || d.file}`, onClick: () => removeDoc(d) }, icon("trash", { size: 13 }), "Remove"))),
-        h("td", { "data-label": "Type" }, KIND_TEXT[d.kind] || d.kind || ""),
+            menu({ label: `More for ${d.title || d.file}`, items: [{ text: "Remove…", icon: "trash", danger: true, onClick: () => removeDoc(d) }] }))),
+        h("td", { "data-label": "Type", class: "fact" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
-        h("td", { "data-label": "Added", class: "small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
+        h("td", { "data-label": "Added", class: "fact small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
         h("td", { "data-label": "AI", class: "access-cell" }, accessSelect(d, pa.default, (lv) => setAccess([d.doc_id], lv || pa.default)),
           d.note ? button({ kind: "quiet", sm: true, class: "access-why", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, d.note) : null),
         h("td", { "data-label": "Sent to Claude", class: "num" }, sentCell(d)),
-        h("td", { "data-label": "Note", class: "check-cell" },
-          d.clash ? h("span", { class: "it tag-clash", title: `The same file as another document here, read into other text on ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} computer (another ENLENS version, or text recognition on one computer and not the other). Quotes are places in the text, so this reading came in as a document of its own, with the results made from it.` }, icon("copy", { size: 12 }), `sync clash · ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} reading`) : null,
+        h("td", { "data-label": "Note", class: "fact check-cell" },
+          d.clash ? tag({ kind: "attention", title: `The same file as another document here, read into other text on ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} computer (another ENLENS version, or text recognition on one computer and not the other). Quotes are places in the text, so this reading came in as a document of its own, with the results made from it.` }, `sync clash · ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} reading`) : null,
           d.check ? tag({ kind: "attention" }, d.check) : null,
           d.scanned ? (/no text/i.test(d.scanned) ? tag({ kind: "attention", class: "it scanned-note" }, d.scanned) : h("span", { class: "it scanned-note muted small" }, icon("eye", { size: 12 }), d.scanned)) : null,
           readingNote(d),
@@ -330,6 +342,7 @@ export async function renderSources(view) {
     // a change of the AI setting, note or cap: the answer carries the list again; only the rows changed are
     // redrawn (the ticks and the scroll position stay), with the counts above the table
     function patchDocs(res, ids) {
+      proposedToast(res, project, ids);   // 0.18 L2: a looser setting held for the owner's word says so
       pa = res.ai_access || pa;
       for (const d of res.documents || []) { const at = docs.findIndex((x) => x.doc_id === d.doc_id); if (at >= 0) docs[at] = d; }   // 0.14.3: the list the loosening check reads
       for (const d of res.documents || []) { const old = rows.get(d.doc_id); if (old && ids.includes(d.doc_id)) old.replaceWith(rowFor(d)); }
@@ -358,7 +371,7 @@ export async function renderSources(view) {
       if (note !== undefined) body.note = note;
       try {
         const res = await api("PUT", `/api/projects/${P(project)}/documents/ai-access`, body);
-        toast(ids.length === 1 ? `${LEVEL[level].title}.` : `${ids.length} documents: ${LEVEL[level].many.toLowerCase()}.`, "ok", { ttl: 2500 });
+        if (!(res.proposed || []).length) toast(ids.length === 1 ? `${LEVEL[level].title}.` : `${ids.length} documents: ${LEVEL[level].many.toLowerCase()}.`, "ok", { ttl: 2500 });   // 0.18 L2: unless proposed
         patchDocs(res, ids);
       } catch (e) { showError(e); await reloadDocs(); }
     }
@@ -441,10 +454,11 @@ export async function renderSources(view) {
 
   async function removeDoc(d) {
     // 0.16 (F4): the reason goes into the research log
+    const proposal = await removalNote(project, d);   // 0.18 L2: in a collaborator's copy, a proposal to the owner
     const ok = await askWhy({ title: "Remove this document?", confirmText: "Remove", placeholder: "For example: a duplicate, the wrong version, outside the scope",
-      message: h("div", {}, h("p", {}, h("strong", {}, d.title || d.file)), h("p", {}, "It is no longer searched. Results you already have keep their quotes, marked as coming from a removed document. Your notes on it are kept in Notes.")) });
+      message: h("div", {}, h("p", {}, h("strong", {}, d.title || d.file)), h("p", {}, "It is no longer searched. Results you already have keep their quotes, marked as coming from a removed document. Your notes on it are kept in Notes."), proposal) });
     if (!ok) return;
-    try { await api("DELETE", `/api/projects/${P(project)}/documents/${P(d.doc_id)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast("Document removed.", "ok"); await reloadDocs(); await App.refresh(); }
+    try { await api("DELETE", `/api/projects/${P(project)}/documents/${P(d.doc_id)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast(proposal ? "Removed from your copy. For the project it waits for the owner (Team tab)." : "Document removed.", "ok"); await reloadDocs(); await App.refresh(); }   // 0.18 L2: proposal
     catch (e) { showError(e); }
   }
 
@@ -488,10 +502,11 @@ function readingNote(d) {
   const href = `#/doc/${encodeURIComponent(d.doc_id)}?tab=reading`;
   if ((d.reading_quality === "poor" || d.reading_quality === "fair") && !d.reading_checked) {
     const title = `${(d.reading_warnings || []).join(" ")} Open it to see where to look, then mark the reading as checked.`.trim();
-    if (d.reading_quality === "poor") return tag({ kind: "attention", class: "it" }, link({ href, title }, "read badly"));
-    return h("a", { class: "it muted small", href, title }, icon("info", { size: 12 }), "something to check in its reading");
+    // a tag is a fact and is never pressed: the way to the reading is a link of its own after it (DESIGN 4.10)
+    if (d.reading_quality === "poor") return h("span", {}, tag({ kind: "attention" }, "read badly"), " ", link({ href, title }, "Look at its reading"));
+    return link({ href, title, class: "it small" }, icon("info", { size: 12 }), "something to check in its reading");
   }
-  if ((d.reader || 1) < newReader) return h("a", { class: "it muted small", href: `${href}&preview=1`, title: "Read by an earlier reader of ENLENS. Open it to see what the new reader would change, or read several at once with the button above the list." },
+  if ((d.reader || 1) < newReader) return link({ class: "it small", href: `${href}&preview=1`, title: "Read by an earlier reader of ENLENS. Open it to see what the new reader would change, or read several at once with the button above the list." },
     icon("layers", { size: 12 }), (d.reader || 1) < 2 ? "read before 0.15" : "read by an earlier reader");
   return null;
 }
@@ -548,7 +563,7 @@ export async function renderDocument(view, [docId], query) {
   const hit = span ? blocks.findIndex((b) => span.start >= b.start && span.start < b.end) : -1;
   // the quote's text, for opening the original at it (the whole excerpt is too long for that)
   const quoteText = hit >= 0 && !span.whole ? (blocks[hit].text || "").slice(Math.max(0, span.start - blocks[hit].start), Math.max(0, span.end - blocks[hit].start)).trim() || null : null;
-  const back = from ? link({ kind: "back", href: `#/h/${encodeURIComponent(from)}${query.card ? `?card=${encodeURIComponent(query.card)}` : ""}` }, "Back to the result") : null;
+  const back = from ? { href: `#/h/${encodeURIComponent(from)}${query.card ? `?card=${encodeURIComponent(query.card)}` : ""}`, text: "Back to the result" } : null;
   const watchers = [];
   const cleanups = [];
   let tab = DOC_TABS.some(([k]) => k === query.tab) ? query.tab : null;
@@ -556,23 +571,23 @@ export async function renderDocument(view, [docId], query) {
 
   // 0.13.3: the original and the highlighted copy are two quiet links on one line, as on the result page
   const copyBtn = downloadButton({ title: "A copy of the document with its quotes and labels highlighted", onClick: () => highlightedCopy() }, "Download a highlighted copy");
-  view.appendChild(h("header", { class: "page-head" }, h("div", { class: "page-head-main" },
-    h("p", { class: "eyebrow" }, from ? [back, " "] : null, link({ kind: "back", href: "#/sources", class: "it" }, "All documents")),
-    h("h1", { id: "page-title", tabindex: "-1", class: "title-display" }, d.title || d.file),
-    h("div", { class: "result-meta dv-file-meta" }, h("span", {}, d.file), h("span", { class: "sep" }, "·"), h("span", {}, KIND_TEXT[d.kind] || d.kind || ""), d.n_pages ? [h("span", { class: "sep" }, "·"), h("span", {}, `${d.n_pages} pages`)] : null,
-      reading ? (d.paragraphs ? [h("span", { class: "sep" }, "·"), h("span", {}, plural(d.paragraphs, "paragraph"))] : null)
-        : d.n_pages && blockUnit(blocks[0]) === "pages" && totalBlocks === d.n_pages ? null : [h("span", { class: "sep" }, "·"), h("span", {}, `${totalBlocks} ${blockUnit(blocks[0])}`)], d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.doi}`, target: "_blank", rel: "noopener noreferrer", title: "Opens the publisher's page in your browser" }, `doi ${d.doi}`)] : null,
-      d.scanned ? [h("span", { class: "sep" }, "·"), h("span", { class: "it" }, icon("eye", { size: 12 }), d.scanned)] : null),
-    d.bib ? h("p", { class: "dv-bib" }, icon("library", { size: 13 }), h("span", {}, "In your ", h("a", { href: "#/bibliography" }, "bibliography"), ": ", h("strong", {}, d.bib.cite || d.bib.title)),
-      d.bib.title && d.bib.title !== d.title ? [h("span", { class: "sep" }, "·"), h("span", { class: "serif" }, d.bib.title)] : null,
-      d.bib.doi && d.bib.doi !== d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.bib.doi}`, target: "_blank", rel: "noopener noreferrer" }, `doi ${d.bib.doi}`)] : null,
-      d.bib.link ? [h("span", { class: "sep" }, "·"), h("a", { href: d.bib.link }, "Open in Zotero")] : null) : null,
-    // 0.13.3: the heading is the work's title; the one read from the file stays visible, on a line of its own
-    d.file_title ? h("p", { class: "muted small dv-file-title" }, "Title in the file: ", h("span", { class: "serif" }, d.file_title)) : null,
-    h("div", { class: "row dv-head-row" },
-      originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
-      copyBtn),
-    span ? h("p", { class: "muted small dv-span-note" }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null)));
+  view.appendChild(pageHead(d.title || d.file, { display: true, back: [back, { href: "#/sources", text: "All documents" }],
+    facts: [d.file, KIND_TEXT[d.kind] || d.kind || "", d.n_pages ? `${d.n_pages} pages` : null,
+      reading ? (d.paragraphs ? plural(d.paragraphs, "paragraph") : null)
+        : d.n_pages && blockUnit(blocks[0]) === "pages" && totalBlocks === d.n_pages ? null : `${totalBlocks} ${blockUnit(blocks[0])}`,
+      d.doi ? h("a", { href: `https://doi.org/${d.doi}`, target: "_blank", rel: "noopener noreferrer", title: "Opens the publisher's page in your browser" }, `doi ${d.doi}`) : null,
+      d.scanned ? h("span", { class: "it" }, icon("eye", { size: 12 }), d.scanned) : null],
+    meta: [
+      d.bib ? h("p", { class: "dv-bib" }, icon("library", { size: 13 }), h("span", {}, "In your ", h("a", { href: "#/bibliography" }, "bibliography"), ": ", h("strong", {}, d.bib.cite || d.bib.title)),
+        d.bib.title && d.bib.title !== d.title ? [h("span", { class: "sep" }, "·"), h("span", { class: "serif" }, d.bib.title)] : null,
+        d.bib.doi && d.bib.doi !== d.doi ? [h("span", { class: "sep" }, "·"), h("a", { href: `https://doi.org/${d.bib.doi}`, target: "_blank", rel: "noopener noreferrer" }, `doi ${d.bib.doi}`)] : null,
+        d.bib.link ? [h("span", { class: "sep" }, "·"), h("a", { href: d.bib.link }, "Open in Zotero")] : null) : null,
+      // 0.13.3: the heading is the work's title; the one read from the file stays visible, on a line of its own
+      d.file_title ? h("p", { class: "muted small dv-file-title" }, "Title in the file: ", h("span", { class: "serif" }, d.file_title)) : null,
+      h("div", { class: "row dv-head-row" },
+        originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
+        copyBtn),
+      span ? h("p", { class: "muted small dv-span-note" }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null] }));
 
   // ----------------------------------------------------------------- the text, with layers of highlights
   const nodeAt = new WeakMap();        // text node -> document offset of its first character
@@ -602,7 +617,7 @@ export async function renderDocument(view, [docId], query) {
       const body = h("div", { class: "dv-body" });
       const kindCls = b.kind ? ` dv-k-${b.kind}${b.included === false ? " dv-out" : ""}${b.changed ? " dv-changed" : ""}${b.joined ? " dv-joined" : ""}` : "";
       const label = h("div", { class: "pp" }, labelParts(b));
-      const row = h("div", { class: "passage-row" + kindCls + (hit >= 0 && b.n === blocks[hit].n ? " hit" : "") }, label, body);
+      const row = h("div", { class: "passage-row" + kindCls, "data-found": hit >= 0 && b.n === blocks[hit].n ? "true" : null }, label, body);
       row.id = `block-${b.n}`;
       rows.set(b.n, { row, body, label, b, sig: null });
       place(b, row, keptOpen);
@@ -1100,7 +1115,7 @@ export async function renderDocument(view, [docId], query) {
   const tabsRow = h("div", { class: "dv-tabs" });
   const panelBox = h("div", { class: "dv-panel-box" });
   const intro = h("p", { class: "muted small dv-intro" }, "Show next to the text: which codes of a codebook it addresses, its key terms, what “it” and “they” refer to, search inside it, how it was read", d.page_images ? ", or the page of the original beside the text." : ".");
-  const side = h("aside", { class: "dv-side", "aria-label": "About this document" }, tabsRow, panelBox);
+  const side = card({ sm: true, as: "aside", class: "dv-side", "aria-label": "About this document" }, tabsRow, panelBox);
   const layout = h("div", { class: "dv-layout" }, side, h("div", { class: "dv-main" }, list, moreBox));
   view.appendChild(layout);
 
@@ -1140,7 +1155,7 @@ export async function renderDocument(view, [docId], query) {
     const rep = d.reading || {};
     const older = (d.reader || 1) < (d.new_reader || 1);
     const before15 = (d.reader || 1) < 2;  // 0.15.1: a document of 0.15.0's reader has a reading report too
-    const qual = { good: ["circle-check", "Read well."], fair: ["alert-triangle", "Read, with something to check."], poor: ["alert-circle", "Read badly: check it before you rely on it."] }[rep.quality];
+    const qual = { good: "Read well.", fair: "Read, with something to check.", poor: "Read badly: check it before you rely on it." }[rep.quality];
     const figs = [];
     const fig = (label, value, title) => { if (value) figs.push(h("li", { title: title || null }, h("span", { class: "muted" }, label), " ", value)); };
     const passFig = h("li", { title: "The passages that searches, codes, themes and checks read" });
@@ -1187,7 +1202,9 @@ export async function renderDocument(view, [docId], query) {
         h("p", {}, before15 ? `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`
           : `Read by the reader of ENLENS 0.15.0. The reader of ENLENS ${App.state.version || ""} also sets running heads, page numbers, contents pages and indexes aside in text files and books, finds their headings and paragraphs, and puts apart words that ran together.`),
         h("p", { class: "small" }, "Documents already in a project keep their reading, so every quote and judgement in them stays where it is, until you move one over."))) : null,
-      !before15 && qual ? h("p", { class: `dv-quality dv-q-${rep.quality}` }, icon(qual[0], { size: 14 }), qual[1]) : null,
+      // a reading to check needs you: an attention notice; a good one is a quiet line with the tick (DESIGN 3.3, 4.12)
+      !before15 && qual ? (rep.quality === "good" ? h("p", { class: "dv-quality small" }, icon("check", { size: 14 }), ` ${qual}`)
+        : notice({ kind: "attention", class: "dv-quality" }, h("p", {}, qual))) : null,
       (rep.warnings || []).length ? h("ul", { class: "dv-warn" }, rep.warnings.map((w, i) => h("li", {}, w, " ", placeBtn((rep.places || [])[i])))) : null,
       !before15 && (rep.quality === "fair" || rep.quality === "poor") ? checkedBox(rep) : null,
       figs.length ? h("ul", { class: "dv-figs" }, figs) : null,
@@ -1203,7 +1220,7 @@ export async function renderDocument(view, [docId], query) {
     const box = h("div", { class: "dv-checked" });
     function draw() {
       const c = rep.checked;
-      replace(box, c ? h("p", { class: "small dv-read-ok" }, icon("circle-check", { size: 13 }),
+      replace(box, c ? h("p", { class: "small dv-read-ok" }, icon("check", { size: 13 }),
         ` Checked by ${c.name || "you"}${c.at ? ` on ${fmt.dateShort(c.at)}` : ""}: the list of documents no longer asks for a look. `,
         button({ kind: "quiet", sm: true, onClick: (e) => mark(false, e.currentTarget) }, "Undo"))
         : [h("p", { class: "muted small dv-read-check" }, "Look at what each point names. If the text is good enough for your work, mark the reading as checked: the note in the list of documents goes away. A new reading of this document asks again."),
@@ -1238,7 +1255,7 @@ export async function renderDocument(view, [docId], query) {
       let r;
       try { r = await api("GET", `${docBase}/reread`); }
       catch (e) { replace(box, notice({ kind: "error" }, h("p", {}, e.message))); return; }
-      if (r.ok === false) { replace(box, notice({ kind: "attention" }, h("p", {}, r.reason || "This document cannot be read again now."))); return; }
+      if (r.ok === false) { replace(box, notice({ kind: "attention", live: "status" }, h("p", {}, r.reason || "This document cannot be read again now."))); return; }
       const lost = r.not_placed || [];
       const moved = movedCount(r);
       const aside = Array.isArray(r.left_out) ? r.left_out : [];  // placed, in text the new reader leaves out
@@ -1262,8 +1279,15 @@ export async function renderDocument(view, [docId], query) {
       try { job = (await api("POST", `${docBase}/reread`)).job; }
       catch (e) { btn.disabled = false; showError(e); return; }
       // the move is one step; then, as after adding a document, its search by meaning, key terms and keyword codes
-      replace(box, h("p", { class: "muted small", role: "status" }, icon("loader", { size: 13 }), " Moving it to the new reader, then updating its key terms and codes…"));
-      const w = watchJob(job.id);
+      const moving = h("p", { class: "muted small", role: "status" }, icon("loader", { size: 13 }), " Moving it to the new reader, then updating its key terms and codes…");
+      replace(box, moving);
+      // 0.18 queued jobs: while another job of the project runs, the move waits its turn and says so
+      let queued = false;
+      const w = watchJob(job.id, (j) => {
+        if (!!j.waiting_for === queued) return;   // redrawn only when it starts or stops waiting (the spinner goes on)
+        queued = !!j.waiting_for;
+        replace(moving, icon(queued ? "clock" : "loader", { size: 13 }), queued ? ` ${j.waiting_for.message}.` : " Moving it to the new reader, then updating its key terms and codes…");
+      });
       watchers.push(w);
       let done;
       try { done = await w.promise; } catch (e) { showError(e); return; }
@@ -1365,7 +1389,7 @@ export async function renderDocument(view, [docId], query) {
           prof = await api("GET", `${docBase}/profile?framework=sdg`);
         }
       }
-      catch (e) { listBox.setAttribute("aria-busy", "false"); replace(listBox, notice({ kind: "error" }, h("p", {}, e.message))); return; }
+      catch (e) { listBox.setAttribute("aria-busy", "false"); replace(listBox, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
       listBox.setAttribute("aria-busy", "false");
       // a goal from the profile grid (?code=7): open its targets
       for (const c of [...open]) if (!prof.codes.some((x) => x.code === c)) { open.delete(c); for (const x of prof.codes) if (x.group === c) open.add(x.code); }
@@ -1476,9 +1500,9 @@ export async function renderDocument(view, [docId], query) {
         if (it.similarity !== null && it.similarity !== undefined) bits.push(h("span", {}, h("span", { class: "muted" }, bits.length ? " · close in meaning" : "Close in meaning to the code's text"), ` (similarity ${Number(it.similarity).toFixed(2)})`));
         why.push(h("p", { class: "dv-why found-words" }, it.source === "both" ? h("strong", {}, "Keywords and meaning agree. ") : null, bits));
       }
-      if (it.note && it.source !== "person") why.push(h("div", { class: "user-note" }, icon("note", { size: 13 }), h("span", {}, h("span", { class: "muted" }, "Your note: "), it.note)));
+      if (it.note && it.source !== "person") why.push(h("p", { class: "dv-note small" }, h("span", { class: "muted" }, "Your note: "), h("span", { class: "serif" }, it.note)));
       const where = link({ kind: "jump", class: "dv-loc", title: "Show it in the text", onClick: () => jumpItem(it) }, icon("eye", { size: 12 }), cap(it.location || (it.page ? `page ${it.page}` : "show in the text")));
-      return h("li", { class: "dv-item" + (it.provisional ? " dv-prov" : "") + (it.decision ? " ev-yours" : ""), dataset: { lid: it.label_id } },
+      return inset({ as: "li", tentative: !!it.provisional, class: "dv-item" + (it.decision ? " ev-yours" : ""), dataset: { lid: it.label_id } },
         h("div", { class: "dv-item-top" }, where, h("span", { class: "chips" }, chips)), why, decideRow(c, it));
     }
 
@@ -1748,16 +1772,17 @@ export async function renderDocument(view, [docId], query) {
       const left = Math.max(0, (st.windows_total || 0) - (st.windows_read || 0));
       body.appendChild(h("p", { class: "muted small dv-refs-note" },
         st.windows_read ? `The AI has read ${fmt.num(st.windows_read)} of ${plural(st.windows_total || 0, "stretch", "stretches")} of this document` : `Not followed yet: ${plural(st.windows_total || 0, "stretch", "stretches")} of three passages to read`,
-        st.windows_failed ? `; ${fmt.num(st.windows_failed)} could not be read` : "", ".",
-        where.where === "cloud" ? ` ${where.sent || "The passages are sent to the Claude API (cloud)."}` : ""));
+        st.windows_failed ? `; ${fmt.num(st.windows_failed)} could not be read` : "", "."));
       if (!running) {
         const name = input({ sm: true, placeholder: "a name used in the document", "aria-label": "Only for one name" });
         const nameBtn = button({ sm: true, onClick: (e) => { const v = name.value.trim(); if (!v) { name.focus(); return; } start(v, e.currentTarget); } }, "Follow this name");
         name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); nameBtn.click(); } });
         body.appendChild(h("div", { class: "btn-row" },
-          left ? button({ kind: chains.length ? "standard" : "main", sm: true, onClick: (e) => start(null, e.currentTarget) }, icon("link", { size: 13 }),
-            st.windows_read ? `Go on where it stopped (${plural(left, "stretch", "stretches")} left)` : "Follow the references in this document") : h("span", { class: "it small" }, icon("circle-check", { size: 13 }), " The AI has read the whole document.")));
-        body.appendChild(fold({}, "Only for one name", h("p", { class: "muted small dv-names-fast" }, "Faster: the AI reads only the passages where the name occurs."), h("div", { class: "row dv-name-row" }, name, nameBtn)));
+          left ? withAI(button({ kind: chains.length ? "standard" : "main", sm: true, onClick: (e) => start(null, e.currentTarget) }, icon("link", { size: 13 }),
+            st.windows_read ? `Go on where it stopped (${plural(left, "stretch", "stretches")} left)` : "Follow the references in this document")) : h("span", { class: "it small" }, icon("check", { size: 13 }), " The AI has read the whole document.")));
+        body.appendChild(fold({}, "Only for one name", h("p", { class: "muted small dv-names-fast" }, "Faster: the AI reads only the passages where the name occurs."), h("div", { class: "row dv-name-row" }, name, withAI(nameBtn))));
+        // where the passages go, once for the panel, at its foot (docs/DESIGN.md 4.4)
+        if (where.where === "cloud" || where.where === "local") body.appendChild(readsLine("the passages it needs", { class: "dv-refs-reads" }));
       }
       if (!chains.length) {
         if (st.windows_read) body.appendChild(h("p", { class: "muted small" }, left ? "No references found yet in the stretches read." : "The AI found no references to follow in this document."));
@@ -1799,7 +1824,7 @@ export async function renderDocument(view, [docId], query) {
         return;
       }
       const btn = button({ sm: true, disabled: running, onClick: (e) => { clear(selBox); start(s.text, e.currentTarget); } }, icon("link", { size: 13 }), `Follow the references to “${shortTitle(s.text, 40)}”`);
-      replace(selBox, notice({ kind: "info", class: "dv-selnote" }, h("div", {}, h("p", {}, `No reference found yet for “${shortTitle(s.text, 60)}”.`), h("div", { class: "btn-row dv-lookup-actions" }, btn))));
+      replace(selBox, notice({ kind: "info", class: "dv-selnote" }, h("div", {}, h("p", {}, `No reference found yet for “${shortTitle(s.text, 60)}”.`), h("div", { class: "btn-row dv-lookup-actions" }, withAI(btn)))));
     }
     load();
     return {

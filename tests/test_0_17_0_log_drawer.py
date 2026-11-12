@@ -55,8 +55,9 @@ def test_the_post_carries_the_subject_and_the_words_match_the_brief():
 def test_button_drawer_and_layout_are_wired():
     # 0.17.0 (design guide): the frame and its button are the drawer component's (lib.js drawer(), drawerButton())
     lib = (STATIC / "lib.js").read_text(encoding="utf-8")
-    assert 'drawer({ id: "logdrawer", title: "Research log"' in JS and "drawerButton({" in JS and "setDrawerOpen(" in JS
+    assert 'drawer({ id: "logdrawer", title: "Research log and team"' in JS and "drawerButton({" in JS and "setDrawerOpen(" in JS
     assert '"aria-expanded"' in lib and '"aria-label": title' in lib and 'h("aside"' in lib
+    assert 'closeLabel: "Close the panel"' in JS  # 0.18: the log and the team
     assert "Escape" in JS and "session(" in JS and "hashchange" in JS and "App.onChange" in JS
     assert "metaKey || e.ctrlKey" in JS
     # the drawer is a column beside the page (reserving its width) from 1000px, floats over it from 861px to 999px
@@ -111,7 +112,7 @@ def test_page_context_in_node(tmp_path):
     # 0.17.0 (design guide): the drawer is built with the components' helpers of lib.js
     (tmp_path / "lib.js").write_text("const n = () => {}; export const App = {}, api = n, h = n, icon = n, clear = n, session = n,"
                                      " fmt = {}, toast = n, showError = n, P = (x) => x, button = n, link = n, textarea = n,"
-                                     " choice = n, drawer = n, drawerButton = n, setDrawerOpen = n;")
+                                     " choice = n, tag = n, drawer = n, drawerButton = n, setDrawerOpen = n;")   # 0.18: tag (the Team tab's count)
     (tmp_path / "run.mjs").write_text(
         'import { pageContext, whenText } from "./views/logdrawer.js";\n'
         f"const cases = {json.dumps(list(NODE_CASES))};\n"

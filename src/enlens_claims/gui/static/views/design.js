@@ -12,9 +12,10 @@ import {
   statusBadge, gradeBadge, codeChip, pageHead, downloadLinks, heatCell, strongerMark,
   button, downloadButton, fileButton, iconButton, link, tag, notice, card, fold, choice, optionCards, input, select,
   textarea, searchField, menu, workState, aiWhere, drawer, drawerButton, personMark, reviewedMark, severityTag, compare,
-  shareState, absentDocument, listRow, listGroup, noticeList,
+  shareState, absentDocument, listRow, listGroup, noticeList, tabs, judgementIcon, readsLine, stopButton, proposalCard, inset,
+  passageNode, foundWords
 } from "../lib.js";
-import { aiTag, viewTabs, featureEyebrow } from "../features.js";
+import { aiTag, withAI, viewTabs, featureEyebrow } from "../features.js";
 
 const HERE = "#/design";   // where a sample's link goes: nowhere else
 
@@ -45,18 +46,32 @@ const side = (...el) => h("div", { class: "dz-side" }, ...el);
 const navEntry = (ic, name, current) => h("a", { href: HERE, "aria-current": current ? "page" : null },
   h("span", { class: "nav-icon" }, icon(ic, { size: 18 })), h("span", {}, name));
 
+// the Display style as a page head draws it (pageHead({ display: true })), without the page's own title id
+const displayTitle = (text) => {
+  const t = pageHead(text, { display: true }).querySelector("h1");
+  t.removeAttribute("id");
+  t.removeAttribute("tabindex");
+  t.setAttribute("role", "presentation");
+  return t;
+};
+
 export async function renderDesign(page) {
   const noop = () => {};
 
   // ---- 3 The identity
   const swatches = COLOURS.map(([name, tokens]) => sample(name, h("div", { class: "dz-swatches" },
     tokens.map((t) => tokenSample("dz-chip", "background-color", t)))));
-  const typeScale = sample("Display, Title, Section, Body, Document text, Small, Group label",
-    h("p", { class: "title-display" }, "Remote work lowers commuting emissions."),
-    // real headings for their look; not headings of this page
-    h("h1", { role: "presentation" }, "Page title"), h("h2", { role: "presentation" }, "Section title"), h("p", {}, "Interface text, 15 px, in the interface face."),
-    h("p", { class: "serif" }, "The documents' own words, in the serif."), h("p", { class: "small muted" }, "Small: help, facts, meta lines."),
-    h("span", { class: "nav-group" }, "Group label"));
+  // each style with its tokens (docs/DESIGN.md 3.2); real headings for their look, not headings of this page
+  const typeScale = [
+    sample("Display · serif, --fs-display, --fw-regular", displayTitle("Remote work lowers commuting emissions.")),
+    sample("Title · --fs-title, --fw-strong", h("h1", { role: "presentation" }, "Page title")),
+    sample("Section · --fs-section, --fw-strong", h("h2", { role: "presentation" }, "Section title")),
+    sample("Body · --fs-body", h("p", {}, "Interface text, in the interface face.")),
+    sample("Document text · serif, --fs-doc", h("p", { class: "serif" }, "The documents' own words, in the serif.")),
+    sample("Small · --fs-small", h("p", { class: "small muted" }, "Help, facts, meta lines.")),
+    sample("Group label · --fs-label, --fw-strong", h("span", { class: "nav-group" }, "Group label")),
+    sample("Lead · --fs-lead: the box a hypothesis is written in (4.8); Fine · --fs-xs: times, a table's header row (4.20)"),
+  ];
 
   // ---- 4.1 to 4.5
   const busy = button({ kind: "main", busy: true, icon: "loader" }, "Checking");
@@ -72,6 +87,24 @@ export async function renderDesign(page) {
     for (const x of tabsDemo.querySelectorAll("a")) x.removeAttribute("aria-current");
     a.setAttribute("aria-current", "page");
   });
+
+  // Settings' tabs, as a sample: a click shows the other tab as current and stays here
+  const settingsTabs = tabs({ label: "A sample of Settings' tabs", current: "model", items: [["model", "AI", HERE, "cloud"], ["basics", "Checking", HERE, "flask"], ["advanced", "Technical", HERE, "sliders"]] });
+  settingsTabs.addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (!a) return;
+    e.preventDefault();
+    for (const x of settingsTabs.querySelectorAll("a")) x.removeAttribute("aria-current");
+    a.setAttribute("aria-current", "page");
+  });
+
+  // Tabs without an address, as a sample: their panel says which is chosen; the arrow keys, Home and End move here too
+  const tabPanel = h("p", { class: "muted small" });
+  const PANEL_WORDS = { log: "The research log's entries would be here.", team: "What came in from your colleagues would be here." };
+  const noAddressTabs = tabs({ label: "A sample of tabs without an address", current: "log", panel: tabPanel,
+    onTab: (key) => { tabPanel.textContent = PANEL_WORDS[key]; },
+    items: [{ key: "log", label: "Research log", icon: "notebook" }, { key: "team", label: "Team", icon: "users" }] });
+  tabPanel.textContent = PANEL_WORDS.log;
 
   // ---- 4.14: page heads as samples (the one title a page has is this page's own, so these give up its id and its
   // place among the headings)
@@ -102,15 +135,7 @@ export async function renderDesign(page) {
   };
   const tabbedDrawer = drawer({ id: "dz-drawer-tabs", title: "Beside the page",
     tabs: [{ key: "log", label: "Research log", icon: "notebook" }, { key: "team", label: "Team", icon: "users" }], current: "log",
-    onTab: (key) => {
-      const tabs = [...tabbedDrawer.querySelectorAll('[role="tab"]')];
-      tabs.forEach((t, i) => {
-        const on = ["log", "team"][i] === key;
-        t.setAttribute("aria-selected", on ? "true" : "false");
-        if (on) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
-      });
-      tabbedDrawer.setSections(tabBodies[key]());
-    },
+    onTab: (key) => tabbedDrawer.setSections(tabBodies[key]()),
     sections: tabBodies.log() });
   for (const d of [drawerDemo, tabbedDrawer]) { d.hidden = false; d.classList.add("dz-drawer"); }
 
@@ -120,7 +145,7 @@ export async function renderDesign(page) {
     h("tbody", {},
       h("tr", {}, h("td", { "data-label": "Hypothesis" }, link({ kind: "title", serif: true, href: HERE }, "Hybrid work improves wellbeing.")),
         h("td", { "data-label": "Answer" }, workState("running", "Checking", 41)), h("td", { class: "num", "data-label": "Excerpts" }, "—"),
-        h("td", { class: "actions" }, button({ kind: "quiet", sm: true, icon: "stop" }, "Stop"))),
+        h("td", { class: "actions" }, stopButton())),
       h("tr", {}, h("td", { "data-label": "Hypothesis" }, link({ kind: "title", serif: true, href: HERE }, "Working from home reduces commuting emissions.")),
         h("td", { "data-label": "Answer" }, statusBadge("contested", { short: true })), h("td", { class: "num", "data-label": "Excerpts" }, "3"),
         h("td", { class: "actions" }, button({ kind: "quiet", sm: true }, "Say why"))))));
@@ -160,7 +185,7 @@ export async function renderDesign(page) {
 
   const sections = [
     section("3.1", "Colour", "Every colour is a token, set for light and dark; each has its meaning.", ...swatches),
-    section("3.2", "Type", "Two faces, two weights, one scale: the serif is for the research's own words.", typeScale),
+    section("3.2", "Type", "Two faces, two weights, one scale: the serif is for the research's own words.", ...typeScale),
     section("3.3", "Space, corners, shadows, icons", "The steps every element is built from.",
       sample("Space: 4, 8, 12, 16, 24, 32 px", ...[1, 2, 3, 4, 5, 6].map((n) => tokenSample("dz-space", "width", `--space-${n}`))),
       sample("Corners: code and keys, tags, every control, cards, dialogs, pills",
@@ -168,7 +193,14 @@ export async function renderDesign(page) {
       sample("Shadows: what hangs from a trigger, what lies over everything (nothing in the page's flow has one)",
         tokenSample("dz-shadow", "box-shadow", "--shadow"), tokenSample("dz-shadow", "box-shadow", "--shadow-lg")),
       sample("Icons: 12 px with small text, 16 on buttons, 18 in the sidebar, 20 in the large badge, 28 in an empty state",
-        ...[12, 16, 18, 20, 28].map((size) => icon("flask", { size })))),
+        ...[12, 16, 18, 20, 28].map((size) => icon("flask", { size }))),
+      sample("Icons with one meaning each: the AI mark's chip; where text goes; needs you; went wrong; done; reviewed by you",
+        aiTag("uses"), h("span", { class: "it" }, icon("cloud", { size: 14 }), "Claude"), h("span", { class: "it" }, icon("house", { size: 14 }), "this computer"),
+        h("span", { class: "it" }, icon("alert-triangle", { size: 14 }), "needs you"), h("span", { class: "it" }, icon("alert-circle", { size: 14 }), "went wrong"),
+        h("span", { class: "it" }, icon("check", { size: 14 }), "done"), personMark(["you"])),
+      sample("The circle family: a judgement's own icons, only in a badge or a grade said in a dense place",
+        ...["supports", "partially_supports", "refutes", "none"].map((g) => judgementIcon(g, 16)),
+        ...["contested", "uncertain"].map((s) => judgementIcon(s, 16)))),
 
     section("4.1", "Buttons", "Pressing it does something. Every button has an edge at rest.",
       sample("Kinds: main, standard, quiet, danger (the confirming red one is in 4.16)",
@@ -198,14 +230,19 @@ export async function renderDesign(page) {
 
     section("4.4", "The AI mark and the AI line", "Does this use the AI (the chip), and where text goes (the cloud or the house).",
       sample("The AI mark: three values", aiTag("uses"), aiTag("optional"), aiTag("none")),
-      sample("A page's eyebrow, a button with its mark", featureEyebrow("check"),
-        h("span", { class: "with-ai" }, button({ kind: "main" }, "Check 3"), aiTag("uses"))),
+      sample("A page's eyebrow", featureEyebrow("check")),
+      sample("A button that sends text to an AI, with its mark (withAI())", ...withAI(button({ sm: true }, "Read more excerpts"))),
+      sample("A row of such buttons: one mark, after the last", ...withAI(button({ sm: true }, "Ask a stronger model"), button({ sm: true }, "Get a second opinion"))),
+      sample("The AI line of the AI chosen in Settings (readsLine())", readsLine("the excerpts again")),
       sample("The AI line, once per card", aiWhere("Claude, on your plan, reads the excerpts it needs."),
         aiWhere("A model on this computer reads the excerpts; nothing leaves it.", "local"),
         aiWhere("No AI model is set up yet: set one up in Settings › AI.", "attention"))),
 
     section("4.5", "View tabs", "Other views of this place, each with its address; the current one teal on the tabs' line.",
-      h("div", { class: "dz-block" }, tabsDemo)),
+      sample("A place's views (viewTabs())", h("div", { class: "dz-block" }, tabsDemo)),
+      sample("Settings' tabs (tabs())", h("div", { class: "dz-block" }, settingsTabs)),
+      sample("Tabs without an address (a drawer's): buttons with the same look; Left and Right, Home and End move between them",
+        h("div", { class: "dz-block" }, noAddressTabs, tabPanel))),
 
     section("4.6", "Choices", "One of a few values, shown in place; or a filter of a list.",
       sample("One of a few values", choice({ label: "Show", value: "cards", options: [["cards", "Cards"], ["table", "Table"]] })),
@@ -217,7 +254,7 @@ export async function renderDesign(page) {
       optionCards({ label: "Who may read new documents", value: "cloud", options: [
         { value: "cloud", icon: "cloud", title: "Claude may read them", text: "The excerpts a check needs go to Claude." },
         { value: "local", icon: "house", title: "Only a local AI", text: "A model on this computer reads them." },
-        { value: "none", icon: "cpu", title: "No AI", text: "You judge them yourself." }] }),
+        { value: "none", icon: "eye-off", title: "No AI", text: "You judge them yourself." }] }),
       sample("With real radio inputs (a form's question), a tag and a foot line",
         optionCards({ name: "dz-route", label: "Which AI reads the documents", value: "claude_code", options: [
           { value: "claude_code", icon: "cloud", title: "Claude Code", tag: "Recommended", text: "Claude reads the excerpts on your own Claude plan.", foot: [icon("cloud", { size: 12 }), "Only the passages inside the tasks go to Anthropic"] },
@@ -241,23 +278,35 @@ export async function renderDesign(page) {
       sample("Answers", ...["supported", "partially_supported", "contested", "contradicted", "uncertain", "unsupported", "no_passages"].map((s) => statusBadge(s, { short: true }))),
       sample("Grades of one excerpt", gradeBadge("supports"), gradeBadge("partially_supports"), gradeBadge("refutes"), gradeBadge(null)),
       sample("Not counted: the AI was less sure than your strictness", gradeBadge("supports", true)),
+      sample("A grade said in a dense place (a table of excerpts, the answers' counts): its icon and words, grey",
+        h("span", { class: "it" }, judgementIcon("supports"), "Supports, 85% sure"), h("span", { class: "it" }, judgementIcon("refutes"), "1 contradict")),
       sample("The large answer of a result page", statusBadge("contradicted", { size: "lg", text: "Contradicted by your documents" }))),
 
     section("4.10", "Tags and counts", "A fact about an item; never pressed.",
       sample("A fact, a code, a count", tag({ icon: "house" }, "Only a local AI"),
-        codeChip("SDG", "13.2", "Integrate climate change measures into national policies"), tag({ kind: "count" }, "12")),
+        codeChip("SDG", "13.2", "Integrate climate change measures into national policies"), tag({ kind: "count" }, "12 passages")),
       sample("A fact that needs you", tag({ kind: "attention" }, "very short: is this the whole text?")),
       sample("A tag that explains itself", strongerMark("partially_supported", { changed: 2 })),
-      sample("Person marks: you, a colleague with a role, several", personMark(["you"]), personMark(["Anna de Vries"], { role: "Owner" }),
-        personMark(["you", "Anna de Vries", "Ben Okafor"])),
+      sample("Person marks in a row that names the person: you, with a role, several (Anna de Vries is AV), one word (Cleo is C)",
+        personMark(["you"]), personMark(["Anna de Vries"], { role: "Owner" }), personMark(["you", "Anna de Vries", "Ben Okafor"]), personMark(["Cleo"])),
+      sample("A person mark that stands alone shows the name: short, full, with what they did",
+        personMark(["Anna de Vries"], { name: "short" }), personMark(["Anna de Vries"], { name: "full" }),
+        personMark(["Anna de Vries"], { name: "short", prefix: "Changed by" })),
       sample("Reviewed, and partly reviewed (in words: no dashed edge)", reviewedMark(["you"]), reviewedMark(["you"], true)),
-      sample("A count beside a name says what it counts", h("span", { class: "it" }, icon("file-text", { size: 12 }), link({ kind: "title", serif: true, href: HERE }, "Policy brief")), tag({ kind: "count" }, "4 passages")),
+      sample("A count beside a name says what it counts", link({ kind: "title", serif: true, href: HERE }, icon("file-text", { size: 12 }), " Policy brief"), tag({ kind: "count" }, "4 passages")),
       sample("A severity: low, medium, high (never a judgement's colour)", severityTag("low"), severityTag("medium"), severityTag("high"))),
 
     section("4.11", "Cards", "One thing, or one task, held together.",
-      card({ title: "A card", help: helpMark("About cards", "One thing, or one task, held together."), action: button({ kind: "quiet", sm: true }, "One action") },
-        h("p", {}, "Its head: a title and at most a help mark and one action. A card holds at most one box, never a card."),
-        aiWhere("A card that holds AI actions ends with its AI line.")),
+      sample("A card: its head a title, at most a help mark and one action",
+        card({ title: "A card", help: helpMark("About cards", "One thing, or one task, held together."), action: button({ kind: "quiet", sm: true }, "One action") },
+          h("p", {}, "Its head (card({ title, help, action })): a title and at most a help mark and one action. A card holds at most one box, never a card."))),
+      sample("A card with AI actions: one AI mark for its row, its AI line last",
+        card({ title: "A card with AI actions", titleId: "dz-ai-card-h" },
+          h("div", { class: "btn-row" }, withAI(button({ sm: true }, "Ask a stronger model"), button({ sm: true }, "Get a second opinion"))),
+          aiWhere("A card that holds AI actions ends with its AI line."))),
+      sample("The one box a card may hold (inset()): one of a list in a card, and one not in force yet (tentative)", card({ as: "div" },
+        h("ul", { class: "stack dz-list" }, inset({ as: "li" }, link({ kind: "title", serif: true, href: HERE }, "Commuting"), h("span", { class: "muted small" }, " · the same thing, said by 4 documents")),
+          inset({ as: "li", tentative: true }, link({ kind: "title", serif: true, href: HERE }, "Office energy"), h("span", { class: "muted small" }, " · proposed by the AI, not accepted"))))),
       sample("The small card, one of many in a list", card({ sm: true, as: "div" }, h("p", {}, "A note: its words, where it is, what can be done with it."))),
       sample("A card that folds", card({ as: "details" }, h("summary", {}, icon("sliders", { size: 14 }), "Codebook settings"), h("p", {}, "The card's body, shown when it is open.")))),
 
@@ -265,23 +314,25 @@ export async function renderDesign(page) {
       notice({ kind: "info" }, h("p", {}, "A fact to keep in mind before going on.")),
       notice({ kind: "done" }, h("p", {}, "Ollama is installed and running.")),
       notice({ kind: "attention" }, h("p", {}, "3 documents need a look."), h("p", {}, button({ sm: true }, "Look at them"))),
-      notice({ kind: "error" }, h("p", {}, "The documents could not be read.")),
+      notice({ kind: "error", live: false }, h("p", {}, "The documents could not be read.")),
       notice({ kind: "info" }, h("p", {}, h("strong", {}, "Add documents first. "), "Search works on the documents of this project."),
         h("p", {}, link({ kind: "next", href: HERE }, "Add documents on the Documents page")))),
 
     section("4.13", "Empty states", "Nothing here yet, and the one step that fills it.",
       emptyState("flask", "No answers yet", "Check a hypothesis and its answer appears here, with its quotes. The work is done on another page: a next-step link.",
         link({ kind: "next", href: HERE }, "Check a hypothesis")),
-      emptyState("tag", "No codes yet", "Which codes each document addresses. The work is done here: one main button, with its AI mark.",
-        h("span", { class: "with-ai" }, button({ kind: "main" }, "Find the codes by keywords"), aiTag("none")))),
+      emptyState("tag", "No codes yet", "Which codes each document addresses. The work is done here: one main button.",
+        button({ kind: "main" }, "Find the codes by keywords"))),
 
     section("4.14", "Page heads", "Where you are and what the page is for.",
       sample("A place: the section and its AI mark, the title, one line; at the right only actions",
         sampleHead("Hypotheses", { eyebrow: featureEyebrow("check"), sub: "Check one hypothesis or a list against the 3 documents, and judge each answer by its quotes.",
           actions: downloadLinks([{ text: "Excel (.xlsx)", onClick: noop }, { text: "CSV", onClick: noop }]) })),
-      sample("One thing: a back link, its name in the Display serif",
-        sampleHead("Remote work lowers commuting emissions.", { eyebrow: link({ kind: "back", href: HERE }, "All hypotheses"), titleClass: "title-display",
-          sub: "Checked 4 Nov 2026, 19:36" }))),
+      sample("One thing: a back link, its name in the Display serif, its facts; a way to another page in the line under the title",
+        sampleHead("Remote work and commuting", { back: { href: HERE, text: "All themes" }, display: true,
+          sub: link({ kind: "next", href: HERE }, "Check a hypothesis about this theme"),
+          facts: ["Theme 3", "42 passages from 5 documents", "Named by the AI"],
+          actions: [button({ sm: true }, "Rename…"), button({ kind: "danger", sm: true }, "Remove…")] }))),
 
     section("4.15", "Toasts", "Something just happened: saved, copied, could not be done.",
       sample("Show one", button({ kind: "quiet", onClick: () => toast("Saved.", "ok") }, "A toast"),
@@ -313,12 +364,12 @@ export async function renderDesign(page) {
       sample("Rows grouped by person or day: who, the item's title link, a quiet second line, when, one or two actions",
         listGroup("Anna de Vries", listRow({ person: personMark(["Anna de Vries"]), title: "Remote work lowers commuting emissions.", href: HERE, time: "17:26",
           actions: [button({ kind: "quiet", sm: true }, "Accept"), button({ kind: "quiet", sm: true }, "Decline")] }),
-        listRow({ person: personMark(["Ben Okafor"], { role: "Collaborator" }), title: "Ben Okafor", sub: "ENLENS 0.18.0" }),
-        listRow({ person: personMark(["Cleo Ma"]), title: "Cleo Ma", sub: "Her copy needs ENLENS 0.18.1 or newer", warn: true })))),
+        listRow({ person: personMark(["Ben Okafor"], { role: "Collaborator" }), title: "Ben Okafor", sub: "ENLENS 0.17.0" }),
+        listRow({ person: personMark(["Cleo Ma"]), title: "Cleo Ma", sub: "Cleo's copy needs ENLENS 0.17.1 or newer", warn: true })))),
 
     section("4.21", "Progress and work states", "Work under way, waiting or not running: words and an icon, never a pill.",
-      sample("Running, waiting its turn, not running, needs you, done, did not work", workState("running", "Checking", 41), workState("waiting", "Waiting its turn"),
-        workState("stopped", "Not running"), workState("attention", "The shared folder cannot be reached"), workState("done", "Done"), workState("failed", "Did not work")),
+      sample("Running, waiting its turn, not running, paused by you, settled, needs you, done, did not work", workState("running", "Checking", 41), workState("waiting", "Waiting its turn"),
+        workState("stopped", "Not running"), workState("paused", "Paused"), workState("ended", "Taken back"), workState("attention", "The shared folder cannot be reached"), workState("done", "Done"), workState("failed", "Did not work")),
       sample("A state of work where an answer would be", statusBadge("not_checked")),
       sample("Queued, with its one action", workState("waiting", "Queued: starts when Read the documents has finished"), button({ kind: "quiet", sm: true }, "Cancel")),
       sample("Loading a part of a page", spinner("Loading the works"), h("span", { class: "muted" }, " Loading the works…")),
@@ -330,14 +381,16 @@ export async function renderDesign(page) {
       fold({ sm: true }, "Technical details", h("p", { class: "small muted" }, "The small kind, in dense places."))),
 
     section("4.23", "Quotes and highlights", "Marks in the documents' own words, each with one look.",
-      sample("The quote the AI found",
-        h("p", { class: "serif" }, "Commuting fell by a fifth. ", h("mark", { class: "quote" }, "Remote work lowers commuting emissions"), ", especially for car commuters.")),
+      sample("The quote the AI found: passageNode()",
+        passageNode("Commuting fell by a fifth. Remote work lowers commuting emissions, especially for car commuters.", 27, 65, "p", "serif")),
       sample("Your highlights, one with a note",
         h("p", { class: "serif" }, h("mark", { class: "hl hl-yellow" }, "Yellow"), " ", h("mark", { class: "hl hl-green" }, "green"), " ",
           h("mark", { class: "hl hl-blue hl-noted" }, "blue, with a note"), " ", h("mark", { class: "hl hl-pink" }, "pink"), ".")),
       sample("Words found by a search or a code; places that name the same thing",
         h("p", { class: "serif" }, "Most ", h("mark", { class: "dv-hit" }, "workers"), " kept two office days. ",
-          h("mark", { class: "dv-ref dv-ref-named" }, "The municipality"), " says ", h("mark", { class: "dv-ref" }, "it"), " will review the rule."))),
+          h("mark", { class: "dv-ref dv-ref-named" }, "The municipality"), " says ", h("mark", { class: "dv-ref" }, "it"), " will review the rule.")),
+      sample("Words found by matching outside the reading view (the words that name a work): foundWords()",
+        h("p", { class: "serif" }, "As shown in ", foundWords("Working from home and wellbeing"), " (2024), most panel members…"))),
 
     section("4.24", "Concordance lines", "Every place some words occur, one line each, the words centred.",
       h("div", { class: "kwic-wrap" }, h("table", { class: "kwic" },
@@ -362,9 +415,11 @@ export async function renderDesign(page) {
         actions: [button({ sm: true }, "Keep mine"), button({ sm: true }, "Keep theirs"), button({ kind: "quiet", sm: true }, "Keep both")] })),
 
     section("5.1", "The sidebar", "The places of the app. The live sidebar is beside this page; these are its pieces.",
-      sample("The project switch", side(h("div", { class: "project-switch" }, h("details", {}, h("summary", { "aria-label": "Project: Demo", onClick: (e) => e.preventDefault() },
-        icon("folder", { size: 16 }), h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"), h("span", { class: "ps-name-text" }, "Demo")),
-        icon("chevron-down", { size: 14 })))))),
+      sample("The project switch", side(h("div", { class: "project-switch" }, menu({ label: "Project: Demo", listClass: "ps-menu",
+        trigger: [icon("folder", { size: 16 }), h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"),
+          h("span", { class: "ps-name-text" }, "Demo")), icon("chevron-down", { size: 14 })],
+        items: [{ text: "Demo", icon: "folder", current: true, meta: "3 documents · 3 answers" }, "sep",
+          { text: "New project…", icon: "plus" }, { text: "Manage projects", icon: "sliders", href: HERE }] })))),
       sample("Entries: a place, the current place; a group label with its AI mark",
         side(h("nav", { class: "nav", "aria-label": "A sample of the places" }, navEntry("grid", "Overview"), navEntry("book-open", "Documents", true),
           h("span", { class: "nav-group", role: "presentation" }, "Explore", aiTag("optional")), navEntry("text-search", "Search"))))),
@@ -374,7 +429,7 @@ export async function renderDesign(page) {
       sample("No AI can run yet: the attention look", side(aiCard("privacy-setup", "alert-triangle", "No AI model set up yet", "Exploring works; checking needs one"))),
       sample("Work running", side(workBox("running", h("span", { class: "running-dot", "aria-hidden": "true" }), "Check", "41 s", "and 1 more running",
         h("span", { class: "work-who" }, icon("cloud", { size: 12 }), "Claude")))),
-      sample("Work not running: one action", side(workBox("stalled", icon("pause", { size: 14 }), "Not running", null, "2 tasks wait for Claude", null,
+      sample("Work not running: one action", side(workBox("stalled", icon("pause", { size: 14 }), "Not running", null, "2 tasks waiting", null,
         button({ kind: "main", sm: true, class: "work-act" }, icon("play", { size: 12 }), "Start")))),
       sample("The last row: Settings, Quit, the theme", side(lastRow(button({ kind: "quiet", sm: true }, icon("power", { size: 13 }), h("span", {}, "Quit"))))),
       sample("An update waits: it takes Quit's place", side(lastRow(button({ kind: "main", sm: true }, icon("arrow-up", { size: 13 }), h("span", {}, "Update")))))),
@@ -388,13 +443,15 @@ export async function renderDesign(page) {
           textarea({ hyp: true, rows: 2, id: "dz-hyp", placeholder: "A hypothesis, or several: one per line" }),
           h("div", { class: "hint-row" }, h("span", { class: "hyp-hint-main" }, "One sentence that could be true or false; for several, one per line."),
             h("span", { class: "hyp-hint-side" }, fileButton({ kind: "quiet", icon: "upload" }, h("input", { type: "file" }), "Load a spreadsheet (CSV) or text file")))),
-        h("div", { class: "btn-row hyp-actions" }, button({ kind: "main", icon: "flask" }, "Check 3"), button({ icon: "eye" }, "Look before checking"), aiTag("uses")),
-        aiWhere("Claude, on your plan, reads the excerpts it needs.")),
+        h("div", { class: "btn-row hyp-actions" }, withAI(button({ kind: "main", icon: "flask" }, "Check 3"), button({ icon: "eye" }, "Look before checking"))),
+        readsLine("the excerpts it needs", { class: "hyp-reads" })),
       answersTable()),
 
     section("5.5", "The pieces of working together", "Built from the elements above; none has a look of its own.",
       sample("Sharing: a fact and its action", shareState("private"), button({ sm: true }, "Share"),
         shareState("shared"), button({ kind: "quiet", sm: true }, "Unshare"), shareState("withdrawn")),
+      sample("Who, where nothing else names them: a shared item's maker, a changed-by line (the name beside the mark)",
+        shareState("shared"), personMark(["Anna de Vries"], { name: "short", prefix: "By" }), personMark(["Ben Okafor"], { name: "short", prefix: "Changed by" })),
       sample("A document not on this computer", absentDocument("Commuting less, emitting less?", { onAdd: noop })),
       sample("Sync states", workState("done", "Synced 3 minutes ago"), workState("running", "Syncing"), workState("stopped", "Offline"),
         workState("attention", "The shared folder cannot be reached"), workState("attention", "Anna's copy needs a newer ENLENS")),
@@ -404,24 +461,71 @@ export async function renderDesign(page) {
         switchControl("Keep documents marked Only a local AI or No AI out of the shared folder", true, { help: "Colleagues then see your judgements and notes on them, but not their text. Turn it off only if every colleague may read every document. It changes nothing on this computer." }),
         h("div", { class: "btn-row" }, button({ kind: "main" }, "Share this project")),
         aiWhere("Your judgements, notes and the log go into this folder; your documents' text stays on this computer.", "folder")))),
-      sample("Rows in the drawer: section 4.20's list rows", h("p", { class: "muted small" }, "listGroup() and listRow(), grouped by person or by day.")),
+      sample("Rows in the drawer, grouped by person or by day", h("div", { class: "dz-block" },
+        listGroup("Today", listRow({ person: personMark(["Anna de Vries"]), title: "Remote work lowers the quality of public services.", serif: true, href: HERE, time: "10:02",
+          actions: [button({ kind: "quiet", sm: true }, "Say why")] }),
+        listRow({ person: personMark(["Ben Okafor"]), title: "Ben Okafor", sub: "ENLENS 0.16.1: needs a newer ENLENS to read your changes", warn: true, time: "09:40" })))),
+      sample("News since last time: the tab's count, What came in, Seen before", h("div", { class: "dz-block" },
+        tabs({ label: "The drawer's tabs", items: [{ key: "log", label: "Research log", icon: "notebook" }, { key: "team", label: "Team", icon: "users", count: "3 new" }], current: "team", onTab: noop }),
+        listGroup({ text: "What came in", action: button({ kind: "quiet", sm: true, icon: "check" }, "Mark as seen") },
+          listRow({ person: personMark(["Anna de Vries"]), title: "Anna judged 3 excerpts of “Hybrid work improves wellbeing”", href: HERE, time: "10:02" }),
+          listRow({ person: personMark(["Ben Okafor"]), title: "Ben added a note to “Rush hour is back in Rivermouth”", href: HERE, time: "09:15" })),
+        fold({ sm: true }, "Seen before: 12 changes", listGroup("Yesterday",
+          listRow({ person: personMark(["Anna de Vries"]), title: "Anna renamed the theme “Commuting”", href: HERE, time: "16:40" }))))),
+      sample("Background work you steer: Sync now, queued with Cancel, Pause, how often; a setting on because of a colleague",
+        h("div", { class: "stack" },
+          h("div", { class: "btn-row" }, button({ sm: true, icon: "refresh" }, "Sync now"), workState("waiting", "Queued: starts when Read the documents has finished"),
+            button({ kind: "quiet", sm: true }, "Cancel")),
+          h("div", { class: "btn-row" }, button({ kind: "quiet", sm: true, icon: "pause" }, "Pause this project"), button({ kind: "quiet", sm: true, icon: "pause" }, "Pause all projects"),
+            workState("paused", "Paused: nothing is synced until you go on")),
+          field("Sync", select({}, ["Every 5 minutes", "Every 15 minutes", "Every hour", "Only when I press Sync now"].map((t) => h("option", {}, t)))),
+          switchControl("Keep documents marked Only a local AI or No AI out of the shared folder", true, { disabled: true,
+            help: [personMark(["Ben Okafor"]), " On because of Ben: Ben's copy keeps these documents out, so the shared folder does for everyone. Ask Ben to turn it off."] }))),
+      sample("Owner actions on a person row: you own the project; the owner has gone; no owner yet", h("div", { class: "dz-block" },
+        listGroup("People in this project",
+          listRow({ person: personMark(["Sam Ortiz"], { role: "Owner" }), title: "Sam Ortiz (you)", sub: "ENLENS 0.17.0", actions: [menu({ text: "Hand over…", label: "Hand over: choose a person",
+            items: [{ text: "Anna de Vries", icon: "user" }, { text: "Ben Okafor", icon: "user" }] })] }),
+          listRow({ person: personMark(["Anna de Vries"], { role: "Collaborator" }), title: "Anna de Vries", sub: "ENLENS 0.17.0" }),
+          listRow({ person: personMark(["Ben Okafor"], { role: "Collaborator" }), title: "Ben Okafor", sub: "ENLENS 0.16.1" })),
+        listGroup("People in another project, whose owner has gone",
+          listRow({ person: personMark(["Cleo Ma"], { role: "Owner" }), title: "Cleo Ma", sub: "Has not synced for 40 days: the owner has gone", warn: true,
+            actions: [button({ sm: true }, "Take over…")] }),
+          listRow({ person: personMark(["Sam Ortiz"], { role: "Collaborator" }), title: "Sam Ortiz (you)", sub: "ENLENS 0.17.0" })),
+        h("div", { class: "btn-row" }, button({ sm: true }, "Become the owner"), h("span", { class: "muted small" }, "in a project that has no owner yet")))),
       sample("Problems with the shared folder, one notice each", noticeList([
         { kind: "attention", text: "The shared folder cannot be reached: is the drive connected, or are you offline?" },
         { kind: "info", person: personMark(["Anna de Vries"]), text: "Anna's changes are still arriving: try again in a few minutes." },
         { kind: "error", text: "The last round of syncing did not finish.", action: button({ sm: true }, "Try again") },
         { kind: "attention", person: personMark(["Ben Okafor"]), text: "Ben's copy needs a newer ENLENS." }])),
-      sample("A proposal, for the owner and for the one who proposed it", h("div", { class: "stack" },
-        card({ title: "Anna proposes: merge two codes", action: severityTag("medium") },
-          h("p", {}, "“Loneliness” and “Isolation” become one code."),
-          h("div", { class: "btn-row" }, button({ kind: "main", sm: true }, "Accept"), button({ kind: "quiet", sm: true }, "Decline"))),
-        card({ title: "You propose: rename a theme", action: severityTag("low") },
-          h("p", {}, "“Commuting” becomes “Commuting and travel”."),
-          h("p", { class: "muted small" }, workState("waiting", "Waiting for the owner"))))),
+      sample("Proposals in full: grouped as waiting, decided and taken back; the owner's side and the proposer's",
+        h("div", { class: "dz-block" },
+          switchControl("Accept added documents at once", false, { help: "Documents a collaborator adds join the project without a proposal. Other changes still wait for you." }),
+          listGroup("Waiting",
+            proposalCard({ what: "Merge “Loneliness” into “Isolation”", person: personMark(["Anna de Vries"], { name: "short" }), time: "Today 10:02", severity: "medium",
+              reason: "They are coded on the same passages in every interview.", onAccept: noop, onDecline: noop }),
+            proposalCard({ what: "Rename the theme “Commuting”", person: personMark(["you"], { name: "short" }), time: "Today 09:30", severity: "low", side: "proposer",
+              reason: "Two of its passages are about business travel.", onTakeBack: noop })),
+          listGroup("Decided",
+            proposalCard({ what: "Remove the code “Other”", person: personMark(["you"], { name: "short" }), time: "Yesterday", severity: "high", side: "proposer", state: "declined",
+              declined: "the codebook is shared with another study" })),
+          listGroup("Taken back",
+            proposalCard({ what: "Add the document “Annual report 2024”", person: personMark(["Ben Okafor"], { name: "short" }), time: "Monday", severity: "low", state: "taken-back" })))),
+      sample("A medium change with a longer reason: the severity stays at the head's right, the reason wraps under who and when",
+        h("div", { class: "dz-block" }, listGroup("Waiting",
+          proposalCard({ what: "Split the code “Wellbeing” in two", person: personMark(["Ben Okafor"], { name: "short" }), time: "Today 11:40", severity: "medium",
+            reason: "Half of its passages are about sleep and exercise, the other half about stress at work.", onAccept: noop, onDecline: noop })))),
+      sample("An item's proposal state in a list, and a move that waits for its person", h("div", { class: "dz-block" },
+        listGroup("Documents",
+          listRow({ title: "Commuting less, emitting less?", serif: true, href: HERE, sub: [workState("waiting", "Proposed: waiting for the owner"), " · ", link({ kind: "jump", onClick: noop }, "See the proposal")] }),
+          listRow({ title: "Annual report 2024", serif: true, href: HERE, sub: [workState("ended", "Declined by the owner"), " · ", link({ kind: "jump", onClick: noop }, "See why")] }),
+          listRow({ title: "Rush hour is back in Rivermouth", serif: true, href: HERE, sub: "2 results would not find their place", warn: true, actions: [button({ sm: true }, "Move it anyway…")] })),
+        noticeList([{ kind: "attention", person: personMark(["Anna de Vries"]), text: "Moving “Rush hour is back in Rivermouth” waits for Anna: 2 of Anna's results would not find their place.",
+          action: h("div", { class: "btn-row" }, button({ sm: true }, "Move it anyway…")) }]))),
       sample("Two versions of one item", h("p", { class: "muted small" }, "A comparison: section 4.27.")),
       sample("A report, a warning before an action, a refusal",
         notice({ kind: "done" }, h("p", {}, "12 changes came in from Anna."), fold({ sm: true }, "What came in", h("p", { class: "small" }, "3 judgements, 2 notes, 7 log entries."))),
         notice({ kind: "attention" }, h("p", {}, "Unsharing takes your work out of the shared folder for everyone.")),
-        notice({ kind: "error" }, h("p", {}, "Only the owner can remove a shared codebook."))),
+        notice({ kind: "error", live: false }, h("p", {}, "Only the owner can remove a shared codebook."))),
       sample("Two downloads for two audiences", downloadLinks([{ text: "For your colleagues (.zip)", onClick: noop }, { text: "To move to another computer (.zip)", onClick: noop }]))),
   ];
 

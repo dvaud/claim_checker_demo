@@ -1573,6 +1573,12 @@ def _store_document(ws: Workspace, doc: "Document", raw: RawDoc, f: Path, dec: d
                     ai_access, (ai_note or "")[:300] or None, READER, __version__))
         # 0.14: the file added again on purpose: a colleague's copy of it may come in again
         cx.execute("DELETE FROM sync_removed WHERE kind='document' AND key=?", (doc.doc_id,))
+        try:  # 0.18: a document a colleague keeps out of the shared folder is as strict here as in their copy, at once
+            from .sync.folder import hold_settings
+
+            hold_settings(ws, cx, [doc.doc_id])
+        except ImportError:  # an app without `sync`
+            pass
         store_reading(cx, doc)
         ws.bump_corpus(cx)
 

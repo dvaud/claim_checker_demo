@@ -227,8 +227,9 @@ def test_page_files():
     from _static import all_css  # 0.17.0: reads the cascade, so it holds when the rules move
 
     css = all_css()
-    # 0.17.0 (design guide): Update is a small main button (app.js), so .update-ready is a hook with no look of its own
-    assert 'btn.className = "btn btn-primary btn-sm update-ready"' in (STATIC / "app.js").read_text(encoding="utf-8") and ".update-popup" in css
+    # 0.17.0 (design guide): Update is a small main button (app.js): the button's kind changes through setButtonKind()
+    # (lib.js), so the page never spells a button's classes
+    assert 'setButtonKind(btn, "main");' in (STATIC / "app.js").read_text(encoding="utf-8") and ".update-popup" in css
 
 
 def test_the_docs_say_so():

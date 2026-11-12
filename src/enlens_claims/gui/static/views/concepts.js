@@ -1,9 +1,10 @@
 // Concepts (F3): a searchable glossary of the terms the documents use, grouped into concepts, and the card of one
 // concept: its wordings, the documents that discuss it, the passages as concordance lines, and related concepts
 // (a person accepts or rejects the links proposed by search by meaning or by the AI).
-import { featureEyebrow, aiTag } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob, button, link, notice, card, tag, input, select, textarea, fold } from "../lib.js";
+import { featureEyebrow, withAI } from "../features.js";
+import { App, api, h, icon, replace, clear, toast, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob, button, link, notice, card, tag, input, select, textarea, fold, readsLine, inset } from "../lib.js";
 import { MiniJob, jobCard as jobCardOf } from "./progress.js";
+import { shareInline, sharingOf } from "./share.js";   // 0.18 (L1)
 
 const PAGE = 50;       // glossary entries per page
 const LINES = 50;      // concordance lines per page
@@ -166,7 +167,7 @@ export async function renderConcepts(view, params, query) {
     judgeBox.appendChild(fold({ class: "section" }, "Terms that may mean the same",
       card({ as: "div", class: "ct-pairs-card" },
         h("p", { class: "ct-pairs-lead" }, "With search by meaning, the glossary proposes pairs of terms that may mean the same (shown as “possibly the same” on a concept). Accept or reject them on the concept. The AI can judge the pairs nobody has judged yet; it never compares all the terms."),
-        h("div", { class: "btn-row" }, h("span", { class: "with-ai" }, btn, aiTag("uses"))), mini)));
+        h("div", { class: "btn-row" }, withAI(btn)), readsLine("the passages where the two terms occur"), mini)));
   }
 
   // 0.17: what the glossary and the key terms of themes leave out: each language's common words (a language can be
@@ -258,10 +259,11 @@ export async function renderConcept(view, [termId], query) {
   let refs = query.refs === "1";
   let allDocs = false;
   let c;
+  let linkShares = new Map();   // 0.18 (L1): the sharing state of links people decided (and the AI judged), by "a|b"
   try { c = await fetchCard(); }
   catch (e) {
     if (e.status === 404) {
-      view.appendChild(pageHead("Concept", { eyebrow: link({ kind: "back", href: "#/concepts", class: "it" }, "All concepts") }));
+      view.appendChild(pageHead("Concept", { back: { href: "#/concepts", text: "All concepts" } }));
       view.appendChild(emptyState("search-x", "No such concept", "The glossary was made again since this link was made, or the term no longer occurs often enough. Find it in the glossary.", link({ kind: "back", href: "#/concepts" }, "Go to the glossary")));
       return;
     }
@@ -269,7 +271,9 @@ export async function renderConcept(view, [termId], query) {
   }
 
   async function fetchCard() {
-    return api("GET", `${base}/concepts/${P(termId)}?offset=${offset}&limit=${LINES}${refs ? "&refs=1" : ""}`);
+    const [card, shares] = await Promise.all([api("GET", `${base}/concepts/${P(termId)}?offset=${offset}&limit=${LINES}${refs ? "&refs=1" : ""}`), sharingOf("link")]);
+    linkShares = shares;
+    return card;
   }
 
   const head = h("div");
@@ -289,11 +293,11 @@ export async function renderConcept(view, [termId], query) {
     // a concept is the research's own words: its title in the Display serif, a back link for the eyebrow; its ways on
     // are links, so they sit in the line under the title (a page head's right holds only actions: DESIGN.md 4.14)
     replace(head, pageHead(c.label, {
-      eyebrow: link({ kind: "back", href: "#/concepts" }, "All concepts"),
-      titleClass: "title-display ct-title",
-      sub: [[plural(c.mentions, "mention"), plural(c.passages, "passage"), plural((c.documents || []).length, "document"),
-        c.wordings.length > 1 ? `${c.wordings.length} wordings` : null].filter(Boolean).join(" · "),
-      h("span", { class: "ct-ways" }, link({ kind: "next", href: checkHref(cap(c.label) + " ") }, "Check a hypothesis about this concept"),
+      back: { href: "#/concepts", text: "All concepts" }, display: true,
+      titleClass: "ct-title",
+      facts: [plural(c.mentions, "mention"), plural(c.passages, "passage"), plural((c.documents || []).length, "document"),
+        c.wordings.length > 1 ? `${c.wordings.length} wordings` : null],
+      sub: [h("span", { class: "ct-ways" }, link({ href: checkHref(cap(c.label) + " ") }, "Check a hypothesis about this concept"),
         link({ href: searchHref(c.label) }, "Search for it"))],
     }));
     document.title = `${c.label} · Concepts · ENLENS`;
@@ -319,7 +323,7 @@ export async function renderConcept(view, [termId], query) {
 
   // ---- wordings, and other wordings the AI proposes
   function wordingsCard() {
-    const list = h("ul", { class: "ct-wordings" }, c.wordings.map((w) => h("li", {},
+    const list = h("ul", { class: "ct-wordings" }, c.wordings.map((w) => inset({ as: "li" },
       link({ kind: "title", serif: true, href: searchHref(w.label), class: "ct-wording", title: `Search the documents for “${w.label}”` }, w.label),
       h("span", { class: "muted small" }, `${plural(w.mentions, "mention")} in ${plural(w.documents, "document")}`),
       w.joined_by && w.joined_by.length ? tag({}, `joined by ${[...new Set(w.joined_by.map((s) => JOINED_TEXT[s] || s))].join(" and ")}`) : null,
@@ -358,14 +362,13 @@ export async function renderConcept(view, [termId], query) {
       h("ul", { class: "ct-wordings" }, sug.map((s) => {
         const add = button({ sm: true }, icon("plus", { size: 13 }), "Add as the same");
         add.addEventListener("click", () => saveLink({ a: termId, b: s.term_id, decision: "add", relation: "same" }, add, `“${s.label}” is now a wording of this concept.`));
-        return h("li", {}, link({ kind: "title", serif: true, href: conceptHref(s.term_id), class: "ct-wording" }, s.label),
+        return inset({ as: "li", tentative: true }, link({ kind: "title", serif: true, href: conceptHref(s.term_id), class: "ct-wording" }, s.label),
           h("span", { class: "muted small" }, `${plural(s.mentions, "mention")} in ${plural(s.documents, "document")}`), add,
           button({ kind: "quiet", sm: true, title: "It does not mean the same: it is not proposed again",
             onClick: (e) => saveLink({ a: termId, b: s.term_id, decision: "add", relation: "different" }, e.currentTarget, `“${s.label}” is not proposed again for this concept.`) }, icon("x", { size: 13 }), "Not the same"));
       }))) : null;
-    return card({ class: "section", "aria-labelledby": "ct-w-h" },
-      h("div", { class: "card-head" }, h("h2", { id: "ct-w-h" }, "How the documents write it"), h("span", { class: "with-ai" }, ask, aiTag("uses"))),
-      list, wordJob, sugBox);
+    return card({ class: "section", title: "How the documents write it", titleId: "ct-w-h", action: withAI(ask) },
+      list, wordJob, sugBox, readsLine("passages that name this concept"));
   }
 
   // ---- documents that discuss it
@@ -380,7 +383,7 @@ export async function renderConcept(view, [termId], query) {
       if (again) again.focus();
     });
     const sec = h("section", { class: "section", "aria-labelledby": "ct-d-h" },
-      h("div", { class: "section-title" }, h("h2", { id: "ct-d-h" }, `Documents that discuss it (${docs.length})`)), sw);
+      h("div", { class: "section-title" }, h("h2", { id: "ct-d-h" }, "Documents that discuss it"), h("span", { class: "muted" }, plural(docs.length, "document"))), sw);
     if (!docs.length) { sec.appendChild(emptyState("book-open", "No document mentions it", "The documents may have changed since the glossary was made.")); return sec; }
     if (refs && c.references_total !== undefined) sec.appendChild(h("p", { class: "muted small" }, c.references_total ? `${plural(c.references_total, "reference")} without the name ${c.references_total === 1 ? "refers" : "refer"} to it.` : "No reference without the name was found: the references of these documents may not have been followed yet."));
     sec.appendChild(h("div", { class: "table-wrap ct-docs-table" }, h("table", { class: "table table-responsive ct-docs" },
@@ -440,7 +443,7 @@ export async function renderConcept(view, [termId], query) {
       actions.append(
         button({ sm: true, onClick: (e) => saveLink({ a: lk.a, b: lk.b, decision: "accept" }, e.currentTarget, "Accepted.") }, icon("check", { size: 13 }), lk.relation === "same" ? "Yes, the same" : "Yes, right"),
         button({ kind: "quiet", sm: true, onClick: (e) => saveLink({ a: lk.a, b: lk.b, decision: "reject" }, e.currentTarget, "Rejected.", { undo: true }) }, icon("x", { size: 13 }), lk.relation === "same" ? "No, not the same" : "No"));
-      if (lk.source === "meaning") actions.append(button({ kind: "quiet", sm: true, disabled: jobRunning, onClick: (e) => judgePair(lk, e.currentTarget) }, "Ask the AI"));
+      if (lk.source === "meaning") actions.append(...withAI(button({ kind: "quiet", sm: true, disabled: jobRunning, onClick: (e) => judgePair(lk, e.currentTarget) }, "Ask the AI")));
     } else if (lk.source !== "abbreviation") {
       actions.append(button({ kind: "quiet", sm: true, onClick: (e) => saveLink({ a: lk.a, b: lk.b, decision: "reject" }, e.currentTarget, "Removed.", { undo: true }) }, icon("x", { size: 13 }), "Not right"));
     }
@@ -452,11 +455,13 @@ export async function renderConcept(view, [termId], query) {
         button({ sm: true, onClick: (e) => saveLink({ a: lk.this_term, b: lk.term_id, decision: "change", relation: sel.value }, e.currentTarget, "Changed.") }, "Save")));
     actions.append(change);
     const quotes = [lk.quote_a, lk.quote_b].filter(Boolean);
-    return h("li", { class: "ct-link" + (proposed ? " ct-proposed" : "") },
+    const shared = linkShares.get([lk.a, lk.b].sort().join("|"));   // 0.18: a link a person decided is theirs to share
+    return inset({ as: "li", tentative: !!proposed, class: "ct-link" },
       h("div", { class: "ct-link-main" },
         link({ kind: "title", serif: true, href: conceptHref(lk.term_id), class: "ct-link-name" }, lk.label),
         proposed ? tag({ kind: "attention" }, "not confirmed") : null,
-        h("span", { class: "muted small" }, who.join(" · "))),
+        h("span", { class: "muted small" }, who.join(" · ")),
+        shared ? shareInline(shared, () => reload()) : null),
       quotes.length ? fold({ sm: true, class: "ct-why" }, "The passages the AI pointed to", h("ul", { class: "ct-quotes" }, quotes.map((t) => h("li", { class: "serif" }, "“", t, "”")))) : null,
       actions);
   }
@@ -471,7 +476,7 @@ export async function renderConcept(view, [termId], query) {
       if (!old || (old.state !== "confirmed" && (lk.state === "confirmed" || (lk.confidence || 0) > (old.confidence || 0)))) byPair.set(key, lk);
     }
     const links = [...byPair.values()];
-    const sec = card({ class: "section", "aria-labelledby": "ct-r-h" }, h("div", { class: "card-head" }, h("h2", { id: "ct-r-h" }, "Related concepts")), linkJob);
+    const sec = card({ class: "section", title: "Related concepts", titleId: "ct-r-h" }, linkJob);
     let any = false;
     for (const [rel_, title, help] of GROUPS) {
       const rows = links.filter((l) => l.relation === rel_).sort((x, y) => (x.state === "proposed" ? 0 : 1) - (y.state === "proposed" ? 0 : 1) || x.label.localeCompare(y.label));
@@ -484,6 +489,8 @@ export async function renderConcept(view, [termId], query) {
         h("ul", { class: "ct-links" }, rows.map(linkRow))));
     }
     if (!any) sec.appendChild(h("p", { class: "muted ct-related-empty" }, "No other concept is linked to this one yet. Add a link yourself below."));
+    // the rows' Ask the AI: the card says once, under the rows, where the passages go (docs/DESIGN.md 4.4)
+    if (links.some((l) => l.state === "proposed" && l.source === "meaning")) sec.appendChild(readsLine("the passages where the two terms occur"));
     // add a link of one's own
     const termIn = input({ sm: true, list: "ct-term-list", autocomplete: "off", placeholder: "another term…", "aria-label": "The other term" });
     const dl = h("datalist", { id: "ct-term-list" });
@@ -516,8 +523,8 @@ export async function renderConcept(view, [termId], query) {
     if (tog.length) {
       sec.appendChild(h("div", { class: "ct-group" },
         h("h3", {}, "Often mentioned together"),
-        h("p", { class: "muted small ct-together-help" }, "Concepts that appear in the same passages more often than chance would make them. The number is how many passages they share."),
-        h("div", { class: "colloc" }, tog.map((t, i) => [i ? " · " : null, link({ href: conceptHref(t.term_id), title: `${plural(t.together, "passage")} together, ${t.lift} times more often than chance` }, t.label), " ", tag({ kind: "count" }, String(t.together))]))));
+        h("p", { class: "muted small ct-together-help" }, "Concepts that appear in the same passages more often than chance would make them. The count is how many passages they share."),
+        h("div", { class: "colloc" }, tog.map((t, i) => [i ? " · " : null, link({ href: conceptHref(t.term_id), title: `${plural(t.together, "passage")} together, ${t.lift} times more often than chance` }, t.label), " ", tag({ kind: "count" }, plural(t.together, "passage"))]))));
     }
     return sec;
   }
@@ -539,12 +546,12 @@ export async function renderConcept(view, [termId], query) {
       h("caption", { class: "visually-hidden" }, `Mentions of ${c.label} in their context`),
       h("tbody", {}, lines.map((l) => {
         const href = `#/doc/${encodeURIComponent(l.doc_id)}?q=${l.start}-${l.end}`;
-        const where = `${shortTitle(l.title, 40)}${l.location ? `, ${l.location}` : ""}`;
         return h("tr", {},
           h("td", { class: "kw-left" }, h("span", {}, l.left)),
           h("td", { class: "kw-node" }, h("a", { href, class: "ct-node", title: `Open ${l.title || "the document"}${l.location ? ` at ${l.location}` : ""}` }, h("mark", {}, l.node))),
           h("td", { class: "kw-right" }, l.right),
-          h("td", { class: "kw-where" }, link({ kind: "title", serif: true, href, title: l.title }, where)));
+          h("td", { class: "kw-where kw-where-title" }, link({ kind: "title", serif: true, href, class: "kw-title", title: l.title }, l.title || "untitled"),
+            l.location ? h("span", { class: "kw-place" }, l.location) : null));
       })))));
     { const pg = pager(); if (pg) sec.appendChild(pg); }
     return sec;

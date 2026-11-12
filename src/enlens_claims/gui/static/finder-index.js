@@ -49,7 +49,7 @@ export const ACTIONS = [
   ["Bring in my Zotero library", "in Documents", "#/bibliography", "library", "zotero references citations literature bibtex import collection"],
   ["See my notes and highlights", "in Documents", "#/notes", "highlighter", "highlight annotate annotation memo notes comments"],
   ["Write in the research log", "in Overview", "#/log", "notebook", "diary journal decision audit trail entry record"],
-  ["Choose the AI or set up Claude", "in Settings", "#/settings/model", "cpu", "ai model claude anthropic api key local ollama plan subscription backend"],
+  ["Choose the AI or set up Claude", "in Settings", "#/settings/model", "cloud", "ai model claude anthropic api key local ollama plan subscription backend"],
   ["Work together or share a project", "in Projects", "#/projects", "users", "share colleague team collaborate export import send file together"],
   ["Start a new project", "in Projects", "#/projects", "folder-open", "create project new open switch"],
   ["Open the settings", "in Settings", "#/settings", "sliders", "settings preferences options appearance dark light"],

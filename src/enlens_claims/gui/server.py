@@ -49,6 +49,10 @@ from .api_documents import DocumentsApi
 from .api_explore import ExploreApi
 from .api_record import RecordApi
 from .api_setup import SetupApi
+from .api_folder import FolderApi
+from .api_poller import PollerApi  # 0.18 (L3)
+from .api_owner import OwnerApi  # 0.18 (L2)
+from .api_sharing import SharingApi
 from .app_library import LibraryMixin
 from .app_queue import QueueMixin
 from .api_common import (  # noqa: F401 - the names are importable from here as before
@@ -109,6 +113,14 @@ class App(LibraryMixin, QueueMixin):
         # the new one. None (tests, tools/dev_server.py): read from disk on every request, so page code can be edited
         # without a restart.
         self.frozen_static: dict[str, bytes] | None = None
+        # 0.18 (L3): looks in each project's shared folder every couple of minutes; started by serve(), not by tests
+        from .poller import Poller
+
+        self.poller = Poller(self)
+        # 0.18 (L2): a new reading the owner accepted is made here after the round that brought the decision in
+        from . import api_owner
+
+        self.jobs.ended.append(lambda job: api_owner.after_job(self, job))
 
     def freeze_static(self) -> None:
         self.frozen_static = {f.relative_to(STATIC).as_posix(): f.read_bytes()
@@ -413,6 +425,13 @@ class App(LibraryMixin, QueueMixin):
             d.update(acc.get(d["doc_id"], {}))
             d["bib"] = cites.get(d["doc_id"])
             d["clash"] = clash.get(d["doc_id"])
+        # 0.18 (L2): a document that is only proposed to the owner (or that the owner declined) says so: `proposal`
+        # {"state": "proposed" | "declined" | "waiting", "text"} or None
+        from .. import ownership
+
+        waits = ownership.document_marks(ws)
+        for d in docs:
+            d["proposal"] = waits.get(d["doc_id"])
         return {"documents": docs, "ai_access": access.project_info(ws), "new_reader": ingest.READER,  # 0.15.7
                 "restricted_model": home.restricted_choice(s),
                 "search": embed.status(ws, s.get("embed_model"),
@@ -1446,7 +1465,37 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/codebooks/{P}/copy-here", "post_codebook_copy_here"),
     ("POST", rf"/api/projects/{P}/codebooks/{P}/try", "post_codebook_try"),
     ("POST", rf"/api/projects/{P}/codebooks/{P}/relabel", "post_codebook_relabel"),
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/clashes/{P}", "post_codebook_clash"),  # 0.18
+    # 0.18 (L1): private until shared (api_sharing.py)
+    ("GET", rf"/api/projects/{P}/sharing", "get_sharing"),
+    ("GET", rf"/api/projects/{P}/sharing/(check|themes|codebook|note|log|link)/{P}", "get_sharing_item"),
+    ("POST", rf"/api/projects/{P}/sharing/share", "post_share"),
+    ("POST", rf"/api/projects/{P}/sharing/unshare", "post_unshare"),
+    # 0.18 (L5): the shared folder (api_folder.py)
+    ("GET", rf"/api/projects/{P}/shared-folder", "get_shared_folder"),
+    ("PUT", rf"/api/projects/{P}/shared-folder", "put_shared_folder"),
+    ("DELETE", rf"/api/projects/{P}/shared-folder", "delete_shared_folder"),
+    ("PUT", rf"/api/projects/{P}/shared-folder/keep-out", "put_shared_folder_keep_out"),
+    ("POST", rf"/api/projects/{P}/shared-folder/sync", "post_shared_folder_sync"),
+    # 0.18 (L3): the poller (api_poller.py)
+    ("GET", r"/api/sync-poller", "get_sync_poller"),
+    ("PUT", r"/api/sync-poller", "put_sync_poller"),
+    ("GET", rf"/api/projects/{P}/sync-poller", "get_project_sync_poller"),
+    ("PUT", rf"/api/projects/{P}/sync-poller", "put_project_sync_poller"),
+    ("POST", rf"/api/projects/{P}/sync-poller/seen", "post_project_sync_poller_seen"),
+    # 0.18 (L2): one owner, proposals by severity (api_owner.py)
+    ("GET", rf"/api/projects/{P}/owner", "get_owner"),
+    ("POST", rf"/api/projects/{P}/owner/claim", "post_owner_claim"),
+    ("POST", rf"/api/projects/{P}/owner/hand-over", "post_owner_hand_over"),
+    ("POST", rf"/api/projects/{P}/owner/take-over", "post_owner_take_over"),
+    ("PUT", rf"/api/projects/{P}/owner/settings", "put_owner_settings"),
+    ("POST", rf"/api/projects/{P}/owner/apply", "post_owner_apply"),
+    ("POST", rf"/api/projects/{P}/owner/proposals/{P}/accept", "post_proposal_accept"),
+    ("POST", rf"/api/projects/{P}/owner/proposals/{P}/decline", "post_proposal_decline"),
+    ("POST", rf"/api/projects/{P}/owner/proposals/{P}/take-back", "post_proposal_take_back"),
 ]]
+# 0.18 (L3): changes after which the poller does not bring a round forward (they are rounds, uploads, or its own)
+NOT_A_CHANGE = {"post_shared_folder_sync", "post_upload", "put_project_sync_poller", "post_project_sync_poller_seen"}
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
              "get_page_image",  # 0.15: a picture of a page, in an <img>
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
@@ -1455,7 +1504,8 @@ DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_pr
 # (these may take the token as ?token=, for plain links)
 
 
-class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, SetupApi, RecordApi):
+class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, SetupApi, RecordApi, SharingApi,
+              FolderApi, PollerApi, OwnerApi):
     app: App
     server_version = f"enlens/{__version__}"
     protocol_version = "HTTP/1.1"
@@ -1599,6 +1649,9 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
                         raise ApiError(401, "Missing or wrong token. Reload the page.")
                     args = [unquote(g) for g in mt.groups()]
                     out = getattr(self, name)(*args, q=q) if isinstance(name, str) else name(self, *args, q=q)
+                    if method != "GET" and args and path.startswith("/api/projects/") and path.count("/") > 3 \
+                            and name not in NOT_A_CHANGE:  # 0.18 (L3): a change in the project: a round soon
+                        self.app.poller.touched(args[0])
                     if out is not None:
                         self._json(200, out)
                     return
@@ -1855,11 +1908,13 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True, 
         import webbrowser
 
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    app.poller.start()  # 0.18 (L3)
     try:
         srv.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         print("\nStopped.")
     finally:
+        app.poller.stop()  # 0.18 (L3): no round starts once the app stops
         srv.server_close()
         if launcher:
             from . import launcher as _l

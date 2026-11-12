@@ -30,7 +30,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend { padding: 0; }
 [hidden] { display: none !important; }
 /* the focus ring: on every control, never removed */
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
 /* page titles receive focus after navigation so screen readers announce the page; they are not controls */
 [tabindex="-1"]:focus, [tabindex="-1"]:focus-visible { outline: none; }
 @media (max-width: 860px) {
@@ -52,12 +52,15 @@ legend { padding: 0; }
 }
 @media (min-width: 861px) {
   .main { padding-top: 38px; }   /* room for the drawer's button, the same spot on every page */
+  /* the band the drawer's button sits on: the page's own ground, so what scrolls goes under it, never under the button
+     alone (50 px: the button's 12 px from the top, its height and 8 px) */
+  .main::before { content: ""; position: sticky; top: 0; z-index: 30; display: block; height: 50px; margin: -38px 0 -12px; background: var(--bg); }
 }
 @media (max-width: 1100px) {
   .view { padding: 26px 24px 70px; }
 }
 @media (max-width: 860px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); }   /* never wider than the window: a long project name in the top bar is cut, not pushed out */
   .topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
   .topbar-project { max-width: 45vw; margin-left: auto; overflow: hidden; color: var(--muted); font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
   .brand-small { gap: 6px; padding: 0; font-size: var(--fs-body); font-weight: var(--fw-strong); letter-spacing: .06em; }
@@ -87,7 +90,7 @@ legend { padding: 0; }
 .fields-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 20px; }
 .fields-2 > *, .fields-3 > * { min-width: 0; }
 .section { margin: 28px 0; }
-.section-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.section-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 10px; }
 .section-title .muted { font-size: var(--fs-small); }
 .kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; }
 .kv dt { color: var(--muted); font-size: var(--fs-xs); }
@@ -110,6 +113,6 @@ legend { padding: 0; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 @media print {
-  .sidebar, .topbar, .toasts, .page-head-actions, .more-row, .threshold-ctl, .drawer, .drawer-btn { display: none !important; }
+  .sidebar, .topbar, .toasts, .page-head-actions, .more-row, .threshold-ctl, .drawer, .drawer-btn, .main::before { display: none !important; }
   .shell { grid-template-columns: 1fr; }
 }

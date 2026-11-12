@@ -105,7 +105,8 @@ def test_longer_explanations_sit_in_help_marks():
     pop = LIB[LIB.index("export function popNote("):LIB.index("// A grade with its certainty")]
     assert "r.right > room ? Math.min(r.right - room, r.left - 8) : 0" in pop and "translateX(" in pop
     hist = view("history")
-    assert 'helpMark("About a second opinion", why)' in hist and "For comparison only: the answers do not change." in hist
+    # 0.17.0 (design guide): the help mark stays with the sentence's last words, so it never sits alone on a line
+    assert 'h("span", { class: "nowrap" }, "do not change. ", helpMark("About a second opinion", why))' in hist and "For comparison only: the answers " in hist
     search = view("search")
     assert 'helpMark("What is a passage?"' in search
     assert 'h("p", { class: "muted small", style: { margin: "-4px 0 8px" } }, "A passage is' not in search

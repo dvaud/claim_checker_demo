@@ -72,11 +72,58 @@ export function initLogDrawer() {
   ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add(); } });
   const note = h("p", { class: "muted small", hidden: true });
   const list = h("div", { class: "logdrawer-list", "aria-live": "polite" });
-  const aside = drawer({ id: "logdrawer", title: "Research log", icon: "notebook", control: which, onClose: () => close(true),
-    closeLabel: "Close the research log",
-    sections: [h("div", { class: "log-new" }, ta, h("div", { class: "log-new-foot" }, keptWith, addBtn)), note, list],
+  /* 0.18 Team tab: the drawer's two tabs, Research log and Team (views/team.js, loaded when first shown), in the drawer
+     component's head (docs/DESIGN.md 4.19). The log's sections are the "log" tab's, unchanged; the Team panel is the
+     "team" tab's one section. The drawer's body is the tabs' panel: drawer({ tabs }) makes them with tabs({ onTab, panel }). */
+  let tab = session("logdrawer-tab") === "team" ? "team" : "log";
+  let team = null;             // the Team panel (team.js), made the first time the tab is shown
+  // each tab keeps a heading for a screen reader's list of headings (the tabs show the names)
+  // This page | All filters the log's entries only, so it is the log tab's own (above its entries), not the drawer
+  // head's: with two tabs, the head holds the tabs and the close button
+  const logSections = [h("div", { class: "log-new" }, h("h2", { class: "visually-hidden" }, "Research log"), ta, h("div", { class: "log-new-foot" }, keptWith, addBtn)),
+    h("div", { class: "log-show" }, which, note), list];
+  const teamPanelBox = h("div", { class: "logdrawer-team" }, h("h2", { class: "visually-hidden" }, "Team"));
+  const aside = drawer({ id: "logdrawer", title: "Research log and team", current: tab, onTab: showTab,
+    tabs: [{ key: "log", label: "Research log", icon: "notebook" }, { key: "team", label: "Team", icon: "users" }],
+    onClose: () => close(true), closeLabel: "Close the panel", sections: logSections,
     foot: [link({ href: "#/log" }, "The whole research log"), h("span", { class: "muted" }, " on the Overview")] });
   const closeBtn = aside.closeButton;
+  // the drawer's tabs are tabs({ onTab, panel }) (lib.js, docs/DESIGN.md 4.5): ids, aria-controls, the panel (the
+  // drawer's body), only the chosen tab in the Tab order, and the arrow keys, Home and End come with them
+  const tabRow = aside.tabs;
+  const tabOf = (key) => tabRow.querySelector(`[data-key="${key}"]`);
+  const foot = aside.querySelector(".drawer-foot");       // its one link, to the whole research log: the log tab's
+  // what came in and was not seen yet (team.js, or the poller's news before the tab was first shown), in words on the
+  // Team tab: "3 new" (a drawer tab's count, docs/DESIGN.md 4.5 and 5.5)
+  let countFor = App.project;   // the project the count is of
+  const setTeamCount = (n) => tabRow.setCount("team", n ? `${n} new` : null);
+  window.addEventListener("enlens-sync-news", (e) => { if (!team && e.detail && e.detail.project === App.project) setTeamCount((e.detail.came_in || {}).count || 0); });
+  // draws the tab chosen (tabs() calls it when a tab is pressed or chosen by its keys; code chooses with tabRow.choose)
+  function showTab(value) {
+    tab = value === "team" ? "team" : "log";
+    session("logdrawer-tab", tab);
+    foot.hidden = tab !== "log";
+    aside.setSections(tab === "team" ? [teamPanelBox] : logSections);
+    if (tab === "team") {
+      if (!team) {
+        import("./team.js").then((m) => {
+          team = m.teamPanel({ onCount: setTeamCount });
+          teamPanelBox.appendChild(team.el);
+          if (open && tab === "team") team.show();
+        }).catch((e) => { teamPanelBox.textContent = `The Team tab could not be loaded (${e.message}).`; });
+      } else if (open) team.show();
+    } else {
+      if (team) team.hide();
+      if (open) refresh();
+    }
+  }
+  // another page opens the drawer on a tab: window.dispatchEvent(new CustomEvent("enlens-drawer", {detail: {tab: "team"}}))
+  window.addEventListener("enlens-drawer", (e) => {
+    tab = (e.detail && e.detail.tab) === "team" ? "team" : "log";
+    if (open) tabRow.choose(tab); else openIt(false);
+    tabOf(tab).focus();
+  });
+  /* end 0.18 Team tab */
   shell.appendChild(aside);
   placeBtn();
   window.matchMedia("(max-width: 860px)").addEventListener("change", placeBtn);
@@ -88,13 +135,14 @@ export function initLogDrawer() {
     session("logdrawer-open", true);
     aside.hidden = false;
     setDrawerOpen(true, btn);
-    refresh();
-    if (byUser) (window.matchMedia("(max-width: 860px)").matches ? closeBtn : ta).focus();
+    tabRow.choose(tab);   // 0.18 Team tab: reads the tab shown (the log's refresh, or the team's)
+    if (byUser) (window.matchMedia("(max-width: 860px)").matches ? closeBtn : tab === "team" ? tabOf("team") : ta).focus();
   }
   function close(returnFocus) {
     const hadFocus = aside.contains(document.activeElement);
     open = false;
     session("logdrawer-open", false);
+    if (team) team.hide();   // 0.18 Team tab
     aside.hidden = true;
     setDrawerOpen(false, btn);
     if (returnFocus || hadFocus) btn.focus();
@@ -117,7 +165,7 @@ export function initLogDrawer() {
 
   // ---- reading
   async function refresh() {
-    if (!open || !App.project) return;
+    if (!open || !App.project || tab !== "log") return;   // 0.18 Team tab: the log reads itself only when it is shown
     const mine = ++token;
     const project = App.project;
     const ctx = context();
@@ -205,7 +253,12 @@ export function initLogDrawer() {
 
   // ---- when to read again, and when to close
   window.addEventListener("hashchange", () => { shown = PAGE; refresh(); });
-  App.onChange(() => { if (open) { shown = PAGE; refresh(); } });
+  App.onChange(() => {
+    if (open) { shown = PAGE; refresh(); }
+    // 0.18 Team tab: another project's count is not this one's; the Team panel reads the new project's (even hidden)
+    if (App.project !== countFor) { countFor = App.project; setTeamCount(0); if (team) team.refresh(); }
+    else if (open && team && tab === "team") team.refresh();
+  });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && open && !e.defaultPrevented && !document.querySelector("#dialogs [role=dialog]")) close(aside.contains(document.activeElement)); });
   document.addEventListener("click", (e) => {
     if (open && overlay() && !aside.contains(e.target) && !btn.contains(e.target) && !e.target.closest(".sidebar, .topbar, .toasts, #dialogs")) close(false);

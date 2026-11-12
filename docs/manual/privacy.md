@@ -7,12 +7,14 @@
 >   inside the AI's tasks are sent to Anthropic, on your own Claude plan.
 > - Every document has a setting: *Claude may read it*, *Only a local AI*, or *No AI*. ENLENS enforces it in code.
 > - ENLENS records every passage it sends to Claude, and you can download that list.
+> - Working together, only what you share goes to colleagues, with the documents (0.17.0): never your private work.
 
 ## What goes where
 
 | Where it goes | What |
 | --- | --- |
-| **Stays on your computer** | Projects (plain folders with one SQLite database each) and settings, in `~/enlens` or `ENLENS_HOME`. The documents themselves, your judgements, notes, highlights, the research log and reviews. They go to a colleague only inside a project zip you send yourself ([Work together](together.md)), and never to the AI. |
+| **Stays on your computer** | Projects (plain folders with one SQLite database each) and settings, in `~/enlens` or `ENLENS_HOME`. The documents themselves, your judgements, notes, highlights, the research log and reviews. They go to a colleague only as you choose: a project zip you send yourself, or a folder your team shares ([Working together](#working-together)); never to the AI. |
+| **To a folder your team shares** (0.17.0) | Only once you choose one for a project: the documents' text and files, and what you shared of your own work. Your cloud service or network drive carries it from there ([Working together](#working-together)). |
 | **To Anthropic, on your Claude plan** | With Claude Code: only the passages inside the tasks it takes, from documents Claude may read. ENLENS never sees your Claude login. |
 | **To Anthropic, on a team key** | With the Claude API, only after *Allow cloud models* is switched on (or `--backend anthropic` on the command line): the hypothesis and the passages read. |
 | **Into your chat** | With the [connector](claude-code.md#claude-in-a-chat-the-connector): the passages shown to Claude are part of your chat. |
@@ -21,8 +23,10 @@
 Apart from the AI you chose, ENLENS itself goes online only to look for a new version on GitHub, and, when you ask for
 them, to get Claude Code or a local model. There is no telemetry. The app is a small server on `127.0.0.1` with a token
 per run, and the page loads nothing from the internet (no CDN, fonts or analytics). Bringing in a colleague's work reads
-the file on this computer and sends nothing. Zotero is only read (never changed), through the Zotero app on this
-computer and never through Zotero's servers, and nothing about your works is sent to Claude.
+the file on this computer and sends nothing. A shared folder is written and read on this computer too: ENLENS itself
+sends nothing for it, and your cloud service or network drive carries what is in it. Zotero is only read (never
+changed), through the Zotero app on this computer and never through Zotero's servers, and nothing about your works is
+sent to Claude.
 
 Whoever installs ENLENS can remove every cloud option for good (`--local-only`,
 [Settings](settings.md#for-whoever-installs-enlens)).
@@ -126,6 +130,81 @@ the connector).
 further passages are treated as *Only a local AI*. It is checked when tasks are made, so a check that is running can
 go over by one round of excerpts.
 
+## Working together
+
+Nothing of yours goes to a colleague until you send it: in a file you send yourself, or through a folder your team
+shares that you chose for the project (0.17.0; [Work together](together.md#through-a-shared-folder)). ENLENS writes into
+that folder on this computer; your cloud service (OneDrive, Dropbox) or your network drive then carries it, under your
+institution's terms.
+
+### What goes into the shared folder
+
+- **What you shared**, and nothing else of your own work: the checks, sets of themes, codebooks, notes and highlights,
+  entries of your own and links between terms you pressed *Share* on, whole, and again whenever they change. A shared
+  check carries the words its excerpts quote, the judgements on them under each person's name, and the AI's answers.
+- **What belongs to the project:** the documents' text and original files (once for the whole team), who may read each
+  with AI, the bibliography (without where its attachments are on your computer), the AI's work on the documents and
+  people's reviews of it, the entries ENLENS writes in the research log about the documents, and the proposals to the
+  project's owner with the owner's answers. Also your name, your ENLENS version and the project's name, so colleagues
+  know whose work is whose.
+- **With the switch *Keep documents marked Only a local AI or No AI out of the shared folder* on**, those documents'
+  text and files stay on your computer, with the AI's work on them and the passages of them a check handed to the AI.
+  Your shared items still carry what you shared about them: **the words their excerpts quote, your notes on them, the
+  judgements, and the documents' titles** (colleagues need the title to know which file to add). To keep such a
+  document's words out of the folder altogether, do not share the checks or notes that quote it. Once anyone in the
+  team turns the switch on, it holds in every copy.
+
+### What never goes there
+
+Your private items, and a colleague's private item that reached you in their whole-project zip. Nor does a check still
+being worked on (it goes once it is done), the earlier versions you keep (*History*), your search index and glossary,
+your settings, the project's database itself, or any path on your computer. Before it writes, ENLENS checks what it is
+about to write: a round that would carry anything you have not shared writes nothing. It also refuses a shared folder
+that holds the project or ENLENS's own folder, since the cloud service would then copy your whole database to the team.
+
+### Who can read the folder
+
+Anyone who has access to it, as with any other file there: your colleagues, and whoever your institution's storage
+lets in. The files are ordinary zip files, not encrypted, and not signed: someone else who can write in the folder
+could write in a colleague's name. Share the folder only with your team, and use storage your institution approves for
+the documents you hold: a folder on the institution's OneDrive or network drive keeps them within its storage.
+
+### Stopping
+
+- **Unshare** an item: it stops going, and at the next round it leaves your part of the folder (and what a colleague's
+  copy wrote of it). Colleagues who already brought it in keep it, marked as withdrawn, and it reaches nobody else
+  through them. A shared check or set of themes you remove is treated the same way.
+- **Turn the switch on later**: at the next round, what your copy had written of the documents it keeps out leaves the
+  folder. What a colleague already brought into their project stays with them.
+- **Stop using this folder** (in the *Team* tab): your copy stops writing and reading there. It removes nothing from
+  the folder, so unshare first what should leave it.
+- **A document removed from the project** leaves every copy, but not yet the folder: its reading and its file stay
+  there, where anyone with access to the folder can still open them (to be fixed in a later release).
+- A cloud service may keep earlier versions of files, or deleted ones, for a while (its version history or bin):
+  something taken out of the folder may still be there for a time.
+
+### The owner and who may read with AI
+
+In a project with an owner ([Work together](together.md#the-owner-and-proposals-0170)):
+
+- **Stricter, at once.** Anyone may make a document stricter (*Only a local AI*, *No AI*): it holds in every copy at
+  once, and is never a proposal.
+- **Looser, only by the owner.** Letting more AI read a document is the owner's decision. A colleague's looser setting
+  takes effect nowhere, not even in their own copy, until the owner accepts it. Once the owner allows it, every copy
+  follows, except one whose person made that document stricter in the meantime. When the switch keeps the document
+  out of the shared folder, accepting asks first: its text and file then go into the folder too.
+
+A project without an owner keeps the stricter setting of the copies, as before 0.17.0.
+
+### Files instead of the folder
+
+*Send what you shared* gives a colleague the documents and what you shared, and nothing private: not even in parts of
+the file a program could still read after a deletion, nor where your documents' files are on your computer. *Download
+the whole project* is for moving the project to another computer of yours: it holds your private work too, and says
+whose each item is, so a colleague's private item that reaches you this way stays theirs and is never passed on from
+your copy. A colleague who opened it with ENLENS 0.17.0rc5 or earlier would see all of it, so ENLENS asks before it
+downloads. Bringing in a colleague's file reads it on this computer and sends nothing.
+
 ## How it is enforced
 
 In code, where every AI task is made and run, never by an instruction in a prompt:
@@ -136,7 +215,9 @@ In code, where every AI task is made and run, never by an instruction in a promp
 - the connector's tools (search, concepts, document profiles, checks) give Claude counts instead of restricted text,
   leave out what a model wrote in its own words when it read restricted text, and show a document marked *No AI* as
   *Restricted document 3*, because a title can name a person;
-- a project zip holds the files of the documents the project has now, not those of documents you removed.
+- a project zip holds the files of the documents the project has now, not those of documents you removed;
+- a zip for a colleague and the shared folder read what each shared item covers from one place, so the two can never
+  disagree about what is private, and a round that would write anything not shared writes nothing (0.17.0).
 
 **The Claude Code run that ENLENS starts works in a box of its own.** It starts in an empty folder, away from the
 projects' databases, and has no tool that reads, writes or searches files, runs commands or browses: only the one that

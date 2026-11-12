@@ -1380,15 +1380,23 @@ def move(ws: Workspace, doc_id: str, person_id: str | None = None, ocr=None, sho
         plan, info = _plan(ws, cx, doc_id, new_doc)
         if keep_all and info["report"].get("not_placed"):
             raise WouldLose(info["report"])  # before anything is written: the transaction has nothing to undo
+        try:  # 0.18 (sync/readings.py): a colleague who still has a moved check's state knows the moved one as it
+            from .sync.readings import remember_move, unit_states
+        except ImportError:  # an app built without shared projects
+            remember_move = unit_states = None
+        before = unit_states(cx, doc_id) if unit_states else None
         _apply(ws, cx, doc_id, plan, info, new_doc, who)
+        if remember_move and before:
+            remember_move(cx, doc_id, before)
     report = info["report"]
     report["moved"] = True
     return report
 
 
-def _apply(ws: Workspace, cx, doc_id: str, plan: _Plan, info: dict, new_doc, who: str) -> None:
-    from .sync import text_fp
-
+def _write_plan(cx, plan: _Plan) -> None:
+    """The plan's deletions and changes of rows (every result moved to its place in the new reading). 0.18: also used
+    by the sync (sync/readings.py), which places a colleague's results made on another reading of a document on the
+    reading this copy has."""
     for table, rids in plan.deletes.items():
         ids = sorted(rids)
         for i in range(0, len(ids), 500):
@@ -1405,6 +1413,12 @@ def _apply(ws: Workspace, cx, doc_id: str, plan: _Plan, info: dict, new_doc, who
         for rid, cols in rows.items():
             sets = ", ".join(f"{k}=?" for k in cols)
             cx.execute(f"UPDATE {table} SET {sets} WHERE rowid=?", (*cols.values(), rid))
+
+
+def _apply(ws: Workspace, cx, doc_id: str, plan: _Plan, info: dict, new_doc, who: str) -> None:
+    from .sync import text_fp
+
+    _write_plan(cx, plan)
     # the document's own rows: its old reading out, the new one in
     for t in ("pages", "paragraphs", "headings", "passages", "blocks", "doc_tables"):
         cx.execute(f"DELETE FROM {t} WHERE doc_id=?", (doc_id,))

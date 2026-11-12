@@ -56,25 +56,23 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **[The SDG and value chain pack](docs/manual/sdg-pack.md)**:
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
-## New in 0.16: notes, a research log and your own codebook
+## New in 0.17: working together, and one look on every page
 
-- **Notes and highlights** on the exact words of a document: select words, then *Highlight* or *Note*. Search them
-  all under *Documents* › *Notes*, and use a note as evidence in a check. Cannot change results.
-- **A research log** that ENLENS keeps as you work (documents added, checks dropped and why, themes removed, codebook
-  changes), with your own entries and reasons, to download for an appendix or an audit. Cannot change results.
-- **Compare and restore** earlier versions of a set of themes, your judgements in a check, or a codebook. A restore
-  puts back what you had before, and can be undone the same way.
-- **Your own codebook**, made in the app fresh or from the themes found: definitions, when to use each code and when
-  not, the words it is matched by, checked examples, and *Try it* without AI. Made from the themes, each code gets a
-  short name from the theme's words, as specific as your documents need (0.16.1). Labels follow renames and merges.
-  **Can change results** for codebooks you change: the AI reads when to use a code, and a removed code's labels stop
-  counting until it comes back.
-- **Quicker on large projects**: several documents read at once, a glossary and search that keep what they read.
+- **Work through a folder your team already shares** (OneDrive, Dropbox, a network drive): your colleagues' shared
+  work comes in every couple of minutes, with no server and no account, in the new *Team* tab. Cannot change results.
+- **Private until you share it, and one owner**: your checks, themes, codebooks, notes and log entries stay yours until
+  you press *Share*; the owner decides which documents a project holds. Cannot change how a check is answered; a
+  document change the owner accepts changes your documents as one of your own would.
+- **One look on every page**, light and dark, with a design guide and a reference page in the app (`#/design`).
   Cannot change results.
+- **Seven places in the sidebar**, tabs for each place's views, *Find* (Ctrl+K or ⌘K) and the research log beside every
+  page. Cannot change results.
+- **Key terms without each language's common words**: the glossary and the key terms of themes found from now on
+  leave out "ik", "ja", "because". Can change results for them; search is not changed.
 
-How it works: [notes, the research log and earlier versions](docs/manual/notes-and-log.md) and
-[your own codebook](docs/manual/codebooks.md) in the manual. Every release, with what was not tested:
-[CHANGELOG.md](CHANGELOG.md).
+How it works: [Work together](docs/manual/together.md) and
+[what a shared folder holds](docs/manual/privacy.md#working-together) in the manual. Every release, with what was not
+tested: [CHANGELOG.md](CHANGELOG.md).
 
 ## How to cite ENLENS
 
@@ -88,16 +86,21 @@ behind each answer. It belongs in your methods section or supplementary material
 
 ## Privacy and your documents
 
-Your documents, results, judgements and settings stay on your computer. With Claude (the default), only the passages
+Your documents, results, judgements and settings stay on your computer unless you choose to share them with colleagues.
+With Claude (the default), only the passages
 inside the AI's tasks are sent to Anthropic, through Claude Code on your own Claude plan (or the Claude API, when a
 shared installation switched it on), and only from documents marked *Claude may read it*; ENLENS records every passage
 it sends (*Sent to Claude* on the *Documents* page). Claude Code, as ENLENS starts it, has no tool that can open your
 files, so those passages are all it sees. To keep a document from Claude, mark it *Only a local AI* or *No
 AI*. To keep everything on the computer, choose *A model on this computer* in *Settings → AI*, or put
-`ENLENS_LOCAL_ONLY=1` before `sh` in the install line, which removes every cloud option for good. Apart from the AI you chose
-and looking for a new version on GitHub, ENLENS sends nothing anywhere and has no telemetry; bringing in a colleague's
-work only reads the file they sent you. The details, and what Anthropic's terms say for each plan, are in
-[Privacy](docs/manual/privacy.md) in the manual.
+`ENLENS_LOCAL_ONLY=1` before `sh` in the install line, which removes every cloud option for good. Apart from the AI you
+chose
+and looking for a new version on GitHub, ENLENS sends nothing anywhere on its own and has no telemetry. Working with
+colleagues, only what you share goes to them, with the documents: in a file you send, or in a folder your team shares
+that you choose, which holds the documents' text and files and only what you share of your own work, so whoever can
+open that folder (and the cloud service behind it) can read it; you can keep documents marked *Only a local AI* or *No
+AI* out of it ([what it holds](docs/manual/privacy.md#working-together)). The details, and what Anthropic's terms say
+for each plan, are in [Privacy](docs/manual/privacy.md) in the manual.
 
 ## Documentation
 

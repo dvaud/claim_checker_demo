@@ -1,7 +1,8 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice } from "./lib.js";
+import { App, api, h, icon, setButtonKind, menu, plural, emptyState, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice , cancelJob } from "./lib.js";
 import { FEATURES, SECTIONS, PLACES, aiTag } from "./features.js";
 import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
+import { quietRound, quietRoundAgainIn, nextSyncLook } from "./views/team-state.js";   // 0.18 stage 5
 import localExtensions from "./extensions.js";
 import { renderResult } from "./views/result.js";
 import { renderSources, renderDocument } from "./views/sources.js";
@@ -104,7 +105,7 @@ async function route() {
   replace(view, page);
   view.setAttribute("aria-busy", "true");
   if (!render) {
-    replace(page, h("div", { class: "empty" }, icon("search-x", { size: 28 }), h("h3", {}, "No such page"), h("p", {}, "The address does not match a page of the app."), link({ kind: "back", href: "#/overview" }, "Go to the overview")));
+    replace(page, emptyState("search-x", "No such page", "The address does not match a page of the app.", link({ kind: "back", href: "#/overview" }, "Go to the overview")));
     view.setAttribute("aria-busy", "false");
     return;
   }
@@ -145,35 +146,18 @@ function renderProjectSwitch() {
   const current = projects.find((p) => p.name === App.project);
   const top = document.getElementById("topbar-project");
   top.textContent = current ? current.name : ""; top.title = current ? current.name : "";
-  const details = h("details");
-  const summary = h("summary", { "aria-label": "Project: " + (current ? current.name : "none"), title: current ? current.name : "" },
-    icon("folder", { size: 16 }),
-    h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"), h("span", { class: "ps-name-text" }, current ? current.name : "No project")),
-    icon("chevron-down", { size: 14 }));
-  const menu = h("div", { class: "menu-list ps-menu", role: "menu" });
-  for (const p of projects) {
-    const item = h("button", { class: "menu-item", type: "button", role: "menuitem", "aria-current": p.name === App.project ? "true" : null,
-      onClick: () => switchProject(p.name) },
-      icon(p.linked ? "link" : "folder", { size: 14 }),
-      h("span", { class: "ps-text" }, p.name),
-      h("span", { class: "ps-meta" }, `${p.documents} doc${p.documents === 1 ? "" : "s"} · ${p.hypotheses} result${p.hypotheses === 1 ? "" : "s"}`));
-    if (!p.ok) item.title = "This project could not be opened.";
-    menu.appendChild(item);
-  }
-  if (projects.length) menu.appendChild(h("div", { class: "menu-sep", role: "separator" }));
-  menu.appendChild(h("button", { class: "menu-item", type: "button", role: "menuitem", onClick: () => { details.open = false; newProjectDialog(); } }, icon("plus", { size: 14 }), h("span", { class: "ps-text" }, "New project…")));
-  menu.appendChild(h("a", { class: "menu-item", href: "#/projects", role: "menuitem" }, icon("sliders", { size: 14 }), h("span", { class: "ps-text" }, "Manage projects")));
-  details.append(summary, menu);
+  // the menu component (docs/DESIGN.md 4.17) with the switch's own summary: a field-like box with the project's name
+  const items = projects.map((p) => ({ text: p.name, icon: p.linked ? "link" : "folder", current: p.name === App.project,
+    meta: `${plural(p.documents, "document")} · ${plural(p.hypotheses, "answer")}`, title: p.ok ? null : "This project could not be opened.",
+    onClick: () => switchProject(p.name) }));
+  const details = menu({ label: "Project: " + (current ? current.name : "none"), title: current ? current.name : "", listClass: "ps-menu",
+    trigger: [icon("folder", { size: 16 }),
+      h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"), h("span", { class: "ps-name-text" }, current ? current.name : "No project")),
+      icon("chevron-down", { size: 14 })],
+    items: [...items, items.length ? "sep" : null, { text: "New project…", icon: "plus", onClick: () => newProjectDialog() },
+      { text: "Manage projects", icon: "sliders", href: "#/projects" }].filter(Boolean) });
   replace(box, details);
-  details.addEventListener("keydown", (e) => { if (e.key === "Escape") { details.open = false; summary.focus(); } });
 }
-
-// One document-level listener closes any open sidebar popover on an outside click.
-document.addEventListener("click", (e) => {
-  for (const d of document.querySelectorAll("#project-switch details[open]")) {
-    if (!d.contains(e.target)) d.open = false;
-  }
-});
 
 export async function switchProject(name) {
   if (name === App.project) return;
@@ -283,7 +267,7 @@ async function renderStatus() {
   try { await drawStatus(); } finally { statusBusy = false; }
   if (statusAgain) { statusAgain = false; renderStatus(); }
 }
-const LOCAL_JOB_KINDS = new Set(["index"]);   // jobs that never use the chat model: search by meaning runs on the embedding model here
+const LOCAL_JOB_KINDS = new Set(["index", "folder-sync", "new_reader"]);   // jobs that never use the chat model: search by meaning runs on the embedding model here; 0.18: a round of the shared folder, a new reading
 const tasksWord = (n) => `${n.toLocaleString()} ${n === 1 ? "task" : "tasks"}`;
 async function drawStatus() {
   const box = document.getElementById("work-indicator");
@@ -298,7 +282,7 @@ async function drawStatus() {
   if (App.project && (s.backend === "claude_code" || summary.waiting)) {
     try { q = await api("GET", `/api/projects/${P(App.project)}/queue`); } catch (_) { q = null; }
   }
-  const active = jobs.filter((j) => !TERMINAL.has(j.state));
+  const active = jobs.filter((j) => !TERMINAL.has(j.state) && !quietRound(j));   // 0.18 (L3): the poller's own rounds stay quiet, unless one takes long
   const going = active.filter((j) => !j.on_hold);
   const hold = active.filter((j) => j.on_hold);
   const runner = !!(q && q.runner && q.runner.running);
@@ -308,14 +292,15 @@ async function drawStatus() {
   let w = null;
   if (!runner && (hold.length || (q && waiting && !answering && s.backend === "claude_code"))) {
     const n = Math.max(waiting, hold.length);
-    w = { kind: "stalled", icon: "pause", main: q && q.paused ? "Paused" : "Not running", sub: `${tasksWord(n)} ${n === 1 ? "waits" : "wait"} for Claude`,
-      href: "#/settings/queue", tip: "Nothing answers this work yet: start Claude Code and it runs.",
+    w = { kind: "stalled", icon: "pause", main: q && q.paused ? "Paused" : "Not running", sub: `${tasksWord(n)} waiting`,
+      href: "#/settings/queue", tip: `Nothing answers this work yet: ${tasksWord(n)} ${n === 1 ? "waits" : "wait"} for Claude Code. Start it and the work runs.`,
       act: q && q.can_start && !q.paused ? "start" : "open" };
   } else if (going.length) {
     const j = going[0], v = jobRow(j);
     const more = going.length - 1;
-    w = { kind: "running", local: LOCAL_JOB_KINDS.has(j.kind), main: v.text, time: j.state === "running" ? fmt.secs(j.seconds) : "", href: v.href, tip: v.tooltip,
-      sub: j.state === "queued" ? "waiting its turn" : more ? `and ${more} more running` : waiting + answering ? `${(waiting + answering).toLocaleString()} for Claude Code` : "running" };
+    w = { kind: "running", local: LOCAL_JOB_KINDS.has(j.kind), main: v.text, time: j.state === "running" ? fmt.secs(j.seconds) : "", href: v.href, tip: v.tooltip, drawer: v.drawer,
+      sub: j.waiting_for ? j.waiting_for.message : j.state === "queued" ? "waiting its turn" : more ? `and ${more} more running` : waiting + answering ? `${(waiting + answering).toLocaleString()} for Claude Code` : "running",
+      act: j.waiting_for ? "cancel" : undefined, job: j.id };   // 0.18 queued jobs: what it waits for, with Cancel
   } else if (runner) {
     w = { kind: "running", main: "Claude Code is working", sub: `${(waiting + answering).toLocaleString()} to go`, href: "#/settings/queue", tip: "Claude Code answers the work waiting for it, on your Claude plan." };
   } else if (q && waiting) {
@@ -326,7 +311,7 @@ async function drawStatus() {
   document.getElementById("status-area").classList.toggle("status-busy", !!w);
   if (!w) { replace(box); statusKey = ""; }
   else {
-    const key = JSON.stringify([App.project, w.kind, w.local, w.main, w.sub, w.href, w.act]);
+    const key = JSON.stringify([App.project, w.kind, w.local, w.main, w.sub, w.href, w.act, w.act === "cancel" ? w.job : ""]);
     if (key === statusKey && box.firstChild) {
       const t = box.querySelector(".work-time"); if (t && w.time) t.textContent = w.time;   // only the seconds changed
     } else {
@@ -336,7 +321,8 @@ async function drawStatus() {
       const who = w.kind === "running" ? (w.local   // 0.17: work that runs on this computer says so, not "Claude"
         ? h("span", { class: "work-who", title: "This runs on this computer; nothing is sent to Anthropic." }, icon("house", { size: 12 }), "This computer")
         : h("span", { class: "work-who", title: p.plain }, icon(p.icon, { size: 12 }), (p.label || "").split(",")[0])) : null;   // nothing is sent while it waits
-      const main = h("a", { class: "work-main", href: w.href, title: w.tip },
+      const main = h("a", { class: "work-main", href: w.href, title: w.tip,   // 0.18: a round opens the Team tab beside the page
+        onClick: w.drawer ? (e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent("enlens-drawer", { detail: { tab: w.drawer } })); } : undefined },
         h("span", { class: "work-line" }, w.kind === "running" ? h("span", { class: "running-dot", "aria-hidden": "true" }) : icon(w.icon, { size: 14 }),
           h("strong", { class: "work-text" }, w.main), w.time ? h("span", { class: "work-time" }, w.time) : null),
         h("span", { class: "work-sub" }, h("span", { class: "work-sub-text" }, w.sub), who));
@@ -348,14 +334,23 @@ async function drawStatus() {
           catch (e) { showError(e); }
           act.disabled = false; renderStatus();
         } }, icon("play", { size: 12 }), "Start");
+      } else if (w.act === "cancel") {   // 0.18 queued jobs: a small quiet Cancel after the waiting state (docs/DESIGN.md 4.21, its row Queued; a running job's Stop is stopButton())
+        act = button({ kind: "quiet", sm: true, class: "work-act", onClick: async () => {
+          act.disabled = true;
+          try { await cancelJob(w.job); } catch (e) { showError(e); }
+          act.disabled = false; renderStatus();
+        } }, "Cancel");
       }   // 0.17.0 (design guide): no "Open" button: the box's words are the link to where the work shows
       box.className = `work-box work-${w.kind}`;
       replace(box, main, act);
     }
   }
-  if (active.length) statusTimer = setTimeout(renderStatus, 2000);
-  else if (q && (waiting || answering || runner)) statusTimer = setTimeout(renderStatus, 5000);
-  else if (s.backend === "claude_code") statusTimer = setTimeout(renderStatus, 15000);
+  let again = active.length ? 2000 : q && (waiting || answering || runner) ? 5000 : s.backend === "claude_code" ? 15000 : 0;
+  // 0.18 stage 5: a quiet round of the poller is looked at again when it reaches 20 s, so a long one shows then (with
+  // nothing else running, no look was due, and it never showed)
+  const quietIn = quietRoundAgainIn(jobs);
+  if (quietIn !== null) again = again ? Math.min(again, quietIn) : quietIn;
+  if (again) statusTimer = setTimeout(renderStatus, again);
 }
 
 // 0.14.2: the theme is a small icon beside Settings (it was a row of its own). The icon shows the theme in use;
@@ -428,7 +423,7 @@ function showUpdate(btn, info) {
   const to = "Update";
   const rc = info.candidate ? "release candidate " : "";
   replace(btn, icon("arrow-up", { size: 13 }), h("span", {}, to));
-  btn.className = "btn btn-primary btn-sm update-ready";   // an update waits: the one thing to do here, the main kind
+  setButtonKind(btn, "main");   // an update waits: the one thing to do here, the main kind
   btn.setAttribute("aria-label", info.latest ? `Update to ${info.latest}` : `Update ${appName()}`);
   btn.title = info.on_disk ? `${appName()} ${info.latest} is installed: restart to use it`
     : info.latest ? `${appName()} ${rc}${info.latest} is ready (you have ${info.version})`
@@ -588,7 +583,7 @@ function closeDrawer() {
   const sb = document.getElementById("sidebar");
   const sc = document.getElementById("scrim");
   const mb = document.getElementById("menu-btn");
-  sb.classList.remove("open");
+  delete sb.dataset.open;
   const main = document.getElementById("main"); if (main) main.inert = false;
   sc.hidden = true;
   mb.setAttribute("aria-expanded", "false");
@@ -600,8 +595,8 @@ function drawerInit() {
   const mb = document.getElementById("menu-btn");
   replace(mb, icon("menu", { size: 20 }));
   mb.addEventListener("click", () => {
-    const open = !sb.classList.contains("open");
-    sb.classList.toggle("open", open);
+    const open = sb.dataset.open !== "true";
+    if (open) sb.dataset.open = "true"; else delete sb.dataset.open;
     sc.hidden = !open;
     // 0.14.3: while the phone menu is open the page behind it cannot be reached (Tab stayed on it)
     const main = document.getElementById("main"); if (main) main.inert = open;
@@ -609,7 +604,7 @@ function drawerInit() {
     if (open) { const first = sb.querySelector("summary, a, button"); if (first) first.focus(); }
   });
   sc.addEventListener("click", closeDrawer);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sb.classList.contains("open")) { closeDrawer(); mb.focus(); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sb.dataset.open === "true") { closeDrawer(); mb.focus(); } });
 }
 
 // 0.17.0: the sidebar's groups say once whether their places use the AI, with the one AI mark (features.js aiTag):
@@ -726,6 +721,39 @@ async function whatsNewInit() {
   document.body.appendChild(card);
 }
 
+// 0.18 (L3) what came in: a light look at the open project's poller every 30 s. When a round the app started by itself
+// brought something in, a small toast says so; when the count of what came in grows, the window event
+// "enlens-sync-news" (detail: the poller's state) lets the Team tab show it.
+// 0.18 stage 5: it also looks just after the next round is due (nextSyncLook), and while a round runs it redraws the
+// sidebar's work box, which shows a round the app started by itself once it has run 20 s (drawStatus).
+function syncNewsInit() {
+  let project = null, round = null, count = null, timer = null;
+  const look = async () => {
+    clearTimeout(timer);
+    let s = null;
+    try { s = await lookOnce(); } finally { timer = setTimeout(look, nextSyncLook(s)); }
+  };
+  const lookOnce = async () => {
+    const p = App.project;
+    if (!p || Connection.down || document.hidden) return null;
+    let s;
+    try { s = await api("GET", `/api/projects/${P(p)}/sync-poller`); } catch (_) { return null; }
+    if (s.folder && s.round) renderStatus();
+    const r = s.folder ? s.last_round : null;
+    const n = s.folder ? s.came_in.count : 0;
+    if (p === project) {
+      if (r && r.job !== round && r.background && r.came_in > 0) {
+        const line = ((s.came_in.rounds[0] || {}).lines || [])[0];
+        toast(line || "New work from colleagues came in through the shared folder.", "info", { group: "sync-news", small: true });
+      }
+      if (count !== null && n > count) window.dispatchEvent(new CustomEvent("enlens-sync-news", { detail: s }));
+    }
+    project = p; round = r ? r.job : null; count = n;
+    return s;
+  };
+  look();
+}
+
 async function boot() {
   skipLinkInit();
   connectionInit();
@@ -751,6 +779,7 @@ async function boot() {
   whatsNewInit();
   initLogDrawer();
   findInit();
+  syncNewsInit();   // 0.18 (L3)
   // 0.17.0: Find (Ctrl+K, or ⌘K on a Mac) opens the feature finder from any page
   document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") { e.preventDefault(); openFinder(); } });
   // keep the sidebar fresh when the window regains focus

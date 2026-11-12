@@ -3,8 +3,8 @@
 // seconds, a provisional profile) and, optionally, the AI reading the passages with a candidate code. Every label
 // says why it is there; a person can agree, change or reject it (in the document viewer, Codes panel).
 // The pieces shared with the document viewer (the AI-labelling card, the keyword pass, wording) are exported from here.
-import { featureEyebrow, viewTabs, aiTag } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice } from "../lib.js";
+import { featureEyebrow, viewTabs, withAI } from "../features.js";
+import { App, api, h, icon, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice, readsLine, inset } from "../lib.js";
 import { jobCard } from "./progress.js";
 
 const pct = (x) => `${Math.round((x || 0) * 100)}%`;
@@ -101,7 +101,6 @@ export function aiLabelCard({ project, framework, docIds = null, watchers, onEnd
       ? `${plural(plan.passages || 0, "passage")}${one ? " in this document" : ""}: ${fmt.num(plan.already_read || 0)} already read, ${fmt.num(toRead)} to read.`
       : `${plural(plan.with_candidates || 0, "passage")} of ${fmt.num(plan.passages || 0)}${one ? " in this document" : ""} ${plan.with_candidates === 1 ? "has" : "have"} a candidate code: ${fmt.num(plan.already_read || 0)} already read, ${fmt.num(toRead)} to read. This can be more than the passages the profile counts: it includes passages with only a weak match by meaning, which count once the AI confirms them.`;
     bits.push(h("p", { class: "pf-ai-counts" }, counts, est ? ` ${cap(aboutTime(est))} with this model.` : toRead ? " How long it takes is not known yet: it is measured on the first passages." : ""));
-    if (where.where === "cloud") bits.push(h("p", { class: "muted small it pf-where-note" }, icon("cloud", { size: 13 }), ` ${where.sent || "The passages are sent to the Claude API (cloud)."}`));
     if (run.error) {
       bits.push(notice({ kind: "attention" }, h("div", {}, h("p", {}, "The AI model is not available, so it cannot label passages now."),
         fold({}, "Technical details", h("div", { class: "mono small" }, run.error)), link({ kind: "next", href: "#/settings" }, "Check the AI model in Settings"))));
@@ -129,14 +128,15 @@ export function aiLabelCard({ project, framework, docIds = null, watchers, onEnd
         h("p", {}, h("strong", {}, `Something changed since the last labelling${last.started_at ? ` (${fmt.date(last.started_at)})` : ""}. `), "New labels may differ from the earlier ones for that reason alone:"),
         h("ul", { class: "pf-changed-list" }, changedLines(changed).map((t) => h("li", {}, t))),
         h("p", {}, "Label a sample the AI already labelled again with the new settings, to see how much the labels agree before you go on."),
-        h("div", { class: "btn-row pf-compare-actions" }, cmpBtn), cmpBox,
+        h("div", { class: "btn-row pf-compare-actions" }, withAI(cmpBtn)), cmpBox,
         compareResult ? compareNote(compareResult) : null,
         fold({}, "Technical details", h("table", { class: "table pf-tech-table" },
           h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Setting"), h("th", { scope: "col" }, "Last run"), h("th", { scope: "col" }, "Now"))),
           h("tbody", {}, changed.map((c) => h("tr", {}, h("td", {}, c.field), h("td", { class: "mono small" }, shown(c.was)), h("td", { class: "mono small" }, shown(c.now))))))))));
     }
-    if (toRead) bits.push(h("div", { class: "btn-row pf-start-actions" }, h("span", { class: "with-ai" }, startBtn, aiTag("uses"))));
-    else bits.push(h("p", { class: "it pf-read-all" }, icon("circle-check", { size: 14 }), all ? " The AI has read every passage." : " The AI has read every passage with a candidate code."));
+    if (toRead) bits.push(h("div", { class: "btn-row pf-start-actions" }, withAI(startBtn)));
+    else bits.push(h("p", { class: "it pf-read-all" }, icon("check", { size: 14 }), all ? " The AI has read every passage." : " The AI has read every passage with a candidate code."));
+    if (toRead || changed.length) bits.push(readsLine("the passages it labels"));
     bits.push(opts);
     bits.push(fold({}, "Technical details", h("dl", { class: "ev-tech-list" },
       h("div", {}, h("dt", {}, "AI model"), h("dd", {}, shown(run.now && run.now.model))),
@@ -150,7 +150,7 @@ export function aiLabelCard({ project, framework, docIds = null, watchers, onEnd
 
   function compareNote(r) {
     if (!r.compared) return h("p", { class: "small pf-compare-note" }, "The AI could not label the sample again", r.errors ? ` (${plural(r.errors, "answer")} could not be read)` : "", ".");
-    return h("div", { class: "pf-compare", role: "status" },
+    return inset({ class: "pf-compare", role: "status" },
       h("p", {}, h("strong", {}, `The AI labelled ${plural(r.compared, "passage")} again with ${r.model || "the model now set"}. `),
         r.kappa !== null && r.kappa !== undefined ? `Agreement with the earlier labels beyond chance: κ = ${Number(r.kappa).toFixed(2)} (${kappaWord(r.kappa)}). ` : "",
         r.same_codes !== null && r.same_codes !== undefined ? `${pct(r.same_codes)} of the passages got exactly the same codes.` : "",
@@ -206,7 +206,7 @@ export function aiLabelCard({ project, framework, docIds = null, watchers, onEnd
 // "How often you agreed with the AI" (the settings page's chart, for codebook labels)
 function calibrationBox(c) {
   const bins = c.bins || [];
-  const box = h("div", { class: "cal-box" });
+  const box = inset({ class: "cal-box" });
   box.appendChild(h("h3", { class: "cal-title" }, icon("scale", { size: 14 }), " How often you agreed with the AI, by its certainty"));
   const chart = h("div", { class: "cal-chart", role: "img", "aria-label": `Agreement with the AI's labels by its certainty: ${bins.map((b) => `${pct(b.from)} to ${pct(b.to)}: ${b.judged ? `${b.agreed} of ${b.judged} (${pct(b.rate || 0)})` : "none judged"}`).join("; ")}.` });
   for (const b of bins) {

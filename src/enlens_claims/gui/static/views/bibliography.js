@@ -4,7 +4,7 @@
 // bibliography.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, confirmDialog, emptyState, TERMINAL,
-  dialog, session, download, plural, spinner, button, downloadButton, fileButton, link, notice, card, input, select, fold } from "../lib.js";
+  dialog, session, download, plural, spinner, button, downloadButton, fileButton, link, notice, card, input, select, fold, stopButton, choice, foundWords } from "../lib.js";
 import { simpleProgress, jobError } from "./progress.js";
 import { accessChoice } from "./ai-access.js";
 
@@ -68,13 +68,12 @@ export async function renderBibliography(view) {
         h("div", { class: "grow" }, h("p", { class: "bib-source-line" }, sourceLine(bib)),
           h("p", { class: "muted small" }, `${plural(c.works, "work", "works")} · brought in on ${fmt.dateShort(bib.pulled_at)}`)),
         h("div", { class: "btn-row" }, update, change)),
-      h("div", { class: "bib-tiles", role: "tablist", "aria-label": "Lists" }, TABS.map(([k, label, ic]) => {
-        const n = c[k] || 0;
-        const on = k === currentTab();
-        return h("button", { class: `bib-tile bib-tile-${k}` + (on ? " on" : ""), type: "button", role: "tab", "aria-selected": on ? "true" : "false", "aria-controls": "bib-list",
-          onClick: () => { tab = k; session(`bib-tab:${project}`, k); draw(); } },
-          h("span", { class: "bib-tile-n" }, fmt.num(n)), h("span", { class: "bib-tile-label" }, icon(ic, { size: 13 }), label));
-      })));
+      // the four lists: a filter of the works (and documents) with how many each holds; the list shows under the card
+      h("div", { class: "bib-lists" }, h("span", { class: "muted small" }, "Show:"),
+        choice({ filter: true, label: "Show the list", value: currentTab(), "aria-controls": "bib-list",
+          // only the list under the card is drawn again, so the focus stays on the choice
+          onPick: (k) => { tab = k; session(`bib-tab:${project}`, k); clear(body); drawLists(); },
+          options: TABS.map(([k, label, ic]) => [k, [icon(ic, { size: 13 }), label], fmt.num(c[k] || 0)]) })));
   }
 
   const changeText = (bib) => bib.kind !== "zotero" ? "Use a newer file or Zotero" : bib.items ? "Choose other works or a file" : "Use another collection or file";
@@ -86,8 +85,7 @@ export async function renderBibliography(view) {
   }
 
   function sourceCard(replacing) {
-    const sect = card({ class: "bib-pick", "aria-label": "Bring in a bibliography" },
-      h("div", { class: "card-head" }, h("h2", {}, replacing ? changeText(data.bibliography) : "Bring in your bibliography")),
+    const sect = card({ class: "bib-pick", "aria-label": "Bring in a bibliography", title: replacing ? changeText(data.bibliography) : "Bring in your bibliography" },
       h("p", { class: "muted bib-replace-note" }, replacing
         ? "It replaces the bibliography above. Your confirmations are kept for every work that is in the new one too."
         : "Pick a Zotero collection, your whole library, or just the works you choose. ENLENS links each work to the document you already have, lists the works you still need to find, and the documents Zotero does not have."));
@@ -213,7 +211,7 @@ export async function renderBibliography(view) {
     });
     drawChips();
     replace(box, h("div", { class: "bib-form" },
-      h("p", { class: "it bib-found" }, icon("circle-check", { size: 14 }), "Zotero is open on this computer."),
+      h("p", { class: "it bib-found" }, icon("check", { size: 14 }), "Zotero is open on this computer."),
       h("div", { class: "bib-fields" },
         libs.length > 1 ? h("div", { class: "field" }, h("label", { class: "field-label", for: "bib-library" }, "Library"), libSel) : null,
         h("div", { class: "field grow" }, h("label", { class: "field-label", for: "bib-collection" }, "Collection"), colSel)),
@@ -248,10 +246,10 @@ export async function renderBibliography(view) {
 
   function follow(jobId, label) {
     jobBox.hidden = false;
-    const head = h("h2", {}, label || "Bringing in the bibliography");
-    const stop = button({ kind: "danger", sm: true, onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop");
+    const head = h("span", {}, label || "Bringing in the bibliography");
+    const stop = stopButton({ onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) });
     const pb = h("div", {});
-    replace(jobBox, card({ as: "div" }, h("div", { class: "card-head" }, head, stop), pb));
+    replace(jobBox, card({ as: "div", title: head, action: stop }, pb));
     const w = watchJob(jobId, (job) => {
       replace(pb, simpleProgress(job, (p) => p.phase === "files" ? `Finding the files Zotero keeps: ${p.done} of ${p.total}`
         : p.phase === "attachments" ? `Reading the attachments: ${p.done} of ${p.total} works`
@@ -278,7 +276,7 @@ export async function renderBibliography(view) {
   // ----------------------------------------------------------------- the four lists
   function drawLists() {
     const k = currentTab();
-    const box = h("section", { class: "bib-list", id: "bib-list", role: "tabpanel", "aria-label": TABS.find((t) => t[0] === k)[1] });
+    const box = h("section", { class: "bib-list", id: "bib-list", "aria-label": TABS.find((t) => t[0] === k)[1] });
     body.appendChild(box);
     ({ confirm: drawConfirm, to_find: drawToFind, linked: drawLinked, not_in: drawNotIn })[k](box);
     body.appendChild(fold({ class: "section bib-remove" }, "Remove the bibliography",
@@ -314,7 +312,7 @@ export async function renderBibliography(view) {
 
   function drawConfirm(box) {
     const rows = data.confirm || [];
-    if (!rows.length) { box.appendChild(emptyState("circle-check", "Nothing to confirm", "When a work’s title, and an author or the year (or a long title, whole, on the title page), are found on the first pages of a document, the pair waits here for you.")); return; }
+    if (!rows.length) { box.appendChild(emptyState("check", "Nothing to confirm", "When a work’s title, and an author or the year (or a long title, whole, on the title page), are found on the first pages of a document, the pair waits here for you.")); return; }
     box.appendChild(h("div", { class: "bib-list-head" },
       h("p", { class: "grow" }, `ENLENS found ${rows.length === 1 ? "this work’s title" : "these works’ titles"} on the first pages of a document. Is it the same work?`),
       rows.length > 1 ? button({ sm: true, onClick: async () => {
@@ -324,7 +322,7 @@ export async function renderBibliography(view) {
     for (const r of rows) {
       const ev = r.evidence || {};
       const ex = ev.excerpt ? h("blockquote", { class: "bib-excerpt" },
-        ev.end > ev.start ? [ev.excerpt.slice(0, ev.start), h("mark", {}, ev.excerpt.slice(ev.start, ev.end)), ev.excerpt.slice(ev.end)] : ev.excerpt) : null;
+        ev.end > ev.start ? [ev.excerpt.slice(0, ev.start), foundWords(ev.excerpt.slice(ev.start, ev.end)), ev.excerpt.slice(ev.end)] : ev.excerpt) : null;
       const found = [
         ev.title === "doi" ? "the work’s DOI, somewhere on the first pages (the document may only cite it)" : ev.title === "whole" ? "the whole title" : ev.title === "main" ? "the title without its subtitle" : "nearly all the words of the title",
         ev.author ? `the author ${titleCase(ev.author)}` : null,
@@ -350,7 +348,7 @@ export async function renderBibliography(view) {
   function drawToFind(box) {
     const rows = data.to_find || [];
     const c = data.counts || {};
-    if (!rows.length) { box.appendChild(emptyState("circle-check", "Every work has its document", "All the works of the bibliography are linked to a document of this project, or wait for you to confirm one.")); return; }
+    if (!rows.length) { box.appendChild(emptyState("check", "Every work has its document", "All the works of the bibliography are linked to a document of this project, or wait for you to confirm one.")); return; }
     if (c.files) box.appendChild(filesCard(c.files));
     const tbody = h("tbody", {});
     const more = h("div", { class: "bib-more" });
@@ -436,7 +434,7 @@ export async function renderBibliography(view) {
 
   function drawNotIn(box) {
     const rows = data.not_in || [];
-    if (!rows.length) { box.appendChild(emptyState("circle-check", "Every document is in the bibliography", "Each document of this project is linked to a work, or waits for you to confirm one.")); return; }
+    if (!rows.length) { box.appendChild(emptyState("check", "Every document is in the bibliography", "Each document of this project is linked to a work, or waits for you to confirm one.")); return; }
     box.appendChild(h("div", { class: "bib-list-head" }, h("p", { class: "grow" },
       `${plural(rows.length, "document has", "documents have")} no work in the bibliography. If you cite ${rows.length === 1 ? "it" : "them"}, add ${rows.length === 1 ? "it" : "them"} to Zotero${data.bibliography.kind === "zotero" ? " and press Update from Zotero" : ""}; or link ${rows.length === 1 ? "it" : "one"} to a work by hand.`)));
     box.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive bib-table" },

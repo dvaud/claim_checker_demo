@@ -3,10 +3,11 @@
 // grid; a person can rename themes, merge two, move a passage, and let the AI name them. Older sets are kept.
 // A theme that is not relevant can be removed (its passages are left out until it is brought back), and a new theme
 // found in its place, on this computer without AI (POST …/new, job "theme-new").
-import { featureEyebrow, aiTag } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold } from "../lib.js";
+import { featureEyebrow, withAI } from "../features.js";
+import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold, readsLine, stopButton, menu, inset } from "../lib.js";
 import { simpleProgress, MiniJob, jobError } from "./progress.js";
 import { historyButton, askWhy } from "./versions.js";
+import { shareBar } from "./share.js";   // 0.18 (L1)
 
 const PASSAGES = 30;   // passages per page on a theme's page
 const searchHref = (q) => `#/search?q=${encodeURIComponent(q)}&mode=phrase`;
@@ -50,15 +51,14 @@ function findCard(project, info, watchers, { again } = {}) {
     h("div", { class: "mono small" }, `mode: ${info.auto_mode} (${info.auto_why}) · spherical k-means, seed 0 · the same documents and settings give the same themes`));
   const btn = button({ kind: "main" }, icon("shapes", { size: 14 }), again ? "Find themes again" : "Find themes");
   const box = h("div", { "aria-live": "polite" });
-  const panel = card({ "aria-labelledby": again ? null : "th-find-h", "aria-label": again ? "Find the themes again" : null },
-    again ? null : h("div", { class: "card-head" }, h("h2", { id: "th-find-h" }, "Find the themes of your documents")),
+  const panel = card({ title: again ? null : "Find the themes of your documents", titleId: again ? null : "th-find-h", "aria-label": again ? "Find the themes again" : null },
     again ? h("p", { class: "th-find-again" }, "A new set of themes is made; this one is kept, so you can compare them (for example before and after adding documents). Your renames, merges and moves apply again to a new set with the same number of themes.") : null,
     range, how, h("div", { class: "btn-row" }, btn), box, tech);
 
   function follow(jobId, k) {
     btn.disabled = true;
     range.input.disabled = true;
-    const stop = button({ kind: "danger", sm: true }, icon("stop", { size: 13 }), "Stop");
+    const stop = stopButton();
     stop.addEventListener("click", async () => { stop.disabled = true; try { await api("POST", `/api/jobs/${P(jobId)}/cancel`); } catch (e) { showError(e); stop.disabled = false; } });
     const pb = h("div", { class: "grow" });
     replace(box, h("div", { class: "row th-job" }, pb, stop));
@@ -93,6 +93,18 @@ function findCard(project, info, watchers, { again } = {}) {
 // ---------------------------------------------------------------------------------------------
 // #/themes: the newest set of themes (or, without one, how to find them)
 // ---------------------------------------------------------------------------------------------
+// a document in a theme's "Mostly from" line: its title link, the document icon its first part, kept on the line of
+// the title's first word, so a line never ends with the icon alone
+// a document a theme comes from, as one piece that never wraps: its icon, its title link (cut with "…") and its count
+// and the "·" after it when more follows, so a wrapped line never begins with it
+// one document of "Mostly from": its icon starts it, so no separator is needed (one would end or start a line when
+// the list wraps)
+function docLead(d) {
+  return h("span", { class: "th-doc" }, icon("file-text", { size: 12 }),
+    link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}`, title: d.title }, d.title || "untitled"),
+    tag({ kind: "count" }, plural(d.passages, "passage")));
+}
+
 export async function renderThemes(view, params, query) {
   const project = App.project;
   const info = await api("GET", `/api/projects/${P(project)}/themes`);
@@ -140,6 +152,7 @@ async function renderRun(view, runId, info, query) {
   api("GET", `/api/projects/${P(project)}/frameworks`).then((r) => { frameworks = r.frameworks || []; if (tab === "codes") drawTab(); }).catch(() => {});
 
   const head = h("div");
+  const sharing = shareBar("themes", runId);   // 0.18 (L1): Private / Shared, Share / Unshare (made once, put back on every draw)
   const notes = h("div");
   const nameJob = h("div");
   const newJob = h("div");      // a new theme being found in place of a removed one
@@ -172,8 +185,9 @@ async function renderRun(view, runId, info, query) {
     replace(head, pageHead("Themes", {
       eyebrow: latest ? featureEyebrow("themes") : h("span", {}, icon("history", { size: 12 }), ` An earlier set of themes, found ${fmt.date(r.created_at)} · `, link({ href: "#/themes" }, "Show the newest")),
       sub: `${plural(v.themes.length, "theme")}${(v.removed || []).length ? ` (${(v.removed || []).length} removed)` : ""} in ${plural(r.passages, "passage")} of ${plural(nDocs, "document")}, found ${modeWords(r.mode)} on ${fmt.date(r.created_at)}. Open a theme to read its passages.`,
-      actions: [h("span", { class: "with-ai" }, nameBtn, aiTag("uses")), historyButton("themes", runId, { onRestored: () => reload() }), xlsx],   // 0.16 (F5)
-    }));
+      actions: [withAI(nameBtn), historyButton("themes", runId, { onRestored: () => reload() }), xlsx],   // 0.16 (F5)
+      ai: readsLine("the passages of each theme"),
+    }), sharing);
     clear(notes);
     if (r.stale) notes.appendChild(notice({ kind: "attention", class: "th-status-notice" },
       h("p", {}, "Documents were added or removed since these themes were found, so they leave out the changes. Find the themes again to include them; this set is kept, so you can compare.")));
@@ -219,10 +233,10 @@ async function renderRun(view, runId, info, query) {
       const reps = t.representatives || [];
       const li = card({ as: "li", class: "th-item", id: `th-${t.theme_id}` },
         h("div", { class: "th-item-head" },
-          h("span", { class: "th-num", "aria-hidden": "true" }, String(t.number ?? t.theme_id)),
           h("div", { class: "th-item-main" },
             h("h3", { class: "th-name" }, link({ kind: "title", serif: true, href }, t.name)),
             h("div", { class: "th-meta" },
+              tag({}, `Theme ${t.number ?? t.theme_id}`),
               tag({ icon: t.name_source === "person" ? "user" : null }, NAMED_BY[t.name_source] || ""),
               t.merged_from && t.merged_from.length ? tag({}, `${t.merged_from.length === 1 ? "1 theme" : `${t.merged_from.length} themes`} merged in`) : null,
               t.moved_in ? tag({}, `${plural(t.moved_in, "passage")} moved here`) : null,
@@ -233,13 +247,16 @@ async function renderRun(view, runId, info, query) {
           h("div", { class: "th-bar", "aria-hidden": "true" }, h("span", { style: { width: `${Math.max(2, pct)}%` } })),
           h("span", { class: "th-size-text" }, `${plural(t.size, "passage")} from ${plural(docs.length, "document")}`)),
         t.terms && t.terms.length ? h("div", { class: "chips th-terms", role: "list", "aria-label": "Key terms" }, t.terms.map((w, i) => [i ? " · " : null, link({ role: "listitem", href: searchHref(w), title: `Search the documents for “${w}”` }, w)])) : null,
-        docs.length ? h("p", { class: "th-docs muted small" }, "Mostly from ", docs.slice(0, 3).map((d, i) => [i ? "; " : "", icon("file-text", { size: 12 }), " ", link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}`, title: d.title }, shortTitle(d.title, 50)), " ", tag({ kind: "count" }, plural(d.passages, "passage"))]), docs.length > 3 ? ` and ${plural(docs.length - 3, "other document")}` : "", ".") : null,
+        docs.length ? h("p", { class: "th-docs muted small" }, "Mostly from ", docs.slice(0, 3).map((d) => [" ", docLead(d)]), docs.length > 3 ? [" ", h("span", { class: "nowrap" }, `and ${plural(docs.length - 3, "other document")}`)] : "") : null,
         reps.length ? fold({ class: "th-reps" }, `The ${reps.length === 1 ? "passage that represents" : `${reps.length} passages that represent`} it best`,
           h("div", { class: "stack th-reps" }, reps.map((p) => repCard(p, t)))) : null,
+        // two row actions at most (docs/DESIGN.md 4.20): Rename, and the rest in a menu, Remove last after a line
         h("div", { class: "btn-row th-acts" },
           button({ kind: "quiet", sm: true, onClick: () => renameTheme(t) }, icon("type", { size: 13 }), "Rename"),
-          button({ kind: "quiet", sm: true, disabled: v.themes.length < 2, onClick: () => mergeTheme(t) }, icon("split", { size: 13 }), "Merge into…"),
-          button({ kind: "danger", sm: true, disabled: v.themes.length < 2 || finding, title: v.themes.length < 2 ? "The last theme cannot be removed" : null, onClick: () => removeTheme(t) }, icon("circle-minus", { size: 13 }), "Remove…")));
+          menu({ label: `More for the theme “${t.name}”`, items: [
+            { text: "Merge into…", icon: "split", disabled: v.themes.length < 2, onClick: () => mergeTheme(t) }, "sep",
+            { text: "Remove…", icon: "minus", danger: true, disabled: v.themes.length < 2 || finding,
+              title: v.themes.length < 2 ? "The last theme cannot be removed" : null, onClick: () => removeTheme(t) }] })));
       ol.appendChild(li);
     }
     return ol;
@@ -314,7 +331,7 @@ async function renderRun(view, runId, info, query) {
     if (!rm.length) return;
     const items = rm.map((t) => {
       const replaced = (t.replaced_by || []).length > 0;
-      return h("li", { class: "th-removed-item" },
+      return inset({ as: "li", tentative: true, class: "th-removed-item" },
         h("div", { class: "th-removed-main" },
           link({ kind: "title", serif: true, href: themeHref(runId, t.theme_id), class: "th-removed-name" }, t.name),
           h("span", { class: "muted small" }, ` · ${plural(t.size, "passage")} left out`,
@@ -333,12 +350,12 @@ async function renderRun(view, runId, info, query) {
   // ---- the list of sets of themes
   function drawRuns() {
     clear(runsBox);
-    runsBox.appendChild(h("div", { class: "section-title" }, h("h2", { id: "th-runs-h" }, `Sets of themes (${runs.length})`), h("span", { class: "muted" }, "Kept until you delete them, to compare the themes before and after adding documents.")));
+    runsBox.appendChild(h("div", { class: "section-title" }, h("h2", { id: "th-runs-h" }, "Sets of themes"), h("span", { class: "muted" }, `${plural(runs.length, "set")}, kept until you delete them, to compare the themes before and after adding documents`)));
     runsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive th-runs" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Found"), h("th", { scope: "col" }, "How"), h("th", { scope: "col", class: "num" }, "Themes"), h("th", { scope: "col", class: "num" }, "Passages"), h("th", { scope: "col" }, "Note"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Actions")))),
       h("tbody", {}, runs.map((r) => h("tr", { class: r.run_id === runId ? "th-run-now" : "" },
         h("td", { class: "nowrap" }, r.run_id === runId ? h("strong", {}, fmt.date(r.created_at)) : link({ kind: "title", href: runHref(r.run_id) }, fmt.date(r.created_at)), r.run_id === runId ? h("span", { class: "muted small" }, " (shown)") : null,
-          r.clash ? h("div", { class: "it tag-clash small", title: "You both changed this set of themes: this version came in beside the other one, so nothing was lost." }, icon("copy", { size: 11 }), `sync clash · ${r.clash.name === "you" ? "your" : `${r.clash.name}’s`} version`) : null),
+          r.clash ? h("div", {}, tag({ kind: "attention", title: "You both changed this set of themes: this version came in beside the other one, so nothing was lost." }, `sync clash · ${r.clash.name === "you" ? "your" : `${r.clash.name}’s`} version`)) : null),
         h("td", { "data-label": "How" }, modeWords(r.mode)),
         h("td", { class: "num", "data-label": "Themes" }, String(r.themes_now ?? r.k)),
         h("td", { class: "num", "data-label": "Passages" }, fmt.num(r.passages)),
@@ -473,7 +490,7 @@ function repCard(p, t) {
   let s = null, e = null;
   if (quotes.length) { const i = (p.text || "").indexOf(quotes[0].quote); if (i >= 0) { s = i; e = i + quotes[0].quote.length; } }
   return h("article", { class: "th-passage" },
-    h("div", { class: "ev-src" }, icon("file-text", { size: 14 }), link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(p.doc_id)}${p.start != null && p.end != null ? `?q=${p.start}-${p.end}&whole=1` : ""}`, class: "title", title: "Open the document at this passage" }, p.title || "untitled"),
+    h("div", { class: "ev-src" }, icon("file-text", { size: 14 }), link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(p.doc_id)}${p.start != null && p.end != null ? `?q=${p.start}-${p.end}&whole=1` : ""}`, title: "Open the document at this passage" }, p.title || "untitled"),
       p.location ? h("span", { class: "page" }, p.location) : null),
     passageNode(p.text, s, e, "p", "passage"));
 }
@@ -490,7 +507,7 @@ export async function renderTheme(view, [runId, themeId], query) {
   try { d = await fetchIt(); }
   catch (e) {
     if (e.status === 404) {
-      view.appendChild(pageHead("Theme", { eyebrow: link({ kind: "back", href: runHref(runId), class: "it" }, "All themes") }));
+      view.appendChild(pageHead("Theme", { back: { href: runHref(runId), text: "All themes" } }));
       view.appendChild(emptyState("search-x", "No such theme", "It was merged into another theme, or its set of themes was deleted.", link({ kind: "back", href: runHref(runId) }, "Show all themes")));
       return;
     }
@@ -545,23 +562,18 @@ export async function renderTheme(view, [runId, themeId], query) {
       if (!r || !(await edit({ what: "remove", theme_id: t.theme_id, value: true, why: r.why || undefined }, `“${shortTitle(t.name, 60)}” removed.`))) return;
       if (r.how === "replace") { try { await api("POST", `${base}/new`, { replaces: t.theme_id }); } catch (e) { showError(e); } }
       navigate(runHref(runId));
-    } }, icon("circle-minus", { size: 13 }), "Remove…");
-    replace(head, h("header", { class: "page-head" },
-      h("div", { class: "page-head-main" },
-        h("p", { class: "eyebrow" }, link({ kind: "back", href: runHref(runId), class: "it" }, "All themes")),
-        h("h1", { id: "page-title", tabindex: "-1", class: "serif th-title" }, t.name),
-        h("div", { class: "result-meta th-title-meta" },
-          h("span", {}, t.removed ? "Removed theme" : `Theme ${t.number ?? t.theme_id}`), h("span", { class: "sep" }, "·"),
-          h("span", {}, `${plural(t.size, "passage")} from ${plural(docs.length, "document")}`), h("span", { class: "sep" }, "·"),
-          h("span", {}, NAMED_BY[t.name_source] || ""))),
-      h("div", { class: "page-head-actions" },
-        link({ kind: "next", href: `#/hypotheses?text=${encodeURIComponent(starter(t))}` }, "Check a hypothesis about this theme"),
-        renameBtn, mergeBtn, removeBtn)));
+    } }, icon("minus", { size: 13 }), "Remove…");
+    // a theme is the research's own words: its name in the Display serif; the way to Hypotheses is a link, so it sits in
+    // the line under the title, and the head's right holds only actions (docs/DESIGN.md 4.14)
+    replace(head, pageHead(t.name, { display: true, titleClass: "th-title", back: { href: runHref(runId), text: "All themes" },
+      facts: [t.removed ? "Removed theme" : `Theme ${t.number ?? t.theme_id}`, `${plural(t.size, "passage")} from ${plural(docs.length, "document")}`, NAMED_BY[t.name_source] || null],
+      sub: link({ href: `#/hypotheses?text=${encodeURIComponent(starter(t))}` }, "Check a hypothesis about this theme"),
+      actions: [renameBtn, mergeBtn, removeBtn] }));
 
     clear(body);
     if (t.removed) {
       const replaced = (t.replaced_by || []).length > 0;
-      body.appendChild(notice({ kind: "attention", icon: "circle-minus", class: "th-removed-note" },
+      body.appendChild(notice({ kind: "attention", class: "th-removed-note" },
         h("div", {}, h("p", {}, "You removed this theme: its passages are left out of the themes, the grids and the Excel file. To keep a passage that matters, move it into a theme below."),
           replaced ? h("p", { class: "small" }, "Found in its place: ", t.replaced_by.map((x, i) => [i ? ", " : "", h("a", { href: themeHref(runId, x.theme_id) }, `“${x.name}”`)]), ".") : null,
           h("div", { class: "btn-row th-title-actions" },
@@ -580,7 +592,7 @@ export async function renderTheme(view, [runId, themeId], query) {
       const from = t.drawn_from || [];
       body.appendChild(notice({ kind: "info", icon: "shapes", class: "th-new-note" },
         h("div", {}, h("p", {}, "A new theme, found in place of ", h("a", { href: themeHref(runId, t.replaces.theme_id) }, `“${t.replaces.name}”`), ", which you removed. Its passages fitted the themes they were in least well."),
-          from.length ? h("p", { class: "small" }, "They come from ", from.map((x, i) => [i ? (i === from.length - 1 ? " and " : ", ") : "", h("a", { href: themeHref(runId, x.theme_id) }, `“${shortTitle(x.name, 50)}”`), ` (${x.passages})`]), ".") : null)));
+          from.length ? h("p", { class: "small" }, "They come from ", from.map((x, i) => [i ? (i === from.length - 1 ? " and " : ", ") : "", h("a", { href: themeHref(runId, x.theme_id) }, `“${shortTitle(x.name, 50)}”`), ` (${plural(x.passages, "passage")})`]), ".") : null)));
     }
     // the AI's description, with its checked quotes
     if (t.description || (t.name_source === "model" && t.quotes)) {
@@ -604,14 +616,14 @@ export async function renderTheme(view, [runId, themeId], query) {
       h("div", { class: "section-title" }, h("h2", { id: "th-t-h" }, "Key terms"), h("span", { class: "muted" }, "The words that set this theme apart. Click one to search the documents for it.")),
       h("div", { class: "chips" }, (t.terms || []).map((w, i) => [i ? " · " : null, link({ href: searchHref(w) }, icon("text-search", { size: 12 }), w)]))));
     body.appendChild(h("section", { class: "section", "aria-labelledby": "th-d-h" },
-      h("div", { class: "section-title" }, h("h2", { id: "th-d-h" }, `The documents it comes from (${docs.length})`)),
+      h("div", { class: "section-title" }, h("h2", { id: "th-d-h" }, "The documents it comes from"), h("span", { class: "muted" }, plural(docs.length, "document"))),
       h("ul", { class: "th-doclist" }, docs.slice(0, 12).map((x) => h("li", {}, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(x.doc_id)}`, title: x.title }, shortTitle(x.title, 90)), h("span", { class: "muted small" }, plural(x.passages, "passage"))))),
       docs.length > 12 ? fold({}, `${plural(docs.length - 12, "other document")}`,
         h("ul", { class: "th-doclist" }, docs.slice(12).map((x) => h("li", {}, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(x.doc_id)}`, title: x.title }, shortTitle(x.title, 90)), h("span", { class: "muted small" }, plural(x.passages, "passage")))))) : null));
     // passages
     const reps = new Set((t.representatives || []).map((p) => p.passage_id));
     const sec = h("section", { class: "section", "aria-labelledby": "th-p-h" },
-      h("div", { class: "section-title" }, h("h2", { id: "th-p-h" }, `Its passages (${fmt.num(d.total)})`), h("span", { class: "muted" }, "Those closest to the heart of the theme first.")));
+      h("div", { class: "section-title" }, h("h2", { id: "th-p-h" }, "Its passages"), h("span", { class: "muted" }, `${plural(d.total, "passage")}, those closest to the heart of the theme first`)));
     const pager = () => d.total > PASSAGES ? h("div", { class: "pager" },
       h("span", { class: "muted small" }, `${fmt.num(d.offset + 1)}–${fmt.num(d.offset + d.passages.length)} of ${fmt.num(d.total)}`),
       h("div", { class: "btn-row" },
@@ -634,7 +646,7 @@ export async function renderTheme(view, [runId, themeId], query) {
       const undo = p.moved ? button({ kind: "quiet", sm: true, onClick: async () => { if (await edit({ what: "move", passage_id: p.passage_id, value: null }, "The passage is back in the theme it was found in.")) reload(); } }, "Undo the move") : null;
       list.appendChild(card({ as: "article", class: "th-passage" },
         h("div", { class: "ev-src" }, icon("file-text", { size: 14 }),
-          link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(p.doc_id)}${p.start != null && p.end != null ? `?q=${p.start}-${p.end}&whole=1` : ""}`, class: "title", title: "Open the document at this passage" }, p.title || "untitled"),
+          link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(p.doc_id)}${p.start != null && p.end != null ? `?q=${p.start}-${p.end}&whole=1` : ""}`, title: "Open the document at this passage" }, p.title || "untitled"),
           p.location ? h("span", { class: "page" }, p.location) : null),
         (reps.has(p.passage_id) || p.moved) ? h("div", { class: "th-flags" },
           reps.has(p.passage_id) ? tag({ kind: "code" }, icon("star", { size: 11 }), "represents the theme best") : null,

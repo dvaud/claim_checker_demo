@@ -150,17 +150,22 @@ class ChecksApi:
                    {"Content-Disposition": f'attachment; filename="checks_{safe}.csv"'})
 
     def get_project_zip(self, name, q):
-        """The whole project as one zip (see bundle.py), built in a temporary file and sent in chunks."""
+        """The whole project as one zip (see bundle.py), built in a temporary file and sent in chunks. 0.18:
+        `?scope=shared` holds only what you shared, to send to a colleague (sharing.py)."""
         import tempfile
 
         from .. import bundle
 
         ws = self.app.ws(name)
+        scope = _str(q, "scope") or "all"
+        if scope not in bundle.SCOPES:
+            raise ApiError(400, "scope is all (the whole project) or shared (what you shared).")
         tmp = Path(tempfile.mkdtemp(prefix="enlens-zip-"))
         try:
             out = tmp / "project.zip"
-            bundle.export_project(ws, out)
-            fname = _filename(f"ENLENS project - {name} - {time.strftime('%Y-%m-%d')}", "zip")
+            bundle.export_project(ws, out, scope=scope)
+            what = "ENLENS shared work" if scope == "shared" else "ENLENS project"
+            fname = _filename(f"{what} - {name} - {time.strftime('%Y-%m-%d')}", "zip")
             self._stream(out, "application/zip", {"Content-Disposition": _disposition(fname)})
         finally:
             import shutil
@@ -185,6 +190,14 @@ class ChecksApi:
                 raise ApiError(409, str(e), extra={"not_this_project": e.info}) from e
             except ValueError as e:
                 raise ApiError(400, str(e)) from e
+        from .api_owner import start_due  # 0.18 L2: a new reading the owner accepted is made here, in the queue
+
+        try:
+            start_due(self.app, name)
+        except Exception:  # noqa: BLE001 - never the zip's fault: it is tried again after the next round or zip
+            import traceback
+
+            traceback.print_exc()
         return {"report": report, "project": self.app.project_summary(name)}
 
     def get_together(self, name, q):
@@ -280,7 +293,7 @@ class ChecksApi:
 
     def post_cancel(self, job_id, q):
         job = self.app.jobs.get(job_id)
-        job.cancel.set()
+        self.app.jobs.cancel(job)  # 0.18 (M6): a job waiting for its turn leaves the queue at once
         return {"job": job.view(full=False)}
 
     def post_benchmark(self, q):

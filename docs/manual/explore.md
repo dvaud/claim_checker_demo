@@ -30,7 +30,7 @@ document first.
 | To grow the search from what you see | Click a word in a line to add it; <kbd>Shift</kbd>-click to make a phrase. |
 | To see patterns | Sort by document, by the words before or by the words after. |
 | The words around your search | *Words that often appear nearby*: the words within 2 to 10 words of the places found, most often or most typical first (point at one for both figures; within one document or code, "typical" is measured against that document's or code's own passages). |
-| To test what a line says | Its *Check* button starts a check of it. |
+| To test what a line says | Its link *Check this* takes the line to *Hypotheses*, where you check it. |
 | A list for later | Download every line for Excel or as CSV. |
 
 Every searched word is marked in the lines, and in the passages that search by meaning finds. A line shows its

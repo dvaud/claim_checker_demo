@@ -123,8 +123,12 @@ step, or not at all:
 - what cannot be placed is kept without a place in the text and listed (its check marks it *no place in the new
   reading*).
 
-It needs the original file, unchanged, and no task of the document out with Claude Code. In a project shared with
-colleagues, move a document on both copies: until then, a colleague's older reading comes in as a second copy of it.
+It needs the original file, unchanged, and no task of the document out with Claude Code. While other work of the
+project runs (documents being added, a round of the shared folder), it waits its turn: *Queued: starts when … has
+finished*, with *Cancel* (0.17.0). In a project shared with colleagues the document stays one document: each copy keeps
+the reading it has, and a colleague's results are placed on yours by their words (0.17.0). In a project with an owner, a
+colleague's move is a proposal; once the owner accepts it, every copy moves
+([Work together](together.md#the-owner-and-proposals-0170)).
 
 **Several at once.** Above the list of documents, **Read all with the new reader** (or *Read the selected with the new
 reader*, when you tick some) moves them one after the other. A document moves only when every one of its results finds

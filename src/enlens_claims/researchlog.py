@@ -37,6 +37,10 @@ GROUPS = {
     "glossary-words": "themes",
     "restored": "history",
     "sync": "together",
+    "shared": "together", "unshared": "together",  # 0.18 (sharing.py)
+    # 0.18 L2 (ownership.py): a change proposed to the owner, the owner's word on it, and who the owner is
+    "proposal": "together", "proposal-accepted": "together", "proposal-declined": "together",
+    "proposal-taken-back": "together", "owner": "together",
 }
 GROUP_NAMES = {"entries": "Your own entries", "documents": "Documents", "checks": "Checks", "themes": "Themes",
                "codebooks": "Codebooks", "history": "Restored versions", "together": "Work together"}

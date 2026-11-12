@@ -437,7 +437,7 @@ def test_the_page_shell_and_documents():
     assert re.search(r'bibliography: \{\s*section: "project", title: "Bibliography", icon: "library", '
                      r'href: "#/bibliography", ai: "none"', features)
     index = (STATIC / "index.html").read_text()
-    assert rule(".bib-source") and rule(".bib-tiles")  # 0.17.0: the page's rules are in the cascade
+    assert rule(".bib-source") and rule(".bib-lists")  # 0.17.0: the page's rules are in the cascade
     # 0.17.0: the bibliography is a view of Documents (a tab on its pages), right after its notes
     assert re.search(r'\["bibliography", "Bibliography", "#/bibliography", "library"\]', features)
     assert features.index('["annotations", "Notes"') < features.index('["bibliography", "Bibliography"')

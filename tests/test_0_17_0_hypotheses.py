@@ -89,17 +89,20 @@ def test_one_box_for_one_hypothesis_or_a_list():
 
 def test_the_ai_marks_and_the_line_on_who_reads():
     hyp = _js("views/hypotheses.js")
-    # one AI mark for the row of buttons (the 0.17 rule), after both of them, not one beside each
-    assert 'h("div", { class: "btn-row hyp-actions" }, runBtn, lookWrap, aiTag("uses"))' in hyp
-    assert hyp.count("aiTag(") == 1 and "hyp-btn-group" not in hyp
+    # one AI mark for the row of buttons (the 0.17 rule), after both of them, not one beside each. 0.17.0 (design
+    # guide): withAI() (features.js) makes the row's mark and keeps it with the last button, on every page alike
+    assert 'h("div", { class: "btn-row hyp-actions" }, withAI(runBtn, lookWrap))' in hyp
+    assert hyp.count("withAI(") == 1 and "aiTag(" not in hyp and "hyp-btn-group" not in hyp
     # "Look before checking" uses the AI only to split the hypothesis and find other words: its tooltip follows them
     assert 'o.decompose || o.expand ? "Uses the AI."' in hyp
     assert "options.addEventListener(\"change\", () => {\n    drawLookTag();" in hyp
-    # which AI reads, from the settings, with the icon of the sidebar's AI line
-    reads = _fn(hyp, "export function readsLine()", "\n}\n")
-    assert "App.privacy()" in reads and "reads the excerpts it needs" in reads and "icon(p.icon" in reads
-    assert "`${p.label}, reads the excerpts it needs.`" in reads   # "Claude, on your plan, reads the excerpts it needs."
-    assert "readsLine()," in hyp
+    # which AI reads, from the settings, with the icon of the sidebar's AI line. 0.17.0 (design guide): the line is
+    # the AI line of lib.js (aiWhere()), shared with the result page's "Ask another AI model" card
+    lib = _js("lib.js")
+    reads = _fn(lib, "export function readsLine(", "\n}\n")
+    assert "App.privacy()" in reads and "aiWhere(" in reads
+    assert "`${p.label}, reads ${what}.`" in reads   # "Claude, on your plan, reads the excerpts it needs."
+    assert 'readsLine("the excerpts it needs", { class: "hyp-reads" }),' in hyp
 
 
 def test_keys_and_the_draft():
@@ -145,7 +148,9 @@ def test_running_checks_are_rows_at_the_top_of_the_answers():
     css = _css()
     # 0.17.0 (design guide): the state of a running check is a workState(), no .badge-job pill any more
     assert 'workState("running", "Checking…")' in hist
-    assert ".hyp-job-row" in css and ".hyp-compose .textarea-hyp" in css
+    # 0.17.0 (design guide 4.3): a waiting check's title link is no longer slanted by the page (.hyp-job-row's only
+    # rule): its words and its work state say it waits, and a title link takes no look from what holds it
+    assert 'class: "row-link hyp-job-row"' in hist and ".hyp-job-row" not in css and ".hyp-compose .textarea-hyp" in css
 
 
 def test_the_result_page_says_all_hypotheses():

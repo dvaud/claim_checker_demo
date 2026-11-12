@@ -126,6 +126,10 @@ export { icon };
 // With `breaks` (0.6: [{at, kind: "paragraph" | "heading", end}], offsets in the unbroken text) the text is laid out
 // as paragraphs, headings as a bold line; the quote offsets still refer to the unbroken text, so the highlight
 // continues across a break.
+// Words the program found by matching (a search, a code's words, the words that name a work): soft teal, never the
+// quote's yellow (docs/DESIGN.md 4.23)
+export function foundWords(text) { return h("mark", { class: "found" }, text); }
+
 export function passageNode(text, start, end, tag = "p", cls = "passage", breaks = null) {
   text = String(text || "");
   const ok = Number.isInteger(start) && Number.isInteger(end) && start >= 0 && start < end && end <= text.length;
@@ -361,7 +365,7 @@ export function toast(message, kind = "info", opts = {}) {
 // Errors in plain words; the technical message is kept behind "Technical details".
 // 0.14.3: a failed load drawn in the page itself (a toast fades, and a heading over nothing looks like "nothing here")
 export function failedLoad(el, e) {
-  replace(el, h("div", { class: "notice notice-error", role: "alert" }, icon("alert-circle"), h("p", {}, (e && e.message) || "This could not be loaded.")));
+  replace(el, notice({ kind: "error" }, h("p", {}, (e && e.message) || "This could not be loaded.")));
 }
 
 export function showError(e, extra = {}) {
@@ -478,6 +482,8 @@ export function watchJob(jobId, onTick, interval = 500) {
       }
       failures = 0;
       if (stopped) return;
+      if (job.waiting_for) queuedToast(job);   // 0.18 queued jobs
+      else if (queuedToasts.has(job.id)) document.querySelectorAll(`.toast[data-group="queued-${job.id}"]`).forEach((t) => t.remove());
       try { if (onTick) onTick(job); } catch (err) { console.error(err); }
       if (TERMINAL.has(job.state)) { resolve(job); jobsChanged(); App.refresh().catch(() => {}); return; }
       timer = setTimeout(tick, interval);
@@ -489,6 +495,20 @@ export function watchJob(jobId, onTick, interval = 500) {
 
 export async function cancelJob(jobId) {
   return api("POST", `/api/jobs/${P(jobId)}/cancel`);
+}
+
+// 0.18 queued jobs: a job that waits for another job of its project says so once, in a toast with Cancel
+const queuedToasts = new Set();
+function queuedToast(job) {
+  if (queuedToasts.has(job.id)) return;
+  queuedToasts.add(job.id);
+  toast(`${job.waiting_for.message}.`, "info", { group: `queued-${job.id}`, button: { text: "Cancel", onClick: async () => {
+    try {   // only while it still waits: once it has started, Stop on its card stops it
+      const now = await api("GET", `/api/jobs/${P(job.id)}`);
+      if (now.waiting_for) await cancelJob(job.id);
+      else if (!TERMINAL.has(now.state)) toast("It has started already: stop it from its card if you want to.", "info");
+    } catch (e) { showError(e); }
+  } } });
 }
 
 // A running job of one of these kinds for this project, if any (`test(job)`: a further condition).
@@ -665,6 +685,7 @@ export const UI = {
   input: "input", select: "select", textarea: "textarea", search: "search-field",
   menu: "menu-list", menuItem: "menu-item", menuSep: "menu-sep",
   workState: "work-state",
+  cardHead: "card-head", pageHead: "page-head", tabs: "settings-tabs",
 };
 
 // h()'s attributes with the component's classes in front of the page's own
@@ -693,10 +714,35 @@ export function button(opts = {}, ...children) {
   return b;
 }
 
+// A button's kind, changed in place: a button that becomes the main one when its step comes (the sidebar's Update,
+// set-up's Next once Claude is ready). Only its kind's classes change.
+export function setButtonKind(b, kind) {
+  b.classList.remove(...new Set(Object.values(UI.button).join(" ").split(" ")));
+  b.classList.add(...UI.button[kind || "standard"].split(" "));
+}
+
 // A button at work: the loader turns in place of its icon, the words stay, it is disabled and keeps its width.
+const BUSY_ICON = new WeakMap();   // a busy button's own icon, put back when the work ends
 export function setBusy(b, busy) {
   b.disabled = !!busy;
-  if (busy) b.setAttribute("aria-busy", "true"); else b.removeAttribute("aria-busy");
+  const first = b.firstElementChild;
+  if (busy) {
+    b.setAttribute("aria-busy", "true");
+    if (first && first.classList.contains("icon") && !BUSY_ICON.has(b)) {
+      BUSY_ICON.set(b, first);
+      first.replaceWith(icon("loader", { size: Number(first.getAttribute("width")) || 15 }));
+    }
+  } else {
+    b.removeAttribute("aria-busy");
+    if (BUSY_ICON.has(b)) { if (first) first.replaceWith(BUSY_ICON.get(b)); BUSY_ICON.delete(b); }
+  }
+}
+
+// A job's Stop: a small quiet button with the stop icon. It ends work under way and removes nothing (what is done is
+// kept), so it is never a danger button. opts.text: "Stop Claude Code" where the job beside it has its own Stop.
+export function stopButton(opts = {}) {
+  const [o, attrs] = split(opts, ["text"]);
+  return button({ ...attrs, kind: "quiet", sm: true, icon: "stop" }, o.text || "Stop");
 }
 
 // A download: it makes a file, so it looks like a (quiet, small) button, though it may be an <a download>.
@@ -755,23 +801,38 @@ export function tag(opts = {}, ...children) {
 // A notice: something to know before going on, that stays while it is true. kind: "info" (default) | "done" (a state
 // the page is about that stays true: set up, passed) | "attention" (needs you) | "error" (did not work). Its icon comes
 // with its kind; icon: another icon name (the cloud, the house) or false. At most one action or one link after its
-// words.
+// words. live: how a screen reader hears it (docs/DESIGN.md 4.12, 8). A notice drawn with the page is read with the
+// page: no live role. One that appears because of what you just did says so: "status" (read when the reader is free:
+// a test's outcome, what came of adding documents) or "alert" (read at once). An error is an alert unless live says
+// otherwise.
 export function notice(opts = {}, ...children) {
-  const [o, attrs] = split(opts, ["kind", "icon"]);
+  const [o, attrs] = split(opts, ["kind", "icon", "live"]);
   const kind = o.kind || "info";
   const ic = o.icon === false ? null : (o.icon || UI.noticeIcon[kind]);
-  const role = kind === "error" || kind === "attention" ? "alert" : null;
+  const role = o.live === undefined ? (kind === "error" ? "alert" : null) : (o.live || null);
   return h("div", withClass(UI.notice[kind], { role, ...attrs }), ic ? icon(ic, { size: 16 }) : null, h("div", { class: "notice-body" }, children));
 }
 
+// The one box a card may hold (docs/DESIGN.md 4.11): --surface-2, no edge, the control's corners. One of a list inside
+// a card (a label in a document's Codes panel, a concept's link, a codebook's Try it) or one aside (a calibration, a
+// comparison). as: the element (default "div"; "li" in a list). tentative: not in force yet (a reading the AI proposed
+// and nobody confirmed, a proposed link): a dashed edge. A box where a dragged item may land says so with
+// data-drop="true".
+export function inset(opts = {}, ...children) {
+  const [o, attrs] = split(opts, ["as", "tentative"]);
+  return h(o.as || "div", withClass(o.tentative ? "inset inset-tentative" : "inset", attrs), ...children);
+}
+
 // A card: one thing, or one task, held together. opts.as: the element (default "section"); title, help (a helpMark)
-// and action (one button) make its head.
+// and action (one button) make its head; level: the title's element (default "h2"); titleId: the title's id, which
+// also names the card (aria-labelledby). A page never spells the head itself.
 // sm: the small card, one of many in a list (a note). as: "details" makes a card that folds: its first child is the
 // <summary>, drawn as its title line with the fold's chevron.
 export function card(opts = {}, ...children) {
-  const [o, attrs] = split(opts, ["as", "title", "help", "action", "level", "sm"]);
-  const head = o.title || o.action ? h("div", { class: "card-head" },
-    o.title ? h(o.level || "h2", { class: "card-title-h" }, o.title, o.help || null) : null, o.action || null) : null;
+  const [o, attrs] = split(opts, ["as", "title", "titleId", "help", "action", "level", "sm"]);
+  if (o.titleId && o.title && !attrs["aria-label"] && !attrs["aria-labelledby"]) attrs["aria-labelledby"] = o.titleId;
+  const head = o.title || o.action ? h("div", { class: UI.cardHead },
+    o.title ? h(o.level || "h2", { class: "card-title-h", id: o.titleId || null }, o.title, o.help || null) : null, o.action || null) : null;
   return h(o.as || "section", withClass(o.sm ? `${UI.card} ${UI.cardSm}` : UI.card, attrs), head, children);
 }
 
@@ -874,39 +935,102 @@ export function searchField(opts = {}) {
   return lab;
 }
 
-// A menu: more actions for one thing, under its button. items: [{ text, icon, onClick, danger, current }] or "sep".
-// The button is a small quiet button: the words (default "More") and the more icon; Escape and a click outside close.
+// A menu: more actions for one thing, or a list to pick from, under its button. items: [{ text, icon, onClick, href,
+// meta, title, danger, current, disabled }] or "sep" (href: a row that goes somewhere; meta: quiet words after the
+// row's own). The button is a small quiet button: the words (default "More") and the more icon; or, with trigger, the
+// summary holds those children and takes its look from where it is placed (the project switch, docs/DESIGN.md 5.1).
+// listClass: the list's own class for placement. Escape and a click outside close it.
 export function menu(opts = {}) {
-  const [o, attrs] = split(opts, ["items", "text", "label"]);
-  const list = h("div", { class: UI.menu, role: "menu" });
-  const trigger = h("summary", { class: `${UI.button.quiet} ${UI.sm}`, "aria-haspopup": "menu", "aria-label": o.label || null },
-    icon("more-horizontal", { size: 14 }), o.text || "More");
+  const [o, attrs] = split(opts, ["items", "text", "label", "title", "trigger", "listClass"]);
+  const list = h("div", { class: o.listClass ? `${UI.menu} ${o.listClass}` : UI.menu, role: "menu" });
+  const trigger = o.trigger
+    ? h("summary", { "aria-haspopup": "menu", "aria-label": o.label || null, title: o.title || null }, o.trigger)
+    : h("summary", { class: `${UI.button.quiet} ${UI.sm}`, "aria-haspopup": "menu", "aria-label": o.label || null, title: o.title || null },
+      icon("more-horizontal", { size: 14 }), o.text || "More");
   const det = h("details", withClass("menu", attrs), trigger, list);
   const close = () => { det.open = false; };
   for (const it of o.items || []) {
     if (it === "sep") { list.appendChild(h("div", { class: UI.menuSep, role: "separator" })); continue; }
-    list.appendChild(h("button", { class: UI.menuItem + (it.danger ? " menu-item-danger" : ""), type: "button", role: "menuitem",
-      "aria-current": it.current ? "true" : null, disabled: !!it.disabled,
-      onClick: (e) => { close(); if (it.onClick) it.onClick(e); } }, it.icon ? icon(it.icon, { size: 14 }) : null, it.text));
+    const inner = [it.icon ? icon(it.icon, { size: 14 }) : null,
+      it.meta ? h("span", { class: "menu-text" }, it.text, h("span", { class: "menu-meta" }, it.meta)) : it.text];
+    const cls = UI.menuItem + (it.danger ? " menu-item-danger" : "");
+    list.appendChild(it.href
+      ? h("a", { class: cls, href: it.href, role: "menuitem", title: it.title || null, onClick: close }, inner)
+      : h("button", { class: cls, type: "button", role: "menuitem", title: it.title || null,
+        "aria-current": it.current ? "true" : null, disabled: !!it.disabled,
+        onClick: (e) => { close(); if (it.onClick) it.onClick(e); } }, inner));
   }
   det.addEventListener("keydown", (e) => { if (e.key === "Escape" && det.open) { close(); trigger.focus(); e.stopPropagation(); } });
-  document.addEventListener("click", (e) => { if (det.open && !det.contains(e.target)) close(); });
+  // Where a frame would cut the open list (a table that scrolls, its last row), the list floats over the page instead,
+  // under its button, toward the side with room; a scroll of the page or a resize closes it, as it would leave its
+  // button behind. Where the list fits inside every frame around it (the project switch in the sidebar, a menu in the
+  // drawer), it hangs from its button as always.
+  const cutBy = () => {
+    const l = list.getBoundingClientRect();
+    for (let el = det.parentElement; el && el !== document.body; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
+      const f = el.getBoundingClientRect();
+      if (l.left < f.left - 1 || l.right > f.right + 1 || l.top < f.top - 1 || l.bottom > f.bottom + 1) return el;
+    }
+    return null;
+  };
+  const unfloat = () => { delete list.dataset.float; list.style.left = ""; list.style.top = ""; };
+  // the list's own scrolling (a long project list) is not a scroll that leaves the button behind
+  const away = (e) => { if (e && e.type === "scroll" && e.target instanceof Node && list.contains(e.target)) return; if (det.open) close(); };
+  det.addEventListener("toggle", () => {
+    if (!det.open) { unfloat(); window.removeEventListener("scroll", away, true); window.removeEventListener("resize", away); return; }
+    unfloat();   // measured where it hangs from its button
+    const frame = cutBy();
+    if (!frame) return;
+    list.dataset.float = "true";
+    const r = trigger.getBoundingClientRect(), f = frame.getBoundingClientRect(), w = list.offsetWidth, hgt = list.offsetHeight;
+    // its end under the button's end when that keeps it over the frame, else its start under the button's start
+    const x = r.right - w >= Math.max(8, f.left) ? r.right - w : Math.min(r.left, window.innerWidth - w - 8);
+    list.style.left = `${Math.round(Math.max(8, x))}px`;
+    list.style.top = `${Math.round(r.bottom + 4 + hgt <= window.innerHeight - 8 ? r.bottom + 4 : Math.max(8, r.top - 4 - hgt))}px`;
+    window.addEventListener("scroll", away, true); window.addEventListener("resize", away);
+  });
+  const outside = (e) => {
+    if (!det.isConnected) { document.removeEventListener("click", outside); return; }
+    if (det.open && !det.contains(e.target)) close();
+  };
+  document.addEventListener("click", outside);
   return det;
 }
 
+// A colleague's initials: the first letters of the first and the last word of the name, so particles (de, van, von,
+// da) never count: "Anna de Vries" is AV. One word gives one letter. Letters and figures of any script count; a name
+// that is not known ("a colleague", "you") gives none.
+export function initials(name) {
+  const n = String(name || "").trim();
+  if (!n || /^(a colleague|you|maker not known)$/i.test(n)) return "";
+  const words = n.split(/[\s.]+/).filter((w) => /\p{L}|\p{N}/u.test(w));
+  if (!words.length) return "";
+  const first = (w) => [...w.replace(/^[^\p{L}\p{N}]+/u, "")][0] || "";
+  const a = first(words[0]), b = words.length > 1 ? first(words[words.length - 1]) : "";
+  return (a + b).toUpperCase();
+}
 // A person mark: who did something, beside an item, a judgement, a log entry or a review. The person icon, then "You"
 // or a colleague's initials (several people: each, "You" first), and a role when it matters (Owner, Collaborator).
 // The full names and the role are its tooltip and its accessible name. note: a word after the role's dot instead of a
-// role ("partly", while only part is reviewed).
+// role ("partly", while only part is reviewed). prefix: what they did, for the tooltip ("Reviewed by").
+// Initials are enough only where the row already names the person (a person row). A mark that stands alone (a shared
+// item's "by Anna", a "changed by" line, a proposal's proposer) shows the name in their place: name "short" (the
+// first word: "Anna") or "full" ("Anna de Vries"); there the prefix is shown too ("By Anna", "Changed by Anna"). A
+// name that is not known stays whole: "A colleague", "By a colleague".
 export function personMark(people, opts = {}) {
   const list = (people || []).filter(Boolean);
   if (!list.length) return null;
-  const names = list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
-  const words = `${opts.prefix ? `${opts.prefix} ` : ""}${names}${opts.role ? ` (${opts.role})` : ""}`;
-  const short = list.map((p) => (p === "you" ? "You" : p.split(/\s+/).map((w) => w[0] || "").join("").slice(0, 2).toUpperCase()));
+  const and = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0]);
+  const words = `${opts.prefix ? `${opts.prefix} ` : ""}${and(list)}${opts.role ? ` (${opts.role})` : ""}`;
+  const shown = opts.name
+    ? (opts.prefix ? `${opts.prefix} ` : "") + and(list.map((p, i) => (p === "you" ? (i || opts.prefix ? "you" : "You")
+      : !initials(p) ? "a colleague" : opts.name === "full" ? p : String(p).trim().split(/\s+/)[0])))
+    : list.map((p) => (p === "you" ? "You" : initials(p))).filter(Boolean).join(" · ");   // not known: the icon only
   const after = opts.role || opts.note;
   return h("span", { class: `${UI.tag.neutral} person-mark`, title: cap(words), "aria-label": cap(words), role: "img" },
-    icon(list.length > 1 ? "users" : "user", { size: 12 }), h("span", { "aria-hidden": "true" }, short.join(" · ")),
+    icon(list.length > 1 ? "users" : "user", { size: 12 }), shown ? h("span", { "aria-hidden": "true" }, opts.name ? cap(shown) : shown) : null,
     after ? h("span", { class: "person-mark-role", "aria-hidden": "true" }, after) : null);
 }
 // Reviewed: who judged the excerpts an answer rests on (the person mark's first use); "You · partly" while only part is.
@@ -918,8 +1042,9 @@ export function reviewedMark(people, partly) {
 // attention tag.
 export function severityTag(level) {
   const words = { low: "Low", medium: "Medium", high: "High" }[level] || level;
-  return level === "high" ? tag({ kind: "attention", title: "Severity: high" }, words)
-    : tag({ class: `severity-${level}`, title: `Severity: ${words.toLowerCase()}` }, words);
+  const said = [h("span", { class: "visually-hidden" }, "Severity: "), words];   // heard as "Severity: Low"
+  return level === "high" ? tag({ kind: "attention", title: "Severity: high" }, said)
+    : tag({ class: `severity-${level}`, title: `Severity: ${words.toLowerCase()}` }, said);
 }
 
 // An item's sharing state (working together): Private (only on this computer), Shared (in the shared folder),
@@ -941,23 +1066,56 @@ export function absentDocument(title, opts = {}) {
 // A row of a list (in the drawer or on a page): who (a person mark), the item's name as its title link, when, and one
 // or two small actions at the row's end. sub: a quiet second line under the name (a colleague's ENLENS version);
 // warn: true when that line needs you (it becomes an attention tag). Rows are grouped under a small heading by
-// listGroup(heading, …rows), by person or by day.
-export function listRow({ person, title, href, time, sub, warn, actions = [] }) {
+// listGroup(heading, …rows), by person or by day (null: no heading); heading may be { text, action }: the group's one action at the
+// head's end (What came in · Mark as seen). serif: the name is the research's own (a document, a hypothesis, a concept,
+// a theme), in the serif (docs/DESIGN.md 3.2); a person's name or a sentence about what happened stays sans.
+export function listRow({ person, title, href, time, sub, warn, serif, actions = [] }) {
   return h("li", { class: "list-row" }, person || null,
-    h("div", { class: "list-row-main" }, href ? link({ kind: "title", href }, title) : h("span", {}, title),
+    h("div", { class: "list-row-main" }, href ? link({ kind: "title", serif, href }, title) : h("span", { class: serif ? "serif" : null }, title),
       sub ? (warn ? tag({ kind: "attention" }, sub) : h("span", { class: "list-row-sub" }, sub)) : null),
     time ? h("time", { class: "list-row-time" }, time) : null,
     actions.length ? h("span", { class: "list-row-actions" }, ...actions) : null);
 }
+// heading null: the rows alone, where the place around them already names them (a section of the drawer)
 export function listGroup(heading, ...rows) {
-  return h("section", { class: "list-group" }, h("h3", { class: "list-head" }, heading), h("ul", { class: "list-rows" }, ...rows));
+  if (heading === null || heading === undefined) return h("div", { class: "list-group" }, h("ul", { class: "list-rows" }, ...rows));
+  const hd = heading.text !== undefined ? heading : { text: heading };
+  const title = h("h3", { class: "list-head" }, hd.text);
+  return h("section", { class: "list-group" }, hd.action ? h("div", { class: "list-group-head" }, title, hd.action) : title,
+    h("ul", { class: "list-rows" }, ...rows));
+}
+
+// A proposed change (working together), one card in a list of them (listGroup(): waiting, decided, taken back). Its
+// head: what is proposed and the severity tag; under it who proposed it and when, and the proposer's reason in their
+// words; detail: what else the card must say (what the change does, a notice of another proposal for the same item).
+// side "owner": Accept (main) and Decline… (quiet; it asks for an optional reason). side "proposer": the state in words
+// (waiting: "Waiting for Anna.", by default "Waiting for the owner"; or Declined: the reason) and Take back (quiet)
+// while it waits, when onTakeBack is given (a colleague who neither decides nor proposed sees the wait only). An owner
+// who still has a proposal of their own waiting (after a hand-over) keeps its Take back beside Accept and Decline…. state: "waiting" | "accepted" | "declined" |
+// "taken-back". Other options (id, aria-label) go to the card.
+export function proposalCard(opts = {}) {
+  const [o, attrs] = split(opts, ["what", "person", "time", "severity", "reason", "detail", "side", "state", "declined", "waiting", "onAccept", "onDecline", "onTakeBack"]);
+  const side = o.side || "owner", state = o.state || "waiting";
+  const words = { accepted: workState("done", "Accepted"), declined: workState("ended", o.declined ? `Declined: ${o.declined}` : "Declined"),
+    "taken-back": workState("ended", "Taken back") }[state]
+    || (side === "proposer" ? workState("waiting", o.waiting || "Waiting for the owner") : null);
+  const takeBack = o.onTakeBack ? [button({ kind: "quiet", sm: true, onClick: o.onTakeBack }, "Take back")] : [];
+  const actions = state !== "waiting" ? [] : side === "owner"
+    ? [button({ kind: "main", sm: true, onClick: o.onAccept }, "Accept"), button({ kind: "quiet", sm: true, onClick: o.onDecline }, "Decline…"), ...takeBack]
+    : takeBack;
+  return card({ ...attrs, as: "li", sm: true, class: ["proposal", attrs.class].filter(Boolean).join(" "), title: o.what, level: "h3", action: o.severity ? severityTag(o.severity) : null },
+    h("p", { class: "proposal-by" }, o.person || null, o.time ? h("time", {}, o.time) : null),
+    o.reason ? h("p", { class: "proposal-why" }, "“", o.reason, "”") : null,
+    o.detail || null,
+    words || actions.length ? h("div", { class: "btn-row proposal-foot" }, words, ...actions) : null);
 }
 
 // A list of problems, one notice each (the shared folder: one per colleague or per kind): items [{ kind, person, text,
-// action }]; kind as notice()'s (attention: needs you, error: did not work, info: wait and it passes).
+// action, live }]; kind as notice()'s (attention: needs you, error: did not work, info: wait and it passes). The list
+// stands in its place and is read with it, so no row is an alert unless its live says so.
 export function noticeList(items) {
   return h("ul", { class: "notice-list" }, items.filter(Boolean).map((it) =>
-    h("li", {}, notice({ kind: it.kind || "attention" }, h("p", {}, it.person || null, it.person ? " " : null, it.text), it.action || null))));
+    h("li", {}, notice({ kind: it.kind || "attention", live: it.live ?? false }, h("p", {}, it.person || null, it.person ? " " : null, it.text), it.action || null))));
 }
 
 // A side-by-side comparison of two versions of one thing (yours and a colleague's, before and after): two columns,
@@ -970,9 +1128,10 @@ export function compare({ left, right, actions, label }) {
 
 // A work state: work under way, waiting, not running, done or did not work, in words and an icon (never a pill).
 // state: "running" | "waiting" (queued: starts when … has finished) | "stopped" (not running) | "done" (synced, finished)
-// | "failed" | "attention" (needs you: a folder not reachable, a newer ENLENS needed); time: seconds for a running state.
+// | "failed" | "attention" (needs you: a folder not reachable, a newer ENLENS needed) | "paused" (you paused it: grey)
+// | "ended" (settled and not done: declined, taken back; grey); time: seconds for a running state.
 export function workState(state, words, time) {
-  const ic = { waiting: "clock", stopped: "pause", done: "check", failed: "alert-circle", attention: "alert-triangle" }[state];
+  const ic = { waiting: "clock", stopped: "pause", paused: "pause", done: "check", failed: "alert-circle", attention: "alert-triangle", ended: "minus" }[state];
   return h("span", { class: `${UI.workState} work-${state}` },
     state === "running" ? h("span", { class: "running-dot", "aria-hidden": "true" }) : icon(ic || "circle", { size: 13 }),
     h("span", {}, words), time !== undefined && time !== null ? h("span", { class: "work-state-time" }, fmt.secs(time)) : null);
@@ -985,12 +1144,11 @@ export function workState(state, words, time) {
 // content's own components (a write box, a list); the last may grow and scroll. `foot`: one link to the whole view.
 // A new tab is a new entry in `tabs` whose onTab draws its own sections (setSections()); a new section is one more
 // element in `sections`. Opening and closing: body[data-drawer="open"], set by setDrawerOpen().
-export function drawer({ id, title, icon: ic, tabs, current, onTab, control, sections = [], foot, onClose, closeLabel }) {
+export function drawer({ id, title, icon: ic, tabs: tabItems, current, onTab, control, sections = [], foot, onClose, closeLabel }) {
   const close = iconButton({ icon: "x", label: closeLabel || `Close ${title.toLowerCase()}`, onClick: () => onClose && onClose() });
-  const tabList = tabs && tabs.length > 1 ? h("div", { class: "drawer-tabs settings-tabs", role: "tablist", "aria-label": title },
-    tabs.map((t) => h("button", { type: "button", role: "tab", "aria-selected": t.key === current ? "true" : "false",
-      "aria-current": t.key === current ? "page" : null, onClick: () => onTab && onTab(t.key) }, t.icon ? icon(t.icon, { size: 14 }) : null, t.label))) : null;
   const body = h("div", { class: "drawer-body" });
+  // with tabs, the body is their panel (role tabpanel, named by the chosen tab)
+  const tabList = tabItems && tabItems.length > 1 ? tabs({ class: "drawer-tabs", label: title, items: tabItems, current, panel: body, onTab: (key) => onTab && onTab(key) }) : null;
   const aside = h("aside", { class: "drawer", id, "aria-label": title, hidden: true },
     h("div", { class: "drawer-head" }, tabList || [ic ? icon(ic, { size: 16 }) : null, h("h2", { class: "drawer-title" }, title)], control || null, close),
     body,
@@ -998,6 +1156,7 @@ export function drawer({ id, title, icon: ic, tabs, current, onTab, control, sec
   aside.setSections = (parts) => replace(body, ...parts.filter(Boolean).map((el) => { el.classList.add("drawer-section"); return el; }));
   aside.setSections(sections);
   aside.closeButton = close;
+  aside.tabs = tabList;   // its tabs (or null): aside.tabs.choose(key) opens one from code
   return aside;
 }
 // The drawer's button: a small button that stays in the same spot on every page, soft teal while its drawer is open.
@@ -1010,12 +1169,48 @@ export function setDrawerOpen(open, btn) {
   if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
+// The one AI mark (docs/DESIGN.md 4.4): the chip icon says whether something uses the AI, everywhere in the same words (the
+// sidebar's groups, a page's top line, beside an action). The cloud icon is kept for where text goes (which AI reads
+// it): the AI line at the foot of the sidebar and "Claude, on your plan, reads…" beside a check.
+const AI_TEXT = {
+  none: ["No AI", "Never uses the AI: it runs on this computer."],
+  optional: ["AI on request", "Works without the AI; the AI adds to it only when you ask."],
+  uses: ["Uses the AI", "The AI does this work: it reads the passages it needs."],
+};
+
+export function aiTag(ai) {
+  const [text, plain] = AI_TEXT[ai] || AI_TEXT.none;
+  return h("span", { class: `ai-tag ai-${ai}`, title: plain }, icon("cpu", { size: 12 }), text);
+}
+
+// Buttons that send text to an AI, with their one AI mark (docs/DESIGN.md 4.4): the buttons and the mark after them
+// are one wrapping group (.with-ai), so a row of such buttons has one mark. Put the result in the row: h("div", { class:
+// "btn-row" }, withAI(check, look)).
+export function withAI(...buttons) {
+  const all = buttons.flat().filter(Boolean);
+  if (!all.length) return null;
+  // one wrapping group: on a narrow screen the buttons stay in one row and the mark goes under them, never beside
+  // the last button only
+  return [h("span", { class: "with-ai" }, ...all, aiTag("uses"))];
+}
+
 // Where text goes, and which AI reads it (the AI line): the cloud (Claude), the house (this computer) or the folder (a
-// folder shared with colleagues) and one sentence. One per card that holds such actions, at its foot; never in the
+// folder shared with colleagues) and one sentence. One per card that holds such actions, under them; never in the
 // row of a button. "attention": no AI can run yet.
-export function aiWhere(text, where = "cloud") {
+export function aiWhere(text, where = "cloud", attrs = {}) {
   const ic = { local: "house", attention: "alert-triangle", folder: "folder" }[where] || "cloud";
-  return h("p", { class: where === "attention" ? "ai-where ai-where-attention" : "ai-where" }, icon(ic, { size: 13 }), h("span", {}, text));
+  return h("p", withClass(where === "attention" ? "ai-where ai-where-attention" : "ai-where", attrs), icon(ic, { size: 13 }), h("span", {}, text));
+}
+
+// The AI line of the AI chosen in Settings: who reads `what`, and where the text goes. opts.model: the model that reads
+// when it is not the main one (a second local model); opts.class: the page's own class for placement.
+export function readsLine(what = "the excerpts it needs", opts = {}) {
+  const p = App.privacy(), s = App.settings();
+  const attrs = opts.class ? { class: opts.class } : {};
+  if (s.backend === "claude_code") return aiWhere(`${p.label}, reads ${what}.`, "cloud", attrs);   // "Claude, on your plan, reads…"
+  if (p.where === "cloud") return aiWhere(`Claude, through the Claude API${s.anthropic_model ? ` (${s.anthropic_model})` : ""}, reads ${what}: the text is sent to Anthropic.`, "cloud", attrs);
+  if (p.where === "local") return aiWhere(`The AI on this computer (${opts.model || p.detail}) reads ${what}: your documents never leave it.`, "local", attrs);
+  return aiWhere("Demo mode: no AI reads the excerpts. A simple word-overlap stand-in answers, so the answers are not findings.", "attention", attrs);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1040,13 +1235,15 @@ export function field(label, control, opts = {}) {
 }
 
 export function switchControl(label, checked, opts = {}) {
-  const input = h("input", { type: "checkbox", role: "switch", class: "switch-input", checked: !!checked, "aria-checked": checked ? "true" : "false" });
+  // disabled: a setting you cannot change here; its help says why ("On because of Ben: …")
+  const input = h("input", { type: "checkbox", role: "switch", class: "switch-input", checked: !!checked, disabled: !!opts.disabled, "aria-checked": checked ? "true" : "false" });
   input.addEventListener("change", () => input.setAttribute("aria-checked", input.checked ? "true" : "false"));
   const id = "sw" + Math.random().toString(36).slice(2, 8);
   input.id = id;
+  if (opts.help) input.setAttribute("aria-describedby", id + "-help");
   const wrap = h("div", { class: "switch-field" },
     h("label", { class: "switch", for: id }, input, h("span", { class: "switch-track", "aria-hidden": "true" }), h("span", { class: "switch-label" }, label)),
-    opts.help ? h("div", { class: "field-help" }, opts.help) : null);
+    opts.help ? h("div", { class: "field-help", id: id + "-help" }, opts.help) : null);
   wrap.input = input;
   return wrap;
 }
@@ -1122,11 +1319,17 @@ export function strongerMark(before, info = {}, opts = {}) {
   return wrap;
 }
 
+// The judgement's own icon (the circle family, docs/DESIGN.md 3.3): an answer (STATUS_ICON, icons.js) or the grade of an
+// excerpt. Only a judgement carries one: a badge, or a grade said in a dense place (a table of excerpts).
+const GRADE_ICON = { supports: "circle-check", partially_supports: "circle-half", refutes: "circle-x", none: "circle-dashed" };
+export function judgementIcon(key, size = 12) {
+  return icon(GRADE_ICON[key || "none"] || STATUS_ICON[key] || GRADE_ICON.none, { size });
+}
+
 export function gradeBadge(verdict, weak) {
-  const names = { supports: "circle-check", partially_supports: "circle-half", refutes: "circle-x" };
   const v = verdict || "none";
   return h("span", { class: `badge grade-${v} ${weak ? "badge-weak" : ""}`, title: weak ? "Not counted: the AI was less sure than your strictness setting asks for" : null },
-    icon(names[v] || "circle-dashed", { size: 14 }), h("span", {}, verdict ? GRADE_TEXT[verdict] || verdict : "Not about this hypothesis"));
+    judgementIcon(v, 14), h("span", {}, verdict ? GRADE_TEXT[verdict] || verdict : "Not about this hypothesis"));
 }
 
 export function codeChip(fw, code, description, label) {
@@ -1200,19 +1403,94 @@ export function helpMark(label, text, opts = {}) {
 export function downloadLinks(items, opts = {}) {
   const parts = [];
   items.filter(Boolean).forEach((it) => {
-    parts.push(downloadButton({ title: it.title || null, onClick: it.onClick }, it.text));
-    if (it.note) parts.push(h("span", { class: "muted small" }, it.note));
+    const b = downloadButton({ title: it.title || null, onClick: it.onClick }, it.text);
+    // a note stays with its button when the line wraps: "CSV (for programmers)" never leaves the note alone
+    parts.push(it.note ? h("span", { class: "dl-pair" }, b, h("span", { class: "muted small" }, it.note)) : b);
   });
-  return h("span", { class: "dl-links" }, h("span", { class: "dl-label" }, opts.label || "Download"), parts);
+  // the files are one group: when the line is too narrow, they go under the word together, never one by one
+  return h("span", { class: "dl-links" }, h("span", { class: "dl-label" }, opts.label || "Download"), h("span", { class: "dl-files" }, parts));
 }
 
+// A page head (docs/DESIGN.md 4.14): where you are and what the page is for.
+//   eyebrow: the section and the AI mark (featureEyebrow(key));
+//   back: { href, text } (or a list of them): a back link in the eyebrow's place, on a page that is one item;
+//   display: the title in the Display serif (the research's own words: a hypothesis, a document, a concept, a theme);
+//   facts: short facts about the item, in a line under the title, "·" between them;
+//   sub: the one line under the title (and its facts): what the page is for, a code, its ways to other pages as links;
+//   meta: further lines (a bibliography line, a row of links), as given;
+//   actions: the page's actions at the right, never a link;
+//   class, titleClass: the page's own classes, for placement.
 export function pageHead(title, opts = {}) {
-  return h("header", { class: "page-head" },
+  const backs = [opts.back || []].flat().filter(Boolean);
+  const top = backs.length ? backs.map((b, i) => [i ? " " : null, link({ kind: "back", href: b.href }, b.text)]) : opts.eyebrow;
+  const facts = (opts.facts || []).filter(Boolean);
+  return h("header", withClass(UI.pageHead, opts.class ? { class: opts.class } : {}),
     h("div", { class: "page-head-main" },
-      opts.eyebrow ? h("p", { class: "eyebrow" }, opts.eyebrow) : null,
-      h("h1", { id: "page-title", tabindex: "-1", class: opts.titleClass || "" }, title),
-      opts.sub ? h("p", { class: "page-sub" }, opts.sub) : null),
-    opts.actions ? h("div", { class: "page-head-actions" }, opts.actions) : null);
+      top ? h("p", { class: "eyebrow" }, top) : null,
+      h("h1", { id: "page-title", tabindex: "-1", class: [opts.display ? "title-display" : "", opts.titleClass || ""].filter(Boolean).join(" ") || null }, title),
+      facts.length ? h("p", { class: "page-facts" }, facts.map((f, i) => [i ? h("span", { class: "sep", "aria-hidden": "true" }, "·") : null, f instanceof Node ? f : h("span", {}, f)])) : null,
+      opts.sub ? h("p", { class: "page-sub" }, opts.sub) : null,
+      opts.meta || null),
+    opts.actions ? h("div", { class: "page-head-actions" }, opts.actions) : null,
+    // the AI line of the head's AI action (docs/DESIGN.md 4.4): the head's last line, under its actions
+    opts.ai || null);
+}
+
+// View tabs (docs/DESIGN.md 4.5): other views of one place, on a rule; the current one has the accent line. items:
+// [{ key, label, href, icon, count }] (or [key, label, href, icon]); count: what is new behind it, in words ("3 new"). With href, each tab is a link (aria-current="page");
+// without (a drawer's tabs, which have no address), onTab(key) is called and the tabs are buttons with the same look,
+// with the whole tab pattern: role tablist/tab, aria-selected, only the chosen tab in the Tab order, Left and Right
+// move to the previous and next tab (and choose it), Home and End to the first and last. panel: the element the tabs
+// show (role tabpanel, labelled by the chosen tab; each tab's aria-controls). row.choose(key) chooses a tab from code,
+// as pressing it does; row.setCount(key, words) changes what is new behind a tab ("3 new"; none hides it).
+let TABS_SEQ = 0;  // each row of tabs' own ids
+export function tabs(opts = {}) {
+  const [o, attrs] = split(opts, ["label", "items", "current", "onTab", "panel"]);
+  const items = (o.items || []).map((t) => (Array.isArray(t) ? { key: t[0], label: t[1], href: t[2], icon: t[3] } : t));
+  const asButtons = !!o.onTab;
+  const row = h(asButtons ? "div" : "nav", withClass(UI.tabs, { role: asButtons ? "tablist" : null, "aria-label": o.label, ...attrs }));
+  // count: what is new behind the tab, in words ("3 new"): a count tag after its label (row.setCount changes it)
+  const countTag = (t) => tag({ kind: "count", class: "tab-count", hidden: !t.count }, t.count || "");
+  const inner = (t) => [t.icon ? icon(t.icon, { size: 14 }) : null, t.label, asButtons || t.count ? countTag(t) : null];
+  if (!asButtons) {
+    append(row, items.map((t) => h("a", { href: t.href, "aria-current": t.key === o.current ? "page" : null, "data-key": t.key }, inner(t))));
+    return row;
+  }
+  const seq = ++TABS_SEQ;
+  const panel = o.panel || null;
+  if (panel) { panel.id = panel.id || `tabpanel-${seq}`; panel.setAttribute("role", "tabpanel"); }
+  const idOf = (key) => `tab-${seq}-${String(key).replace(/[^\w-]/g, "_")}`;
+  const buttons = items.map((t) => h("button", { type: "button", role: "tab", id: idOf(t.key), "data-key": t.key,
+    "aria-controls": panel ? panel.id : null, onClick: () => row.choose(t.key) }, inner(t)));
+  // the chosen tab shows itself current and is the one in the Tab order; the panel is named by it
+  const mark = (key) => {
+    for (const b of buttons) {
+      const on = b.dataset.key === key;
+      b.setAttribute("aria-selected", on ? "true" : "false");
+      b.tabIndex = on ? 0 : -1;
+    }
+    if (panel) panel.setAttribute("aria-labelledby", idOf(key));
+  };
+  // a tab without an address shows itself current when it is chosen, then onTab draws what it holds
+  row.choose = (key) => { mark(key); o.onTab(key); };
+  // what is new behind a tab changed (words, "3 new"; none hides the count)
+  row.setCount = (key, words) => {
+    const c = buttons.find((b) => b.dataset.key === key)?.querySelector(".tab-count");
+    if (c) { c.textContent = words || ""; c.hidden = !words; }
+  };
+  row.addEventListener("keydown", (e) => {
+    const at = buttons.indexOf(e.target);
+    if (at < 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+    const to = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: buttons.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    const b = buttons[(to + buttons.length) % buttons.length];
+    b.focus();
+    if (b.getAttribute("aria-selected") !== "true") row.choose(b.dataset.key);
+  });
+  append(row, buttons);
+  mark(items.some((t) => t.key === o.current) ? o.current : (items[0] || {}).key);
+  return row;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1296,7 +1574,7 @@ export function startClaude(project, opts = {}) {
     const typeBlock = opts.foldType && q.can_start ? fold({ sm: true, class: "sc-type-fold" }, "How it works",
       h("p", { class: "small" }, "It works on your Claude plan, in the background, and stops by itself when nothing waits."),
       h("div", { class: "sc-type" }, h("span", { class: "muted small" }, "Or type this in Claude Code yourself:"), copyLine(cmd)),
-      h("p", { class: "muted small" }, icon("cloud", { size: 12 }), " ", q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic.")) : typeIt;
+      aiWhere(q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic.")) : typeIt;
     const r = q.runner || {};
     const parts = [];
     const idle = idleQueue(q);
@@ -1305,11 +1583,11 @@ export function startClaude(project, opts = {}) {
     if (r.running) {
       parts.push(h("div", { class: "sc-running" }, h("span", { class: "running-dot", "aria-hidden": "true" }),
         h("span", {}, h("strong", {}, "Claude Code is working on it"), h("span", { class: "muted small" }, ` · started ${ago(r.seconds || 0)} from ${appName()}${planText(r) ? ` · ${planText(r)}` : ""}`)),
-        h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: async () => {
+        stopButton({ text: "Stop Claude Code", onClick: async () => {
           try { await api("POST", `/api/projects/${P(project)}/queue/claude-code/stop`, {}); toast("Claude Code stopped. What it had not answered waits again.", "ok"); QUEUE_CACHE.delete(project); draw(false); } catch (e) { showError(e); }
-        } }, icon("stop", { size: 12 }), "Stop Claude Code")));  // 0.11.3: not just "Stop": the job beside it has its own
+        } })));  // 0.11.3: not just "Stop": the job beside it has its own
     } else if (q.can_start && (q.waiting || q.being_answered || opts.always)) {
-      const b = h("button", { class: "btn btn-primary btn-sm", type: "button", onClick: async () => {
+      const b = button({ kind: "main", sm: true, onClick: async () => {
         if (busy) return;
         busy = true; b.disabled = true; b.classList.remove("sc-nudge");
         const body = runBody(project, q);
@@ -1328,19 +1606,16 @@ export function startClaude(project, opts = {}) {
         choiceChanged(project, box);
       } }, icon("play", { size: 13 }), "Start Claude Code");
       const hint = h("span", { class: "muted small" }, opts.foldType ? "Nothing runs until you press it." : "Runs on your Claude plan, in the background. It stops by itself when nothing waits.");
-      parts.push(h("div", { class: "sc-start" }, b, hint));
+      parts.push(h("div", { class: "sc-start" }, withAI(b), hint));
       if (idle) watchIdle(b, hint);
-      // 0.13.10: the speed (kept), and the helpers for this run (folded away)
+      // 0.13.10: the speed (kept), and the helpers for this run (folded away). 0.17.0: the speed is chosen in one
+      // place, Settings › AI; here it is said, with the way there (one control for one setting)
       if (q.speed) {
         const custom = customRun(RUN_CHOICE.get(project));
-        const speed = speedPicker(q.speed.chosen, q.speed.options, async (v) => {
-          await saveSpeed(v);
-          RUN_CHOICE.delete(project);  // a speed picked (even the one shown) replaces the helpers chosen for this run
-          await draw(false);
-          const again = box.querySelector(`.sc-speed [data-speed="${v}"]`);
-          if (again) again.focus();
-          choiceChanged(project, box);
-        }, { custom: () => customRun(RUN_CHOICE.get(project)) });
+        const chosen = q.speed.chosen || "normal";
+        const speed = h("p", { class: "sc-speed small" }, h("span", { class: "sc-speed-line muted" },
+          `${(SPEED_CHOICES.find(([v]) => v === chosen) || [, "Normal"])[1]} speed: ${helpersText((q.speed.options || {})[chosen] || 2)} at a time. `),
+          link({ href: "#/settings/speed" }, "Change the speed"));
         if (custom) speed.classList.add("sc-speed-off");
         parts.push(speed, helpersFold(project, q, () => {
           speed.classList.toggle("sc-speed-off", customRun(RUN_CHOICE.get(project)));
@@ -1348,7 +1623,7 @@ export function startClaude(project, opts = {}) {
         }));
       }
       if (r.exit_code !== undefined && r.exit_code !== null && r.exit_code !== 0 && !r.stopped) {
-        parts.push(fold({ sm: true }, [icon("alert-circle", { size: 12 }), " The last run stopped with a problem"], h("pre", { class: "mono small sc-report" }, r.report || "(no report)")));
+        parts.push(fold({ sm: true }, workState("failed", "The last run stopped with a problem"), inset({ as: "pre", class: "mono small sc-report" }, r.report || "(no report)")));
       }
     } else if (!q.can_start && q.claude && !q.claude.found) {
       parts.push(h("p", { class: "small sc-missing" }, icon("info", { size: 12 }), " Claude Code was not found on this computer. ", h("a", { href: "#/settings/model" }, "Set it up"), " to start it from here."));
@@ -1396,19 +1671,15 @@ export async function saveSpeed(speed) {
 export function speedPicker(chosen, options = { slower: 1, normal: 2, faster: 4 }, onPick = saveSpeed, opts = {}) {
   let current = chosen || "normal";
   const line = h("span", { class: "muted small sc-speed-line" });
-  const group = h("div", { class: `${UI.choice} seg-sm sc-speed-btns`, role: "group", "aria-label": "Speed of Claude Code" });
-  const show = (v) => {
-    for (const b of group.children) { const on = b.dataset.speed === v; b.setAttribute("aria-pressed", on ? "true" : "false"); }
-    line.textContent = `${helpersText(options[v] || 2)} at a time${SPEED_NOTE[v] || ""}.`;
-  };
-  for (const [v, label] of SPEED_CHOICES) {
-    group.appendChild(h("button", { class: UI.choiceButton, type: "button", dataset: { speed: v }, onClick: async () => {
+  const show = (v) => { line.textContent = `${helpersText(options[v] || 2)} at a time${SPEED_NOTE[v] || ""}.`; };
+  // a choice (radio form): one Tab stop, the arrows move and pick, each pick saved at once
+  const group = choice({ sm: true, label: "Speed of Claude Code", class: "sc-speed-btns", value: current, options: SPEED_CHOICES,
+    onPick: async (v) => {
       if (v === current && !(opts.custom && opts.custom())) return;  // the speed shown, picked again, undoes a choice of helpers
       const before = current;
       current = v; show(v);
-      try { await onPick(v); } catch (e) { current = before; show(before); showError(e); }
-    } }, label));
-  }
+      try { await onPick(v); } catch (e) { current = before; group.set(before); show(before); showError(e); }
+    } });
   show(current);
   const label = opts.label === undefined ? "Speed" : opts.label;
   return h("div", { class: "sc-speed" }, label ? h("span", { class: "sc-speed-label small" }, label) : null, group, line);
@@ -1474,7 +1745,7 @@ function helpersFold(project, q, onChange) {
     });
     const named = rows.reduce((s, r) => s + value(r), 0);
     const n = Object.keys(C().counts).length ? Math.min(total(), named) : total();
-    const back = customRun(C()) ? h("button", { class: "btn btn-sm btn-ghost", type: "button", onClick: () => { const c = C(); c.total = null; c.counts = {}; draw(); onChange(); } },
+    const back = customRun(C()) ? button({ kind: "quiet", sm: true, onClick: () => { const c = C(); c.total = null; c.counts = {}; draw(); onChange(); } },
       icon("refresh", { size: 12 }), "Use the speed again") : null;
     replace(body,
       h("div", { class: "sc-total" }, h("label", { for: totalSel.id }, "Helpers at once, in all"), totalSel),

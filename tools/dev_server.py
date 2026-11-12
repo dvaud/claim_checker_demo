@@ -39,6 +39,10 @@
 - with `--low-memory` (0.13.11): the computer has 2.7 GB free and every local model needs 8.1 GB, so the local model
   for documents marked Only a local AI is not started (use it with `--mixed --claude-code`): see the note on the
   progress, the excerpts that wait, and *Read them now* → *Start it anyway*.
+- 0.18: as `enlens-gui` does, the app looks in each project's shared folder by itself every couple of minutes (the
+  poller, gui/poller.py), so the Team tab's rounds by themselves can be tried: choose a shared folder for a project
+  (two dev servers with their own `--home` and one folder make two colleagues). None of the projects made here has
+  one, so until then it only looks. `--no-poller` leaves it off (*Sync now* still works).
 """
 from __future__ import annotations
 
@@ -107,6 +111,8 @@ def main() -> int:
                          "on it, to try the reading view and Read with the new reader")
     ap.add_argument("--low-memory", action="store_true",
                     help="0.13.11: too little memory free for the local model (2.7 GB free, 8.1 GB needed)")
+    ap.add_argument("--no-poller", action="store_true",
+                    help="0.18: do not look in the projects' shared folders by themselves (Sync now still works)")
     a = ap.parse_args()
     home_dir = Path(a.home or tempfile.mkdtemp(prefix="enlens-dev-"))
     os.environ["ENLENS_HOME"] = str(home_dir)
@@ -330,11 +336,14 @@ def main() -> int:
             port = srv.server_address[1]
             print(f"data folder: {home_dir}\nfake Ollama: {fake_url}\napp: http://127.0.0.1:{port}/\n"
                   f"token: {app.token}", flush=True)
+            if not a.no_poller:
+                app.poller.start()  # 0.18 (L3): as serve() does (each app of a restart has its own)
             try:
                 srv.serve_forever(poll_interval=0.3)
             except KeyboardInterrupt:
                 break
             finally:
+                app.poller.stop()  # no round starts once this app stops
                 srv.server_close()
             if HANDOVER["pending"]:  # 0.15.4: the app quit for the Windows hand-over: "install", then come back
                 HANDOVER["pending"] = False

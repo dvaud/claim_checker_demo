@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import threading
 from collections import Counter
 
 import pytest
@@ -323,14 +324,14 @@ def test_read_with_the_new_reader_from_the_app(app_api, tmp_path, monkeypatch):
     assert st == 200 and pre["ok"] is True and pre["new_reader"] == 2 and "counts" in pre and "not_placed" in pre
     assert api("GET", base)[1]["reader"] == 1                       # the preview changed nothing
 
-    class Busy:  # a job of the project still running
-        project, state, title = "R", "running", "Adding sources"
-    app.jobs.jobs["busy"] = Busy()
+    # 0.18 (M6): a job of the project still running holds the move back: it waits its turn (it was refused before)
+    release = threading.Event()
+    busy = app.jobs.start("ingest", "Adding sources", "R", lambda job: release.wait(30), uses_model=False)
     st, body = api("POST", f"{base}/reread")
-    assert st == 409 and "Adding sources" in body["error"]
-    del app.jobs.jobs["busy"]
-    st, body = api("POST", f"{base}/reread")
-    assert st == 200 and body["job"]["kind"] == "reread"
+    assert st == 200 and body["job"]["kind"] == "reread" and body["job"]["state"] == "queued"
+    assert body["job"]["waiting_for"]["id"] == busy.id and "Adding sources" in body["job"]["waiting_for"]["message"]
+    assert api("GET", base)[1]["reader"] == 1                       # nothing moved while it waits
+    release.set()
     job = api.wait(body["job"]["id"])
     assert job["state"] == "done", job
     assert job["result"]["report"]["moved"] is True and "glossary" in job["result"]

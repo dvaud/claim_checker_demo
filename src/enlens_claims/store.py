@@ -182,6 +182,42 @@ CREATE INDEX IF NOT EXISTS ix_notes_doc ON notes(doc_id, start);
 CREATE TABLE IF NOT EXISTS versions(version_id TEXT PRIMARY KEY, kind TEXT, key TEXT, at TEXT, person_id TEXT,
   label TEXT, data_json TEXT);
 CREATE INDEX IF NOT EXISTS ix_versions_key ON versions(kind, key, at);
+-- 0.18 (L1, sharing.py): what is shared. One row per item (kind: check, themes, codebook, note, log, link; key: its id,
+-- the same in every copy): private, shared or withdrawn, who made it (`owner`, NULL: not known, made before 0.18), who
+-- set the state and when. No row: made in this copy by its person, and private
+CREATE TABLE IF NOT EXISTS shares(kind TEXT, key TEXT, state TEXT, owner TEXT, by TEXT, at TEXT, title TEXT,
+  PRIMARY KEY(kind, key));
+-- 0.18 (the shared folder, sync/folder.py): this copy's own record of the folder, never exchanged. What it wrote there
+-- (kind: an item's kind and key with its fingerprint; "doc": a document's stub; "reading", "file": a reading or an
+-- original file there; "row": one of the project's rows; "head": the folder written to and the last bundle's number;
+-- "words": a document whose words may be in what was written, taken out again if it is later kept out of the folder;
+-- "content": an item written whole, "<kind>/<key>", taken out again if it is later taken back; "keep": a colleague's
+-- switch as last read; a "reading" or "file" seen in a colleague's subfolder has that colleague's id as its fp),
+-- with the bundle that carried it; how far it has brought in each colleague's bundles; and what the folder says of each
+-- document (the latest stub heard), so a check that read a document this copy does not hold is still compared by
+-- content (sync.fingerprints._canon), and the document's file can be fetched once it arrives
+CREATE TABLE IF NOT EXISTS sync_written(kind TEXT, key TEXT, fp TEXT, seq INT, at TEXT, PRIMARY KEY(kind, key));
+CREATE TABLE IF NOT EXISTS sync_folder_read(person_id TEXT PRIMARY KEY, seq INT, at TEXT, epoch TEXT);
+CREATE TABLE IF NOT EXISTS sync_folder_docs(doc_id TEXT PRIMARY KEY, text_fp TEXT, sha1 TEXT, title TEXT, reading TEXT,
+  file TEXT, name TEXT, kept_out INT, person_id TEXT, at TEXT, ai_access TEXT, ai_by TEXT);
+-- 0.18 (L2, ownership.py): one owner and several collaborators. `ownership`: who the owner is, as a chain of records
+-- (seq 1: the maker or whoever first claimed it; then each hand-over or take-over, `after` the owner before it).
+-- `proposals`: a collaborator's change to the documents (kind: add, remove, reread, blocks, loosen), written by
+-- their copy. `decisions`: the owner's word on a proposal. `canon`: the documents as the owner accepted them, one row
+-- per document and writer (state in/removed, its reading, who may read it with AI, which blocks are left out), each
+-- part with the number (`*_n`) of the owner's change that last set it. These four travel (their own merge rules).
+-- `canon_seen`: this copy's own record of how far it has followed `canon`, never merged.
+CREATE TABLE IF NOT EXISTS ownership(seq INT, owner TEXT, by TEXT, at TEXT, kind TEXT, after TEXT, why TEXT,
+  PRIMARY KEY(seq, by));
+CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY, kind TEXT, doc TEXT, title TEXT, by TEXT, at TEXT,
+  detail_json TEXT, taken_back_at TEXT);
+CREATE TABLE IF NOT EXISTS decisions(proposal TEXT, by TEXT, owner_seq INT, verdict TEXT, reason TEXT, at TEXT,
+  auto INT, PRIMARY KEY(proposal, by));
+CREATE TABLE IF NOT EXISTS canon(doc TEXT, by TEXT, owner_seq INT, n INT, state TEXT, state_n INT, sha1 TEXT, title TEXT,
+  text_fp TEXT, reader INT, read_n INT, ai_access TEXT, ai_n INT, ai_hist_json TEXT, blocks_json TEXT, blocks_n INT,
+  at TEXT, PRIMARY KEY(doc, by));
+CREATE TABLE IF NOT EXISTS canon_seen(doc TEXT PRIMARY KEY, state_n INT, read_n INT, ai_n INT, ai_level TEXT,
+  blocks_n INT, blocks_json TEXT, gone INT, came_from TEXT, read_tried INT, read_note TEXT, read_from TEXT);
 """
 
 # Indexes on columns that older workspaces gain only through MIGRATIONS, so they are created afterwards.
@@ -311,7 +347,14 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               ("documents", "old_fps", "TEXT"), ("documents", "sent_share", "REAL"),
               # 0.16 (K1, codebooks.py): the code a label had before its code was merged into another, so restoring
               # the codebook from before the merge gives it back (NULL: never merged)
-              ("labels", "merged_from", "TEXT")]
+              ("labels", "merged_from", "TEXT"),
+              # 0.18 (sync/folder.py): which start of a colleague's bundles (their epoch) this copy has read up to
+              ("sync_folder_read", "epoch", "TEXT"),
+              # 0.18: who may read a document with AI as the folder said (the strictest heard), so a document a colleague
+              # keeps out of the folder is as strict here from the moment its file is added (sync/folder.py hold_settings)
+              ("sync_folder_docs", "ai_access", "TEXT"), ("sync_folder_docs", "ai_by", "TEXT"),
+              # 0.18 L2: whose new reading a copy made from their zip holds (ownership.adopt)
+              ("canon_seen", "read_from", "TEXT")]
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:
@@ -403,10 +446,15 @@ class Workspace:
             cx.execute("PRAGMA journal_mode=WAL")  # readers do not block on a long write; persistent per file
             doc_cols = {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
             before_011 = bool(doc_cols) and "ai_access" not in doc_cols  # a project made before 0.11, opened now
+            before_018 = not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone()
             cx.executescript(SCHEMA)
             _migrate(cx)
             cx.executescript(INDEXES)
             _setup_addons(cx)
+            if before_018:  # 0.18 (L1): a project exchanged before counts as shared; one never sent starts private
+                from .sharing import upgrade
+
+                upgrade(cx, self.root)
             cx.commit()
         finally:
             cx.close()

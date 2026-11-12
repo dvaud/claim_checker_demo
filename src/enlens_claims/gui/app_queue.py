@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .api_common import ApiError, Cancelled, Job, _body_int, _bool, _list, _str, benchmark_table
+from .api_common import ONE_START, ApiError, Cancelled, Job, _body_int, _bool, _list, _str, benchmark_table
 from .progress import Tracker
 from .. import addons, claimcheck, frameworks, home, runs as runs_mod, taskqueue, tasks as tasks_mod
 from ..claude_setup import setup_info as claude_setup_info
@@ -309,21 +309,27 @@ class QueueMixin:
             raise ApiError(400, "A new theme is found in place of a removed one: remove this theme first.")
         if ws.scalar("SELECT 1 FROM themes WHERE run_id=? AND replaces=?", (run_id, replaces)):
             raise ApiError(400, "A new theme was found in place of this one already.")
-        if any(j.kind == "theme-new" and j.project == name and j.scope == run_id and j.state in ("queued", "running")
-               for j in self.jobs.all()):   # one at a time: two would take the same passages
-            raise ApiError(409, "A new theme is being found for these themes already. Wait until it is ready.")
-
+        # 0.18 (M6): one at a time per set of themes (two would take the same passages): a second waits its turn
+        # (`serial`) instead of being refused; the same removed theme asked for again gets the job already there
         words = {"vectors": "reading the passages", "search": "looking where a new theme fits",
                  "name": "naming it by its key terms"}
 
         def run(job: Job):
+            if ws.scalar("SELECT 1 FROM themes WHERE run_id=? AND replaces=?", (run_id, replaces)):
+                raise ValueError("A new theme was found in place of this one already.")
             job.progress = {"done": 0, "total": 0, "phase": "vectors", "message": words["vectors"]}
             tid = themes.new_theme(ws, run_id, replaces, progress=lambda phase, d, n: job.progress.update(
                 phase=phase, done=d, total=n, message=words.get(phase, "")), should_stop=job.cancel.is_set)
             return {"theme_id": tid, "replaces": replaces}
 
-        job = self.jobs.start("theme-new", "Finding a new theme", name, run, uses_model=False)
-        job.scope = run_id
+        with ONE_START:
+            same = [j for j in self.jobs.all() if j.kind == "theme-new" and j.project == name and j.scope == run_id
+                    and j.state in ("queued", "running") and getattr(j, "replaces", None) == replaces]
+            if same:
+                return same[0]
+            job = self.jobs.start("theme-new", "Finding a new theme", name, run, uses_model=False, scope=run_id,
+                                  serial=f"theme-new:{run_id}")
+            job.replaces = replaces
         return job
 
     def start_resolve(self, name: str, doc_id: str, body: dict) -> Job:

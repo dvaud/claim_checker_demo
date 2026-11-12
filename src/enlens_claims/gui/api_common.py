@@ -50,17 +50,32 @@ class Job:
         self.scope: str | None = None   # 0.7: what a job is about within its project (a document id), to find it again
         self.queue = False              # 0.8: its tasks wait in the queue for Claude Code
         self.cancel = threading.Event()
+        # 0.18 (M6): its turn in its project (see Jobs and LANES)
+        self.lane: str | None = None    # what it changes in the project, if more than its own results
+        self.serial: str | None = None  # jobs with the same serial run one after the other
+        self.order = (0.0, 0)           # its place in the project's queue (lower: earlier)
+        self.admitted = False           # it has had its turn in the project (it runs, or waits only for the model)
+        self.blocker: Job | None = None  # the job it waits for, while it waits for its turn
+        self.background = False         # started by the app itself (the shared folder's poller), not the person
 
     def view(self, full: bool = True) -> dict:
         end = self.finished or time.time()
         out = {"id": self.id, "kind": self.kind, "title": self.title, "project": self.project, "state": self.state,
                "created_at": self.created, "started_at": self.started, "finished_at": self.finished,
                "seconds": round(end - (self.started or end), 1), "error": self.error, "error_kind": self.error_kind,
-               "scope": self.scope, "queue": self.queue}
+               "scope": self.scope, "queue": self.queue, "waiting_for": self.waiting_for(),
+               "background": self.background}
         if full:
             out["progress"] = self.tracker.state() if self.tracker else self.progress
             out["result"] = self.result
         return out
+
+    def waiting_for(self) -> dict | None:
+        """0.18 (M6): the job of the same project this one waits for, in words, while it waits for its turn."""
+        b = self.blocker
+        if b is None or self.admitted or self.state != "queued":
+            return None
+        return {"id": b.id, "kind": b.kind, "title": b.title, "message": f"Queued: starts when “{b.title}” has finished"}
 
     def waits_on_queue(self) -> bool:
         """0.12: its work waits in the queue for Claude Code right now (not its own steps on this computer)."""
@@ -71,28 +86,98 @@ class Job:
         return isinstance(self.progress, dict) and bool(self.progress.get("queue"))
 
 
+# 0.18 (M6): jobs wait their turn. Jobs of one project that change the same things do not run at the same time: the
+# later one waits in the project's queue (state "queued", `waiting_for` says for which job) and starts when its turn
+# comes, first come first served; it can be cancelled while it waits. A job's lane says what it changes besides its own results; a job in no
+# lane (a check, labels, themes, the glossary, a codebook tried out …) reads the documents and writes its own results,
+# so such jobs run beside each other (and the chat model still serves one at a time: `model_lock`).
+#   reader  the new reader: it replaces a document's passages and moves every result on them, in one step. A job that
+#           holds passage ids from before would write its results onto passages that are gone, so it runs alone in
+#           its project: it waits until no other job of the project runs, and while it runs every other job waits
+#           for it. While it waits, it and the jobs waiting behind it hold back only search by meaning and other
+#           moves (WAITING_HOLDS): the rest of the project's work goes on, so a move waiting behind a check that waits
+#           for Claude Code never stalls the whole project (it takes the first moment nothing else runs).
+#   corpus  adding documents: new documents and passages, their vectors for search by meaning, the glossary and codes.
+#   index   setting up search by meaning: vectors for every passage without one (adding documents makes them too, so
+#           the two would prepare the same passages twice).
+#   sync    a round of the shared folder: it brings colleagues' documents and work in (a merge); never while documents
+#           are being added or read again, and never two at once. It runs beside checks, as a colleague's zip does.
+LANES: dict[str, set[str]] = {
+    "corpus": {"corpus", "index", "sync"},
+    "index": {"corpus", "index"},
+    "sync": {"corpus", "sync"},
+}
+ALONE = "reader"
+WAITING_HOLDS = {ALONE, "index"}  # a move still waiting, and what waits behind it, hold back only jobs of these lanes
+ONE_START = threading.Lock()  # a look for the same job already there, then the start of a new one, as one step
+LANE_OF_KIND = {"ingest": "corpus", "new_reader": "reader", "index": "index", "folder-sync": "sync"}
+# (one document read with the new reader is a job of kind "reread", as reading one excerpt again is: its start names
+# the lane.) The project's jobs in the second lanes that still wait move behind a new job of the first: search by
+# meaning after the new reader, so no passage is prepared twice.
+BEHIND = {ALONE: {"index"}}
+
+
+def conflicts(a: Job, b: Job) -> bool:
+    """0.18 (M6): whether two jobs may not run at the same time: the same project, and lanes that clash (or the same
+    `serial`, such as new themes for one set of themes, which would take the same passages)."""
+    if a.project is None or a.project != b.project:
+        return False
+    if a.serial is not None and a.serial == b.serial:
+        return True
+    if a.lane == ALONE or b.lane == ALONE:
+        return True
+    return a.lane is not None and b.lane is not None and b.lane in LANES.get(a.lane, ())
+
+
 class Jobs:
     """Background work. Jobs that use the chat model run one at a time (a local model serves one request well);
-    the others (adding sources, embeddings) run beside them."""
+    the others (adding sources, embeddings) run beside them. 0.18 (M6): jobs of one project that change the same
+    things wait their turn (LANES), first come first served, except that search by meaning still waiting moves behind
+    the new reader (BEHIND), and a move still waiting holds back little (WAITING_HOLDS)."""
 
     KEEP = 50
+    WAKE = 0.25  # seconds: how often a job that waits for its turn looks again (it is also woken when a job ends)
 
     def __init__(self):
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
+        self.turns = threading.Condition(self.lock)  # 0.18: woken whenever a job ends or is cancelled
         self.model_lock = threading.Lock()
+        self.ended: list[Callable[[Job], Any]] = []   # 0.18: called with every job that ends (the poller listens)
+        self._seq = 0
 
     def start(self, kind: str, title: str, project: str | None, fn: Callable[[Job], Any], uses_model: bool,
-              unique: bool = False) -> Job:
+              unique: bool = False, lane: str | None = None, serial: str | None = None, background: bool = False,
+              if_free: bool = False, scope: str | None = None) -> Job | None:
         """`unique`: when a job of this kind is already queued or running for the project, that one is returned and
-        nothing starts (a second press of a button, or a second tab, must not do the same work twice)."""
+        nothing starts (a second press of a button, or a second tab, must not do the same work twice).
+
+        0.18 (M6): `lane` (default: by kind, LANE_OF_KIND) and `serial` say which jobs of the project this one may not
+        run beside (see LANES); it waits for them in the queue. `background`: started by the app, not the person.
+        `if_free`: start only when it would not have to wait; None (nothing started) otherwise."""
         job = Job(kind, title, project)
+        job.lane = lane if lane is not None else LANE_OF_KIND.get(kind)
+        job.serial, job.background, job.scope = serial, background, scope
         with self.lock:
             if unique:
                 same = [j for j in self.jobs.values() if j.kind == kind and j.project == project
                         and j.state in ("queued", "running")]
                 if same:
                     return same[0]
+            self._seq += 1
+            job.order = (float(self._seq), self._seq)
+            behind = BEHIND.get(job.lane or "")
+            moved = {}
+            if behind and project is not None:  # the jobs that still wait and go after it now come after it
+                for j in self.jobs.values():
+                    if j.project == project and j.lane in behind and j.state == "queued" and not j.admitted:
+                        moved[j] = j.order
+                        j.order = (job.order[0] + 0.5, j.order[1])
+            job.blocker = self._blocker(job)
+            if if_free and job.blocker is not None:
+                for j, order in moved.items():  # nothing started: they keep their places
+                    j.order = order
+                return None
             self.jobs[job.id] = job
             done = [j for j in self.jobs.values() if j.state in ("done", "error", "cancelled")]
             for j in sorted(done, key=lambda j: j.created)[:-self.KEEP or None] if len(done) > self.KEEP else []:
@@ -101,6 +186,7 @@ class Jobs:
         def run():
             lock = self.model_lock if uses_model else None
             try:
+                self._wait_turn(job)
                 if lock:
                     while not lock.acquire(timeout=0.5):
                         if job.cancel.is_set():
@@ -131,9 +217,77 @@ class Jobs:
                 job.finished = time.time()
                 if job.tracker is not None:
                     job.tracker.finish()
+                with self.turns:  # 0.18: the jobs that wait for this one look again now
+                    self.turns.notify_all()
+                for listener in list(self.ended):
+                    try:
+                        listener(job)
+                    except Exception:  # noqa: BLE001 - a listener never stops the job's thread from ending well
+                        traceback.print_exc()
 
         threading.Thread(target=run, daemon=True, name=f"job-{kind}-{job.id}").start()
         return job
+
+    # -- 0.18 (M6): the project's queue --------------------------------------------------------------------------
+    def _blocker(self, job: Job) -> Job | None:
+        """The job `job` waits for (call with the lock held), among the jobs of its project it may not run beside: the
+        one just ahead of it in the queue that still waits (it finishes last, so "starts when … has finished" holds),
+        else one that has had its turn (the one longest at it)."""
+        if job.project is None:
+            return None
+        parked = set() if job.lane in WAITING_HOLDS else self._parked(job.project)
+        running = ahead = None
+        for o in self.jobs.values():
+            if o is job or o.project != job.project or o.state not in ("queued", "running") or not conflicts(job, o):
+                continue
+            if o.admitted:
+                if running is None or o.order < running.order:
+                    running = o
+            elif o.order < job.order and not o.cancel.is_set() and o.id not in parked:
+                if ahead is None or o.order > ahead.order:
+                    ahead = o
+        return ahead or running
+
+    def _parked(self, project: str) -> set[str]:
+        """The jobs of the project that wait behind a move to the new reader still waiting (the move itself, and the
+        moves and search by meaning waiting behind it, directly or through each other): they hold back only jobs of
+        their own lanes (WAITING_HOLDS), so a move that waits long never stalls the rest of the project. Call with
+        the lock held."""
+        waiting = sorted((o for o in self.jobs.values() if o.project == project and o.state == "queued"
+                          and not o.admitted and not o.cancel.is_set()), key=lambda o: o.order)
+        parked: set[str] = set()
+        for i, o in enumerate(waiting):
+            if o.lane == ALONE or (o.lane in WAITING_HOLDS and any(p.id in parked and conflicts(o, p)
+                                                                   for p in waiting[:i])):
+                parked.add(o.id)
+        return parked
+
+    def _wait_turn(self, job: Job) -> None:
+        """Wait until it is the job's turn in its project (raises Cancelled when it is cancelled meanwhile)."""
+        with self.turns:
+            while True:
+                if job.cancel.is_set():
+                    job.blocker = None
+                    raise Cancelled()
+                job.blocker = self._blocker(job)
+                if job.blocker is None:
+                    job.admitted = True
+                    return
+                self.turns.wait(self.WAKE)
+
+    def cancel(self, job: Job) -> None:
+        """Stop a job; one that waits for its turn leaves the queue at once (and the jobs behind it move up)."""
+        job.cancel.set()
+        with self.turns:
+            self.turns.notify_all()
+
+    def holder(self, project: str, kind: str, lane: str | None = None) -> Job | None:
+        """0.18: the job a new job of `kind` (and `lane`) in `project` would wait for now, if any (the poller asks)."""
+        probe = Job(kind, "", project)
+        probe.lane = lane if lane is not None else LANE_OF_KIND.get(kind)
+        with self.lock:
+            probe.order = (float(self._seq + 1), self._seq + 1)
+            return self._blocker(probe)
 
     def all(self) -> list[Job]:
         with self.lock:

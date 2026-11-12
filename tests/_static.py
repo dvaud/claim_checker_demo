@@ -59,7 +59,7 @@ def _strip_comments(css: str) -> str:
 
 
 def css_blocks(css: str):
-    """Every style rule of `css` as (media, selectors, declarations): media is the enclosing @media/@supports prelude
+    """Every style rule of `css` as (media, selectors, declarations): media is the enclosing @media/@supports/@container prelude
     ("" at the top level; nested ones joined with " && "), selectors the selector list split at its top-level commas
     (whitespace normalised), declarations the rule's body as {property: value} in order. @keyframes are skipped."""
     css = _strip_comments(css)
@@ -83,7 +83,8 @@ def css_blocks(css: str):
             if css[j] == ";":
                 i = j + 1
                 continue
-            if prelude.startswith(("@media", "@supports")):
+            # 0.17.0: a table stacks by its frame's width (@container); its rules are read like any other, so the guards see them
+            if prelude.startswith(("@media", "@supports", "@container")):
                 i = block(j + 1, f"{media} && {prelude}" if media else prelude)
                 continue
             depth, k = 1, j + 1

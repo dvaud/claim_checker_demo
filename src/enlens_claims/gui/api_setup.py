@@ -55,9 +55,12 @@ class SetupApi:
     def _stop_jobs_then(self, finish) -> int:
         """Stop the running jobs, then call `finish` (stop or restart the app) once this answer has gone out and the
         stopped jobs have cleaned up (at most 20 s). Returns how many jobs were stopped."""
+        poller = getattr(self.app, "poller", None)
+        if poller is not None:  # 0.18 (L3): no round of the shared folder starts while the app stops (one being
+            poller.stop(wait=0)  # started now is listed below, so it is stopped and waited for with the others)
         running = [j for j in self.app.jobs.all() if j.state in ("queued", "running")]
         for j in running:
-            j.cancel.set()
+            self.app.jobs.cancel(j)  # 0.18 (M6): the jobs waiting for their turn leave at once
         self._stop_claude_runs()
 
         def later():

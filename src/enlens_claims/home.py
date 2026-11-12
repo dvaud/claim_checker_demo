@@ -86,6 +86,11 @@ DEFAULTS = {
     "update_channel": "stable",
     # 0.15.1: the version whose "what's new" note was last shown (once, after an update; see gui/server.py)
     "whats_new_seen": "",
+    # 0.18 (L3): how often each project with a shared folder looks for colleagues' new work (gui/poller.py), in
+    # minutes; paused for the whole app, or for the projects named (this computer's choice: never in a project)
+    "sync_every_minutes": 2,
+    "sync_paused": False,
+    "sync_paused_projects": [],
 }
 
 BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Local model (automatic)",
@@ -154,6 +159,11 @@ def clean_settings(changes: dict) -> dict:
 
             out[k] = clean_task_models(v)
             continue
+        if k == "sync_paused_projects":  # 0.18: a list of project names
+            if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+                raise ValueError("sync_paused_projects must be a list of project names.")
+            out[k] = sorted({x.strip() for x in v if x.strip()})
+            continue
         if k == "num_ctx":
             if str(v).strip().lower() in ("auto", ""):
                 v = "auto"
@@ -211,6 +221,8 @@ def clean_settings(changes: dict) -> dict:
         raise ValueError("num_ctx must be between 2,048 and 262,144.")
     if "seed" in out and not 0 <= out["seed"] <= 2 ** 31 - 1:
         raise ValueError("seed must be a whole number from 0 to 2,147,483,647.")
+    if "sync_every_minutes" in out and not 1 <= out["sync_every_minutes"] <= 60:
+        raise ValueError("sync_every_minutes must be between 1 and 60.")
     if "themes_k" in out and not 2 <= out["themes_k"] <= 60:
         raise ValueError("themes_k must be between 2 and 60.")
     if "your_name" in out:

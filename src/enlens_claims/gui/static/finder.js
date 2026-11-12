@@ -1,7 +1,7 @@
 // 0.17.0: the feature finder ("Find": Ctrl+K or ⌘K, the sidebar's button, and a box on the Overview). Type what you
 // want to do; it suggests the place, view or action you probably meant, misspellings included. Not an AI feature:
 // finder-index.js matches the words with plain loops.
-import { h, icon, navigate } from "./lib.js";
+import { h, icon, input as fieldInput, navigate } from "./lib.js";
 import { FEATURES, PLACES, SECTIONS } from "./features.js";
 import { buildIndex, findFeatures } from "./finder-index.js";
 
@@ -29,8 +29,8 @@ function finderParts({ placeholder, onPick, onEscape, label }) {
   let rows = [];
   let active = -1;
 
-  const input = h("input", {
-    class: "input finder-input", type: "text", autocomplete: "off", spellcheck: "false", autocapitalize: "off",
+  const input = fieldInput({
+    class: "finder-input", autocomplete: "off", spellcheck: "false", autocapitalize: "off",
     placeholder, "aria-label": label, role: "combobox", "aria-expanded": "true", "aria-controls": listId, "aria-autocomplete": "list",
   });
   const list = h("div", { class: "finder-list", id: listId, role: "listbox", "aria-label": "Suggestions" });

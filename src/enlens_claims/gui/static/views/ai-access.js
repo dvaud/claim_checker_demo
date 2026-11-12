@@ -9,7 +9,7 @@ export const LEVEL = {
     sub: "Read by the AI you chose: Claude Code, the Claude API, or a local model." },
   local: { title: "Only a local AI", many: "Only a local AI", short: "Local AI", icon: "house",
     sub: "Read only by a model on this computer, or by you. Never sent to Claude." },
-  none: { title: "No AI", many: "No AI", short: "No AI", icon: "cpu",
+  none: { title: "No AI", many: "No AI", short: "No AI", icon: "eye-off",
     sub: "Only you judge its excerpts. Search, the keyword profile, concepts and themes still work." },
 };
 const CHECKED = "30 October 2026";

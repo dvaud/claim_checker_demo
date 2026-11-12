@@ -146,7 +146,71 @@ def load(ws: Workspace, name: str) -> dict:
     st["stale"] = stale(ws, name)
     st["versions"] = len(_version_files(ws, name))
     st["profile_default"] = name == _profile_default()
+    st["clashes"] = clashes(ws, name)  # 0.18: a colleague's version of a code you both changed (sync)
     return st
+
+
+def clashes(ws: Workspace, name: str) -> list[dict]:
+    """0.18 (sync/codebook_merge.py): the codes you and a colleague both changed since you last exchanged the
+    codebook. Yours is in the codebook; theirs waits here until you keep one of the two (`settle_clash`):
+    [{"uid", "code" (yours now, or None when you removed it), "theirs": {their version}, "name", "at"}]."""
+    fw = frameworks.get(name, ws)
+    by_uid = {c["uid"]: c for c in state_of(ws, name)["codes"]}
+    out = []
+    for uid, c in ((fw.meta or {}).get("clashes") or {}).items():
+        if not isinstance(c, dict):
+            continue
+        theirs = {k: c.get(k) for k in ("code", "description", "group", "group_name", "include", "exclude",
+                                        "keywords", "examples")}
+        out.append({"uid": uid, "code": (by_uid.get(uid) or {}).get("code"), "removed_here": bool(c.get("removed_here")),
+                    "theirs": theirs, "person_id": c.get("person_id"), "name": c.get("name") or "a colleague",
+                    "at": c.get("at")})
+    return out
+
+
+def settle_clash(ws: Workspace, name: str, uid: str, keep: str, why: str | None = None) -> dict:
+    """0.18: keep your version of a code you and a colleague both changed (`keep` "mine": theirs is set aside), or
+    theirs ("theirs": it replaces yours, or comes back when you had removed it; labels follow a new name as in any
+    edit). Each is a change of the codebook: a version is kept and the research log says so. Returns the codebook."""
+    from . import researchlog
+
+    if keep not in ("mine", "theirs"):
+        raise ValueError("Say which version to keep: yours or theirs.")
+    where, f = locate(ws, name)
+    if where == "bundled":
+        raise KeyError(name)
+    fw = frameworks.get(name, ws)
+    clash = ((fw.meta or {}).get("clashes") or {}).get(uid)
+    if not isinstance(clash, dict):
+        raise KeyError(uid)
+    who = clash.get("name") or "a colleague"
+    if keep == "theirs":
+        st = state_of(ws, name)
+        theirs = {"uid": uid, "code": str(clash.get("code") or ""), "description": str(clash.get("description") or ""),
+                  "group": str(clash.get("group") or ""), "include": str(clash.get("include") or ""),
+                  "exclude": str(clash.get("exclude") or ""), "keywords": list(clash.get("keywords") or []),
+                  "examples": [{"quote": q} for q in (clash.get("examples") or []) if isinstance(q, str)]}
+        codes = [theirs if c["uid"] == uid else c for c in st["codes"]]
+        if not any(c["uid"] == uid for c in st["codes"]):
+            codes.append(theirs)  # you had removed it: it comes back as they have it
+        if theirs["group"] not in {g["group"] for g in st["groups"]}:
+            st["groups"].append({"group": theirs["group"], "group_name": str(clash.get("group_name") or "")})
+        save(ws, name, {**st, "codes": codes}, why=why, label=f"keeping {who}'s version of a code")
+    where, f = locate(ws, name)
+    meta = _meta(f, name)
+    (meta.get("clashes") or {}).pop(uid, None)
+    if not meta.get("clashes"):
+        meta.pop("clashes", None)
+    vid = _keep_version(f, name, "settling a sync clash") if keep == "mine" else None
+    _write(f, name, frameworks.decode((f / f"{name}.csv").read_bytes()), meta)
+    if keep == "mine":
+        with ws.connect() as cx:
+            researchlog.record(cx, "codebook-changed", f"Kept your version of the code "
+                                                       f"{researchlog.quoted(clash.get('code'), 60)} in the codebook "
+                                                       f"{researchlog.quoted(meta.get('title') or name, 80)}; {who}'s "
+                                                       "version was set aside.", "codebook", name,
+                               meta.get("title") or name, version_id=vid, why=why)
+    return load(ws, name)
 
 
 def _profile_default() -> str:

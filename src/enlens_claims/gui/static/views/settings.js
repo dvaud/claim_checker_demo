@@ -1,5 +1,6 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards } from "../lib.js";
+import { App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere } from "../lib.js";
+import { withAI } from "../features.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
 import { localModelHelp } from "./local-model.js";
@@ -9,7 +10,8 @@ const rerender = () => window.dispatchEvent(new HashChangeEvent("hashchange"));
 
 // 0.9: Settings as five flat tabs (no section folded inside another). Old links to a section (#/settings/second,
 // #/settings/calibration…) open its tab and scroll to it.
-const TABS = [["model", "AI", "cpu"], ["basics", "Checking", "flask"], ["explore", "Exploring", "network"], ["documents", "Documents", "book-open"], ["advanced", "Technical", "sliders"]];
+// the AI tab wears the icon of the sidebar's AI line (where text goes): the chip is the AI mark's only (DESIGN.md 3.3)
+const TABS = [["model", "AI", "cloud"], ["basics", "Checking", "flask"], ["explore", "Exploring", "network"], ["documents", "Documents", "book-open"], ["advanced", "Technical", "sliders"]];
 const TAB_OF = { model: "model", ai: "model", speed: "model", queue: "model", basics: "basics", calibration: "basics", explore: "explore", frameworks: "explore", documents: "documents", ocr: "documents", embeddings: "documents",
   advanced: "advanced", routing: "advanced", second: "advanced", context: "advanced", repeatable: "advanced", test: "advanced", updates: "advanced", data: "advanced" };
 
@@ -30,8 +32,8 @@ export async function renderSettings(view, [section]) {
     documents: "Reading scanned PDFs, and search by meaning.",
     advanced: "For whoever installs the app. Most people never change anything here.",
   }[tab], " ", versionTag()] }));
-  view.appendChild(h("nav", { class: "settings-tabs", "aria-label": "Settings" },
-    TABS.map(([id, label, ic]) => h("a", { href: `#/settings/${id}`, "aria-current": id === tab ? "page" : null }, icon(ic, { size: 14 }), label))));
+  view.appendChild(tabs({ label: "Settings", current: tab,
+    items: TABS.map(([id, label, ic]) => [id, label, `#/settings/${id}`, id === "model" ? App.privacy().icon || ic : ic]) }));
   const main = h("div", { class: "stack set-main" });
   view.appendChild(main);
   if (tab === "model") {
@@ -50,7 +52,12 @@ export async function renderSettings(view, [section]) {
     main.append(...[routingSection(s, servers), local ? secondModelSection(s, servers) : null, local ? contextSection(s) : null, reproSection(s), testSection(s, watchers), ledgerSection(), updatesSection(), dataSection()].filter(Boolean));
     if (!local) main.appendChild(h("p", { class: "muted small" }, icon("info", { size: 13 }), " The settings of a model on this computer (the model for second opinions, the context length) show here when a local model is chosen under AI."));
   }
-  if (section && section !== tab) setTimeout(() => { const t = document.getElementById(`s-${section}`); if (t) t.scrollIntoView({ block: "start" }); }, 80);
+  // a link to one setting (#/settings/speed): it comes into view clear of the top bar, and its control takes the focus
+  if (section && section !== tab) setTimeout(() => {
+    const t = document.getElementById(`s-${section}`); if (!t) return;
+    t.scrollIntoView({ block: "start" });
+    const c = t.querySelector('[aria-checked="true"]') || t.querySelector("input, select, textarea, button"); if (c) c.focus({ preventScroll: true });
+  }, 80);
   return () => watchers.forEach((w) => w.stop());
 }
 
@@ -135,7 +142,7 @@ function calibrationBlock(c, useSuggestion) {
   const bins = c.bins || [];
   const total = c.total || 0;
   const pct = (x) => `${Math.round(x * 100)}%`;
-  const box = h("div", { class: "cal-box" });
+  const box = inset({ class: "cal-box" });
   box.appendChild(h("h4", { class: "cal-title" }, icon("scale", { size: 14 }), " How often you agreed with the AI, by its certainty"));
   if (!total) {
     box.appendChild(h("p", { class: "muted small set-calibration-empty" }, "Nothing to show yet: when you review excerpts (agree with the AI or judge them differently), this shows how often you agreed, for each level of the AI's certainty, and suggests a strictness. ", c.note || ""));
@@ -177,7 +184,7 @@ function ocrBlock(s) {
   const st = (App.state && App.state.ocr) || {};
   const state = h("span", { class: "save-state", "aria-live": "polite" });
   const on = switchControl("Read scanned PDF pages (text recognition)", (s.ocr || "auto") !== "off", { help: "A scanned PDF is a picture of the pages. With text recognition (OCR) the app reads the text on them, on this computer, slowly and with some errors; the Documents page says which documents were read this way." });
-  const lang = fieldInput({ sm: true, type: "text", value: s.ocr_lang || "eng", placeholder: "eng", maxlength: 60, class: "set-lang" });
+  const lang = fieldInput({ type: "text", value: s.ocr_lang || "eng", placeholder: "eng", maxlength: 60, class: "set-lang" });
   const installed = st.languages && st.languages.length ? st.languages : [];
   const langField = field("Languages of the scanned documents", lang, { help: `Three-letter codes, joined with +, for example eng+nld for English and Dutch.${installed.length ? ` Installed on this computer: ${installed.join(", ")}.` : ""}` });
   const saveOcr = async () => { try { await save({ ocr: on.input.checked ? "auto" : "off", ocr_lang: lang.value.trim() || "eng" }, state); } catch (_) { /* shown */ } };
@@ -188,7 +195,7 @@ function ocrBlock(s) {
     box.appendChild(notice({ kind: "attention", class: "set-ocr-notice" }, h("p", {}, h("strong", {}, "To read scanned PDFs, install Tesseract."), " Until then, scanned pages stay without text and a wholly scanned PDF cannot be added."),
       st.install ? tesseractHelp(st) : h("p", { class: "small" }, "What is missing is listed under Settings → Technical.")));
   } else if (st.available) {
-    box.appendChild(h("p", { class: "muted small set-ocr-ok" }, icon("circle-check", { size: 13 }), " Text recognition is installed on this computer."));
+    box.appendChild(h("p", { class: "muted small set-ocr-ok" }, icon("check", { size: 13 }), " Text recognition is installed on this computer."));
   }
   box.append(on, langField, h("div", { class: "save-row" }, h("span", { class: "muted small" }, "Saved as soon as you change something. Applies to documents added from now on."), state));
   return box;
@@ -235,13 +242,13 @@ function modelSection(s, servers, watchers, info = { servers }) {
   let backend = s.backend || "auto";
   const isLocal = (b) => ["auto", "ollama", "openai"].includes(b);
   const allowCloud = switchControl("Allow cloud models", !!s.allow_cloud, { help: "" });
-  const cloudBox = h("div", { class: "cloud-box" }, allowCloud, h("p", {}, icon("alert-triangle", { size: 13 }), " With the Claude API the hypothesis and the excerpts read leave this computer and are billed to the key."));
+  const cloudBox = inset({ class: "cloud-box" }, allowCloud, aiWhere("With the Claude API the hypothesis and the excerpts read leave this computer and are billed to the key.", "cloud"));
 
   // 0.9: subscription first: four large choices, Claude Code first
   const ROUTES = [
     ["claude_code", "Claude Code", "cloud", "Recommended", "Claude reads the excerpts on your own Claude plan (Pro or Max). ENLENS prepares the work, starts Claude Code for you and checks every quote.", "Only the passages inside the tasks go to Anthropic"],
     ["local", "A model on this computer", "house", "", "Ollama, LM Studio, llama.cpp, Jan or vLLM. Free and fully private; needs a capable computer and judges less well than Claude.", "Nothing leaves this computer"],
-    ["baseline", "No AI (demo)", "cpu", "", "A word-overlap stand-in, to see how the app works. Search, keyword profiles, the glossary and themes work fully without AI.", "Nothing leaves this computer"],
+    ["baseline", "No AI (demo)", "eye-off", "", "A word-overlap stand-in, to see how the app works. Search, keyword profiles, the glossary and themes work fully without AI.", "Nothing leaves this computer"],
     ["anthropic", "Claude API (team key)", "key", "", "For a shared installation: the Claude API with the team's key, billed per use.", "The excerpts read go to Anthropic"],
   ];
   const routeOf = (b) => (isLocal(b) ? "local" : b);
@@ -321,7 +328,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
         rerender();
       },
     });
-    const list = servers.length ? h("div", { class: "server-list" }, servers.map((sv) => h("div", { class: "server" }, icon("circle-check", { size: 14 }),
+    const list = servers.length ? h("div", { class: "server-list" }, servers.map((sv) => inset({ class: "server small" }, icon("check", { size: 14 }),
       h("div", {}, h("strong", {}, sv.kind === "ollama" ? `Ollama ${sv.version || ""}` : `OpenAI-compatible server`), h("span", { class: "muted" }, ` at ${sv.url}`),
         h("div", { class: "sv-models" }, `Chat: ${(sv.chat_models || []).join(", ") || "none"} · Embedding: ${(sv.embedding_models || []).join(", ") || "none"}`))))) : null;
     return help ? h("div", { class: "stack" }, list, help) : list;
@@ -385,9 +392,9 @@ function modelSection(s, servers, watchers, info = { servers }) {
       st.textContent = "Saving…";
       try { await saveSpeed(v); s.claude_speed = v; st.textContent = "Saved."; } catch (e) { st.textContent = ""; throw e; }
     }, { label: null });
-    return h("div", { class: "stack set-claude-code-box" }, claudeSetupCard({ watchers }),
+    return h("div", { class: "stack set-claude-code-box" }, claudeSetupCard({ watchers, kind: "standard" }),
       h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Speed of Claude Code"), h("div", { class: "row" }, speed, st),
-        h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code (it is beside that button too). Faster is done sooner and uses your plan's limits faster. ",
+        h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code (each Start Claude Code says its speed and links here). Faster is done sooner and uses your plan's limits faster. ",
           helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model (labels on Haiku, checks on Sonnet, second opinions on Opus). Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))));
   }
 
@@ -405,7 +412,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
     const forget = button({ kind: "quiet", sm: true, hidden: !(k.session || k.stored), onClick: async () => {
       try { const r = await api("DELETE", "/api/settings/key"); App.state.key = r.key; st.textContent = "Key forgotten."; forget.hidden = true; } catch (e) { showError(e); }
     } }, "Forget the key");
-    return card({ as: "div" },
+    return card({ as: "div", class: "set-key" },
       h("div", { class: "field-label" }, "API key"),
       have ? notice({ kind: "done", class: "set-key-notice" }, h("p", {}, `A key is set (${have}).`)) : h("p", { class: "muted small" }, "From console.anthropic.com. Without a key, cloud checks fail."),
       h("div", { class: "row" }, input),
@@ -445,7 +452,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
       const r = await api("POST", "/api/servers/test");
       replace(testOut, testResult(r));
     } catch (e) {
-      replace(testOut, notice({ kind: "error" }, h("p", {}, e.message), e.kind === "backend" ? h("p", { class: "small" }, "Is the server running? For Ollama: open the Ollama app; a model can be downloaded above.") : null));
+      replace(testOut, notice({ kind: "error", live: false }, h("p", {}, e.message), e.kind === "backend" ? h("p", { class: "small" }, "Is the server running? For Ollama: open the Ollama app; a model can be downloaded above.") : null));
     }
     testBtn.disabled = false;
   });
@@ -677,7 +684,8 @@ function reproSection(s) {
   return sectionCard("repeatable", "Repeatable results", "Every model request is sent with a fixed seed and temperature 0, and every result records the model and, when the server reports it, its exact version (the digest), so the same documents and settings give the same answers. Whether a server honours the seed differs: test it here.",
     h("div", { class: "fields-2" },
       field("Seed", seed, { help: "Any whole number. Changing it can change the answers; it is shown in “How these results were made”." })),
-    h("div", { class: "save-row" }, test, state),
+    h("div", { class: "save-row" }, withAI(test), state),
+    readsLine("a short test question, twice"),
     out);
 }
 
@@ -689,7 +697,7 @@ function testSection(s, watchers) {
   const kExtract = h("input", { type: "checkbox", id: "k-extract" });
   const kLabel = h("input", { type: "checkbox", id: "k-label" });
   const out = h("div", { "aria-live": "polite", class: "set-test-out" });
-  const run = button({ kind: "main" }, icon("play", { size: 14 }), "Run test");
+  const run = button({}, icon("play", { size: 14 }), "Run test");
   run.addEventListener("click", async () => {
     const kinds = [kVerify.checked && "verify_set", kExtract.checked && "extract", kLabel.checked && "label"].filter(Boolean);
     if (!ref.value.trim() || !kinds.length) { toast("Give the reference folder and tick at least one task kind.", "warn"); return; }
@@ -700,13 +708,15 @@ function testSection(s, watchers) {
     } catch (e) { showError(e); run.disabled = false; }
   });
   function follow(jobId) {
-    const holder = card({ as: "div" }, h("div", { class: "card-head" }, h("h3", {}, "Testing"), button({ kind: "danger", sm: true, onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) }, icon("stop", { size: 13 }), "Stop")), h("div", { class: "pb" }));
+    const stop = stopButton({ onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) });
+    const pb = h("div", { class: "pb" });
+    const holder = card({ as: "div", title: "Testing", level: "h3", action: stop }, pb);
     replace(out, holder);
     const watcher = watchJob(jobId, (job) => {
       const p = job.progress || {};
-      replace(holder.querySelector(".pb"), simpleProgress(job, () => p.total ? `Task ${Math.min((p.done || 0) + 1, p.total)} of ${p.total}${p.task ? " · " + p.task : ""}` : "Starting…"),
-        p.model && p.model.line ? h("div", { class: "model-line set-model-line" }, h("div", { class: "ml-head" }, icon("cpu", { size: 14 }), h("span", {}, p.model.line))) : null);
-      if (TERMINAL.has(job.state)) { const b = holder.querySelector(".btn-outline-danger"); if (b) b.hidden = true; }
+      replace(pb, simpleProgress(job, () => p.total ? `Task ${Math.min((p.done || 0) + 1, p.total)} of ${p.total}${p.task ? " · " + p.task : ""}` : "Starting…"),
+        p.model && p.model.line ? h("div", { class: "model-line set-model-line" }, h("div", { class: "ml-head" }, h("span", {}, p.model.line))) : null);
+      if (TERMINAL.has(job.state)) stop.hidden = true;
     });
     watchers.push(watcher);
     watcher.promise.then((job) => {
@@ -731,7 +741,8 @@ function testSection(s, watchers) {
   return sectionCard("test", "Test a model before trusting it", "For technical users. It compares the chosen local model with reference answers saved in a project (for the pilot, those were made earlier with Claude Opus 5.5). Nothing is sent anywhere and nothing is stored. This measures agreement with the reference, not correctness.",
     field("Reference workspace folder", ref, { help: "For example the pilot folder that ships with the package." }),
     h("div", { class: "fields-2" }, n, h("div", { class: "field" }, h("span", { class: "field-label" }, "Tasks"), h("label", { class: "it", for: "k-verify" }, kVerify, " Checking claims"), h("label", { class: "it", for: "k-extract" }, kExtract, " Extracting claims"), h("label", { class: "it", for: "k-label" }, kLabel, " Labelling with codes"))),
-    h("div", { class: "save-row" }, run, App.settings().backend === "anthropic" ? h("span", { class: "muted small" }, "With the Claude API this is billed: one call per task.") : null),
+    h("div", { class: "save-row" }, withAI(run), App.settings().backend === "anthropic" ? h("span", { class: "muted small" }, "With the Claude API this is billed: one call per task.") : null),
+    readsLine("the test tasks"),
     out);
 }
 
@@ -775,7 +786,7 @@ function updatesSection() {
     }
     if (!info) { clear(out); return; }
     if (!info.available) {
-      replace(out, h("p", { class: "small" }, icon("circle-check", { size: 14 }), ` ${name} ${info.version} is the newest version.`,
+      replace(out, h("p", { class: "small" }, icon("check", { size: 14 }), ` ${name} ${info.version} is the newest version.`,
         when ? h("span", { class: "muted" }, ` Looked at ${at(when)}.`) : null));
       return;
     }
@@ -875,11 +886,12 @@ export function claudeSetupCard(opts = {}) {
   const log = h("div", { class: "cc-progress", "aria-live": "polite" });
   let info = { status: {}, commands: [] };
   let busy = false;
-  const step = (ok, title, text) => h("li", { class: `cc-step ${ok === true ? "ok" : ok === false ? "bad" : ""}` },
+  const step = (ok, title, text) => h("li", { class: "cc-step", "data-state": ok === true ? "done" : ok === false ? "todo" : null },
     h("span", { class: "cc-mark", "aria-hidden": "true" }, ok === true ? icon("check", { size: 12 }) : ok === false ? icon("alert-triangle", { size: 14 }) : "?"),
     h("div", {}, h("strong", {}, title), text ? h("span", { class: "small" }, text) : null));
-  const say = (...children) => replace(log, h("div", { class: "cc-now" }, ...children));
-  const working = (text) => say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("span", {}, text));
+  // what the set-up is doing now: work under way is a work state; a wait for you or a failure is a notice (DESIGN 4.12, 4.21)
+  const say = (kind, ic, ...children) => replace(log, notice({ kind, icon: ic, class: "cc-now", ...(kind === "info" ? { role: "status" } : {}) }, ...children));
+  const working = (text) => replace(log, h("p", { class: "cc-now" }, workState("running", text)));
   // 0.13.4: what it reads is the sidebar's too (the account on its "Claude, on your plan" card)
   const fresh = async () => { info = await api("GET", "/api/claude-setup?refresh=1"); return rememberClaude(info.status || {}); };
 
@@ -901,7 +913,7 @@ export function claudeSetupCard(opts = {}) {
     if (opts.watchers) opts.watchers.push(w);
     const job = await w.promise;
     if (job.state !== "done") {
-      say(icon("alert-circle", { size: 14 }), h("div", {}, h("p", {}, "Claude Code could not be installed from here."),
+      say("error", null, h("div", {}, h("p", {}, "Claude Code could not be installed from here."),
         h("p", { class: "small" }, "Install it with ", h("a", { href: info.docs || "https://code.claude.com/docs/en/setup", target: "_blank", rel: "noopener" }, "Anthropic's set-up page"), ", then press Set up Claude again."),
         job.error ? fold({}, "Technical details", h("div", { class: "mono small" }, job.error)) : null));
       return false;
@@ -919,7 +931,7 @@ export function claudeSetupCard(opts = {}) {
       const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve(v); };
       const checkNow = button({ sm: true, onClick: () => poll(true) }, "I have signed in");
       const cancel = button({ kind: "quiet", sm: true, onClick: () => { finish(false); replace(log); } }, "Stop waiting");
-      say(h("span", { class: "spinner" }, icon("loader", { size: 13 })), h("div", {},
+      say("info", "clock", h("div", {},
         opened.opened ? h("p", {}, `A ${opened.window} window opened with Claude Code. Sign in there with your Claude plan (it opens a page in your browser), then close that window. ENLENS is waiting and continues by itself.`)
           : h("div", {}, h("p", {}, "Sign in to Claude Code once: open a terminal (Terminal on a Mac, PowerShell on Windows), type the line below, and follow the steps. It starts Claude Code in an empty folder of ENLENS, away from your files."), copyLine(opened.command || "claude", "Copy", "a terminal")),
         h("p", { class: "small muted" }, "ENLENS never sees your login: Claude Code keeps it."),
@@ -947,7 +959,7 @@ export function claudeSetupCard(opts = {}) {
     info = { ...info, ...r };
     const bad = (r.steps || []).filter((x) => !x.ok);
     if (bad.length) {
-      say(icon("alert-circle", { size: 14 }), h("div", {}, h("p", {}, "The plugin could not be added: ", bad[0].step),
+      say("error", null, h("div", {}, h("p", {}, "The plugin could not be added: ", bad[0].step),
         fold({}, "Technical details", h("div", { class: "mono small" }, bad[0].text))));
       return false;
     }
@@ -985,7 +997,8 @@ export function claudeSetupCard(opts = {}) {
     const ready = !!st.ready && st.signed_in !== false;
     if (ready && opts.onReady) opts.onReady();
     if (!keepLog && !busy) replace(log);
-    const btn = button({ kind: ready ? "standard" : "main", sm: ready, disabled: busy, onClick: () => (ready ? fresh().then(() => draw()).catch(showError) : setUp()) },
+    // the main button of the first screen; in Settings the card's main action is Save, so it is a standard one there
+    const btn = button({ kind: ready ? "standard" : opts.kind || "main", sm: ready, disabled: busy, onClick: () => (ready ? fresh().then(() => draw()).catch(showError) : setUp()) },
       icon(ready ? "refresh" : "zap", { size: 14 }), ready ? "Check again" : "Set up Claude");
     const manual = fold({}, "Set it up yourself instead",
       h("ol", { class: "cc-manual small" },

@@ -1170,7 +1170,7 @@ def _work_view(r) -> dict:
             "container": r["container"], "doi": r["doi"], "url": r["url"], "link": r["link"],
             # 0.15.1: the file ENLENS would add (a PDF before a saved web page, as `files_to_add` chooses)
             "file": min(((f["name"], _FILE_RANK.get(Path(f["path"]).suffix.lower(), 9), i) for i, f in enumerate(files)
-                         if f.get("exists") and Path(f["path"]).suffix.lower() in READABLE),
+                         if f.get("exists") and f.get("path") and Path(f["path"]).suffix.lower() in READABLE),
                         key=lambda x: (x[1], x[2]), default=(None,))[0]}
 
 

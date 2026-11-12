@@ -76,7 +76,11 @@ def test_the_project_zip_is_downloaded_with_the_token_in_a_header():
     js = _js("views/result.js")
     fn = js[js.index("export function projectZipLink"):]
     fn = fn[:fn.index("\n}\n")]
-    assert "download(`/api/projects/${P(project)}/export.zip`)" in fn
+    assert "zipButton(" in fn  # 0.18: the two downloads (what you shared, the whole project) live in share.js
+    share = _js("views/share.js")
+    fn = share[share.index("export async function downloadProject"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert 'download(`/api/projects/${P(project)}/export.zip${shared ? "?scope=shared" : ""}`)' in fn
     assert "token=" not in fn and "TOKEN" not in fn
 
 

@@ -114,7 +114,8 @@ def test_second_opinion_everywhere():
                     "Choose a second model", "The second model must be", "The second model is the same",
                     "(a second model, the context length)", '"the second model"', "add a second model"):
             assert old not in text, old
-    assert '"second-opinion": { icon: "cpu", text: "Second opinion"' in (STATIC / "registry.js").read_text()  # 0.13.6
+    # 0.13.6; 0.17.0 (design guide): the chip is the AI mark's only, so the job's icon is the scale (two readings weighed)
+    assert '"second-opinion": { icon: "scale", text: "Second opinion"' in (STATIC / "registry.js").read_text()
     assert "The second opinion read" in page["views/result.js"]
     from enlens_claims import taskkinds  # 0.13.6: the run's name lives in the registry
 
