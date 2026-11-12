@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, setButtonKind, menu, plural, emptyState, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice , cancelJob, ensureToken, keyWasStale, copyLine } from "./lib.js";
+import { App, api, h, icon, setButtonKind, menu, plural, emptyState, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice , cancelJob, ensureToken, keyWasStale, copyLine, WhatsNew, loadWhatsNew, showWhatsNew } from "./lib.js";
 import { FEATURES, SECTIONS, PLACES, aiTag } from "./features.js";
 import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
 import { quietRound, quietRoundAgainIn, nextSyncLook } from "./views/team-state.js";   // 0.18 stage 5
@@ -707,25 +707,33 @@ function connectionInit() {
   setInterval(() => { if (Connection.down) api("GET", "/api/state").catch(() => {}); }, 5000);
 }
 
-// 0.15.1: a small note of what is new, once, on the first start after an update (the app marks it seen when it serves it)
-// 0.15.4: or, also once, why an update on Windows did not finish (`kind: "problem"`)
+// 0.15.1: what is new after an update. After 0.17.2 it is read only when asked: no note in the corner, but What's new
+// above Settings until it is opened (lib.js showWhatsNew; Settings, beside the version, has it always).
+// 0.15.4: why an update on Windows did not finish (`note`, `kind: "problem"`) still shows by itself, once: it says what
+// to do.
 async function whatsNewInit() {
-  let note = null;
-  try { note = (await api("GET", "/api/whats-new")).note; } catch (e) { return; }
-  if (!note || !Array.isArray(note.points) || !note.points.length) return;
-  const problem = note.kind === "problem";
+  const r = await loadWhatsNew();
+  const btn = document.getElementById("news-btn");
+  if (btn && WhatsNew.unread) {
+    replace(btn, icon("sparkles", { size: 13 }), h("span", {}, `What's new in ${WhatsNew.changes.version}`));
+    btn.title = `What ${appName()} ${WhatsNew.changes.version} brings. It goes once you have read it; Settings has it too.`;
+    btn.addEventListener("click", () => showWhatsNew());
+    window.addEventListener("enlens-whats-new-read", () => { btn.hidden = true; });
+    btn.hidden = false;
+  }
+  const note = r && r.note;
+  if (!note || note.kind !== "problem" || !Array.isArray(note.points) || !note.points.length) return;
   const onKey = (ev) => { if (ev.key === "Escape") close(); };
   const close = () => { document.removeEventListener("keydown", onKey); card.remove(); };
-  const card = h("div", { class: problem ? "release-note release-note-problem" : "release-note", role: "status",
-    "aria-live": "polite", "aria-label": problem ? "The update did not finish" : "What is new" },
+  const card = h("div", { class: "release-note release-note-problem", role: "status", "aria-live": "polite", "aria-label": "The update did not finish" },
     h("div", { class: "release-note-head" },
-      problem ? icon("alert-triangle", { size: 15 }) : null,
-      h("p", { class: "release-note-title" }, problem ? note.title : `${note.version}: ${note.title}`),
+      icon("alert-triangle", { size: 15 }),
+      h("p", { class: "release-note-title" }, note.title),
       iconButton({ icon: "x", size: 14, label: "Close", class: "release-note-close", onClick: close })),
     note.subtitle ? h("p", { class: "release-note-sub" }, note.subtitle) : null,
     h("ul", { class: "release-note-list" }, ...note.points.map((t) => h("li", {}, t))));
   document.addEventListener("keydown", onKey);
-  if (problem) document.querySelectorAll(".update-popup").forEach((el) => el.remove());  // the same corner
+  document.querySelectorAll(".update-popup").forEach((el) => el.remove());  // the same corner
   document.body.appendChild(card);
 }
 

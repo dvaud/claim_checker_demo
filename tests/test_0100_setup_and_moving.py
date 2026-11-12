@@ -446,9 +446,13 @@ def test_move_everything_to_another_computer(api, home, corpus, tmp_path, monkey
     assert meta["settings"]["threshold"] == 0.7 and "project" not in meta["settings"]
     assert not any("credentials" in n for n in names)
 
-    # a new computer: everything comes in, with the settings
+    # a new computer: everything comes in, with the settings. Roles (DESIGN-roles §4.11): the import first asks who
+    # this computer is (the upload waits under a token), and the settings come when the person says so
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "new-computer"))
-    st, r = api("POST", "/api/projects/import", raw=data, headers={"Content-Type": "application/zip"})
+    st, asked = api("POST", "/api/projects/import", raw=data, headers={"Content-Type": "application/zip"})
+    assert st == 200 and asked["move"]["fresh"] is True and "moved" not in asked, asked
+    assert [p["name"] for p in asked["move"]["projects"]] == ["Alpha", "Beta"]
+    st, r = api("POST", "/api/move", {"token": asked["token"], "mode": "moving", "settings": True})
     assert st == 200, r
     assert [(p["from"], p["name"]) for p in r["moved"]["projects"]] == [("Alpha", "Alpha"), ("Beta", "Beta")]
     assert r["moved"]["settings"] is True and r["moved"]["current"] == "Beta" and r["project"]["documents"] == 3
@@ -457,9 +461,12 @@ def test_move_everything_to_another_computer(api, home, corpus, tmp_path, monkey
     st, state = api("GET", "/api/state")
     assert {p["name"] for p in state["projects"]} == {"Alpha", "Beta"}
 
-    # a computer in use: the projects come in beside its own, its settings stay
+    # a computer in use: the projects come in beside its own, its settings stay ("moving" is not offered there)
     api("PUT", "/api/settings", {"threshold": 0.5})
-    st, r = api("POST", "/api/projects/import", raw=data, headers={"Content-Type": "application/zip"})
+    st, asked = api("POST", "/api/projects/import", raw=data, headers={"Content-Type": "application/zip"})
+    assert asked["move"]["fresh"] is False
+    assert api("POST", "/api/move", {"token": asked["token"], "mode": "moving"})[0] == 400
+    st, r = api("POST", "/api/move", {"token": asked["token"], "mode": "both"})
     assert [p["name"] for p in r["moved"]["projects"]] == ["Alpha (2)", "Beta (2)"] and r["moved"]["settings"] is False
     assert home.load_settings()["threshold"] == 0.5 and home.load_settings()["project"] == "Beta"  # stays put
 
@@ -480,14 +487,14 @@ def test_moved_settings_respect_local_only(home, tmp_path, monkeypatch):  # noqa
     bundle.export_all(out)
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "locked"))
     monkeypatch.setenv("ENLENS_LOCAL_ONLY", "1")
-    r = bundle.import_all(out)
+    r = bundle.import_all(out, "moving", settings=True)  # roles: the mode is said, and the settings asked for
     s = home.load_settings()
     assert r["settings"] is True and s["themes_k"] == 12 and s["backend"] == "auto"  # nothing may leave this one
     bad = tmp_path / "bad.zip"
     with zipfile.ZipFile(bad, "w") as zf:
         zf.writestr("enlens-move.json", json.dumps({"format": "other"}))
     with pytest.raises(ValueError, match="not made with"):
-        bundle.import_all(bad)
+        bundle.import_all(bad, "moving")
 
 
 # ---------------------------------------------------------------------------------------------

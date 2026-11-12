@@ -307,9 +307,13 @@ def test_a_colleagues_edit_never_takes_the_text_out_of_the_writers_own_tasks(pai
         claimcheck.set_note(ben.ws, hid, "Ben's note")
     _round(ben)
     rep = _round(anna)["read"][0]["report"]
-    assert rep["checks"]["updated"] == 1
+    # roles (H5, DESIGN-roles §4.9): Anna's own check is not replaced; Ben's version comes in beside it. Her own
+    # tasks keep their text either way
+    assert rep["checks"]["updated"] == 0 and len(rep["checks"]["clash"]) == 1
     with anna:
-        assert anna.ws.scalar("SELECT note FROM hypotheses WHERE hyp_id=?", (hid,)) == "Ben's note"
+        assert anna.ws.scalar("SELECT note FROM hypotheses WHERE hyp_id=?", (hid,)) is None
+        assert anna.ws.scalar("SELECT note FROM hypotheses WHERE hyp_id=?", (rep["checks"]["clash"][0]["hyp_id"],)) == \
+            "Ben's note"
         assert anna.ws.scalar("SELECT COUNT(*) FROM tasks WHERE payload_json LIKE '%zebrafish%'") == with_text > 0
 
 

@@ -401,7 +401,8 @@ details.card > summary .muted { font-weight: var(--fw-regular); }
 @media (max-width: 860px) {
   .toasts { right: 8px; left: 8px; bottom: 8px; max-width: none; }
 }
-/* the note of what is new after an update: small, muted, closed by x or Escape */
+/* the note of an update on Windows that did not finish: small, muted, closed by x or Escape (what is new after an update
+   is no longer a note here: it is a dialog, opened only when asked, below) */
 .release-note {
   position: fixed; right: 16px; bottom: 16px; z-index: 80; width: 300px; max-width: calc(100vw - 32px); padding: 10px 12px 12px;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow);
@@ -416,6 +417,10 @@ details.card > summary .muted { font-weight: var(--fw-regular); }
 .release-note-problem { border-color: var(--attention-line); }
 .release-note-problem .release-note-head > .icon { flex: none; margin-top: 1px; color: var(--attention); }
 @keyframes release-note-in { from { opacity: 0; } to { opacity: 1; } }
+/* What's new, in a dialog opened only when asked (lib.js showWhatsNew): the version's title, its subtitle, its points */
+.news-title { margin: 0; color: var(--text); font-weight: var(--fw-strong); }
+.news-sub { margin: 2px 0 10px; color: var(--muted); font-style: italic; }
+.news-list { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; padding-left: 18px; }
 @media (max-width: 480px) {
   .release-note { left: 16px; right: 16px; width: auto; }
 }
@@ -967,6 +972,8 @@ span.passage-broken, span.passage-broken > span { display: block; }
 .sidebar-app-row .nav-foot a { padding-right: 6px; }
 .sidebar-app-row .btn { flex: none; }
 .sidebar-app .btn[hidden] { display: none; }
+/* after an update, until it is opened: What's new, a small quiet button above the last row, as wide as its words */
+.sidebar-app .news-btn { align-self: flex-start; margin-bottom: 4px; }
 .sidebar-app .theme-btn { flex: none; }
 
 /* ==== 5.3 Find */

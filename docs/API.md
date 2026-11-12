@@ -202,6 +202,14 @@ since 0.13.6 only when there is an update).
   running, "title": "The update to X did not finish", "subtitle", "points": [what happened, what to do]}}`, from the
   result `handover.py` left in `updates/result.json` of the data folder (removed when read; a result that says the
   update worked is only removed).
+  After 0.17.2 what is new is read only when asked, so the answer is `{"note", "changes", "unread"}`: `note` is only
+  the Windows problem above (once) or `null`; `changes` is the running version's note, `{"version", "title",
+  "subtitle", "points", "url"}` (`url`: the version's release page on GitHub), or `null`, served every time and marking
+  nothing; `unread` is true when an update brought it and this person has not opened it (`whats_new_seen` is not the
+  running version; never on a new installation, which is still marked silently). The sidebar offers *What's new*
+  while `unread`; Settings has it always.
+- `POST /api/whats-new/read` `{}` (after 0.17.2) → `{"unread": false}`: *What's new* was opened; `whats_new_seen`
+  becomes the running version.
 
 - `POST /api/update` `{}` → `{"updated": true, "restarting": true, "handover": false, "from", "version",
   "jobs_stopped": n}`: installs it as `enlens update` does, then restarts on the same address and port (running jobs
@@ -298,7 +306,11 @@ is not one, 409 when no Ollama answers on this computer (or at the address in Se
 `GET /api/projects` → `{"projects": [summary]}`.
 `POST /api/projects` `{"name": "Morocco"}` → `{"project": summary}` (also becomes the current project).
 `POST /api/projects/link` `{"path": "/path/to/workspace", "name": "Pilot"}` → links an existing workspace folder
-(not copied). `DELETE /api/projects/<p>` `{"confirm": "<p>"}` → `{"result": "unlinked" | "moved to …/trash/…"}`.
+(not copied). When the folder is another person's project (its people do not include this person) the answer is 409 with
+`{"error", "report": {"other": {"name"} | null, "triggers": n, "views": n, "config": [keys changed], "bib_paths": n,
+"cache": bool}}` and nothing is linked; the same request with `"clean": true` cleans it like a project brought in from a
+file (a shared-folder record, file paths of the other computer, and what was stored for speed go; the documents and
+the work stay) and links it. `DELETE /api/projects/<p>` `{"confirm": "<p>"}` → `{"result": "unlinked" | "moved to …/trash/…"}`.
 
 `GET /api/projects/<p>/export.zip` → the whole project as one zip, to give to a colleague or move to another
 computer: a consistent copy of the database, `config.json`, the project's codebooks, and the original file of every
@@ -380,7 +392,9 @@ and original files are stored there once for the whole team.
   colleague's work waits, the others' comes in), `too_large` (a bundle, or a document's reading, larger than ENLENS
   reads: left aside, that colleague's later work waits behind it), `documents` (documents their work reads have not
   arrived yet),
-  `failed` (their work could not be merged: nothing of it changed, the others' came in). Each `message` is in plain
+  `failed` (their work could not be merged: nothing of it changed, the others' came in), `other_computer` (another
+  computer writes into this person's subfolder: nothing is written or deleted from this copy until the person presses
+  *Use both computers*, `POST /api/second-computer`). Each `message` is in plain
   words, ready to show; every one except `other_project` goes away by itself on a later round. A copy held up at a
   colleague's bundle says so in its own subfolder (`waiting.json`); when that bundle is damaged or gone on its
   writer's computer too, or names a reading no copy can write again, the writer's copy starts afresh at its next round
@@ -454,37 +468,58 @@ stops when the app quits (no round starts once quitting has begun).
 - Settings (also through `PUT /api/settings`): `sync_every_minutes` (1–60, default 2), `sync_paused` (default false),
   `sync_paused_projects` (a list of project names). They belong to this computer.
 
-**One owner, several collaborators (0.17.0, roadmap L2: `ownership.py`, `sync/owner_merge.py`, `gui/api_owner.py`).**
-A shared project has one owner. What its documents *are* (which documents, how each is read, who may read each with
-AI) is the owner's to decide; the owner's own changes are the project's at once. A collaborator may still change the
-documents in their own copy: each such change is a *proposal* (kind, severity): `add` (a document added, low:
+**One owner, Co-owners and Members (0.17.0, roadmap L2; roles after it: `ownership.py`, `sync/owner_merge.py`,
+`gui/api_owner.py`).** A shared project has one Owner, any number of Co-owners and, for everyone else, Members (no row
+needed). What its documents *are* (which documents, how each is read, who may read each with AI) is for the Owner and
+the Co-owners to decide: their own changes are the project's at once, and they answer proposals. Only the Owner sets
+roles and hands the project over. A Member may still change the documents in their own copy: each such change is a
+*proposal* (kind, severity): `add` (a document added, low:
 accepted at once by the owner's setting, on by default), `reread` (read with the new reader, medium), `blocks` (*Leave
 out* / *Restore*, where the text starts or ends, medium), `remove` (high), `loosen` (more AI may read a document,
 high). The proposer's copy keeps the change, except a looser AI setting, which waits in every copy, theirs too. A
-document a collaborator adds reaches every copy at once, provisionally, and leaves the others when the owner declines
+document a Member adds reaches every copy at once, provisionally, and leaves the others when the owner declines
 it; every other proposal changes nothing elsewhere until the owner accepts it. A *stricter* AI setting is never a
-proposal: it holds in every copy at once. Who the owner is travels as a chain of records (`ownership`), with the
-proposals, the owner's decisions and the documents as the owner accepted them (`canon`), in zips and through the
-shared folder; `canon_seen` (how far this copy followed) stays in the copy. A project made with 0.17.0 is its maker's
+proposal: it holds in every copy at once; a *looser* one is never put into force in a copy by a file: it is an *offer*
+its person answers (`offers`, `POST owner/loosening`). Who the owner is travels as a chain of records (`ownership`),
+and each copy *pins* the record it follows for each place in the chain (no clock decides; another founder or a
+take-over is a *question*, `questions`); roles (`roles`), the proposals, the answers and the documents as the
+Owner and Co-owners decided them (`canon`, merged part by part by what each writer knew) travel in zips and through
+the shared folder; `canon_seen` (how far this copy followed) and the pins stay in the copy. Two different answers to
+one proposal, given without each other's, count for nothing (`clash`). Sync format 4. A project made with 0.17.0 is its maker's
 (the record is written when it first leaves the computer: a zip or the shared folder); a project exchanged before
 0.17.0 has no owner, and works as before, until someone says *Become the owner*. All routes are under
-`/api/projects/<p>/`; errors: 403 (only the owner, or only the proposer, in words), 404 (no such proposal, person or
-document), 409 (a proposal that no longer waits; nothing to make here), 400 (a body that says nothing usable).
+`/api/projects/<p>/`; errors: 403 (only the owner, or an Owner or Co-owner, or only the proposer, in words), 404 (no such proposal, person,
+question or document), 409 (a proposal that no longer waits; nothing to make here), 400 (a body that says nothing usable).
 - `GET owner` → the view:
   `{"owner": {"id", "name", "me"} | null, "me": person id, "is_owner", "since": ISO | null (when the record that made
   the owner was written), "how": "made" | "claim" | "handover" | "takeover" | null, "can_claim" (no owner yet: *Become
   the owner*), "can_take_over": words why | null (the owner has left the shared folder, or was not heard of for 14
-  days), "accept_adds" (the owner's setting; true in a collaborator's copy), "people": [{"id", "name", "me",
-  "owner"}] (this copy's person first), "proposals": [{"id", "kind", "severity": "low" | "medium" | "high", "doc",
+  days), "accept_adds" (the owner's setting; true in any other copy), "role": "owner" | "co" | "member" (this
+  copy's person), "can_write" (Owner or Co-owner: this person's changes to the documents hold at once),
+  "can_set_roles" (Owner only), "people": [{"id", "name", "me", "owner", "role": "owner" | "co" | "member",
+  "same_as": person id | null (another person this one is marked the same as), "needs_update": bool (a Co-owner whose
+  ENLENS is too old to act as one)}] (this copy's person first), "proposals": [{"id", "kind", "severity": "low" | "medium" | "high", "doc",
   "title", "what" (the change in words: "removing “Annual report 2024” from the project"), "by": {"id", "name",
   "me"}, "at", "state": "waiting" | "accepted" | "declined" | "taken_back" | "replaced" | "moot", "note" (why it needs
   no answer any more, in words) | null, "reason" (the owner's) | null, "decided_by": {…} | null, "decided_at",
   "auto" (accepted at once by the setting), "mine", "can_decide", "can_take_back", "here" (the document is in this
-  copy), "conflicts": [ids of the other waiting proposals for the document], "detail"}] (newest first), "waiting": n
-  (in the owner's copy all that wait; otherwise this person's own), "to_apply": [{"doc", "title", "kind": "reread",
+  copy), "conflicts": [ids of the other waiting proposals for the document], "detail"}] (newest first; each also has
+  `"clash": {"accepted": [person ids], "declined": [person ids]} | null`: set when it was answered both ways and
+  neither answer counts, `state` then reads `waiting` with `note` "answered both ways"), "waiting": n (in a copy that
+  may decide, all that wait, the questions, offers, refused rows and proposals answered both ways included;
+  otherwise this person's own), "to_apply": [{"doc", "title", "kind": "reread",
   "note", "can_force"}] (a new reading the owner accepted that this copy did not make by itself: some of its results
   would find no place, or it cannot be read now), "documents": {doc id: {"state": "proposed" | "declined" | "waiting",
-  "text"}}, "job": the move job of the project queued or running (a job view) | null}`. `detail` by kind: `add`
+  "text"}}, "job": the move job of the project queued or running (a job view) | null,
+  "questions": [{"id", "seq", "kind": "founder" | "takeover" | "other", "owner": person, "by": person, "why", "now":
+  person (the owner this copy follows)}] (a change of owner this copy's person has not answered), "offers": [{"doc",
+  "title", "from" (the level here), "to" (the level offered), "by": person}] (a looser AI setting offered, never
+  applied), "removed": [{"doc", "title", "at", "by": person, "why", "cause": "removed" | "declined", "until"}] (can be
+  restored until then: 30 days), "clashes": [{"id", "kind": "part" | "answer", "doc", "title", "part": "state" |
+  "read" | "ai" | "blocks", "events", "counts", "people"}] (what was settled at the same time; for `"answer"` also
+  "proposal", "what", "accepted", "declined": a proposal answered both ways), "refused": [{"kind", "key", "via",
+  "title", "at"}] (a change in this person's name that a file carried and was not taken), "notices": [{"kind":
+  "handover" | "role", "text"}] (shown once)}`. A `person` is `{"id", "name", "me"}`. `detail` by kind: `add`
   `{sha1, text_fp, reader, ai_access, state_n, again}`; `reread` `{from_fp, from_reader, to_fp, to_reader}`; `blocks`
   `{digest, blocks_n, left_out, restored, undone, bounds}`; `remove` `{removed_at, state_n}`; `loosen` `{from, to,
   ai_n}`. A copy names its own person "you". Before it answers, what this copy's person changed since the last look is
@@ -496,11 +531,12 @@ document), 409 (a proposal that no longer waits; nothing to make here), 400 (a b
   person the project does not know → 404. The owner's own changes up to that moment become the project's first.
   Proposals that wait are then the new owner's to answer; the new owner's own earlier proposals stay proposals.
 - `POST owner/take-over {"why"?}` → the view, when `can_take_over` says why; 403 otherwise (in words), and for the
-  owner. A hand-over and a take-over written at the same time: the hand-over counts.
+  owner. A Co-owner may when the owner has left; a Member only when no Co-owner was heard of for 14 days either. It is
+  a question in every other copy (`questions`), never a fact there.
 - `PUT owner/settings {"accept_adds": bool}` → the view. Only the owner (403); not a boolean → 400. Turned on, the
   additions that wait are accepted at once. It is this copy's own and holds for one time as the owner: a new owner,
   and an owner who has the project back, start at the default (on).
-- `POST owner/proposals/<id>/accept {"reason"?}` and `…/decline {"reason"?}` → the view. Only the owner (403); an
+- `POST owner/proposals/<id>/accept {"reason"?}` and `…/decline {"reason"?}` → the view. Only the owner or a Co-owner (403); an
   unknown id → 404; one that no longer waits → 409. Accepted, the change is made in the owner's copy at once (a
   document not here is fetched from the shared folder; a new reading is made by a job, below) and reaches every copy
   with its next round or zip. Declined, nothing changes in the project; the proposer's copy keeps its change (a
@@ -510,6 +546,24 @@ document), 409 (a proposal that no longer waits; nothing to make here), 400 (a b
   (`to_apply`). `force`: results that find no place in the new reading are kept as records (as when a person moves a
   document from its own page); without it the document moves only when every result finds its place. 400 without
   `doc`, 404 for a document not here, 409 when it is read as the project reads it already.
+- **Roles, questions, offers, removals and clashes (all under `/api/projects/<p>/owner`; each answers with the view; 403
+  not allowed, 404 no such thing, 409 no longer so):**
+  - `PUT roles/<person> {"role": "co" | "member"}` or `{"same_as": person id | null}` → the view. Only the Owner (403).
+    Making a Member again writes the Owner's rows and the answers that counted again first, so nothing accepted goes
+    and no proposal opens again.
+  - `POST questions/<id> {"answer": "follow" | "keep"}`: follow the record the question names (the owner it names
+    becomes the owner this copy follows), or keep the one followed now (the question is not asked again).
+  - `POST loosening {"docs": [doc ids] | null, "allow": bool}`: answer offers. `allow: true` sets the level offered in
+    this copy for those documents; `false` keeps them stricter. `docs: null` is every offer. An offer left alone is
+    kept stricter. A stricter setting is never an offer.
+  - `POST removed/<doc>/restore`: put back a document removed in the last 30 days (404 when there is no such archive,
+    or it is older). A Member's restore also proposes it to the owner.
+  - `POST clashes/<id>` (*Leave it so*): writes the part again as it is, so the clash goes in every copy. For a
+    clash of kind `"answer"` use accept or decline of the proposal.
+  - `POST take-back {}`: after a hand-over in this person's name that they did not make (`refused` of kind
+    `ownership`): takes the project back with a take-over of this person's own, which every other copy is asked about.
+  - `POST refused/<kind>/<key>/dismiss`: forget one `refused` row.
+- **Codebooks:** `POST …/codebooks/<name>/follow` and the `offer` of a codebook are under *Codebooks* below.
 - **The move job:** a new reading the owner accepted is made in each copy by one job of kind `new_reader` (lane
   `reader`: alone in its project, see Jobs), started when the owner accepts it, when a round of the shared folder that
   brought the decision in ends, and after `bring-in` of a zip; `"background": true` unless started by `apply`. Only
@@ -1275,10 +1329,22 @@ that no session has taken yet out of the queue; a check by queue is removed whol
   zip of `GET /api/projects/<p>/export.zip`, under `projects/NNN.zip`) and `enlens-move.json`: `{"format":
   "enlens-move", "version", "made", "projects": [{"name", "file", "documents", "linked", "missing"}], "current",
   "settings"}`. Quick looks not kept are left out, and so is a saved Claude API key.
-- `POST /api/projects/import` also takes that zip → `{"moved": {"projects": [{"from", "name", "documents"}],
-  "settings": bool, "current", "made", "version"}, "project": summary of the current one}`. A project whose name is
-  taken comes in as `name (2)`. The settings come along only when this computer has no project yet; with
-  `--local-only`, never the choice of a cloud AI.
+- `POST /api/projects/import` with that zip asks first, in two steps. Step one imports nothing: it answers `{"move":
+  peek, "token"}`, where `peek` is `{"made", "version", "projects": [{"name", "documents"}], "person": {"id",
+  "name"}, "settings": {key: value shown}, "servers": [{"key", "url", "here": bool}] (addresses of servers; `here`:
+  on this computer), "fresh": bool (this computer has no project)}`; the upload waits under `token`. Step two,
+  `POST /api/move {"token", "mode": "moving" | "both", "name"?, "settings": bool, "servers": [keys]}` →
+  `{"moved": {"projects": [{"from", "name", "documents"}], "settings": bool, "current", "made", "version"}, "project":
+  summary of the current one}`. `mode` has no default (400). `"moving"` only when `fresh` (else 409): this person's id
+  and name are taken first, then the projects come in as this person's own. `"both"`: a new person here, called
+  `name`; the projects come in as a colleague's do. `settings` takes the other computer's settings; an address that is
+  not on this computer is taken only when its key is in `servers`, else that back end goes back to its default; the
+  installation id never comes. A project whose name is taken comes in as `name (2)`. With `--local-only`, never the
+  choice of a cloud AI. An unknown or used `token` → 404.
+- `POST /api/second-computer {"name"}` → `{"person": {"id", "name"}}`: use both computers. This computer becomes a second
+  person (a new id, the name given); what it did so far stays under the first id. Answers the folder problem
+  the problem of `GET …/shared-folder` (`kind` `other_computer`, and `"other_computer": {"since": ISO} | null` beside
+  `problems`) that stops a copy from writing into a folder where another computer already writes under the same name.
 - `GET /api/state` adds `"installation": {"kind": "git" | "script" | "package" | "pip", "system": "mac" | "windows"
   | "linux", "line", "releases"}`, and `ocr` adds `"install"` when Tesseract is missing: `{"text", "command", "link",
   "link_text"}` for this system.
@@ -1480,6 +1546,10 @@ codes, where each example was found, the groups and their order. The old routes 
   colleague both changed since you last exchanged the codebook, merged code by code when their work came in: `[{"uid",
   "code" (yours now; null when you had removed it), "removed_here", "theirs": {"code", "description", "group",
   "group_name", "include", "exclude", "keywords", "examples"}, "person_id", "name", "at"}]`.
+- `POST /api/projects/<p>/codebooks/<name>/follow {"follow": bool}` → `{"codebook"}`: answer the `offer` of `GET
+  …/codebooks/<name>` (`{"name", "from": person, "events": [{"op", "from", "to"}], "labels"}` | null): renames and
+  merges by someone other than the codebook's maker. `true` moves this copy's labels with them, `false` keeps them.
+  The maker's own move everyone's labels at once; none deletes a label.
 - `POST /api/projects/<p>/codebooks/<name>/clashes/<uid> {"keep": "mine" | "theirs", "why"?}` → `{"codebook"}` (0.17.0):
   keep your version (theirs is set aside) or theirs (it replaces yours, or comes back when you had removed it; labels
   follow a new name as after any edit). A version is kept and the research log says so. 404 when there is no such

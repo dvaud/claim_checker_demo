@@ -104,10 +104,12 @@ def after_job(app, job: Job) -> None:
 def _guard(fn, *args):
     try:
         return fn(*args)
+    except NotImplementedError as e:  # roles (DESIGN-roles §7): a rule of another piece not built in this tree yet
+        raise ApiError(501, f"Not built yet: {e}") from e
     except ownership.NotAllowed as e:
         raise ApiError(403, str(e)) from e
     except KeyError:
-        raise ApiError(404, "No such proposal or person in this project.") from None
+        raise ApiError(404, "No such proposal, person, question or document in this project.") from None
     except ValueError as e:
         raise ApiError(409, str(e)) from e
 
@@ -197,3 +199,110 @@ class OwnerApi:
             job = next((j for j in self.app.jobs.all() if j.kind == JOB and j.project == name
                         and j.state in ("queued", "running") and doc in getattr(j, "owner_docs", ())), None)
         return {**self._owner_view(name), "job": job.view() if job else None}
+
+    # -----------------------------------------------------------------------------------------
+    # roles (DESIGN-roles §5, §7 P4): the Owner sets roles, this copy answers questions, offers and refused rows
+    # -----------------------------------------------------------------------------------------
+    def put_owner_role(self, name, person, q):
+        """{"role": "co" | "member"} and/or {"same_as": a person id | null}: the Owner's copy only (403 otherwise)."""
+        from .. import people
+
+        body = self._body()
+        if "role" not in body and "same_as" not in body:
+            raise ApiError(400, "Send {\"role\": \"co\" | \"member\"} or {\"same_as\": a person id or null}.")
+        if person == people.me():
+            raise ApiError(400, "Your own role is the owner's: hand the project over to change it.")
+        ws = self.app.ws(name)
+        if "role" in body:
+            if body["role"] not in ("co", "member"):
+                raise ApiError(400, "A role is \"co\" (Co-owner) or \"member\" (Member).")
+            _guard(ownership.set_role, ws, person, body["role"])
+        if "same_as" in body:
+            other = body["same_as"]
+            if other is not None and (not isinstance(other, str) or not other or other == person):
+                raise ApiError(400, "Say who else this person is: {\"same_as\": another person's id}, or null.")
+            _guard(ownership.set_same_as, ws, person, other)
+        return self._owner_view(name)
+
+    def post_owner_question(self, name, qid, q):
+        """{"answer": "follow" | "keep"}: follow the owner record a question is about, or keep the one followed."""
+        body = self._body()
+        answer = body.get("answer")
+        if answer not in ("follow", "keep"):
+            raise ApiError(400, "Send {\"answer\": \"follow\"} or {\"answer\": \"keep\"}.")
+        ws = self.app.ws(name)
+        found = next((x for x in _guard(ownership.owner_questions, ws._conn()) if x.get("id") == qid), None)
+        if found is None:
+            raise ApiError(404, "This question is not asked any more.")
+        _guard(ownership.follow_owner if answer == "follow" else ownership.keep_owner, ws, found["seq"], found["by"])
+        start_due(self.app, name)  # following another owner may make new readings due here
+        return self._owner_view(name)
+
+    def post_owner_loosening(self, name, q):
+        """{"docs": [doc ids] | null (all offered), "allow": bool}: a looser AI setting a file offers here."""
+        body = self._body()
+        docs, allow = body.get("docs"), body.get("allow")
+        if not isinstance(allow, bool):
+            raise ApiError(400, "Send {\"allow\": true} or {\"allow\": false}, with \"docs\".")
+        if docs is not None and (not isinstance(docs, list) or not docs or not all(isinstance(d, str) and d for d in docs)):
+            raise ApiError(400, "Say which documents: {\"docs\": [their ids]}, or null for all that are offered.")
+        _guard(ownership.answer_loosening, self.app.ws(name), docs, allow)
+        return self._owner_view(name)
+
+    def post_owner_restore(self, name, doc, q):
+        """Bring back a document removed in the last 30 days (`removed.restore`). In a Member's copy it is then
+        proposed to the owner again (the next look writes it down)."""
+        from .. import removed
+
+        ws = self.app.ws(name)
+        title = next((r.get("title") for r in _guard(removed.listing, ws) if r.get("doc") == doc), None)
+        if not _guard(removed.restore, ws, doc):
+            raise ApiError(404, "There is nothing to restore of this document: its 30 days are over, or it is back.")
+        ownership.settle(ws, apply=False, wait=False)
+        out = self._owner_view(name)
+        out["restored"] = {"doc": doc, "title": title, "proposed": not out.get("can_write", True)}
+        return out
+
+    def post_owner_clash(self, name, cid, q):
+        """"Leave it so": write the part again as it is, knowing both changes, so the clash ends in every copy."""
+        self._body()
+        _guard(ownership.decide_again, self.app.ws(name), cid)
+        return self._owner_view(name)
+
+    def post_owner_take_back(self, name, q):
+        """A file said this person handed the project over, and they did not: take it back (§4.10)."""
+        self._body()
+        _guard(ownership.take_project_back, self.app.ws(name))
+        return self._owner_view(name)
+
+    def post_owner_refused_dismiss(self, name, kind, key, q):
+        self._body()
+        _guard(ownership.dismiss_refused, self.app.ws(name), kind, key)
+        return self._owner_view(name)
+
+    # H8: a colleague's renames and merges of a codebook they did not make wait before they move this person's labels
+    def get_codebook_offer(self, name, cb, q):
+        return {"offer": _offer(self.app.ws(name), cb)}
+
+    def post_codebook_follow(self, name, cb, q):
+        """{"follow": bool}: Follow (move this person's labels as the colleague did) or Keep mine."""
+        from .. import codebooks
+
+        body = self._body()
+        if not isinstance(body.get("follow"), bool):
+            raise ApiError(400, "Send {\"follow\": true} or {\"follow\": false}.")
+        ws = self.app.ws(name)
+        if _offer(ws, cb) is None:
+            raise ApiError(409, "Nothing of this codebook waits for your word any more.")
+        _guard(codebooks.answer_offer, ws, cb, body["follow"])
+        return {"codebook": codebooks.load(ws, cb), "offer": _offer(ws, cb)}
+
+
+def _offer(ws, cb: str) -> dict | None:
+    """The offer of codebook `cb` (`codebooks.offers`), or None; None too while that rule is not built in this tree."""
+    from .. import codebooks
+
+    try:
+        return next((o for o in codebooks.offers(ws) if o.get("name") == cb), None)
+    except NotImplementedError:
+        return None

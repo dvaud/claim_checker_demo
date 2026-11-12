@@ -1207,7 +1207,7 @@ def _repair_plugin() -> None:
 
 
 # ---------------------------------------------------------------------------------------------
-# 0.15.1: the "what's new" note, shown once after an update
+# 0.15.1: the "what's new" note, shown once after an update. After 0.17.2: read only when asked (What's new)
 # ---------------------------------------------------------------------------------------------
 WHATS_NEW_FILE = Path(__file__).resolve().parent / "static" / "whats-new.md"
 _whats_new_lock = threading.Lock()
@@ -1264,26 +1264,41 @@ def update_note() -> dict | None:
             "points": UPDATE_PROBLEMS.get(str(res.get("hint") or ""), UPDATE_PROBLEM_OTHER)}
 
 
-def whats_new_note() -> dict | None:
-    """The note when it is for the running version and this person has not been shown it; it is marked as shown the
-    moment it is served. A new installation (no project yet, or no settings file) is only marked, never shown."""
+def whats_new_note() -> tuple[dict | None, bool]:
+    """The note when it is for the running version (else None), and whether it is unread: an update brought it and
+    this person has not opened it yet. After 0.17.2 nothing is shown by itself any more, so serving it marks nothing
+    (What's new marks it read when it is opened: mark_whats_new_read). A new installation (no project yet, or
+    no settings file) is marked read at once, so it never offers the note of a version it did not update to."""
     try:
         note = parse_whats_new(WHATS_NEW_FILE.read_text(encoding="utf-8"))
     except (OSError, UnicodeError):
-        return None
+        return None, False
     if not note or note["version"] != __version__:
-        return None
+        return None, False
+    from ..installation import REPO
+
+    note["url"] = f"https://github.com/{REPO}/releases/tag/v{__version__}"  # every change, on the release page
     with _whats_new_lock, home.LOCK:  # (home.LOCK: read and written back as one step, as every change of settings)
         try:
             settings = home.load_settings()
             if settings.get("whats_new_seen") == __version__:
-                return None
-            fresh = not home.list_projects() or not (home.home() / "settings.json").exists()
+                return note, False
+            if not home.list_projects() or not (home.home() / "settings.json").exists():
+                settings["whats_new_seen"] = __version__
+                home.save_settings(settings)
+                return note, False
+        except (OSError, ValueError):
+            return note, False
+    return note, True
+
+
+def mark_whats_new_read() -> None:
+    """The note of the running version has been opened: the sidebar no longer offers it."""
+    with _whats_new_lock, home.LOCK:
+        settings = home.load_settings()
+        if settings.get("whats_new_seen") != __version__:
             settings["whats_new_seen"] = __version__
             home.save_settings(settings)
-        except (OSError, ValueError):
-            return None
-    return None if fresh else note
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1299,6 +1314,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", r"/api/restart", "post_restart"),
     ("GET", r"/api/update", "get_update"),
     ("GET", r"/api/whats-new", "get_whats_new"),
+    ("POST", r"/api/whats-new/read", "post_whats_new_read"),
     ("POST", r"/api/update", "post_update"),
     ("GET", r"/api/technical-details", "get_technical_details"),
     ("GET", r"/api/servers", "get_servers"),
@@ -1312,6 +1328,9 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", r"/api/projects", "post_project"),
     ("POST", r"/api/projects/link", "post_link"),
     ("POST", r"/api/projects/import", "post_import"),
+    # roles-P3: the answer to a move zip's question, and *Use both computers* (DESIGN-roles §4.11, §5.5, §5.6)
+    ("POST", r"/api/move", "post_move"),
+    ("POST", r"/api/second-computer", "post_second_computer"),
     ("GET", rf"/api/projects/{P}", "get_project"),
     ("DELETE", rf"/api/projects/{P}", "delete_project"),
     ("GET", rf"/api/projects/{P}/documents", "get_documents"),
@@ -1492,6 +1511,16 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/owner/proposals/{P}/accept", "post_proposal_accept"),
     ("POST", rf"/api/projects/{P}/owner/proposals/{P}/decline", "post_proposal_decline"),
     ("POST", rf"/api/projects/{P}/owner/proposals/{P}/take-back", "post_proposal_take_back"),
+    # roles (DESIGN-roles §7 P4): roles, questions about the owner, offers, removals, clashes, refused rows (api_owner.py)
+    ("PUT", rf"/api/projects/{P}/owner/roles/{P}", "put_owner_role"),
+    ("POST", rf"/api/projects/{P}/owner/questions/{P}", "post_owner_question"),
+    ("POST", rf"/api/projects/{P}/owner/loosening", "post_owner_loosening"),
+    ("POST", rf"/api/projects/{P}/owner/removed/{P}/restore", "post_owner_restore"),
+    ("POST", rf"/api/projects/{P}/owner/clashes/{P}", "post_owner_clash"),
+    ("POST", rf"/api/projects/{P}/owner/take-back", "post_owner_take_back"),
+    ("POST", rf"/api/projects/{P}/owner/refused/{P}/{P}/dismiss", "post_owner_refused_dismiss"),
+    ("GET", rf"/api/projects/{P}/codebooks/{P}/offer", "get_codebook_offer"),
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/follow", "post_codebook_follow"),
 ]]
 # 0.18 (L3): changes after which the poller does not bring a round forward (they are rounds, uploads, or its own)
 NOT_A_CHANGE = {"post_shared_folder_sync", "post_upload", "put_project_sync_poller", "post_project_sync_poller_seen"}
@@ -1731,10 +1760,18 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
         return {"restarting": True, "jobs_stopped": self._stop_jobs_then(self.app.restart)}
 
     def get_whats_new(self, q):
-        """0.15.1: `{"note": {version, title, subtitle, points}}` once, on the first start after an update, else
-        `{"note": null}` (also on a new installation, which is only marked as up to date). 0.15.4: first, once, an
-        update on Windows that did not finish (`"kind": "problem"`, update_note)."""
-        return {"note": update_note() or whats_new_note()}
+        """`{"note", "changes", "unread"}`. `note`: once, an update on Windows that did not finish (0.15.4,
+        `"kind": "problem"`, update_note), else null. `changes` (after 0.17.2; until then `note` was this, shown once
+        by itself): what is new in the running version, `{version, title, subtitle, points, url}`, or null; `unread`:
+        an update brought it and this person has not opened it (never on a new installation)."""
+        changes, unread = whats_new_note()
+        return {"note": update_note(), "changes": changes, "unread": unread}
+
+    def post_whats_new_read(self, q):
+        """What's new was opened (after 0.17.2): `{"unread": false}`."""
+        self._body()
+        mark_whats_new_read()
+        return {"unread": False}
 
     def get_update(self, q):
         """0.13.1: whether a newer ENLENS waits: the latest GitHub release (the one-line install), or new commits on

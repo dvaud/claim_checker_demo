@@ -431,7 +431,7 @@ takes the judgement's icon and its words, grey: `judgementIcon(grade or status, 
 Kinds: a code (its code in 600, `codeChip()`); a count (tabular figures); **attention** (amber ground, amber words, the
 triangle): a fact that needs you (*very short: is this the whole text?*, *the second model differs*). **A person mark** says who did something: the
 person icon and *You* or a colleague's initials (the users icon and each, for several people), and a role when it
-matters (*Owner*, *Collaborator*); the full names are its tooltip and its name. Initials are the first letters of the
+matters (*Owner*, *Co-owner*); the full names are its tooltip and its name. Initials are the first letters of the
 first and the last word, so a particle never counts: *Anna de Vries* is *AV*, *Ludwig van Beethoven* *LB*
 (`initials()`). Its first use is *Reviewed* beside an answer (`reviewedMark()`): *You*, and *You · partly* while only
 part is reviewed. **Initials, or the name:** initials alone only where the row already names the person (a person row
@@ -540,7 +540,8 @@ nothing more (*Saved*, *Copied*, *Undone*), with *Undo* where it can be undone; 
 (`showError()`). **Looks:** bottom right, the card's white, the
 large shadow, an icon in its meaning's colour (a teal tick for done, the triangle, the red alert circle), a close icon
 button; at most one link or one small button. An error toast stays 15 s and keeps the technical message behind
-*Technical details*. The note of what is new after an update is a quieter toast that waits to be closed. **Not for:**
+*Technical details*. The note of an update on Windows that did not finish is a quieter toast that waits to be closed;
+what is new after an update is never a toast (it waits under *What's new*, [5.2](#52-the-status-area-and-the-last-row)). **Not for:**
 anything to act on later (a notice) or not to miss (a dialog). **Make it:** `toast(message, kind, { action, button,
 detail })`, `showError(e)`. **Lives in:** `components.css` § 4.15.
 
@@ -796,7 +797,11 @@ while work runs or waits, the work box in exactly that space. Never a popover.
 The box's words are the link to where the work shows; its one button is always an action. The status area is the AI's
 own place (the AI line, the AI's name), so its *Start* carries no AI mark; *Start Claude Code* anywhere else does. **The last row:**
 *Settings* (an entry), then *Quit* (a small quiet button) or, when an update waits, *Update* in its place (a small main
-button), then the theme's icon button. **Lives in:** `components.css` § 5.2.
+button), then the theme's icon button. **Above the last row**, after an update and until it is opened: *What's new in
+0.X.Y* (a small quiet button with the sparkles icon, as wide as its words). It opens a dialog with the version's note
+(`showWhatsNew()`: its title, subtitle and points, and a link to every change on GitHub) and goes once it has been
+opened; Settings has it always (*What's new* beside the version, and in *Technical › Updates*), and Find goes there.
+Nothing is shown by itself. **Lives in:** `components.css` § 5.2.
 
 ### 5.3 Find
 
@@ -835,13 +840,24 @@ none needs a look of its own. **Looks**, **Make it** and **Lives in:** each piec
 | News since last time | the drawer tab's label with a [count tag](#410-tags-and-counts) in words (*Team* · *3 new*); a list group *What came in* with *Mark as seen* (a small quiet button) at its head's end; what was seen before folded under a small fold *Seen before: 12 changes* | `tabs({ items: [{ …, count: "3 new" }] })`, `listGroup({ text, action }, …rows)`, `fold({ sm: true })` |
 | Background work you steer | *Sync now*: a small button with the refresh icon; while other work runs, the work state *Queued: starts when … has finished* and a small quiet *Cancel* after it. *Pause this project* and *Pause all projects*: small quiet buttons with the pause icon, then the grey work state *Paused*. How often: a [select](#48-form-fields) in a field. A setting that is on because of a colleague: its switch is disabled and its help line starts with the colleague's person mark and says so (*On because of Ben: …*) | `button({ sm, icon })`, `workState()`, `field()`, `select()`, `switchControl(label, on, { disabled, help })` |
 | A proposed change, in full | a small [card](#411-cards) per proposal: in its head what is proposed and its severity tag (*Low*, *Medium*: neutral; *High*: attention; never a judgement colour); under it the proposer's person mark with the name (*Anna*, *You*) and the time, then their reason in quotation marks (a long one wraps under them; the severity stays in the head). The owner's side: *Accept* (main) and *Decline…* (quiet: a dialog asks for an optional reason). The proposer's side: the work state *Waiting for the owner* and *Take back* (quiet); once decided, *Accepted*, or *Declined:* and the reason. Cards are grouped under list heads: *Waiting*, *Decided*, *Taken back*. The owner's standing choice, *Accept added documents at once*, is a switch with its help line above the groups | `proposalCard({ what, person, time, severity, reason, detail, side, state, declined, onAccept, onDecline, onTakeBack })` in `listGroup()` (`detail`: what the change does, a notice of another proposal for the same item; *Take back* only with `onTakeBack`, so a colleague who neither decides nor proposed sees the wait only); `switchControl()` |
-| Owner actions on a person row | the person mark with the role (*Owner*, *Collaborator*); on your own row, as owner, *Hand over…* (a small [menu](#417-menus) of the people; choosing one opens a dialog that confirms); *Become the owner* (a small button) where a project has no owner; *Take over…* (a small button) on the owner's row when the owner has gone, the reason in the row's second line as an attention tag, and a dialog that confirms | `listRow({ person: personMark(people, { role }), sub, warn, actions })`, `menu()`, `confirmDialog()` |
+| Owner actions on a person row | the person mark with the role (*Owner*, *Co-owner*; a Member has none); under the list's head one sentence for this person's own role. In the Owner's copy each other person's row has a *More* [menu](#417-menus): *Make a Co-owner…* (or *Make a Member again…*), *Same person as…*, and last, after a line, *Make owner…*; each opens a dialog that confirms. Rows of one person stand together, the second line says *Also Anna de Vries (laptop): the same person*. A Co-owner on an older ENLENS has the attention tag *needs a newer ENLENS to act as Co-owner*. *Become the owner* (a small button) where a project has no owner; *Take over…* (a small button) when the owner has gone, the reason in the row's second line as an attention tag, and a dialog that confirms | `listRow({ person: personMark(people, { role }), sub, warn, actions: [menu(…)] })`, `menu()`, `confirmDialog()` |
+| *Waiting for your word* | the first list group of the Team tab, with a count, after a folder problem that stops this copy: one [card](#411-cards) per question, the most serious first (a proposal answered both ways, a take-over, another first owner, a change in your name that was refused, the AI offers, then the ordinary proposals); one sentence when nothing waits. A proposal answered both ways is a red error notice inside the proposal's own card with *Accept* and *Decline…* both small, neither main; a question that is not a proposal has the proposal card's shape (the question as its words, its answers as small buttons, the answer that acts first, a quiet one that leaves it or puts it off) | `listGroup()`, `proposalCard()` for a proposal, `decisionCard()` for any other question, `notice({ kind: "error" })` inside the card |
+| The AI offers | one card per person who loosened (*Ben lets more AI read 2 documents*): a tick box per document, unticked at first, labelled by the document's title, each with both settings in the document's own AI tags (*Here:* … · *Ben's:* …); the buttons wait until a box is ticked and count them (*Allow here for 2 documents* / *Keep 2 stricter here*); with one document no box, and *Allow here* / *Keep it stricter here*; an AI line at the foot says who will read. Nothing loosens in a batch that was not ticked | `decisionCard({ …, ai })`, the system's check boxes, `button()`, `aiWhere()` |
+| *Settled at the same time* | quiet [list rows](#420-tables-lists-and-dense-places), one per part two people changed without each other's version: the document's title as a link that opens it, one line of what holds, and a small quiet *Leave it so* | `listGroup()`, `listRow({ title: link(), sub, actions })` |
+| *Removed in the last 30 days* | list rows: the title, one line (*By Anna (owner) on 12 November: “reason” Can be restored until 12 December.*), a small *Restore*; a [toast](#415-toasts) says what it did | `listGroup()`, `listRow()`, `toast()` |
+| The move question (the import of a move zip) | a [dialog](#416-dialogs) with two [option cards](#47-option-cards) (*I am moving to this computer.*, *I will use both computers.* with a field for the name); when the first is not offered, the reason is a line under the cards at full contrast, not inside the dimmed card; a switch *Take the settings too* with a [fold](#422-folds) that lists them, and a check box, off, for each server address that is not on this computer; the main button waits for a card | `dialog()`, `optionCards()`, `switchControl()`, `fold()`, `field()` |
+| A colleague's rename or merge of a codebook (the codebook page) | a card with two answers: the sentence (*Ben renamed A to Water use and merged C into B. Follow for your 40 labels?*), *Follow* main and *Keep mine* quiet | `decisionCard()` |
 | An item's proposal state in a list | the row's second line: the work state *Proposed: waiting for the owner* (clock) or *Declined by the owner* (grey dash), then " · " and a jump link to its card in the drawer (*See the proposal*, *See why*) | `listRow({ serif: true, sub: [workState(), " · ", link({ kind: "jump" })] })` |
 | A move that waits for its person | on the row, the attention tag *2 results would not find their place* and *Move it anyway…* (a small button: a dialog confirms); in the drawer, the same as an attention notice naming the person, with the same button | `listRow({ sub, warn: true, actions })`, `noticeList()` |
 | Two versions of one item | a [comparison](#427-comparisons) | `compare()` |
 | Queued work | a work state, *Queued: starts when … has finished*, with a small quiet *Cancel*; in a toast, the same words and the button | `workState("waiting", …)`, `toast(…, { button })` |
 | A report, a warning before an action, a refusal | [notices](#412-notices): done with a small fold of details; attention; error | `notice()`, `fold({ sm: true })` |
 | Two downloads for two audiences | two small quiet download buttons whose words say who each is for (*For your colleagues*, *To move to another computer*) | `downloadLinks()` |
+
+**A notice or a card.** A [notice](#412-notices) holds one action (a small button) or one link. A question with two
+answers is a card, as in *Waiting for your word* and on the codebook page: the answers are its buttons, one of them
+main, never a notice with two buttons, and never a button beside a link. An answer that acts (*Keep mine*) is never
+a link.
 
 A second tab in the drawer (*Team*) is added as [4.19](#419-the-drawer) says.
 
@@ -966,6 +982,7 @@ else may reach it.
 | Fields | `field()`, `input()`, `select()`, `textarea()`, `searchField()`, `switchControl()`, `rangeControl()` |
 | Drawer | `drawer()`, `drawerButton()`, `setDrawerOpen()` |
 | Quotes and words found | `passageNode()`, `foundWords()` |
+| A decision that is not a proposal | `decisionCard({ what, flag, person, time, said, body, actions, ai })`: a decision that is not a proposal, in a proposal card's shape |
 | Lists, grids, work | `listRow()`, `listGroup()`, `proposalCard()`, `drawInSteps()`, `heatCell()`, `workState()`, `spinner()`, `fold()` |
 
 ### 9.4 The promise to forks and add-ons

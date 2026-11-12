@@ -23,7 +23,8 @@ globalThis.sessionStorage = { getItem: () => null, setItem() {} }; globalThis.lo
 """
 
 QUERIES = ["", "zotero", "codbook", "bibliografy", "hypothesys", "results", "check several", "themes", "glosary",
-           "nvivo", "profile", "check a hypothesis", "diary", "highlight", "share", "excel", "xyzzyq"]
+           "nvivo", "profile", "check a hypothesis", "diary", "highlight", "share", "excel", "xyzzyq", "changelog",
+           "what's new"]
 
 
 @pytest.fixture(scope="module")
@@ -123,3 +124,9 @@ def test_finder_index_has_no_imports():
     src = (STATIC / "finder-index.js").read_text()
     assert not [l for l in src.splitlines() if l.startswith("import ")]
     assert "export function buildIndex(" in src and "export function findFeatures(" in src
+
+
+def test_the_changelog_is_found(found):
+    # after 0.17.2 what is new is read only when asked: Find goes to Settings › Technical, where it opens
+    for q in ("changelog", "what's new"):
+        assert top(found, q) == [("Read what's new in this version", "#/settings/updates")]

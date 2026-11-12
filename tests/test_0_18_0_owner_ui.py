@@ -67,7 +67,8 @@ def test_the_owner_has_its_rules_in_the_views_stylesheet():
 
 def test_the_section_comes_before_the_people_with_its_own_data_and_number():
     assert 'import { OWNER_SECTION, ownerMarks, ownerPerson } from "./owner.js";   // 0.18 L2' in TEAM
-    assert 'addTeamSection(OWNER_SECTION, { before: "people" });' in TEAM
+    # roles (mock-up B): "Waiting for your word" is the tab's first section, before the shared folder
+    assert 'addTeamSection(OWNER_SECTION, { before: "state" });' in TEAM
     # TEAM_SECTIONS is filled before the section is added (the call comes after the list and the function)
     assert TEAM.index("export const TEAM_SECTIONS") < TEAM.index("addTeamSection(OWNER_SECTION")
     # a section reads its own answer with the tab's refresh, and a failed read keeps what was there
@@ -93,9 +94,10 @@ def test_the_people_list_shows_the_owner_and_the_hand_over():
     assert any('listRow({ person: ownerPerson(ctx, me, "you")' in ln for ln in marked)
     assert any('listRow({ person: ownerPerson(ctx, x, x.name)' in ln for ln in marked)
     assert "actions: [ownerMarks(ctx, me)].filter(Boolean)" in TEAM and "actions: [ownerMarks(ctx, x)].filter(Boolean)" in TEAM
-    fn = OWNER[OWNER.index("export function ownerPerson"):OWNER.index("// the Documents page (sources.js)")]
-    assert 'role: owner ? "Owner" : null' in fn and "v.owner.id === person.id" in fn
-    assert "v.is_owner &&" in fn and '"Make owner…"' in fn and '"aria-label": `Make ${name} the owner…`' in fn
+    fn = OWNER[OWNER.index("// the people list (team.js peopleSection)"):OWNER.index("// the Documents page (sources.js)")]
+    # roles: the role (Owner, Co-owner) on the person mark; Make owner… is the last item of the Owner's More menu
+    assert "const m = personMark([name || \"a colleague\"], { role });" in fn and "v.owner.id === person.id" in fn
+    assert "!canSetRoles(v)" in fn and '{ text: "Make owner…", icon: "shield"' in fn and "label: `More for ${name}`" in fn
     assert "Hand this project over to ${name}?" in fn
     assert "They will decide about its documents from now on; proposals that wait become theirs to answer. You stay in the team." in fn
     assert 'api("POST", OWNER_API.handOver(P(ctx.project))' in OWNER and "{ to: to.id, why }" in OWNER
@@ -125,7 +127,7 @@ def test_no_inline_look_and_no_link_drawn_as_a_button():
     # 0.17.0: a proposal is the guide's proposalCard() (lib.js: a small card, the severity tag in its head, Accept main
     # and Decline… quiet), where 0.18 made it of card(), listRow() and severityTag() at the mark "0.17.0: proposalCard()"
     for made in ('button({ kind: "quiet", sm: true', 'button({ sm: true',
-                 'personMark([name || "a colleague"], { role: owner ? "Owner" : null })', "proposalCardBox({ id: `owner-card-${p.id}`",
+                 'personMark([name || "a colleague"], { role })', "proposalCardBox({ id: `owner-card-${p.id}`",
                  'notice({ kind: "attention", role: "note", class: "owner-notice" }', 'notice({ kind: "info", role: "note", class: "owner-notice" }',
                  "severity: p.severity,", 'side: p.can_decide ? "owner" : "proposer"'):
         assert made in OWNER, made
@@ -133,7 +135,7 @@ def test_no_inline_look_and_no_link_drawn_as_a_button():
     card = lib[lib.index("export function proposalCard("):]
     card = card[:card.index("\n}\n")]
     assert 'button({ kind: "main", sm: true, onClick: o.onAccept }, "Accept")' in card
-    assert 'button({ kind: "quiet", sm: true, onClick: o.onDecline }, "Decline…")' in card
+    assert 'button({ kind: o.even ? "standard" : "quiet", sm: true, onClick: o.onDecline }, "Decline…")' in card
     assert "o.severity ? severityTag(o.severity) : null" in card
     assert not re.search(r'class: [`"](btn|chip|card|notice)(?![\w-])', OWNER)
 
@@ -142,7 +144,7 @@ def test_no_inline_look_and_no_link_drawn_as_a_button():
 def test_the_words_of_the_plan():
     words = OWNER + STATE
     for w in (
-        "Waiting for the owner", "Waiting for you", "Nothing waits for the owner.", "Nothing waits for you.",
+        "Waiting for your word", "Waiting for you.", "Nothing waits for your word.",
         "This project has no owner yet. An owner decides which documents the project holds, how they are read and who "
         "may read them with AI. Until someone is, everything works as before.", "Become the owner",
         "It is in every copy for now. Declined, it stays in ",
@@ -196,7 +198,7 @@ def test_keyboard_and_screen_reader():
     # stable ids, so the panel finds the focus again after a redraw (a card's buttons: an answer reads the tab again and
     # the focus goes to the section's heading, ctx.focusHeading("owner"))
     for i in ("owner-card-${p.id}", "owner-dlg-reason", "owner-dlg-ok",
-              "owner-claim", "owner-take-over", "owner-accept-adds", "owner-seen", "owner-make-${person.id}"):
+              "owner-claim", "owner-take-over", "owner-accept-adds", "owner-seen", "owner-more-${person.id}"):
         assert i in OWNER, i
     assert 'role: "status"' in OWNER          # the new-reader job's line
     assert "gone.has(job.id)" in OWNER and "gone.add(job.id)" in OWNER   # a job that is no more is not followed again
@@ -218,7 +220,7 @@ const P = (o) => ({ id: "q" + Math.random().toString(16).slice(2, 10), kind: "ad
   what: "adding “Annual report 2024”", by: ben, at: "2026-11-11T09:00:00Z", state: "waiting", note: null, reason: null,
   decided_by: null, decided_at: null, auto: false, mine: false, can_decide: false, can_take_back: false, here: true,
   conflicts: [], detail: {}, ...o });
-const owner = { owner: me, is_owner: true, waiting: 2, since: "2026-11-10T09:00:00Z", proposals: [], to_apply: [] };
+const owner = { owner: me, is_owner: true, role: "owner", can_write: true, waiting: 2, since: "2026-11-10T09:00:00Z", proposals: [], to_apply: [] };
 const collab = { owner: anna, is_owner: false, waiting: 1, since: "2026-11-10T09:00:00Z", proposals: [], to_apply: [] };
 const out = {};
 out.shown = [O.sectionShown(null, true), O.sectionShown({ proposals: [], to_apply: [] }, false), O.sectionShown({ proposals: [], to_apply: [] }, true),
@@ -231,7 +233,9 @@ const v = { ...collab, proposals: list };
 const s = O.splitProposals(v);
 out.split = { cards: s.cards.map((p) => p.id), declined: s.declined.map((p) => p.id), answered: s.answered.length, total: s.answeredTotal };
 out.splitSeen = O.splitProposals(v, new Set(["qdec"])).declined.length;
-out.count = [O.tabCount({ ...owner, proposals: list }), O.tabCount(v), O.tabCount(v, new Set(["qdec"])), O.tabCount(null)];
+// roles: the owner answers the proposals that wait (can_decide); a collaborator counts their declined ones not seen
+const decide = list.map((p) => (p.state === "waiting" ? { ...p, can_decide: true } : p));
+out.count = [O.tabCount({ ...owner, proposals: decide }), O.tabCount(v), O.tabCount(v, new Set(["qdec"])), O.tabCount(null)];
 out.heading = [O.heading(owner, 2), O.heading(collab, 0), O.heading({ can_claim: true }), O.nothingWaits(owner), O.nothingWaits(collab)];
 out.who = [O.proposer(P({})), O.proposer(P({ by: me }))];
 out.parts = [O.whatParts("removing “Annual report 2024” from the project"), O.whatParts("something without a title")];
@@ -289,10 +293,13 @@ def test_when_the_section_shows_and_what_goes_where(node_out):
     assert s["declined"] == ["qdec"]                            # this person's own declined one, first, until seen
     assert s["answered"] == 10 and s["total"] == 14             # the latest ten in the fold
     assert node_out["splitSeen"] == 0
-    # the tab's number: what waits for the owner's answer; for a collaborator, their declined ones not seen yet
-    assert node_out["count"] == [2, 1, 0, 0]
-    assert node_out["heading"] == ["Waiting for you (2)", "Waiting for the owner", "No owner yet", "Nothing waits for you.",
-                                   "Nothing waits for the owner."]
+    # the tab's number: what waits for this person's answer, and their own declined ones not seen yet (roles: one
+    # heading, "Waiting for your word", whatever the role)
+    assert node_out["count"] == [3, 1, 0, 0]
+    assert node_out["heading"] == [
+        "Waiting for your word (2)", "Waiting for your word", "No owner yet",
+        "Nothing waits for your word. Proposals, looser AI settings and questions about the owner come here first.",
+        "Nothing waits for your word. Looser AI settings and questions about the owner come here first."]
 
 
 def test_a_cards_words(node_out):

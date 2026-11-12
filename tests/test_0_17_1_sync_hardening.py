@@ -303,6 +303,9 @@ def test_the_owners_copy_takes_no_record_of_the_documents_in_the_owners_name_fro
     with anna:
         assert not anna.ws.scalar("SELECT 1 FROM canon WHERE n=?", (n,))
         ownership.settle(anna.ws)
+        # roles (DESIGN-roles §4.10): the refused row is recorded, and answered with her own row above it
+        assert anna.ws.scalar("SELECT via FROM sync_refused WHERE kind='canon' AND key=?", (doc,)) == carol.id
+        assert anna.ws.scalar("SELECT n FROM canon WHERE doc=? AND by=?", (doc, anna.id)) > n
     assert level(anna, doc) == "local"
 
 
@@ -320,7 +323,12 @@ def test_the_owners_copy_takes_no_hand_over_decision_or_proposal_in_the_owners_n
         cx = anna.ws._conn()
         assert not cx.execute("SELECT 1 FROM ownership WHERE seq=2").fetchone()
         assert not cx.execute("SELECT 1 FROM proposals WHERE id='xforged1'").fetchone()
-        assert not cx.execute("SELECT 1 FROM decisions WHERE proposal='xforged1'").fetchone()
+        # roles (DESIGN-roles §4.10): each refused row is recorded; the answer is replaced by one of hers that counts
+        # for nothing (so third copies drop the forged one)
+        assert not cx.execute("SELECT 1 FROM decisions WHERE proposal='xforged1' AND verdict IN ('accept', 'decline')"
+                              ).fetchone()
+        assert {r[0] for r in cx.execute("SELECT kind FROM sync_refused WHERE state='new'")} == \
+            {"ownership", "proposals", "decisions"}
         assert ownership.owner(cx) == anna.id
 
 

@@ -57,10 +57,14 @@ WORDS = {"check": ("check", "checks"), "themes": ("set of themes", "sets of them
 LOCAL_LOG_KINDS = {"sync", "glossary-words"}  # the research log's entries about this copy only: never sent
 # the tables about this copy only (sync.LOCAL_ONLY): emptied in a zip sent to a colleague, except `meta`
 _LOCAL_TABLES = ("embeddings", "code_vectors", "terms", "term_mentions", "concepts", "concept_terms", "task_claims",
-                 "sync_log", "versions", "sync_written", "sync_folder_read", "sync_folder_docs")
+                 "sync_log", "versions", "sync_written", "sync_folder_read", "sync_folder_docs",
+                 # roles (DESIGN-roles §3.2): a new copy from a zip starts without them. Not `owner_pins` and
+                 # `canon_seen`: the zip a copy is made from is where its trust starts
+                 "removed_docs", "sync_via", "sync_from", "sync_refused")
 # the keys of `meta` a zip for a colleague keeps (besides `codebook_followed:` of shared codebooks and `read_again:`
 # of documents): what a colleague's merge or import reads
-_META_KEPT = {"project_uid", "project_uids_known", "bibliography", "corpus_version"}
+_META_KEPT = {"project_uid", "project_uids_known", "bibliography", "corpus_version",
+              "roles_upgraded"}  # roles (DESIGN-roles §3.5): a copy made from the zip never pins by 0.17's rule
 
 
 def _at() -> str:
@@ -672,6 +676,8 @@ def strip(cx: sqlite3.Connection, root: Path | str | None, me: str) -> dict:
     for t in _LOCAL_TABLES:
         if t in present:
             cx.execute(f"DELETE FROM {t}")
+    if "canon_seen" in present:  # roles-p1: a looser AI setting offered to this person is theirs to answer, not the zip's
+        cx.execute("UPDATE canon_seen SET ai_offer=NULL")
     return out
 
 
@@ -682,7 +688,8 @@ def strip(cx: sqlite3.Connection, root: Path | str | None, me: str) -> dict:
 ITEM_TASK_KINDS = ("check", "expand", "decompose", "reread", "second", "theme")
 # tables without words of a document in them: a document kept out of the shared folder does not keep these rows out
 _NO_TEXT = {"ai_sent", "people", "bib_items", "bib_links", "research_log", "sync_removed", "runs", "meta",
-            "ownership", "proposals", "decisions", "canon"}  # 0.18 L2: they name documents, and hold none of their words
+            "ownership", "proposals", "decisions", "canon",  # 0.18 L2: they name documents, and hold none of their words
+            "roles"}  # roles: who is a Co-owner
 # a task's columns that say what became of it (its payload, the passages handed to the AI, is read only when a document
 # is kept out of the shared folder, to see which documents it names)
 _TASK_COLS = "task_id, kind, status, attempts, model, again, step"
@@ -871,7 +878,8 @@ class ProjectRows:
                ("verifications", "subject_kind != 'user_claim'", "*"),
                ("meta", "key='bibliography'", "*"),
                # 0.18 L2 (ownership.py): who the owner is, proposals, decisions, the documents as accepted
-               ("ownership", "1", "*"), ("proposals", "1", "*"), ("decisions", "1", "*"), ("canon", "1", "*")]
+               ("ownership", "1", "*"), ("proposals", "1", "*"), ("decisions", "1", "*"), ("canon", "1", "*"),
+               ("roles", "1", "*")]  # roles (DESIGN-roles §3.1): who is a Co-owner, by the Owner's word
         present = {r[0] for r in self.cx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         other = sorted(t for t in present if t not in LOCAL_ONLY and t not in OWN_RULES and not t.startswith("sqlite_")
                        and t not in ("meta", "verifications"))

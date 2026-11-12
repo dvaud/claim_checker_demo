@@ -274,12 +274,14 @@ def test_a_colleague_on_a_version_with_more_columns_is_no_sync_clash(anna_and_be
         with anna.ws.connect() as cx:  # Anna's newer ENLENS added columns, one of them with a default
             cx.execute("ALTER TABLE verifications ADD COLUMN cited_by TEXT")
             cx.execute("ALTER TABLE hypotheses ADD COLUMN reviewed INT DEFAULT 0")
-    with ben:
-        claimcheck.set_note(ben.ws, anna.hid, "Ben's note")  # only Ben changed the check
+    # roles (H5, DESIGN-roles §4.9): a colleague's change of Anna's own check would come in beside hers, so the
+    # change is Anna's here (her copy has the columns), and Ben's copy is the one that takes it, both ways round
+    with anna:
+        claimcheck.set_note(anna.ws, anna.hid, "Anna's first note")  # only Anna changed the check
     rep = ben.bring_in(anna.send())
-    assert rep["checks"]["yours_newer"] == 1 and not rep["checks"]["clash"]
-    rep = anna.bring_in(ben.send())  # and the other way round: Ben's change is newer for Anna
     assert rep["checks"]["updated"] == 1 and not rep["checks"]["clash"]
+    rep = anna.bring_in(ben.send())  # and the other way round: Ben's copy, without the columns, is the same check
+    assert rep["checks"]["updated"] == 0 and not rep["checks"]["clash"]
     with ben:  # Ben updates too, to a version that adds a column with a default: his earlier states still count
         with ben.ws.connect() as cx:
             cx.execute("ALTER TABLE user_claims ADD COLUMN weight INT DEFAULT 0")
@@ -380,14 +382,18 @@ def test_a_colleagues_file_cannot_decide_in_your_name(anna_and_ben):
         assert ben.ws.query("SELECT verdict, note FROM judgements WHERE passage_id=? AND person_id=?",
                             (pid, ben.id))[0][:] == ("supports", "Ben's own")
         assert not ben.ws.scalar("SELECT 1 FROM reviews WHERE item_id='forged-label'")
-    with anna:  # taking a judgement back under your name is what a file can do (the manual says so)
+    # roles (review L2, the owner's call): a file no longer takes a judgement back under your name either. Since a
+    # second computer is its own person, nothing honest writes under this id from elsewhere; a move keeps the id, but
+    # the old computer stops. The file's row is refused and recorded (DESIGN-roles §4.10)
+    with anna:
         with anna.ws.connect() as cx:
             cx.execute("UPDATE judgements SET verdict=NULL, note=NULL, at='2999-01-02T00:00:00+00:00' WHERE person_id=?",
                        (ben.id,))
     ben.bring_in(anna.send())
     with ben:
         got = {p["passage_id"]: p for p in _excerpts(ben.ws, anna.hid)}[pid]
-        assert got["judged_by"] != "you"
+        assert got["judged_by"] == "you" and got["user_verdict"] == "supports"
+        assert ben.ws.scalar("SELECT 1 FROM sync_refused WHERE kind='judgement'")
 
 
 # ---------------------------------------------------------------------------------------------

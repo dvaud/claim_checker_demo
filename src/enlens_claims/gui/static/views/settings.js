@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere, myLink } from "../lib.js";
+import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere, myLink, WhatsNew, loadWhatsNew, showWhatsNew, whatsNewLink } from "../lib.js";
 import { withAI } from "../features.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -756,9 +756,11 @@ function versionTag() {
   const now = st.installed_version && st.installed_version !== v ? st.installed_version : null;
   // 0.17.0 (design guide): the version is words with a link to Updates, not a pill; a newer one installed is a fact that
   // needs you (an attention tag)
+  // After 0.17.2: then What's new, always here (a note in the corner no longer shows it by itself)
   return h("span", { class: "version-tag" },
     link({ href: "#/settings/updates", title: now ? `ENLENS ${now} is installed: restart ENLENS to use it` : "Check for updates, and how ENLENS was installed (Technical)" },
       "Version ", v),
+    whatsNewLink(),
     now ? tag({ kind: "attention" }, `${now} installed: restart to use it`) : null);
 }
 
@@ -806,10 +808,15 @@ function updatesSection() {
     btn.disabled = false;
   });
   if (Updates.info || Updates.error) show(Updates.info, Updates.error, Updates.at);  // what the last look found
+  // After 0.17.2: what is new in this version, here as well (Find comes here for it)
+  const changes = h("span", {});
+  loadWhatsNew().then(() => {
+    if (WhatsNew.changes) replace(changes, button({ kind: "quiet", sm: true, icon: "sparkles", "aria-haspopup": "dialog", onClick: () => showWhatsNew() }, `What's new in ${WhatsNew.changes.version}`));
+  });
   return sectionCard("updates", "Updates", st.can_restart
     ? `${name} looks for a new version when it opens and every two minutes after. When there is one, it says so in a pop-up, and an Update button appears at the bottom of the sidebar until you install it. Your projects and results are kept.`
     : `Look for a new version of ${name}. Your projects and results are kept when you update.`,
-    channelField(st), h("div", { class: "save-row" }, btn), out, problemRow(),
+    channelField(st), h("div", { class: "save-row" }, btn, changes), out, problemRow(),
     // 0.17.0: while an update waits, its button takes Quit's place at the foot of the sidebar: Quit is here too
     st.can_quit && Updates.quit ? h("div", { class: "save-row" }, button({ onClick: () => Updates.quit() }, icon("power", { size: 14 }), `Quit ${name}`),
       h("span", { class: "muted small" }, "Stops the app on this computer; your projects and results are kept.")) : null);

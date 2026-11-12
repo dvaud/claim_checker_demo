@@ -8,8 +8,11 @@
 >   step by itself, every couple of minutes (0.17.0). Or send each other a file. No server, no account.
 > - What you make is private until you press *Share* on it (0.17.0).
 > - When you both changed the same thing, both versions are kept (a *sync clash*), so nothing is lost.
-> - A shared project has one **owner** (0.17.0), who decides which documents it holds. A colleague's change to the
->   documents is a proposal the owner accepts or declines.
+> - A shared project has one **owner** (0.17.0), who decides which documents it holds and may make colleagues
+>   **Co-owners**. Everyone else is a **Member**: a Member's change to the documents is a proposal the owner or a
+>   Co-owner accepts or declines.
+> - A colleague's file never lets more AI read a document on your computer without your click, never makes someone
+>   else the owner for you without asking, and never destroys a document for good.
 
 ## Sharing a project with colleagues
 
@@ -42,7 +45,7 @@ highlights, the entries you write in the research log, and the links you decide 
   may share it or take it back.
 - **Whose is what.** A colleague's judgements, notes and entries carry a small mark with their initials.
 - **What is no one's own stays shared**, as before: the documents, who may read each with AI, the bibliography, and the
-  AI's work on the documents with people's reviews of it. Which documents the project holds is the owner's to decide
+  AI's work on the documents with people's reviews of it. Which documents the project holds is for the owner and the Co-owners to decide
   ([below](#the-owner-and-proposals-0170)).
 - **A project you shared before 0.17.0** counts as shared, item by item. A project you only kept to yourself starts
   private, even if you made zips of it to back it up or move it.
@@ -74,9 +77,10 @@ ENLENS makes a folder of its own in it for the project (`ENLENS-` and a few lett
 It refuses a folder that holds the project itself or ENLENS's own folder, and says why under the field. What the
 folder holds, and who can read it: [Privacy](privacy.md#working-together).
 
-**One computer each.** Use the shared folder from one computer per person. The same person on two computers (a desktop
-and a laptop) writes into one subfolder from both, and the two never see each other's work; move the project with
-*Move ENLENS to another computer* instead ([below](#moving-to-another-computer)).
+**One person, one name in the folder.** A computer writes into the folder under its person's name. When another
+computer writes there under the same name (a copy of your ENLENS folder, say), the second one stops before it writes
+anything, and says so under *Needs your attention*, so nothing is lost. Press *Use both computers…* to make that
+computer a second person in your projects ([below](#moving-to-another-computer)).
 
 **A colleague joins** in three steps: send them what you shared, as a file (*As a file* in the Team tab); they open it
 with *Import a project* under *Projects*; in their copy, they choose the same shared folder in the Team tab (its path on
@@ -122,12 +126,13 @@ A small note says when something came in by itself, and the *Team* tab shows how
 lists them by colleague, newest first, in the words of the round's report. **Mark as seen** folds them under *Seen
 before*; until then they stay, also across a restart. The tab also shows, as needed:
 
-- **Needs your attention**, in plain words: a colleague's copy on a newer ENLENS (only their work waits, with a word to
+- **Needs your attention**, in plain words: another computer writing into the folder under your name (this comes first
+  in the tab, because this copy then writes nothing), a colleague's copy on a newer ENLENS (only their work waits, with a word to
   update), work the cloud has not brought yet, a damaged file (only that colleague's work waits). Copies the cloud
   makes when two computers write at once (`000041 (1).zip`) are never read. When a colleague cannot read one of your
   files, your copy writes everything you share once more by itself: nobody waits for ever.
-- **People in the folder**, each with their ENLENS version and whether their newest work is in, and the owner's mark
-  ([below](#the-people-list-the-owners-mark-and-the-hand-over)).
+- **People in the folder**, each with their ENLENS version and whether their newest work is in, and their role
+  ([below](roles.md#the-people-list-roles-and-the-hand-over)).
 - **Documents not on this computer**: documents your colleagues' work names but they keep out of the folder, each with
   *Add its file* ([below](#documents-kept-out-of-the-folder)).
 
@@ -185,67 +190,38 @@ sends and receives files, and what they send comes in with the same rules.
 
 A shared project has one **owner**. The owner decides which documents the project holds, how they are read and who
 may read them with AI. Everyone keeps their own working copy, and everyone's checks, themes, notes and judgements stay
-their own: only the documents are the owner's to decide.
+their own: only the documents are decided together.
+
+There are three roles:
+
+| Role | Who | What their changes to the documents are |
+| --- | --- | --- |
+| **Owner** | One person | The project's at once, in every copy. Only the owner sets roles and hands the project over. |
+| **Co-owner** | Any number of people the owner chose | The project's at once, in every copy. A Co-owner also answers proposals. |
+| **Member** | Everyone else, with no setting to make | A **proposal** to the owner and the Co-owners. |
 
 - **Who the owner is.** Whoever made the project, when it was made in ENLENS 0.17.0 or never left their computer
   before. A project exchanged with an earlier ENLENS has no owner yet and works as before: the *Team* tab says *This
   project has no owner yet* and offers **Become the owner**.
-- **The owner's own changes** are the project's at once, in every copy.
-- **A colleague's change to the documents** happens in their own copy at once and is a **proposal** to the owner. How
-  much it matters decides how it is shown:
+- **Roles change by no click of yours.** A notice says it once (*Anna made Ben a Co-owner.*). A Co-owner whose ENLENS
+  is older than this release cannot act as one: their changes still arrive as proposals.
+- **A Co-owner made a Member again** keeps what the project has taken. What they change from then on is a proposal.
+- **A Member's change to the documents** happens in their own copy at once and is a **proposal**. How much it matters
+  decides how it is shown:
 
-| Severity | What a colleague did | Until the owner answers |
+| Severity | What a Member did | Until the owner or a Co-owner answers |
 | --- | --- | --- |
 | **Low** | added a document | It is in every copy for now. Declined, it stays in their copy only. The owner's setting *Accept documents collaborators add, at once* (on by default) accepts it without a click. |
 | **Medium** | read a document again with the new reader; *Leave out* or *Restore* a passage; moved where the text starts or ends | Only their copy has the change. Accepted, every copy reads it so (a new reading is made in each copy, and its results move with it). |
 | **High** | removed a document | Only their copy is without it. Accepted, it leaves every copy; checks keep what they read of it. |
 | **High** | let more AI read a document (*No AI* → *Claude may read it*, say) | Nothing changes anywhere, not even in their copy. On the *Documents* page the setting stays as it was and a note says *a looser setting is the owner's to decide*. |
 
-A **stricter** AI setting is never a proposal: it holds in every copy at once, as before.
+A **stricter** AI setting is never a proposal: it holds in every copy at once, as before. A looser one, even when the
+owner or a Co-owner makes it or accepts it, is never put into force in your copy without your click
+([below](roles.md#more-ai-is-offered-never-applied)).
 
-### In the Team tab
-
-The section **Waiting for the owner** (**Waiting for you** in the owner's copy) lists the proposals that wait, newest
-first. Each card says who proposes what and when, how much it matters (*Low*, *Medium*, *High*, in words), and what
-happens when it is accepted. When two proposals concern the same document (one colleague removes it, another leaves a
-passage of it out), each card says so.
-
-- **The owner** answers with **Accept** or **Decline**. *Decline* first opens a field *Reason (optional)*: the
-  colleague sees it with the answer, and the research log keeps it. *Add a reason* opens it for *Accept* too.
-  Accepting a removal asks first: *Remove "…" from every copy of the project?*
-- **The colleague who proposed it** sees *Waiting for …* and can **Take back** the proposal: their copy stays as it is.
-  When the owner declined it, it is shown first, with the reason, until they press *Mark as seen*.
-- **Everyone else** sees the proposals, but cannot answer them.
-- **Answered** (a fold) keeps the latest ten: *Accepted by …*, *Declined: …*, *Taken back*, *No longer needed: …*
-  (the document was removed since, say). The research log keeps every one.
-- At the bottom, the owner's switch **Accept documents collaborators add, at once**. Off, each added document waits
-  for a click. Removing a document and letting more AI read one always wait for the owner.
-
-The *Team* tab's number counts what waits for the owner's answer (in the owner's copy), and a colleague's declined
-proposals not seen yet.
-
-**A new reading the owner accepted** is made in each copy by itself, as a job that waits for its turn, and every
-result moves with it to the same words. When some result of yours would not find its place in the new reading, your
-copy keeps the document as it is and the *Team* tab says *The project now reads "…" with the new reader*, with why:
-open the document to look, or press **Move it anyway** (results that find no place are kept as records).
-
-### The people list: the owner's mark and the hand-over
-
-*People in the folder* marks the owner with **Owner**. In the owner's copy, each colleague's row has **Make owner…**:
-*Hand this project over to …? They will decide about its documents from now on; proposals that wait become theirs to
-answer. You stay in the team.* In a team that works with files only (no shared folder), the section names the owner
-(*Owner: …*), and the owner's *Hand over…* is there.
-
-When the owner has left (their subfolder is gone from the shared folder, or nothing was heard of them for 14 days), a
-colleague's *Team* tab says why and offers **Take over**. While the owner is there, only they can hand the project
-over.
-
-### On the Documents page
-
-- A document a colleague added that waits for the owner is marked **Waiting for the owner**; your own changes that
-  wait too. A document of yours the owner declined is marked **In your copy only**: it stays with you, and no other
-  copy brings it back.
-- In a colleague's copy, *Remove* says *In your copy it goes now; for the project it is a proposal to the owner.*
+The details (what the Team tab asks of you, how a proposal is answered, what happens when two people answer or change
+the same thing at once, and the people list) are on [Roles, proposals and what waits for your word](roles.md).
 
 ## How two copies come together
 
@@ -253,23 +229,26 @@ over.
 | --- | --- |
 | **Something new** | Comes in: documents with their original files; what your colleague shared (results, sets of themes, codebooks, also those kept for all your projects, notes, their own research log entries, links between terms); the AI's labels and reference chains; and the bibliography (when you have none, or it comes from the same Zotero collection or file). What your colleague keeps private never comes. |
 | **A newer version** | Replaces the older one. A result your colleague changed (a note, excerpts read again, more excerpts) and you did not is brought up to date, and the other way round. Colleagues on different ENLENS versions work together as well. |
-| **Both of you changed it** | A **sync clash**: both are kept ([below](#a-sync-clash)). A codebook you exchanged before is merged code by code instead ([below](#a-codebook-you-both-changed)). |
+| **Both of you changed it** | A **sync clash**: both are kept ([below](#a-sync-clash)), and your colleague's version of your own check or set of themes never replaces yours. A codebook you exchanged before is merged code by code instead ([below](#a-codebook-you-both-changed)). |
 | **The same file, read into other text** | When you both added the same file but the two computers read it differently (another ENLENS version, or text recognition on one computer only), your colleague's reading comes in as a document of its own, marked *sync clash · Anna's reading* on the *Documents* page, and their results point at it. |
 | **One document, two readings** (0.17.0) | When one of you moved a document to the new reader ([Read with the new reader](reading.md#read-with-the-new-reader)), the two readings are known as one document. Each of you keeps the reading you have, and a colleague's results are placed on yours by their words; a result whose words are not in your reading is kept as a record, and the report says how many. |
 | **Judgements** | Each is kept under the name of who made it ([below](#each-persons-judgements)). |
 | **Reviews** of labels, links between terms and themes | Yours count over a colleague's on the same thing. *Clear* and *Undo* take back only your own. |
 | **AI work you both did** on the same document (labels of a codebook, reference chains) | Not doubled: yours is kept. |
-| **Who may read a document with AI** | The stricter setting wins: *No AI* over *Only a local AI* over *Claude may read it*, and the report says so. New documents get your copy's setting for new documents when it is stricter than theirs. A looser setting comes only from the owner, once they accepted it ([above](#the-owner-and-proposals-0170)). |
+| **Who may read a document with AI** | The stricter setting wins: *No AI* over *Only a local AI* over *Claude may read it*, and the report says so. New documents get your copy's setting for new documents when it is stricter than theirs. A looser setting comes only from the owner or a Co-owner, and even then your copy only *offers* it to you: *Allow here* or *Keep it stricter here* ([above](roles.md#more-ai-is-offered-never-applied)). |
+| **Work of a third person in a colleague's file** | Taken, and marked *via*: *Anna, via Carol's file*. It never replaces or removes what came from Anna herself; a removal of her notes that did not come from her is not applied (the report says *2 removals of other people's notes were not applied: they did not come from those people themselves.*). |
 | **Notes and log entries** | Each person's own: your colleague's come in under their name once they share them and you cannot change them, yours stay as you wrote them, and one removed by its author does not come back. The log also records that their work was brought in ([Notes, the research log and earlier versions](notes-and-log.md)). |
 | **Earlier versions** (*History*) | Stay with the copy that made them: bringing in a colleague's work neither takes over theirs nor gives them yours. |
-| **Something you removed** | Stays removed: a document, result or set of themes, or a colleague's reading of a file you removed. When your colleague removed something you still have, the report names it and leaves it in your copy. In a project with an owner, a document the owner removed leaves every copy (after a backup; checks keep what they read of it), and a colleague's removal is a proposal ([above](#the-owner-and-proposals-0170)). |
+| **Something you removed** | Stays removed: a document, result or set of themes, or a colleague's reading of a file you removed. When your colleague removed something you still have, the report names it and leaves it in your copy. In a project with an owner, a document the owner or a Co-owner removed leaves every copy (checks keep what they read of it) and can be restored for 30 days, and a Member's removal is a proposal ([above](roles.md#removed-in-the-last-30-days)). |
+| **Two answers to one proposal** | Neither counts: the proposal waits to be decided again ([above](roles.md#a-proposal-answered-both-ways)). Two people changing one part of a document at once: [what holds](roles.md#settled-at-the-same-time). |
 | **Not brought in yet** | A check still running in your colleague's copy (bring in a later file when it is done; through the shared folder, it comes with the first round after it is done), and the vectors of search by meaning (your computer makes them for the new documents). |
 
 ### A sync clash
 
 When you both changed the same result, set of themes or codebook, your colleague's version comes in as a copy beside
-yours, marked *sync clash · Anna's version* in the list of answers under *Hypotheses*, with a notice and a link to the other version on
-the result.
+yours, and never replaces your own check or set of themes. It is marked *sync clash · Anna's version* in the list of
+answers under *Hypotheses*, with a notice and a link to the other version on the result. The notice's first button,
+*Take their version*, is yours to press: nothing takes it for you.
 
 - Compare them, keep the one you want and delete the other: the *sync clash* mark goes.
 - Bringing in the same file again makes no second copy. When your colleague changes their version again, your copy
@@ -285,7 +264,12 @@ the result.
 A codebook you and a colleague exchanged before is merged code by code (0.17.0): a code only your colleague changed comes
 in, one only you changed stays as it is, a new code comes in, and a code removed in one copy and left alone in the
 other is removed. Two codes you each added under the same name both stay: your colleague's gets their name added to
-it. Labels follow renames and merges made in either copy, and your codebook as it was before is kept in *History*.
+it. Your codebook as it was before is kept in *History*.
+
+**Renames and merges.** When the person who made the codebook renames or merges codes, everyone's labels move with
+them at once. When anyone else does, the codebook page shows a card: *Ben renamed A to Water use and merged C into B.
+Follow for your 40 labels?* with **Follow** and **Keep mine**. Until you answer, your labels stay as they are. No
+rename or merge deletes a label.
 
 Where you both changed the same code, yours stays and the codebook editor shows the two versions side by side (name,
 definition, when to use it and when not, the words it is matched by, examples), says in words what differs, and offers
@@ -299,7 +283,7 @@ each copy) are kept side by side.
 - Where you have not judged an excerpt, the latest colleague's judgement counts, and the card says *Anna's
   judgement*. A comment of yours is not a judgement, so it does not set hers aside.
 - When others judged an excerpt too, the card lists them (*Also judged: Anna contradicts*), marked where you differ.
-- *Take back* removes only your own judgement: a colleague's then counts again.
+- *Take back* removes only your own judgement: a colleague's then counts again. No file takes yours back.
 - *How often you agreed with the AI* (*Settings → Checking*) counts only your own judgements.
 - The *Projects* page says how often you and each colleague judged the same excerpts alike, with Cohen's kappa once
   you share 10 or more.
@@ -319,14 +303,28 @@ put that file in place of `enlens.sqlite`. With a shared folder, the next round 
 the project's rounds are paused (*Pause* in the Team tab).
 
 > [!WARNING]
-> Bring in files only from colleagues you work with, and share the folder only with your team. Nothing in a file can
-> reach files outside the project, loosen who may read a document with AI (unless the project's owner accepted it), or
-> replace a judgement or review under your name. But what is exchanged is not signed and is trusted with what people
-> decided, so a crafted file, or one written in the shared folder by someone else who can write there, could take back
-> judgements or reviews made under your name, write in a colleague's name, or speak as the project's owner.
+> Bring in files only from colleagues you work with, and share the folder only with your team. What is exchanged is
+> still not signed, so a crafted file, or one written in the shared folder by someone else who can write there, can
+> still be made to look as if a colleague wrote it. What it can no longer do: reach files outside the project; let
+> more AI read a document on your computer without your click; remove a document for good (a removal applies at once
+> and can be restored for 30 days); make someone else the owner for you without a question (a change of owner you did
+> not expect waits for your word); or act in your copy under your own name (it is refused, and the Team tab says so).
 
 From a terminal, `enlens --ws <project folder> bring-in <zip>` does the same as the button (`--anyway` for a file not
 known to be this project).
+
+### Known limits
+
+These are known. ENLENS makes each visible and harmless as far as it can; only signed files, which it does not have
+yet, would refuse them.
+
+- **A forged hand-over in the owner's name** is followed by a third colleague's copy until the owner takes the project
+  back (*Take the project back*). It can loosen nothing and destroy nothing meanwhile.
+- **A late role setting of a former owner** for a person the new owner did not know yet is taken. A notice shows it,
+  and the owner can change it.
+- **Work a Co-owner had not sent when they became a Member again** comes as proposals ([Roles](roles.md)).
+- **Files are not signed.** Someone who can write in the shared folder can still write in a colleague's name.
+- **An older ENLENS opens a newer zip as a new project** without a warning ([Project zips](#project-zips)).
 
 ## Project zips
 
@@ -341,6 +339,11 @@ On the *Projects* page (the project menu → *Manage projects*):
 - **Import a project (.zip)** opens such a file as a new project. A damaged zip, or one whose database cannot be
   read, is refused with a plain message and leaves nothing behind.
 
+> [!WARNING]
+> Update ENLENS before you open a project zip made by a newer ENLENS. ENLENS 0.17.0 and 0.17.1 open such a zip *as a
+> new project* without a warning, and the new project then disagrees with the team. (Bringing such a zip into a
+> project, and the shared folder, do say *update ENLENS first*, and change nothing.)
+
 ## Moving to another computer
 
 *Projects → Move ENLENS to another computer → Download everything (.zip)* makes one file with every project (each as
@@ -348,13 +351,19 @@ its own project zip, with the original file of each document) and the settings. 
 and so are quick looks you did not keep; projects used in place from another folder come along as copies.
 
 On the new computer, install ENLENS and choose the file under *Import from another computer* on the first screen (or
-*Projects → Import a project (.zip)*, which takes both kinds of zip). Each project keeps its name (`name (2)` when the
-name is taken). The settings come along only when the new computer has no project yet, and on an installation without
-cloud AI (`--local-only`) never the choice of a cloud AI.
+*Projects → Import a project (.zip)*, which takes both kinds of zip). ENLENS first asks whether you are moving to this
+computer or will use both, and imports nothing until you answer
+([the question](roles.md#the-question-when-you-import-a-move-file)). Each project keeps its name (`name (2)` when the
+name is taken).
 
 > [!IMPORTANT]
-> To move yourself, use *Move ENLENS to another computer*, not a single project zip: it keeps who you are. A new
-> installation is a new person, and your own judgements would come back under your old name.
+> To move yourself, use *Move ENLENS to another computer*, not a single project zip: it keeps who you are when you
+> choose *I am moving to this computer*. A single project zip, or a new installation, is a new person, and your own
+> judgements would come back under your old name.
+
+**A second computer is a second person.** When you want both computers to work on your projects, the second becomes a
+second person, and ENLENS stops a copy of your folder that would write under your name. How, and what to do about a
+folder made by someone else: [Roles, proposals and what waits for your word](roles.md#a-second-computer-is-a-second-person).
 
 ---
 

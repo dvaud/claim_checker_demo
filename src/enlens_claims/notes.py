@@ -374,13 +374,22 @@ def move(cx: sqlite3.Connection, doc_id: str, new_text: str, page_spans: list | 
     return {"moved": moved, "lost": lost}
 
 
-def merge(cx: sqlite3.Connection, rows: list[dict], fix) -> int:
+def merge(cx: sqlite3.Connection, rows: list[dict], fix, sender: str | None = None, report: dict | None = None) -> int:
     """A colleague's notes (sync.py): those not here come in (unless removed here, or their document did not come in);
-    one of theirs they changed since is brought up to date. Yours are never changed."""
+    one of theirs they changed since is brought up to date. Yours are never changed.
+
+    Roles (DESIGN-roles §4.8), with `sender` (who sent the file): a row of a third person comes in labelled "via" the
+    sender (`sync_via`); it brings up to date only a row that came relayed itself; its author's own row takes its
+    place whatever its time. Without `sender`: as before."""
     me = _me()
     gone = {r[0] for r in cx.execute("SELECT key FROM sync_removed WHERE kind='note'")}
     docs = {r[0] for r in cx.execute("SELECT doc_id FROM documents")}
     cols = [r[1] for r in cx.execute("PRAGMA table_info(notes)")]
+    via_here: set[str] = set()
+    if sender:
+        from .people import first_hand, note_via, relayed
+
+        via_here = relayed(cx, "note")
     n = 0
     for r in rows:
         if not isinstance(r.get("note_id"), str) or not _ID.fullmatch(r["note_id"]) or r["note_id"] in gone:
@@ -394,10 +403,22 @@ def merge(cx: sqlite3.Connection, rows: list[dict], fix) -> int:
             # nothing in a colleague's file is written in your name: a note of yours that is not here is one
             # you removed, or one the file made up
             continue
+        third = bool(sender) and bool(r.get("person_id")) and r["person_id"] != sender
         if have is None:
+            if third:
+                note_via(cx, "note", r["note_id"], r["person_id"], sender)
+                if report is not None:
+                    report["via"] = report.get("via", 0) + 1
             cx.execute(f"INSERT INTO notes({','.join(use)}) VALUES ({','.join('?' * len(use))})", [r[c] for c in use])
             n += 1
-        elif have[0] != me and have[0] == r.get("person_id") and (r.get("edited_at") or "") > (have[1] or ""):
+        elif have[0] != me and have[0] == r.get("person_id") and (
+                (r.get("edited_at") or "") > (have[1] or "") or (sender and not third and r["note_id"] in via_here)):
+            if third and r["note_id"] not in via_here:
+                continue  # relayed: never in place of the author's own row
+            if sender and not third and r["note_id"] in via_here:
+                first_hand(cx, "note", [r["note_id"]])
+            elif third:
+                note_via(cx, "note", r["note_id"], r["person_id"], sender)
             sets = [c for c in use if c != "note_id"]
             cx.execute(f"UPDATE notes SET {', '.join(c + '=?' for c in sets)} WHERE note_id=?",
                        [*(r[c] for c in sets), r["note_id"]])

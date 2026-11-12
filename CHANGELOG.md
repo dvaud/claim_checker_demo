@@ -1,5 +1,110 @@
 # Changelog
 
+## 0.18.0rc1 (November 2026): Co-owners, and a project no file can take from you
+
+A release candidate. 0.17 let colleagues work through a shared folder, but its files are not signed: someone who could
+write in the folder could make themselves the owner, open a document kept from AI to Claude in everyone's copy, or
+remove documents and notes in another person's name. 0.18 gives the owner Co-owners, and makes such files unable to
+do the things that cannot be undone. **Everyone in a shared project must update**: a copy on 0.17 says "update
+ENLENS first" in the shared folder and when a newer zip is brought into a project.
+
+### Roles
+
+- **The owner can make a colleague a Co-owner** (Team tab, beside each person). A Co-owner's changes to the documents
+  hold for everyone at once, and a Co-owner accepts or declines proposals. Everyone else is a Member, as before. Only
+  the owner sets roles and hands the project over. A Co-owner made a Member again keeps nothing back: what they had
+  not sent comes as their proposals.
+- **Waiting for your word** is the first thing in the Team tab, most serious first: a change of owner you did not
+  expect, a looser AI setting offered to you, something a file tried to do in your name, and the proposals to answer.
+
+### What a file can no longer do
+
+- **Let more AI read a document on your computer without your click.** When the owner or a Co-owner loosens a
+  setting, your Team tab offers it: tick the documents, then *Allow here* or *Keep stricter here*. A stricter setting
+  still holds everywhere at once. Your own accepted proposal sets the level once; anything later is an offer.
+- **Change the owner without asking you.** A hand-over by the owner you follow just happens, with a notice; another
+  first owner or a take-over is a question (*Follow* or *Stay*). A record of who owns the project that your copy
+  holds is never replaced by a file's.
+- **Act in your name.** Rows a file says you wrote, and changes it says you made inside someone else's row, are not
+  taken; the Team tab lists them and your copy answers with its own. A file can no longer take back your judgement.
+- **Destroy a document for good.** A document removed by the owner or a Co-owner leaves your copy at once and can be
+  restored for 30 days with one click (*Removed in the last 30 days*).
+
+### When two people do things at the same time
+
+- **Nothing is lost by chance.** Changes made without each other's version are merged part by part: the document
+  stays, the stricter AI setting holds, the newer reading counts, and both people are told.
+- **A proposal answered both ways counts for neither answer.** When one person accepts and another declines without
+  the other's answer, every owner's and Co-owner's copy says so, what the accept had changed goes back, and one of you
+  decides again. Making the decliner or the accepter a Member does not decide it.
+
+### Your own work, and two computers
+
+- **A colleague's file no longer replaces your own check** or set of themes: their version comes in beside it.
+- **Codebooks:** renames and merges by the person who made the codebook still move everyone's labels; anyone else's
+  are offered for yours (*Follow* / *Keep mine*). None can delete a label any more.
+- **Work of a third person** that reaches you in someone else's file is marked *via* that person, and cannot remove
+  that person's notes, log entries or reviews.
+- **Two computers:** *Move ENLENS to another computer* now asks whether you are moving or will use both, and shows the
+  settings and the model addresses it would take (an address of another computer is taken only when you tick it). A
+  second computer is a second person in your projects, whom the owner can make a Co-owner and mark as you. A copy of
+  your ENLENS folder on another computer no longer writes over your work in the shared folder: it stops and says why.
+- **A folder opened as a project** that another person made is cleaned like a project brought in from a file, after
+  you say so.
+
+### Also
+
+- **What is new waits until you ask for it.** After an update, a note of what the version brings no longer appears in
+  the corner by itself. *What's new in 0.X.Y* waits above *Settings* at the foot of the sidebar instead: it opens the
+  same note in a dialog, with a link to every change on GitHub, and goes once you have read it. Settings has it always
+  (*What's new* beside the version on every tab, and in *Technical › Updates*), and Find has it (*changelog*, *what's
+  new*). The note of an update on Windows that did not finish still shows by itself: it says what to do.
+  `GET /api/whats-new` now serves the note every time without marking it (`changes`, `unread`), and the new
+  `POST /api/whats-new/read` marks it read (docs/API.md). Tests: `test_0_15_1_whats_new.py` (offered until read, a
+  reload still offers it, never on a new installation; the sidebar, Settings and Find), `test_0_17_0_finder.py`
+  (*changelog* and *what's new* find it).
+
+### Defects found and fixed before this candidate
+
+An independent review of the built roles, which proved each finding with a failing test, found two critical, three high,
+two medium and two low problems, all fixed with those tests kept:
+- a forged record of who owns the project could replace a real one and was followed without a question;
+- a row in someone else's name that said a change was yours could loosen your AI setting;
+- an old accepted request to loosen could allow a later loosening (also when a forged row named it);
+- a number at the top of the range could stop the project, or keep a forged removal from being answered;
+- a forged "you removed it" note could make the owner's copy remove a document;
+- a former owner's late row still counted for documents only Co-owners had added;
+- making someone a Member decided a proposal answered both ways;
+- a document restored from the archive was briefly looser than the project;
+- a file could take back your own judgement.
+
+### For developers
+
+Sync format 4 (`formats.FORMAT`, `folder.NEEDS`, `formats.zip_needs`). `canon` is merged per part by what each writer
+knew (`hist_json`, `*_by`); who owns the project follows each copy's pins (`owner_pins`, keyed `(seq, by, owner)`),
+never a clock. New tables `roles`, `owner_pins`, `removed_docs`, `sync_via`, `sync_from`, `sync_refused`, and nullable
+`sig` columns for later signatures; `removed.py` keeps the 30-day archive; `bundle.import_all` needs a `mode`;
+`home.installation_id` guards the shared folder's subfolder (`head.json`). A row numbered more than 2**32 above every
+number held is not taken. The Team tab's new card is `decisionCard()` in `lib.js`. New manual page:
+[Roles](docs/manual/roles.md).
+
+### Tests
+
+New: `tests/test_0_18_0_roles_schema.py`, `_roles_invariants.py` (I1–I7), `_roles_answers.py`, `_roles_random.py`
+(5 copies, 60 steps, 10 seeds; 30 with `ENLENS_L2_LONG=1`, clocks shifted per copy), `_roles_proofs.py` (the proofs of
+the weaknesses of 0.17, turned round), `_roles_review.py` (the review's 12 proofs), `_formats.py`, `_authorship.py`,
+`_h5_h8.py`, `_removed.py`, `_second_computer.py`, `_move_and_link.py`, `_roles_api.py`, `_roles_ui.py`.
+
+### Not yet done
+
+- **Files are still not signed.** Someone who can write in the shared folder can still write in a colleague's name.
+  It is now visible and cannot loosen, destroy or change the owner, but a forged hand-over in the owner's name is
+  followed by a third colleague's copy until the owner takes the project back. Signatures would refuse it.
+- An older ENLENS opens a newer zip as a new project without a warning.
+- Not yet tried by a team on real computers and a real shared folder: please use this candidate on a test project
+  first.
+- *Not now* on a take-over hides it from the tab's count in this browser only.
+
 ## 0.17.2 (November 2026): a new reader, smaller project files, and your key off the page
 
 The rest of the review that gave 0.17.1: a new reader for text and Word files, project files about a quarter smaller,

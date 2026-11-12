@@ -109,6 +109,7 @@ def test_nothing_private_is_ever_written_to_the_folder(rich, tmp_path, monkeypat
         assert not cx.execute("SELECT 1 FROM shares WHERE state='private' OR (state='withdrawn' AND title IS NOT NULL)"
                               ).fetchone()
         assert set(r[0] for r in cx.execute("SELECT key FROM meta")) <= {"project_uid", "corpus_version",
-                                                                          "bibliography", "codebook_followed:ours"}
+                                                                          "bibliography", "codebook_followed:ours",
+                                                                          "roles_upgraded"}  # (roles §3.5: a marker)
         cx.close()
     assert not list(shared_dir.rglob("frameworks/mine.*")) and not [n for n, _d in files if "frameworks/mine." in n]

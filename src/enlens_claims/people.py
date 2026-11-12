@@ -154,11 +154,22 @@ def refresh(cx: sqlite3.Connection, claim_ids: Iterable[str] | None = None, me_i
             return
         where += f" AND subject_id IN ({','.join('?' * len(ids))})"
         args = ids
+    # roles (§4.8): one human on two computers (`same_as`) is one person: their later judgement of an excerpt
+    # counts (an earlier one of the group does not), and both computers' judgements are "yours"
+    groups = _groups(cx)
+    later = ""
+    if groups:
+        later = (" AND NOT EXISTS (SELECT 1 FROM judgements k WHERE k.claim_id=j.claim_id AND k.passage_id=j.passage_id "
+                 f"AND k.person_id != j.person_id AND ({_grp_sql(groups, 'k.person_id')}) = "
+                 f"({_grp_sql(groups, 'j.person_id')}) AND k.at > j.at)")
     pick = ("(SELECT {col} FROM judgements j WHERE j.claim_id=verifications.subject_id AND "
-            "j.passage_id=verifications.passage_id AND (j.verdict IS NOT NULL OR j.note IS NOT NULL) "
-            "ORDER BY {order}, j.at DESC LIMIT 1)")
-    in_force = "(j.verdict IS NOT NULL) DESC, (j.person_id = ?) DESC"  # a verdict first; of verdicts, yours
-    own_note = "(j.person_id = ?) DESC, (j.verdict IS NOT NULL) DESC"   # your row first (as before 0.14.3)
+            "j.passage_id=verifications.passage_id AND (j.verdict IS NOT NULL OR j.note IS NOT NULL)" + later +
+            " ORDER BY {order}, j.at DESC LIMIT 1)")
+    mine = "j.person_id = ?"
+    if m in groups:
+        mine = "j.person_id IN (" + ",".join(f"'{p}'" for p in sorted(group(cx, m))) + ") AND ? IS NOT NULL"
+    in_force = f"(j.verdict IS NOT NULL) DESC, ({mine}) DESC"  # a verdict first; of verdicts, yours
+    own_note = f"({mine}) DESC, (j.verdict IS NOT NULL) DESC"   # your row first (as before 0.14.3)
     cols = (("user_verdict", "verdict", in_force), ("user_note", "note", own_note), ("user_at", "at", in_force),
             ("user_quote", "quote", in_force), ("user_start", "start", in_force), ("user_end", "end", in_force),
             ("user_by", "person_id", in_force))
@@ -190,6 +201,9 @@ def others(ws: Workspace, claim_ids: Iterable[str]) -> dict[tuple[str, str], lis
     if not ids:
         return {}
     who, m = names(ws), me()
+    groups = _groups(ws._conn())
+    if groups:
+        return _others_grouped(ws, ids, groups, who, m)
     rows = ws.query("SELECT j.claim_id, j.passage_id, j.person_id, j.verdict, j.note, j.at FROM judgements j JOIN "
                     "verifications v ON v.subject_kind='user_claim' AND v.subject_id=j.claim_id AND "
                     f"v.passage_id=j.passage_id WHERE j.claim_id IN ({','.join('?' * len(ids))}) AND "
@@ -203,6 +217,24 @@ def others(ws: Workspace, claim_ids: Iterable[str]) -> dict[tuple[str, str], lis
     return out
 
 
+def _others_grouped(ws: Workspace, ids: list[str], groups: dict[str, str], who: dict[str, str],
+                    m: str) -> dict[tuple[str, str], list[dict]]:
+    """`others` where some person works on two computers: each human once, with their later judgement, shown with
+    that computer's name; the group of the judgement in force is left out."""
+    rows = [dict(r) for r in ws.query(
+        "SELECT j.claim_id, j.passage_id, j.person_id, j.verdict, j.note, j.at, v.user_by FROM judgements j JOIN "
+        "verifications v ON v.subject_kind='user_claim' AND v.subject_id=j.claim_id AND v.passage_id=j.passage_id "
+        f"WHERE j.claim_id IN ({','.join('?' * len(ids))})", ids)]
+    mine = {p for p, h in groups.items() if h == groups.get(m)} | {m}
+    out: dict[tuple[str, str], list[dict]] = {}
+    for (c, p, g), r in sorted(_latest_in_group(rows, groups).items(), key=lambda kv: kv[1]["at"] or "", reverse=True):
+        if g == groups.get(r["user_by"] or "", r["user_by"]) or (r["verdict"] is None and r["note"] is None):
+            continue
+        out.setdefault((c, p), []).append({"mine": r["person_id"] in mine, "name": who.get(r["person_id"], "a colleague"),
+                                           "verdict": r["verdict"], "note": r["note"], "at": r["at"]})
+    return out
+
+
 def agreement(ws: Workspace) -> list[dict]:
     """How often you and each colleague judged the same excerpts alike: [{"person_id", "name", "both", "agreed",
     "rate", "kappa"}], most excerpts in common first. Cohen's kappa over the four answers (supports, partly
@@ -211,9 +243,25 @@ def agreement(ws: Workspace) -> list[dict]:
     m = me()
     who = names(ws)
     pairs: dict[str, list[tuple[str, str]]] = {}
-    for r in ws.query("SELECT o.person_id, y.verdict AS mine, o.verdict AS theirs FROM judgements y JOIN judgements o "
-                      "ON o.claim_id=y.claim_id AND o.passage_id=y.passage_id AND o.person_id != y.person_id "
-                      "WHERE y.person_id=? AND y.verdict IS NOT NULL AND o.verdict IS NOT NULL", (m,)):
+    groups = _groups(ws._conn())
+    if groups:  # roles (§4.8): one human on two computers counts once, with their later judgement
+        latest = _latest_in_group([dict(r) for r in ws.query("SELECT claim_id, passage_id, person_id, verdict, at "
+                                                             "FROM judgements")], groups)
+        g_me = groups.get(m, m)
+        by_excerpt: dict[tuple[str, str], dict[str, str]] = {}
+        for (c, p, g), r in latest.items():
+            if r["verdict"] is not None:
+                by_excerpt.setdefault((c, p), {})[g] = r["verdict"]
+        for got in by_excerpt.values():
+            if g_me in got:
+                for g, v in got.items():
+                    if g != g_me:
+                        pairs.setdefault(g, []).append((got[g_me], v))
+    rows = [] if groups else ws.query(
+        "SELECT o.person_id, y.verdict AS mine, o.verdict AS theirs FROM judgements y JOIN judgements o ON "
+        "o.claim_id=y.claim_id AND o.passage_id=y.passage_id AND o.person_id != y.person_id WHERE y.person_id=? AND "
+        "y.verdict IS NOT NULL AND o.verdict IS NOT NULL", (m,))
+    for r in rows:
         pairs.setdefault(r["person_id"], []).append((r["mine"], r["theirs"]))
     out = []
     for pid, ps in pairs.items():
@@ -225,3 +273,99 @@ def agreement(ws: Workspace) -> list[dict]:
         out.append({"person_id": pid, "name": who.get(pid, "a colleague"), "both": n, "agreed": agreed,
                     "rate": round(po, 3), "kappa": kappa})
     return sorted(out, key=lambda x: -x["both"])
+
+
+# ---------------------------------------------------------------------------------------------
+# rows of a third person, and one human on two computers (DESIGN-roles §4.8)
+# ---------------------------------------------------------------------------------------------
+# A row of a colleague's file is first-hand when its author sent the file (the subfolder's person, a zip's sender);
+# else it was relayed, and is noted in `sync_via` (this copy's own bookkeeping, never sent): shown as "Anna, via
+# Carol's file" until the author's own file brings the row. Keys: judgement `claim|passage|person`, review
+# `review_key`, note `note_id`, log `entry_id`, proposal `id`.
+def via(cx: sqlite3.Connection) -> dict[tuple[str, str], str]:
+    """{(kind, key): the person who relayed it} of rows that came from a third person (`sync_via`)."""
+    try:
+        return {(r[0], r[1]): r[2] for r in cx.execute("SELECT kind, key, via FROM sync_via")}
+    except sqlite3.OperationalError:  # a database from before the table (an incoming file of 0.17)
+        return {}
+
+
+def relayed(cx: sqlite3.Connection, kind: str) -> set[str]:
+    """The keys of the rows of one kind this copy holds only as relayed."""
+    return {r[0] for r in cx.execute("SELECT key FROM sync_via WHERE kind=?", (kind,))}
+
+
+def note_via(cx: sqlite3.Connection, kind: str, key: str, author: str | None, sender: str) -> None:
+    """A row of `author` taken (or brought up to date) from `sender`'s file."""
+    cx.execute("INSERT OR REPLACE INTO sync_via(kind, key, author, via, at) VALUES (?,?,?,?,?)",
+               (kind, key, author, sender, now()))
+
+
+def first_hand(cx: sqlite3.Connection, kind: str, keys: Iterable[str]) -> None:
+    """These rows came from their author's own file: no longer "via" anyone."""
+    keys = list(keys)
+    for i in range(0, len(keys), 500):
+        chunk = keys[i:i + 500]
+        cx.execute(f"DELETE FROM sync_via WHERE kind=? AND key IN ({','.join('?' * len(chunk))})", (kind, *chunk))
+
+
+def _groups(cx: sqlite3.Connection) -> dict[str, str]:
+    """{person: the id of their group} of everyone in a `same_as` group of two or more ids (the Owner's word, by the
+    role rows that count: `ownership.roles`); {} in most projects. A group's id is the one the others are the same as
+    (the id with no `same_as` of its own; the smallest when that is not one id)."""
+    try:
+        if not cx.execute("SELECT 1 FROM roles WHERE same_as IS NOT NULL LIMIT 1").fetchone():
+            return {}
+    except sqlite3.OperationalError:
+        return {}
+    from . import ownership
+
+    links = [(p, r.get("same_as")) for p, r in ownership.roles(cx).items()
+             if r.get("same_as") and ID_RE.fullmatch(p) and ID_RE.fullmatch(r["same_as"]) and r["same_as"] != p]
+    up: dict[str, str] = {}
+
+    def root(x: str) -> str:
+        while up.get(x, x) != x:
+            x = up[x]
+        return x
+
+    for a, b in links:
+        ra, rb = root(a), root(b)
+        if ra != rb:
+            up[max(ra, rb)] = min(ra, rb)
+    members: dict[str, set[str]] = {}
+    for p in {x for link in links for x in link}:
+        members.setdefault(root(p), set()).add(p)
+    pointing = {a for a, _ in links}
+    out = {}
+    for ids in members.values():
+        heads = sorted(ids - pointing)
+        head = heads[0] if len(heads) == 1 else min(ids)
+        out.update({p: head for p in ids})
+    return out
+
+
+def group(cx: sqlite3.Connection, person: str) -> set[str]:
+    """The ids that are one human with `person` (the Owner's `same_as`, connected sets), `person` included."""
+    g = _groups(cx)
+    if person not in g:
+        return {person}
+    return {p for p, h in g.items() if h == g[person]}
+
+
+def _grp_sql(groups: dict[str, str], col: str) -> str:
+    """SQL for the group id of the person in `col` (ids are checked: `ID_RE`, so they can stand in the text)."""
+    if not groups:
+        return col
+    return f"CASE {col} " + " ".join(f"WHEN '{p}' THEN '{h}'" for p, h in sorted(groups.items())) + f" ELSE {col} END"
+
+
+def _latest_in_group(rows: list[dict], groups: dict[str, str]) -> dict[tuple[str, str, str], dict]:
+    """{(claim, passage, group): the row that counts}: of one human's judgements of an excerpt on several computers,
+    the later (`at`) counts. That use of the time is between one person's own computers (BRIEF §2.6)."""
+    out: dict[tuple[str, str, str], dict] = {}
+    for r in rows:
+        k = (r["claim_id"], r["passage_id"], groups.get(r["person_id"], r["person_id"]))
+        if k not in out or (r["at"] or "") > (out[k]["at"] or ""):
+            out[k] = r
+    return out

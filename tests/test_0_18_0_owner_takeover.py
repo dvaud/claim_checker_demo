@@ -2,7 +2,9 @@
 they own the project changes its documents. Their late changes must not become the project's (ownership.py: the new
 owner's copy writes the rows that count again under its own place, `_Ctx.restamp`; a copy that followed a row which
 no longer counts follows the project's again), and their late answer to a proposal must not override the owner's
-(`_decisions`: the later owner's answer counts)."""
+(`_decisions`: the later owner's answer counts).
+
+Roles (DESIGN-roles §4.1, §6.6): a take-over is never followed unasked. Each copy answers the question (`follow`)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,8 +13,8 @@ import pytest
 
 from enlens_claims import ownership
 from enlens_claims.sync import folder
-from owner_helpers import (accept, add_doc, choices, decline, docs_of, has, join, leave_out, level, proposals,
-                           set_level, sync, view)
+from owner_helpers import (accept, add_doc, allow, choices, decline, docs_of, follow, has, join, leave_out, level,
+                           proposals, set_level, sync, view)
 from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
 
 
@@ -44,10 +46,13 @@ def test_a_former_owners_late_loosening_does_not_spread(team, tmp_path):
     sync(anna, ben, carol)
     _take_over(ben)
     sync(ben, carol)
+    follow(carol)
     assert view(carol)["owner"]["id"] == ben.id
     set_level(anna, doc, "cloud")      # offline, she still believes she owns the project
     view(anna)                         # the Team tab: her change is written down as the owner's
     sync(anna, ben, carol, rounds=3)
+    follow(anna)
+    sync(anna, ben, carol, rounds=2)
     assert view(anna)["owner"]["id"] == ben.id
     assert (level(ben, doc), level(carol, doc), level(anna, doc)) == ("none", "none", "none")
     waiting = proposals(ben, state="waiting", kind="loosen")   # her late setting: a proposal to Ben now
@@ -59,10 +64,13 @@ def test_a_former_owners_late_removal_is_her_proposal(team):
     doc = sorted(docs_of(anna))[0]
     _take_over(ben)
     sync(ben, carol)
+    follow(carol)
     with anna:
         anna.ws.remove_document(doc)
     view(anna)
     sync(anna, ben, carol, rounds=3)
+    follow(anna)
+    sync(anna, ben, carol, rounds=2)
     assert has(ben, doc) and has(carol, doc)
     waiting = proposals(ben, state="waiting", kind="remove")
     assert [(p["doc"], p["by"]["id"]) for p in waiting] == [(doc, anna.id)]
@@ -80,8 +88,11 @@ def test_a_copy_that_followed_the_former_owner_first_follows_the_new_owner(team,
         anna.ws.remove_document(gone)
     view(anna)
     sync(anna, carol)                  # Carol follows Anna, the owner as far as she knows
+    allow(carol, doc)                  # (roles §4.7: a looser setting is offered; Carol allows it)
     assert level(carol, doc) == "cloud" and fp in choices(carol, doc) and not has(carol, gone)
     sync(ben, carol, anna, rounds=3)   # then Ben's take-over and his rows arrive
+    follow(carol)
+    sync(ben, carol, anna, rounds=2)
     assert view(carol)["owner"]["id"] == ben.id
     assert level(carol, doc) == "none" and fp not in choices(carol, doc) and has(carol, gone)
     assert not [p for p in proposals(ben) if p["by"]["id"] == carol.id]   # nothing proposed in Carol's name
@@ -98,6 +109,9 @@ def test_the_owners_answer_counts_over_a_former_owners_late_one(team):
     accept(ben, pid)                   # the owner accepts Carol's removal
     decline(anna, pid)                 # Anna, offline, declines it
     sync(ben, carol, anna, rounds=3)
+    follow(anna)
+    follow(carol)
+    sync(ben, carol, anna, rounds=3)
     for p in (anna, ben, carol):
         assert [x["state"] for x in proposals(p) if x["id"] == pid] == ["accepted"], p.name
         assert not has(p, doc), p.name
@@ -113,6 +127,9 @@ def test_a_stricter_setting_a_former_owner_made_late_is_never_loosened_on_the_wa
     sync(anna, carol)
     assert level(carol, doc) == "none"
     sync(ben, carol, rounds=1)         # Ben's take-over and rows (still "Claude may read it") reach Carol first
+    follow(carol)
     assert view(carol)["owner"]["id"] == ben.id and level(carol, doc) == "none"
+    sync(ben, carol, anna, rounds=3)
+    follow(anna)
     sync(ben, carol, anna, rounds=3)
     assert (level(ben, doc), level(carol, doc), level(anna, doc)) == ("none", "none", "none")

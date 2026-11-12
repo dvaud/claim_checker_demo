@@ -54,6 +54,7 @@ export const ACTIONS = [
   ["Start a new project", "in Projects", "#/projects", "folder-open", "create project new open switch"],
   ["Open the settings", "in Settings", "#/settings", "sliders", "settings preferences options appearance dark light"],
   ["Copy my link", "in Settings › Technical", "#/settings/link", "link", "bookmark link address url open browser"],
+  ["Read what's new in this version", "in Settings › Technical", "#/settings/updates", "sparkles", "changelog change log release notes news new version changes update updated whats"],
 ];
 
 const PLACE_WHERE = { explore: "in Explore", check: "in Check hypotheses", record: "in Your notes" };

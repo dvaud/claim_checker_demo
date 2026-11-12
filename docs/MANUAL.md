@@ -55,6 +55,7 @@ Three things hold everywhere:
 | | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find |
 | | [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights and notes, the dated record of decisions, compare and restore |
 | | [Work together](manual/together.md) | Sharing a project with colleagues (a shared folder, the Team tab, the owner), sync clashes, moving to another computer |
+| | [Roles, proposals and what waits for your word](manual/roles.md) | Owner, Co-owner, Member; proposals; what the Team tab asks of you |
 | **The AI and your privacy** | [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI, working together, how it is enforced |
 | | [Claude Code](manual/claude-code.md) | Starting it, its speed and helpers, the queue; Claude in a chat (the connector) |
 | | [A model on your own computer](manual/local-models.md) | Getting one, choosing and tuning it, testing it |

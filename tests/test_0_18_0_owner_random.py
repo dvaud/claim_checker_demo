@@ -351,6 +351,23 @@ class Run:
         self.say(p, f"{'accepted' if yes else 'declined'} {q['kind']} of {q['doc']} by {q['by']['name']}")
         return True
 
+    def a_allow(self, p: Person, every: bool = False) -> bool:
+        """Roles (DESIGN-roles §4.7, §6.6): a looser setting reaches the other copies as an offer; the person allows it
+        (a recorded click, the only way it loosens there) or keeps it stricter."""
+        with p:
+            ownership.settle(p.ws, apply=False)
+            offers = sorted(o["doc"] for o in ownership.view(p.ws)["offers"])
+        if not offers:
+            return False
+        for d in (offers if every else [self.rng.choice(offers)]):
+            yes = every or self.rng.random() < 0.7
+            with p:
+                ownership.answer_loosening(p.ws, [d], yes)
+            if yes:
+                self.owner_loosened.add((p.name, d))
+            self.say(p, f"{'allowed' if yes else 'kept stricter'} the looser setting of {d}")
+        return True
+
     def a_take_back(self, p: Person) -> bool:
         with p:
             ws = [x for x in ownership.view(p.ws)["proposals"] if x["can_take_back"]]
@@ -383,7 +400,7 @@ class Run:
 
     WEIGHTS = (("add", 3), ("remove", 2), ("blocks", 3), ("tighten", 2), ("loosen", 2), ("reread", 1), ("check", 2),
                ("judge", 2), ("share", 1), ("unshare", 1), ("take_back", 1), ("decide", 5), ("toggle", 1),
-               ("hand_over", 0.25), ("skip", 2))
+               ("hand_over", 0.25), ("allow", 2), ("skip", 2))
     OWNER_ONLY = {"decide", "toggle", "hand_over"}
 
     def act(self, p: Person) -> None:
@@ -495,6 +512,12 @@ class Run:
 
     def quiesce(self) -> None:
         self.round += 1
+        self.owner_loosened = set()
+        for _ in range(3):  # roles: every open offer of a looser setting is allowed (kept ones stay kept)
+            for p in self.people:
+                self.sync(p)
+            for p in self.people:
+                self.a_allow(p, every=True)
         for _ in range(8):
             wrote = False
             for p in self.people:
@@ -558,7 +581,13 @@ class Run:
                              (x["by"]["id"] == p.id or x["state"] == "waiting")]
                     self.check_that(bool(again), f"{p.name} holds {d}, which the owner removed")
                 continue
-            if len(holders) == len(P):
+            kept = set()   # roles: a copy that kept a looser setting out stays stricter (DESIGN-roles §4.7)
+            for p in holders:
+                with p:
+                    o = p.ws.scalar("SELECT ai_offer FROM canon_seen WHERE doc=?", (d,))
+                if o and json.loads(o).get("state") == "kept":
+                    kept.add(p.name)
+            if len(holders) == len(P) and not kept:
                 lv = {levels[p.name].get(d) for p in P}
                 self.check_that(lv == {ai}, f"{d}: AI levels {lv} in the copies, the project's is {ai}")
             for p in holders:

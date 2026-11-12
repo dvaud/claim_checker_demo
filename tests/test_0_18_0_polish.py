@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from enlens_claims import access, claimcheck, ingest, sharing
+from enlens_claims import access, claimcheck, ingest, sharing, sync
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
 from enlens_claims.sync.common import text_fp
@@ -334,8 +334,12 @@ def test_an_item_taken_back_leaves_the_bundles_its_owner_and_a_colleague_wrote(p
     _round(anna)
     assert len(_words(shared_dir, b"desalination brine")) >= 2
     with anna:
-        assert _note_here(anna, hid) == "Ben agrees"
-        sharing.unshare(anna.ws, [{"kind": "check", "key": hid}])
+        # roles (H5, DESIGN-roles §4.9): Anna's own check keeps her version; Ben's comes in beside it, a sync-clash
+        # copy, which is an item of its own in her list: she takes back both
+        assert _note_here(anna, hid) is None
+        copies = [k for k, v in sync.copies_of(anna.ws, "check").items() if v["of"] == hid]
+        assert len(copies) == 1 and _note_here(anna, copies[0]) == "Ben agrees"
+        sharing.unshare(anna.ws, [{"kind": "check", "key": k} for k in [hid] + copies])
     _round(anna)
     _round(ben)
     assert _words(shared_dir, b"desalination brine") == []
@@ -455,6 +459,14 @@ def test_a_setting_two_colleagues_both_loosen_stays_loosened(pair, shared_dir):
             access.set_documents(p.ws, [doc], "cloud")
     for p in (anna, ben, anna, ben):
         _round(p)
+    # roles (review H1): Ben's own proposal was answered by nobody; the owner set it so herself. That is not the event
+    # an accept of his made, so his copy is offered it rather than set: one click of his
+    from enlens_claims import ownership
+
+    with ben:
+        assert access.levels(ben.ws, [doc], budget=False)[doc] == "local"
+        assert [o["doc"] for o in ownership.view(ben.ws)["offers"]] == [doc]
+        ownership.answer_loosening(ben.ws, [doc], True)
     for p in (anna, ben):
         with p:
             assert access.levels(p.ws, [doc], budget=False)[doc] == "cloud"

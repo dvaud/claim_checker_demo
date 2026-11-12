@@ -93,6 +93,12 @@ DEFAULTS = {
     "sync_every_minutes": 2,
     "sync_paused": False,
     "sync_paused_projects": [],
+    # roles (DESIGN-roles §3.2, §4.11): this installation's own id, written into the shared folder (`head.json`), so a
+    # copy of this data folder on another computer is stopped before it writes there under the same person. Made once
+    # (`installation_id`), and made anew when the data folder is not the one it was made in (`installation_place`: a
+    # copied or restored folder). Neither is ever in a move zip (bundle.MACHINE_SETTINGS)
+    "installation_id": "",
+    "installation_place": "",
 }
 
 BACKEND_LABELS = {"claude_code": "Claude Code (your subscription)", "auto": "Local model (automatic)",
@@ -407,6 +413,8 @@ def clean_settings(changes: dict) -> dict:
             raise ValueError("Your name can be at most 60 characters.")
     if "person_id" in out and not re.fullmatch(r"p[0-9a-f]{12}", out["person_id"] or ""):
         raise ValueError("person_id is made by ENLENS itself.")
+    if "installation_id" in out and not re.fullmatch(r"[0-9a-f]{16}", out["installation_id"] or ""):
+        raise ValueError("installation_id is made by ENLENS itself.")
     if "profile_framework" in out and not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", out["profile_framework"] or ""):
         raise ValueError("profile_framework must be the short name of a codebook, for example sdg or sdg_goals.")
     return out
@@ -851,14 +859,28 @@ def release_open_projects() -> None:
         ws.close()
 
 
-def link_existing(path: str, name: str | None = None) -> str:
-    """Make an existing workspace folder (for example the pilot) appear as a project, without copying it."""
+def link_existing(path: str, name: str | None = None, clean: bool = False) -> str:
+    """Make an existing workspace folder (for example the pilot) appear as a project, without copying it. Roles
+    (DESIGN-roles §4.11): it is cleaned as a project from a zip is (`bundle.clean_linked`): always its rows alone
+    (triggers and views go) and its config.json. A folder another person made raises NeedsCleaning (what would go:
+    `bundle.check_linked`) unless `clean`; with `clean` it also loses its record of a shared folder, the file paths of
+    the other computer and what was stored for speed."""
+    from . import bundle
+
     src = Path(path).expanduser().resolve()
     if not (src / "enlens.sqlite").exists():
         raise ValueError(f"No workspace (enlens.sqlite) in {src}.")
     n = safe_name(name or src.name) or "workspace"
     if n in list_projects() or (home() / "projects" / n).exists():
         raise ValueError(f"A project called {n!r} already exists.")
+    report = bundle.check_linked(src)
+    if report["other"] and not clean:
+        who = report["other"].get("name") or "a colleague"
+        raise NeedsCleaning(report, f"This folder is {who}’s project. ENLENS will clean it like a project brought in "
+                                    "from a file: its record of a shared folder, file paths on the other computer, and "
+                                    "what was stored for speed go. The documents and the work stay.")
+    close_project(src)  # (a connection this program holds on it: the cleaning writes through its own)
+    bundle.clean_linked(src, other=bool(report["other"]))
     with LOCK:
         links = _links(strict=True)
         links[n] = str(src)
@@ -1083,3 +1105,62 @@ def unique_project_name(name: str) -> str:
         n = f"{base[:54]} ({i})"
         i += 1
     return n
+
+
+# roles (DESIGN-roles §4.11): stubs of the groundwork (S0), built in P3. Nothing calls them yet
+class NeedsCleaning(ValueError):
+    """A folder to link was made by another person: the page asks before it is cleaned like an import (`report`:
+    what `bundle.check_linked` found)."""
+
+    def __init__(self, report: dict, message: str = "This folder was made by another person: clean it first.") -> None:
+        super().__init__(message)
+        self.report: dict = report
+
+
+def _place() -> str:
+    """Where this data folder is, as the file system knows it (device and folder number): a copy of the folder, on
+    this computer or another, or one restored from a backup, is somewhere else. "" when the file system has no numbers."""
+    try:
+        st = os.stat(home())
+    except OSError:
+        return ""
+    return f"{st.st_dev}:{st.st_ino}" if st.st_ino else ""
+
+
+def installation_id() -> str:
+    """This installation's own id (the setting `installation_id`, 16 hex digits, made once; never in a move zip). A
+    data folder copied to another computer (or restored, or moved) gets a new one there: the shared folder's guard
+    (sync/folder.py) then tells the two computers apart. A new id alone never stops a round: the guard also looks at
+    this copy's own record of the folder."""
+    import secrets
+
+    def mine(s: dict) -> str | None:
+        iid, place = str(s.get("installation_id") or ""), str(s.get("installation_place") or "")
+        here = _place()
+        return iid if re.fullmatch(r"[0-9a-f]{16}", iid) and (place == here or not here) else None
+
+    iid = mine(load_settings())
+    if iid:
+        return iid
+    with LOCK:  # made once: two requests at once must not each make their own
+        with to_change():
+            iid = mine(load_settings())
+        if not iid:
+            iid = secrets.token_hex(8)
+            update_settings({"installation_id": iid, "installation_place": _place()})
+    return iid
+
+
+def new_identity(name: str) -> str:
+    """*Use both computers* (DESIGN-roles §4.11, §5.6): this computer becomes a person of its own in every project, a
+    new person id with the name given. What was done here so far keeps the first id, so it is shown as the other
+    computer's work (the owner can mark both as one person: `ownership.set_same_as`). Returns the new id."""
+    import uuid
+
+    clean = " ".join(str(name or "").split())
+    if not clean:
+        raise ValueError("Give the name you use on this computer.")
+    with LOCK:
+        pid = "p" + uuid.uuid4().hex[:12]
+        update_settings({"person_id": pid, "your_name": clean})
+    return pid

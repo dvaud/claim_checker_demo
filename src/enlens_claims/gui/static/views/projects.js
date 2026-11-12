@@ -1,6 +1,8 @@
 // Projects: create, link an existing workspace folder, switch, remove.
 import { quickLookButton } from "./quicklook.js";
-import { App, api, h, icon, replace, append, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download, button, downloadButton, card, input, tag, emptyState } from "../lib.js";
+import { App, api, h, icon, replace, append, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download, button, downloadButton, card, input, tag, emptyState,
+  optionCards, switchControl, fold } from "../lib.js";
+import { MOVE_TITLE, MOVING, BOTH, NOT_FRESH, moveSummary, secondName, foreignServers, serverLine, movedText, linkCleanTitle, LINK_CLEAN } from "./move-state.js";   // roles
 import { zipButton } from "./share.js";   // 0.18: the two downloads, what you shared or the whole project
 import { FEATURES } from "../features.js";
 
@@ -46,6 +48,8 @@ export function importProjectDialog(opts = {}) {
         btn.disabled = true; status.textContent = `Importing ${f.name}… this can take a moment for a large project.`;
         try {
           const r = await api("POST", `/api/projects/import${typed ? `?name=${encodeURIComponent(typed)}` : ""}`, f);
+          // roles: a move zip is not brought in yet; the app asks first whether this is a move or a second computer
+          if (r.move && r.token) { setTimeout(() => moveDialog(r.move, r.token)); return true; }
           await App.refresh();
           if (r.moved) {
             const n = r.moved.projects.length;
@@ -232,6 +236,56 @@ export function newProjectDialog() {
   });
 }
 
+// Roles (DESIGN-roles §5.5): a move zip asks first: moving to this computer (only where it has no projects), or using
+// both computers (a second person in the projects). The settings come only with the switch; an address of a server
+// that is not on this computer only with its own tick. Nothing is chosen at first, so Bring in waits for a card.
+export function moveDialog(peek, token) {
+  let mode = null;
+  const name = input({ id: "move-name", maxlength: 60, autocomplete: "off", value: secondName(peek) });
+  const nameField = field("Your name on this computer", name, { help: "Colleagues see this name beside what you do here." });
+  nameField.hidden = true;
+  const err = h("div", { class: "field-error", role: "alert" });
+  const go = () => document.getElementById("move-go");
+  const cards = optionCards({ label: "How you will use this computer", options: [
+    { value: "moving", icon: "arrow-right", title: MOVING.title, text: MOVING.text, disabled: !peek.fresh },
+    { value: "both", icon: "users", title: BOTH.title, text: BOTH.text },
+  ], onPick: (v) => { mode = v; nameField.hidden = v !== "both"; const b = go(); if (b) b.disabled = false; } });
+  const settings = switchControl("Take the settings too", !!peek.fresh, { help: "Which AI reads, how checks are made, how often the shared folder is read." });
+  const listed = Object.entries(peek.settings || {});
+  const settingsList = listed.length ? fold({ sm: true }, "The settings it takes", h("ul", { class: "small move-settings" }, listed.map(([k, v]) => h("li", {}, `${k}: ${v}`)))) : null;
+  const servers = foreignServers(peek).map((sv) => {
+    const box = h("input", { type: "checkbox", id: `move-server-${sv.key}`, value: sv.key });
+    return h("label", { class: "move-server", for: box.id }, box, h("span", {}, serverLine(h("span", { class: "mono" }, sv.url))));
+  });
+  return dialog({ title: MOVE_TITLE, wide: true,
+    body: h("div", { class: "move-dialog" }, h("p", {}, moveSummary(peek)), cards,
+      peek.fresh ? null : h("p", { class: "move-why" }, NOT_FRESH),
+      nameField, settings, settingsList, ...servers, err),
+    actions: [{ text: "Cancel", value: null }, { text: "Bring in", value: true, primary: true, id: "move-go", disabled: true,
+      async onClick(dlg) {
+        err.textContent = "";
+        if (!mode) return false;
+        if (mode === "both" && !name.value.trim()) { err.textContent = "Give this computer a name."; name.focus(); return false; }
+        const b = dlg.querySelector("#move-go");
+        b.disabled = true;
+        try {
+          const r = await api("POST", "/api/move", { token, mode, name: mode === "both" ? name.value.trim() : undefined,
+            settings: settings.input.checked, servers: servers.map((l) => l.querySelector("input")).filter((x) => x.checked).map((x) => x.value) });
+          await App.refresh();
+          toast(movedText(r), "ok", { ttl: 9000 });
+          navigate("#/projects");
+        } catch (e) { b.disabled = false; err.textContent = e.message; return false; }
+        return true;
+      } }],
+    onOpen: () => { const first = cards.querySelector("button:not([disabled])"); if (first) first.focus(); } });
+}
+
+// Roles (DESIGN-roles §5.7): a folder made by another person is cleaned like an import, after one question
+function linkCleanDialog(report) {
+  return dialog({ title: linkCleanTitle(report), body: h("p", {}, LINK_CLEAN),
+    actions: [{ text: "Cancel", value: null }, { text: "Clean and link", value: true, primary: true, id: "link-clean-ok" }] });
+}
+
 export function linkProjectDialog() {
   const path = input({ mono: true, placeholder: "/path/to/workspace (contains enlens.sqlite)", autocomplete: "off" });
   const name = input({ placeholder: "defaults to the folder's name", maxlength: 60 });
@@ -241,10 +295,17 @@ export function linkProjectDialog() {
     body: h("div", {}, h("p", { class: "muted" }, "For technical users. This is not for a folder of documents (add those under Documents), but for a project folder that ENLENS itself made earlier, on the command line or in another copy of the app. It is used in place, not copied."), field("Folder path", path), field("Project name (optional)", name), err),
     actions: [{ text: "Cancel", value: null }, {
       text: "Link", value: true, primary: true, id: "dlg-confirm",
-      async onClick() {
+      async onClick(dlg) {
         err.textContent = "";
         try {
-          const r = await api("POST", "/api/projects/link", { path: path.value.trim(), name: name.value.trim() || undefined });
+          const body = { path: path.value.trim(), name: name.value.trim() || undefined };
+          let r;
+          try { r = await api("POST", "/api/projects/link", body); } catch (e) {
+            // roles: another person's folder: asked first, then linked with clean
+            if (e.status !== 409 || !(e.data && e.data.report)) throw e;
+            if (!(await linkCleanDialog(e.data.report))) return false;
+            r = await api("POST", "/api/projects/link", { ...body, clean: true });
+          }
           await App.refresh();
           toast(`Project “${r.project.name}” added.`, "ok");
           navigate("#/hypotheses");

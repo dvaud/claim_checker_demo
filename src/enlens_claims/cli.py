@@ -138,6 +138,20 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--shared", action="store_true", help="only what you shared, to send to a colleague")
     p = sub.add_parser("import-project", help="unpack a project zip into the folder given by --ws (new or empty)")
     p.add_argument("zip")
+    # roles (DESIGN-roles §4.11): the zip of "Move ENLENS to another computer" says first who this computer is
+    p = sub.add_parser("import-all", help="bring in the zip of “Move ENLENS to another computer” (every project and "
+                                          "the settings); say --moving or --both")
+    p.add_argument("zip")
+    who = p.add_mutually_exclusive_group(required=True)
+    who.add_argument("--moving", action="store_true", help="you move to this computer (only on one with no project "
+                     "yet): you stay the same person")
+    who.add_argument("--both", action="store_true", help="you will use both computers: this one becomes a second "
+                     "person in your projects")
+    p.add_argument("--name", help="with --both: your name on this computer (default: your name and “(2)”)")
+    p.add_argument("--settings", action="store_true", help="take the other computer's settings too")
+    p.add_argument("--server", action="append", default=[], metavar="SETTING",
+                   help="with --settings: also take this address that is not on this computer (ollama_url, "
+                        "openai_url, embed_url; repeatable)")
     p = sub.add_parser("bring-in", help="0.14: merge a colleague's project zip into this copy of the project")
     p.add_argument("zip")
     p.add_argument("--anyway", action="store_true", help="also when the zip is not known to be this project")
@@ -467,6 +481,16 @@ def _main(argv: list[str] | None = None) -> int:
     if a.cmd == "init":
         ws = Workspace.create(a.ws)
         print(f"Workspace ready at {ws.root.resolve()}")
+        return 0
+    if a.cmd == "import-all":
+        from . import bundle
+
+        try:
+            _print(bundle.import_all(a.zip, "moving" if a.moving else "both", settings=a.settings, servers=a.server,
+                                     name=a.name))
+        except ValueError as e:
+            print(f"Problem: {e}", file=sys.stderr)
+            return 1
         return 0
     if a.cmd == "import-project":
         from . import bundle
@@ -806,7 +830,11 @@ def _project_name(ws) -> str:
     for name in home.list_projects():
         if home.project_path(name).resolve() == root:
             return name
-    name = home.link_existing(str(root))
+    try:
+        name = home.link_existing(str(root))
+    except home.NeedsCleaning as e:  # roles (DESIGN-roles §4.11): another person's folder is cleaned only when asked
+        raise SystemExit(f"Problem: {e} Open it in the app first (Projects → Open an existing ENLENS project folder), "
+                         "where you can clean and link it.") from None
     print(f"Linked this folder as the project {name!r}, so Claude Code can reach it.", file=sys.stderr)
     return name
 

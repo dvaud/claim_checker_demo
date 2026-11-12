@@ -316,10 +316,13 @@ def build_server():
         name, ws = _project(project)
         return {"project": name, **_ingest(ws, sources_path, exclude, ai_access)}
 
-    @s.tool(description="Use an existing ENLENS workspace folder (for example the pilot) as a project, without copying it.")
+    @s.tool(description="Use an existing ENLENS workspace folder (for example the pilot) as a project, without copying "
+                        "it. A folder another person made is cleaned first, as a project from a zip is (its record of a "
+                        "shared folder, file paths and cache go; the documents and the work stay): ask the user, then "
+                        "call again with clean=true.")
     @_friendly
-    def use_folder_as_project(path: str, name: Optional[str] = None) -> dict:
-        return {"project": core.link_existing(path, name)}
+    def use_folder_as_project(path: str, name: Optional[str] = None, clean: bool = False) -> dict:
+        return {"project": core.link_existing(path, name, clean=clean)}
 
     @s.tool(description="List a project's documents with pages, passages and warnings (unreadable or very short files).")
     @_friendly

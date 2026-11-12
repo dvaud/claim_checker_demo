@@ -678,6 +678,8 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 /* 0.18 (L1): a code you and a colleague both changed: a card per code holding a comparison (compare(), components.css
    4.27); each side's fields as a list, what differs marked by a line and said in words (" · differs") */
 .cb-clashes { margin: 0 0 var(--space-4); }
+/* roles (H8): a colleague's renames and merges offered, as a card (decisionCard()) */
+.cb-offer:not(:empty) { margin: 0 0 var(--space-3); }
 .cb-clashes > .notice { margin-bottom: var(--space-3); }
 .cb-clash { margin: 0 0 12px; }
 .cb-clash-side-h { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--fs-small); }
@@ -1453,6 +1455,14 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .pj-counts { margin-top: var(--space-1); }
 .pj-path { margin-top: var(--space-1); overflow-wrap: anywhere; }
 
+/* roles: the move-zip question (projects.js moveDialog) and its address ticks; the reason "moving" is not offered stands
+   under the cards at full contrast, not inside the dimmed card */
+.move-dialog > * + * { margin-top: 12px; }
+.move-why { margin: 8px 0 0; }
+.move-server { display: flex; align-items: flex-start; gap: 8px; overflow-wrap: anywhere; }
+.move-server > input { flex: none; margin-top: 4px; }
+.move-settings { margin: 6px 0 0; padding-left: 1.2em; }
+
 /* ==== Working together */
 /* 0.18: the Team tab of the drawer beside every page (views/team.js, the owner's section views/owner.js), and an item's
    sharing on its own page and in lists (views/share.js). Built of the components (docs/DESIGN.md 5.5): these rules
@@ -1510,6 +1520,29 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .owner-answered-list { margin: 6px 0 0; padding: 0; list-style: none; }
 .owner-setting { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); }
 .owner-dlg-field { margin-top: 12px; }
+/* roles (DESIGN-roles §5, mock-up B): the people list keeps one control per row (More) at the end of the name's line;
+   the second line and its tag take the row's whole width, under the mark (the review's change 5) */
+.team-people { margin: 0 0 var(--space-2); }
+.team-people .list-rows.list-rows { grid-template-columns: minmax(0, 1fr); }
+.team-people .list-row { grid-template-columns: max-content minmax(0, 1fr) auto; grid-template-areas: "mark name more" "sub sub sub"; column-gap: 8px; align-items: center; }
+.team-people .list-row > .chip { grid-area: mark; }
+.team-people .list-row-main { display: contents; }
+.team-people .list-row-main > :first-child { grid-area: name; min-width: 0; overflow-wrap: anywhere; }
+.team-people .list-row-main > :nth-child(2) { grid-area: sub; justify-self: start; }
+.team-people .list-row-time { display: none; }
+.team-people .list-row-actions { grid-area: more; justify-content: flex-end; }
+.owner-role-note { margin: 0 0 6px; }
+/* a looser AI setting offered (decisionCard()): a tick per document with both settings, then the buttons */
+.owner-ticks { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.owner-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.owner-check > input { flex: none; margin-top: 4px; }
+.owner-check-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.owner-levels { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.owner-tick-first { align-self: center; }
+/* answered both ways: the error notice inside the proposal's card */
+.owner-both p + p { margin-top: 4px; }
+/* settled at the same time: quiet rows under the cards */
+.owner-settled { margin: 4px 0 8px; }
 
 /* ==== Quick look */
 /* text in --muted (4.5:1 or more), never --faint */

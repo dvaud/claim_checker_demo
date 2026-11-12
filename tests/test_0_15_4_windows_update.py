@@ -352,7 +352,7 @@ def test_an_update_that_did_not_finish_is_said_once(served):  # noqa: F811
 def test_the_page_waits_longer_for_the_handover_and_shows_the_problem():
     app = (ROOT / "src" / "enlens_claims" / "gui" / "static" / "app.js").read_text(encoding="utf-8")
     assert "waitForRestart(r.version, r.handover)" in app and "handover ? 300000 : 90000" in app
-    assert 'note.kind === "problem"' in app
+    assert 'note.kind !== "problem"' in app   # after 0.17.2 the corner shows only this note by itself
     from _static import all_css  # 0.17.0: the cascade, so it holds when the rule moves
 
     assert ".release-note-problem" in all_css()

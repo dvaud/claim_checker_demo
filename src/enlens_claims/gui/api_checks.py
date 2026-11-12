@@ -220,11 +220,13 @@ class ChecksApi:
             path = Path(tmp) / "in.zip"
             self._save_body(path, n)
             if bundle.is_move_zip(path):  # 0.10: everything from another computer
+                # roles (DESIGN-roles §4.11, §5.5): it always asks first who this computer is. The upload waits under
+                # a token for the answer (`post_move`)
                 try:
-                    moved = bundle.import_all(path)
+                    peek = bundle.peek_move(path)
                 except ValueError as e:
                     raise ApiError(400, str(e)) from e
-                return {"moved": moved, "project": self.app.project_summary(moved["current"]) if moved["current"] else None}
+                return {"move": peek, "token": _MOVES._keep(path)}
             wanted = _str(q, "name")
             if not wanted:
                 try:
@@ -242,6 +244,38 @@ class ChecksApi:
             bundle.import_project(path, home.home() / "projects" / name)
         home.update_settings({"project": name})
         return {"project": self.app.project_summary(name)}
+
+    def post_move(self, q):
+        """roles (DESIGN-roles §4.11): the answer to a move zip's question, {token, mode: "moving" | "both", name,
+        settings, servers: [setting keys]}. The upload is kept until it is brought in."""
+        from .. import bundle
+
+        body = self._body()
+        token = str(body.get("token") or "")
+        path = _MOVES._get(token)
+        if path is None:
+            raise ApiError(410, "The file is no longer here: choose it again.")
+        servers = body.get("servers") or []
+        if not isinstance(servers, list) or not all(isinstance(x, str) for x in servers):
+            raise ApiError(400, "servers must be a list of setting names.")
+        try:
+            moved = bundle.import_all(path, str(body.get("mode") or ""), settings=bool(body.get("settings")),
+                                      servers=servers, name=(str(body.get("name") or "").strip() or None))
+        except ValueError as e:
+            raise ApiError(400, str(e)) from e
+        _MOVES._drop(token)
+        return {"moved": moved, "project": self.app.project_summary(moved["current"]) if moved["current"] else None}
+
+    def post_second_computer(self, q):
+        """roles (DESIGN-roles §5.6): *Use both computers*: this computer becomes a person of its own, {name}."""
+        from .. import people
+
+        body = self._body()
+        try:
+            pid = home.new_identity(str(body.get("name") or ""))
+        except ValueError as e:
+            raise ApiError(400, str(e)) from e
+        return {"person": {"id": pid, "name": people.my_name()}}
 
     def get_map(self, name, q):
         ws = self.app.ws(name)
@@ -382,3 +416,55 @@ class ChecksApi:
             self.app.ws(name)  # 404 for a project that does not exist
             self._release_run_claims(name, before["started_at"])
         return out
+
+
+class _Uploads:
+    """roles (DESIGN-roles §4.11): move zips waiting for the answer to their question, each under a random token, in a
+    folder of their own; one not answered within an hour goes. (Its methods start with "_": an `api_*.py` class's
+    public names are the endpoints' handlers, test_0_16_0_history.)"""
+
+    TTL = 3600
+
+    def __init__(self) -> None:
+        import threading
+
+        self._lock = threading.Lock()
+        self._kept: dict[str, tuple[float, Path]] = {}
+
+    def _keep(self, path: Path) -> str:
+        import secrets
+        import shutil
+        import tempfile
+
+        self._expire()
+        token = secrets.token_urlsafe(16)
+        folder = Path(tempfile.mkdtemp(prefix="enlens-move-wait-"))
+        dest = folder / "move.zip"
+        shutil.copyfile(path, dest)
+        with self._lock:
+            self._kept[token] = (time.time(), dest)
+        return token
+
+    def _get(self, token: str) -> Path | None:
+        self._expire()
+        with self._lock:
+            hit = self._kept.get(token)
+        return hit[1] if hit and hit[1].is_file() else None
+
+    def _drop(self, token: str) -> None:
+        import shutil
+
+        with self._lock:
+            hit = self._kept.pop(token, None)
+        if hit:
+            shutil.rmtree(hit[1].parent, ignore_errors=True)
+
+    def _expire(self) -> None:
+        now = time.time()
+        with self._lock:
+            old = [t for t, (at, _p) in self._kept.items() if now - at > self.TTL]
+        for t in old:
+            self._drop(t)
+
+
+_MOVES = _Uploads()

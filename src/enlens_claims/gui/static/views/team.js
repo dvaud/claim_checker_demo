@@ -10,11 +10,12 @@
 // The tab is a list of sections (TEAM_SECTIONS), drawn in order, each from the same data (`ctx`). A later stage adds
 // one with `addTeamSection` (L2: "Waiting for the owner", before "people").
 import { App, api, h, clear, replace, toast, showError, P, plural, field, switchControl, confirmDialog, watchJob,
-  TERMINAL, store, shortTitle, helpMark, navigate, button, link, input, select, fold, tag, noticeList, notice, workState,
+  TERMINAL, store, shortTitle, helpMark, navigate, button, link, input, select, fold, tag, noticeList, notice, workState, dialog,
   listRow, listGroup, absentDocument, aiWhere, personMark } from "../lib.js";
 import { itemHref, shareButton, KIND_WORDS, KIND_MANY, zipButton, ZIP_WORDS, SHARING_HELP } from "./share.js";
 import { pollerState, syncLine, myShared, personLine, cleanPath, whenText, whenPhrase, newsLines, whoseWork, POLLER_API, EVERY_CHOICES } from "./team-state.js";
 import { OWNER_SECTION, ownerMarks, ownerPerson } from "./owner.js";   // 0.18 L2
+import { MINE_SECTION, REMOVED_SECTION, peopleRows, personSub, peopleNote } from "./owner.js";   // roles
 
 const EVERY = 20000;          // how often the open tab reads the folder's state again (it is cheap)
 const SOON = 4000;            // … and while the poller is about to start a round ("due": it looks every 5 s)
@@ -27,6 +28,7 @@ const win = () => /Win/i.test(navigator.platform || navigator.userAgent || "");
 // ---- the sections, in order. Each is {key, render(ctx) -> Element | null}.
 export const TEAM_SECTIONS = [
   { key: "setup", render: setupSection },         // no shared folder yet
+  { key: "stop", render: stopSection },           // roles: a folder problem that stops this copy, first of all
   { key: "state", render: stateSection },         // the sync state, Sync now, pause
   { key: "problems", render: problemsSection },
   { key: "came-in", render: cameInSection },
@@ -45,7 +47,11 @@ export function addTeamSection(section, { before } = {}) {
 }
 // 0.18 L2: a section may also read its own answer with the tab's refresh (`load(project)`, kept in ctx.data[key]) and
 // add to the tab's number (`count(ctx)`)
-addTeamSection(OWNER_SECTION, { before: "people" });
+// roles (DESIGN-roles §5, mock-up B): "Waiting for your word" is the tab's first section, before the shared folder;
+// a Member's own proposals after it; the removals of the last 30 days before the people
+addTeamSection(OWNER_SECTION, { before: "state" });
+addTeamSection(MINE_SECTION, { before: "state" });
+addTeamSection(REMOVED_SECTION, { before: "people" });
 const sectionCount = (ctx) => TEAM_SECTIONS.reduce((n, s) => { try { return n + (s.count ? Number(s.count(ctx)) || 0 : 0); } catch (_) { return n; } }, 0);
 
 function section(key, title, ...children) {
@@ -401,14 +407,64 @@ function stateSection(ctx) {
     h("div", { class: "btn-row team-actions" }, sync, pause), often);
 }
 
-function problemsSection(ctx) {
+// roles: the problems that stop this copy from writing (another computer under this name, the folder out of reach)
+// come first in the tab; the others stay under the shared folder
+const STOPS = new Set(["other_computer", "unreachable"]);
+const SECOND_COMPUTER = (since) => `Another computer is writing into this folder under your name${since ? ` (since ${since})` : ""}. Nothing was written from here, so nothing is lost.`;
+function folderProblems(ctx) {
   const st = ctx.status;
   const list = (st.problems || []).filter((x) => !(x.kind === "unreachable" && ctx.poll.offline && !x.person));
-  if (!st.folder || !list.length) return null;
+  // the second-computer guard (DESIGN-roles §4.11): folder.status() says it as `other_computer` too
+  if (st.other_computer && !list.some((x) => x.kind === "other_computer")) list.unshift({ kind: "other_computer", person: null, message: "" });
+  return list;
+}
+const problemItem = (ctx, x) => {
   const severe = new Set(["damaged", "other_project", "failed"]);
+  if (x.kind === "other_computer") {
+    const since = ctx.status.other_computer && ctx.status.other_computer.since ? new Date(ctx.status.other_computer.since).toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "";
+    return { kind: "attention", text: SECOND_COMPUTER(since),
+      action: h("div", { class: "btn-row" }, button({ sm: true, id: "team-both-computers", onClick: () => bothComputersDialog(ctx) }, "Use both computers…")) };
+  }
+  return { kind: severe.has(x.kind) ? "error" : "attention", person: x.person && x.person.name ? personMark([x.person.name]) : null, text: x.message };
+};
+
+function stopSection(ctx) {
+  const st = ctx.status;
+  if (!st.folder) return null;
+  const list = folderProblems(ctx).filter((x) => STOPS.has(x.kind) && !x.person);
+  if (!list.length) return null;
+  return section("stop", "Needs your attention", noticeList(list.map((x) => problemItem(ctx, x))));
+}
+
+function problemsSection(ctx) {
+  const st = ctx.status;
+  const list = folderProblems(ctx).filter((x) => !(STOPS.has(x.kind) && !x.person));
+  if (!st.folder || !list.length) return null;
   return section("problems", list.length === 1 ? "Needs your attention" : `Needs your attention (${list.length})`,
-    noticeList(list.map((x) => ({ kind: severe.has(x.kind) ? "error" : "attention",
-      person: x.person && x.person.name ? personMark([x.person.name]) : null, text: x.message }))));
+    noticeList(list.map((x) => problemItem(ctx, x))));
+}
+
+// "Use both computers": this computer becomes a second person in the projects (DESIGN-roles §5.6)
+async function bothComputersDialog(ctx) {
+  const me = (ctx.status && ctx.status.me) || {};
+  const name = input({ id: "team-dlg-name", maxlength: 60, autocomplete: "off", value: me.name ? `${me.name} (2)` : "" });
+  const err = h("p", { class: "field-error", role: "alert" });
+  const ok = await dialog({ title: "Use both computers?", body: h("div", {},
+    h("p", {}, "This computer becomes a second person in your projects. What you did on this computer so far stays here, shown as your other computer’s."),
+    field("Your name on this computer", name, { help: "Colleagues see this name beside what you do here." }), err),
+  actions: [{ text: "Cancel", value: null }, { text: "Use both computers", value: true, primary: true, id: "team-dlg-ok",
+    async onClick() {
+      err.textContent = "";
+      if (!name.value.trim()) { err.textContent = "Give this computer a name."; name.focus(); return false; }
+      try { await api("POST", "/api/second-computer", { name: name.value.trim() }); } catch (e) { err.textContent = e.message; return false; }
+      return true;
+    } }],
+  onOpen: () => { name.focus(); name.select(); } });
+  if (!ok) return;
+  toast("This computer is a second person in your projects now. The owner can mark both as you.", "ok", { ttl: 9000 });
+  await App.refresh().catch(() => {});
+  await ctx.refresh({ force: true });
+  ctx.focusHeading("state");
 }
 
 function cameInSection(ctx) {
@@ -453,14 +509,16 @@ function peopleSection(ctx) {
   const mine = listRow({ person: ownerPerson(ctx, me, "you"), title: me.name ? `${me.name} (you)` : "You",   // 0.18 L2: ownerPerson, ownerMarks
     sub: [me.last_written_at ? `you last sent work ${whenPhrase(me.last_written_at)}` : "you have not sent work yet",
       me.name ? null : [" · ", link({ href: "#/projects" }, "add your name")]], actions: [ownerMarks(ctx, me)].filter(Boolean) });
-  const rows = people.map((x) => {
-    const line = personLine(x, st.problems || []);
+  // roles: rows of one person stand together; the second line says who else they are, or that a Co-owner's ENLENS
+  // is too old to act as one
+  const rows = peopleRows(ctx, people).map((x) => {
+    const line = personSub(ctx, x, personLine(x, st.problems || []));
     return listRow({ person: ownerPerson(ctx, x, x.name), title: x.name || "a colleague", sub: line.text, warn: line.warn,   // 0.18 L2: ownerPerson, ownerMarks
       actions: [ownerMarks(ctx, x)].filter(Boolean) });
   });
   /* 0.18 real poller: offline, the folder says nothing of who is in it (not "no colleague yet") */
   if (!people.length && st.reachable === false) {
-    return section("people", "People in the folder", listGroup(null, mine),
+    return section("people", "People in the folder", h("div", { class: "team-people" }, listGroup(null, mine)),
       h("p", { class: "muted team-text" }, "Your colleagues show here again once the shared folder can be reached."));
   }
   const join = people.length ? null : h("div", { class: "team-join" },
@@ -470,7 +528,7 @@ function peopleSection(ctx) {
       h("li", {}, "They open it with Import a project, under Projects."),
       h("li", {}, "In their copy, they choose the same shared folder in this tab.")));
   return section("people", people.length ? `People in the folder (${people.length + 1})` : "People in the folder",
-    listGroup(null, mine, ...rows), join);
+    peopleNote(ctx), h("div", { class: "team-people" }, listGroup(null, mine, ...rows)), join);
 }
 
 function sharedSection(ctx) {

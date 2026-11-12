@@ -541,7 +541,11 @@ def test_a_check_naming_a_document_one_copy_removed_is_not_churned(pair):
         claimcheck.set_note(ben.ws, h2, "Ben's reply")
     _round(ben)
     rep = _round(anna)["read"][0]["report"]
-    assert rep["checks"]["updated"] == 1 and not rep["checks"]["clash"]
+    # roles (H5, DESIGN-roles §4.9): Ben's change of Anna's own check comes in beside it, once; then nothing churns
+    assert rep["checks"]["updated"] == 0 and len(rep["checks"]["clash"]) == 1
+    _round(ben)
+    reps = [x["report"] for x in _round(anna)["read"] if x.get("report")]
+    assert not any(x["checks"]["updated"] or x["checks"]["clash"] for x in reps)
 
 
 def test_one_log_entry_that_came_in_is_said_in_the_singular():

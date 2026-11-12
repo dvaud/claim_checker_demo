@@ -655,20 +655,57 @@ def follow(ws: Workspace, name: str | None = None) -> int:
     fws = frameworks.available(ws)
     moved = 0
     for fw in ([fws[name]] if name and name in fws else [] if name else list(fws.values())):
-        events = [e for e in ((fw.meta or {}).get("events") or [])
-                  if isinstance(e, dict) and e.get("op") in ("rename", "merge", "unmerge") and e.get("id")]
+        events = _events(fw.meta or {})
         if not events:
             continue
         key = f"codebook_followed:{fw.name}"
         if not set(e["id"] for e in events) - set(ws.meta(key) or []):
             continue
+        ok, _skipped = checked_events(events)  # roles (H8): an event that does not fit the list moves nothing
         with ws.connect() as cx:  # read again inside the write lock: two requests at once apply a change once
             done = set(ws.meta(key) or [])
-            for e in events:
+            for e in ok:
                 if e["id"] not in done:
                     moved += _follow_one(cx, fw.name, e, label_id)
             ws.set_meta(key, sorted({e["id"] for e in events}), cx)
     return moved
+
+
+def _events(meta: dict) -> list[dict]:
+    """A codebook's renames, merges and unmerges, in its order."""
+    return [e for e in (meta.get("events") or [])
+            if isinstance(e, dict) and e.get("op") in ("rename", "merge", "unmerge") and e.get("id")]
+
+
+def checked_events(events: list[dict]) -> tuple[list[dict], list[str]]:
+    """Roles (H8, DESIGN-roles §4.9): the events of a codebook's list that fit it, and the ids of those that do not.
+    A rename and a merge need two names. An unmerge needs an earlier merge of the list of the code it gives back
+    (`was`), into the code it takes the labels from (`from`, as that code is named by then: renames between them are
+    followed), and it gives the labels back to that code (`to == was`), or, made by the app (both events name the
+    code's id), to the name the code came back under. A list written by hand otherwise moves labels anywhere."""
+    ok, skipped = [], []
+    merges: list[dict] = []   # {"was", "into" (its name now), "uid"} of the merges so far
+    for e in events:
+        src, dst = str(e.get("from") or ""), str(e.get("to") or "")
+        if not src or not dst or src == dst:
+            skipped.append(e["id"])
+            continue
+        if e["op"] == "unmerge":
+            was = str(e.get("was") or "")
+            fits = [m for m in merges if m["was"] == was and m["into"] == src and
+                    (dst == was or (e.get("uid") and m["uid"] == e.get("uid")))]
+            if not fits:
+                skipped.append(e["id"])
+                continue
+            merges.remove(fits[-1])
+        elif e["op"] == "rename":
+            for m in merges:
+                if m["into"] == src:
+                    m["into"] = dst
+        else:
+            merges.append({"was": src, "into": dst, "uid": e.get("uid")})
+        ok.append(e)
+    return ok, skipped
 
 
 def _follow_one(cx, fw: str, e: dict, label_id: Callable, only: set | None = None, hyps: set | None = None) -> int:
@@ -700,9 +737,9 @@ def _follow_one(cx, fw: str, e: dict, label_id: Callable, only: set | None = Non
                 cx.execute("UPDATE labels SET merged_from=COALESCE(merged_from, ?) WHERE label_id=?", (src, old_id))
             elif e["op"] == "rename":  # a label there under the new name already: never lost, left as it is
                 pass
-            else:  # the same label is there under the name it goes back to: one is enough
-                cx.execute("DELETE FROM labels WHERE label_id=?", (old_id,))
-                cx.execute("UPDATE reviews SET item_id=? WHERE item_kind='label' AND item_id=?", (new_id, old_id))
+            # an unmerge, and the label is there under the name it goes back to already: roles (H8) this label stays
+            # too, marked as merged (following never deletes a label: a list of changes from someone else's file
+            # once deleted labels this way)
             n += 1
             continue
         merged = (src if e["op"] == "merge" else None)
@@ -727,27 +764,59 @@ def _follow_one(cx, fw: str, e: dict, label_id: Callable, only: set | None = Non
     return n
 
 
-def follow_merged(cx, ws: Workspace, name: str, meta: dict, theirs_done: set, incoming: set, hyps_before: set) -> None:
+def follow_merged(cx, ws: Workspace, name: str, meta: dict, theirs_done: set, incoming: set, hyps_before: set,
+                  sender: str | None = None, at_once: bool = True, report: dict | None = None) -> None:
     """0.16 (sync.py): a colleague's work came in. This copy's labels follow the codebook's changes this copy had not
     followed; the labels that came in follow those the colleague's copy had not followed (each kind of label once, so
-    a swap of two names or a name used again is not undone). Then every change counts as followed here."""
+    a swap of two names or a name used again is not undone). Then every change counts as followed here.
+
+    Roles (H8, DESIGN-roles §4.9): only the events that fit the list are followed (`checked_events`; the others are
+    counted in `report["skipped_events"]`). This copy's own labels follow at once only when `at_once` (the sender
+    made the codebook and this person did not); otherwise the events wait for this person's word (`offers`,
+    `answer_offer`), from `sender`, when they would move a label of theirs."""
     from .profile import label_id
 
-    events = [e for e in (meta.get("events") or [])
-              if isinstance(e, dict) and e.get("op") in ("rename", "merge", "unmerge") and e.get("id")]
+    events = _events(meta)
     if not events:
         return
+    ok, skipped = checked_events(events)
     key = f"codebook_followed:{name}"
     row = cx.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
     mine_done = set(json.loads(row[0]) if row else [])
+    if report is not None:
+        report["skipped_events"] = report.get("skipped_events", 0) + len([i for i in skipped if i not in mine_done])
     incoming = set(incoming)
     mine = {r[0] for r in cx.execute("SELECT label_id FROM labels WHERE framework=?", (name,))} - incoming
-    for e in events:
+    waiting = []
+    for e in ok:
         if e["id"] not in mine_done:
-            _follow_one(cx, name, e, label_id, only=mine, hyps=hyps_before)
+            if at_once:
+                _follow_one(cx, name, e, label_id, only=mine, hyps=hyps_before)
+            else:
+                waiting.append(e)
         if e["id"] not in theirs_done and incoming:
             _follow_one(cx, name, e, label_id, only=incoming, hyps=set())
+    if waiting and _moves_any(cx, name, waiting, mine):
+        okey = f"codebook_offers:{name}"
+        got = cx.execute("SELECT value FROM meta WHERE key=?", (okey,)).fetchone()
+        offer = json.loads(got[0]) if got else {}
+        ids = list(offer.get("events") or []) + [e["id"] for e in waiting if e["id"] not in (offer.get("events") or [])]
+        cx.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)",
+                   (okey, json.dumps({"events": ids, "from": sender, "at": now()})))
+        if report is not None:
+            report.setdefault("offered", []).append(name)
     cx.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, json.dumps(sorted(e["id"] for e in events))))
+
+
+def _moves_any(cx, name: str, events: list[dict], only: set | None = None) -> int:
+    """How many labels (of `only`, when given) these events would take from a code: the labels of a code some event
+    takes labels from (an estimate: the time of each event is not looked at)."""
+    froms = {str(e.get("from") or "") for e in events}
+    if not froms:
+        return 0
+    q = ",".join("?" * len(froms))
+    ids = {r[0] for r in cx.execute(f"SELECT label_id FROM labels WHERE framework=? AND code IN ({q})", (name, *froms))}
+    return len(ids & only if only is not None else ids)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1274,3 +1343,61 @@ def _restore(ws: Workspace, name: str, vid: str) -> dict:
 
 history.KINDS["codebook"] = history.Kind(_title_of, _capture, _changes, lambda *a: None, stored="own",
                                          versions=_versions, load=_load_version, restore=_restore)
+
+
+# ---------------------------------------------------------------------------------------------
+# roles (DESIGN-roles §4.9, H8): a colleague's renames and merges, offered
+# ---------------------------------------------------------------------------------------------
+def _offer(ws: Workspace, name: str) -> tuple[dict | None, list[dict]]:
+    """The waiting offer of codebook `name` and its events (in the codebook's order); (None, []) when none."""
+    raw = ws.meta(f"codebook_offers:{name}")
+    if not isinstance(raw, dict):
+        return None, []
+    fw = frameworks.available(ws).get(name)
+    ids = set(raw.get("events") or [])
+    return raw, [e for e in _events((fw.meta if fw else None) or {}) if e["id"] in ids]
+
+
+def offers(ws: Workspace) -> list[dict]:
+    """A colleague's renames and merges waiting before they move this person's own labels: {"name", "from", "events":
+    [{"op", "from", "to"}], "labels": n}."""
+    out = []
+    for (key,) in ws.query("SELECT key FROM meta WHERE key LIKE 'codebook_offers:%' ORDER BY key"):
+        name = key.split(":", 1)[1]
+        raw, events = _offer(ws, name)
+        if raw is None:
+            continue
+        n = _moves_any(ws._conn(), name, events)
+        out.append({"name": name, "from": raw.get("from"), "at": raw.get("at"),
+                    "events": [{"op": e["op"], "from": e.get("from"), "to": e.get("to")} for e in events
+                               if not str(e.get("to") or "").startswith("~")],
+                    "labels": n})
+    return out
+
+
+def answer_offer(ws: Workspace, name: str, follow: bool) -> dict:
+    """Follow the waiting events of codebook `name` on this person's own labels (*Follow*), or keep the labels as
+    they are (*Keep mine*: the events count as followed; labels of a code that is gone wait under *Removed codes*).
+    Returns {"name", "followed", "moved"}."""
+    from . import researchlog
+    from .profile import label_id
+
+    raw, events = _offer(ws, name)
+    if raw is None:
+        raise KeyError(name)
+    moved = 0
+    title = _title_of(ws, name)
+    with ws.connect() as cx:
+        if follow:
+            ok, _ = checked_events(events)
+            for e in ok:
+                moved += _follow_one(cx, name, e, label_id)
+        cx.execute("DELETE FROM meta WHERE key=?", (f"codebook_offers:{name}",))
+        who = (cx.execute("SELECT name FROM people WHERE person_id=?", (raw.get("from"),)).fetchone() or [None])[0]
+        researchlog.record(cx, "codebook-changed",
+                           (f"Followed {who or 'a colleague'}'s renames and merges of the codebook "
+                            f"{researchlog.quoted(title, 80)}: {moved} label{'s' if moved != 1 else ''} "
+                            "moved." if follow else
+                            f"Kept the labels as they were after {who or 'a colleague'}'s renames and merges of the "
+                            f"codebook {researchlog.quoted(title, 80)}."), "codebook", name, title)
+    return {"name": name, "followed": follow, "moved": moved}

@@ -11,16 +11,28 @@
 // - The people list: the Owner mark and the owner's Make owner… on a colleague's row (`ownerMarks`, from team.js).
 // - The Documents page (sources.js): the chip of a document that waits for the owner or stays in your copy only, the
 //   words after a looser AI setting was proposed, and the line in the removal question of a collaborator.
+// Roles (DESIGN-roles §5; the picked mock-up B, "one inbox, first", with the blind review's changes): the section is
+// "Waiting for your word", the first of the tab: one card per decision, most serious first (a proposal answered both
+// ways, a question about the owner, a change refused in your name, a colleague's looser AI settings, the proposals
+// this person answers), then the quiet rows "Settled at the same time". A Member's own proposals have their section
+// ("Your proposals"), the removals of the last 30 days theirs, and the people list the role on each person mark and,
+// in the Owner's copy, the role in each row's More menu.
 // Built on GET/POST/PUT …/owner (gui/api_owner.py, docs/API.md); the words are worked out in owner-state.js.
 // Built of 0.17.0's components (docs/DESIGN.md 5.5): a proposal is proposalCard() (what and its severity tag, who
 // and when, Accept (main) and Decline… (quiet), or the wait and Take back); the owner is a role on the person mark;
 // placed in views.css (the block "Working together").
 import { App, api, h, toast, showError, P, confirmDialog, dialog, watchJob, TERMINAL, store, shortTitle, switchControl,
-  button, link, input, select, field, notice, noticeList, fold, listRow, personMark, workState, proposalCard as proposalCardBox } from "../lib.js";
+  button, link, input, select, field, notice, noticeList, fold, listRow, listGroup, personMark, workState, tag, menu, aiWhere,
+  proposalCard as proposalCardBox, decisionCard } from "../lib.js";
 import { whenText } from "./team-state.js";
 import { OWNER_API, ownerName, sectionShown, splitProposals, heading, nothingWaits, tabCount, proposer,
   whatParts, kindLine, conflictsText, answeredLine, declinedLine, applyText, docChip, proposedText,
-  REMOVE_PROPOSAL, loosenConfirm, waitingFor } from "./owner-state.js";
+  REMOVE_PROPOSAL, loosenConfirm, waitingFor,
+  // roles (DESIGN-roles §5)
+  LEVEL_WORDS, ROLE_WORD, NEEDS_UPDATE, CLASH_WAITING, TICK_FIRST, inbox, mineHeading, questionWords, refusedWords,
+  offerWords, allowedText, bothWaysWords, settledWords, removedLine, restoredText, roleDialogWords, roleToast,
+  SAME_PERSON_BODY, samePersonTitle, samePersonLine, peopleInOrder, roleSentence, canSetRoles, shortName,
+  personOf } from "./owner-state.js";
 
 const ACCEPT_ADDS = "Accept documents collaborators add, at once";
 const ACCEPT_ADDS_HELP = "Off: each added document waits for your click. Removing a document and letting more AI read one always wait for you.";
@@ -39,6 +51,20 @@ function markSeen(project, ids) {
   for (const id of ids) s.add(id);
   store(seenKey(project), JSON.stringify([...s].slice(-500)));
 }
+
+// questions about the owner put off with Not now (in this browser): they stay in the list, but no longer count
+const laterKey = (project) => `owner-later:${project}`;
+function laterSet(project) {
+  try { return new Set(JSON.parse(store(laterKey(project)) || "[]")); } catch (_) { return new Set(); }
+}
+function putOff(project, ids) {
+  const s = laterSet(project);
+  for (const id of ids) s.add(id);
+  store(laterKey(project), JSON.stringify([...s].slice(-200)));
+}
+// the documents ticked on an offer card, kept across the tab's redraws: project -> Set of doc ids
+const ticked = new Map();
+const tickedFor = (project) => { if (!ticked.has(project)) ticked.set(project, new Set()); return ticked.get(project); };
 
 // the section's look is team.js's (`section`), with a heading the panel can focus
 function sec(key, title, ...children) {
@@ -72,8 +98,12 @@ export const OWNER_SECTION = {
   key: "owner",
   render: ownerSection,
   load: (project) => api("GET", OWNER_API.view(P(project))),
-  count: (ctx) => tabCount(ctx.data && ctx.data.owner, seenSet(ctx.project)),
+  count: (ctx) => tabCount(ctx.data && ctx.data.owner, new Set([...seenSet(ctx.project), ...laterSet(ctx.project)])),
 };
+// a Member's own proposals that wait (a colleague's too, for whoever cannot answer them)
+export const MINE_SECTION = { key: "mine", render: mineSection };
+// "Removed in the last 30 days"
+export const REMOVED_SECTION = { key: "removed", render: removedSection };
 
 function ownerSection(ctx) {
   const v = ctx.data && ctx.data.owner;
@@ -82,11 +112,14 @@ function ownerSection(ctx) {
   follow(ctx, v.job);
   if (v.can_claim) return sec("owner", heading(v), claimBox(ctx));
   const parts = splitProposals(v, seenSet(ctx.project));
+  const box = inbox(v, laterSet(ctx.project));
   const body = [];
   // a team working with zips has no people list: the owner is named here
   if (!hasFolder && v.owner) {
     body.push(h("p", { class: "team-text owner-who" }, v.owner.me ? "You are the owner." : ["Owner: ", personMark([v.owner.name]), " ", v.owner.name, "."],
       v.owner.me ? handOverPicker(ctx, v) : null));
+    const said = roleSentence(v);
+    if (said) body.push(h("p", { class: "team-text" }, said));
   }
   if (v.can_take_over) body.push(takeOverBox(ctx, v));
   if (parts.declined.length) body.push(declinedBox(ctx, v, parts.declined));
@@ -94,11 +127,27 @@ function ownerSection(ctx) {
     body.push(h("p", { class: "owner-job", role: "status" }, workState("running", v.job.title || "Reading with the new reader, as the owner accepted…")));
   }
   for (const row of v.to_apply || []) body.push(applyRow(ctx, row));
-  if (parts.cards.length) body.push(h("ul", { class: "owner-cards" }, parts.cards.map((p) => proposalCard(ctx, v, p))));
+  // one card per decision, most serious first (DESIGN-roles §5.2)
+  const cards = [...box.bothWays.map((p) => proposalCard(ctx, v, p)), ...box.questions.map((c) => questionCard(ctx, v, c)),
+    ...box.refused.map((r) => refusedCard(ctx, v, r)), ...box.offers.map((g) => offerCard(ctx, v, g)),
+    ...box.deciding.map((p) => proposalCard(ctx, v, p))];
+  if (cards.length) body.push(h("ul", { class: "owner-cards" }, cards));
   else body.push(h("p", { class: "muted team-text owner-none" }, nothingWaits(v)));
+  // role changes and hand-overs made elsewhere, said once (ownership.view)
+  if ((v.notices || []).length) body.push(noticeList(v.notices.map((n) => ({ kind: "info", text: n.text }))));
+  if (box.settled.length) body.push(settledGroup(ctx, v, box.settled));
   if (parts.answered.length) body.push(answeredFold(ctx, v, parts));
   if (v.is_owner) body.push(acceptAddsSwitch(ctx, v));
-  return sec("owner", heading(v, parts.cards.length), ...body);
+  return sec("owner", heading(v, box.cards), ...body);
+}
+
+// proposals that wait for someone else's word: a Member's own (with Take back), and a colleague's they cannot answer
+function mineSection(ctx) {
+  const v = ctx.data && ctx.data.owner;
+  if (!v || v.can_claim) return null;
+  const list = inbox(v).mine;
+  if (!list.length) return null;
+  return sec("mine", mineHeading(list), h("ul", { class: "owner-cards" }, list.map((p) => proposalCard(ctx, v, p))));
 }
 
 // no owner: say what an owner is, and offer to become it
@@ -151,13 +200,13 @@ async function handOver(ctx, to, why, btn) {
 }
 
 // one request of the section; then the tab is read again and the focus goes to the section's heading
-async function act(ctx, btn, call, said, kind = "ok") {
+async function act(ctx, btn, call, said, kind = "ok", focus = "owner") {
   if (btn) btn.disabled = true;
   try {
     const r = await call();
     if (said) toast(typeof said === "function" ? said(r) : said, kind, { ttl: 7000 });
     await ctx.refresh({ force: true });
-    ctx.focusHeading("owner");
+    ctx.focusHeading(document.getElementById(`team-h-${focus}`) ? focus : "owner");
     return r;
   } catch (e) {
     showError(e);
@@ -200,16 +249,158 @@ function whatNode(p, v) {
 // for the same document; then the owner's Accept and Decline…, or the wait and the proposer's Take back.
 function proposalCard(ctx, v, p) {
   const line = kindLine(p, v);
+  // answered both ways (DESIGN-roles §5.4): said once, as an error notice inside the card, for whoever decides it
+  // again; the proposer and the Members read it in the card's state. Neither answer is the main button (even).
+  const both = p.clash && p.can_decide ? bothWaysNotice(p, v) : null;
   const card = proposalCardBox({ id: `owner-card-${p.id}`, "aria-label": `A proposed change: ${p.what}`,
     what: whatNode(p, v), person: byMark(ctx, p), time: p.at ? whenText(p.at) : null, severity: p.severity,
-    detail: [line ? h("p", { class: "owner-line" }, line) : null,
+    detail: [both, line ? h("p", { class: "owner-line" }, line) : null,
       (p.conflicts || []).length ? notice({ kind: "attention", class: "owner-conflicts" }, h("p", {}, conflictsText(p.conflicts.length))) : null],
-    side: p.can_decide ? "owner" : "proposer", waiting: waitingFor(v),
+    side: p.can_decide ? "owner" : "proposer", waiting: p.clash ? CLASH_WAITING : waitingFor(v), even: !!both,
     onAccept: (e) => accept(ctx, p, e.currentTarget), onDecline: (e) => decline(ctx, p, e.currentTarget),
     onTakeBack: p.can_take_back ? (e) => takeBack(ctx, p, e.currentTarget) : null });
   const time = card.querySelector(".proposal-by time");
   if (time && p.at) time.dateTime = new Date(p.at).toISOString();
   return card;
+}
+
+function bothWaysNotice(p, v) {
+  const w = bothWaysWords(p, v);
+  return notice({ kind: "error", live: false, class: "owner-line owner-both" },
+    h("p", {}, h("strong", {}, "Answered both ways."), " ", w.who),
+    h("p", {}, "Neither answer counts: ", h("em", {}, w.result), ". Decide it again."));
+}
+
+// ---- the decisions that are not proposals (decisionCard(), lib.js)
+// a person of the view as a mark that stands alone ("Ben", "In the file of Eszter")
+function markOf(v, x, opts = {}) {
+  const p = personOf(x, v);
+  if (!p) return null;
+  return personMark([p.me ? "you" : p.name || "a colleague"], { name: "short", ...opts });
+}
+
+// a question about the owner: Follow …, and Keep … or Not now (a take-over stays in the list, no longer counted)
+function questionCard(ctx, v, c) {
+  const w = questionWords(c, v);
+  const q = c.list[0];
+  const actions = w.answers.map((a, i) => button({ kind: a.quiet ? "quiet" : "standard", sm: true, id: `owner-q-${a.id}-${a.answer || "later"}`,
+    onClick: (e) => answerQuestion(ctx, a, w, e.currentTarget, c) }, a.label));
+  return decisionCard({ id: `owner-q-${c.ids.join("-")}`, what: w.title, flag: w.tag, person: c.kind === "founders" ? null : markOf(v, q.by),
+    time: q.at ? whenText(q.at) : null, said: w.said, body: h("p", { class: "owner-line" }, w.text), actions });
+}
+
+async function answerQuestion(ctx, a, w, btn, c) {
+  if (!a.answer) {   // Not now
+    putOff(ctx.project, c.ids);
+    toast("Put off: it stays in the list until you answer it.", "info", { small: true, ttl: 5000 });
+    await ctx.refresh({ force: true });
+    ctx.focusHeading("owner");
+    return;
+  }
+  if (a.answer === "follow") {
+    const who = a.label.replace(/^Follow /, "");
+    const ok = await confirmDialog({ title: `Follow ${who} as the owner?`, confirmText: a.label, danger: false,
+      message: h("div", {}, h("p", {}, `${who} then decides about the documents in your copy, and the proposals that wait become ${who}’s to answer.`),
+        h("p", {}, "Your own work stays as it is.")) });
+    if (!ok) return;
+  }
+  await act(ctx, btn, () => api("POST", OWNER_API.question(P(ctx.project), P(a.id)), { answer: a.answer }),
+    a.answer === "follow" ? `You follow ${a.label.replace(/^Follow /, "")} as the owner now.` : "Kept as it is. You are not asked about it again.");
+}
+
+// a change a file brought in this person's name, refused (DESIGN-roles §4.10)
+function refusedCard(ctx, v, r) {
+  const w = refusedWords(r, v);
+  const id = `${r.kind}-${r.key}`;
+  const back = w.takeBack ? button({ sm: true, id: `owner-take-back-${id}`, onClick: (e) => takeProjectBack(ctx, e.currentTarget) }, "Take the project back") : null;
+  const dismiss = button({ kind: "quiet", sm: true, id: `owner-dismiss-${id}`,
+    onClick: (e) => act(ctx, e.currentTarget, () => api("POST", OWNER_API.dismiss(P(ctx.project), P(r.kind), P(r.key)), {}), null) }, "Dismiss");
+  return decisionCard({ id: `owner-refused-${id}`, what: w.title, person: markOf(v, r.via, { prefix: "In the file of" }),
+    time: r.at ? whenText(r.at) : null, body: h("p", { class: "owner-line" }, w.text), actions: [back, dismiss] });
+}
+
+async function takeProjectBack(ctx, btn) {
+  const ok = await confirmDialog({ title: "Take the project back?", confirmText: "Take the project back", danger: false,
+    message: h("div", {}, h("p", {}, "You are the owner in your copy again. Every other copy is asked whom to follow, as for any take-over."),
+      h("p", {}, "Nothing of the project was changed here.")) });
+  if (!ok) return;
+  await act(ctx, btn, () => api("POST", OWNER_API.takeProjectBack(P(ctx.project)), {}), "You took the project back. The other copies are asked with your next round or file.");
+}
+
+// a colleague's looser AI settings, one card per person (DESIGN-roles §5.2; the review's change 1): each document a
+// tick box that starts unticked, both settings in its AI tags; the buttons wait for a tick and count what they do. A
+// card of one document has no box: one sentence and two buttons.
+const LEVEL_ICON = { cloud: "cloud", local: "house", none: "eye-off" };
+const levelTag = (lv) => tag({ icon: LEVEL_ICON[lv] || "eye-off" }, LEVEL_WORDS[lv] || lv || "?");
+function offerCard(ctx, v, g) {
+  const sel = tickedFor(ctx.project);
+  const docs = g.list.map((o) => o.doc);
+  for (const d of [...sel]) if (!docs.includes(d) && !(v.offers || []).some((o) => o.doc === d)) sel.delete(d);
+  const chosen = () => (g.list.length === 1 ? docs : docs.filter((d) => sel.has(d)));
+  const w0 = offerWords(g, v, chosen().length);
+  const allow = button({ sm: true, id: `owner-allow-${g.by.id}` }, w0.allow);
+  const keep = button({ kind: "quiet", sm: true, id: `owner-keep-${g.by.id}` }, w0.keep);
+  const why = h("span", { class: "muted small owner-tick-first", id: `owner-tick-${g.by.id}` }, TICK_FIRST);
+  const paint = () => {
+    const w = offerWords(g, v, chosen().length);
+    allow.textContent = w.allow; keep.textContent = w.keep;
+    allow.disabled = keep.disabled = !w.ready;
+    why.hidden = w.ready;
+    for (const b of [allow, keep]) { if (w.ready) b.removeAttribute("aria-describedby"); else b.setAttribute("aria-describedby", why.id); }
+  };
+  const answer = (yes, btn) => {
+    const list = chosen();
+    if (!list.length) return;
+    act(ctx, btn, () => api("POST", OWNER_API.loosening(P(ctx.project)), { docs: list, allow: yes }), allowedText(list.length, yes))
+      .then((r) => { if (r) for (const d of list) sel.delete(d); });
+  };
+  allow.addEventListener("click", () => answer(true, allow));
+  keep.addEventListener("click", () => answer(false, keep));
+  let body;
+  if (w0.one) {
+    body = h("p", { class: "owner-line" }, w0.text);
+  } else {
+    const rows = g.list.map((o) => {
+      const box = h("input", { type: "checkbox", id: `owner-tick-doc-${o.doc}`, checked: sel.has(o.doc) });
+      box.addEventListener("change", () => { if (box.checked) sel.add(o.doc); else sel.delete(o.doc); paint(); });
+      return h("li", {}, h("label", { class: "owner-check", for: box.id }, box,
+        h("span", { class: "owner-check-text" }, h("span", { class: "serif" }, o.title || "a document"),
+          h("span", { class: "owner-levels" }, h("span", { class: "muted small" }, w0.here), levelTag(o.from),
+            h("span", { class: "muted small" }, w0.theirs), levelTag(o.to)))));
+    });
+    body = [h("p", { class: "owner-line" }, w0.text), h("ul", { class: "owner-ticks" }, rows)];
+  }
+  paint();
+  return decisionCard({ id: `owner-offer-${g.by.id}`, what: w0.title, flag: w0.tag,
+    person: markOf(v, g.by, { role: ROLE_WORD[(v.people || []).find((x) => x.id === g.by.id)?.role] || (v.owner && v.owner.id === g.by.id ? "Owner" : null) }),
+    body, actions: w0.one ? [allow, keep] : [allow, keep, why], ai: aiWhere(w0.ai, w0.where) });
+}
+
+// changed at the same time and settled by the rules (DESIGN-roles §5.4): quiet rows, the document's title opens it,
+// Leave it so writes it again as it is (the row then goes in every copy)
+function settledGroup(ctx, v, list) {
+  const rows = list.map((c) => {
+    const w = settledWords(c, v);
+    const people = (c.people && c.people.length ? c.people : []).map((x) => personOf(x, v)).filter(Boolean);
+    const leave = button({ kind: "quiet", sm: true, id: `owner-leave-${c.id}`,
+      onClick: (e) => act(ctx, e.currentTarget, () => api("POST", OWNER_API.clash(P(ctx.project), P(c.id)), {}), "Left so. It goes from this list in every copy with your next round or file.") }, "Leave it so");
+    return listRow({ person: people.length ? personMark(people.map((p) => (p.me ? "you" : p.name))) : null,
+      title: c.title || "a document", href: c.doc ? `#/doc/${encodeURIComponent(c.doc)}` : null, serif: true,
+      sub: w.remove ? [w.text, " ", w.remove, link({ href: "#/sources" }, w.where), "."] : w.text, actions: [leave] });
+  });
+  return h("div", { class: "owner-settled" }, listGroup(`Settled at the same time (${list.length})`, ...rows));
+}
+
+// "Removed in the last 30 days": each its title, who removed it and why, until when, Restore
+function removedSection(ctx) {
+  const v = ctx.data && ctx.data.owner;
+  const list = (v && v.removed) || [];
+  if (!list.length) return null;
+  const rows = list.map((r) => listRow({ title: r.title || "a document", serif: true, sub: removedLine(r, v),
+    actions: [button({ kind: "quiet", sm: true, icon: "undo", id: `owner-restore-${r.doc}`, "aria-label": `Restore “${shortTitle(r.title || "a document", 60)}”`,
+      onClick: (e) => act(ctx, e.currentTarget, () => api("POST", OWNER_API.restore(P(ctx.project), P(r.doc)), {}),
+        (res) => restoredText(r.title, !!(res && res.restored && res.restored.proposed)), "ok", "removed") }, "Restore")] }));
+  return sec("removed", `Removed in the last 30 days (${list.length})`, listGroup(null, ...rows));
 }
 
 // the owner's Accept. Removing a document, or letting more AI read one, asks first, with an optional reason (kept in
@@ -356,36 +547,101 @@ function follow(ctx, job) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// the people list (team.js peopleSection): the Owner role on the person mark, and the owner's Make owner…
+// the people list (team.js peopleSection): the role on the person mark, and in the Owner's copy each other person's
+// More menu (Make a Co-owner… / Make a Member again…, Same person as…, and last Make owner…)
 // ---------------------------------------------------------------------------------------------
 const OWNER_TIP = "Decides which documents the project holds, how they are read and who may read them with AI.";
-// a person's mark in the people list: "Owner" as its role (docs/DESIGN.md 4.10) for the owner
-export function ownerPerson(ctx, person, name) {
+const CO_TIP = "Their changes to the documents hold for everyone, and they answer proposals.";
+// the view's own row of a person (role, same_as, needs_update), or null
+function viewPerson(ctx, person) {
   const v = ctx.data && ctx.data.owner;
-  const owner = !!(v && v.owner && person && person.id && v.owner.id === person.id);
-  const m = personMark([name || "a colleague"], { role: owner ? "Owner" : null });
-  if (owner) m.title = `${m.title}. ${OWNER_TIP}`;
+  return v && person && person.id ? (v.people || []).find((x) => x.id === person.id) || null : null;
+}
+function roleWord(ctx, person) {
+  const v = ctx.data && ctx.data.owner;
+  if (!v || !person || !person.id) return null;
+  if (v.owner && v.owner.id === person.id) return "Owner";
+  const x = viewPerson(ctx, person);
+  return x ? ROLE_WORD[x.role] || null : null;
+}
+// a person's mark in the people list: the role (docs/DESIGN.md 4.10) for the Owner and a Co-owner; a Member has none
+export function ownerPerson(ctx, person, name) {
+  const role = roleWord(ctx, person);
+  const m = personMark([name || "a colleague"], { role });
+  if (role) m.title = `${m.title}. ${role === "Owner" ? OWNER_TIP : CO_TIP}`;
   return m;
 }
-// the owner's Make owner… on a colleague's row (null otherwise; the Owner role is on the person mark, ownerPerson)
+// the people in the order of the list: rows of one person stand together (a second computer under its person)
+export function peopleRows(ctx, list) {
+  const v = ctx.data && ctx.data.owner;
+  if (!v || !(v.people || []).some((x) => x.same_as)) return list;
+  const withSame = list.map((x) => ({ ...x, same_as: (viewPerson(ctx, x) || {}).same_as || null }));
+  return peopleInOrder(withSame);
+}
+// the second line of a person's row: who else they are; or, for a Co-owner on an old ENLENS, an attention tag
+export function personSub(ctx, person, line) {
+  const v = ctx.data && ctx.data.owner;
+  const x = viewPerson(ctx, person);
+  if (x && x.needs_update && x.role === "co") return { text: NEEDS_UPDATE, warn: true };
+  const same = x ? samePersonLine(x, v) : null;
+  if (!same) return line;
+  return { text: line && line.text ? [same, " · ", line.text] : same, warn: false };
+}
+// what the role of this copy's person means, under the people list's head (a Co-owner, a Member)
+export function peopleNote(ctx) {
+  const said = roleSentence(ctx.data && ctx.data.owner);
+  return said ? h("p", { class: "team-text owner-role-note" }, said) : null;
+}
+
+// the Owner's More menu on another person's row (null otherwise)
 export function ownerMarks(ctx, person) {
   const v = ctx.data && ctx.data.owner;
   if (!v || !v.owner || !person || !person.id) return null;
-  const out = [];
-  if (v.owner.id === person.id) return null;   // "Owner": the role on the person mark
-  else if (v.is_owner && (v.people || []).some((x) => x.id === person.id)) {
-    const name = person.name || "this colleague";
-    const b = button({ kind: "quiet", sm: true, class: "owner-make", id: `owner-make-${person.id}`, "aria-label": `Make ${name} the owner…` }, "Make owner…");
-    b.addEventListener("click", async () => {
-      const ok = await reasonDialog({ title: `Hand this project over to ${name}?`, confirmText: "Hand it over",
-        message: "They will decide about its documents from now on; proposals that wait become theirs to answer. You stay in the team.",
-        help: "Kept in the research log, for the team." });
-      if (!ok) return;
-      await handOver(ctx, { id: person.id, name }, ok.why, b);
-    });
-    out.push(b);
-  }
-  return out.length ? out[0] : null;
+  if (v.owner.id === person.id || person.me || !canSetRoles(v)) return null;
+  const known = (v.people || []).find((x) => x.id === person.id);
+  if (!known) return null;
+  const name = person.name || known.name || "this colleague";
+  const co = known.role === "co";
+  const items = [
+    co ? { text: "Make a Member again…", icon: "user", onClick: () => roleChange(ctx, person.id, name, "member") }
+      : { text: "Make a Co-owner…", icon: "users", onClick: () => roleChange(ctx, person.id, name, "co") },
+    { text: "Same person as…", icon: "users", onClick: () => samePerson(ctx, v, person.id, name, known.same_as || "") },
+    "sep",
+    { text: "Make owner…", icon: "shield", onClick: () => makeOwner(ctx, person.id, name) },
+  ];
+  const m = menu({ label: `More for ${name}`, items, id: `owner-more-${person.id}` });
+  m.querySelector("summary").id = `owner-more-${person.id}-btn`;   // the focus finds it again after a redraw
+  return m;
+}
+
+async function roleChange(ctx, id, name, to) {
+  const w = roleDialogWords(name, to);
+  const ok = await dialog({ title: w.title, body: h("div", {}, w.body.map((t) => h("p", {}, t))),
+    actions: [{ text: "Cancel", value: null }, { text: w.ok, value: true, primary: true, id: "owner-dlg-ok" }] });
+  if (!ok) return;
+  await act(ctx, null, () => api("PUT", OWNER_API.role(P(ctx.project), P(id)), { role: to }), roleToast(name, to), "ok", "people");
+}
+
+async function samePerson(ctx, v, id, name, current) {
+  const others = (v.people || []).filter((x) => x.id !== id);
+  const sel = select({ id: "owner-dlg-same" }, h("option", { value: "" }, "Nobody"),
+    others.map((x) => h("option", { value: x.id, selected: x.id === current }, x.me ? `${x.name} (you)` : x.name)));
+  const ok = await dialog({ title: samePersonTitle(name), body: h("div", {}, h("p", {}, SAME_PERSON_BODY),
+    field("The same person as", sel, { help: "Use it for a second computer of one person." })),
+  actions: [{ text: "Cancel", value: null }, { text: "Save", value: true, primary: true, id: "owner-dlg-ok" }] });
+  if (!ok) return;
+  const to = sel.value || null;
+  const other = others.find((x) => x.id === to);
+  await act(ctx, null, () => api("PUT", OWNER_API.role(P(ctx.project), P(id)), { same_as: to }),
+    to ? `${shortName({ name }, v)} and ${other && other.me ? "you" : shortName(other, v)} stand together now, as one person.` : `${shortName({ name }, v)} stands alone again.`, "ok", "people");
+}
+
+async function makeOwner(ctx, id, name) {
+  const ok = await reasonDialog({ title: `Hand this project over to ${name}?`, confirmText: "Hand it over",
+    message: "They will decide about its documents from now on; proposals that wait become theirs to answer. You stay in the team.",
+    help: "Kept in the research log, for the team." });
+  if (!ok) return;
+  await handOver(ctx, { id, name }, ok.why, null);
 }
 
 // ---------------------------------------------------------------------------------------------

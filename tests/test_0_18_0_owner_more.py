@@ -17,8 +17,8 @@ import pytest
 from enlens_claims import ingest, ownership, reread, sharing
 from enlens_claims.store import Workspace
 from enlens_claims.sync import folder
-from owner_helpers import (TEXTS, accept, add_doc, check, choices, decline, docs_of, has, included, join, leave_out,
-                           level, move, proposals, reader_of, set_level, sync, view)
+from owner_helpers import (TEXTS, accept, add_doc, allow, check, choices, decline, docs_of, follow, has, included,
+                           join, leave_out, level, move, proposals, reader_of, set_level, sync, view)
 from owner_more_helpers import (PersonAt, as_017_zip, as_before_018, canon_of, everything, file_names, join_zip,
                                 levels_of, log_rows, owner_of, readers_of, results_of, send, small_project, states_of,
                                 waiting, zips)
@@ -158,6 +158,8 @@ def _busy_team(trio, tmp_path):
     decline(anna, w[("blocks", jobs)])
     accept(anna, w[("loosen", grid)])
     sync(anna, ben, carol, rounds=2)
+    allow(carol, grid)  # roles (DESIGN-roles §6.6): a looser setting is offered in the copies that did not ask for it
+    sync(carol, anna, ben)
     return dict(desal=desal, jobs=jobs, grid=grid, kept=kept, gone=gone)
 
 
@@ -268,6 +270,8 @@ def test_zips_only_each_kind_proposed_accepted_declined_and_the_copies_converge(
     decline(anna, w[("loosen", iv, carol.id)], "Local only")   # (accepting Ben's first would make Carol's moot)
     accept(anna, w[("loosen", iv, ben.id)])
     zips(anna, ben, carol, rounds=3)
+    allow(carol, iv)  # roles (DESIGN-roles §6.6): Carol did not ask for Ben's level: it is offered in her copy
+    zips(carol, anna, ben)
     for p in (anna, ben, carol):
         assert not has(p, grid), p.name
         assert has(p, added_b) and has(p, added_c), p.name
@@ -339,12 +343,14 @@ def test_a_project_exchanged_before_018_has_no_owner_and_works_as_before_until_s
 
 
 @pytest.mark.parametrize("same_second", [False, True])
-def test_two_people_who_claim_an_ownerless_project_at_once_end_with_the_earlier_claim(tmp_path, monkeypatch,
-                                                                                       shared, same_second):
+def test_two_people_who_claim_an_ownerless_project_at_once_are_each_asked_and_settle_it_by_hand(tmp_path, monkeypatch,
+                                                                                               shared, same_second):
+    # roles (DESIGN-roles §4.1, §6.6): no clock decides between two first owners. Each claimer follows itself and is
+    # asked about the other; a third copy follows whichever it heard of first and is asked about the other
     anna, ben, carol = _old_trio(tmp_path, monkeypatch, shared)
     desal, jobs = _doc(anna, "Desalination"), _doc(anna, "jobs")
     first, second = sorted((ben, carol), key=lambda p: p.id) if same_second else (ben, carol)
-    with monkeypatch.context() as mp:   # (the records say the second: of two in one second, the smaller id counts)
+    with monkeypatch.context() as mp:   # (the times make no difference any more)
         mp.setattr(ownership, "now", lambda: "2026-11-11T10:00:00+00:00")
         with first:
             ownership.claim(first.ws)
@@ -352,22 +358,31 @@ def test_two_people_who_claim_an_ownerless_project_at_once_end_with_the_earlier_
             mp.setattr(ownership, "now", lambda: "2026-11-11T10:01:00+00:00")
         with second:
             ownership.claim(second.ws)                             # later, before hearing of the other one
-    ben, carol = first, second                                     # (Ben: the claim that counts; Carol: the other)
+    ben, carol = first, second
     with carol:
         carol.ws.remove_document(desal)                            # as the owner, as far as she knows
     fp = leave_out(carol, jobs, 1)
     sync(carol, anna)                                             # Anna hears of Carol's claim first
     assert owner_of(anna) == carol.id and not has(anna, desal)    # and follows her as the owner
     sync(ben, anna, carol, rounds=3)
+    assert (owner_of(anna), owner_of(ben), owner_of(carol)) == (carol.id, ben.id, carol.id)
+    for p, other in ((anna, ben), (ben, carol), (carol, ben)):
+        assert [(q["kind"], q["owner"]) for q in view(p)["questions"]] == [("founder", other.id)], p.name
+    follow(carol, ben.id)                                         # settled by hand: Ben is the first owner
+    follow(anna, ben.id)
+    with ben:
+        ownership.keep_owner(ben.ws, 1, carol.id)                 # (Ben keeps himself: not asked again)
+    sync(carol, ben, anna, rounds=3)
     for p in (anna, ben, carol):
         v = view(p)
-        assert v["owner"]["id"] == ben.id and v["how"] == "claim", p.name
+        assert v["owner"]["id"] == ben.id and v["how"] == "claim" and not v["questions"], p.name
     assert canon_of(anna) == canon_of(ben) == canon_of(carol)
     assert canon_of(ben)[desal][0] == "in" and has(ben, desal)    # Carol's rows stopped counting
     assert json_blocks(canon_of(ben)[jobs]) == {}
-    # what she did as the owner is a proposal to Ben now; what Anna's copy applied of it is not undone (a written limit)
+    # what she did as the owner is a proposal to Ben now; Anna's copy, which had applied it, follows Ben again
     got = {(q["kind"], q["doc"]) for q in proposals(ben, state="waiting") if q["by"]["id"] == carol.id}
     assert got == {("remove", desal), ("blocks", jobs)} and choices(carol, jobs) == {fp: 0}
+    assert has(anna, desal) and fp not in choices(anna, jobs)
 
 
 def json_blocks(row: tuple) -> dict:
@@ -414,6 +429,7 @@ def test_a_017_zip_saying_the_setting_the_owner_loosened_does_not_tighten_it_aga
     view(ben)                                                     # (Ben's copy has looked once: see the next test)
     set_level(anna, iv, "cloud")                                  # the owner loosens it
     zips(anna, ben)
+    allow(ben, iv)                     # roles (DESIGN-roles §6.6): offered in Ben's copy, and allowed
     assert level(ben, iv) == level(anna, iv) == "cloud"
     stale = as_017_zip(send(old, scope="all"), tmp_path / "olga-stale.zip")   # Olga's copy still says No AI
     ben.bring_in(stale)
@@ -437,6 +453,8 @@ def test_a_copy_made_from_a_zip_follows_the_owners_first_loosening(tmp_path, mon
     set_level(anna, iv, "cloud")                                  # when the owner loosens it
     zips(anna, ben, rounds=2)
     assert level(anna, iv) == "cloud" and canon_of(anna)[iv][2] == "cloud"
+    assert level(ben, iv) == "none" and [o["doc"] for o in view(ben)["offers"]] == [iv]   # roles (§6.6): offered
+    allow(ben, iv)
     assert level(ben, iv) == "cloud"
 
 
@@ -735,6 +753,8 @@ def test_the_old_owners_last_changes_hold_when_the_hand_over_reaches_a_copy_with
     assert owner_of(carol) == ben.id
     assert fp in json_blocks(canon_of(ben)[jobs])
     assert canon_of(ben)[grid][2] == "cloud"
+    allow(ben, grid)                  # roles (DESIGN-roles §6.6): her looser setting is offered in the other copies
+    allow(carol, grid)
     for p in (anna, ben, carol):
         assert choices(p, jobs) == {fp: 0}, p.name
         assert level(p, grid) == "cloud", p.name
@@ -787,6 +807,8 @@ def test_two_collaborators_propose_the_same_and_different_changes_to_one_documen
     accept(anna, w[("blocks", jobs, carol.id)]["id"])
     accept(anna, w[("loosen", grid, ben.id)]["id"])
     sync(anna, ben, carol, rounds=3)
+    allow(carol, grid)                # roles (DESIGN-roles §6.6): Ben's level, offered in Carol's copy
+    sync(carol, anna, ben)
     st = {(q["kind"], q["doc"], q["by"]["id"]): (q["state"], q["note"]) for q in proposals(carol)}
     assert st[("remove", desal, carol.id)][0] == "accepted" and "removed" in st[("remove", desal, carol.id)][1]
     assert st[("loosen", grid, carol.id)][0] == "moot"            # the setting was changed since: asked again
@@ -1136,6 +1158,8 @@ def test_the_owners_changes_just_before_a_hand_over_are_the_projects(trio):
         ownership.hand_over(anna.ws, ben.id)
     sync(anna, ben, carol, rounds=3)
     assert not [q for q in proposals(ben) if q["by"]["id"] == anna.id]   # nothing of hers waits as a proposal
+    allow(ben, grid)                  # roles (DESIGN-roles §6.6): her looser setting is offered in the other copies
+    allow(carol, grid)
     for p in (anna, ben, carol):
         assert level(p, grid) == "cloud", p.name
         assert choices(p, jobs) == {fp: 0}, p.name

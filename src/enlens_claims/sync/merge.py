@@ -58,6 +58,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         # documents this merge must not bring back (the owner removed or declined them)
         self.canon_ai: dict = {k: v for k, v in (info.get("canon_ai") or {}).items()}
         self.not_wanted: set[str] = set()
+        self.taken: list[tuple[str, str]] = []  # roles (H5): units taken from the sender in this merge (`sync_from`)
         self.r = {"from": self.sender, "project": info.get("name"), "version": info.get("version"), "at": self.at,
                   "documents": {"new": [], "clash": [], "removed_here": [], "removed_there": [],
                                 "not_wanted": [],  # 0.18 L2: the owner removed it from the project, or declined it
@@ -66,9 +67,13 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                   "checks": {"new": 0, "updated": 0, "same": 0, "yours_newer": 0, "clash": [], "running": [],
                              "running_here": [], "removed_here": [], "removed_there": []},
                   "themes": {"new": 0, "updated": 0, "clash": [], "removed_here": 0, "running_here": []},
-                  "codebooks": {"new": [], "updated": [], "clash": [], "merged": []},  # 0.18: merged code by code
+                  "codebooks": {"new": [], "updated": [], "clash": [], "merged": [],  # 0.18: merged code by code
+                                "skipped_events": 0,  # roles (H8): renames and merges that do not fit the list
+                                "offered": []},       # roles (H8): codebooks whose changes wait for your word
                   "judgements": 0, "reviews": 0, "labels": 0, "labels_kept_yours": 0, "links": 0, "other_rows": 0,
                   "log": 0, "notes": 0,
+                  "via": 0,  # roles (§4.8): rows of a third person taken, or brought up to date, from this file
+                  "held_back": 0,  # roles (§4.8): removals of a third person's rows, relayed: not applied
                   "shares": {"shared": [], "withdrawn": [], "withheld": []},  # 0.18 (share_merge.py)
                   "bibliography": None, "ai_access": []}
 
@@ -181,6 +186,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             from ..access import relabel
 
             relabel(cx)
+            self._taken_from(cx)                  # roles (H5): after every row of the units is in place
             record_seen(self.ws, cx)
             # last, so a failure undoes the merge: the files of new documents and codebooks
             self._keep_codebook_versions()
@@ -499,6 +505,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             alias = self.placed_there.get((kind, key), {}).get(pre[0]) if pre else None
             if key not in here:
                 self._put(cx, kind, unit)
+                self.taken.append((kind, key))
                 self.history.add((kind, key))
                 self._placed(cx, kind, key, fp_in, pre)
                 rep["new"] += 1
@@ -519,8 +526,19 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                 if _running(mine):  # 0.14.3: but a round of it runs here: it stays, and the report says so
                     rep["running_here"].append(text if kind == "check" else key)
                     continue
+                if not self._may_replace(cx, kind, key, fp_here):
+                    # roles (H5, DESIGN-roles §4.9): this person's own, which they did not take from this sender
+                    # as it is: theirs comes in beside it, whatever their file says they had
+                    self._follow(cx, kind, unit, key, held_copies(key), canon_in, canon_here,
+                                 seen_there.get(key, set()), rep, removed, fps, text=text, new=True)
+                    continue
+                from .. import history as versions
+
+                versions.snapshot(self.ws, cx, kind, key,
+                                  f"before bringing in {self.sender['name'] or 'a colleague'}'s version")
                 self._drop(cx, kind, mine)
                 self._put(cx, kind, unit)
+                self.taken.append((kind, key))
                 self.history.add((kind, key))
                 self._placed(cx, kind, key, fp_in, pre)
                 rep["updated"] += 1
@@ -558,6 +576,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             self._drop(cx, kind, unit_of(cx, follow))
             self._route(unit, key, follow)
             self._put(cx, kind, unit)
+            self.taken.append((kind, follow))
             rep["updated"] += 1
             return
         if not new:
@@ -570,6 +589,33 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         self._put(cx, kind, unit)
         self._mark(cx, kind, copy_id, key)
         rep["clash"].append({"hyp_id" if kind == "check" else "run_id": copy_id, "of": key, "text": text})
+
+    def _may_replace(self, cx: sqlite3.Connection, kind: str, key: str, fp_here: tuple[str, str]) -> bool:
+        """Roles (H5, DESIGN-roles §4.9): whether the sender's newer version may take the place of this copy's `key`.
+        Not when it is this person's own (they made it, or no one else did), unless this copy holds it exactly as it
+        took it from this same sender (`sync_from`): the sender's file can say it had any version (in a shared folder
+        everyone has everyone's), so it decides nothing about a person's own work."""
+        from .. import sharing
+
+        if not sharing.state(cx, kind, key, self.me)["mine"]:
+            return True
+        taken = cx.execute("SELECT fp, person FROM sync_from WHERE kind=? AND key=?", (kind, key)).fetchone()
+        return bool(taken) and taken[1] == self.sender["id"] and _known(fp_here, {taken[0]})
+
+    def _taken_from(self, cx: sqlite3.Connection) -> None:
+        """Roles (H5): the state of each unit taken from the sender in this merge, as this copy holds it now, and from
+        whom (`sync_from`): while it stays so, that sender's later versions replace it."""
+        if not self.taken:
+            return
+        canon, fps = _canon(cx), _fingerprints(cx)
+        rows = []
+        for kind, key in dict.fromkeys(self.taken):
+            unit_of = _check_unit if kind == "check" else _themes_unit
+            exists = cx.execute("SELECT 1 FROM hypotheses WHERE hyp_id=?" if kind == "check" else
+                                "SELECT 1 FROM theme_runs WHERE run_id=?", (key,)).fetchone()
+            if exists:
+                rows.append((kind, key, fps(unit_of(cx, key), canon)[0], self.sender["id"], self.at))
+        cx.executemany("INSERT OR REPLACE INTO sync_from(kind, key, fp, person, at) VALUES (?,?,?,?,?)", rows)
 
     def _route(self, unit: dict, key: str, to: str) -> None:
         """Their unit `key` stands for `to` here: their copy of your version (its mark is taken off), or their version
@@ -674,17 +720,61 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
     def _judgements(self, cx: sqlite3.Connection) -> None:
         """Each person's judgements of the excerpts of the checks this copy has: a newer one of the same person
         replaces theirs (a judgement taken back is a row without a verdict, so it is not brought back); then the one
-        in force is worked out again (yours first). 0.14.3: a row under your own name comes in only when it takes a
-        judgement back (no verdict, no note): nothing in a colleague's file can decide in your name."""
-        rows = [r for r in _rows(self.icx, "SELECT * FROM judgements") if self._id("claim_id", r["claim_id"]) in self.claims
-                and (r["person_id"] != self.me or (r["verdict"] is None and r["note"] is None))]
+        in force is worked out again (yours first). A row under this copy's own name never comes in (roles-p1, review
+        L2: 0.14.3 took one that takes a judgement back; since a second computer is its own person, nothing honest
+        writes under this id elsewhere, and a move keeps the id but the old computer stops). One that says other than
+        this copy does, and is not older than its own, is recorded in `sync_refused` (DESIGN-roles §4.10).
+
+        Roles (DESIGN-roles §4.8): a judgement of a third person (not the sender's) is relayed. It comes in when this
+        copy has none of that person on that excerpt, labelled "via" the sender; it brings up to date only a row that
+        came relayed itself, and never one that came from its author. The author's own row takes the place of a
+        relayed one whatever its time (the relayed one is the word of whoever relayed it)."""
+        rows = [r for r in _rows(self.icx, "SELECT * FROM judgements") if self._id("claim_id", r["claim_id"]) in self.claims]
+        if self.sender["id"] != self.me:
+            from ..ownership import record_refused
+
+            for r in rows:
+                if r["person_id"] != self.me:
+                    continue
+                c, pg = self._id("claim_id", r["claim_id"]), self._id("passage_id", r["passage_id"])
+                h = cx.execute("SELECT verdict, note, at FROM judgements WHERE claim_id=? AND passage_id=? AND "
+                               "person_id=?", (c, pg, self.me)).fetchone()
+                if h is None or ((h[0], h[1]) != (r["verdict"], r["note"]) and (r["at"] or "") >= (h[2] or "")):
+                    record_refused(cx, "judgement", f"{c}|{pg}", {**r, "claim_id": c, "passage_id": pg},
+                                   self.sender["id"], None)
+        rows = [r for r in rows if r["person_id"] != self.me]
         cols = ["claim_id", "passage_id", "person_id", "verdict", "note", "at", "quote", "start", "end"]
-        cur = cx.executemany(f"INSERT INTO judgements({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
-                       "ON CONFLICT(claim_id, passage_id, person_id) DO UPDATE SET verdict=excluded.verdict, "
-                       "note=excluded.note, at=excluded.at, quote=excluded.quote, start=excluded.start, end=excluded.end "
-                       "WHERE excluded.at > judgements.at OR (excluded.at = judgements.at AND excluded.verdict IS NULL "
-                       "AND excluded.note IS NULL)", [self._row(r, cols) for r in rows])
-        self.r["judgements"] = max(cur.rowcount, 0)  # (its own rows: not what triggers write, as in `_insert`)
+        sender = self.sender["id"]
+        here = {(r[0], r[1], r[2]) for r in cx.execute("SELECT claim_id, passage_id, person_id FROM judgements")}
+        via_here = people.relayed(cx, "judgement")
+        first, relayed, gone = [], [], []
+        for r in rows:
+            t = self._row(r, cols)
+            key = f"{t[0]}|{t[1]}|{t[2]}"
+            if t[2] == sender or t[2] == self.me:
+                first.append(t)
+                if key in via_here:  # the author's own row: in place of what was relayed, whatever its time
+                    gone.append(key)
+            elif (t[0], t[1], t[2]) not in here or key in via_here:
+                relayed.append((key, t))
+            # else: relayed, and this copy has the author's own row: left as it is
+        if gone:
+            for key in gone:
+                c, p, who = key.split("|", 2)
+                cx.execute("DELETE FROM judgements WHERE claim_id=? AND passage_id=? AND person_id=?", (c, p, who))
+            people.first_hand(cx, "judgement", gone)
+        upsert = (f"INSERT INTO judgements({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
+                  "ON CONFLICT(claim_id, passage_id, person_id) DO UPDATE SET verdict=excluded.verdict, "
+                  "note=excluded.note, at=excluded.at, quote=excluded.quote, start=excluded.start, end=excluded.end "
+                  "WHERE excluded.at > judgements.at OR (excluded.at = judgements.at AND excluded.verdict IS NULL "
+                  "AND excluded.note IS NULL)")
+        n = max(cx.executemany(upsert, first).rowcount, 0)  # (its own rows: not what triggers write, as in `_insert`)
+        for key, t in relayed:
+            if cx.execute(upsert, t).rowcount > 0:
+                n += 1
+                people.note_via(cx, "judgement", key, t[2], sender)
+                self.r["via"] += 1
+        self.r["judgements"] = n
         people.refresh(cx, self.claims, self.me)
 
     # reviews, links between terms, the bibliography -------------------------------------------
@@ -692,8 +782,14 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         """Every person's reviews (of labels, links, themes, the SDG pack's claims): a log, so a review that is not
         here yet is added; which one counts is decided when they are read (yours first, people.review_order). A
         review its author took back (*Clear*, *Undo*) is noted as removed: it is not brought back, and it goes from
-        the other copies too."""
+        the other copies too.
+
+        Roles (§4.8): a review of a third person comes in labelled "via" the sender, until its author's own file
+        brings it; that a third person took one back is applied only from their own file (relayed, it is held back
+        and counted)."""
+        sender = self.sender["id"]
         gone_here = {r[0] for r in cx.execute("SELECT key FROM sync_removed WHERE kind='review'")}
+        have = {people.review_key(dict(r)) for r in _rows(cx, "SELECT * FROM reviews")}
         for r in _rows(self.icx, "SELECT * FROM sync_removed WHERE kind='review'"):
             try:  # the review's own fields, named as here (a label's id may differ in this copy)
                 f = json.loads(r["title"] or "")
@@ -704,22 +800,38 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                 key = people.review_key(f)
             else:
                 f, key = None, r["key"]
-            if key not in gone_here:
-                people.forget_reviews(cx, keys=[] if f else [key], reviews=[f] if f else [], at=r["at"],
-                                      person_id=r["person_id"])
-                gone_here.add(key)
-        have = {people.review_key(dict(r)) for r in _rows(cx, "SELECT * FROM reviews")}
-        rows = []
+            if key in gone_here:
+                continue
+            # relayed (or a note that one person took back another's review): not applied
+            if r["person_id"] != sender or (f and f.get("person_id") not in (None, sender)):
+                if key in have:
+                    self.r["held_back"] += 1
+                continue
+            people.forget_reviews(cx, keys=[] if f else [key], reviews=[f] if f else [], at=r["at"],
+                                  person_id=r["person_id"])
+            gone_here.add(key)
+            have.discard(key)
+            people.first_hand(cx, "review", [key])  # gone, whoever had relayed it
+        via_here = people.relayed(cx, "review")
+        rows, own, relayed = [], [], []
         for r in _rows(self.icx, "SELECT * FROM reviews ORDER BY review_id"):
             r.pop("review_id", None)
             r["person_id"] = r.get("person_id") or self.sender["id"]
             if r["person_id"] == self.me:
                 continue  # 0.14.3: yours are here already (or you took them back): a file cannot add one in your name
             k = people.review_key({c: self._id(c, v) for c, v in r.items()})
+            if r["person_id"] == sender and k in via_here:
+                own.append(k)
             if k not in have and k not in gone_here:
                 have.add(k)
                 rows.append(r)
+                if r["person_id"] != sender:
+                    relayed.append((k, r["person_id"]))
         self.r["reviews"] = self._insert(cx, "reviews", rows, verb="")
+        for k, author in relayed:
+            people.note_via(cx, "review", k, author, sender)
+        self.r["via"] += len(relayed)
+        people.first_hand(cx, "review", own)
 
     def _links(self, cx: sqlite3.Connection) -> int:
         n = self._insert(cx, "concept_links", _rows(self.icx, "SELECT * FROM concept_links"))
@@ -768,17 +880,24 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         here = {r[0] for r in cx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         there = {r[0] for r in self.icx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "research_log" in there and "research_log" in here:
-            self.r["log"] = researchlog.merge(cx, _rows(self.icx, "SELECT * FROM research_log ORDER BY at"), fix)
+            self.r["log"] = researchlog.merge(cx, _rows(self.icx, "SELECT * FROM research_log ORDER BY at"), fix,
+                                              self.sender["id"], self.r)
         if "notes" in there and "notes" in here:
-            self.r["notes"] = notes.merge(cx, _rows(self.icx, "SELECT * FROM notes"), fix)
-        # a note or an entry its own author removed in their copy goes here too (and stays gone)
+            self.r["notes"] = notes.merge(cx, _rows(self.icx, "SELECT * FROM notes"), fix, self.sender["id"], self.r)
+        # a note or an entry its own author removed in their copy goes here too (and stays gone). Roles (§4.8): only
+        # from the author's own file; relayed, the removal is held back (and counted when it would have removed a row)
         for r in _rows(self.icx, "SELECT * FROM sync_removed WHERE kind IN ('note', 'log')"):
             table, col = ("notes", "note_id") if r["kind"] == "note" else ("research_log", "entry_id")
             if table not in here:
                 continue
             row = cx.execute(f"SELECT person_id FROM {table} WHERE {col}=?", (r["key"],)).fetchone()
+            if r["person_id"] != self.sender["id"]:
+                if row is not None and row[0] != self.me and row[0] == r["person_id"]:
+                    self.r["held_back"] += 1
+                continue
             if row is not None and row[0] != self.me and row[0] == r["person_id"]:
                 cx.execute(f"DELETE FROM {table} WHERE {col}=?", (r["key"],))
+                people.first_hand(cx, r["kind"], [r["key"]])  # gone, whoever had relayed it
             if row is None or row[0] == r["person_id"]:
                 cx.execute("INSERT OR IGNORE INTO sync_removed(kind, key, title, at, person_id) VALUES (?,?,?,?,?)",
                            (r["kind"], r["key"], r["title"], r["at"], r["person_id"]))
@@ -806,11 +925,21 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
 
     def _removed(self, cx: sqlite3.Connection) -> None:
         """What the colleague removed from their copy stays in yours (it is listed); what you do not have is noted as
-        removed, so it does not come back with someone else's work either."""
+        removed, so it does not come back with someone else's work either. A note in this copy's own name that this
+        copy does not hold is not taken: it would make this copy remove the document as its person's own word (in an
+        Owner's or a Co-owner's copy, from the project). It is recorded, as a row in this copy's name (roles-p1,
+        review H3; DESIGN-roles §4.10)."""
+        from ..ownership import record_refused
+
         have_docs = {r[0] for r in cx.execute("SELECT doc_id FROM documents")}
         have_runs = {r[0] for r in cx.execute("SELECT run_id FROM theme_runs")}
+        mine = {(r[0], r[1]) for r in cx.execute("SELECT kind, key FROM sync_removed WHERE person_id=?", (self.me,))}
         for r in _rows(self.icx, "SELECT * FROM sync_removed WHERE kind IN ('document', 'check', 'themes')"):
             key = r["key"]
+            if r["person_id"] == self.me and self.sender["id"] != self.me:
+                if (r["kind"], key) not in mine:
+                    record_refused(cx, "removal", f"{r['kind']}|{key}", r, self.sender["id"], None)
+                continue
             present = key in have_docs if r["kind"] == "document" else \
                 bool(cx.execute("SELECT 1 FROM hypotheses WHERE hyp_id=?", (key,)).fetchone()) if r["kind"] == "check" \
                 else key in have_runs
@@ -824,9 +953,22 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                 cx.execute("INSERT OR IGNORE INTO sync_removed(kind, key, title, at, person_id, fp) VALUES (?,?,?,?,?,?)",
                            (r["kind"], key, r["title"], r["at"], r["person_id"], r.get("fp")))
 
+    def _via_proposal(self, cx: sqlite3.Connection, p: dict, new: bool) -> None:
+        """Roles (§4.8), called from owner_merge.py: a proposal of a third person that comes in now is labelled "via"
+        the sender; its maker's own file ends the label."""
+        sender = self.sender["id"]
+        if p.get("by") == sender:
+            people.first_hand(cx, "proposal", [p["id"]])
+        elif new and p.get("by"):
+            people.note_via(cx, "proposal", p["id"], p["by"], sender)
+            self.r["via"] += 1
+
     def _people(self, cx: sqlite3.Connection) -> None:
+        """Names: a person's name from their own file; from another's only when this copy knows no name for them
+        (roles, §4.8)."""
+        known = {r[0] for r in cx.execute("SELECT person_id FROM people WHERE COALESCE(name, '') != ''")}
         for r in _rows(self.icx, "SELECT * FROM people"):
-            if r["person_id"] != self.me:
+            if r["person_id"] != self.me and (r["person_id"] == self.sender["id"] or r["person_id"] not in known):
                 people.remember(cx, r["person_id"], r["name"])
         if self.sender["id"] != self.me:
             people.remember(cx, self.sender["id"], self.sender["name"])

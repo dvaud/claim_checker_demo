@@ -287,4 +287,21 @@ class CodebookRules:
             except ValueError:
                 theirs_done = set()
             codebooks.follow_merged(cx, self.ws, name, meta, theirs_done, self.new_labels.get(name, set()),
-                                    self.hyps_before)
+                                    self.hyps_before, sender=self.sender["id"], at_once=self._makers_word(cx, name),
+                                    report=self.r["codebooks"])
+
+    def _makers_word(self, cx: sqlite3.Connection, name: str) -> bool:
+        """Roles (H8, DESIGN-roles §4.9; the owner's decision of 2026-11-12): whether the codebook's renames and merges
+        in this file move this copy's own labels at once: only when the sender made the codebook (its mark of
+        sharing here names them; this file is theirs, first-hand) and this person did not. Anyone else's wait for
+        this person's word (`codebooks.offers`)."""
+        from .. import sharing
+
+        sender = self.sender["id"]
+        st = sharing.state(cx, "codebook", name, self.me)
+        if st["owner"] is None and (row := sharing.rows(self.icx).get(("codebook", self._theirs_name(name)))):
+            st = {**st, "owner": row.get("owner"), "mine": row.get("owner") == self.me}  # it comes in now
+        return not st["mine"] and st["owner"] == sender
+
+    def _theirs_name(self, name: str) -> str:
+        return {v: k for k, v in self.fw.items()}.get(name, name)

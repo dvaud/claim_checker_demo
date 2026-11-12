@@ -1,6 +1,8 @@
-# 0.17.2: A new reader, smaller files, your key off the page
-*Text and Word files read better, projects take less space, and only you can open your ENLENS.*
-- Reader 4: a text file with one paragraph per line, and Word's content controls and nested tables
-- Project files about a quarter smaller; the glossary is made again once
-- A shared folder costs almost nothing when nothing changed
-- The page no longer carries ENLENS's key: open ENLENS from its icon, or copy your link in Settings
+# 0.18.0rc1: Co-owners, and a project no file can take
+*A release candidate: everyone in a shared project must update.*
+- The owner can make a colleague a Co-owner, in the Team tab
+- A looser AI setting is offered to you, never applied without your click
+- A removed document can be restored for 30 days
+- A change of owner you did not expect is a question
+- Moving ENLENS asks: moving, or using both computers
+- What's new now waits for you: a button above Settings, until you open it

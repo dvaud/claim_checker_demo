@@ -26,16 +26,19 @@ import pytest
 
 from enlens_claims import ingest, ownership, reread
 from enlens_claims.sync import folder
-from owner_helpers import add_doc, has, join, level, move, reader_of, sync
+from owner_helpers import add_doc, follow, has, join, level, move, reader_of, sync
 from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
 from test_app import Api, home  # noqa: F401  (fixture)
 
 NAME = "Közös projekt"  # a project name with accents and a space, as a researcher names one
 URL = urllib.parse.quote(NAME)
 VIEW = {"owner", "me", "is_owner", "since", "how", "can_claim", "can_take_over", "accept_adds", "people", "proposals",
-        "waiting", "to_apply", "documents", "job"}
+        "waiting", "to_apply", "documents", "job",
+        # roles (DESIGN-roles §7 P1, builder P1): the role, questions, offers, removals, clashes, refused rows, notices
+        "role", "can_write", "can_set_roles", "questions", "offers", "removed", "clashes", "refused", "notices"}
 PROPOSAL = {"id", "kind", "severity", "doc", "title", "what", "by", "at", "state", "note", "reason", "decided_by",
-            "decided_at", "auto", "mine", "can_decide", "can_take_back", "here", "conflicts", "detail"}
+            "decided_at", "auto", "mine", "can_decide", "can_take_back", "here", "conflicts", "detail",
+            "clash"}  # roles (builder P1): who accepted and who declined, when answered both ways
 DETAIL = {"add": {"sha1", "text_fp", "reader", "ai_access", "state_n", "again"},
           "reread": {"from_fp", "from_reader", "to_fp", "to_reader"},
           "blocks": {"digest", "blocks_n", "left_out", "restored", "undone", "bounds"},
@@ -148,7 +151,8 @@ def test_the_view_has_every_field_for_the_owner_and_for_a_collaborator(team, ser
         assert v["proposals"] == [] and v["waiting"] == 0 and v["to_apply"] == [] and v["documents"] == {}
         assert v["job"] is None
         assert {x["id"] for x in v["people"]} == {anna.id, ben.id, carol.id}
-        assert all(set(x) == {"id", "name", "me", "owner"} for x in v["people"])
+        assert all(set(x) == {"id", "name", "me", "owner", "role", "same_as", "needs_update"}  # (+ roles, builder P1)
+                   for x in v["people"])
         assert [x["id"] for x in v["people"] if x["owner"]] == [anna.id]
         assert [x["id"] for x in v["people"] if x["me"]] == [v["me"]] and v["people"][0]["me"]
     # the project's documents carry no proposal
@@ -182,7 +186,8 @@ def test_a_project_exchanged_before_has_no_owner_until_someone_claims_it(team, s
     for p in team:  # as a project exchanged with 0.17: no record of an owner, nothing decided
         with p:
             with p.ws.connect() as cx:
-                for t in ("ownership", "proposals", "decisions", "canon", "canon_seen"):
+                # (and nothing pinned: since the review's C1 a pinned record that vanishes makes its place a question)
+                for t in ("ownership", "proposals", "decisions", "canon", "canon_seen", "owner_pins"):
                     cx.execute(f"DELETE FROM {t}")
     b = serve(ben)
     v = b.owner()
@@ -360,6 +365,15 @@ def test_hand_over_and_take_over(team, serve, shared_dir):
     assert vc["can_take_over"] and vc["can_take_over"].endswith(".")
     st, v = c("POST", "/owner/take-over", {"why": "Ben left"})
     assert st == 200 and v["is_owner"] and v["how"] == "takeover" and v["owner"]["id"] == carol.id
+    # roles (DESIGN-roles §4.1, §6.6): a take-over is never followed unasked; the other copies answer *Follow*
+    sync(carol, anna, rounds=1)
+    va = a.owner()
+    assert va["owner"]["id"] == ben.id
+    assert [(q["kind"], q["owner"], q["now"]) for q in va["questions"]] == [("takeover", carol.id, ben.id)]
+    assert va["waiting"] >= 1
+    follow(anna)
+    va = a.owner()
+    assert va["owner"]["id"] == carol.id and va["how"] == "takeover" and not va["questions"]
 
 
 def test_the_owners_setting_holds_for_one_time_as_the_owner(team, serve):

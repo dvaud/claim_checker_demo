@@ -11,8 +11,8 @@ import pytest
 
 from enlens_claims import ingest, ownership, people
 from enlens_claims.sync import folder
-from owner_helpers import (accept, add_doc, check, choices, decline, docs_of, has, included, join, leave_out, level,
-                           log_kinds, move, proposals, reader_of, set_level, sync, view)
+from owner_helpers import (accept, add_doc, allow, check, choices, decline, docs_of, follow, has, included, join,
+                           leave_out, level, log_kinds, move, proposals, reader_of, set_level, sync, view)
 from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
 
 
@@ -198,6 +198,11 @@ def test_a_stricter_ai_setting_holds_at_once_and_a_looser_one_waits(team, tmp_pa
     accept(anna, _one(anna, state="waiting")["id"])
     assert level(anna, doc) == "local"
     sync(anna, ben, carol, rounds=3)
+    # roles (DESIGN-roles §4.7, §6.6): the proposer's copy takes it (her own proposal); Ben's is offered it
+    assert level(carol, doc) == level(anna, doc) == "local" and level(ben, doc) == "none"
+    assert [o["doc"] for o in view(ben)["offers"]] == [doc]
+    allow(ben, doc)
+    sync(anna, ben, carol, rounds=2)
     assert level(ben, doc) == level(carol, doc) == level(anna, doc) == "local"
     # and the copies that had not followed yet did not make the owner's copy strict again
     assert _one(ben)["state"] == "accepted"
@@ -406,6 +411,10 @@ def test_the_owner_leaves_and_a_collaborator_takes_over(team, shared_dir):
     with ben:
         ownership.take_over(ben.ws, "Anna left the group")
     sync(ben, carol)
+    # roles (DESIGN-roles §4.1): a take-over is never followed unasked; Carol is asked, and follows Ben
+    q = [x for x in view(carol)["questions"] if x["kind"] == "takeover"]
+    assert [(x["owner"], x["now"]) for x in q] == [(ben.id, anna.id)] and view(carol)["owner"]["id"] == anna.id
+    follow(carol)
     for p in (ben, carol):
         v = view(p)
         assert v["owner"]["id"] == ben.id and v["how"] == "takeover"
@@ -418,7 +427,9 @@ def test_the_owner_leaves_and_a_collaborator_takes_over(team, shared_dir):
     assert not has(ben, a) and not has(carol, a)
 
 
-def test_a_hand_over_counts_over_a_take_over_made_at_the_same_time(team, shared_dir, monkeypatch):
+def test_a_hand_over_is_followed_and_a_take_over_made_at_the_same_time_is_a_question(team, shared_dir, monkeypatch):
+    # roles (DESIGN-roles §4.1, §6.6): no clock decides between them. The copies that follow Anna follow her hand-over
+    # at once; Ben's copy follows its own take-over and is asked about the hand-over, as the others are about his
     anna, ben, carol = team
     monkeypatch.setattr(ownership, "owner_left", lambda *a: "Nothing was heard of the owner for 20 days.")
     with ben:
@@ -426,6 +437,12 @@ def test_a_hand_over_counts_over_a_take_over_made_at_the_same_time(team, shared_
     with anna:
         ownership.hand_over(anna.ws, carol.id)
     sync(anna, ben, carol, rounds=3)
+    assert view(anna)["owner"]["id"] == view(carol)["owner"]["id"] == carol.id
+    assert view(ben)["owner"]["id"] == ben.id
+    assert [(q["kind"], q["owner"]) for q in view(ben)["questions"]] == [("other", carol.id)]
+    assert [(q["kind"], q["owner"]) for q in view(carol)["questions"]] == [("other", ben.id)]
+    follow(ben, carol.id)
+    sync(ben, anna, carol, rounds=2)
     for p in team:
         assert view(p)["owner"]["id"] == carol.id
 
@@ -446,7 +463,10 @@ def test_stale_strict_only_names_the_setting_the_owner_loosened(team, tmp_path):
     sync(ben, anna)   # Ben's copy still says "none": it does not make the owner's strict again
     assert level(anna, doc) == "local"
     sync(anna, ben, carol)
-    assert level(ben, doc) == level(carol, doc) == "local"
+    allow(ben, doc)   # roles (DESIGN-roles §6.6): a looser setting is offered in the other copies
+    allow(carol, doc)
+    sync(ben, carol, anna)
+    assert level(ben, doc) == level(carol, doc) == level(anna, doc) == "local"
     assert people.me
 
 
@@ -712,7 +732,8 @@ def test_a_copy_without_the_owners_rules_stops_at_a_bundle_in_words(team, tmp_pa
 
     with zipfile.ZipFile(bundles[-1]) as zf:
         meta = json.loads(zf.read("bundle.json"))
-    assert meta["sync_needs"] == 3 and meta["sync_format"] == formats.FORMAT
+    # roles (DESIGN-roles §3.3): bundles need format 4 now; a copy on format 2 stops all the more
+    assert meta["sync_needs"] == 4 and meta["sync_format"] == formats.FORMAT
     monkeypatch.setattr(formats, "FORMAT", 2)   # Ben's ENLENS: the shared folder, without the owner's rules
     with ben:
         out = folder.sync_now(ben.ws)

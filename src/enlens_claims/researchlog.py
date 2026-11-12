@@ -267,13 +267,22 @@ def markdown(ws: Workspace, project: str) -> str:
 # ---------------------------------------------------------------------------------------------
 # a colleague's entries (sync.py)
 # ---------------------------------------------------------------------------------------------
-def merge(cx: sqlite3.Connection, rows: list[dict], fix) -> int:
+def merge(cx: sqlite3.Connection, rows: list[dict], fix, sender: str | None = None, report: dict | None = None) -> int:
     """Bring in a colleague's entries: those not here come in (unless removed here); one of theirs they changed since
     (a later `edited_at`) is brought up to date. Yours are never changed. `fix(row) -> row` rewrites the ids of a
-    merge (documents, checks). Returns how many came in or changed."""
+    merge (documents, checks). Returns how many came in or changed.
+
+    Roles (DESIGN-roles §4.8), with `sender` (who sent the file): a row of a third person comes in labelled "via" the
+    sender (`sync_via`); it brings up to date only a row that came relayed itself; its author's own row takes its
+    place whatever its time. Without `sender`: as before."""
     me = _me()
     gone = {r[0] for r in cx.execute("SELECT key FROM sync_removed WHERE kind='log'")}
     cols = [r[1] for r in cx.execute("PRAGMA table_info(research_log)")]
+    via_here: set[str] = set()
+    if sender:
+        from .people import first_hand, note_via, relayed
+
+        via_here = relayed(cx, "log")
     n = 0
     for r in rows:
         if not isinstance(r.get("entry_id"), str) or not _ID.fullmatch(r["entry_id"]) or r["entry_id"] in gone:
@@ -287,11 +296,23 @@ def merge(cx: sqlite3.Connection, rows: list[dict], fix) -> int:
             # nothing in a colleague's file is written in your name: an entry of yours that is not here is one
             # you removed, or one the file made up
             continue
+        third = bool(sender) and bool(r.get("person_id")) and r["person_id"] != sender
         if have is None:
+            if third:
+                note_via(cx, "log", r["entry_id"], r["person_id"], sender)
+                if report is not None:
+                    report["via"] = report.get("via", 0) + 1
             cx.execute(f"INSERT INTO research_log({','.join(use)}) VALUES ({','.join('?' * len(use))})",
                        [r[c] for c in use])
             n += 1
-        elif have[0] != me and have[0] == r.get("person_id") and (r.get("edited_at") or "") > (have[1] or ""):
+        elif have[0] != me and have[0] == r.get("person_id") and (
+                (r.get("edited_at") or "") > (have[1] or "") or (sender and not third and r["entry_id"] in via_here)):
+            if third and r["entry_id"] not in via_here:
+                continue  # relayed: never in place of the author's own row
+            if sender and not third and r["entry_id"] in via_here:
+                first_hand(cx, "log", [r["entry_id"]])
+            elif third:
+                note_via(cx, "log", r["entry_id"], r["person_id"], sender)
             sets = [c for c in use if c != "entry_id"]
             cx.execute(f"UPDATE research_log SET {', '.join(c + '=?' for c in sets)} WHERE entry_id=?",
                        [*(r[c] for c in sets), r["entry_id"]])

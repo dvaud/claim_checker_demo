@@ -134,12 +134,15 @@ def test_a_check_changed_on_one_side_is_brought_up_to_date(anna_and_ben):
     assert rep["checks"]["updated"] == 1 and not rep["checks"]["clash"]
     with ben:
         assert ben.ws.scalar("SELECT note FROM hypotheses WHERE hyp_id=?", (anna.hid,)) == "Anna's note"
-        # and the other way round: Ben's later note is newer than Anna's unchanged check
+        # and the other way round: Ben's later note is newer than Anna's unchanged check. Roles (H5, DESIGN-roles
+        # §4.9): it is Anna's own check, so Ben's version comes in beside hers (a sync clash), never in its place
         claimcheck.set_note(ben.ws, anna.hid, "Ben's note")
     rep = anna.bring_in(ben.send())
-    assert rep["checks"]["updated"] == 1
+    assert rep["checks"]["updated"] == 0 and len(rep["checks"]["clash"]) == 1
     with anna:
-        assert anna.ws.scalar("SELECT note FROM hypotheses WHERE hyp_id=?", (anna.hid,)) == "Ben's note"
+        assert anna.ws.scalar("SELECT note FROM hypotheses WHERE hyp_id=?", (anna.hid,)) == "Anna's note"
+        assert anna.ws.scalar("SELECT note FROM hypotheses WHERE hyp_id=?", (rep["checks"]["clash"][0]["hyp_id"],)) == \
+            "Ben's note"
 
 
 def test_a_check_both_changed_comes_in_as_a_sync_clash_copy(anna_and_ben):

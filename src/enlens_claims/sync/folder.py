@@ -98,7 +98,7 @@ FOLDER = "shared_folder"            # config.json: the folder the team shares (a
 KEEP_OUT = "shared_folder_keep_out"  # config.json: keep documents marked Only a local AI or No AI out of it
 TEAM = "ENLENS-"
 BUNDLE_FORMAT = "enlens-bundle"
-NEEDS = 3                           # a bundle needs format 3 (formats.py): a copy without L2 must not merge it
+NEEDS = 4                           # a bundle needs format 4 (formats.py): a copy without roles must not merge it
 JOB = "folder-sync"                 # the kind of job of a round (gui/api_folder.py)
 _BUNDLE = re.compile(r"(\d{6,})\.zip")
 _READING = re.compile(r"[0-9a-f]{12}\.[0-9a-f]{16}\.zip")
@@ -709,6 +709,49 @@ def _begin_again(mine: Path) -> list[Path]:
     return _remove(old)
 
 
+OTHER_COMPUTER = ("Another computer is writing into this folder under your name{since}. Nothing was written from "
+                  "here, so nothing is lost. If you use ENLENS on both computers, choose “Use both computers”.")
+
+
+def other_computer(cx: sqlite3.Connection, mine: Path, folder_id: str | None = None) -> dict | None:
+    """roles (DESIGN-roles §4.11): whether another computer writes into this copy's subfolder under this person's id (a
+    data folder copied to it, a project zip moved by hand): {"since": when it last wrote} or None. Nothing is written
+    or deleted in the subfolder while it does (`write`, `read`).
+
+    Its `head.json` names the installation that wrote it last: this one's goes on. Another one, or none (written before
+    roles), goes on only when this copy's own record of the folder holds what the file says (the number of its last
+    bundle, in this folder): this copy wrote it, from a data folder that has since moved (a copied data folder gets a new
+    installation id, home.installation_id). No `head.json`: nothing to take the place of."""
+    from .. import home
+
+    h = _json(mine / "head.json")
+    if h is None:
+        return None
+    iid = h.get("installation")
+    if isinstance(iid, str) and iid and iid == home.installation_id():
+        return None
+    row = cx.execute("SELECT fp, seq FROM sync_written WHERE kind='head' AND key=''").fetchone()
+    same = row is not None and (not folder_id or row[0] == folder_id)
+    if same and int(row[1] or 0) > 0 and _int(h.get("last")) == int(row[1] or 0):
+        return None
+    return {"since": h.get("at") if isinstance(h.get("at"), str) else None}
+
+
+def _other_computer_problem(found: dict) -> FolderProblem:
+    since = found.get("since")
+    return FolderProblem(OTHER_COMPUTER.format(since=f" (since {since[:10]})" if since else ""), "other_computer")
+
+
+def _claim_head(mine: Path) -> None:
+    """A `head.json` this copy wrote (the guard said so) that does not name this installation yet gets its id, so a
+    copy of this data folder elsewhere is told apart from the next round on (DESIGN-roles §3.5)."""
+    from .. import home
+
+    h = _json(mine / "head.json")
+    if h is not None and h.get("installation") != home.installation_id():
+        _put_json(mine / "head.json", {**h, "installation": home.installation_id()})
+
+
 def _remove(files: Iterable[Path]) -> list[Path]:
     """Remove each file that can be removed now; returns those that cannot (on Windows, a file the cloud service is
     copying at this moment): one held file never keeps the others in the folder."""
@@ -1307,12 +1350,17 @@ def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSt
     me, name = people.me(), people.my_name()
     _settle(ws)  # 0.18 L2: what this person changed of the documents goes as proposals; the owner's word is followed
     mine = team / me
-    for sub in ("bundles", "docs", "files"):
-        (mine / sub).mkdir(parents=True, exist_ok=True)
     folder_id = str(info.get("folder_id") or "")
     if not folder_id:  # project.json without one (written by hand?): this copy's record stays as it is
         row = ws._conn().execute("SELECT fp FROM sync_written WHERE kind='head' AND key=''").fetchone()
         folder_id = row[0] if row and row[0] else ""
+    # roles (DESIGN-roles §4.11): before anything is written or deleted there (also not `_take_words_out`, `_begin_again`)
+    found = other_computer(ws._conn(), mine, folder_id)
+    if found is not None:
+        raise _other_computer_problem(found)
+    _claim_head(mine)
+    for sub in ("bundles", "docs", "files"):
+        (mine / sub).mkdir(parents=True, exist_ok=True)
     keep = keep_out_state(ws, team, me)
     with ws.connect() as cx:  # as before a zip is made (sync.before_sending): who decided what, and every state
         people.adopt(cx, me)
@@ -1371,8 +1419,10 @@ def write(ws: Workspace, progress: Progress | None = None, should_stop: ShouldSt
     finally:
         rcx.rollback()
         rcx.close()
+    from .. import home
+
     _put_json(mine / "head.json", {"last": seq, "snapshot": snap, "epoch": epoch, "at": now(),
-                                   **formats.stamp(needs=NEEDS)})
+                                   "installation": home.installation_id(), **formats.stamp(needs=NEEDS)})
     _prune(mine, snap)
     at = now()
     with ws.connect() as cx:
@@ -2192,8 +2242,9 @@ def _read_people(ws: Workspace, team: Path, me: str, out: dict, progress: Progre
     except OSError:
         pass  # tried again on the next round
     try:
-        _read_json(ws, team / me)
-        _waiting_json(team / me, held_up, reached if out["stopped"] else None)
+        if other_computer(ws._conn(), team / me) is None:  # roles: never in a subfolder another computer writes
+            _read_json(ws, team / me)
+            _waiting_json(team / me, held_up, reached if out["stopped"] else None)
     except OSError:
         pass
 
@@ -2340,7 +2391,8 @@ def status(ws: Workspace) -> dict:
     as last seen)}, "me": {"id", "name", "last_written", "last_written_at"},
     "people": [{"id", "name", "app_version", "sync_format", "keep_out", "last_bundle", "read_up_to", "last_read_at",
     "waiting", "has_read_mine"}], "problems": [{"kind", "person", "message", "seq"}], "not_here": [{"doc_id",
-    "title", "from"}]}."""
+    "title", "from"}], "other_computer": {"since"} | None (roles: another computer writes into this copy's subfolder
+    under this person's id, `other_computer`; also a problem of that kind)}."""
     me = people.me()
     base = chosen(ws)
     cx = ws._conn()
@@ -2348,7 +2400,7 @@ def status(ws: Workspace) -> dict:
     out: dict[str, Any] = {"folder": str(base) if base else None, "team_folder": None, "reachable": None,
                            # until the folder is read: who kept the switch on when it last was (offline: kept so)
                            "keep_out": keep_out_state(ws, last_known=base is not None), "problems": [], "people": [],
-                           "not_here": [],
+                           "not_here": [], "other_computer": None,
                            "me": {"id": me, "name": people.my_name(), "last_written": head[0] if head else None,
                                   "last_written_at": head[1] if head else None}}
     held = {r[0] for r in cx.execute("SELECT doc_id FROM documents")}
@@ -2375,6 +2427,11 @@ def status(ws: Workspace) -> dict:
             out["problems"].append({"kind": e.kind, "person": None, "message": str(e), "seq": None})
             return out
         out["keep_out"] = keep_out_state(ws, team, me)
+        found = other_computer(cx, team / me)  # roles (DESIGN-roles §4.11, §5.6)
+        if found is not None:
+            out["other_computer"] = found
+            out["problems"].append({"kind": "other_computer", "person": None, "seq": None,
+                                    "message": str(_other_computer_problem(found))})
         done = {r[0]: (int(r[1] or 0), r[2], r[3]) for r in cx.execute("SELECT person_id, seq, at, epoch FROM "
                                                                         "sync_folder_read")}
         uid = ws.project_uid()

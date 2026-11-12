@@ -33,8 +33,10 @@ def _rewrite(f: Path, out: Path, change) -> Path:
 def test_a_project_zip_says_its_format(anna_and_ben):
     anna, _ben = anna_and_ben
     info = sync.peek(anna.send())
-    assert info["sync_format"] == formats.FORMAT == 3
-    assert info["sync_needs"] == formats.ZIP_NEEDS == 1  # a copy on 0.17 still merges it without harm
+    assert info["sync_format"] == formats.FORMAT == 4  # roles (DESIGN-roles §3.3): format 4
+    # roles (DESIGN-roles §3.3): a zip of a project with an owner (Anna made and sent it) needs format 4, so a copy on
+    # 0.17 refuses it in words; a project with no owner still says ZIP_NEEDS (formats.zip_needs)
+    assert info["sync_needs"] == formats.OWNED_ZIP_NEEDS == 4 and formats.ZIP_NEEDS == 1
     assert info["scope"] == "all"
 
 

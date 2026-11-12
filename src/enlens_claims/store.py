@@ -220,17 +220,40 @@ CREATE TABLE IF NOT EXISTS sync_folder_docs(doc_id TEXT PRIMARY KEY, text_fp TEX
 -- per document and writer (state in/removed, its reading, who may read it with AI, which blocks are left out), each
 -- part with the number (`*_n`) of the owner's change that last set it. These four travel (their own merge rules).
 -- `canon_seen`: this copy's own record of how far it has followed `canon`, never merged.
-CREATE TABLE IF NOT EXISTS ownership(seq INT, owner TEXT, by TEXT, at TEXT, kind TEXT, after TEXT, why TEXT,
-  PRIMARY KEY(seq, by));
+-- Roles (DESIGN-roles §3): `roles`, the Owner's word on who is a Co-owner (`grant`: the id of one grant of 'co'), which
+-- travels; `decisions` and `canon` are written by Co-owners too (`grant`: the grant a row was written under, NULL: as
+-- the Owner), each part of `canon` with the event that made it (`*_n`, `*_by`) and the events its writer had followed
+-- (`hist_json`, `ai_hist_json`; `hist_json["via"]`: the parts an accept wrote, with the value before), each answer
+-- with the others it had seen (`knew_json`). `sig`: NULL for now, for signatures later; nothing reads it.
+-- `ownership` is keyed by (seq, by, owner) (changed after review, C1): a record this copy holds is never replaced by a
+-- file's; two records of one writer for one place live side by side, and the second is a question.
+CREATE TABLE IF NOT EXISTS ownership(seq INT, owner TEXT, by TEXT, at TEXT, kind TEXT, after TEXT, why TEXT, sig TEXT,
+  PRIMARY KEY(seq, by, owner));
+CREATE TABLE IF NOT EXISTS roles(person TEXT, by TEXT, owner_seq INT, n INT, role TEXT, grant TEXT, same_as TEXT, at TEXT,
+  sig TEXT, PRIMARY KEY(person, by));
 CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY, kind TEXT, doc TEXT, title TEXT, by TEXT, at TEXT,
   detail_json TEXT, taken_back_at TEXT);
 CREATE TABLE IF NOT EXISTS decisions(proposal TEXT, by TEXT, owner_seq INT, verdict TEXT, reason TEXT, at TEXT,
-  auto INT, PRIMARY KEY(proposal, by));
+  auto INT, n INT, grant TEXT, knew_json TEXT, sig TEXT, PRIMARY KEY(proposal, by));
 CREATE TABLE IF NOT EXISTS canon(doc TEXT, by TEXT, owner_seq INT, n INT, state TEXT, state_n INT, sha1 TEXT, title TEXT,
   text_fp TEXT, reader INT, read_n INT, ai_access TEXT, ai_n INT, ai_hist_json TEXT, blocks_json TEXT, blocks_n INT,
-  at TEXT, PRIMARY KEY(doc, by));
+  at TEXT, grant TEXT, state_by TEXT, read_by TEXT, ai_by TEXT, blocks_by TEXT, hist_json TEXT, sig TEXT,
+  PRIMARY KEY(doc, by));
 CREATE TABLE IF NOT EXISTS canon_seen(doc TEXT PRIMARY KEY, state_n INT, read_n INT, ai_n INT, ai_level TEXT,
-  blocks_n INT, blocks_json TEXT, gone INT, came_from TEXT, read_tried INT, read_note TEXT, read_from TEXT);
+  blocks_n INT, blocks_json TEXT, gone INT, came_from TEXT, read_tried INT, read_note TEXT, read_from TEXT,
+  state_by TEXT, read_by TEXT, ai_by TEXT, blocks_by TEXT, blocks_base TEXT, ai_offer TEXT);
+-- Roles (DESIGN-roles §3.2), this copy's own, never merged: the owner records this copy follows or refused, place by
+-- place (`owner_pins`, state 'followed' | 'refused'); documents a colleague's word removed here, restorable for 30 days
+-- from an archive in backups/removed/ (`removed_docs`, removed.py); rows of a third person that came in someone else's
+-- file (`sync_via`); the state last taken from a colleague, and from whom (`sync_from`); rows a file brought under this
+-- copy's own id and that were refused (`sync_refused`, state 'new' | 'answered' | 'dismissed')
+CREATE TABLE IF NOT EXISTS owner_pins(seq INT, by TEXT, owner TEXT, state TEXT, at TEXT, PRIMARY KEY(seq, by, owner));
+CREATE TABLE IF NOT EXISTS removed_docs(doc_id TEXT PRIMARY KEY, title TEXT, at TEXT, by TEXT, why TEXT, cause TEXT,
+  archive TEXT, bytes INT);
+CREATE TABLE IF NOT EXISTS sync_via(kind TEXT, key TEXT, author TEXT, via TEXT, at TEXT, PRIMARY KEY(kind, key));
+CREATE TABLE IF NOT EXISTS sync_from(kind TEXT, key TEXT, fp TEXT, person TEXT, at TEXT, PRIMARY KEY(kind, key));
+CREATE TABLE IF NOT EXISTS sync_refused(kind TEXT, key TEXT, what_json TEXT, via TEXT, n INT, at TEXT, state TEXT,
+  PRIMARY KEY(kind, key));
 """
 SCHEMA = SCHEMA.replace("{PLACES_TABLE}", PLACES_TABLE)
 
@@ -378,7 +401,21 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               # keeps out of the folder is as strict here from the moment its file is added (sync/folder.py hold_settings)
               ("sync_folder_docs", "ai_access", "TEXT"), ("sync_folder_docs", "ai_by", "TEXT"),
               # 0.18 L2: whose new reading a copy made from their zip holds (ownership.adopt)
-              ("canon_seen", "read_from", "TEXT")]
+              ("canon_seen", "read_from", "TEXT"),
+              # roles (DESIGN-roles §3): Co-owners write `decisions` and `canon` too. An answer's own number, the grant
+              # it was written under (NULL: as the Owner) and the other answers it had seen; each part of a document's
+              # row with the person whose event made it (NULL: the row's `by`) and the events its writer had followed;
+              # this copy's own record of the same, the project's choices of blocks it followed last from someone
+              # else, and an AI setting a file would loosen here, offered rather than set. `sig`: NULL for now
+              ("ownership", "sig", "TEXT"),
+              ("decisions", "n", "INT"), ("decisions", "grant", "TEXT"), ("decisions", "knew_json", "TEXT"),
+              ("decisions", "sig", "TEXT"),
+              ("canon", "grant", "TEXT"), ("canon", "state_by", "TEXT"), ("canon", "read_by", "TEXT"),
+              ("canon", "ai_by", "TEXT"), ("canon", "blocks_by", "TEXT"), ("canon", "hist_json", "TEXT"),
+              ("canon", "sig", "TEXT"),
+              ("canon_seen", "state_by", "TEXT"), ("canon_seen", "read_by", "TEXT"), ("canon_seen", "ai_by", "TEXT"),
+              ("canon_seen", "blocks_by", "TEXT"), ("canon_seen", "blocks_base", "TEXT"),
+              ("canon_seen", "ai_offer", "TEXT")]
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:
@@ -403,10 +440,50 @@ def _migrate(cx: sqlite3.Connection) -> None:
                "framework=CASE WHEN COALESCE(target, '') != '' THEN 'sdg' END WHERE hyp_id IS NULL")
 
 
+def _ownership_key(cx: sqlite3.Connection) -> None:
+    """Roles, changed after review (C1): `ownership` is keyed by (seq, by, owner), so a file's record never replaces
+    one held here. A table made with the key (seq, by) is made again with its rows (the shared folder's change
+    counters on it are dropped with it and made again by the next round)."""
+    pk = [r[1] for r in sorted(cx.execute("PRAGMA table_info(ownership)"), key=lambda r: r[5]) if r[5]]
+    if not pk or "owner" in pk:
+        return
+    cols = [r[1] for r in cx.execute("PRAGMA table_info(ownership)")]
+    cx.execute("ALTER TABLE ownership RENAME TO ownership_before_c1")
+    cx.execute("CREATE TABLE ownership(seq INT, owner TEXT, by TEXT, at TEXT, kind TEXT, after TEXT, why TEXT, sig TEXT, "
+               "PRIMARY KEY(seq, by, owner))")
+    keep = [c for c in cols if c in ("seq", "owner", "by", "at", "kind", "after", "why", "sig")]
+    cx.execute(f"INSERT OR IGNORE INTO ownership({', '.join(keep)}) SELECT {', '.join(keep)} FROM ownership_before_c1")
+    cx.execute("DROP TABLE ownership_before_c1")
+
+
+def _roles_upgrade(cx: sqlite3.Connection) -> None:
+    """Roles (DESIGN-roles §3.5), once per project (`meta.roles_upgraded`): who the owner is now follows this copy's
+    own pins, never a clock. A project with records of who owns it and no pins pins the chain as 0.17 computed it,
+    record by record, so nothing changes for anyone at the update. Nothing else is rewritten: rows of 0.17 read as an
+    owner's (no grant), knowing nothing more than their own events. A zip of this release keeps the marker with its
+    pins (`sharing._META_KEPT`), so a copy made from it never pins by the old rule."""
+    if cx.execute("SELECT 1 FROM meta WHERE key='roles_upgraded'").fetchone():
+        return
+    if cx.execute("SELECT 1 FROM ownership LIMIT 1").fetchone() and \
+            not cx.execute("SELECT 1 FROM owner_pins LIMIT 1").fetchone():
+        from .ownership import _chain_0_17
+
+        at = now()
+        for r in _chain_0_17(cx):
+            cx.execute("INSERT OR IGNORE INTO owner_pins(seq, by, owner, state, at) VALUES (?,?,?,'followed',?)",
+                       (r["seq"], r["by"], r["owner"], at))
+    cx.execute("INSERT OR REPLACE INTO meta VALUES ('roles_upgraded', '1')")
+
+
 # 0.17.2: the glossary's state as a build notes it. The corpus version it was made from has a new name: an ENLENS before
 # 0.17.2 reads `terms_corpus_version`, finds none and says its glossary is not made, rather than showing one whose places
 # it cannot read (it reads them by `doc_id`); and when it makes its own, its note tells this version so
 GLOSSARY_META = ("glossary_corpus_version", "terms_corpus_version", "terms_built_at", "terms_build_id")
+
+
+# roles (DESIGN-roles §3.4): rows `Workspace._document_rows` names that are made again, so a removal's archive
+# (removed.py) leaves them out
+REMADE = ("embeddings", "term_mentions")
 
 
 def passage_range(doc_id: str) -> tuple[str, str]:
@@ -548,6 +625,8 @@ class Workspace:
             before_018 = not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone()
             cx.executescript(SCHEMA)
             _migrate(cx)
+            _ownership_key(cx)
+            _roles_upgrade(cx)
             dropped = _drop_old_places(cx)
             cx.executescript(INDEXES)
             _setup_addons(cx)
@@ -724,14 +803,59 @@ class Workspace:
             self.bump_corpus(cx)
         return out
 
+    def _document_rows(self, doc_id: str, cx: sqlite3.Connection | None = None) -> list[tuple[str, str, tuple]]:
+        """The rows `remove_document` deletes, as (table, where, args), in the order they are deleted (what is found
+        through a document's passages or claims comes before those). roles (DESIGN-roles §3.4): one list, so the
+        archive of a removal a colleague's word caused (removed.py) holds exactly what is deleted, and gives it back.
+        `REMADE` names the tables whose rows are made again rather than kept."""
+        cx = cx or self._conn()
+        own = "(SELECT passage_id FROM passages WHERE doc_id=?)"
+        claims = "claim_id IN (SELECT claim_id FROM claims WHERE doc_id=?)"
+        out: list[tuple[str, str, tuple]] = [
+            ("sync_copies", "kind='document' AND key=?", (doc_id,)),
+            ("claim_targets", claims, (doc_id,)),
+            ("evidence", claims, (doc_id,)),
+            ("claims", "doc_id=?", (doc_id,)),
+            ("interactions", "doc_id=? AND kind='stated'", (doc_id,)),
+            ("verifications", "doc_id=? AND subject_kind != 'user_claim'", (doc_id,)),
+            # one statement per table rather than four per passage (0.11.1: a document of a few hundred passages in a
+            # project with many tasks held the database for seconds)
+            ("embeddings", f"passage_id IN {own}", (doc_id,)),
+            ("theme_members", f"passage_id IN {own}", (doc_id,)),
+        ]
+        lengths = sorted(r[0] for r in cx.execute("SELECT DISTINCT length(passage_id) FROM passages WHERE doc_id=?",
+                                                  (doc_id,)))
+        for tbl in ("results", "tasks"):
+            out.append((tbl, "task_id IN (SELECT 'extract:' || passage_id FROM passages WHERE doc_id=?)", (doc_id,)))
+            # model labels of its passages: their tasks are 'label:<framework>:<passage_id>'; the passage ids of one
+            # document share a length (seq is padded), so the tail of the task id is compared exactly
+            for n in lengths:
+                out.append((tbl, f"kind='label' AND substr(task_id, -?) IN {own}", (n, doc_id)))
+        # 0.7: what was derived from the document (the term index is rebuilt when the corpus version changes)
+        out += [("labels", "doc_id=?", (doc_id,)), ("mentions", "doc_id=?", (doc_id,)),
+                ("term_mentions", "passage_id >= ? AND passage_id < ?", passage_range(doc_id))]
+        out += [(tbl, "doc_id=?", (doc_id,)) for tbl in ("blocks", "doc_tables", "block_choices")]  # 0.15
+        # 0.15: answers kept as records when the document moved to the new reader name passages that no longer exist
+        # ("<doc>:r1-0005", reread.tombstone); they go with the document
+        for tbl in ("results", "tasks"):
+            out.append((tbl, "instr(task_id, ?) > 0 AND task_id GLOB ?", (f"{doc_id}:r", f"*{doc_id}:r[0-9]*-[0-9]*")))
+        head = f"resolve:{doc_id}:"
+        for tbl in ("results", "tasks"):
+            out.append((tbl, "kind='resolve' AND substr(task_id, 1, ?) = ?", (len(head), head)))
+        out += [(tbl, "doc_id=?", (doc_id,)) for tbl in ("passages", "pages", "paragraphs", "headings", "doc_refs",
+                                                          "bib_links",  # 0.13: its work goes back to "to find"
+                                                          "documents")]
+        return out
+
     def remove_document(self, doc_id: str, why: str | None = None) -> dict[str, int]:
-        """Remove one document and what the pipeline derived from it.
+        """Remove one document and what the pipeline derived from it (the rows `_document_rows` names).
 
         Hypothesis checks keep their grades: they are a record of what was read (each check stores the passage
         text and title it showed), so a past verdict does not change when a source is removed later. 0.16: the
         research log says so (`why`: the person's reason), and a person's notes on it stay (notes.py lists them).
         """
         out: dict[str, int] = {}
+        counted = ("claims", "interactions", "verifications", "labels", "mentions", "passages", "documents")
         with self.connect() as cx:
             row = cx.execute("SELECT title FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
             if not row:
@@ -741,49 +865,10 @@ class Workspace:
 
             researchlog.record(cx, "document-removed", f"Removed the document {researchlog.quoted(row[0])}.",
                                "document", doc_id, row[0], why=why)
-            cx.execute("DELETE FROM sync_copies WHERE kind='document' AND key=?", (doc_id,))
-            pids = [r[0] for r in cx.execute("SELECT passage_id FROM passages WHERE doc_id=?", (doc_id,))]
-            claim_ids = [r[0] for r in cx.execute("SELECT claim_id FROM claims WHERE doc_id=?", (doc_id,))]
-            for cid in claim_ids:
-                cx.execute("DELETE FROM claim_targets WHERE claim_id=?", (cid,))
-                cx.execute("DELETE FROM evidence WHERE claim_id=?", (cid,))
-            out["claims"] = cx.execute("DELETE FROM claims WHERE doc_id=?", (doc_id,)).rowcount
-            out["interactions"] = cx.execute("DELETE FROM interactions WHERE doc_id=? AND kind='stated'", (doc_id,)).rowcount
-            out["verifications"] = cx.execute("DELETE FROM verifications WHERE doc_id=? AND subject_kind != 'user_claim'",
-                                              (doc_id,)).rowcount
-            # one statement per table rather than four per passage (0.11.1: a document of a few hundred passages in a
-            # project with many tasks held the database for seconds)
-            own = "(SELECT passage_id FROM passages WHERE doc_id=?)"
-            cx.execute(f"DELETE FROM embeddings WHERE passage_id IN {own}", (doc_id,))
-            cx.execute(f"DELETE FROM theme_members WHERE passage_id IN {own}", (doc_id,))
-            for tbl in ("results", "tasks"):
-                cx.execute(f"DELETE FROM {tbl} WHERE task_id IN (SELECT 'extract:' || passage_id FROM passages "
-                           "WHERE doc_id=?)", (doc_id,))
-                # model labels of its passages: their tasks are 'label:<framework>:<passage_id>'; the passage ids of
-                # one document share a length (seq is padded), so the tail of the task id is compared exactly
-                for n in sorted({len(pid) for pid in pids}):
-                    cx.execute(f"DELETE FROM {tbl} WHERE kind='label' AND substr(task_id, -?) IN {own}", (n, doc_id))
-            # 0.7: what was derived from the document (the term index is rebuilt when the corpus version changes)
-            out["labels"] = cx.execute("DELETE FROM labels WHERE doc_id=?", (doc_id,)).rowcount
-            out["mentions"] = cx.execute("DELETE FROM mentions WHERE doc_id=?", (doc_id,)).rowcount
-            cx.execute("DELETE FROM term_mentions WHERE passage_id >= ? AND passage_id < ?", passage_range(doc_id))
-            for tbl in ("blocks", "doc_tables", "block_choices"):  # 0.15
-                cx.execute(f"DELETE FROM {tbl} WHERE doc_id=?", (doc_id,))
-            # 0.15: answers kept as records when the document moved to the new reader name passages that no longer
-            # exist ("<doc>:r1-0005", reread.tombstone); they go with the document
-            for tbl in ("results", "tasks"):
-                cx.execute(f"DELETE FROM {tbl} WHERE instr(task_id, ?) > 0 AND task_id GLOB ?",
-                           (f"{doc_id}:r", f"*{doc_id}:r[0-9]*-[0-9]*"))
-            head = f"resolve:{doc_id}:"
-            for tbl in ("results", "tasks"):
-                cx.execute(f"DELETE FROM {tbl} WHERE kind='resolve' AND substr(task_id, 1, ?) = ?", (len(head), head))
-            out["passages"] = cx.execute("DELETE FROM passages WHERE doc_id=?", (doc_id,)).rowcount
-            cx.execute("DELETE FROM pages WHERE doc_id=?", (doc_id,))
-            cx.execute("DELETE FROM paragraphs WHERE doc_id=?", (doc_id,))
-            cx.execute("DELETE FROM headings WHERE doc_id=?", (doc_id,))
-            cx.execute("DELETE FROM doc_refs WHERE doc_id=?", (doc_id,))
-            cx.execute("DELETE FROM bib_links WHERE doc_id=?", (doc_id,))  # 0.13: its work goes back to "to find"
-            out["documents"] = cx.execute("DELETE FROM documents WHERE doc_id=?", (doc_id,)).rowcount
+            for tbl, where, args in self._document_rows(doc_id, cx):
+                n = cx.execute(f"DELETE FROM {tbl} WHERE {where}", args).rowcount
+                if tbl in counted:
+                    out[tbl] = out.get(tbl, 0) + n
             # 0.11.1: tasks not answered yet that still hold its passages (a check, a theme name, a concept link) are
             # relabelled now, so none of them is handed to Claude Code after the document is gone
             from .access import relabel

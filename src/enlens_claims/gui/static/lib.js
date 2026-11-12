@@ -802,6 +802,45 @@ export function checkUpdate(fresh = false) {
 }
 export function onUpdateSeen(fn) { Updates.listeners.add(fn); return () => Updates.listeners.delete(fn); }
 
+// What is new in this version (gui/static/whats-new.md), read only when asked: after 0.17.2 it is no longer a note in
+// the corner after an update. After an update the sidebar offers What's new until it is opened; Settings (beside the
+// version) and Find (which goes to Settings › Technical) offer it always. One look (GET /api/whats-new) for them all:
+// it also brings, once, the note of an update on Windows that did not finish (`note`, which app.js shows by itself).
+export const WhatsNew = { changes: null, unread: false, pending: null };
+export function loadWhatsNew() {
+  if (!WhatsNew.pending) {
+    WhatsNew.pending = api("GET", "/api/whats-new").then((r) => {
+      WhatsNew.changes = r.changes && Array.isArray(r.changes.points) && r.changes.points.length ? r.changes : null;
+      WhatsNew.unread = !!(WhatsNew.changes && r.unread);
+      return r;
+    }, () => ({ note: null }));
+  }
+  return WhatsNew.pending;
+}
+export function showWhatsNew() {
+  const n = WhatsNew.changes;
+  if (!n) return Promise.resolve(null);
+  if (WhatsNew.unread) {
+    WhatsNew.unread = false;
+    api("POST", "/api/whats-new/read").catch(() => {});
+    window.dispatchEvent(new CustomEvent("enlens-whats-new-read"));
+  }
+  return dialog({ title: `What's new in ${n.version}`, body: h("div", { class: "news-note" },
+    h("p", { class: "news-title" }, n.title),
+    n.subtitle ? h("p", { class: "news-sub" }, n.subtitle) : null,
+    h("ul", { class: "news-list" }, ...n.points.map((t) => h("li", {}, t))),
+    n.url ? h("p", { class: "small" }, link({ kind: "external", href: n.url }, `Every change in ${n.version}, on GitHub`)) : null) });
+}
+// The words that open it, where it is offered always (Settings): a link drawn as a button (`jump`), since it opens a
+// dialog and changes nothing; nothing when this version has no note.
+export function whatsNewLink() {
+  const slot = h("span", {});
+  loadWhatsNew().then(() => {
+    if (WhatsNew.changes) replace(slot, " · ", link({ kind: "jump", onClick: () => showWhatsNew(), "aria-haspopup": "dialog" }, "What's new"));
+  });
+  return slot;
+}
+
 // Which account Claude Code is signed in to, in words: { email, plan: "Team plan", org } or null when it is not
 // signed in (or does not say). The organisation only on a Team or Enterprise plan: on Pro and Max it is usually Claude's
 // own "…'s Organization".
@@ -1219,7 +1258,7 @@ export function initials(name) {
   return (a + b).toUpperCase();
 }
 // A person mark: who did something, beside an item, a judgement, a log entry or a review. The person icon, then "You"
-// or a colleague's initials (several people: each, "You" first), and a role when it matters (Owner, Collaborator).
+// or a colleague's initials (several people: each, "You" first), and a role when it matters (Owner, Co-owner).
 // The full names and the role are its tooltip and its accessible name. note: a word after the role's dot instead of a
 // role ("partly", while only part is reviewed). prefix: what they did, for the tooltip ("Reviewed by").
 // Initials are enough only where the row already names the person (a person row). A mark that stands alone (a shared
@@ -1299,22 +1338,41 @@ export function listGroup(heading, ...rows) {
 // (waiting: "Waiting for Anna.", by default "Waiting for the owner"; or Declined: the reason) and Take back (quiet)
 // while it waits, when onTakeBack is given (a colleague who neither decides nor proposed sees the wait only). An owner
 // who still has a proposal of their own waiting (after a hand-over) keeps its Take back beside Accept and Decline…. state: "waiting" | "accepted" | "declined" |
-// "taken-back". Other options (id, aria-label) go to the card.
+// "taken-back". even: neither answer is the main one (a proposal two people answered both ways: both small standard
+// buttons, so the look favours no answer). Other options (id, aria-label) go to the card.
 export function proposalCard(opts = {}) {
-  const [o, attrs] = split(opts, ["what", "person", "time", "severity", "reason", "detail", "side", "state", "declined", "waiting", "onAccept", "onDecline", "onTakeBack"]);
+  const [o, attrs] = split(opts, ["what", "person", "time", "severity", "reason", "detail", "side", "state", "declined", "waiting", "onAccept", "onDecline", "onTakeBack", "even"]);
   const side = o.side || "owner", state = o.state || "waiting";
   const words = { accepted: workState("done", "Accepted"), declined: workState("ended", o.declined ? `Declined: ${o.declined}` : "Declined"),
     "taken-back": workState("ended", "Taken back") }[state]
     || (side === "proposer" ? workState("waiting", o.waiting || "Waiting for the owner") : null);
   const takeBack = o.onTakeBack ? [button({ kind: "quiet", sm: true, onClick: o.onTakeBack }, "Take back")] : [];
   const actions = state !== "waiting" ? [] : side === "owner"
-    ? [button({ kind: "main", sm: true, onClick: o.onAccept }, "Accept"), button({ kind: "quiet", sm: true, onClick: o.onDecline }, "Decline…"), ...takeBack]
+    ? [o.even ? button({ sm: true, onClick: o.onAccept }, "Accept") : button({ kind: "main", sm: true, onClick: o.onAccept }, "Accept"),
+      button({ kind: o.even ? "standard" : "quiet", sm: true, onClick: o.onDecline }, "Decline…"), ...takeBack]
     : takeBack;
   return card({ ...attrs, as: "li", sm: true, class: ["proposal", attrs.class].filter(Boolean).join(" "), title: o.what, level: "h3", action: o.severity ? severityTag(o.severity) : null },
     h("p", { class: "proposal-by" }, o.person || null, o.time ? h("time", {}, o.time) : null),
     o.reason ? h("p", { class: "proposal-why" }, "“", o.reason, "”") : null,
     o.detail || null,
     words || actions.length ? h("div", { class: "btn-row proposal-foot" }, words, ...actions) : null);
+}
+
+// A decision that is not a proposal (working together: a question about the owner, a change refused in your name, a
+// looser AI setting offered), in a proposal card's shape: what it is about in the head, with one tag (flag: "A
+// take-over", "More AI"); who and when; their words (said); what the card must say (body); its buttons (actions: at
+// most one main, the rest small); and the AI line at its foot (ai), where an answer lets an AI read more. A question
+// with two answers is such a card, never a notice with two buttons (docs/DESIGN.md 5.5). Other options (id,
+// aria-label) go to the card.
+export function decisionCard(opts = {}) {
+  const [o, attrs] = split(opts, ["what", "flag", "person", "time", "said", "body", "actions", "ai"]);
+  return card({ ...attrs, as: "li", sm: true, class: ["proposal", attrs.class].filter(Boolean).join(" "), title: o.what, level: "h3",
+    action: o.flag ? tag({ kind: "attention" }, o.flag) : null },
+    o.person || o.time ? h("p", { class: "proposal-by" }, o.person || null, o.time ? h("time", {}, o.time) : null) : null,
+    o.said ? h("p", { class: "proposal-why" }, "“", o.said, "”") : null,
+    o.body || null,
+    (o.actions || []).filter(Boolean).length ? h("div", { class: "btn-row proposal-foot" }, ...o.actions.filter(Boolean)) : null,
+    o.ai || null);
 }
 
 // A list of problems, one notice each (the shared folder: one per colleague or per kind): items [{ kind, person, text,

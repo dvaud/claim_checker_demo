@@ -28,7 +28,10 @@ class DocumentsApi:
 
     def post_link(self, q):
         body = self._body()
-        name = home.link_existing(str(body.get("path") or ""), body.get("name") or None)
+        try:
+            name = home.link_existing(str(body.get("path") or ""), body.get("name") or None, clean=bool(body.get("clean")))
+        except home.NeedsCleaning as e:  # roles (DESIGN-roles §5.7): another person's folder: the page asks first
+            raise ApiError(409, str(e), kind="needs_cleaning", extra={"needs_cleaning": e.report, "report": e.report}) from None
         home.update_settings({"project": name})
         return {"project": self.app.project_summary(name)}
 

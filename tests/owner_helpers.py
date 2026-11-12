@@ -177,3 +177,30 @@ def join(p: Person, source: Person, tmp: Path, shared: Path, scope: str = "all")
 def docs_of(p: Person) -> set[str]:
     with p:
         return {r[0] for r in p.ws.query("SELECT doc_id FROM documents")}
+
+
+# ---- roles (DESIGN-roles §6.6): a file never loosens an AI setting, and a take-over is never followed unasked -------
+def allow(p: Person, doc: str | None = None) -> dict:
+    """*Allow here*: this person takes the looser AI setting the project now has (one document, or every offer)."""
+    with p:
+        ownership.settle(p.ws, apply=False)
+        return ownership.answer_loosening(p.ws, [doc] if doc else None, True)
+
+
+def follow(p: Person, owner: str | None = None) -> dict:
+    """This person answers the questions about who owns the project by following (the record naming `owner`, else
+    each one asked, in order of place)."""
+    with p:
+        ownership.settle(p.ws, apply=False)
+        for _ in range(10):
+            qs = [q for q in ownership.owner_questions(p.ws._conn()) if owner is None or q["owner"] == owner]
+            if not qs:
+                break
+            q = min(qs, key=lambda q: (q["seq"], q["by"]))
+            ownership.follow_owner(p.ws, q["seq"], q["by"])
+        return ownership.view(p.ws)
+
+
+def set_role(p: Person, person: Person, role: str) -> dict:
+    with p:
+        return ownership.set_role(p.ws, person.id, role)

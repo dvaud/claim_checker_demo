@@ -10,6 +10,8 @@ import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, p
 import { forgetFrameworks } from "./options.js";
 import { showHistory, askWhy } from "./versions.js";
 import { shareBar } from "./share.js";   // 0.18 (L1)
+import { decisionCard } from "../lib.js";   // roles (H8)
+import { OWNER_API, codebookOfferText } from "./owner-state.js";   // roles (H8)
 
 const WHERE = { project: ["This project", "folder"], home: ["All projects", "layers"], bundled: ["Ships with ENLENS", "library"] };
 const drafts = new Map();   // unsaved edits, kept while you look at another page: `${project}:${name}` -> {st, merges}
@@ -234,10 +236,35 @@ export async function renderCodebook(view, [name]) {
   const head = h("div");
   const sharing = cb.where === "bundled" ? null : shareBar("codebook", cb.name);   // 0.18 (L1): made once, put back on every draw
   const clashBox = h("div", { class: "cb-clashes" });   // 0.18: codes you and a colleague both changed
+  const offerBox = h("div", { class: "cb-offer" });     // roles (H8): a colleague's renames and merges, offered
   const notices = h("div");
   const body = h("div", { class: "cb-editor" });
   const saveBar = h("div", { class: "cb-savebar", hidden: true, role: "region", "aria-label": "Unsaved changes" });
-  view.append(head, clashBox, notices, body, saveBar);
+  view.append(head, offerBox, clashBox, notices, body, saveBar);
+  drawOffer();
+
+  // ---- roles (DESIGN-roles §4.9, §5.7; the review's rule (a)): renames and merges of this codebook by someone who did
+  // not make it wait before they move this person's labels. A question with two answers is a card, never a notice:
+  // Follow (main) moves the labels as they did, Keep mine (quiet) leaves them.
+  async function drawOffer() {
+    let offer = null;
+    try { offer = (await api("GET", OWNER_API.codebookOffer(P(project), P(name)))).offer; } catch (_) { offer = null; }
+    clear(offerBox);
+    if (!offer) return;
+    const by = offer.from && typeof offer.from === "object" ? offer.from.name : offer.from;
+    const answer = async (follow, btn) => {
+      btn.disabled = true;
+      try {
+        await api("POST", OWNER_API.codebookFollow(P(project), P(name)), { follow });
+        toast(follow ? "Your labels follow their renames and merges now." : "Your labels stay as they are.", "ok", { ttl: 6000 });
+        if (follow) await reload(); else drawOffer();
+      } catch (e) { showError(e); btn.disabled = false; drawOffer(); }
+    };
+    offerBox.appendChild(h("ul", { class: "owner-cards" }, decisionCard({ id: "cb-offer-card", what: "Renames and merges to follow?",
+      person: by ? personMark([by], { name: "short" }) : null, body: h("p", { class: "owner-line" }, codebookOfferText(offer)),
+      actions: [button({ kind: "main", sm: true, id: "cb-offer-follow", onClick: (e) => answer(true, e.currentTarget) }, "Follow"),
+        button({ kind: "quiet", sm: true, id: "cb-offer-keep", onClick: (e) => answer(false, e.currentTarget) }, "Keep mine")] })));
+  }
 
   function touch() {
     dirty = true;

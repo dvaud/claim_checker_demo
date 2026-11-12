@@ -22,7 +22,11 @@ LOCAL_ONLY = {"meta", "embeddings", "code_vectors", "terms", "term_mentions", "c
               "versions",  # 0.16: earlier versions of themes and checks are this copy's history (history.py)
               "sync_written", "sync_folder_read", "sync_folder_docs",  # 0.18: this copy's record of the shared folder
               "canon_seen",  # 0.18 L2: how far this copy has followed the owner's decisions (ownership.py)
-              "sync_changes"}  # what changed since the shared folder's last round (changes.py)
+              "sync_changes",  # what changed since the shared folder's last round (changes.py)
+              # roles (DESIGN-roles §3.2): the owner records this copy follows, documents removed here by a colleague's
+              # word (restorable for 30 days), rows relayed by a third person, the state last taken from whom, and rows
+              # a file brought under this copy's own id
+              "owner_pins", "removed_docs", "sync_via", "sync_from", "sync_refused"}
 # merged by their own rules (merge.py); every other table (the SDG pack's, an add-on's) is merged row by row, keeping yours
 OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "blocks", "doc_tables", "labels", "mentions", "tasks", "results",
              "ai_sent", "hypotheses", "user_claims", "second_opinions", "judgements", "people", "theme_runs", "themes",
@@ -32,7 +36,8 @@ OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "blocks
              "shares",  # 0.18: what each person shares, by its owner's word (sharing.receive, share_merge.py)
              # 0.18 L2 (ownership.py, sync/owner_merge.py): who the owner is, proposals, decisions and the documents as
              # accepted; a person's Leave out / Restore no longer travels row by row (it is a proposal)
-             "ownership", "proposals", "decisions", "canon", "block_choices"}
+             "ownership", "proposals", "decisions", "canon", "block_choices",
+             "roles"}  # roles (DESIGN-roles §3.1): the Owner's word on who is a Co-owner (ownership.py, owner_merge.py)
 # the columns that hold ids of documents, passages, tasks, checks, runs (rewritten when an id changes in a merge)
 ID_COLS = {"doc_id", "passage_id", "task_id", "claim_id", "subject_id", "ver_id", "hyp_id", "run_id", "item_id",
            "label_id", "window", "payload_json", "options_json", "parts_json", "key", "of_key", "origin_id"}

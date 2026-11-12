@@ -149,6 +149,20 @@ def summary(r: dict) -> list[str]:
     if sh.get("withheld"):
         out.append(f"{_n(len(sh['withheld']), 'item')} in {who}'s file had been taken back by the person who shared "
                    "it, so it did not come in.")
+    # roles (DESIGN-roles §4.8, §4.9): rows of a third person, and a codebook's changes that wait
+    if r.get("via"):
+        out.append(f"{_n(r['via'], 'row')} of other people came in through {who}'s file, not from their own: each is "
+                   f"shown under its author's name, via {who}, until their own file brings it.")
+    if r.get("held_back"):
+        out.append(f"{_n(r['held_back'], 'removal')} of other people's notes, log entries or reviews came through "
+                   f"{who}'s file, not from their own, and {'was' if r['held_back'] == 1 else 'were'} held back: "
+                   "nothing was removed.")
+    if cb.get("skipped_events"):
+        out.append(f"{_n(cb['skipped_events'], 'rename or merge', 'renames or merges')} of codes in {who}'s file did "
+                   "not fit the codebook's list of changes and moved no label.")
+    for name in cb.get("offered") or []:
+        out.append(f"{who} renamed or merged codes of the codebook “{name}”. Your labels keep their codes until you "
+                   "choose Follow or Keep mine on the codebook's page.")
     if r["bibliography"] == "kept_yours":
         out.append(f"{who}'s bibliography comes from another Zotero collection or file: yours was kept.")
     if r["labels_kept_yours"]:

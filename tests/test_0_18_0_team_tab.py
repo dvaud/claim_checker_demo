@@ -86,7 +86,8 @@ def test_the_drawer_has_two_tabs_in_a_marked_block():
 
 def test_the_sections_come_in_order_with_room_for_the_owner():
     keys = re.findall(r'\{ key: "([a-z-]+)", render: \w+ \}', TEAM)
-    assert keys == ["setup", "state", "problems", "came-in", "people", "shared", "not-here", "keep-out", "downloads", "leave"]
+    # roles (DESIGN-roles §5, mock-up B): a folder problem that stops this copy ("stop") comes before everything else
+    assert keys == ["setup", "stop", "state", "problems", "came-in", "people", "shared", "not-here", "keep-out", "downloads", "leave"]
     assert "export function addTeamSection" in TEAM and 'before: "people"' in TEAM and "Waiting for the owner" in TEAM
     assert "export function teamPanel" in TEAM and "show()" in TEAM and "hide()" in TEAM
 
