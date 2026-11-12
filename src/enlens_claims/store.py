@@ -569,18 +569,21 @@ def _setup_addons(cx: sqlite3.Connection) -> None:
 
 
 _ONE_TRANSACTION = True  # a new database is set up in one transaction (False: a statement at a time, as before)
-_EMPTY: dict[str, sqlite3.Connection] = {}
+_EMPTY: dict[str, bytes] = {}
 _EMPTY_LOCK = threading.Lock()
 
 
 def _copy_empty_database(dest: Path) -> None:
     """2026-11-13: a new project's database is a copy of an empty one that this process made once, the usual way
-    (`Workspace._setup`), and keeps in memory. Setting one up takes about 17 ms on a Mac and many times that on Windows,
-    most of it the columns added after a table was made (each makes SQLite read the whole layout again); a copy takes
-    about 2. A shared-folder round makes one to three scratch projects, so this is most of the time a round takes on
-    Windows. Nothing is kept on disk: the key holds everything the setup is built from (ENLENS's tables, columns and
-    indexes, and the add-ons'), so a changed layout, here or in a later version, makes a new empty database. An empty
-    one holds no rows of a project's own (its id is made when first asked for).
+    (`Workspace._setup`), and keeps in memory as the file's bytes. Setting one up takes about 17 ms on a Mac and many
+    times that on Windows, most of it the columns added after a table was made (each makes SQLite read the whole
+    layout again). A shared-folder round makes one to three scratch projects, so this was much of the time a round
+    takes. The bytes are written as they are, not through SQLite's own copy, which forces every page to disk (34 ms a
+    project on GitHub's Windows machines): the file is new and nothing uses it until `_setup` has opened it. It is the
+    file the setup makes, byte for byte (in WAL mode, with nothing left in a log). Nothing is kept on disk: the key holds
+    everything the setup is built from (ENLENS's tables, columns and indexes, and the add-ons'), so a changed layout,
+    here or in a later version, makes a new empty database. An empty one holds no rows of a project's own (its id is made
+    when first asked for).
 
     The copy is written beside `dest` and put in place only if there is no database there yet, so two creations of the
     same new project at once never copy an empty database over what the other already wrote (after review)."""
@@ -598,23 +601,17 @@ def _copy_empty_database(dest: Path) -> None:
             tmp = Path(tempfile.mkdtemp(prefix="enlens-empty-"))
             try:
                 made = Workspace(tmp)
-                made._setup()
-                empty = sqlite3.connect(":memory:", check_same_thread=False)
-                src = sqlite3.connect(made.db_path)
-                try:
-                    src.backup(empty)
-                finally:
-                    src.close()
+                made._setup()  # closes its connection: the log is written into the file and removed
+                left = [f.name for f in tmp.iterdir() if f.name != made.db_path.name]
+                if left:
+                    raise OSError(f"the empty database left {left}")  # not the whole file: set up the usual way
+                empty = made.db_path.read_bytes()
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
             _EMPTY.clear()  # only the latest layout is wanted
             _EMPTY[key] = empty
-        part = dest.with_name(f"{dest.name}.{os.getpid()}-{threading.get_ident()}.new")
-        dst = sqlite3.connect(part)
-        try:
-            empty.backup(dst)
-        finally:
-            dst.close()
+    part = dest.with_name(f"{dest.name}.{os.getpid()}-{threading.get_ident()}.new")
+    part.write_bytes(empty)
     try:
         if os.name == "nt":
             os.rename(part, dest)  # refuses when dest is there
