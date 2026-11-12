@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import __version__
-from .store import Workspace
+from .store import Workspace, scratch
 
 STORED = {".pdf", ".zip", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".docx", ".xlsx", ".pptx", ".gz"}  # compressed
 MAX_IMPORT = 8 * 1024 ** 3
@@ -78,8 +78,9 @@ def export_project(ws: Workspace, out: str | Path, scope: str = "all") -> dict:
             dst.close()
             src.close()
         # 0.18: every item says whose it is; for a colleague, only what is shared (and nothing left in free pages)
-        cx = sqlite3.connect(db)
+        cx = scratch(sqlite3.connect(db))
         try:
+            cx.execute("PRAGMA journal_mode=MEMORY")  # 2026-11-12: a scratch copy: what changes is written once, not twice
             needs = sync_formats.zip_needs(cx)  # roles (DESIGN-roles §3.3): 4 once the project has an owner
             with cx:
                 sync_changes.forget(cx)  # this computer's own counters of what changed (sync/changes.py)

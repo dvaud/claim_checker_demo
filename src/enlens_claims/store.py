@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import sqlite3
 import threading
 import weakref
@@ -568,6 +569,34 @@ def _setup_addons(cx: sqlite3.Connection) -> None:
             cx.executescript(db["indexes"])
 
 
+def fast_tests() -> bool:
+    """2026-11-12: set by the test suite (tests/conftest.py `_fast_sqlite`) for every test not marked `durable`."""
+    return os.environ.get("ENLENS_TEST_FAST_SQLITE") == "1"
+
+
+def tune(cx: sqlite3.Connection) -> sqlite3.Connection:
+    """2026-11-12: the settings of every connection that writes to a project database. NORMAL is safe with WAL and
+    saves a flush per commit. In tests (`fast_tests`) nothing is flushed (synchronous=OFF: a test's files are thrown
+    away, and a test process that ends abruptly still leaves what it wrote with the system) and temporary tables and
+    sorts stay in memory. The journal stays WAL in tests too: measured on four of the 0.18 test files, a rollback
+    journal in memory wrote 5% less but four tests failed and the files took four times as long (readers and writers
+    wait for each other there)."""
+    if fast_tests():
+        cx.execute("PRAGMA synchronous=OFF")
+        cx.execute("PRAGMA temp_store=MEMORY")
+    else:
+        cx.execute("PRAGMA synchronous=NORMAL")
+    return cx
+
+
+def scratch(cx: sqlite3.Connection) -> sqlite3.Connection:
+    """2026-11-12: the settings of a connection to a database that is thrown away when the work ends (a bundle being
+    put together, the copy a zip is made from): no flushes, and temporary tables, sorts and VACUUM's copy in memory.
+    A computer that stops in the middle loses only the scratch file, which is made again."""
+    cx.execute("PRAGMA synchronous=OFF")
+    cx.execute("PRAGMA temp_store=MEMORY")
+    return cx
+
 _ONE_TRANSACTION = True  # a new database is set up in one transaction (False: a statement at a time, as before)
 _EMPTY: dict[str, bytes] = {}
 _EMPTY_LOCK = threading.Lock()
@@ -639,8 +668,12 @@ class Workspace:
     Nested `connect()` blocks become savepoints, so an inner block that fails undoes only its own writes.
     """
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, scratch: bool = False):
         self.root = Path(root)
+        # 2026-11-12: a scratch project (the copy a round of the shared folder puts a colleague's bundles together in),
+        # used by one thread and thrown away when the work ends: its connections write each change once (a rollback
+        # journal in memory, where WAL writes it to the log and again into the file) and never flush (`scratch`)
+        self.scratch = scratch
         self.db_path = self.root / "enlens.sqlite"
         self.config_path = self.root / "config.json"
         self._local = threading.local()
@@ -655,8 +688,8 @@ class Workspace:
 
     # ---- lifecycle -------------------------------------------------------------------------
     @classmethod
-    def create(cls, root: str | Path) -> "Workspace":
-        ws = cls(root)
+    def create(cls, root: str | Path, scratch: bool = False) -> "Workspace":
+        ws = cls(root, scratch=scratch)
         ws.root.mkdir(parents=True, exist_ok=True)
         for sub in ("tasks", "results", "exports", "report"):
             (ws.root / sub).mkdir(exist_ok=True)
@@ -685,7 +718,7 @@ class Workspace:
             # each statement of the schema below is a transaction of its own: with the default FULL each one is
             # flushed to disk (about a second per new project on Windows, and a round of the shared folder makes
             # one to three scratch projects); NORMAL, as every connection of `_conn`, is safe with WAL
-            cx.execute("PRAGMA synchronous=NORMAL")
+            tune(cx)
             doc_cols = {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
             before_011 = bool(doc_cols) and "ai_access" not in doc_cols  # a project made before 0.11, opened now
             before_018 = not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone()
@@ -725,7 +758,11 @@ class Workspace:
             # thread: each connection is still used by the thread that opened it alone
             cx = sqlite3.connect(self.db_path, timeout=60, isolation_level=None, factory=_Cx, check_same_thread=False)
             cx.row_factory = sqlite3.Row
-            cx.execute("PRAGMA synchronous=NORMAL")  # safe with WAL; much faster commits
+            if self.scratch:
+                scratch(cx)
+                cx.execute("PRAGMA journal_mode=MEMORY")
+            else:
+                tune(cx)  # synchronous=NORMAL: safe with WAL; much faster commits
             # a project may have come from someone else: nothing its database's own definitions name (in a default, an
             # index, a check) may call functions that reach outside the database
             cx.execute("PRAGMA trusted_schema=OFF")
