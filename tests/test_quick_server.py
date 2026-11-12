@@ -32,7 +32,7 @@ def test_every_test_server_starts_without_the_lookup_too():
 
     here = Path(__file__).parent
     found = []
-    for f in sorted(here.glob("*.py")) + sorted((here.parent / "src").rglob("*.py")):
+    for f in sorted(here.rglob("*.py")) + sorted((here.parent / "src").rglob("*.py")):
         for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
             code = line.split("#", 1)[0]
             if re.search(r"\b(Threading)?HTTPServer\s*[()]", code) and "class QuickServer(" not in code:

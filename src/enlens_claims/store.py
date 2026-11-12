@@ -568,6 +568,7 @@ def _setup_addons(cx: sqlite3.Connection) -> None:
             cx.executescript(db["indexes"])
 
 
+_ONE_TRANSACTION = True  # a new database is set up in one transaction (False: a statement at a time, as before)
 _EMPTY: dict[str, sqlite3.Connection] = {}
 _EMPTY_LOCK = threading.Lock()
 
@@ -579,7 +580,12 @@ def _copy_empty_database(dest: Path) -> None:
     about 2. A shared-folder round makes one to three scratch projects, so this is most of the time a round takes on
     Windows. Nothing is kept on disk: the key holds everything the setup is built from (ENLENS's tables, columns and
     indexes, and the add-ons'), so a changed layout, here or in a later version, makes a new empty database. An empty
-    one holds no rows of a project's own (its id is made when first asked for)."""
+    one holds no rows of a project's own (its id is made when first asked for).
+
+    The copy is written beside `dest` and put in place only if there is no database there yet, so two creations of the
+    same new project at once never copy an empty database over what the other already wrote (after review)."""
+    import os
+
     from .addons import database
 
     key = repr((SCHEMA, INDEXES, MIGRATIONS, database()))
@@ -603,11 +609,23 @@ def _copy_empty_database(dest: Path) -> None:
                 shutil.rmtree(tmp, ignore_errors=True)
             _EMPTY.clear()  # only the latest layout is wanted
             _EMPTY[key] = empty
-        dst = sqlite3.connect(dest)
+        part = dest.with_name(f"{dest.name}.{os.getpid()}-{threading.get_ident()}.new")
+        dst = sqlite3.connect(part)
         try:
             empty.backup(dst)
         finally:
             dst.close()
+    try:
+        if os.name == "nt":
+            os.rename(part, dest)  # refuses when dest is there
+        else:
+            os.link(part, dest)  # the same; os.rename would replace it
+    except FileExistsError:
+        pass  # made at the same moment by another: theirs stands, and `_setup` runs on it as on any project
+    except OSError:
+        pass  # a drive without links: `_setup` makes the database the usual way
+    finally:
+        part.unlink(missing_ok=True)
 
 
 def now() -> str:
@@ -648,7 +666,10 @@ class Workspace:
         if not ws.config_path.exists():
             ws.config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=2))
         if not ws.db_path.exists():
-            _copy_empty_database(ws.db_path)
+            try:
+                _copy_empty_database(ws.db_path)
+            except (OSError, sqlite3.Error):
+                pass  # (no temporary folder, say) `_setup` makes it the usual way
         ws._setup()  # as for any project: whatever the copy lacks is added here
         return ws
 
@@ -675,7 +696,7 @@ class Workspace:
             # set up in one transaction, saved once instead of once per table, column and index; nothing else has it
             # open yet. A project already there is set up as before, a statement at a time, so opening it never holds
             # the database while a job of it writes.
-            new = not cx.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
+            new = _ONE_TRANSACTION and not cx.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
             begin = "BEGIN IMMEDIATE;\n" if new else ""
             cx.executescript(begin + SCHEMA)
             _migrate(cx)
