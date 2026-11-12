@@ -2,8 +2,9 @@
 itself (gui/poller.py): a round soon after the app starts, then every `sync_every_minutes`, and soon after a change made
 through the app; paused per project or for the whole app; nothing for a project without a shared folder; one round per
 project at a time and never beside adding documents or the new reader; offline backs off 2 → 4 → 8 → 16 → 30 minutes
-and comes back after a round that reaches the folder; what came in is kept until the person marks it seen; it stops
-with the app. The clock is the test's: nothing waits real minutes.
+and comes back after a round that reaches the folder; rounds that find nothing back off to four intervals (2026-11-12)
+and come back at once with a change, a round that found something or a round by hand; what came in is kept until the
+person marks it seen; it stops with the app. The clock is the test's: nothing waits real minutes.
 """
 from __future__ import annotations
 
@@ -447,3 +448,85 @@ def test_pauses_asked_for_at_once_are_all_kept(setup, home):  # noqa: F811
     for t in threads:
         t.join(10)
     assert home.load_settings()["sync_paused_projects"] == sorted(names)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 2026-11-12: idle rounds back off (gui/poller.py, "Idle")
+# ---------------------------------------------------------------------------------------------------------------------
+def _waits(poller, clock, at, n):
+    """`n` rounds, each started when it is due (and not a second before); returns the waits and the time of the last."""
+    out = []
+    for _ in range(n):
+        wait = poller.state("P")["next_round_in"]
+        assert _step(poller, clock, at + wait - 1) == []
+        at += wait
+        assert len(_step(poller, clock, at)) == 1
+        out.append(wait)
+    return out, at
+
+
+def test_idle_rounds_back_off_to_four_intervals(setup):
+    app, poller, clock, rounds = setup
+    assert len(_step(poller, clock, 15)) == 1                          # idle 1
+    waits, _at = _waits(poller, clock, 15, 6)
+    assert waits == [120, 120, 120, 240, 480, 480]                     # three at 2, then 4, then 8 minutes at most
+    assert poller.state("P")["state"] == "waiting" and poller.state("P")["offline"] is None
+
+
+def test_idle_back_off_never_passes_fifteen_minutes_and_a_long_interval_stays_as_it_is(setup, home):  # noqa: F811
+    app, poller, clock, rounds = setup
+    home.update_settings({"sync_every_minutes": 10})
+    assert len(_step(poller, clock, 15)) == 1
+    waits, at = _waits(poller, clock, 15, 5)
+    assert waits == [600, 600, 600, 900, 900]
+    home.update_settings({"sync_every_minutes": 60})
+    waits, _at = _waits(poller, clock, at, 2)
+    assert waits == [3600, 3600]
+
+
+def _backed_off(poller, clock):
+    assert len(_step(poller, clock, 15)) == 1
+    _w, at = _waits(poller, clock, 15, 4)                             # idle 5
+    assert poller.state("P")["next_round_in"] == 480
+    return at
+
+
+def test_a_change_brings_the_usual_interval_back_at_once(setup):
+    app, poller, clock, rounds = setup
+    at = _backed_off(poller, clock)
+    clock.t = poller.born + at + 10
+    poller.touched("P")                                                # a change made through the app: 20 s
+    assert poller.state("P")["next_round_in"] == 20
+    assert len(_step(poller, clock, at + 30)) == 1                     # (it found nothing: idle 1 again)
+    assert poller.state("P")["next_round_in"] == 120
+
+
+def test_a_round_that_found_something_or_a_problem_brings_the_usual_interval_back(setup):
+    app, poller, clock, rounds = setup
+    at = _backed_off(poller, clock)
+    rounds.answer = _report(came={"from": {"id": "pabc", "name": "Anna"}, "checks": {"new": 1}})
+    assert len(_step(poller, clock, at + 480)) == 1
+    assert poller.state("P")["next_round_in"] == 120
+    rounds.answer = _report()
+    _w, at = _waits(poller, clock, at + 480, 5)
+    assert poller.state("P")["next_round_in"] == 480
+    for found in ({**_report(), "wrote": {"seq": 7}}, {**_report(), "files": 2},
+                  _report([{"kind": "documents", "person": {"id": "p1"}, "seq": 3, "message": "Waiting for …"}])):
+        rounds.answer = found
+        wait = poller.state("P")["next_round_in"]
+        at += wait
+        assert len(_step(poller, clock, at)) == 1
+        assert poller.state("P")["next_round_in"] == 120, found        # wrote, fetched a file, waits for documents
+        rounds.answer = _report()
+        _w, at = _waits(poller, clock, at, 5)
+
+
+def test_a_round_by_hand_brings_the_usual_interval_back(setup):
+    app, poller, clock, rounds = setup
+    at = _backed_off(poller, clock)
+    ws = app.ws("P")
+    by_hand = app.jobs.start(folder.JOB, "Working together: the shared folder", "P",
+                             lambda job: folder.sync_now(ws), uses_model=False, unique=True)   # as api_folder does
+    assert _until(lambda: poller.state("P")["last_round"]["job"] == by_hand.id)
+    assert poller.state("P")["next_round_in"] == 120
+    assert poller.projects["P"].idle == 0
