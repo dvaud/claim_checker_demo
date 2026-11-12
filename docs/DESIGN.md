@@ -540,8 +540,11 @@ nothing more (*Saved*, *Copied*, *Undone*), with *Undo* where it can be undone; 
 (`showError()`). **Looks:** bottom right, the card's white, the
 large shadow, an icon in its meaning's colour (a teal tick for done, the triangle, the red alert circle), a close icon
 button; at most one link or one small button. An error toast stays 15 s and keeps the technical message behind
-*Technical details*. The note of an update on Windows that did not finish is a quieter toast that waits to be closed;
-what is new after an update is never a toast (it waits under *What's new*, [5.2](#52-the-status-area-and-the-last-row)). **Not for:**
+*Technical details*. The note in the corner after an update is a quieter toast that waits to be closed: what is new
+says only the version and its title and subtitle, with *Read what's new* (a small quiet button) that opens the points
+in a dialog (`showWhatsNew()`, with a link to every change on GitHub); reading it or closing it marks it read, so it
+comes once, and Settings has it always (*What's new* beside the version, and in *Technical › Updates*; Find goes
+there). An update on Windows that did not finish says what happened and what to do, in full. **Not for:**
 anything to act on later (a notice) or not to miss (a dialog). **Make it:** `toast(message, kind, { action, button,
 detail })`, `showError(e)`. **Lives in:** `components.css` § 4.15.
 
@@ -797,11 +800,7 @@ while work runs or waits, the work box in exactly that space. Never a popover.
 The box's words are the link to where the work shows; its one button is always an action. The status area is the AI's
 own place (the AI line, the AI's name), so its *Start* carries no AI mark; *Start Claude Code* anywhere else does. **The last row:**
 *Settings* (an entry), then *Quit* (a small quiet button) or, when an update waits, *Update* in its place (a small main
-button), then the theme's icon button. **Above the last row**, after an update and until it is opened: *What's new in
-0.X.Y* (a small quiet button with the sparkles icon, as wide as its words). It opens a dialog with the version's note
-(`showWhatsNew()`: its title, subtitle and points, and a link to every change on GitHub) and goes once it has been
-opened; Settings has it always (*What's new* beside the version, and in *Technical › Updates*), and Find goes there.
-Nothing is shown by itself. **Lives in:** `components.css` § 5.2.
+button), then the theme's icon button. **Lives in:** `components.css` § 5.2.
 
 ### 5.3 Find
 
