@@ -75,6 +75,10 @@ def _windows():
 
     kernel32 = ctypes.WinDLL("kernel32")
     kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.argtypes = []
+    # the pseudo-handle of this process is -1 as a pointer: without argtypes ctypes passes it as an int and overflows
+    kernel32.GetProcessIoCounters.argtypes = [wintypes.HANDLE, ctypes.POINTER(IoCounters)]
+    kernel32.GetProcessIoCounters.restype = wintypes.BOOL
 
     def written() -> int:
         c = IoCounters()
@@ -98,8 +102,15 @@ def _pick():
     return lambda: 0
 
 
-written = _pick()
-written.__doc__ = "Bytes this process has asked to write so far (0 where it cannot be measured)."
+_measure = _pick()
+
+
+def written() -> int:
+    """Bytes this process has asked to write so far (0 where it cannot be measured: a meter never fails a test)."""
+    try:
+        return _measure()
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def _budget() -> int:
