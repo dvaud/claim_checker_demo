@@ -38,6 +38,7 @@ share (`ingest.py`, `terms.py`, `routing.py`, `llm.py`, the task queue), is buil
 | **0.15** | Released as 0.15.0 (8 November 2026), with patches up to 0.15.7: A0 to A5, H1, CI on three systems and the beta channel (J1 items 1 and 6), the rollback runbook (J1 item 10), versions on results (J4.2), issue forms and `SECURITY.md` (J4.5), and the half of the validation report that needs no AI (J4.3). J4.1 is dropped: ENLENS gives no citation file or DOI, by choice. |
 | **0.16** | Released as 0.16.0 (9 November 2026) and 0.16.1: H3, H2, H6 for `gui/server.py`, F4, F2, F5 and K1. Not built yet, and waiting for a later release: A6, D1 to D4, B5, G5, the AI mix (I5, H4, I1, I2, I4), H5, and `docs/METHODS.md` and `docs/PRIVACY.md` (J4.4). |
 | **0.17** | Released as 0.17.0 (12 November 2026): the sidebar of seven places, key terms without each language's common words, small fixes from use (M1, M2, M4, M6), the design guide (`docs/DESIGN.md`) with one look on every page, and working together, live: L1 to L5 (private until shared, one owner, a shared folder looked at every couple of minutes, the Team tab). Its release candidates were 0.17.0rc1 to rc5. Not tried yet between two computers on a real OneDrive, Dropbox or network drive, nor on a real Windows PC; four smaller points wait for a later release ([below](#017-working-together-live)). |
+| **0.18** | Candidates: 0.18.0rc1 (12 November 2026), Owner, Co-owner and Member roles with merges no file can abuse; 0.18.0rc2 (12 November 2026), a storage space of the team's own (L6, at Backblaze or Cloudflare, sealed and signed), an easier shared folder (L7), and M3, M7, M8. Not tried yet with real accounts at the two services, nor by a team on real computers. |
 
 ## Releases 0.15 to 0.17
 
@@ -574,8 +575,8 @@ The owner's model (9 November 2026). Until 0.17.0 (0.14, `sync.py`) colleagues e
 hand: what is new comes in, each person's judgements are kept under their name, and nothing decided is replaced. L
 keeps those merge rules and makes the exchange continuous and selective. **L1 to L5 are built in 0.17.0**; each item
 ends with what was decided. The known limits are in the 0.17.0 changelog entry, under *Not yet done*. **L6 and L7**
-(planned 12 November 2026) make the set-up easier: a storage space of the team's own (recommended), and an easier
-shared folder.
+(planned 12 November 2026, built in 0.18.0rc2) make the set-up easier: a storage space of the team's own
+(recommended), and an easier shared folder.
 
 **L1. Private until shared** · Level 0 · built in 0.17.0 (`sharing.py`, the `sync/` package)
 - Everything a person makes is theirs alone until they share it: checks of hypotheses, notes and highlights, research
@@ -648,8 +649,8 @@ running something for years. So, in this order of recommendation:
 
 The zip stays for one-off exchanges.
 
-**L6. A storage space of the team's own (recommended)** · Level 0 · ENLENS candidate (the `sync/` package,
-`views/team.js`)
+**L6. A storage space of the team's own (recommended)** · Level 0 · built in 0.18.0rc2 (`sync/space.py`, `seal.py`,
+`storage.py`, `b2.py`, `r2.py`, `views/team-space.js`)
 
 *In plain words:* the team rents a private storage space, free at a team's size, at a company that keeps files online
 (technically an *S3 bucket*: S3 is the common language such services speak). ENLENS puts the team's shared work there
@@ -742,7 +743,28 @@ administrators often refuse); **a GitHub repository** (accounts, size limits, no
 such as Oracle's (a card, servers taken back when idle, still a server to keep up); **one member's computer as the
 team's host** (colleagues cannot reach a laptop behind most networks, and the team stops when it sleeps).
 
-**L7. An easier shared folder** · Level 0 · ENLENS candidate (`views/team.js`, `sync/folder.py`)
+*Built (0.18.0rc2), and decided while building:*
+- **The storage layer** (`storage.py`: list, read, write whole, remove; a folder, or S3 with Signature V4 over the
+  standard library) sits under the folder's rules rather than inside them: each copy keeps a copy of the space on its
+  computer (`<ENLENS folder>/spaces/<id>/`), laid out as a shared folder, and `folder.py`'s round runs on it unchanged.
+  A round brings the space's news into that copy (each file checked), runs, and sends the copy's own part back,
+  `head.json` last. So every rule of the folder (roles, privacy, the merge) holds without being written twice.
+- **Sealing** with `cryptography` (now a dependency; `pdfminer.six`, in every one-line install, needed it already):
+  AES-256-GCM with the project's key, Ed25519 signatures by each member's own key, documents' readings and files under
+  a keyed hash of their names. People's names, the documents' text and titles never reach the storage readable.
+- **Trust:** the space's *keeper* (whoever set it up; then whoever is the project's owner, L2) signs the list of members
+  (`space/roster.json`) and the project's keys sealed to each member (`space/keys.json`). An invite gives a part, its
+  storage keys, the project's keys and a one-time secret; the colleague's first file proves the secret, and the
+  keeper's next round lets them in. A hand-over to a new owner is signed into the roster (the old keeper signs no later
+  one), with the storage keys sealed to the new keeper. Removing a member starts a new key *epoch*.
+- **Every 10 minutes at most** (the poller), and about 20 seconds after a change, as with the folder.
+- *Not checked against the real services* (no account could be used for tests): Backblaze's v4 calls and its key
+  limited to a name prefix, whether a key ENLENS makes may make keys (if not, the master key is kept, with a warning),
+  Cloudflare's token link with the right to make tokens (`api_tokens`), and the services' exact words for caps and
+  maintenance. Built against stand-ins that follow the services' documents.
+
+**L7. An easier shared folder** · Level 0 · built in 0.18.0rc2 (`views/team.js`, `sync/cloud_folders.py`,
+`gui/folder_picker.py`)
 - For teams that already share a folder, or cannot use an online storage service: OneDrive, Dropbox, SURFdrive for
   Dutch institutions, a network drive, or Syncthing (computer to computer, no cloud, both computers on at once). It
   works today (L5); what is clunky is choosing the folder.
@@ -760,7 +782,7 @@ Seen while using 0.17.0rc2, and small enough to come before the next feature. Bu
 cards and footers in one layout, without its AI box; one AI mark under the hypothesis box; the Evidence map's download
 as a small icon; a gap above a running check; the Search page's titles, with every searched word marked, in search by
 meaning too; and search by meaning set up only once per project. Built in 0.17.0rc4: M1, M2 and M4. Built in
-0.17.0: M6. Still to do:
+0.17.0: M5 and M6. Built in 0.18.0rc2: M3, M7 and M8.
 
 **M1. The research log panel makes room for the page** · Level 0 · built in 0.17.0rc4
 - With the panel open, the page's content runs right up to it, and at 90% zoom the panel covers the page and cuts the
@@ -771,7 +793,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - A quick look opened from a project says "Unknown framework" when the codebook chosen for the whole app is kept in
   that project only. Decided: a quick look started from a project can use that project's codebooks.
 
-**M3. Search by meaning set up from the Search page** · Level 1
+**M3. Search by meaning set up from the Search page** · Level 1 · built in 0.18.0rc2
 - When a model for search by meaning is chosen in Settings but the open project is not set up for it, the Search page
   offers to set it up there, with its progress, instead of a hint that points elsewhere.
 
@@ -779,7 +801,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - Today the title and a bare book icon both open it, and neither looks like it. One visible way, and the icon actions
   labelled.
 
-**M5. Marks to try in mockups** · Level 0
+**M5. Marks to try in mockups** · Level 0 · built in 0.17.0
 - The active page tab without the white folder tab (an underline or a tinted pill); a document icon before each title
   in a theme's *Mostly from* line; *reviewed by you* beside a verdict as a small badge, with the words as its tooltip.
 
@@ -792,12 +814,12 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   in its project; adding documents, search by meaning and rounds of the shared folder wait for each other; checks,
   codes, themes and the glossary run beside each other. A job that waits holds no AI model.
 
-**M7. Moving many documents to the new reader** · Level 0
+**M7. Moving many documents to the new reader** · Level 0 · built in 0.18.0rc2
 - Say beforehand how many can move cleanly; report in one line and a compact table instead of one sentence per
   document; one combined review of the results that would lose their place, then *Move anyway*; and *Review next* to
   walk the documents one at a time.
 
-**M8. A local model that works without a terminal** · Level 0
+**M8. A local model that works without a terminal** · Level 0 · built in 0.18.0rc2
 - Seen on Windows after *Install Ollama*: the person still had to open Ollama, and then a terminal, before a model
   would answer. Someone who has never used a terminal, and doesn't know what a model is, stops there. ENLENS should
   go from the installed program to a model that answers by itself: start Ollama, wait until it answers, then offer the

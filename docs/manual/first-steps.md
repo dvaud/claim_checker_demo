@@ -34,10 +34,16 @@ switched off, so it cannot open your files. ENLENS runs Claude Code the same way
 this computer needs no terminal:
 
 1. With no model server running, *Install Ollama* gets **Ollama** (free): it says the size of the download first
-   (about 1.7 GB on Windows, 230 MB on a Mac), then installs and starts it, with a progress bar. Ollama installed but
-   not running: *Start Ollama*. The step notices Ollama by itself when it starts.
-2. With Ollama running but no model yet, *Download qwen3:8b* (about 5 GB) gets one, with *Also nomic-embed-text* for
-   search by meaning, a progress bar and *Stop* (Ollama keeps what it has and goes on from there).
+   (about 1.7 GB on Windows, 230 MB on a Mac), then installs and starts it, with a progress bar. If Ollama is on the
+   computer but not running (after an install, or on a later day), ENLENS starts it by itself and waits until it
+   answers: there is nothing to open and nothing to type. *Start Ollama* stays for when that did not work.
+2. With Ollama running but no model yet, ENLENS suggests the models that **fit this computer**, from its memory, free
+   disk space and graphics card: one recommended, a smaller and quicker one, and a larger and more careful one
+   beside it, each with its download size, how quick it will be here and what it is good for. *Download …* gets the
+   one you chose, with *Also …* for search by meaning (a small one for English, a larger one for many languages), a
+   progress bar and *Stop* (Ollama keeps what it has and goes on from there). A model that does not fit is not offered.
+3. The downloaded model becomes the AI and is tested at once.
+
 3. The downloaded model becomes the AI and is tested at once.
 
 Ollama fetches the model from ollama.com; none of your documents are sent. When whoever installed the app already

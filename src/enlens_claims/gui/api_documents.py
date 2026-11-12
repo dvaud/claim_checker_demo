@@ -217,7 +217,26 @@ class DocumentsApi:
         if not ids:
             raise ApiError(409, "Every document here was read by the current reader already: there is nothing to do.")
         # 0.18 (M6): while another job of the project runs, the moves wait for their turn (`waiting_for`), cancellable
-        return {"job": self.app.start_new_reader_many(name, ids, people.me()).view()}
+        # 0.18 (M7): `keep_unplaced` is the person's *Move anyway* after the combined review
+        return {"job": self.app.start_new_reader_many(name, ids, people.me(), keep_unplaced=body.get("keep_unplaced") is True).view()}
+
+    def post_new_reader_preview(self, name, q):
+        """0.18 (M7): the dry run before moving several documents (same `doc_ids` as the move): how many move cleanly,
+        how many results would lose their place, and which. Nothing is stored or changed."""
+        ws = self.app.ws(name)
+        body = self._body()
+        older = [r["doc_id"] for r in ws.query("SELECT doc_id FROM documents WHERE COALESCE(reader, 1) < ? "
+                                               "ORDER BY title", (ingest.READER,))]
+        ids = body.get("doc_ids")
+        if ids is not None:
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                raise ApiError(400, "doc_ids must be a list of document ids.")
+            ids = [i for i in older if i in set(ids)]
+        else:
+            ids = older
+        if not ids:
+            raise ApiError(409, "Every document here was read by the current reader already: there is nothing to do.")
+        return {"job": self.app.start_new_reader_preview(name, ids).view()}
 
     def put_reading_checked(self, name, doc_id, q):
         """0.15.7: mark a document's reading as checked by the person (`checked`: true), or take that back."""

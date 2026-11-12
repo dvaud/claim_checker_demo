@@ -1500,7 +1500,26 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .team-kind + .team-kind { margin-top: 8px; }
 .team-more { margin-top: 4px; }
 .team-join { margin-top: var(--space-3); }
+/* 0.18.0rc2 (L7): the shared folder chosen from the cloud folders this computer has */
+.team-offers { margin: 0 0 var(--space-3); }
+.team-offers > div > * + * { margin-top: var(--space-2); }
+.team-offers .team-text { margin-bottom: 0; }
+.team-cloud .list-rows.list-rows { grid-template-columns: minmax(0, 1fr); }
+.team-cloud .list-row { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
+.team-cloud .list-row .list-row-main { grid-column: 1; }
+.team-cloud .list-row .list-row-actions { grid-column: 2; justify-content: flex-end; }
+.team-cloud .list-row-sub { overflow-wrap: anywhere; }
+.team-cloud .list-group { margin: 0; }
+.team-found strong, .team-join-folder { overflow-wrap: anywhere; }
 .team-steps { margin: 0; padding-left: 1.3em; font-size: var(--fs-small); }
+/* 0.18.0rc2 (L6): a storage space: the two services offered, the set-up's steps in a dialog */
+.team-choices { list-style: none; margin: var(--space-2) 0; padding: 0; display: grid; gap: var(--space-2); }
+.team-choices li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
+.team-space-setup .team-steps { font-size: inherit; display: grid; gap: var(--space-3); }
+.team-space-setup .field { margin-top: var(--space-2); }
+.team-space-where { overflow-wrap: anywhere; }
+.team-check { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+#space-invite-message, #space-join-link { width: 100%; resize: vertical; font-size: var(--fs-small); word-break: break-all; }
 .team-downloads { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .team-downloads li { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
 .team-foot { padding: 12px 0 0; }
@@ -1595,3 +1614,32 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
   .dz-sample { grid-template-columns: 1fr; }
   .dz-drawer { position: static; height: auto; border-radius: var(--radius); }
 }
+
+/* 0.18 (M3): setting up search by meaning from the Search page */
+.search-meaning { margin-top: var(--space-3); }
+.search-meaning:empty { display: none; }
+.search-meaning-hint { margin: 0; }
+.search-meaning-card .row { align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.search-meaning-card p { margin: var(--space-1) 0 0; }
+
+/* 0.18 (M7): moving many documents to the new reader: the compact table, and the combined review */
+.nr-table { width: 100%; border-collapse: collapse; margin-top: var(--space-2); }
+.nr-table th, .nr-table td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+.nr-table th { font-weight: var(--fw-strong); color: var(--text-2); }
+.nr-table .num { text-align: right; white-space: nowrap; padding-right: var(--space-3); }
+.nr-review-doc + .nr-review-doc { margin-top: var(--space-4); }
+.nr-review-doc h3 { margin: 0 0 var(--space-2); }
+.nr-review-list { list-style: none; margin: 0; padding: 0; }
+.nr-review-list li { padding: var(--space-2) 0; border-top: 1px solid var(--border); }
+.nr-review-list blockquote { margin: 0 0 4px; padding-left: var(--space-3); border-left: 3px solid var(--border-strong); }
+.nr-table th:first-child, .nr-table td:first-child { width: 100%; }
+.nr-table th.num { white-space: normal; max-width: 9em; }
+.nr-table td:last-child { white-space: nowrap; width: 1%; }
+
+/* 0.18.0rc2 (M8): the models offered for this computer */
+.model-choices { border: 0; margin: var(--space-2) 0; padding: 0; display: grid; gap: var(--space-2); }
+.model-choice { display: flex; gap: var(--space-2); align-items: flex-start; cursor: pointer; }
+.model-choice input { margin-top: 4px; }
+.model-choice-head, .model-choice-line { display: block; }
+.model-role { margin-left: var(--space-2); color: var(--accent-text); }
+.model-what { margin: 0 0 var(--space-1); }

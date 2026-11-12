@@ -5,6 +5,7 @@ import { App, api, h, icon, replace, append, toast, showError, field, navigate, 
 import { MOVE_TITLE, MOVING, BOTH, NOT_FRESH, moveSummary, secondName, foreignServers, serverLine, movedText, linkCleanTitle, LINK_CLEAN } from "./move-state.js";   // roles
 import { zipButton } from "./share.js";   // 0.18: the two downloads, what you shared or the whole project
 import { FEATURES } from "../features.js";
+import { joinTeamButton } from "./team-space.js";   // 0.18.0rc2 (L6): a new project from a team's invite link
 
 // Import a project from a zip made with "Send what you shared" or "Download the whole project" (on this or another computer). 0.10: the same dialog takes
 // the zip of "Move ENLENS to another computer" (every project and the settings); its projects keep their names.
@@ -158,8 +159,8 @@ function togetherCard() {
       h("span", { class: "muted small" }, "Colleagues see your judgements under this name.")),
     // 0.18: the shared folder first (the Team tab), the file by hand as before
     // the action after its sentence, never inside it (docs/DESIGN.md 6): it opens the Team tab beside the page
-    h("p", { class: "small tg-folder" }, h("strong", {}, "Through a shared folder: "), "your copies keep in step by themselves. ",
-      "In the Team tab beside any page, choose a folder your team shares (OneDrive, Dropbox, a network drive). ",
+    h("p", { class: "small tg-folder" }, h("strong", {}, "Through a storage space or a shared folder: "), "your copies keep in step by themselves. ",
+      "In the Team tab beside any page, set up a storage space of your team’s own (recommended), or choose a folder your team shares (OneDrive, Dropbox, a network drive). A colleague who got an invite link chooses Join a team, above. ",
       button({ kind: "quiet", sm: true, icon: "users", onClick: (e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("enlens-drawer", { detail: { tab: "team" } })); } }, "Open the Team tab")),
     h("p", { class: "small" }, h("strong", {}, "Or as a file:")),
     h("ol", { class: "small move-steps" },
@@ -325,6 +326,7 @@ export async function renderProjects(view) {
   view.appendChild(pageHead("Projects", { sub: "Each project keeps its own documents, results and notes.", actions: [
     button({ kind: "main", onClick: () => newProjectDialog() }, icon("plus", { size: 14 }), "New project"),
     button({ onClick: () => importProjectDialog() }, icon("upload", { size: 14 }), "Import a project (.zip)"),
+    joinTeamButton(),
     button({ onClick: () => linkProjectDialog() }, icon("link", { size: 14 }), "Open an existing ENLENS project folder"),
     quickLookButton()] }));
   view.appendChild(h("p", { class: "muted small pj-zip-note" }, "“Send what you shared” gives a colleague the documents and the work you shared, nothing private. “Download the whole project” moves it to another computer of yours: everything, your private work too. “Import a project” brings such a zip in as a new project; “Bring in a colleague’s work” merges it into the copy you have."));

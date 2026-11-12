@@ -272,10 +272,21 @@ minute). An Ollama already on the computer is only started (`"already": true`). 
 plain words (not enough disk space, offline, a file that is not Ollama's: nothing is installed from it). Linux:
 `{"terminal": {"opened", "window", "command"}}`: a terminal window runs Ollama's own line, which asks for the password
 (it installs for everyone and sets up a service); `command` is the line to type when no window could be opened.
-Nothing of the person's is sent, so it is allowed with `--local-only` too.
+Nothing of the person's is sent, so it is allowed with `--local-only` too. 0.18.0rc2: `suggested` is what fits THIS
+computer (`modeladvice.suggested`), and `advice` says more: `{"computer": {"memory", "disk_free", "gpu", "system",
+"unified", "words"}, "chat": {"pick", "smaller", "larger", "options", "reason"}, "embed": {…}, "what_is_a_model"}`;
+a model is `{"name", "use", "role": "recommended"|"smaller"|"larger", "size", "bytes", "speed": "quick"|"fair"|"slow",
+"speed_text", "good_for", "tight", "note"}`. Only models that fit the memory (the size and the memory its context takes,
+at most 50 % of the memory for the recommended one, 65 % for a larger one; a graphics card's own memory where
+`nvidia-smi` reports one) and the disk (the download and 2 GB to spare) are listed; when none fits, `pick` is null and
+`reason` says why. `advice` is null when the computer cannot be read, and `suggested` then keeps the old
+`qwen3:8b` and `nomic-embed-text`.
 
 `POST /api/ollama/start` (0.15.6) → starts the Ollama that is on this computer but not running, hidden: `{"started",
-"path"}`; 409 when Ollama is not on this computer. The page notices it within a few seconds.
+"path"}`; 409 when Ollama is not on this computer. The page notices it within a few seconds. 0.18.0rc2: it starts nothing
+when Ollama answers already (`{"started": false, "running": true}`) or was started by ENLENS in the last 45 seconds
+(`{"started": false, "starting": true}`): the card calls it by itself whenever Ollama is on the computer and does not
+answer.
 
 `POST /api/servers/pull` (0.13.7) → downloads models into the Ollama running on this computer, so a local model needs
 no terminal. Body `{"models": ["qwen3:8b", "nomic-embed-text"]}` (one to four names as Ollama's library writes them;
@@ -399,6 +410,18 @@ and original files are stored there once for the whole team.
   colleague's bundle says so in its own subfolder (`waiting.json`); when that bundle is damaged or gone on its
   writer's computer too, or names a reading no copy can write again, the writer's copy starts afresh at its next round
   (one bundle with everything it shares), and the colleague goes on from there.
+- `GET /api/cloud-folders` → `{"folders": [{"name", "path", "service"}], "picker": bool}` (0.18.0rc2, L7): the cloud
+  folders this computer has, by plain name (`service`: `onedrive`, `googledrive`, `box`, `dropbox`, `other`): on a Mac
+  those in `~/Library/CloudStorage/` and `~/Dropbox`; on Windows the folders `%OneDrive%`, `%OneDriveCommercial%` and
+  `%OneDriveConsumer%` name, and Dropbox's (`info.json`); on Linux `~/Dropbox` and Dropbox's `info.json`. `picker`:
+  whether `POST /api/choose-folder` has a folder window to open. Only folders that exist are listed.
+- `POST /api/choose-folder {"prompt"?, "start"?}` → `{"path": str | null, "available": bool}`: opens the system's own
+  folder window (macOS `osascript`, Windows PowerShell, Linux `zenity` or `kdialog`) and answers when it is closed;
+  `path` is null when it was cancelled, closed too late (10 minutes), failed or there is no such window
+  (`available` false). 409 while another folder window is open. Never reads or writes anything in the folder.
+- `GET /api/projects/<p>/shared-folder/find` → `{"found": [path], "team": "ENLENS-xxxxxxxx"}`: the folders, among the
+  cloud folders and up to three levels below them, that already hold this project's team folder (a colleague set it
+  up); each is a shared folder to choose. Looks about two seconds at most; hidden folders are skipped.
 - `PUT /api/projects/<p>/shared-folder {"path", "keep_out"?}` → the status above. The folder must exist, be writable,
   not be inside the project's own folder, and not hold the project nor ENLENS's own folder (the cloud service would
   copy the project's database to the team): 400 in plain words otherwise. The project's folder in it (`ENLENS-…`)
@@ -429,6 +452,54 @@ and original files are stored there once for the whole team.
   problem in the result, not an error: nothing changed. Each colleague's work brought in is logged as from a zip
   (`sync_log`, research log kind `sync`). 0.17.0 (M6): a round never runs beside adding documents, the new reader or
   another round of the project: it waits its turn (`waiting_for`); it runs beside checks.
+
+**A storage space of the team's own (0.18.0rc2, roadmap L6: `sync/space.py`, `sync/seal.py`, `sync/storage.py`,
+`sync/b2.py`, `sync/r2.py`, `gui/api_space.py`).** An online storage space (an S3 bucket at Backblaze B2 or Cloudflare
+R2) in place of a shared folder. Each copy keeps a copy of the space on this computer (`<ENLENS folder>/spaces/<space
+id>/`), laid out as a shared folder; a round brings the space's news into it (every file opened and checked: sealed
+for that place, signed by the member whose part it is in), runs the shared folder's round on it, and sends this copy's
+part back, sealed (AES-256-GCM with the project's key, Ed25519 signatures). The project's `config.json` says where the
+space is (`shared_space`, no keys); the keys are in the system's keychain (`keychain.py`). With a space, `GET
+…/shared-folder` has `"space"` (below) and `"folder"` is the copy on this computer; *Sync now* and the poller are the
+folder's (a space is looked at every 10 minutes at most, and about 20 s after a change). The round's `result` has
+`"space"` (where it is, in words), `"sent"` (files sent) and, when the team moved, `"moved"`. More problem kinds:
+`denied` (the space refused this copy's key: removed from the team, or a key deleted), `full` (the service's cap or
+billing), `set_aside` (a file or the list of members not signed as it must be: nothing of it came in), `no_keys` (this
+computer has not got the space's keys: a project copied from elsewhere; ask for a new invite).
+- `GET …/shared-folder` → as above, with `"space": null | {"id", "service": "b2" | "r2" | "dir", "where", "region",
+  "in_eu", "keeper" (this copy keeps the space's keys: it invites, removes and moves), "joined" (the keeper's copy has
+  let this copy in), "members": [{"part", "person", "name", "me", "keeper", "removed", "since"}], "invites": [{"part",
+  "made_at", "label"}] (not used yet), "set_aside": [{"part", "why", "message", "at"}], "keychain": "macos" |
+  "windows" | "secret-tool" | "file"}`.
+- `GET /api/space/links` → the services' pages the set-up opens (`b2_signup`, `b2_keys`, `b2_caps`, `r2_signup`,
+  `r2_dashboard`, `r2_token`: the link that fills in Cloudflare's token form).
+- `POST /api/projects/<p>/space/b2 {"key_id", "app_key"}` → `{"job": view}` (kind `space-setup`): the owner's set-up
+  with a Backblaze master application key. The job checks the key and the region, makes a key of ENLENS's own (or keeps
+  the master key, with a warning, when that key may not make keys), a private bucket keeping only each file's latest
+  version, and a test file; its `result` is the status above with `"warnings": [text]` (not in the EU; the master key
+  kept). 400 without both halves; 409 when the project has a space already; a wrong key, maintenance or no connection
+  end the job with `error` in plain words, nothing set up.
+- `POST /api/projects/<p>/space/r2 {"token", "account_id"?}` → `{"job": view}`: the same at Cloudflare R2 (a bucket in
+  the EU jurisdiction). When the token reaches several accounts and none is named, the job's `result` has `"accounts":
+  [{"id", "name"}]` and nothing is set up.
+- `POST /api/projects/<p>/space/invites {"label"?}` → `{"link", "message", "part", "status"}`: a new part with its own
+  storage keys, and an invite link (`enlens://join#…`, holding those keys, the project's keys and a one-time secret);
+  `message` is ready to send. The keeper's copy only (400 otherwise). The keeper's next round lets the colleague in.
+- `DELETE /api/projects/<p>/space/invites/<part>` → the status: an invite not used yet is withdrawn (its keys deleted).
+- `DELETE /api/projects/<p>/space/members/<part>` → the status: the colleague's keys are deleted and the project's key
+  is replaced for those who stay. The keeper's copy only.
+- `POST /api/projects/<p>/space/move {"service": "b2", "key_id", "app_key"} | {"service": "r2", "token",
+  "account_id"?}` → `{"job": view}`: a new space; every member gets a part and keys there, sealed to them in the old
+  space, and their copies follow at their next round. The `result` has `"moved": {"told": n, "not_told": [names]}`
+  (the old space could not be reached: send them new invites).
+- `POST /api/projects/<p>/space/join {"link"}` → the status: this project joins the team's space (409 when it has one).
+- `POST /api/join-team {"link", "name"?}` → `{"project"}`: *Join a team* under Projects: a new project (named as the
+  inviter's, or `name`), joined, and made the current project. 400 in plain words for a link that is cut off or not an
+  invite.
+- `DELETE /api/projects/<p>/space` → the status: this copy stops using the space and forgets its keys (nothing in the
+  space is removed). `DELETE …/shared-folder` does the same for a project with a space.
+- `POST /api/projects/<p>/space/dir {"path"}`: a space kept in a folder of this computer, sealed as at a service, for
+  trying the Team tab (only with `ENLENS_TRY_SPACES=1`, as `tools/dev_server.py --space` sets it; 404 otherwise).
 
 **Looking by itself every couple of minutes (0.17.0, roadmap L3: `gui/poller.py`, `gui/api_poller.py`).** A thread of
 the app starts a round (`folder.sync_now`, the job above, marked `"background": true`) for each project with a shared
@@ -747,8 +818,20 @@ meaning, the glossary and the keyword pass. The job's result is `{"moved": [{"do
 "left_out"}], "kept": [{"doc_id", "title", "reason", "not_placed"?}], "stopped", "glossary", "codes", …}`: `kept` are
 left as they were, `not_placed` (how many results would have had no place) when that is the reason. Stopping it keeps
 the documents moved so far. 400 for `doc_ids` that is not a list; 409 when none is left to move. 0.17.0: while another
-job of the project runs, it waits its turn (`waiting_for`) instead of a 409. The list of documents (`GET …/documents`) gives `new_reader` (`ingest.READER`) beside each
-document's `reader`.
+job of the project runs, it waits its turn (`waiting_for`) instead of a 409. 0.18.0rc2: `{"keep_unplaced": true}` (the person's *Move anyway*) moves a document even when some results find no
+place: those are kept as records that point nowhere, as a move from the document's own page does
+(`reread.move(keep_all=False)`). `moved` entries also give `no_place`, `kept` entries `cannot: true` when the document
+cannot be read again now, and the result has `summary`: `{"moved", "left_as_they_were", "results_moved",
+"results_without_place", "moved_anyway"}`. The list of documents (`GET …/documents`) gives `new_reader`
+(`ingest.READER`) beside each document's `reader`.
+
+`POST /api/projects/<p>/new-reader/preview` `{"doc_ids"?: [doc_id]}` (0.18.0rc2) → `{"job"}` (kind
+`new_reader_preview`): the dry run before moving several documents; same `doc_ids` rules, errors and 409 as the move.
+Each document is read again by the current reader (`reread.preview`; nothing is stored or changed). The job's result is
+`{"documents": [{"doc_id", "title", "ok", "reason", "results", "no_place", "left_out", "not_placed": [{"kind_text",
+"what", "quote", "page", "where", "left_out_kind", "why"}]}], "stopped", "summary": {"documents", "clean",
+"would_lose", "cannot", "results_without_place"}}`: `clean` documents move with every result in place, `would_lose`
+documents have `no_place` results that would find none, `cannot` documents cannot be read again now (`reason`).
 
 `PUT /api/projects/<p>/documents/<doc_id>/reading-checked` `{"checked": bool}` (0.15.7) → `{"checked": {"by", "name",
 "at"} | null}`: the person marks the reading as checked (or takes it back). It is kept in the reading report, so a new

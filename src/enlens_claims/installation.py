@@ -108,6 +108,10 @@ def technical_details(settings: dict | None = None, local_only: bool | None = No
         channel = "follows main (git copy)"
     else:
         channel = "early (release candidates too)" if s.get("update_channel") == "early" else "stable"
+    from . import keychain
+
+    keys = {"macos": "the macOS keychain", "windows": "the Windows Credential Manager", "secret-tool": "the system keyring (secret-tool)",
+            "file": "files in ENLENS's folder"}[keychain.backend()]
     shown = {"windows": "Windows", "mac": "macOS", "linux": "Linux"}[system()]
     return "\n".join([
         f"ENLENS version: {__version__}",
@@ -116,6 +120,7 @@ def technical_details(settings: dict | None = None, local_only: bool | None = No
         f"Python: {platform.python_version()}",
         f"AI route: {route}",
         f"Local only: {'yes' if off else 'no'}",
+        f"Secrets kept in: {keys}",
         f"Update channel: {channel}",
     ])
 

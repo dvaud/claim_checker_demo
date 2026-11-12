@@ -211,6 +211,27 @@ export function cleanPath(raw) {
   return p;
 }
 
+// 0.18.0rc2 (L7): a folder as a colleague sees it: the cloud folder it is in, by name, then the folders below it
+// ("OneDrive – University of Amsterdam › Team › Project"). `clouds` is GET /api/cloud-folders' list; a folder in none of
+// them is named by its last two folders. Returns {cloud: name | null, below: [names], text}.
+export function folderAsSeen(path, clouds) {
+  const windows = /^[A-Za-z]:[\\/]/.test(String(path || ""));
+  const norm = (x) => { const t = String(x || "").replace(/\\/g, "/").replace(/\/+$/, ""); return windows ? t.toLowerCase() : t; };
+  const keep = (x) => String(x || "").replace(/\\/g, "/").split("/").filter(Boolean);
+  const p = norm(path);
+  let best = null;
+  for (const c of clouds || []) {
+    const r = norm(c.path);
+    if (r && (p === r || p.startsWith(`${r}/`)) && (!best || r.length > norm(best.path).length)) best = c;
+  }
+  if (best) {
+    const below = keep(path).slice(keep(best.path).length);
+    return { cloud: best.name, below, text: [best.name, ...below].join(" \u203a ") };
+  }
+  const last = keep(path).slice(-2);
+  return { cloud: null, below: last, text: last.join(" \u203a ") };
+}
+
 // 0.18 stage 5: a round the poller started (a job marked `background`) stays out of the sidebar's work box for its
 // first QUIET_SECONDS, then shows like any job (app.js drawStatus). The page learns that a round runs from GET /api/jobs
 // (drawStatus) and from the poller's state (app.js syncNewsInit); these say when to look again, so that a long round

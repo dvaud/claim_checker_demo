@@ -1,7 +1,7 @@
 // Documents: a big add area first, the document table, smart search in plain words, a document viewer, and the
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
-import { tesseractHelp, App, api, h, icon, readsLine, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
+import { tesseractHelp, App, api, h, icon, readsLine, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, navigate, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
   dialog, certainty, breakSegments, breaksToIndex, textPositions, wordSpan, cpLength, safeHref, searchHref, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
@@ -257,7 +257,7 @@ export async function renderSources(view) {
   // 0.15.7: documents read by an earlier reader, moved to the new one from here (several at once): the box keeps
   // its job's progress, or what the last move did, across re-draws of the list
   const nrBox = h("div", { class: "nr-box", role: "region", "aria-label": "Documents read by an earlier reader" });
-  const nr = { running: false, done: null, older: [] };
+  const nr = { running: false, done: null, plan: null, older: [] };
   let pa = {};                // the project's AI-access info, as last drawn
   let countsEl = null, shieldNote = null, tbody = null;
   const rows = new Map();     // doc_id -> its row
@@ -393,6 +393,36 @@ export async function renderSources(view) {
   }
 
   // 0.15.7: the documents an earlier reader read, offered to the new one; the job's progress; what it did
+  // 0.18 (M7): moving many documents. First a dry run (nothing changes): how many move cleanly and how many results
+  // would lose their place. Then the person chooses: move the clean ones; review the results without a place, all in
+  // one list, and Move anyway (they are kept as records that point nowhere, as in a move from the document's own
+  // page); or Review next, one document's Reading preview after the other. The note after a move is one line and a
+  // compact table.
+  const REVIEW_KEY = `enlens-nr-review:${project}`;
+  const reviewLeft = () => {
+    try { const ids = JSON.parse(sessionStorage.getItem(REVIEW_KEY) || "[]"); return ids.filter((id) => nr.older.some((d) => d.doc_id === id)); } catch (_) { return []; }
+  };
+  const setReviewLeft = (ids) => { try { sessionStorage.setItem(REVIEW_KEY, JSON.stringify(ids)); } catch (_) { /* the walk still works from the plan */ } };
+  const readingHref = (id) => `#/doc/${encodeURIComponent(id)}?tab=reading&preview=1`;
+  function reviewNext(ids) {
+    if (ids) setReviewLeft(ids);
+    const left = reviewLeft();
+    if (!left.length) { toast("No document is left to review.", "info"); return; }
+    setReviewLeft(left.slice(1));
+    navigate(readingHref(left[0]));
+  }
+  // one line per document: its title as a link to its Reading, what it is, and Review
+  function nrTable(rows) {
+    const shown = rows.slice(0, 20);
+    return [h("table", { class: "nr-table small" },
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Document"), h("th", { scope: "col", class: "num" }, "Results without a place"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Review")))),
+      h("tbody", {}, shown.map((r) => h("tr", {},
+        h("td", {}, h("a", { href: readingHref(r.doc_id) }, r.title || "a document"), r.note ? h("span", { class: "muted" }, ` · ${r.note}`) : null,
+          r.reason ? h("div", { class: "muted" }, r.reason) : null),
+        h("td", { class: "num" }, r.count === null ? "–" : fmt.num(r.count)),
+        h("td", {}, link({ href: readingHref(r.doc_id) }, "Review")))))),
+      rows.length > shown.length ? h("p", { class: "muted small" }, `and ${fmt.num(rows.length - shown.length)} more.`) : null];
+  }
   function drawNr() {
     if (nr.running) return;  // the job's card is in the box
     // while the note of the last move is shown, the documents it left as they were are listed there, not offered again
@@ -401,8 +431,10 @@ export async function renderSources(view) {
     const sel = older.filter((d) => picked.has(d.doc_id));
     const parts = [];
     if (nr.done) parts.push(nrSummary(nr.done));
-    if (older.length) {
+    if (nr.plan) parts.push(nrPlan(nr.plan));
+    else if (older.length) {
       const n = older.length;
+      const left = reviewLeft();
       parts.push(notice({ kind: "info", icon: "layers" }, h("div", { class: "grow" },
         h("p", {}, h("strong", {}, `${fmt.num(n)} ${n === 1 ? "document was" : "documents were"} read by an earlier reader of ENLENS.`),
           ` ${n === 1 ? "It keeps" : "They keep"} that reading, so your quotes and judgements stay where they are. `,
@@ -411,24 +443,79 @@ export async function renderSources(view) {
         h("div", { class: "btn-row docs-nr-actions" },
           button({ kind: "main", sm: true, onClick: () => startNr(sel.length ? sel : older, !!sel.length) }, icon("layers", { size: 13 }),
             sel.length ? `Read the ${sel.length === 1 ? "selected one" : `${fmt.num(sel.length)} selected`} with the new reader` : n === 1 ? "Read it with the new reader" : `Read all ${fmt.num(n)} with the new reader`),
-          sel.length ? null : h("span", { class: "muted small" }, "or tick some in the list to read only those")))));
+          left.length ? button({ kind: "quiet", sm: true, onClick: () => reviewNext() }, `Review next (${fmt.num(left.length)} left)`) : null,
+          sel.length ? null : h("span", { class: "muted small" }, n === 1 ? "It is checked first; nothing changes until you say so." : "or tick some in the list to read only those. They are checked first; nothing changes until you say so.")))));
     }
     nrBox.hidden = !parts.length;
     replace(nrBox, parts);
   }
+  // the dry run: nothing is stored; the answer is drawn by drawNr()
   async function startNr(list, chosen) {
-    const n = list.length;
-    const ok = await confirmDialog({
-      title: n === 1 ? "Read this document with the new reader?" : `Read ${fmt.num(n)} documents with the new reader?`,
-      message: h("div", {},
-        h("p", {}, `${n === 1 ? "It is" : "Each is"} read again from ${n === 1 ? "its" : "their"} original file, and your results (quotes, judgements, codes, themes) move with ${n === 1 ? "it" : "each"} to the same words.`),
-        h("p", {}, "A document where any result would not find its place is left as it is. The list afterwards says which, and you can look at each one on its own page before you move it."),
-        h("p", { class: "muted small" }, "You can go on working meanwhile, or stop it: documents already moved stay moved.")),
-      confirmText: n === 1 ? "Read it" : "Read them" });
-    if (!ok) return;
     let job;
-    try { job = (await api("POST", `/api/projects/${P(project)}/new-reader`, chosen ? { doc_ids: list.map((d) => d.doc_id) } : {})).job; }
+    try { job = (await api("POST", `/api/projects/${P(project)}/new-reader/preview`, chosen ? { doc_ids: list.map((d) => d.doc_id) } : {})).job; }
     catch (e) { showError(e); return; }
+    followNrCheck(job.id);
+  }
+  function followNrCheck(jobId) {
+    nr.running = true;
+    nr.done = null; nr.plan = null;
+    const w = jobCard(nrBox, jobId, "Checking where your results would go",
+      (p) => (p.total ? `${fmt.num(p.done)} of ${fmt.num(p.total)}${p.file ? ` · ${p.file}` : ""}` : "Starting…"),
+      async (j) => {
+        nr.running = false;
+        if (j.state === "done" && !(j.result || {}).stopped) nr.plan = j.result || null;
+        drawNr();
+      }, { small: true, plain: true, stoppedText: "Stopped. Nothing was changed." });
+    watchers.push(w);
+  }
+  function nrPlan(plan) {
+    const sum = plan.summary || {}, docs = plan.documents || [];
+    const clean = docs.filter((d) => d.ok && !d.no_place), losing = docs.filter((d) => d.ok && d.no_place), cannot = docs.filter((d) => !d.ok);
+    const rows = [...losing.map((d) => ({ doc_id: d.doc_id, title: d.title, count: d.no_place })),
+      ...cannot.map((d) => ({ doc_id: d.doc_id, title: d.title, count: null, reason: d.reason }))];
+    const movable = clean.length + losing.length;
+    return notice({ kind: losing.length || cannot.length ? "attention" : "info", role: "status", icon: "layers" }, h("div", { class: "grow" },
+      h("p", {}, h("strong", {}, `${fmt.num(clean.length)} of ${fmt.num(docs.length)} ${docs.length === 1 ? "document moves" : "documents move"} cleanly`),
+        `: every result in ${clean.length === 1 ? "it" : "them"} finds its place in the new reading.`,
+        losing.length ? ` ${plural(sum.results_without_place || 0, "result")} in ${plural(losing.length, "other document")} would lose ${(sum.results_without_place || 0) === 1 ? "its" : "their"} place.` : "",
+        cannot.length ? ` ${plural(cannot.length, "document")} cannot be read again now.` : ""),
+      rows.length ? [h("p", { class: "small muted" }, "Review shows what each would lose, on its own page. Nothing has been changed yet."), ...nrTable(rows)] : null,
+      h("div", { class: "btn-row docs-nr-actions" },
+        clean.length ? button({ kind: "main", sm: true, onClick: () => moveNr(clean.map((d) => d.doc_id), false, `Move the ${plural(clean.length, "document")} that ${clean.length === 1 ? "moves" : "move"} cleanly?`) },
+          icon("layers", { size: 13 }), clean.length === docs.length ? (clean.length === 1 ? "Move it" : `Move all ${fmt.num(clean.length)}`) : `Move the ${fmt.num(clean.length)} that ${clean.length === 1 ? "moves" : "move"} cleanly`) : null,
+        losing.length ? button({ kind: clean.length ? "quiet" : "main", sm: true, onClick: () => reviewAll(plan) }, `Review the ${plural(sum.results_without_place || 0, "result")} without a place`) : null,
+        losing.length ? button({ kind: "quiet", sm: true, onClick: () => reviewNext(losing.map((d) => d.doc_id)) }, "Review next") : null,
+        button({ kind: "quiet", sm: true, onClick: () => { nr.plan = null; drawNr(); } }, "Not now"),
+        movable === 0 ? h("span", { class: "muted small" }, "None can be moved now.") : null)));
+  }
+  // one list of every result that would lose its place, by document, then Move anyway
+  async function reviewAll(plan) {
+    const losing = (plan.documents || []).filter((d) => d.ok && d.no_place);
+    const total = losing.reduce((a, d) => a + d.no_place, 0);
+    const body = h("div", { class: "nr-review" },
+      h("p", {}, `${plural(total, "result")} in ${plural(losing.length, "document")} would find no place in the new reading. Move anyway keeps each as a record: its quote and judgement stay, but it no longer points at words in the text, and the page shows it as it shows an excerpt of a removed document. The move is written in the research log.`),
+      losing.map((d) => h("section", { class: "nr-review-doc" },
+        h("h3", {}, h("a", { href: readingHref(d.doc_id) }, d.title || "a document"), h("span", { class: "muted small" }, ` · ${plural(d.no_place, "result")}`)),
+        h("ul", { class: "nr-review-list" }, d.not_placed.slice(0, 100).map((x) => h("li", {},
+          x.quote ? h("blockquote", { class: "serif" }, x.quote) : null,
+          h("div", { class: "muted small" }, [x.kind_text, x.what, x.where || (x.page ? `page ${x.page}` : null)].filter(Boolean).join(" · ")),
+          x.why ? h("div", { class: "small" }, x.why) : null,
+          x.left_out_kind ? h("div", { class: "muted small" }, `Its words are now in ${x.left_out_kind}.`) : null))),
+        d.not_placed.length > 100 ? h("p", { class: "muted small" }, `and ${fmt.num(d.not_placed.length - 100)} more: see the document’s Reading.`) : null)));
+    const go = await dialog({ title: "Results that would lose their place", body, wide: true,
+      actions: [{ text: "Close", value: false }, { text: `Move anyway (${plural(losing.length, "document")})`, value: true, primary: true }] });
+    if (go) await moveNr(losing.map((d) => d.doc_id), true);
+  }
+  async function moveNr(ids, anyway, ask) {
+    if (ask) {
+      const ok = await confirmDialog({ title: ask, danger: false, confirmText: "Move",
+        message: "Each is read again from its original file, and your results (quotes, judgements, codes, themes) move with it to the same words. You can go on working meanwhile, or stop it: documents already moved stay moved." });
+      if (!ok) return;
+    }
+    let job;
+    try { job = (await api("POST", `/api/projects/${P(project)}/new-reader`, anyway ? { doc_ids: ids, keep_unplaced: true } : { doc_ids: ids })).job; }
+    catch (e) { showError(e); return; }
+    nr.plan = null;
     followNr(job.id);
   }
   function followNr(jobId) {
@@ -444,18 +531,21 @@ export async function renderSources(view) {
       }, { small: true, plain: true, stoppedText: "Stopped. The documents already moved stay moved." });
     watchers.push(w);
   }
+  // the note after a move: one line, then a compact table of the documents with results that have no place
   function nrSummary(res) {
     const moved = res.moved || [], kept = res.kept || [];
     const results = moved.reduce((a, m) => a + (m.results || 0), 0);
     const aside = moved.reduce((a, m) => a + (m.left_out || 0), 0);
+    const noPlace = moved.reduce((a, m) => a + (m.no_place || 0), 0);
     const ok = moved.length && !kept.length;
+    const rows = [...moved.filter((m) => m.no_place).map((m) => ({ doc_id: m.doc_id, title: m.title, count: m.no_place, note: "moved, kept as records" })),
+      ...kept.map((k) => ({ doc_id: k.doc_id, title: k.title, count: k.cannot ? null : (k.not_placed ?? null), note: "left as it was", reason: k.cannot ? k.reason : null }))];
     return notice({ kind: ok ? "done" : "attention", role: "status" }, h("div", { class: "grow" },
       h("p", {}, h("strong", {}, `${res.stopped ? "Stopped. " : ""}${moved.length ? `Read with the new reader: ${plural(moved.length, "document")}` : "No document was moved"}`),
-        moved.length ? `, ${plural(results, "result")} moved with ${moved.length === 1 ? "it" : "them"}.` : "."),
+        moved.length ? `, ${plural(results, "result")} moved with ${moved.length === 1 ? "it" : "them"}${noPlace ? `, ${fmt.num(noPlace)} of them kept as ${noPlace === 1 ? "a record" : "records"} that point at no words` : ""}.` : ".",
+        kept.length ? ` Left as ${kept.length === 1 ? "it was" : "they were"}: ${fmt.num(kept.length)}.` : ""),
       aside ? h("p", { class: "small" }, `${plural(aside, "result")} now ${aside === 1 ? "sits" : "sit"} in text the new reader leaves out of searches (a running head, say): see each document’s Reading.`) : null,
-      kept.length ? [h("p", { class: "small docs-kept-note" }, h("strong", {}, `Left as ${kept.length === 1 ? "it was" : "they were"}: ${fmt.num(kept.length)}`)),
-        h("ul", { class: "nr-kept small" }, kept.slice(0, 20).map((k) => h("li", {}, h("a", { href: `#/doc/${encodeURIComponent(k.doc_id)}?tab=reading&preview=1` }, k.title || "a document"), h("span", { class: "muted" }, ` · ${k.reason}`)))),
-        kept.length > 20 ? h("p", { class: "muted small" }, `and ${fmt.num(kept.length - 20)} more.`) : null] : null),
+      rows.length ? [h("p", { class: "small muted" }, "Review shows each one’s results without a place. A document left as it was can be moved from its own page after that."), ...nrTable(rows)] : null),
       iconButton({ icon: "x", size: 14, label: "Close this note", title: null, onClick: () => { nr.done = null; drawNr(); } }));
   }
 
@@ -492,6 +582,8 @@ export async function renderSources(view) {
     if (running) followIngest(running.id, "Adding documents");
     const moving = jobs.find((j) => j.project === project && j.kind === "new_reader" && !TERMINAL.has(j.state));  // 0.15.7
     if (moving) followNr(moving.id);
+    const checking = jobs.find((j) => j.project === project && j.kind === "new_reader_preview" && !TERMINAL.has(j.state));  // 0.18 (M7)
+    if (checking && !moving) followNrCheck(checking.id);
     const indexing = jobs.find((j) => j.project === project && j.kind === "index" && !TERMINAL.has(j.state));
     if (indexing) {
       indexJob = indexing; drawIndex(lastSearch);   // the card says it runs, with the button off

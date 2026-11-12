@@ -1,6 +1,73 @@
 # Changelog
 
-## Unreleased
+## 0.18.0rc2 (November 2026): a storage space of your team's own
+
+A release candidate. Working together through a shared folder means everyone needs the folder's app, finds the folder
+on their computer and pastes its path. This candidate adds the way the roadmap recommends: a private storage space
+online that ENLENS fills and reads by itself, set up once by the owner, which colleagues join from a link; everything
+in it is locked and signed before it leaves the computer. It also makes the shared folder easier to choose, and brings
+the rest of the small fixes from use (roadmap M3, M5, M7, M8). Nothing in it changes results.
+
+### A storage space of your team's own (roadmap L6)
+
+- **Set up once, by the owner, in about five minutes**, in the *Team* tab: *Backblaze…* (for most research groups: no
+  card, storage in the EU) or *Cloudflare…* (for large teams that grow quickly: fetching is always free, it asks for a
+  card). The dialog says each step: make an account (at Backblaze, choose *EU Central* on the sign-up form), then paste
+  Backblaze's master key or Cloudflare's token. ENLENS checks where the storage is and says so when it is not in the
+  EU, makes a key of its own with only the rights it needs and forgets the pasted one, makes a private storage space
+  and tries it. Both are free up to 10 GB.
+- **Colleagues join from a link.** *Invite a colleague…* makes a message to send; the colleague chooses **Join a team**
+  under *Projects* (new) and pastes the link: a new project fills in by itself with the documents and everything
+  shared. The owner's ENLENS lets them in at its next round. A link works once, and *Withdraw* takes back one not used.
+- **Nobody installs anything or looks for a folder**: ENLENS looks at the space about every ten minutes, and soon
+  after you share something.
+- **The storage company cannot read your work.** Every file is encrypted on your computer with the project's key and
+  signed with your own key; the project's key travels only inside invite links (after the `#`) and sealed to each
+  member. The company sees how many files there are and how large, not their words, nor people's or documents' names.
+- **A file in someone else's name is set aside**: your copy takes a file only when the member whose part it is in
+  signed it, as the members' list signed by the owner says; at Backblaze each colleague's key can write only in their
+  own part in the first place. The Team tab says when something was set aside.
+- **Removing a colleague** deletes their keys and replaces the project's key for those who stay. **Moving to another
+  storage space** sets up a new one, and colleagues' copies follow by themselves. The space's keys follow the
+  project's owner: when the owner hands the project over, the new owner's copy takes them.
+- The keys are kept in this computer's keychain, never in a project, a zip or the space.
+
+### An easier shared folder (roadmap L7)
+
+- **Choose the folder without typing its path.** The Team tab lists the cloud folders this computer has (OneDrive,
+  Google Drive, Box, Dropbox) by name: one click fills the path. *Choose folder…* opens the system's own folder window.
+- **A colleague is offered the team's folder.** Their ENLENS looks for this project's folder among their cloud folders
+  and says *Your colleague's shared folder is here* with *Use it*. When it is not there yet, one line says what to do:
+  on OneDrive, *Add shortcut to My files* on its website and *Always keep on this device*; on Google Drive and
+  Dropbox, accept the share and keep it available offline.
+- The steps for a colleague to join name the shared folder as they will see it. A new manual page,
+  [Choosing the shared folder](docs/manual/shared-folder.md).
+- Secrets (a storage space's keys) are kept in the system's keychain: macOS's, Windows' Credential Manager, or a
+  Linux keyring when there is one; otherwise in a file only you can read. A secret the keychain refuses is kept in the
+  file, never lost. *Settings › Technical* says where.
+
+### The rest of the small fixes from use (roadmap M3, M5, M7, M8)
+
+- **Search by meaning set up from the Search page (M3).** With a model for search by meaning chosen in Settings but
+  the project not (or only partly) set up, the Search page offers *Set up search by meaning for this project*, says how
+  much is covered and shows the progress; the tick box can be used as soon as it ends. With no model chosen, it links
+  to *Settings › Documents*. Settings now says "the project's Documents page", not "under Documents".
+- **Moving many documents to the new reader says what will happen first (M7).** *Read all with the new reader* first
+  looks at the documents without changing anything, and says how many move cleanly and how many results would lose
+  their place, in one line and a small table. Then: move the clean ones; review every result that would lose its place
+  in one list and *Move anyway* (those results are kept as records that point at no words, as a one-document move does);
+  or *Review next*, one document at a time. The 34 sentences of one long note are gone.
+- **A local model needs nothing to open or type (M8).** On the owner's Windows PC, *Install Ollama* left Ollama not
+  running: ENLENS took for granted that Ollama's installer starts it, and nothing else did. ENLENS now starts Ollama
+  itself after installing it, and whenever it is installed but not answering, then offers a model. **The model offered
+  fits this computer**: one recommended, a smaller and quicker one and a larger and more careful one, each with its
+  download size, how quick it will be here and what it is good for, and one line on what a model is (a 16 GB Mac is
+  offered qwen3:8b, an 8 GB PC qwen3:4b, 32 GB qwen3:14b). Search by meaning gets a small English model and a
+  multilingual one.
+- **Marks to try (M5)** were all built in 0.17.0 (the active tab as an underline, a document icon in *Mostly from*,
+  *reviewed by you* as a badge): checked on screen, nothing to change.
+
+### Also
 
 - **A shared-folder round, and a new project, start faster, most of all on Windows.** Each round brings colleagues'
   work in through one to three scratch projects, and each scratch project's database was set up table by table, with
@@ -9,6 +76,74 @@
   the same database, and a newer layout makes a new one.
 - **For developers:** two test stand-in servers waited 35 s each on GitHub's Mac for its own name; every stand-in
   server is now a `QuickServer`, and a test sees to it.
+
+### Defects found and fixed before this candidate
+
+An independent review of the storage space, which proved each finding with a failing test first, found:
+- a colleague with an invite could join under another member's person id, the owner's too, and write in their name;
+- a keeper who had handed the space over could still write the project's own file there, and kept the keys that make
+  invites;
+- a keeper whose copy of the space was lost could, at the next join, write a list of members holding one person;
+- a damaged or oversized file in the space could stop every round of every copy;
+- a removal that failed halfway sealed the keeper's later work with a key no colleague had been given;
+- a move that failed halfway left the project on a broken new space;
+- opening a large file held several copies of it in memory, and an original over 2 GB stopped this copy's sending;
+- a file put back in the space could take a copy back to an older state, and a name one folder deeper could remove a
+  colleague's bundle from every copy;
+- the keeper sent the project's own file again at every round; an invite link could unpack to any size; a secret too
+  long for the Windows Credential Manager was not kept.
+All are fixed, with the proofs kept as tests (`tests/test_0_18_0_storage_space_review.py`).
+
+### For developers
+
+- New modules: `sync/space.py` (the space: set-up, invites, joining, the members' list and its keeper, removal, new
+  keys, moving; a round brings the space into a copy of it on this computer, `<ENLENS folder>/spaces/<id>/`, runs the
+  shared folder's round there unchanged, and sends the copy's own part back), `sync/seal.py`, `sync/storage.py` (a
+  storage: a folder, or S3 with Signature V4 over the standard library), `sync/b2.py`, `sync/r2.py`, `sync/_web.py`,
+  `keychain.py`, `gui/api_space.py`, `views/team-space.js`. New endpoints under `/api/projects/<p>/space/…` and
+  `POST /api/join-team` ([docs/API.md](docs/API.md)).
+- `cryptography` is now a direct dependency (AES-GCM, Ed25519, X25519); every one-line install had it already, through
+  `pdfminer.six`.
+- Tests keep secrets in files (`ENLENS_KEYCHAIN=file` in `tests/conftest.py`), and so does `tools/dev_server.py`;
+  `tools/dev_server.py --space` shows the Demo project with a space kept in a folder and an invite waiting.
+
+### Tests
+
+New: `tests/test_0_18_0_storage_space.py` (a colleague joins from a link and gets every document and the shared work;
+the storage holds only sealed files, with no names or words readable; a file put in someone else's part, a join
+without the invite's secret and a members' list not signed by the keeper are set aside; removing a colleague replaces
+the project's key; the keys follow the owner; moving takes the team along), `_storage_space_services.py` (Backblaze
+and Cloudflare set-ups against stand-ins: a colleague's key cannot write outside their part, a removed colleague is
+refused, the EU warning, the master key kept when ENLENS's own key may not make keys), `_storage_space_api.py`,
+`_s3_storage.py` (Signature V4 against AWS's published examples, pagination, retries, each problem's words),
+`_b2.py`, `_r2.py`, with stand-ins `tests/fake_s3.py`, `fake_b2.py`, `fake_cloudflare.py`. Also `_keychain.py` (the secret never on a command line; a refused secret kept in the file; Windows'
+Credential Manager for real on Windows only), `_easier_folder.py` (cloud folders found on made-up computers, the
+team's folder found, the folder window's programs, the endpoints), `_search_meaning_setup.py`, `_new_reader_many.py`
+(the dry run's counts, *Move anyway* keeping the results as records, the report's shape) and `_model_advice.py`
+(8, 16 and 32 GB, little disk, Windows with and without a graphics card, starting Ollama once).
+
+### Not yet done
+
+- **Not tried with real accounts.** Everything was built against stand-ins that follow Backblaze's and Cloudflare's
+  documents. Still to see with a real account: Backblaze's newer interface (v4) and a key limited to one part, whether
+  a key ENLENS makes may make keys (if not, the master key is kept, with a warning), Cloudflare's token link with the
+  right to make tokens, and the exact words of a cap, a billing problem or maintenance. Please try a test project
+  first.
+- Old files in the space stay sealed with the key they were written with; a removed colleague who kept a copy of them
+  can still read those, as with *Unshare*.
+- A project copied to another computer (Move ENLENS, a whole-project zip) has no keys to its space there: the Team tab
+  says so; ask the owner for a new invite.
+- When the owner who keeps the space's keys leaves without handing the project over, nobody can invite or remove
+  colleagues any more: the new owner moves the team to a new storage space.
+- A hand-over moves the space's keys to the new owner, but the storage account stays the person's who made it: they
+  can still reach the space through the service's own website. For a hand-over in full, the new owner moves the team to
+  a storage space of their own.
+- **Never run on a real computer:** the Windows Credential Manager (a Windows-only test writes, reads and removes a
+  secret on GitHub's Windows machine), the folder windows of Windows and Linux, real OneDrive, Google Drive and Dropbox
+  folders, and a real Windows install of Ollama with its first model. Please try them.
+- How quick each model will be is estimated from the computer's kind, not measured. *Review next* does not go on by
+  itself after you move a document from its own page.
+- A OneDrive folder is named as macOS names it ("OneDrive – UniversityofAmsterdam"), without the spaces.
 
 ## 0.18.0rc1 (November 2026): Co-owners, and a project no file can take from you
 

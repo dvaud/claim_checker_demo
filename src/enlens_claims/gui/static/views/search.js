@@ -2,7 +2,8 @@
 // (a concordance). No hypothesis and no AI are needed. Clicking a word of a line adds it to the search; Shift-click
 // makes a phrase. A line opens its document at the words, or starts a check about what it says.
 import { featureEyebrow } from "../features.js";
-import { App, api, h, icon, replace, clear, showError, addDocumentsFirst, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks, button, link, notice, card, input, select, fold, choice, shortTitle, textPositions, cpLength, latest } from "../lib.js";
+import { simpleProgress } from "./progress.js";
+import { App, api, h, icon, replace, clear, showError, toast, watchJob, TERMINAL, addDocumentsFirst, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks, button, link, notice, card, input, select, fold, choice, shortTitle, textPositions, cpLength, latest } from "../lib.js";
 
 const MODES = [
   ["any", "any of the words"],
@@ -82,7 +83,7 @@ export async function renderSearch(view, params, query) {
     all: query.all === "1", docs: query.docs || "", code: query.code || "", sort: query.sort || "doc",
     offset: Number(query.offset || 0), meaning: query.meaning === "1",
   };
-  const semantic = !!(info.search && info.search.embedded);
+  let semantic = !!(info.search && info.search.embedded);
   if (!docs.length) {
     view.appendChild(pageHead("Search the documents", { eyebrow: featureEyebrow("search"), sub: "Every place words occur in the documents, one line per place, with the words around it." }));
     view.appendChild(addDocumentsFirst("Search"));
@@ -100,6 +101,7 @@ export async function renderSearch(view, params, query) {
   const exact = h("input", { type: "checkbox", checked: st.exact });
   const allSec = h("input", { type: "checkbox", checked: st.all });
   const meaning = h("input", { type: "checkbox", checked: st.meaning && semantic, disabled: !semantic });
+  const meaningLabel = h("label", {}, meaning, "search by meaning");
   const docSel = select({ sm: true, "aria-label": "In which documents" }, h("option", { value: "" }, "in all documents"),
     docs.map((d) => h("option", { value: d.doc_id, selected: d.doc_id === st.docs }, (d.title || d.file || "").slice(0, 70))));
   const codeIn = input({ sm: true, value: st.code, placeholder: "e.g. sdg:6.4", class: "sr-code", "aria-label": "Only passages labelled with this code" });
@@ -111,11 +113,14 @@ export async function renderSearch(view, params, query) {
       h("label", {}, "Find", modeSel), nearBox, docSel,
       h("label", { title: "Without this, “price” also finds “prices” and “priced”." }, exact, "exact words only"),
       h("label", { title: "Reference lists and title pages are left out of checks; include them here." }, allSec, "include reference lists"),
-      h("label", { title: semantic ? "Whole passages that say the same thing in other words (uses the embedding model, on this computer; no AI model)" : "Turn on search by meaning under Settings → Documents first." }, meaning, "search by meaning")),
+      meaningLabel),
     fold({ open: !!st.code }, "Only passages with a code",
       h("div", { class: "search-opts sr-code-opts" }, h("label", {}, "Code", codeIn),
         h("span", { class: "muted small" }, "A code of the Profile page, written as codebook:code (sdg:6.4). Only passages labelled with it are searched."))));
   view.appendChild(form);
+  const meaningBox = h("div", { class: "search-meaning" });   // 0.18 (M3): setting up search by meaning, from here
+  view.appendChild(meaningBox);
+  setUpMeaning(info.search || {});
   const out = h("section", { class: "section", "aria-live": "polite" });
   view.appendChild(out);
 
@@ -144,6 +149,67 @@ export async function renderSearch(view, params, query) {
     if (st.code) qs.set("code", st.code);
     for (const [k, v] of Object.entries(extra)) qs.set(k, String(v));
     return qs;
+  }
+
+  // 0.18 (M3): the three states of search by meaning. No model chosen: a line that leads to Settings. A model chosen but
+  // the project not (fully) set up: a quiet prompt with the button of the Documents page (the same job, one per
+  // project), and its progress here; a job already running (started anywhere) shows as progress, never a second button.
+  // When the job ends the checkbox is usable at once, without a reload.
+  function drawMeaningChoice(search) {
+    semantic = !!(search && search.embedded);
+    meaning.disabled = !semantic;
+    if (!semantic) meaning.checked = false;
+    meaningLabel.title = semantic
+      ? "Whole passages that say the same thing in other words (uses the embedding model, on this computer; no AI model)"
+      : "Not set up for this project yet: see the note below the search box.";
+  }
+  async function setUpMeaning(search, job = null) {
+    drawMeaningChoice(search);
+    clear(meaningBox);
+    if (!search.model) {
+      meaningBox.appendChild(h("p", { class: "muted small search-meaning-hint" }, icon("network", { size: 13 }), " Search by meaning finds passages that say the same thing in other words. It is off: ",
+        link({ href: "#/settings/documents" }, "turn it on in Settings → Documents"), "."));
+      return;
+    }
+    if (job) {
+      meaningBox.appendChild(card({ class: "search-meaning-card", "aria-label": "Setting up search by meaning" },
+        h("h2", {}, "Setting up search by meaning…"),
+        h("p", { class: "muted small" }, "Searching by words works meanwhile. Search by meaning can be used when this is done."),
+        simpleProgress(job, (p) => (p.total ? `Preparing ${fmt.num(p.done || 0)} of ${fmt.num(p.total)} excerpts` : "Starting…"))));
+      return;
+    }
+    if (search.complete || !search.passages) return;
+    const covered = search.embedded
+      ? `${fmt.num(search.embedded)} of ${fmt.num(search.passages)} excerpts are covered so far; the rest are found by their words only.`
+      : "Until it is set up, passages are found by their words only.";
+    const btn = button({ kind: "main", sm: true }, icon("network", { size: 14 }), "Set up search by meaning");
+    meaningBox.appendChild(card({ class: "search-meaning-card", "aria-label": "Set up search by meaning" },
+      h("div", { class: "row" }, h("div", { class: "grow" }, h("strong", {}, "Set up search by meaning for this project"), h("p", { class: "muted small" }, covered)), btn)));
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const r = await api("POST", `/api/projects/${P(project)}/index`);   // a job already running comes back as it is
+        followMeaning(r.job);
+      } catch (e) { showError(e); btn.disabled = false; }
+    });
+  }
+  function followMeaning(job) {
+    setUpMeaning(info.search, job);
+    const w = watchJob(job.id, (j) => { if (!TERMINAL.has(j.state)) setUpMeaning(info.search, j); });
+    w.promise.then(async (j) => {
+      if (!meaningBox.isConnected) return;
+      try { info.search = (await api("GET", `/api/projects/${P(project)}`)).search || {}; } catch (_) { /* keep what it was */ }
+      setUpMeaning(info.search);
+      if (j.state === "done") toast("Search by meaning is ready.", "ok");
+      else if (j.state === "error") showError({ message: j.error, kind: j.error_kind });
+    }, () => { if (meaningBox.isConnected) setUpMeaning(info.search); });
+  }
+  // an index job that already runs for this project: shown as progress at once
+  if (info.search && info.search.model) {
+    api("GET", "/api/jobs").then((r) => {
+      const running = (r.jobs || []).find((j) => j.project === project && j.kind === "index" && !TERMINAL.has(j.state));
+      if (running && meaningBox.isConnected) followMeaning(running);
+    }).catch(() => {});
   }
 
   const fresh = latest();   // a search answered after a newer one was asked (Next, Next) is not drawn

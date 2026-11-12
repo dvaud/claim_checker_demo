@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enlens-claims"
-version = "0.18.0rc1"
+version = "0.18.0rc2"
 description = "Explore your documents (search, code profiles, concepts, themes) and check hypotheses against them with Claude Code on your own plan or a local model, with verified quotes (ENLENS); includes the SDG value chain assessment pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,6 +12,7 @@ dependencies = [
   "pydantic>=2.5",
   "pypdf>=4.0",
   "openpyxl>=3.1",
+  "cryptography>=41",   # 0.18.0rc2 (L6): a storage space's files sealed (AES-GCM) and signed (Ed25519); pdfminer.six needs it too
 ]
 
 [project.optional-dependencies]

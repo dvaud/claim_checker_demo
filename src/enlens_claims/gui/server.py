@@ -36,7 +36,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .. import __version__, access, addons, bibliography, claimcheck, embed, frameworks, home, ingest, taskqueue
 from .. import sync
 from .. import tasks as tasks_mod
-from .. import llm, ollama_setup
+from .. import llm, modeladvice, ollama_setup
 from ..llm import BackendError, detect_local
 from ..store import now as _now
 from ..sources import document_overview
@@ -47,6 +47,7 @@ from .api_explore import ExploreApi
 from .api_record import RecordApi
 from .api_setup import SetupApi
 from .api_folder import FolderApi
+from .api_space import SpaceApi
 from .api_poller import PollerApi  # 0.18 (L3)
 from .api_owner import OwnerApi  # 0.18 (L2)
 from .api_sharing import SharingApi
@@ -271,8 +272,14 @@ class App(LibraryMixin, QueueMixin):
             srv["embedding_models"] = [m for m in srv["models"] if re.search(r"embed|bge-|e5-|minilm", m, re.I)]
         # 0.13.7: the models the page offers to download into Ollama with one button; 0.15.6: whether Ollama is on
         # this computer (running or not), for the button that installs or starts it
-        return {"servers": found, "suggested": [dict(m) for m in llm.SUGGESTED_MODELS],
-                "ollama_app": ollama_setup.status()}
+        # 0.18.0rc2 (M8): the models suggested are those that fit THIS computer (modeladvice), with a smaller and a larger
+        # one beside them in `advice`; `suggested` keeps its old shape for the one-button download
+        try:
+            advice = modeladvice.advise(modeladvice.computer(str(home.home())))
+        except Exception:  # noqa: BLE001 - the advice is a convenience: the card works without it
+            advice = None
+        return {"servers": found, "suggested": modeladvice.suggested(advice) if advice else [dict(m) for m in llm.SUGGESTED_MODELS],
+                "advice": advice, "ollama_app": ollama_setup.status()}
 
     _OLLAMA_INSTALL = threading.Lock()   # two presses (two tabs) never start two downloads of 1.7 GB
 
@@ -1348,6 +1355,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", rf"/api/projects/{P}/documents/{P}/reread", "get_reread"),
     ("POST", rf"/api/projects/{P}/documents/{P}/reread", "post_reread_document"),
     ("POST", rf"/api/projects/{P}/new-reader", "post_new_reader_many"),
+    ("POST", rf"/api/projects/{P}/new-reader/preview", "post_new_reader_preview"),
     ("PUT", rf"/api/projects/{P}/documents/{P}/reading-checked", "put_reading_checked"),
     ("GET", rf"/api/projects/{P}/documents/{P}/pages/{P}\.png", "get_page_image"),
     ("GET", rf"/api/projects/{P}/documents/{P}/tables/{P}\.xlsx", "get_table_export"),
@@ -1495,6 +1503,22 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("DELETE", rf"/api/projects/{P}/shared-folder", "delete_shared_folder"),
     ("PUT", rf"/api/projects/{P}/shared-folder/keep-out", "put_shared_folder_keep_out"),
     ("POST", rf"/api/projects/{P}/shared-folder/sync", "post_shared_folder_sync"),
+    # 0.18.0rc2 (L6): a storage space of the team's own (api_space.py)
+    ("GET", r"/api/space/links", "get_space_links"),
+    ("POST", r"/api/join-team", "post_join_team"),
+    ("POST", rf"/api/projects/{P}/space/b2", "post_space_b2"),
+    ("POST", rf"/api/projects/{P}/space/r2", "post_space_r2"),
+    ("POST", rf"/api/projects/{P}/space/dir", "post_space_dir"),
+    ("POST", rf"/api/projects/{P}/space/invites", "post_space_invites"),
+    ("DELETE", rf"/api/projects/{P}/space/invites/(m[0-9a-f]{{12}})", "delete_space_invite"),
+    ("DELETE", rf"/api/projects/{P}/space/members/(m[0-9a-f]{{12}})", "delete_space_member"),
+    ("POST", rf"/api/projects/{P}/space/move", "post_space_move"),
+    ("POST", rf"/api/projects/{P}/space/join", "post_space_join"),
+    ("DELETE", rf"/api/projects/{P}/space", "delete_space"),
+    # 0.18.0rc2 (L7): an easier shared folder (api_folder.py)
+    ("GET", r"/api/cloud-folders", "get_cloud_folders"),
+    ("POST", r"/api/choose-folder", "post_choose_folder"),
+    ("GET", rf"/api/projects/{P}/shared-folder/find", "get_shared_folder_find"),
     # 0.18 (L3): the poller (api_poller.py)
     ("GET", r"/api/sync-poller", "get_sync_poller"),
     ("PUT", r"/api/sync-poller", "put_sync_poller"),
@@ -1523,7 +1547,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/codebooks/{P}/follow", "post_codebook_follow"),
 ]]
 # 0.18 (L3): changes after which the poller does not bring a round forward (they are rounds, uploads, or its own)
-NOT_A_CHANGE = {"post_shared_folder_sync", "post_upload", "put_project_sync_poller", "post_project_sync_poller_seen"}
+NOT_A_CHANGE = {"post_choose_folder", "post_shared_folder_sync", "post_upload", "put_project_sync_poller", "post_project_sync_poller_seen"}
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
              "get_page_image",  # 0.15: a picture of a page, in an <img>
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
@@ -1533,7 +1557,7 @@ DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_pr
 
 
 class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, SetupApi, RecordApi, SharingApi,
-              FolderApi, PollerApi, OwnerApi):
+              FolderApi, SpaceApi, PollerApi, OwnerApi):
     app: App
     server_version = f"enlens/{__version__}"
     protocol_version = "HTTP/1.1"

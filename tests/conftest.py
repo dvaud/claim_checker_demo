@@ -59,6 +59,8 @@ def _no_real_enlens_home(tmp_path, monkeypatch):
     ENLENS_HOME read the real settings, so the models recommended for the plan Claude Code found there (Max: Opus)
     replaced the ones the test expects (Pro). A test that sets ENLENS_HOME itself still gets its own."""
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "enlens-home"))
+    # 0.18.0rc2: secrets (a storage space's keys) go to files in that folder, never the computer's own keychain
+    monkeypatch.setenv("ENLENS_KEYCHAIN", "file")
 
 
 @pytest.fixture(autouse=True)

@@ -1,8 +1,8 @@
-# 0.18.0rc1: Co-owners, and a project no file can take
-*A release candidate: everyone in a shared project must update.*
-- The owner can make a colleague a Co-owner, in the Team tab
-- A looser AI setting is offered to you, never applied without your click
-- A removed document can be restored for 30 days
-- A change of owner you did not expect is a question
-- Moving ENLENS asks: moving, or using both computers
-- What's new now waits for you: a button above Settings, until you open it
+# 0.18.0rc2: A storage space of your team's own
+*A release candidate: try it on a test project first.*
+- Work together through a private storage space online, free at a team's size; colleagues join from a link
+- Everything is locked on your computer before it leaves it
+- The shared folder is easier to choose: your cloud folders by name, or a folder window
+- Search by meaning can be set up from the Search page
+- Moving many documents to the new reader says first what will happen
+- A local model starts by itself, and the one offered fits your computer

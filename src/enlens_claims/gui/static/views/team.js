@@ -11,11 +11,12 @@
 // one with `addTeamSection` (L2: "Waiting for the owner", before "people").
 import { App, api, h, clear, replace, toast, showError, P, plural, field, switchControl, confirmDialog, watchJob,
   TERMINAL, store, shortTitle, helpMark, navigate, button, link, input, select, fold, tag, noticeList, notice, workState, dialog,
-  listRow, listGroup, absentDocument, aiWhere, personMark } from "../lib.js";
+  listRow, listGroup, absentDocument, aiWhere, personMark, setBusy } from "../lib.js";
 import { itemHref, shareButton, KIND_WORDS, KIND_MANY, zipButton, ZIP_WORDS, SHARING_HELP } from "./share.js";
-import { pollerState, syncLine, myShared, personLine, cleanPath, whenText, whenPhrase, newsLines, whoseWork, POLLER_API, EVERY_CHOICES } from "./team-state.js";
+import { pollerState, syncLine, myShared, personLine, cleanPath, whenText, whenPhrase, newsLines, whoseWork, folderAsSeen, POLLER_API, EVERY_CHOICES } from "./team-state.js";
 import { OWNER_SECTION, ownerMarks, ownerPerson } from "./owner.js";   // 0.18 L2
 import { MINE_SECTION, REMOVED_SECTION, peopleRows, personSub, peopleNote } from "./owner.js";   // roles
+import { SPACE_SETUP_SECTION, SPACE_SECTION } from "./team-space.js";   // 0.18.0rc2 (L6): a storage space
 
 const EVERY = 20000;          // how often the open tab reads the folder's state again (it is cheap)
 const SOON = 4000;            // … and while the poller is about to start a round ("due": it looks every 5 s)
@@ -52,6 +53,9 @@ export function addTeamSection(section, { before } = {}) {
 addTeamSection(OWNER_SECTION, { before: "state" });
 addTeamSection(MINE_SECTION, { before: "state" });
 addTeamSection(REMOVED_SECTION, { before: "people" });
+// 0.18.0rc2 (L6): a storage space of the team's own is offered first (recommended), and shown after the sync state
+addTeamSection(SPACE_SETUP_SECTION, { before: "setup" });
+addTeamSection(SPACE_SECTION, { before: "problems" });
 const sectionCount = (ctx) => TEAM_SECTIONS.reduce((n, s) => { try { return n + (s.count ? Number(s.count(ctx)) || 0 : 0); } catch (_) { return n; } }, 0);
 
 function section(key, title, ...children) {
@@ -246,6 +250,15 @@ export function teamPanel({ onCount } = {}) {
 
 // keepOut null: not touched here, so the form shows the project's own switch and leaves it as it is (it stays on
 // after Stop using this folder, and a project moved to this computer brings it)
+// 0.18.0rc2 (L7): the cloud folders this computer has, read once and kept for the page's life (they rarely change)
+let cloudAnswer = null;
+let cloudKnown = [];
+const cloudAnswerNow = () => cloudKnown;
+function cloudFolders() {
+  if (!cloudAnswer) cloudAnswer = api("GET", "/api/cloud-folders").catch(() => ({ folders: [], picker: false }))
+    .then((a) => { cloudKnown = a.folders || []; return a; });
+  return cloudAnswer;
+}
 function freshSetup() { return { path: "", name: "", keepOut: null, error: "" }; }
 
 function roundToast(j) {
@@ -332,15 +345,76 @@ function setupSection(ctx) {
     }
   };
   go.addEventListener("click", choose);
+  // 0.18.0rc2 (L7): the cloud folders by name, the system's folder window, and a colleague's folder already found
+  const fillPath = (p) => {
+    typed.path = p;
+    const f = document.getElementById("team-folder-path") || path;
+    f.value = p;
+    showErr("");
+    f.focus();
+  };
+  const offers = h("div", { class: "team-offers", id: "team-offers" });
+  const drawOffers = (into) => replace(into, offerBlock(typed.offers, project, fillPath, showErr, typed));
+  const project = ctx.project;
+  if (!typed.offers) {
+    typed.offers = { loaded: false, folders: [], picker: false, found: [], team: "" };
+    Promise.all([cloudFolders(), api("GET", `/api/projects/${P(project)}/shared-folder/find`).catch(() => ({ found: [], team: "" }))])
+      .then(([cloud, find]) => {
+        Object.assign(typed.offers, { loaded: true, folders: cloud.folders || [], picker: !!cloud.picker, found: find.found || [], team: find.team || "" });
+        const el = document.getElementById("team-offers");
+        if (el && ctx.setup === typed) drawOffers(el);
+      });
+  }
+  drawOffers(offers);
   path.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); choose(); } });
   return section("setup", "Work together through a shared folder",
     h("p", { class: "team-text" }, "Each of you keeps your own copy of this project. Choose a folder your team already shares (OneDrive, Dropbox, a network drive): ENLENS puts what you share there and brings in what your colleagues share."),
     h("p", { class: "team-text" }, "Nothing of yours goes to the team until you press Share on it: a check, a set of themes, a codebook, a note, an entry of your own or a link between terms."),
-    nameField, pathField, err, sw,
+    nameField, offers, pathField, err, sw,
     h("div", { class: "btn-row" }, go),
     // where text goes, at the foot (docs/DESIGN.md 4.4 and 5.5: the AI line's folder)
     aiWhere([h("strong", {}, "The folder will hold the documents’ text and files, and only what you share of your own work. "),
       "Your project’s database stays on this computer."], "folder"));
+}
+
+// 0.18.0rc2 (L7): above the path field. A colleague's shared folder, when it is already among this computer's cloud
+// folders ("Use it"); the cloud folders by name (one click fills the path); the system's folder window; and, when the
+// team's folder is nowhere yet, what to do at each service. The pasted path stays as the fallback.
+const WHERE = "Your colleague’s shared folder is here:";
+function offerBlock(o, project, fillPath, showErr, typed) {
+  const rows = [];
+  for (const dir of o.found) {
+    const seen = folderAsSeen(dir, o.folders);
+    rows.push(h("p", { class: "team-text team-found" }, `${WHERE} `, h("strong", { title: dir }, seen.text), " · ",
+      link({ kind: "jump", "data-found": dir, onclick: () => fillPath(dir) }, "Use it")));
+  }
+  if (o.folders.length) {
+    rows.push(h("div", { class: "team-cloud" }, listGroup("Cloud folders on this computer", ...o.folders.map((c) =>
+      listRow({ title: c.name, sub: c.path, actions: [button({ sm: true, "aria-label": `Use ${c.name}`, onclick: () => fillPath(c.path) }, "Use")] })))));
+  }
+  if (o.picker) {
+    const pick = button({ sm: true, icon: "folder", id: "team-choose-folder" }, "Choose folder…");
+    pick.addEventListener("click", async () => {
+      showErr("");
+      setBusy(pick, true);
+      try {
+        const r = await api("POST", "/api/choose-folder", { prompt: "Choose the folder your team shares", start: cleanPath(typed.path) || undefined });
+        if (r.path) fillPath(r.path);
+      } catch (e) {
+        if (e.status === 409) showErr(e.message); else showError(e);
+      } finally { setBusy(pick, false); }
+    });
+    rows.push(h("div", { class: "btn-row team-pick" }, pick));
+  }
+  if (o.loaded && !o.found.length) {
+    rows.push(h("p", { class: "muted team-text team-where" },
+      "Not here yet? Ask the colleague who set this up to share the folder with you, then make it available on this computer. ",
+      h("strong", {}, "OneDrive: "), "on OneDrive’s website, choose ", h("em", {}, "Add shortcut to My files"), " on the shared folder, and ",
+      h("em", {}, "Always keep on this device"), " so its files are not fetched only when opened. ",
+      h("strong", {}, "Google Drive and Dropbox: "), "accept the share and keep the folder available offline. ",
+      "It then appears here."));
+  }
+  return h("div", {}, ...rows);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -396,8 +470,8 @@ function stateSection(ctx) {
   const wrote = st.last_round && st.last_round.result && st.last_round.result.wrote;
   const waiting = (wrote && wrote.waiting) || [];
   const s = syncLine(st, p);
-  return section("state", "The shared folder",
-    h("p", { class: "team-folder mono", title: st.folder }, st.folder),
+  return section("state", st.space ? "Sync" : "The shared folder",
+    st.space ? null : h("p", { class: "team-folder mono", title: st.folder }, st.folder),   // (a space: its own section)
     // not a live region: its times move on every few seconds (the panel's own region says what matters)
     h("div", { class: "team-state-line", "data-kind": s.kind }, stateLine(ctx)),
     waiting.length ? h("p", { class: "muted small team-waiting" }, `${plural(waiting.length, "shared item")} still being worked on go${waiting.length === 1 ? "es" : ""} with the next round once ${waiting.length === 1 ? "it is" : "they are"} done: `,
@@ -519,15 +593,21 @@ function peopleSection(ctx) {
   /* 0.18 real poller: offline, the folder says nothing of who is in it (not "no colleague yet") */
   if (!people.length && st.reachable === false) {
     return section("people", "People in the folder", h("div", { class: "team-people" }, listGroup(null, mine)),
-      h("p", { class: "muted team-text" }, "Your colleagues show here again once the shared folder can be reached."));
+      h("p", { class: "muted team-text" }, st.space ? "Your colleagues show here again once the storage space can be reached." : "Your colleagues show here again once the shared folder can be reached."));
   }
-  const join = people.length ? null : h("div", { class: "team-join" },
+  const join = people.length || st.space ? null : h("div", { class: "team-join" },   // (a storage space: its section invites)
     h("p", { class: "muted team-text" }, "No colleague has used this folder for this project yet. A colleague joins in three steps:"),
     h("ol", { class: "team-steps" },
       h("li", {}, "Send them what you shared (below), as a file."),
       h("li", {}, "They open it with Import a project, under Projects."),
-      h("li", {}, "In their copy, they choose the same shared folder in this tab.")));
-  return section("people", people.length ? `People in the folder (${people.length + 1})` : "People in the folder",
+      h("li", {}, "In their copy, this tab offers the shared folder, ", h("strong", { class: "team-join-folder", title: st.folder }, folderAsSeen(st.folder, cloudAnswerNow()).text),
+        ", as soon as it is among their cloud folders: they confirm it there.")));
+  if (join && !cloudAnswerNow().length) cloudFolders().then((c) => {   // the cloud folder's name, when it arrives
+    const el = document.querySelector(".team-join-folder");
+    if (el && (c.folders || []).length) el.textContent = folderAsSeen(st.folder, c.folders).text;
+  });
+  const where = st.space ? "People in the team" : "People in the folder";   // 0.18.0rc2 (L6)
+  return section("people", people.length ? `${where} (${people.length + 1})` : where,
     peopleNote(ctx), h("div", { class: "team-people" }, listGroup(null, mine, ...rows)), join);
 }
 
@@ -619,15 +699,16 @@ function leaveSection(ctx) {
   const st = ctx.status;
   if (!st.folder) return null;
   // a quiet button: it asks first, and nothing is removed (docs/DESIGN.md 4.1: danger is for what removes)
-  const b = button({ kind: "quiet", sm: true, icon: "x", id: "team-leave" }, "Stop using this folder");
+  const sp = st.space;   // 0.18.0rc2 (L6): leaving a storage space on this computer is the same button
+  const b = button({ kind: "quiet", sm: true, icon: "x", id: "team-leave" }, sp ? "Stop using the storage space here" : "Stop using this folder");
   b.addEventListener("click", async () => {
-    const ok = await confirmDialog({ title: "Stop using the shared folder?", confirmText: "Stop using it", danger: false,
-      message: h("div", {}, h("p", {}, `This project stops sending your shared work to ${st.folder} and bringing in your colleagues’ from it.`),
-        h("p", {}, "Nothing in the folder is removed, and what came in stays here. You can choose the folder again later.")) });
+    const ok = await confirmDialog({ title: sp ? "Stop using the storage space here?" : "Stop using the shared folder?", confirmText: "Stop using it", danger: false,
+      message: h("div", {}, h("p", {}, sp ? "This project stops sending your shared work to the team’s storage space and bringing in your colleagues’ from it, and this computer forgets its keys to it." : `This project stops sending your shared work to ${st.folder} and bringing in your colleagues’ from it.`),
+        h("p", {}, sp ? (sp.keeper ? "Nothing in the storage space is removed, and what came in stays here. You keep its keys: hand the project to a colleague first, or your team cannot invite anyone any more." : "Nothing in the storage space is removed, and what came in stays here. To come back, ask the owner for a new invite.") : "Nothing in the folder is removed, and what came in stays here. You can choose the folder again later.")) });
     if (!ok) return;
     try {
       await api("DELETE", `/api/projects/${P(ctx.project)}/shared-folder`, {});
-      toast("This project no longer uses the shared folder.", "ok");
+      toast(sp ? "This project no longer uses the storage space." : "This project no longer uses the shared folder.", "ok");
       await ctx.refresh({ force: true });
       ctx.focusHeading("setup");
     } catch (e) { showError(e); }

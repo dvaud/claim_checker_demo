@@ -53,6 +53,8 @@ WIN_SIGNER = re.compile(r"(^|, )O=Ollama Inc\.(,|$)")
 # free space asked for, as a multiple of the download: the file itself and Ollama unpacked (on macOS the 230 MB zip
 # becomes a 693 MB app)
 ROOM = 4
+# seconds Windows' installer is given to start Ollama itself before ENLENS does (0.18.0rc2)
+INSTALLER_STARTS_IT = 20
 DEFAULT_URL = "http://localhost:11434"
 UA = f"enlens/{__version__}"
 
@@ -326,6 +328,23 @@ def start(sys_name: str | None = None) -> dict:
     return {"started": True, "path": str(path), "serve": serves(path)}
 
 
+_STARTED: dict = {"at": 0.0}
+
+
+def start_once(url: str | None = None, within: float = 45.0) -> dict:
+    """0.18.0rc2 (M8): start Ollama unless it answers already or was started by ENLENS within the last `within` seconds
+    (the card asks again whenever it is drawn: two starts would only race each other). {"started", "running"}."""
+    if not app_path():
+        raise ValueError("Ollama is not on this computer.")
+    if answers(url):
+        return {"started": False, "running": True}
+    if time.time() - _STARTED["at"] < within:
+        return {"started": False, "running": False, "starting": True}
+    out = start()
+    _STARTED["at"] = time.time()
+    return {**out, "running": False}
+
+
 def answers(url: str | None = None) -> bool:
     """Whether an Ollama answers at `url` (by default where Ollama listens)."""
     from .llm import ollama_version
@@ -379,9 +398,17 @@ def install(on_progress: Progress = lambda p: None, should_stop: Callable[[], bo
     on_progress({"step": "start"})
     if name == "mac":
         start(name)
-    # Windows' installer starts Ollama itself, which install.ps1 relies on too: a second start here would only race it
-    # (and an antivirus scanning the new files can keep it from answering for a while)
-    return {"path": str(path), "running": _wait(is_running, 60)}
+        return {"path": str(path), "running": _wait(is_running, 60)}
+    # Windows' installer is meant to start Ollama itself, as install.ps1 relies on, so it is given time to (an antivirus
+    # scanning the new files can keep it for a while). 0.18.0rc2: when it has not by then ENLENS starts Ollama itself,
+    # as the Start Ollama button does, instead of leaving the person to open it: nothing to open, nothing to type
+    if _wait(is_running, INSTALLER_STARTS_IT):
+        return {"path": str(path), "running": True}
+    try:
+        start(name)
+    except ValueError:
+        return {"path": str(path), "running": False}
+    return {"path": str(path), "running": _wait(is_running, 60), "started_by_enlens": True}
 
 
 def open_terminal() -> dict:

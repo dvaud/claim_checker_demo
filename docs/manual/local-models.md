@@ -18,12 +18,18 @@ offers **Ollama**, a free program that runs AI models on your computer:
   downloaded. Then ENLENS downloads Ollama's own installer from ollama.com, checks that it is signed by Ollama, installs
   it (Windows: in your user folder, no administrator rights; Mac: in *Applications*) and starts it, with a progress
   bar and *Stop*. On Linux, Ollama's installer asks for your password, so ENLENS opens a terminal window running it.
-- Ollama already on the computer but not running: *Start Ollama*.
+- Ollama already on the computer but not running: ENLENS starts it by itself and waits until it answers (0.18.0rc2; on
+  Windows also right after the install, when Ollama's installer did not start it). *Start Ollama* stays for when that
+  did not work.
 - Rather do it yourself? *Download Ollama's installer* gets the file itself (ollama.com's own download page now leads
   with a line to type in a terminal).
 
-Then ENLENS downloads a model with one button: *Download qwen3:8b* (about 5 GB), and if you like *nomic-embed-text*
-for search by meaning ([First steps](first-steps.md#1-the-ai)). None of your documents are sent. **LM Studio**, **llama.cpp**, **Jan** and **vLLM** work too, as
+Then ENLENS offers a model with one button, chosen for this computer (0.18.0rc2): from its memory, free disk space and
+graphics card it recommends one, with a smaller and quicker and a larger and more careful one beside it (the
+*qwen3* family: 4b about 2.6 GB, 8b about 5.2 GB, 14b about 9.3 GB), each with its size, how quick it will be here
+and what it is good for. A computer with 8 GB of memory is offered the 4b, one with 16 GB the 8b, one with 32 GB
+the 14b; a model is only offered when it fits the memory and the disk with room to spare. For search by meaning,
+*nomic-embed-text* (about 0.3 GB, English) or *bge-m3* (about 1.2 GB, many languages) ([First steps](first-steps.md#1-the-ai)). None of your documents are sent. **LM Studio**, **llama.cpp**, **Jan** and **vLLM** work too, as
 OpenAI-compatible servers: in [LM Studio](https://lmstudio.ai), *Developer → Start server* with a model loaded.
 
 In a terminal instead:

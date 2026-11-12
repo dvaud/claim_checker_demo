@@ -115,6 +115,7 @@ class _Project:
         self.offline_since: float | None = None   # wall clock
         self.last: dict | None = None         # the last round's summary
         self.round: Job | None = None         # the round the poller started or found, until it ends
+        self.min_every = 0.0                  # 0.18.0rc2 (L6): a storage space is looked at every 10 minutes at most
 
 
 class Poller:
@@ -195,7 +196,7 @@ class Poller:
         return p
 
     def _wait(self, p: _Project) -> float:
-        every = self.every()
+        every = max(self.every(), p.min_every)
         if p.failures <= 0:
             return every
         return min(every * 2 ** min(p.failures - 1, 16), max(self.max_backoff, every))   # (weeks offline: no overflow)
@@ -235,8 +236,12 @@ class Poller:
 
     def _start_round(self, name: str, p: _Project) -> Job | None:
         try:
+            from ..sync import space
+
             ws = home.open_project(name)
             has = folder.chosen(ws) is not None
+            with self.lock:
+                p.min_every = float(space.MIN_EVERY) if space.configured(ws) is not None else 0.0
         except Exception:  # noqa: BLE001 - a project that cannot be opened has no round now
             has = False
         if not has:  # nothing to do: looked at again after an interval (choosing a folder is a change: sooner)

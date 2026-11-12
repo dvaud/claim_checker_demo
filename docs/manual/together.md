@@ -16,9 +16,11 @@
 
 ## Sharing a project with colleagues
 
-Each of you keeps your own copy of the project, on your own computer. The copies reach each other in one of two ways,
-with the same rules ([How two copies come together](#how-two-copies-come-together)):
+Each of you keeps your own copy of the project, on your own computer. The copies reach each other in one of three
+ways, with the same rules ([How two copies come together](#how-two-copies-come-together)):
 
+- **Through a storage space of your team's own** (0.18.0rc2, recommended): online, free at a team's size; colleagues
+  join from a link ([how](storage-space.md)).
 - **Through a folder your team already shares** (0.17.0): ENLENS puts what you share there and brings in what your
   colleagues share, by itself ([below](#through-a-shared-folder)).
 - **As a file** you send yourself: for a one-off exchange, or a colleague without the folder
@@ -52,6 +54,10 @@ highlights, the entries you write in the research log, and the links you decide 
 
 The *Team* tab's *What you shared* lists everything you shared, by kind, each with *Unshare*.
 
+### Through a storage space of your team's own
+
+See [A storage space of your team's own](storage-space.md) (0.18.0rc2, recommended).
+
 ### Through a shared folder
 
 ```mermaid
@@ -62,16 +68,11 @@ flowchart LR
     F -- "every couple of minutes" --> A
 ```
 
-**Setting it up.** One of you starts (0.17.0):
-
-1. Open the **Team** tab. The *Research log* button at the top right of every page opens a panel with two tabs,
-   *Research log* and *Team*; *Projects → Work together → Open the Team tab* opens it too.
-2. Under *Work together through a shared folder*, paste the whole path of the folder: `/Users/anna/Dropbox/Our
-   project` on a Mac, `C:\Users\Anna\OneDrive\Our project` on Windows. To copy a folder's path: in the Finder, select
-   it and press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>C</kbd>; in File Explorer, hold <kbd>Shift</kbd>, right-click it and
-   choose *Copy as path*.
-3. Decide on the switch *Keep documents marked Only a local AI or No AI out of the shared folder*
-   ([below](#documents-kept-out-of-the-folder)), and press **Use this folder**. The first round starts at once.
+**Setting it up.** One of you starts: in the *Team* tab, ENLENS offers the cloud folders of your computer by name, or
+opens the system's folder window, and a colleague is offered the team's folder by their own ENLENS. Step by step:
+[Choosing the shared folder](shared-folder.md). Then decide on the switch *Keep documents marked Only a local AI or
+No AI out of the shared folder* ([below](#documents-kept-out-of-the-folder)); the first round starts when you press
+**Use this folder**.
 
 ENLENS makes a folder of its own in it for the project (`ENLENS-` and a few letters); leave what is inside as it is.
 It refuses a folder that holds the project itself or ENLENS's own folder, and says why under the field. What the
@@ -83,8 +84,8 @@ anything, and says so under *Needs your attention*, so nothing is lost. Press *U
 computer a second person in your projects ([below](#moving-to-another-computer)).
 
 **A colleague joins** in three steps: send them what you shared, as a file (*As a file* in the Team tab); they open it
-with *Import a project* under *Projects*; in their copy, they choose the same shared folder in the Team tab (its path on
-their computer may differ).
+with *Import a project* under *Projects*; in their copy, the Team tab offers them the team's folder
+([Choosing the shared folder](shared-folder.md#a-colleague-joins)).
 
 **A round** first brings in what your colleagues shared, then writes what you shared that changed, so your copy writes
 with their decisions in force (a stricter AI setting, something taken back). What comes in follows the rules

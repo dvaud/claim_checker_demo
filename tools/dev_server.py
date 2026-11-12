@@ -111,6 +111,9 @@ def main() -> int:
                          "on it, to try the reading view and Read with the new reader")
     ap.add_argument("--low-memory", action="store_true",
                     help="0.13.11: too little memory free for the local model (2.7 GB free, 8.1 GB needed)")
+    ap.add_argument("--space", action="store_true",
+                    help="0.18.0rc2 (L6): the Demo project works through a storage space kept in a folder of the data "
+                         "folder (sealed as at a service), with one invite waiting; and the Team tab may set one up")
     ap.add_argument("--no-poller", action="store_true",
                     help="0.18: do not look in the projects' shared folders by themselves (Sync now still works)")
     a = ap.parse_args()
@@ -120,6 +123,8 @@ def main() -> int:
     # and plan into the dev settings, and *Start Claude Code* would start a real run on their plan. By default nothing
     # answers as `claude`; the Claude Code modes below put the stand-in in its place.
     os.environ["ENLENS_CLAUDE"] = str(home_dir / "no-claude-here")
+    # 0.18.0rc2 (L6): a storage space's keys go to files in the dev data folder, never the developer's own keychain
+    os.environ["ENLENS_KEYCHAIN"] = "file"
 
     import fake_servers
     from helpers import PAPER_A_PAGES, REPORT_B_TEXT, UNRELATED_HTML, make_pdf
@@ -182,6 +187,19 @@ def main() -> int:
         for text, dec in checks:
             claimcheck.check_hypothesis(ws, text, be, chat_model, decompose=dec, embedder=emb)
         home.update_settings({"project": "Demo"})
+    if a.space:
+        os.environ["ENLENS_TRY_SPACES"] = "1"   # (the Team tab may set up a space in a folder too)
+        if "Demo" in home.list_projects():
+            from enlens_claims.sync import folder as sync_folder, space
+
+            ws = home.open_project("Demo")
+            if space.configured(ws) is None:
+                home.update_settings({"your_name": home.load_settings().get("your_name") or "Anna"})
+                store_dir = home_dir / "space-store"
+                store_dir.mkdir(exist_ok=True)
+                space.setup_dir(ws, store_dir)
+                sync_folder.sync_now(ws)
+                space.invite(ws, "Ben")
     if a.reading and "Reading" not in home.list_projects():
         from enlens_claims import measure
 
@@ -212,7 +230,10 @@ def main() -> int:
         from enlens_claims import llm
 
         llm.OPENAI_PORTS = ()
-        fake.aliases = {"qwen3:8b": fake_servers.FAKE_MODEL, "nomic-embed-text:latest": fake_servers.FAKE_EMBED}
+        fake.aliases = {"qwen3:8b": fake_servers.FAKE_MODEL, "nomic-embed-text:latest": fake_servers.FAKE_EMBED,
+                        # 0.18.0rc2 (M8): the smaller and larger models offered beside the recommended one
+                        "qwen3:1.7b": fake_servers.FAKE_MODEL, "qwen3:4b": fake_servers.FAKE_MODEL,
+                        "qwen3:14b": fake_servers.FAKE_MODEL, "bge-m3:latest": fake_servers.FAKE_EMBED}
         fake.installed, fake.pull_seconds = [], 12.0
         dead = "http://127.0.0.1:9"   # nothing answers there: "no Ollama yet"
         home.update_settings({"backend": "auto", "ollama_url": fake_url if a.ollama == "empty" else dead,

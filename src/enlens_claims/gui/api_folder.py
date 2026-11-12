@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from .api_common import ApiError
 from .poller import TITLE, _round  # one round, by hand or by the poller, is the same job
-from ..sync import folder
+from ..sync import cloud_folders, folder
+from . import folder_picker
 
 
 class FolderApi:
@@ -75,3 +76,30 @@ class FolderApi:
             raise ApiError(400, "Choose a shared folder for this project first.")
         job = self.app.jobs.start(folder.JOB, TITLE, name, lambda job: _round(ws, job), uses_model=False, unique=True)
         return {"job": job.view()}
+
+    # 0.18.0rc2 (L7): an easier shared folder
+    def get_cloud_folders(self, q):
+        """The cloud folders this computer has (OneDrive, Google Drive, Box, Dropbox...): {"folders": [{"name", "path",
+        "service"}], "picker": whether this
+        computer has a folder window to open (POST /api/choose-folder)}."""
+        return {"folders": cloud_folders.offered(), "picker": folder_picker.available()}
+
+    def get_shared_folder_find(self, name, q):
+        """The shared folders among the cloud folders that already hold this project's team folder (a colleague set it
+        up): {"found": [paths of the folders to choose], "team": the team folder's name}. Looks a few levels down for about two seconds at most."""
+        team = folder.team_name(self.app.ws(name))
+        return {"found": cloud_folders.find_team(team), "team": team}
+
+    def post_choose_folder(self, q):
+        """Open the system's folder picker and wait for it: {"prompt"?, "start"?} -> {"path": the folder or null (cancelled
+        or no picker), "available": whether this computer has a picker}. 409 while another dialog is open."""
+        body = self._body()
+        if not folder_picker.available():
+            return {"path": None, "available": False}
+        prompt = body.get("prompt") if isinstance(body.get("prompt"), str) else ""
+        start = body.get("start") if isinstance(body.get("start"), str) else None
+        try:
+            path = folder_picker.choose_folder(prompt.strip()[:200] or "Choose the shared folder", start)
+        except folder_picker.Busy:
+            raise ApiError(409, "A folder window is already open. Finish or close it first.") from None
+        return {"path": path, "available": True}

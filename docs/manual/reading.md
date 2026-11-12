@@ -144,10 +144,20 @@ colleague's move is a proposal; once the owner accepts it, every copy moves
 ([Work together](together.md#the-owner-and-proposals-0170)).
 
 **Several at once.** Above the list of documents, **Read all with the new reader** (or *Read the selected with the new
-reader*, when you tick some) moves them one after the other. A document moves only when every one of its results finds
-its place; one where any would not, and one that cannot be read again now (its file is missing or changed, or Claude
-Code is working on it), is left as it was. The note afterwards lists them with the reason, each linked to its page,
-where the preview shows what would be lost. You can work on meanwhile, or stop it: documents already moved stay moved.
+reader*, when you tick some) first checks them, with nothing changed (0.18.0rc2): each file is read again, and ENLENS
+says beforehand how many documents move cleanly (every result finds its place) and how many results would lose
+their place, in which documents. Then you choose:
+
+- **Move the ones that move cleanly.** The others are left as they were.
+- **Review the results without a place.** One list of all of them, grouped by document, each with its quote and what
+  it belongs to. **Move anyway** moves those documents as well: such a result is kept as a record that points at no
+  words in the text (as when you move one document from its own page), and the move is written in the research log.
+- **Review next** opens the documents that would lose results one at a time, each at its *Reading* preview.
+
+A document that cannot be read again now (its file is missing or changed, or Claude Code is working on it) is listed
+with the reason and left as it was. When the move ends, one line says how many documents moved and how many results
+went with them, and a short table lists the documents with results that have no place (with *Review*). You can work on
+meanwhile, or stop it: documents already moved stay moved.
 
 ## Measuring how well ENLENS reads
 

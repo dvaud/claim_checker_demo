@@ -622,9 +622,9 @@ function embedSection(s, servers, info = { servers }) {
   } });
   const toggle = () => { row.querySelectorAll(".field")[1].hidden = row.querySelectorAll(".field")[2].hidden = kind.value === "off"; };
   kind.addEventListener("change", toggle); toggle();
-  const form = h("form", { onSubmit: async (e) => { e.preventDefault(); try { await save({ embed_backend: kind.value, embed_model: model.value.trim(), embed_url: url.value.trim() }, state); toast("Saved. Set up search by meaning under Documents if needed.", "ok"); } catch (_) { /* shown */ } } },
+  const form = h("form", { onSubmit: async (e) => { e.preventDefault(); try { await save({ embed_backend: kind.value, embed_model: model.value.trim(), embed_url: url.value.trim() }, state); toast("Saved. If needed, set up search by meaning on the project’s Documents page.", "ok"); } catch (_) { /* shown */ } } },
     row, datalist, pull, h("div", { class: "save-row" }, button({ kind: "main", type: "submit" }, icon("check", { size: 14 }), "Save"), state));
-  return sectionCard("embeddings", "Search by meaning (embeddings)", "With an embedding model, excerpts are found by meaning as well as by shared words. It is set up per project under Documents.", form);
+  return sectionCard("embeddings", "Search by meaning (embeddings)", "With an embedding model, excerpts are found by meaning as well as by shared words. It is set up per project, on the project’s Documents page.", form);
 }
 
 // ---------------------------------------------------------------------------------------------

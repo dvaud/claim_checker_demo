@@ -130,7 +130,51 @@ class LibraryMixin:
             return self.jobs.start("reread", f"Reading “{title[:60]}” with the new reader", name, run,
                                    uses_model=False, lane="reader", scope=doc_id)  # it runs alone in its project
 
-    def start_new_reader_many(self, name: str, doc_ids: list[str], person: str) -> Job:
+    def start_new_reader_preview(self, name: str, doc_ids: list[str]) -> Job:
+        """0.18 (M7): the dry run before moving several documents: each is read again by the current reader (nothing is
+        stored) and the job says, per document, how many results would find no place and which. Counts first, so the
+        person knows beforehand how many documents move cleanly; the `not_placed` lists feed one combined review."""
+        from .. import reread
+
+        ws = self.ws(name)
+        titles = {r["doc_id"]: r["title"] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
+
+        def run(job: Job):
+            docs = []
+            for i, doc_id in enumerate(doc_ids):
+                if job.cancel.is_set():
+                    break
+                title = titles.get(doc_id, "")
+                job.progress = {"done": i, "total": len(doc_ids), "file": title, "phase": "checking"}
+                entry = {"doc_id": doc_id, "title": title, "ok": True, "reason": None, "results": 0, "no_place": 0,
+                         "not_placed": [], "left_out": 0}
+                try:
+                    rep = reread.preview(ws, doc_id, should_stop=job.cancel.is_set)
+                except Exception as e:  # noqa: BLE001 - one document's fault does not stop the others
+                    traceback.print_exc()
+                    rep = {"ok": False, "reason": f"It could not be read again ({e}). Nothing was changed."}
+                if not rep.get("ok"):
+                    entry.update(ok=False, reason=rep.get("reason") or "It cannot be read again now.")
+                else:
+                    lost = rep.get("not_placed") or []
+                    placed = sum(c.get("moved", 0) for k, c in (rep.get("counts") or {}).items() if k != "theme_member")
+                    entry.update(results=placed + len(lost), no_place=len(lost), left_out=len(rep.get("left_out") or []),
+                                 not_placed=[{k: x.get(k) for k in ("kind_text", "what", "quote", "page", "where",
+                                                                    "left_out_kind", "why")} for x in lost])
+                docs.append(entry)
+            job.progress = {"done": len(docs), "total": len(doc_ids), "file": "", "phase": "checking"}
+            clean = [d for d in docs if d["ok"] and not d["no_place"]]
+            losing = [d for d in docs if d["ok"] and d["no_place"]]
+            return {"documents": docs, "stopped": job.cancel.is_set(),
+                    "summary": {"documents": len(docs), "clean": len(clean), "would_lose": len(losing),
+                                "cannot": len([d for d in docs if not d["ok"]]),
+                                "results_without_place": sum(d["no_place"] for d in losing)}}
+
+        n = len(doc_ids)
+        return self.jobs.start("new_reader_preview", f"Checking {n} {'document' if n == 1 else 'documents'} for the new reader",
+                               name, run, uses_model=False)
+
+    def start_new_reader_many(self, name: str, doc_ids: list[str], person: str, keep_unplaced: bool = False) -> Job:
         """0.15.7: several documents moved to the new reader in one job, from the Documents page, each all or nothing
         (reread.move). A document where any result would find no place is left as it is (`keep_all`), and so is one
         that cannot be read again now; both are listed with the reason, to be moved from their own page after its
@@ -149,24 +193,28 @@ class LibraryMixin:
                 title = titles.get(doc_id, "")
                 job.progress = {"done": i, "total": len(doc_ids), "file": title, "phase": "reading"}
                 try:
-                    r = reread.move(ws, doc_id, person, keep_all=True)
+                    r = reread.move(ws, doc_id, person, keep_all=not keep_unplaced)
                 except reread.WouldLose as e:
                     kept.append({"doc_id": doc_id, "title": title, "reason": str(e),
                                  "not_placed": len(e.report.get("not_placed") or [])})
                     continue
                 except ValueError as e:  # it cannot be read again now: in words for a researcher
-                    kept.append({"doc_id": doc_id, "title": title, "reason": str(e)})
+                    kept.append({"doc_id": doc_id, "title": title, "reason": str(e), "cannot": True})
                     continue
                 except Exception as e:  # noqa: BLE001 - one document's fault does not stop the others; nothing changed
                     traceback.print_exc()
                     kept.append({"doc_id": doc_id, "title": title, "reason": f"It could not be read again ({e}). "
-                                 "Nothing was changed."})
+                                 "Nothing was changed.", "cannot": True})
                     continue
                 moved.append({"doc_id": doc_id, "title": title,
                               "results": sum(c.get("moved", 0) for c in (r.get("counts") or {}).values()),
-                              "left_out": len(r.get("left_out") or [])})
+                              "left_out": len(r.get("left_out") or []), "no_place": len(r.get("not_placed") or [])})
             job.progress = {"done": len(moved) + len(kept), "total": len(doc_ids), "file": "", "phase": "reading"}
-            stats = {"moved": moved, "kept": kept, "stopped": job.cancel.is_set()}
+            stats = {"moved": moved, "kept": kept, "stopped": job.cancel.is_set(),
+                     "summary": {"moved": len(moved), "left_as_they_were": len(kept),
+                                 "results_moved": sum(m["results"] for m in moved),
+                                 "results_without_place": sum(m["no_place"] for m in moved),
+                                 "moved_anyway": bool(keep_unplaced)}}
             if moved:  # the moves are kept even when the job is stopped: each was complete on its own
                 emb = home.make_embedder(s)
                 if emb is not None and not job.cancel.is_set():

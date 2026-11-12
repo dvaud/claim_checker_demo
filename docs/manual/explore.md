@@ -39,6 +39,12 @@ paragraph, up to about 1,100 characters ([How documents are read](reading.md)). 
 that of the original. Setting up search by meaning runs once per project: a second press, or a reload while it
 runs, follows the same job.
 
+*Search by meaning* is a tick box above the results. With no model chosen it stays off, and a line under the search box
+leads to *Settings → Documents*. With a model chosen but the project not (fully) set up, the Search page itself says
+so, with how much is covered and the button *Set up search by meaning* (the same job as on the Documents page, with
+its progress); a job already running shows as progress, never a second button. When it ends the tick box can be used
+at once, without reloading the page.
+
 ## Codes
 
 <img src="../images/manual/profile.png" alt="Codes, By document: codes by document" width="800">

@@ -31,9 +31,13 @@ export function localModelHelp(info, opts = {}) {
   const chat = suggested.find((m) => m.use === "chat");
   const emb = suggested.find((m) => m.use === "embed");
   const ollama = servers.find((sv) => sv.kind === "ollama");
-  if (opts.only === "embed") return ollama && emb && !(ollama.embedding_models || []).length ? pullBox(ollama, null, emb, opts) : null;
+  const advice = (info && info.advice) || null;   // 0.18.0rc2 (M8): the models that fit this computer
+  if (opts.only === "embed") return ollama && emb && !(ollama.embedding_models || []).length ? pullBox(ollama, null, emb, opts, advice) : null;
   if (hasChatModel(servers)) return null;
-  if (ollama && chat) return pullBox(ollama, chat, opts.embed === false || (ollama.embedding_models || []).length ? null : emb, opts);
+  if (ollama && chat) return pullBox(ollama, chat, opts.embed === false || (ollama.embedding_models || []).length ? null : emb, opts, advice);
+  if (ollama && advice && advice.chat && advice.chat.reason) {   // no model fits this computer: say why, in words
+    return h("div", { class: "local-help" }, notice({ kind: "attention", live: false }, h("p", {}, h("strong", {}, "Ollama is running, but no model that reads well fits this computer. "), advice.chat.reason)));
+  }
   if (servers.length) {
     return watchFor(h("div", { class: "local-help" },
       h("p", {}, h("strong", {}, "A model server is running, but it offers no model yet."), " Load a model in it (in LM Studio: choose a model and load it). This page notices by itself."),
@@ -74,26 +78,45 @@ function getOllama(app) {
     looking("Looking for Ollama on this computer…"), manual);
   // an install that is already running (started on another page, or before a reload): show it instead of the button,
   // also when Ollama looks installed: the installer writes "ollama app.exe" first and the rest after it
-  if (app.how !== "terminal") {
-    api("GET", "/api/jobs").then((r) => {
-      const j = ((r && r.jobs) || []).find((x) => x.kind === "ollama-install" && !TERMINAL.has(x.state));
-      if (j) followInstall(j, area, steps[0].querySelector("button"));
-    }).catch(() => {});
-  }
+  const btn0 = steps[0].querySelector("button");
+  api("GET", "/api/jobs").then((r) => {
+    const j = ((r && r.jobs) || []).find((x) => x.kind === "ollama-install" && !TERMINAL.has(x.state));
+    if (j && app.how !== "terminal") { followInstall(j, area, btn0); return; }
+    // 0.18.0rc2 (M8): Ollama is on this computer but does not answer: ENLENS starts it itself, once a minute at most
+    // (the card is drawn again whenever the page looks again); the button stays for when that did not work
+    if (app.installed && box.isConnected) {
+      if (Date.now() - lastAutoStart > 50000) { lastAutoStart = Date.now(); startByItself(area, btn0); }
+      else startedWait(area, btn0, STARTING, 60000 - (Date.now() - lastAutoStart));   // the card was drawn again meanwhile
+    }
+  }).catch(() => {});
   return box;
 }
 
+let lastAutoStart = 0;
+const STARTING = "Ollama was not running, so ENLENS is starting it. A moment…";
+
+async function startByItself(area, btn) {
+  btn.disabled = true;
+  try {
+    const r = await api("POST", "/api/ollama/start", {});
+    if (r.job) { followInstall(r.job, area, btn); return; }   // an install is still running: its progress instead
+    if (r.running) { btn.disabled = false; return; }           // it answers already: the page notices it by itself
+    startedWait(area, btn, STARTING);
+  } catch (e) { btn.disabled = false; replace(area, h("p", { class: "muted small" }, `${e.message} Press Start Ollama to try again.`)); }
+}
+
 // After Start Ollama: the page notices Ollama within a few seconds (and moves on); after a minute without it, say so.
-function startedWait(area, btn) {
+function startedWait(area, btn, text = "Ollama is starting…", ms = 60000) {
   const look = area.parentElement && area.parentElement.querySelector(".local-looking");
   if (look) look.hidden = true;
-  replace(area, looking("Ollama is starting…"));
+  replace(area, looking(text));
   setTimeout(() => {
     if (!area.isConnected) return;
     if (look) look.hidden = false;
     btn.disabled = false;
-    replace(area, h("p", { class: "muted small" }, "Ollama did not answer within a minute. Open the Ollama app yourself, or press Start Ollama again."));
-  }, 60000);
+    replace(area, h("p", { class: "muted small" }, btn.hidden ? "Ollama did not answer within a minute. Open the Ollama app yourself, or open this page again and ENLENS tries again."
+      : "Ollama did not answer within a minute. Open the Ollama app yourself, or press Start Ollama again."));
+  }, Math.max(1000, ms));
 }
 
 const INSTALL_STEPS = { download: "Downloading Ollama", check: "Checking that it is Ollama's own installer…", install: "Installing Ollama…", start: "Starting Ollama…" };
@@ -177,9 +200,15 @@ function followInstall(job, area, btn) {
   w.promise.then((j) => {
     if (j.state === "done") {
       const r = j.result || {};
-      replace(area, r.running
-        ? notice({ kind: "done" }, h("p", {}, "Ollama is installed and running. A moment, and the next step appears here."))
-        : notice({ kind: "info" }, h("p", {}, "Ollama is installed, but it did not answer yet. Open it from ", r.path && /\.app$/.test(r.path) ? "Applications" : "the Start menu", ", and ", appName(), " notices it by itself.")));
+      if (r.running) {
+        replace(area, notice({ kind: "done" }, h("p", {}, "Ollama is installed and running. A moment, and the next step appears here: a model to download.")));
+        return;
+      }
+      // 0.18.0rc2 (M8): installed but not answering: ENLENS starts it, as the install's last step did, and waits; nothing
+      // is left for the person to open
+      if (btn) btn.hidden = true;
+      lastAutoStart = Date.now();
+      startByItself(area, btn || h("button"));
       return;
     }
     if (btn) { btn.hidden = false; btn.disabled = false; }
@@ -216,23 +245,74 @@ function watchFor(el, done, onFound) {
   return el;
 }
 
-// The download: the suggested model (and the one for search by meaning, if wanted), its progress, Stop.
-function pullBox(ollama, chat, emb, opts) {
+// The download: the model suggested for this computer, with a smaller, quicker and a larger, more careful one beside it
+// (0.18.0rc2, M8: modeladvice.py), and the one for search by meaning if wanted; its progress, Stop.
+const ROLE_WORDS = { recommended: "Recommended for this computer", smaller: "Smaller and quicker", larger: "Larger and more careful" };
+
+// The choices of one kind of model as radio buttons: each with its size, how quick it is here and what it is good for.
+// `value()` is the option chosen; `onChange` runs when the choice changes. Without advice there is nothing to choose.
+function modelChoices(name, ladder, onChange) {
+  const options = (ladder && ladder.options) || [];
+  let chosen = options.find((o) => o.role === "recommended") || options[0] || null;
+  if (options.length < 2) return { el: null, value: () => chosen };
+  const el = h("fieldset", { class: "model-choices" }, h("legend", { class: "visually-hidden" }, "Which model"),
+    options.map((o) => {
+      const input = h("input", { type: "radio", name, value: o.name, checked: o === chosen });
+      input.addEventListener("change", () => { chosen = o; onChange(); });
+      return h("label", { class: "model-choice" }, input,
+        h("span", { class: "grow" },
+          h("span", { class: "model-choice-head" }, h("strong", {}, o.name), ` · ${o.size}`, h("span", { class: "model-role small" }, (o.use === "embed" && o.role === "larger" ? "For many languages" : o.use === "embed" ? "Recommended to start" : ROLE_WORDS[o.role]) || "")),
+          o.use === "chat" ? h("span", { class: "muted small model-choice-line" }, o.speed_text) : null,
+          h("span", { class: "muted small model-choice-line" }, o.good_for, o.note ? ` ${o.note}` : "")));
+    }));
+  return { el, value: () => chosen };
+}
+
+function pullBox(ollama, chat, emb, opts, advice) {
+  const adviceChat = advice && advice.chat && advice.chat.options.length ? advice.chat : null;
+  const adviceEmbed = advice && advice.embed && advice.embed.options.length ? advice.embed : null;
+  const embOnly = !chat;
   const alsoEmb = chat && emb ? h("input", { type: "checkbox", id: "pull-embed", checked: true }) : null;
-  const first = chat || emb;
-  const btn = button({ kind: chat ? "main" : "standard" }, icon("download", { size: 14 }), `Download ${first.name}`);
+  const chatChoice = chat ? modelChoices("pull-chat", adviceChat, () => refresh()) : { el: null, value: () => null };
+  const embChoice = emb && (alsoEmb || embOnly) ? modelChoices("pull-embed-model", adviceEmbed, () => refresh()) : { el: null, value: () => null };
+  // what is downloaded: the option chosen, else the model the server suggested
+  const pickChat = () => { const o = chatChoice.value(); return o ? { name: o.name, size: o.size } : chat; };
+  const pickEmb = () => { const o = embChoice.value(); return o ? { name: o.name, size: o.size } : emb; };
+  const first = () => pickChat() || pickEmb();
+  const btn = button({ kind: chat ? "main" : "standard" }, icon("download", { size: 14 }), `Download ${first().name}`);
   const area = h("div", { class: "local-pull", "aria-live": "polite" });
+  const detail = h("p", { class: "muted small" });
+  const refresh = () => {
+    btn.lastChild.textContent = `Download ${first().name}`;
+    detail.textContent = `${first().name}: ${first().size}. Ollama downloads it from ollama.com; none of your documents are sent. It can take a while, and ${appName()} keeps working meanwhile.`;
+  };
+  const computerLine = advice && advice.computer && advice.computer.words ? h("p", { class: "muted small" }, advice.computer.words) : null;
   const box = h("div", { class: "local-help" },
-    chat ? h("p", {}, h("strong", {}, `Ollama ${ollama.version || ""} is running`.replace("  ", " ")), ", but it has no model yet. Download one:")
+    chat ? h("p", {}, h("strong", {}, `Ollama ${ollama.version || ""} is running`.replace("  ", " ")), ", but it has no model yet. ",
+      adviceChat ? "These fit this computer; the first is the one ENLENS recommends:" : "Download one:")
       : h("p", {}, h("strong", {}, "Ollama has no model for search by meaning yet."), " Download one, and it is chosen here:"),
-    h("p", { class: "muted small" }, `${first.name}: ${first.size}. Ollama downloads it from ollama.com; none of your documents are sent. It can take a while, and ${appName()} keeps working meanwhile.`),
-    alsoEmb ? h("label", { class: "it small", for: "pull-embed" }, alsoEmb, ` Also ${emb.name} (${emb.size}), for search by meaning: it finds excerpts that use other words.`) : null,
+    chat && adviceChat ? h("p", { class: "muted small model-what" }, advice.what_is_a_model) : null,
+    computerLine,
+    chatChoice.el,
+    chat ? null : embChoice.el,
+    alsoEmb ? h("label", { class: "it small", for: "pull-embed" }, alsoEmb) : null,
+    alsoEmb ? embChoice.el : null,
+    detail,
     h("div", { class: "btn-row" }, btn),
     area);
-  const names = () => [first.name, ...(alsoEmb && alsoEmb.checked ? [emb.name] : [])];
+  // the checkbox line names the chosen one (it changes with the choice)
+  if (alsoEmb) {
+    const label = box.querySelector('label[for="pull-embed"]');
+    const say = () => { label.replaceChildren(alsoEmb, ` Also ${pickEmb().name} (${pickEmb().size}), for search by meaning: it finds excerpts that use other words.`); };
+    say();
+    if (embChoice.el) embChoice.el.addEventListener("change", say);
+  }
+  refresh();
+  const names = () => [first().name, ...(alsoEmb && alsoEmb.checked ? [pickEmb().name] : [])];
   const follow = (job) => {
     btn.hidden = true;
     if (alsoEmb) alsoEmb.disabled = true;
+    box.querySelectorAll(".model-choices input").forEach((i) => { i.disabled = true; });
     const stop = stopButton();
     stop.addEventListener("click", async () => { stop.disabled = true; try { await api("POST", `/api/jobs/${job.id}/cancel`); } catch (e) { showError(e); stop.disabled = false; } });
     const label = h("strong", {}, "Starting the download…");
@@ -261,12 +341,13 @@ function pullBox(ollama, chat, emb, opts) {
         const got = r.models || [];
         replace(area, notice({ kind: "done" }, h("p", {}, `Downloaded: ${got.join(" and ")}.`)));
         const listed = (m) => (m && got.includes(m.name) ? (r.listed || {})[m.name] || m.name : "");
-        if (opts.onReady) opts.onReady({ url: r.url || ollama.url, chat: listed(chat), embed: listed(emb), chosen: r.chosen || null });
+        if (opts.onReady) opts.onReady({ url: r.url || ollama.url, chat: listed(pickChat()), embed: listed(pickEmb()), chosen: r.chosen || null });
         return;
       }
       btn.hidden = false;
       if (alsoEmb) alsoEmb.disabled = false;
-      btn.lastChild.textContent = `Download ${first.name} again`;
+      box.querySelectorAll(".model-choices input").forEach((i) => { i.disabled = false; });
+      btn.lastChild.textContent = `Download ${first().name} again`;
       replace(area, j.state === "cancelled"
         ? h("p", { class: "muted small" }, "Stopped. Ollama keeps what it has; the download goes on from there.")
         : notice({ kind: "error", live: false }, h("p", {}, j.error || "The download did not finish.")));

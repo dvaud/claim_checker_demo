@@ -200,6 +200,30 @@ network drive keeps them within its storage.
 - A cloud service may keep earlier versions of files, or deleted ones, for a while (its version history or bin):
   something taken out of the folder may still be there for a time.
 
+### Through a storage space of your team's own (0.18.0rc2)
+
+A storage space (at Backblaze or Cloudflare; [Work together](storage-space.md))
+holds the same things as a shared folder, with three differences:
+
+- **Everything is locked before it leaves your computer.** Each file is encrypted with the project's key (AES-256-GCM)
+  and signed with your own key (Ed25519). The project's key travels only inside an invite link, after its `#`, and to
+  each member sealed with their own key; the storage company never holds it. It sees how many files there are, how
+  large they are and when they change, nothing of what is in them: no text, no names of people or documents (a
+  document's reading and file are stored under a name made from a key the company does not have).
+- **A file in someone else's name is set aside.** Your copy takes a file only when it is signed by the member whose
+  part of the space it is in, as the list of members signed by the space's keeper (the owner) says. A file anyone else
+  put there never comes into your project; the *Team* tab lists it. At Backblaze, each colleague's key can write only
+  in their own part in the first place.
+- **Removing a colleague** deletes their keys to the space, so they can no longer read or write it, and replaces the
+  project's key for those who stay: what is written afterwards does not open for them. What they already had stays
+  with them, as with *Unshare*.
+
+The keys (the project's, your own, the space's) are kept in this computer's keychain (on a computer without one, in a
+file in ENLENS's folder that only you can read), never in the project, a zip or the space. The space is never the
+only copy of anything: every copy holds the whole project, so a space lost or deleted loses nothing (*Move to another
+storage space*). Deleting files in the space takes a day to be final at Backblaze (it keeps only the latest version of
+each file, and a deleted one for a day).
+
 ### The owner and who may read with AI
 
 In a project with an owner ([Work together](together.md#the-owner-and-proposals-0170)):

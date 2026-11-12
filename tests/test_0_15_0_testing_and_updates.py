@@ -166,7 +166,7 @@ def test_the_technical_details_have_what_a_report_needs_and_nothing_private(monk
     monkeypatch.setattr(installation, "kind", lambda: "script")
     text = installation.technical_details()
     lines = dict(line.split(": ", 1) for line in text.splitlines())
-    assert list(lines) == ["ENLENS version", "Installed", "System", "Python", "AI route", "Local only", "Update channel"]
+    assert list(lines) == ["ENLENS version", "Installed", "System", "Python", "AI route", "Local only", "Secrets kept in", "Update channel"]
     assert lines["ENLENS version"] == __version__ and lines["Installed"] == "script"
     assert re.fullmatch(r"3\.\d+\.\d+", lines["Python"])
     assert lines["System"].split()[0] in ("Windows", "macOS", "Linux")

@@ -200,7 +200,14 @@ def _safe_name(name: str | None, fallback: str) -> str:
 # the folder of a project
 # ---------------------------------------------------------------------------------------------
 def chosen(ws: Workspace) -> Path | None:
-    """The shared folder chosen for this project on this computer (None: none)."""
+    """The shared folder chosen for this project on this computer (None: none). 0.18.0rc2 (L6): with a storage space
+    of the team's own, the copy of the space kept on this computer (`space.mirror_of`), which every rule here works on
+    as on a shared folder."""
+    from . import space
+
+    m = space.mirror_of(ws)
+    if m is not None:
+        return m
     v = ws.config.get(FOLDER)
     return Path(v) if isinstance(v, str) and v.strip() else None
 
@@ -285,6 +292,10 @@ def set_folder(ws: Workspace, raw: Any) -> dict:
     """Use this shared folder for the project (checked: `check_folder`). Nothing is written in it until the next round
     (`sync_now`). Returns `status`."""
     p = check_folder(ws, raw)
+    from . import space
+
+    if space.configured(ws) is not None:  # (a folder instead of the storage space: the space is left on this computer)
+        space.leave(ws)
     before = chosen(ws)
     _set_config(ws, **{FOLDER: str(p)})
     if before is None or Path(before) != p:
@@ -300,6 +311,11 @@ def set_folder(ws: Workspace, raw: Any) -> dict:
 def clear_folder(ws: Workspace) -> dict:
     """Stop using the shared folder for the project. Nothing in the folder is removed (it is the team's), and what came
     in stays. Returns `status`."""
+    from . import space
+
+    if space.configured(ws) is not None:
+        space.leave(ws)
+        return status(ws)
     before = chosen(ws)
     _set_config(ws, **{FOLDER: None})
     if before is not None:
@@ -2324,6 +2340,16 @@ def fetch_files(ws: Workspace, team: Path, progress: Progress | None = None,
 # one round, and what the Team tab shows
 # ---------------------------------------------------------------------------------------------
 def sync_now(ws: Workspace, progress: Progress | None = None, should_stop: ShouldStop | None = None) -> dict:
+    """One round, through the project's storage space (`space.sync_now`, 0.18.0rc2) or its shared folder
+    (`_sync_now`)."""
+    from . import space
+
+    if space.configured(ws) is not None:
+        return space.sync_now(ws, progress, should_stop)
+    return _sync_now(ws, progress, should_stop)
+
+
+def _sync_now(ws: Workspace, progress: Progress | None = None, should_stop: ShouldStop | None = None) -> dict:
     """One round: bring in what colleagues wrote, then write what changed. Returns {"at", "folder", "wrote": `write`'s
     report | None, "read": `read`'s "people", "files", "problems": [{"kind", "person", "message", "seq"}], "stopped"}.
     A folder that cannot be reached is a problem in the report, not an error: nothing changed, and the next round tries
@@ -2397,7 +2423,7 @@ def status(ws: Workspace) -> dict:
     base = chosen(ws)
     cx = ws._conn()
     head = cx.execute("SELECT seq, at FROM sync_written WHERE kind='head' AND key=''").fetchone()
-    out: dict[str, Any] = {"folder": str(base) if base else None, "team_folder": None, "reachable": None,
+    out: dict[str, Any] = {"folder": str(base) if base else None, "team_folder": None, "reachable": None, "space": None,
                            # until the folder is read: who kept the switch on when it last was (offline: kept so)
                            "keep_out": keep_out_state(ws, last_known=base is not None), "problems": [], "people": [],
                            "not_here": [], "other_computer": None,
@@ -2412,6 +2438,10 @@ def status(ws: Workspace) -> dict:
                        if r[0] not in held and (r[3] or "").split("~")[0] not in shas]
     if base is None:
         return out
+    from . import space
+
+    out["space"] = space.status(ws)  # 0.18.0rc2 (L6): the storage space, when the project has one ("folder" is the
+    #                                   copy of it on this computer, which the rounds work on)
     try:
         team = base / team_name(ws)
         out["team_folder"] = str(team)

@@ -351,7 +351,7 @@ def test_page_files():
     assert "`Download: ${amount}`" in js and "Free disk space needed: about" in js and '"Not enough free disk space"' in js
     assert "Download ${amount} and install" in js and "None of your documents are sent." in js
     assert 'x.kind === "ollama-install"' in js and "/cancel" in js   # an install already running is shown again
-    assert 'if (app.how !== "terminal") {' in js   # also when Ollama already looks installed
+    assert "if (j && app.how !== \"terminal\")" in js   # also when Ollama already looks installed (0.18.0rc2: the same look decides on the start by itself)
     assert "Ollama did not answer within a minute." in js   # Start Ollama does not wait for ever
     registry = (STATIC / "registry.js").read_text(encoding="utf-8")
     assert '"ollama-install": { icon: "download", text: "Installing Ollama", link: "#/settings/model" }' in registry
