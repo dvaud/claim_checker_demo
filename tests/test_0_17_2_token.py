@@ -93,6 +93,17 @@ def test_the_page_files_hold_no_token():
 # ---------------------------------------------------------------------------------------------
 # starting: the link, the token file
 # ---------------------------------------------------------------------------------------------
+def _target(url: str) -> str:
+    """What the browser was sent to: on Linux `launcher.browse` hands it a private file that sends it on to the link
+    (test_on_linux_the_browser_gets_a_private_file_not_the_token); that link is read from the file."""
+    if url.startswith("file://"):
+        from urllib.parse import unquote, urlparse
+
+        page = Path(unquote(urlparse(url).path)).read_text(encoding="utf-8")
+        return json.loads(re.search(r"location\.replace\((\"[^\"]*\")\)", page).group(1))
+    return url
+
+
 def _serve_once(monkeypatch, launcher_mode=False, env_token=None, port=0):
     """Run server.serve() in a thread on a free port, as the icon or the terminal would. Returns what it opened in the
     browser, the token file's text and mode while it ran, the app, and whether the file was gone after it stopped."""
@@ -101,7 +112,7 @@ def _serve_once(monkeypatch, launcher_mode=False, env_token=None, port=0):
     from enlens_claims.gui import launcher, server
 
     opened, made = [], []
-    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: opened.append(url) or True)
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: opened.append(_target(url)) or True)
     monkeypatch.setattr(server, "_repair_plugin", lambda: None)
     monkeypatch.setattr(server, "_repair_icons", lambda: None)
     real = server.make_server
@@ -268,7 +279,7 @@ def test_open_again_opens_the_link_with_the_token(home, monkeypatch):  # noqa: F
     launcher.write_token(url, 8799, "K" * 40)
     live = {"url": url, "port": 8799, "pid": 1, "version": installation.__version__}
     opened = []
-    monkeypatch.setattr(webbrowser, "open", lambda u, *a, **k: opened.append(u) or True)
+    monkeypatch.setattr(webbrowser, "open", lambda u, *a, **k: opened.append(_target(u)) or True)
     monkeypatch.setattr(launcher, "running", lambda timeout=1.5: live)
     assert launch.main(["--launcher", "--no-start-ollama"]) == 0  # a second double-click on the icon
     assert installation._open(live, None, False) is True           # enlens post-install --open
