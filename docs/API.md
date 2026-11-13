@@ -1685,56 +1685,7 @@ codes, where each example was found, the groups and their order. The old routes 
   takes that apostrophe off (`review.csv_cell` and `review.csv_uncell`, exact inverses). Codebook files written before
   0.17.2 have none; the download adds them.
 
-### Jobs
-
-`GET /api/jobs` → `{"jobs": [Job summary]}` newest first. `GET /api/jobs/<id>` → full Job:
-```json
-{"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "second-opinion" |
-         "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
-         "claude-install" | "bibliography" | "new_reader" | "theme-new" | "folder-sync" | …,
- "title": "…", "queue": false,
- "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
- "created_at": 1793136448.87, "started_at": … | null, "finished_at": … | null, "seconds": 19.9,
- "error": null | "message", "error_kind": null | "backend" | "memory" | "request" | "internal",
- "waiting_for": null | {"id", "kind", "title", "message": "Queued: starts when “…” has finished"},
- "background": false,
- "progress": {…kind-specific…}, "result": {…} | null}
-```
-Summaries (in lists) omit `progress` and `result`. Jobs live until the app is closed. `background`: started by the app
-itself (a round of the shared folder by the poller), not by the person.
-
-**Jobs wait their turn (0.17.0, roadmap M6: `api_common.Jobs`, `LANES`).** Jobs of one project that change the same
-things never run at the same time: the later one stays `queued`, with `waiting_for` naming the job it waits for (the
-one just ahead of it in the project's queue, else the one running), and starts when its turn comes, first come first
-served. It can be cancelled while it waits (`POST /api/jobs/<id>/cancel`: it leaves at once, `cancelled`, and the ones
-behind it move up). Which jobs wait for which:
-- *the new reader* (`new_reader`, and `reread` of one document, not of an excerpt) runs alone in its project: it waits
-  until no other job of the project runs, and while it runs every other job waits for it (a job holding passage ids
-  from before the move would put its results on passages that are gone). While it still waits, it (and search by
-  meaning or another move waiting behind it) holds back only search by meaning and other moves, so a move waiting
-  behind a check that waits for Claude Code never stalls the rest of the project;
-- *adding documents* (`ingest`), *search by meaning* (`index`) and *a round of the shared folder* (`folder-sync`):
-  adding waits for the other three and they for it; two of the same kind never run together; search by meaning and a
-  round run beside each other;
-- *new themes for one set of themes* (`theme-new`) run one after the other (two would take the same passages);
-- everything else (checks, labels, themes, the glossary, codebooks tried out, the bibliography …) runs beside the
-  others, except the new reader, as before; jobs that use the chat model still take turns for it, and a job waiting
-  for its project's turn does not hold the model.
-When both are asked for, the new reader goes first: search by meaning that still waits moves behind it (the other
-waiting jobs keep their places), so no passage is prepared twice; search by meaning asked for while the new reader
-waits or runs waits for it. `waiting_for` is null once the job has its
-turn (a job that then waits only for the chat model is `queued` with `waiting_for` null, as before).
-
-### Testing a model
-
-`POST /api/benchmark` `{"reference": "/path/to/pilot", "kinds": ["verify_set", "extract"], "n": 10}` → job (kind
-`benchmark`): runs the chosen model on tasks a reference workspace already answered and compares. Progress
-`{"done", "total", "task", "model"}`. `result`: `{"model", "backend", "verdict": ["Checking claims: usable for a first
-pass; …"], "table": [{"measure": "Usable answers on the first try", "Checking claims": "90%"}], "kinds": {…raw…}}`.
-
-### New in 0.18.1: documents, theory documents, concepts and team copies
-
-<!-- 0.18.1 part A: its routes below this line (gui/api_corpus.py); integration moves them to their places -->
+### Theory documents, a codebook from theory, concepts and reader 5 (0.18.1)
 
 **A document's role** (roadmap K2 part 1, `docrole.py`). A document marked as theory is the lens the research is read
 through: still read, searched and noted, but left out of themes, codebook labels, the excerpts a check reads and key
@@ -1789,11 +1740,8 @@ page's `related.links` with `"source": "pattern"` and their `"sentences"` (`[{"d
   after it (or, failing that, just before).
 - The reading report (`reading`, `documents.reading_json`) gains `figures` (how many were found) and
   `tables_joined` (tables that ran over a page and were joined into one).
-<!-- end of 0.18.1 part A -->
 
-### New in 0.18.1: the AI mix, checks and retractions
-
-<!-- 0.18.1 part B: its routes below this line (gui/api_checks_extra.py); integration moves them to their places -->
+### The assessment in words, retractions, agreement between routes, answers a page at a time (0.18.1)
 
 **The assessment in words (N4).** `GET …/hypotheses/<id>` carries `assessment`: `{"sentences": [{"text", "rule",
 "refs"}], "moved_by": {"text", "rule", "refs", "from", "to"} | null}`. Each sentence comes from one rule (`verdict`,
@@ -1802,6 +1750,7 @@ page's `related.links` with `"source": "pattern"` and their `"sentences"` (`[{"d
 documents not readable by Claude are counted, never quoted. `PUT …/judgements/<claim_id>/<passage_id>` now also
 answers `{"status_before", "status", "moved"}` (`moved`: the sentence naming this judgement when it changed the
 answer, also written into the research log as kind `verdict-moved`, else null).
+
 #### Retractions and corrections
 
 Looks the DOIs of the bibliography's works and of the documents up in Crossref, which carries Retraction Watch's
@@ -1815,7 +1764,10 @@ No AI is not looked up. The Crossref address can be set with `ENLENS_CROSSREF_UR
 | `POST /api/projects/<name>/retractions/check` | Starts the lookup as a job (`{"job"}`; `progress` has `done` and `total` DOIs; one at a time per project). Its result: `{"looked_up", "no_ai", "notices", "capped", "checked_at"}`. 400 under local-only or when there is no DOI to ask about. |
 
 `GET …/bibliography` gives each work a `notices` list, and `retractions: {checked_at, affected, local_only}` beside `counts`.
-**Agreement between routes (I5).** The local model and Claude answer the same sample of an answered kind of task, and
+
+#### Agreement between routes (I5)
+
+The local model and Claude answer the same sample of an answered kind of task, and
 Cohen's kappa compares their decisions (the grade of each excerpt for `check`, `reread` and `second`; whether each
 candidate code applies for `label`; the relation of each pair of terms for `link`). Only tasks whose documents Claude
 may read are used. An answer a task already has from a route is reused; only what is missing is asked. Nothing is stored
@@ -1832,4 +1784,49 @@ and `threshold`) answers one page of the list: `hypotheses` holds at most `limit
 1,000) from row `offset`, in the same order as the whole list, and `total` (the rows after the filters), `offset` and
 `limit` are added. `counts` still cover every hypothesis. Without `offset` the answer is what it always was.
 
-<!-- end of 0.18.1 part B -->
+### Jobs
+
+`GET /api/jobs` → `{"jobs": [Job summary]}` newest first. `GET /api/jobs/<id>` → full Job:
+```json
+{"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "second-opinion" |
+         "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
+         "claude-install" | "bibliography" | "new_reader" | "theme-new" | "folder-sync" | …,
+ "title": "…", "queue": false,
+ "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
+ "created_at": 1793136448.87, "started_at": … | null, "finished_at": … | null, "seconds": 19.9,
+ "error": null | "message", "error_kind": null | "backend" | "memory" | "request" | "internal",
+ "waiting_for": null | {"id", "kind", "title", "message": "Queued: starts when “…” has finished"},
+ "background": false,
+ "progress": {…kind-specific…}, "result": {…} | null}
+```
+Summaries (in lists) omit `progress` and `result`. Jobs live until the app is closed. `background`: started by the app
+itself (a round of the shared folder by the poller), not by the person.
+
+**Jobs wait their turn (0.17.0, roadmap M6: `api_common.Jobs`, `LANES`).** Jobs of one project that change the same
+things never run at the same time: the later one stays `queued`, with `waiting_for` naming the job it waits for (the
+one just ahead of it in the project's queue, else the one running), and starts when its turn comes, first come first
+served. It can be cancelled while it waits (`POST /api/jobs/<id>/cancel`: it leaves at once, `cancelled`, and the ones
+behind it move up). Which jobs wait for which:
+- *the new reader* (`new_reader`, and `reread` of one document, not of an excerpt) runs alone in its project: it waits
+  until no other job of the project runs, and while it runs every other job waits for it (a job holding passage ids
+  from before the move would put its results on passages that are gone). While it still waits, it (and search by
+  meaning or another move waiting behind it) holds back only search by meaning and other moves, so a move waiting
+  behind a check that waits for Claude Code never stalls the rest of the project;
+- *adding documents* (`ingest`), *search by meaning* (`index`) and *a round of the shared folder* (`folder-sync`):
+  adding waits for the other three and they for it; two of the same kind never run together; search by meaning and a
+  round run beside each other;
+- *new themes for one set of themes* (`theme-new`) run one after the other (two would take the same passages);
+- everything else (checks, labels, themes, the glossary, codebooks tried out, the bibliography …) runs beside the
+  others, except the new reader, as before; jobs that use the chat model still take turns for it, and a job waiting
+  for its project's turn does not hold the model.
+When both are asked for, the new reader goes first: search by meaning that still waits moves behind it (the other
+waiting jobs keep their places), so no passage is prepared twice; search by meaning asked for while the new reader
+waits or runs waits for it. `waiting_for` is null once the job has its
+turn (a job that then waits only for the chat model is `queued` with `waiting_for` null, as before).
+
+### Testing a model
+
+`POST /api/benchmark` `{"reference": "/path/to/pilot", "kinds": ["verify_set", "extract"], "n": 10}` → job (kind
+`benchmark`): runs the chosen model on tasks a reference workspace already answered and compares. Progress
+`{"done", "total", "task", "model"}`. `result`: `{"model", "backend", "verdict": ["Checking claims: usable for a first
+pass; …"], "table": [{"measure": "Usable answers on the first try", "Checking claims": "90%"}], "kinds": {…raw…}}`.

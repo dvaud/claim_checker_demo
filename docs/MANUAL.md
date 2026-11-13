@@ -48,11 +48,11 @@ Three things hold everywhere:
 | **Get going** | [Install and update](manual/install.md) | The one-line install, the files to double-click, scanned PDFs, updating, the icon |
 | | [First steps](manual/first-steps.md) | The first screen, adding documents, the sidebar, the finder, the AI mark |
 | **Your work** | [Check a hypothesis](manual/check.md) | The *Hypotheses* place: what a check does, the answers, hypotheses in parts, checking many at once |
-| | [Read and review a result](manual/review.md) | The result page, excerpt cards, second opinions, downloads, the list of answers, the evidence map |
-| | [Explore your documents](manual/explore.md) | Search, Codes, Concepts, Themes, a document's panels, Quick look |
-| | [Make your own codebook](manual/codebooks.md) | Codes of your own: from the themes, a copy or a CSV file; try them, change them, labels follow |
-| | [How documents are read](manual/reading.md) | What is read and what is left out, the reading view, moving to a new reader |
-| | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find |
+| | [Read and review a result](manual/review.md) | The result page, the assessment in words, excerpt cards, second opinions, downloads, the list of answers, the evidence map |
+| | [Explore your documents](manual/explore.md) | Search, Codes, Concepts (links found in the text, paths between concepts, over time), Themes, a document's panels, theory documents, Quick look |
+| | [Make your own codebook](manual/codebooks.md) | Codes of your own: from the themes, a theory document, a copy or a CSV file; try them, change them, labels follow |
+| | [How documents are read](manual/reading.md) | What is read and what is left out, tables and figures, the reading view, moving to a new reader |
+| | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find, retractions and corrections |
 | | [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights and notes, the dated record of decisions, compare and restore |
 | | [Work together](manual/together.md) | Sharing, the Team tab and page, the owner, clashes, moving |
 | | [A storage space of your team's own](manual/storage-space.md) | Set-up, invites, joining |
@@ -61,7 +61,7 @@ Three things hold everywhere:
 | **The AI and your privacy** | [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI, working together, how it is enforced |
 | | [Claude Code](manual/claude-code.md) | Starting it, its speed and helpers, the queue; Claude in a chat (the connector) |
 | | [A model on your own computer](manual/local-models.md) | Getting one, choosing and tuning it, testing it |
-| | [Which model does what](manual/models.md) | The model of each task and of each Claude plan; what every answer records |
+| | [Which model does what](manual/models.md) | The model of each task and of each Claude plan, how much thought, the mix of local and Claude; what every answer records |
 | **Reference** | [Settings](manual/settings.md) | The five tabs, new versions early, reporting a problem, installing for others |
 | | [Glossary](manual/glossary.md) | The words of the app and their technical names |
 | | [Troubleshooting and limits](manual/troubleshooting.md) | Problems by topic, with their fixes; what ENLENS cannot promise |
@@ -91,6 +91,12 @@ Three things hold everywhere:
 | know what a shared folder holds | [Privacy: working together](manual/privacy.md#working-together) |
 | move ENLENS to a new computer | [Moving to another computer](manual/together.md#moving-to-another-computer) |
 | make Claude Code go faster, or easier on my plan's limits | [How fast it works](manual/claude-code.md#how-fast-it-works) |
+| choose how much thought Claude gives the tasks | [How much thought](manual/models.md#how-much-thought) |
+| share the work between a local model and Claude | [The mix of local and Claude](manual/models.md#the-mix-of-local-and-claude) |
+| carry on when my plan's limit is reached | [At your plan's usage limit](manual/claude-code.md#at-your-plans-usage-limit) |
+| see what an answer rests on, in words | [The assessment in words](manual/review.md#the-assessment-in-words) |
+| keep the theory I read through out of the evidence | [Theory documents](manual/explore.md#theory-documents) |
+| check my sources for retractions | [Retractions and corrections](manual/bibliography.md#retractions-and-corrections) |
 | update ENLENS | [Update](manual/install.md#update) |
 | report a problem | [Reporting a problem](manual/settings.md#reporting-a-problem) |
 
