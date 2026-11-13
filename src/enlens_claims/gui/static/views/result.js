@@ -634,7 +634,7 @@ export async function renderResult(view, [hypId], query) {
       reviewed.length ? reviewedMark(people, relevantLeft !== 0)
         : basis ? h("span", { class: "basis-text", title: `Who judged the excerpts this answer rests on${r.model ? `. The AI model: ${r.model} (more under Technical details)` : ""}` }, basis) : null));
     if (sentence) card.appendChild(h("p", { class: "answer-sentence" }, sentence));
-    const said = assessmentBlock(r.assessment);
+    const said = assessmentBlock(r.assessment, r.status);
     if (said) card.appendChild(said);
     if (r.decomposed) {
       card.appendChild(h("ol", { class: "answer-part-list part-grid" }, parts.map((p) => h("li", {},
@@ -675,8 +675,11 @@ export async function renderResult(view, [hypId], query) {
   // 0.18.1 (N4): the assessment in words, made by rules from the judgements (never by an AI). The verdict's own sentence
   // is left out here (the badge and who says what say it; the exports keep it). A sentence that rests on excerpts takes
   // you to the first of them.
-  function assessmentBlock(a) {
-    const said = ((a && a.sentences) || []).filter((x) => x.rule !== "verdict");
+  function assessmentBlock(a, status) {
+    // what the card says already is not said twice here: the excerpts that wait for you (its caution), and those below
+    // your strictness when that is the whole answer ("too unsure to count")
+    const said = ((a && a.sentences) || []).filter((x) => x.rule !== "verdict" && x.rule !== "waiting-for-you"
+      && !(x.rule === "below-strictness" && status === "uncertain"));
     if (!said.length) return null;
     const goTo = (ref) => () => {
       const [claimId, passageId] = ref.split("/");
