@@ -177,12 +177,16 @@ def test_an_excerpt_card_is_compact_and_can_be_dismissed():
     # the radio "Not about this" is left out where the button does it
     assert '!(canDismiss && val === "not_relevant")' in judge
     card = js[js.index("  function evidenceCard("):js.index("  // Where a card is on the screen now")]
-    # the quote in its context; "In context" is the one way to more of the text (the whole excerpt, and on into the
-    # document); the actions in one row that never moves: the judge and More panels open under it
+    # the quote in its context; "more…" at the end of the excerpt (0.18.2; it was the "In context" button) is the one way
+    # to more of the text (the whole excerpt, and on into the document), never part of a selected sentence; the actions
+    # in one row that never moves: the judge and More panels open under it
     assert "excerptWindow(p.text, hsI, heI, brI, { after:" in card and '"Show the whole excerpt"' not in card and "function contextView" not in js
-    assert 'whole ? "Less context" : "In context"' in card and '"Open the whole document at this place"' in card
+    assert '}, whole ? "less" : "more…");' in card and '"Open the whole document at this place"' in card
+    assert 'link({ kind: "jump", class: "more-link",' in card and '"In context")' not in card and "ctx-toggle" not in js
+    from _static import rule
+    assert rule(".ev .more-link").get("user-select") == "none"
     assert "judgeControl(p, part, passageEl, extras)" in card and 'panelToggle(`tech:${p.passage_id}`, "Details", morePanel, false)' in card
-    # five actions in the row; reading again is under Details, the original file with the whole excerpt (In context);
+    # four actions in the row; reading again is under Details, the original file with the whole excerpt (more…);
     # one panel open at a time
     # 0.17.0 (design guide): reading again sends the excerpt to the AI, so it carries the AI mark (withAI())
     # 0.17.0 (design guide 4.4): the reread button's panel says where the excerpt goes, under the button

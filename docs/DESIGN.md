@@ -748,8 +748,9 @@ prefix, onClick)`. **Lives in:** `components.css` § 4.25.
 **Means:** one excerpt the AI read for a hypothesis (the result page). **Use:** the result page's evidence only.
 **Not for:** a passage shown anywhere else (concordance lines, the reading view, a note). **Looks:** a card (8 px corners): its grade
 badge and facts at the top, the document and the place in small text, the passage in serif grey with the AI's quote in
-its grade's tint and line; then the row of actions: *Agree* (small standard) first, then small quiet buttons, the
-toggles *Judge differently…*, *In context* and *Details* last (their panels open under the row, which never moves). A
+its grade's tint and line, *more…* at its end (a link in the UI face that shows the whole excerpt and the ways into the
+document, then reads *less*); then the row of actions: *Agree* (small standard) first, then small quiet buttons, the
+toggles *Judge differently…* and *Details* last (their panels open under the row, which never moves). A
 judgement that does not count shows its badge without fill and with a dashed edge, then *Not counted*. A reviewed card sits
 back (no fill: the page's ground shows through its solid edge), and says who judged it with the person icon, so the ones
 still to review stand out. The other judgements, in *Judge differently…*, are a [choice](#46-choices) (filter form). **After a judgement** the toast carries *Undo* for a few seconds; the card keeps *Take back* in its row (back to the AI's judgement); when you changed your own earlier judgement, the one-line info notice at its top that says where it moved and why also offers *Back to “…”* (that judgement), unless the row already offers it in one press (*Not about this*, on an excerpt the AI read): no two buttons on a card go to the same place, and each is named by where it goes (`noteWayBack()` in `views/result.js` decides). The keyboard's focus goes to the note's button when there is one, else to the row's first button. The place it left is a one-line info notice with the arrow icon, like the card's own, that says where it went, with *Show it* and no other action. **Make it:** drawn by `views/result.js`; no helper, as one page draws it.
@@ -869,7 +870,8 @@ The rule: **does it change something, or move you?** Changing is a button; movin
 
 | Case | It… | Is |
 | --- | --- | --- |
-| *In context*, *Details*, *Judge differently…* on an excerpt card | opens a panel here | small quiet toggle buttons (a chevron after the words) |
+| *Details*, *Judge differently…* on an excerpt card | opens a panel here | small quiet toggle buttons (a chevron after the words) |
+| *more…* / *less* at the end of an excerpt | shows the whole excerpt here, and folds it again | a link button in the UI face, not selectable |
 | *Next to review* on a result page, *Review the 3 excerpts judged not about it* | steps through the excerpts still to judge: each press goes to another, switches the evidence to cards and opens a fold when it must | buttons: the page's main button, an arrow after its words; the second a small standard button |
 | *Say why*, *Edit*, *Undo*, *Forget this sentence* | act | small quiet buttons after their sentence |
 | *Remove*, *Delete this result* | remove | small danger buttons (a dialog confirms) |

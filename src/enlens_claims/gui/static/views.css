@@ -1134,7 +1134,6 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .result .ev .passage .runin { display: block; font-family: var(--font-ui); font-size: var(--fs-small); font-weight: var(--fw-strong); color: var(--text-2); margin: 0 0 1px; }
 .result .ev .passage-window.passage-broken { gap: .35em; }
 .result .ev-src .also-in { white-space: nowrap; }
-/* "In context" and "Details": quiet, but visibly something to click */
 .result .ask-facts .ask-fact { margin: 0 0 6px; font-size: var(--fs-small); color: var(--text-2); }
 .result .ask-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .result .ev-notes .has-tip { cursor: help; }
@@ -1169,7 +1168,7 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .result .judge-row > span[aria-live] { min-width: 0; }
 .result .agree-box { flex-direction: row; align-items: center; gap: 4px 12px; flex-wrap: wrap; }
 .result .agree-btn { min-width: 0; }
-/* slots, so "In context" and "Details" sit in the same place on every card, whatever the labels: each button is at
+/* slots, so "Details" sits in the same place on every card, whatever the labels: each button is at
    least as wide as its longest label needs (Take back; Not about this; Judge this excerpt… with its chevron), and
    wider when its words need more. A min-width, never a width: a button is never narrower than its words and padding */
 .result .judge-row .agree-btn { min-width: 6.5rem; justify-content: center; }

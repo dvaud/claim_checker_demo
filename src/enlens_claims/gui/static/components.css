@@ -807,8 +807,10 @@ mark.kw-also { background: color-mix(in srgb, var(--accent-soft) 60%, transparen
 /* ==== 4.26 Excerpt cards */
 /* One excerpt the AI read for a hypothesis (the result page): its grade badge at the top, the document and the place,
    the passage in serif with the AI's quote in its grade's tint and line, then the row of actions (Agree in the first
-   place, the rest small quiet buttons; In context and Details are toggles). */
+   place, the rest small quiet buttons; Details is a toggle), with more… at the end of the passage for the whole excerpt. */
 .ev-list { display: flex; flex-direction: column; gap: 14px; }
+/* "more…" / "less" at the end of the excerpt: a link in the UI face, never part of a selected sentence */
+.ev .more-link { font-family: var(--font-ui); font-size: var(--fs-small); white-space: nowrap; user-select: none; -webkit-user-select: none; }
 .ev { padding: 14px 18px 10px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--surface); }
 /* a reviewed card sits back on the page (no fill: the page's ground), so the ones still to review stand out */
 .ev[data-reviewed="1"] { background: transparent; }

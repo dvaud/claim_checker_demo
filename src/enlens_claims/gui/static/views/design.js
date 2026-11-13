@@ -75,7 +75,7 @@ export async function renderDesign(page) {
 
   // ---- 4.1 to 4.5
   const busy = button({ kind: "main", busy: true, icon: "loader" }, "Checking");
-  const toggle = button({ kind: "quiet", sm: true, toggle: true }, "In context");
+  const toggle = button({ kind: "quiet", sm: true, toggle: true }, "Details");
   toggle.addEventListener("click", () => toggle.setAttribute("aria-expanded", toggle.getAttribute("aria-expanded") === "true" ? "false" : "true"));
   const fileInput = h("input", { type: "file" });
   // the view tabs of a place, as a sample: a click shows the other tab as current and stays here
@@ -162,9 +162,10 @@ export async function renderDesign(page) {
   const excerpt = (grade, reviewed) => h("article", { class: `ev ev-${grade}`, "data-reviewed": reviewed ? "1" : null },
     h("div", { class: "ev-top" }, gradeBadge(grade), h("span", {}, "Certainty: medium")),
     h("p", { class: "ev-src" }, h("span", { class: "title" }, "Commuting less, emitting less?"), h("span", { class: "page" }, " · paragraph 5 of 9")),
-    h("p", { class: "passage" }, "Home energy rises in winter. ", h("mark", { class: "quote" }, "The climate benefit of home working is real but small."), " It does not replace investment."),
+    h("p", { class: "passage" }, "Home energy rises in winter. ", h("mark", { class: "quote" }, "The climate benefit of home working is real but small."), " It does not replace investment.",
+      h("span", { class: "ellip", "aria-hidden": "true" }, "\u00a0…"), "\u00a0", link({ kind: "jump", class: "more-link" }, "more…")),
     h("div", { class: "judge-row" }, button({ sm: true }, "Agree"), button({ kind: "quiet", sm: true }, "Not about this"),
-      button({ kind: "quiet", sm: true, toggle: true }, "In context"), button({ kind: "quiet", sm: true, toggle: true }, "Details")));
+      button({ kind: "quiet", sm: true, toggle: true }, "Details")));
 
   // ---- 5.2: the status area in each state, the last row
   const aiCard = (cls, ic, name, words) => h("div", { class: "status-area" }, h("div", { class: "privacy-wrap" },

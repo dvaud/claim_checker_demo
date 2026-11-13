@@ -76,7 +76,7 @@ export function originalLink(project, docId, page, kind, opts = {}) {
       const isPdf = k === "pdf";
       const where = isPdf ? (page ? `, at page ${page}` : "") : opts.quote ? ", at the quote" : "";
       const link = h("a", { class: "it", href: originalHref(project, docId, { kind: k, page, quote: opts.quote }), target: "_blank", rel: "noopener",
-        title: `Opens ${info.name || "the original file"} in a new tab${where}${isPdf && opts.quote && opts.pdfHint ? ". The quote itself is highlighted here in the app, under “In context”." : ""}` },
+        title: `Opens ${info.name || "the original file"} in a new tab${where}${isPdf && opts.quote && opts.pdfHint ? ". The quote itself is highlighted here in the app, under “more…” at the end of the excerpt." : ""}` },
         opts.noIcon ? null : icon("external-link", { size: 13 }), opts.text || (isPdf && page && !opts.pdfHint ? `Open the original (page ${page})` : "Open the original"));
       replace(holder, link);   // 0.12: where it opens is in its title, not in a line beside it
     } else if (opts.reason !== false) {
@@ -1449,7 +1449,27 @@ export async function renderResult(view, [hypId], query) {
     const win = !whole && !p.waiting_for_you ? excerptWindow(p.text, hsI, heI, brI, { after: matchMedia("(max-width: 600px)").matches ? 0 : 1 }) : null;
     const passageEl = win ? windowNode(p.text, hsI, heI, hcls, brI, win) : passageNode(p.text, hsI, heI, "p", hcls, brI);
     card.appendChild(passageEl);
-    // the ways into the document: with the whole excerpt (In context), not in every card's row
+    // 0.18.2: "more…" at the end of the excerpt is the one way to more of the text: the whole excerpt the AI read, with
+    // the ways on into the document under it; "less" at the end of the whole excerpt folds it again. It was the
+    // "In context" button in the row of actions. Not selectable, so a sentence selected to quote never takes it along.
+    if (p.in_corpus || win || whole) {
+      const moreLink = link({ kind: "jump", class: "more-link", "aria-expanded": whole ? "true" : "false",
+        "aria-label": whole ? "Less context" : "More context", onMousedown: (e) => e.preventDefault(),
+        title: whole ? "Back to the quote in its context" : "The whole excerpt the AI read, and the way into the whole document at this place",
+        onClick: () => {
+          if (whole) wholeShown.delete(wkey); else wholeShown.add(wkey);
+          const j = card.querySelector(".judge");
+          if (j && j.saveDraft && j.saveDraft()) return;
+          focusAfter = { passage_id: p.passage_id, claim_id: part.claim_id, ...placeOf(p.passage_id, part.claim_id), noNote: true };
+          redraw();
+          const again = findCard(part.claim_id, p.passage_id);
+          const el = again ? again.querySelector(".more-link") : null;
+          if (el) el.focus({ preventScroll: true });
+        } }, whole ? "less" : "more…");
+      const end = passageEl.classList.contains("passage-broken") ? passageEl.lastElementChild || passageEl : passageEl;
+      end.append("\u00a0", moreLink);
+    }
+    // the ways into the document: with the whole excerpt (more…), not in every card's row
     // the links in one line, then the download (an action) after it, its words a verb (DESIGN.md 6)
     if (whole && p.in_corpus) card.appendChild(h("div", { class: "ev-doclink" },
       h("p", {}, h("a", { href: docHref(p, span) }, "Open the whole document at this place"), " · ",
@@ -1488,22 +1508,9 @@ export async function renderResult(view, [hypId], query) {
     if (p.verdict && p.quote && !(Number.isInteger(p.quote_start) && Number.isInteger(p.quote_end))) {
       card.appendChild(h("div", { class: "ev-weak-note" }, icon("info", { size: 13 }), "Quote: ", h("q", {}, p.quote)));
     }
-    // 0.12: one row of actions on every card: the three judging buttons, then two quiet ones: "In context" (the whole
-    // excerpt, the document, the original file, a highlighted copy) and "Details" (how it was read, reading it again)
+    // 0.12: one row of actions on every card: the judging buttons, then a quiet "Details" (how it was read, reading it
+    // again); more of the text is "more…" at the end of the excerpt (0.18.2)
     const extras = { buttons: [], panels: [] };
-    if (p.in_corpus || win || whole) {
-      // 0.12: "In context" is the one way to see more of the text: the whole excerpt the AI read, with a way on into
-      // the whole document at this place
-      const ctxBtn = button({ kind: "quiet", sm: true, toggle: true, class: "ev-link ctx-toggle", "aria-expanded": whole ? "true" : "false", onMousedown: (e) => e.preventDefault(),
-        title: "The whole excerpt the AI read, and the way into the whole document at this place", onClick: () => {
-          if (whole) wholeShown.delete(wkey); else wholeShown.add(wkey);
-          const j = card.querySelector(".judge");
-          if (j && j.saveDraft && j.saveDraft()) return;
-          focusAfter = { passage_id: p.passage_id, claim_id: part.claim_id, ...placeOf(p.passage_id, part.claim_id), noNote: true };
-          redraw();
-        } }, whole ? "Less context" : "In context");
-      extras.buttons.push(ctxBtn);
-    }
     let rereadBtn = null;
     if (p.read_by !== "you") {   // 0.11: no model may read it
       // 0.12: under Details, with the facts about how this excerpt was read
@@ -1717,7 +1724,7 @@ export async function renderResult(view, [hypId], query) {
     note.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveNote(); } });
     note.addEventListener("blur", saveNote);
     note.addEventListener("input", () => draftNotes.set(pendingKey(p, part), note.value));
-    // "In context" re-draws the card: a comment typed and not saved yet is saved first (the save re-draws it)
+    // "more…" re-draws the card: a comment typed and not saved yet is saved first (the save re-draws it)
     wrap.saveDraft = () => { if (saving || note.value.trim() === (p.user_note || "").trim()) return false; saveNote(); return true; };
     const judgeBtn = panelToggle(`judge:${part.claim_id}:${p.passage_id}`, p.read_by === "you" && !p.user_verdict ? "Judge this excerpt…" : p.user_verdict ? "Edit judgement…" : "Judge differently…", judgePanel, needed);
     judgeBtn.title = "A comment, another judgement, or another sentence as the quote";
