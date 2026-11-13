@@ -98,6 +98,8 @@ jobs:
         id: version
         run: |
           python tools/release.py check "${{ github.ref_type == 'tag' && github.ref_name || '' }}"
+          # a release joins its changelog fragments first (changes/*.md, 0.18.1); a run by hand on main may have some
+          if [ "${{ github.ref_type }}" = "tag" ]; then python tools/release.py fragments --check; fi
           echo "prerelease=$(python tools/release.py prerelease)" >> "$GITHUB_OUTPUT"
       - name: Install
         run: |

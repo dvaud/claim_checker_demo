@@ -197,6 +197,12 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   Tests run (none, or one cancelled by a later push to `main`).
 - The `CHANGELOG.md` entry (what changed and why, the defects fixed, the tests added, and *Not yet done*) becomes the
   release notes. Update the manual where behaviour changed (*The manual*, below) and `docs/API.md` for new routes.
+- **Changelog fragments (0.18.1).** A change does not edit `CHANGELOG.md`: it adds `changes/<topic>.md`, made of
+  `### <Section>` headings and their text ([`changes/README.md`](../changes/README.md)), so two branches never edit
+  the same lines. At the release, `python tools/release.py fragments X.Y.Z "<title>" --dry-run` shows the entry,
+  the same without `--dry-run` writes it at the top of `CHANGELOG.md` and deletes the fragments; then write the entry's
+  opening paragraph by hand. The release workflow refuses a tag while fragments are left
+  (`python tools/release.py fragments --check`).
 - Each release updates `gui/static/whats-new.md` (`# X.Y.Z: Title`, `*subtitle*`, then a few extremely short points,
   one `-` line each). When its version matches the running one, the app offers it, never shows it by itself: after an
   update the sidebar has *What's new* until it is opened, and Settings has it always.

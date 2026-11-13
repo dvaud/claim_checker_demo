@@ -7,6 +7,9 @@
                                                 # version filled in, the same as files to double-click
                                                 # (Install-ENLENS-Windows.cmd, Install-ENLENS-macOS.zip; 0.14.5),
                                                 # and SHA256SUMS of every file
+    python tools/release.py fragments 0.18.1 "a title"   # 0.18.1: join changes/*.md into a new CHANGELOG entry
+                                                # and delete them (--dry-run prints the entry and changes nothing)
+    python tools/release.py fragments --check   # fails while changes/ still holds fragments (the release workflow)
 
 Exit code 1 with a plain message when something does not agree, so the workflow stops before building.
 """
@@ -155,12 +158,115 @@ def double_click_files(dist: Path, v: str, root: Path = ROOT) -> list[Path]:
     return [dist / WINDOWS_FILE, dist / MAC_FILE]
 
 
+# 0.18.1 (roadmap J1.4): changelog fragments. Each change adds a small file, changes/<topic>.md, instead of editing
+# CHANGELOG.md, so two branches never edit the same lines of it. A fragment is made of "### <Section>" headings, each
+# followed by its text; the release joins them into one new entry and deletes them. Sections of the same name (in any
+# case) from several fragments become one; FIRST come first, LAST last, any other in the order they first appear.
+CHANGES = "changes"
+FIRST = ("New", "Changes that can alter your results")
+LAST = ("Fixed", "Privacy", "For developers", "Tests", "Not yet done")
+MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December")
+
+
+def fragment_files(root: Path = ROOT) -> list[Path]:
+    folder = root / CHANGES
+    return sorted(p for p in folder.glob("*.md") if p.name != "README.md") if folder.is_dir() else []
+
+
+def _join(a: str, b: str) -> str:
+    # two lists run on as one list; anything else is a paragraph of its own
+    return a + ("\n" if a.lstrip().startswith("- ") and b.lstrip().startswith("- ") else "\n\n") + b
+
+
+def fragments_entry(version: str, title: str, root: Path = ROOT, month: str | None = None) -> str:
+    """The new CHANGELOG entry made from changes/*.md (not written)."""
+    files = fragment_files(root)
+    if not files:
+        raise ReleaseError(f"{CHANGES}/ holds no fragments")
+    if not re.fullmatch(VERSION, version):
+        raise ReleaseError(f"{version} is not of the form 1.2.3 (or 1.2.3rc1)")
+    if version in changelog_versions(root):
+        raise ReleaseError(f"CHANGELOG.md already has an entry for {version}")
+    if not title.strip():
+        raise ReleaseError("the entry needs a title")
+    names: dict[str, str] = {}     # lower case -> the name as first written
+    parts: dict[str, list[str]] = {}
+    for f in files:
+        current, lines = None, []
+
+        def keep():
+            text = "\n".join(lines).strip()
+            if current is not None and text:
+                parts.setdefault(current, []).append(text)
+
+        for line in f.read_text("utf-8").splitlines():
+            m = re.match(r"^###\s+(.+?)\s*$", line)
+            if m:
+                keep()
+                name = m.group(1)
+                canon = next((c for c in FIRST + LAST if c.lower() == name.lower()), name)
+                current, lines = names.setdefault(canon.lower(), canon).lower(), []
+            elif line.startswith("#"):
+                raise ReleaseError(f"{CHANGES}/{f.name}: only '### Section' headings belong in a fragment: {line!r}")
+            elif current is None and line.strip():
+                raise ReleaseError(f"{CHANGES}/{f.name}: text before its first '### Section' heading")
+            else:
+                lines.append(line)
+        keep()
+    if not parts:
+        raise ReleaseError(f"the fragments in {CHANGES}/ are empty")
+    first = [c.lower() for c in FIRST if c.lower() in parts]
+    last = [c.lower() for c in LAST if c.lower() in parts]
+    middle = [k for k in parts if k not in first and k not in last]
+    month = month or f"{MONTHS[time.localtime().tm_mon - 1]} {time.localtime().tm_year}"
+    out = f"## {version} ({month}): {title.strip()}\n"
+    for key in first + middle + last:
+        body = parts[key][0]
+        for more in parts[key][1:]:
+            body = _join(body, more)
+        out += f"\n### {names[key]}\n\n{body}\n"
+    return out
+
+
+def join_fragments(version: str, title: str, root: Path = ROOT, month: str | None = None) -> str:
+    """Write the entry at the top of CHANGELOG.md and delete the fragments. Returns the entry."""
+    entry = fragments_entry(version, title, root, month)
+    path = root / "CHANGELOG.md"
+    text = path.read_text("utf-8")
+    m = re.search(r"^## ", text, re.M)
+    at = m.start() if m else len(text)
+    path.write_text(text[:at] + entry + "\n" + text[at:], encoding="utf-8")
+    for f in fragment_files(root):
+        f.unlink()
+    return entry
+
+
+def no_fragments_left(root: Path = ROOT) -> None:
+    files = fragment_files(root)
+    if files:
+        raise ReleaseError(f"{CHANGES}/ still holds {len(files)} fragment(s) ({', '.join(f.name for f in files)}): "
+                           f'run `python tools/release.py fragments <version> "<title>"` first')
+
+
 def main(argv: list[str]) -> int:
     try:
-        if not argv or argv[0] not in ("check", "notes", "assets", "prerelease"):
+        if not argv or argv[0] not in ("check", "notes", "assets", "prerelease", "fragments"):
             print(__doc__)
             return 2
-        if argv[0] == "check":
+        if argv[0] == "fragments":
+            args = [a for a in argv[1:] if not a.startswith("--")]
+            if "--check" in argv:
+                no_fragments_left()
+                print(f"{CHANGES}/ holds no fragments")
+            elif len(args) != 2:
+                print(__doc__)
+                return 2
+            elif "--dry-run" in argv:
+                print(fragments_entry(args[0], args[1]), end="")
+            else:
+                print(join_fragments(args[0], args[1]), end="")
+        elif argv[0] == "check":
             print(check(argv[1] if len(argv) > 1 and argv[1] else None))
         elif argv[0] == "prerelease":
             print("true" if is_prerelease(argv[1] if len(argv) > 1 else pyproject_version()) else "false")
