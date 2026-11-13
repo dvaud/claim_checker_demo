@@ -263,7 +263,7 @@ def test_the_result_page_draws_long_card_lists_in_pages_and_still_finds_every_ca
     # every jump to an excerpt goes through findCard(), which draws the card first when it is not drawn yet
     find = _fn(js, "  function findCard(claimId, passageId) {")
     assert "l.lazy.reveal(" in find
-    for where in ("function assessmentBlock(a)", "function nextToReview"):
+    for where in ("function assessmentBlock(", "function nextToReview"):
         assert "findCard(" in js[js.index(where):js.index(where) + 2500], where
     assert "const showIt = () => { const el = findCard(part.claim_id, p.passage_id);" in js
     assert "returnTo" in js and "findCard(id.claim_id, id.passage_id)" in js and "findCard(f.claim_id, f.passage_id)" in js
