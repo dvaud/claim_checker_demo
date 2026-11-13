@@ -82,6 +82,10 @@ export const FEATURES = {
     what: "A dated record of what was decided: documents added, checks made and dropped, themes removed, codebook changes. Add your own entries, say why, and go back to an earlier version.",
     overview: false,   // 0.17.0: a view of the Overview, and the drawer beside every page
   },
+  // 0.18.1 part A (documents, theory, concepts, team copies): its features below this line
+  // end of 0.18.1 part A
+  // 0.18.1 part B (AI mix, checks, retractions): its features below this line
+  // end of 0.18.1 part B
 };
 
 // The one AI mark (aiTag()) and a row's buttons with it (withAI()) are components: they live in lib.js with the other

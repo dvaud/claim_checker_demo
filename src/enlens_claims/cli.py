@@ -426,6 +426,10 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-icon", action="store_true", help="do not make the ENLENS icon")
     p.add_argument("--open", action="store_true", help="start ENLENS afterwards (or show the copy already running)")
     p.add_argument("--home", help="data folder built into the icon (default: ~/enlens, or ENLENS_HOME)")
+    # 0.18.1 part A (documents, theory, concepts, team copies): its subcommands below this line; name each in _PART_A
+    # end of 0.18.1 part A
+    # 0.18.1 part B (AI mix, checks, retractions): its subcommands below this line; name each in _PART_B
+    # end of 0.18.1 part B
 
     a = ap.parse_args(argv)
     if a.cmd == "update":
@@ -666,6 +670,10 @@ def _main(argv: list[str] | None = None) -> int:
         return _cmd_07(a, ws)
     elif a.cmd in ("prepare", "queue"):
         return _cmd_08(a, ws)
+    elif a.cmd in _PART_A:
+        return _cmd_part_a(a, ws)
+    elif a.cmd in _PART_B:
+        return _cmd_part_b(a, ws)
     elif a.cmd == "status":
         st = {r[0] + ":" + r[1]: r[2] for r in ws.query("SELECT kind, status, COUNT(*) FROM tasks GROUP BY kind, status")}
         cl = {r[0]: r[1] for r in ws.query("SELECT status, COUNT(*) FROM claims GROUP BY status")}
@@ -1017,3 +1025,21 @@ def _write_csv(path: str, rows: list[dict]) -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
+
+
+# 0.18.1 part A (documents, theory, concepts, team copies): its commands, run with the project open
+_PART_A: tuple[str, ...] = ()
+
+
+def _cmd_part_a(a, ws) -> int:
+    return 1
+# end of 0.18.1 part A
+
+
+# 0.18.1 part B (AI mix, checks, retractions): its commands, run with the project open
+_PART_B: tuple[str, ...] = ()
+
+
+def _cmd_part_b(a, ws) -> int:
+    return 1
+# end of 0.18.1 part B

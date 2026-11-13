@@ -18,6 +18,10 @@ const KEYWORDS = {
   "documents": "upload import add pdf word docx files reports papers web pages sources read corpus",
   "search": "find word phrase keyword lookup passage quote text occurs",
   "overview": "home start dashboard summary",
+  // 0.18.1 part A: its words below this line
+  // end of 0.18.1 part A
+  // 0.18.1 part B: its words below this line
+  // end of 0.18.1 part B
 };
 
 // Other names for the same thing, scored like a word of its title: "zotero" is the Bibliography, however many
@@ -57,6 +61,10 @@ export const ACTIONS = [
   ["Open the settings", "in Settings", "#/settings", "sliders", "settings preferences options appearance dark light"],
   ["Copy my link", "in Settings › Technical", "#/settings/link", "link", "bookmark link address url open browser"],
   ["Read what's new in this version", "in Settings › Technical", "#/settings/updates", "sparkles", "changelog change log release notes news new version changes update updated whats"],
+  // 0.18.1 part A: its actions below this line
+  // end of 0.18.1 part A
+  // 0.18.1 part B: its actions below this line
+  // end of 0.18.1 part B
 ];
 
 const PLACE_WHERE = { explore: "in Explore", check: "in Check hypotheses", record: "in Your notes" };

@@ -255,6 +255,10 @@ CREATE TABLE IF NOT EXISTS sync_via(kind TEXT, key TEXT, author TEXT, via TEXT, 
 CREATE TABLE IF NOT EXISTS sync_from(kind TEXT, key TEXT, fp TEXT, person TEXT, at TEXT, PRIMARY KEY(kind, key));
 CREATE TABLE IF NOT EXISTS sync_refused(kind TEXT, key TEXT, what_json TEXT, via TEXT, n INT, at TEXT, state TEXT,
   PRIMARY KEY(kind, key));
+-- 0.18.1 part A (documents, theory, concepts, team copies): new tables below this line
+-- end of 0.18.1 part A
+-- 0.18.1 part B (AI mix, checks, retractions): new tables below this line
+-- end of 0.18.1 part B
 """
 SCHEMA = SCHEMA.replace("{PLACES_TABLE}", PLACES_TABLE)
 
@@ -296,6 +300,10 @@ CREATE INDEX IF NOT EXISTS ix_tasks_waiting ON tasks(kind, queued_at) WHERE COAL
   COALESCE(access, 'cloud')='cloud' AND (status IN ('pending', 'retry') OR (status='done' AND again=1));
 CREATE INDEX IF NOT EXISTS ix_tasks_claimed ON tasks(claimed_by) WHERE claimed_by IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_results_route ON results(route, received_at);
+-- 0.18.1 part A: new indexes below this line
+-- end of 0.18.1 part A
+-- 0.18.1 part B: new indexes below this line
+-- end of 0.18.1 part B
 """
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -416,7 +424,12 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               ("canon", "sig", "TEXT"),
               ("canon_seen", "state_by", "TEXT"), ("canon_seen", "read_by", "TEXT"), ("canon_seen", "ai_by", "TEXT"),
               ("canon_seen", "blocks_by", "TEXT"), ("canon_seen", "blocks_base", "TEXT"),
-              ("canon_seen", "ai_offer", "TEXT")]
+              ("canon_seen", "ai_offer", "TEXT"),
+              # 0.18.1 part A (documents, theory, concepts, team copies): new columns below this line
+              # end of 0.18.1 part A
+              # 0.18.1 part B (AI mix, checks, retractions): new columns below this line
+              # end of 0.18.1 part B
+              ]
 
 
 def _add_columns(cx: sqlite3.Connection, migrations) -> None:

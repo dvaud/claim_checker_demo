@@ -51,6 +51,9 @@ from .api_space import SpaceApi
 from .api_poller import PollerApi  # 0.18 (L3)
 from .api_owner import OwnerApi  # 0.18 (L2)
 from .api_sharing import SharingApi
+from . import api_checks_extra, api_corpus  # 0.18.1: part B's and part A's routes, built side by side
+from .api_checks_extra import ChecksExtraApi
+from .api_corpus import CorpusApi
 from .app_library import LibraryMixin
 from .app_queue import QueueMixin
 from .api_common import (  # noqa: F401 - the names are importable from here as before
@@ -1548,19 +1551,21 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/owner/refused/{P}/{P}/dismiss", "post_owner_refused_dismiss"),
     ("GET", rf"/api/projects/{P}/codebooks/{P}/offer", "get_codebook_offer"),
     ("POST", rf"/api/projects/{P}/codebooks/{P}/follow", "post_codebook_follow"),
-]]
+] + api_corpus.ROUTES + api_checks_extra.ROUTES]
 # 0.18 (L3): changes after which the poller does not bring a round forward (they are rounds, uploads, or its own)
 NOT_A_CHANGE = {"post_choose_folder", "post_shared_folder_sync", "post_upload", "put_project_sync_poller", "post_project_sync_poller_seen"}
+NOT_A_CHANGE |= api_corpus.NOT_A_CHANGE | api_checks_extra.NOT_A_CHANGE
 DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_project_zip", "get_annotated", "get_flexiconc",
              "get_page_image",  # 0.15: a picture of a page, in an <img>
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
              "get_ai_sent_csv", "get_bibliography_export",
              "get_log_export", "get_notes_export", "get_codebook_csv"}  # 0.16
+DOWNLOADS |= api_corpus.DOWNLOADS | api_checks_extra.DOWNLOADS
 # (these may take the token as ?token=, for plain links)
 
 
 class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, SetupApi, RecordApi, SharingApi,
-              FolderApi, SpaceApi, PollerApi, OwnerApi):
+              FolderApi, SpaceApi, PollerApi, OwnerApi, CorpusApi, ChecksExtraApi):
     app: App
     server_version = f"enlens/{__version__}"
     protocol_version = "HTTP/1.1"

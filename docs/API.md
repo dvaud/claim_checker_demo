@@ -1731,3 +1731,13 @@ turn (a job that then waits only for the chat model is `queued` with `waiting_fo
 `benchmark`): runs the chosen model on tasks a reference workspace already answered and compares. Progress
 `{"done", "total", "task", "model"}`. `result`: `{"model", "backend", "verdict": ["Checking claims: usable for a first
 pass; …"], "table": [{"measure": "Usable answers on the first try", "Checking claims": "90%"}], "kinds": {…raw…}}`.
+
+### New in 0.18.1: documents, theory documents, concepts and team copies
+
+<!-- 0.18.1 part A: its routes below this line (gui/api_corpus.py); integration moves them to their places -->
+<!-- end of 0.18.1 part A -->
+
+### New in 0.18.1: the AI mix, checks and retractions
+
+<!-- 0.18.1 part B: its routes below this line (gui/api_checks_extra.py); integration moves them to their places -->
+<!-- end of 0.18.1 part B -->
