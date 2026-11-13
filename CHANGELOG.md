@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.18.4 (November 2026): A theory's concepts drafted by the AI, and how often the AI is right
+
+The AI can now draft a theory's concepts for a codebook, each definition quoted from the theory and checked, and each
+release says how often the AI's answers are right on a set of invented documents whose right answers are known. The
+manual is arranged by what you need, starting with a walk-through of a first project. Nothing in this release changes
+results.
+
+### New
+
+- **A codebook from a theory document: the AI can draft the concepts.** In *New codebook*, *From a theory document*,
+  the list of concepts found without AI now has a **Draft with AI** button. The AI reads the passages of the theory
+  where those concepts are defined or used most, and drafts the theory's own concepts: each with a short name, its
+  definition quoted exactly from the theory with its page, and one line on why it is a concept of the theory. Every
+  quote is checked against the document, and a quote that is not there, is shorter than three words or only repeats
+  the concept's name goes back to the AI to be fixed. The AI's concepts join the end of the list **unticked and marked
+  *AI draft***; a concept already on the list is not offered twice. Their examples still come only from your evidence
+  documents, never from the theory and never from the AI, and only when you tick them. The document's own AI setting
+  decides who reads it: Claude, only a local AI on this computer, or none (then the button is not offered, and the
+  dialog says why). The draft waits its turn like any AI job, goes to Claude Code's queue when Claude Code is your AI,
+  is written in the research log, and asking again for the same document reuses the answer; closing the dialog stops
+  a draft still running. Nothing changes until you tick a concept and make the codebook, so nothing here changes
+  results.
+- **The validation report's AI half.** Each release now carries `validation-report-ai.md` beside
+  `validation-report.md`: how often ENLENS's AI gives the right answer on a small gold set of invented documents on
+  remote work, whose right answers are known (about 30 hypotheses to check and 100 passages to label with a codebook
+  made for it). Per kind it gives the share of right answers and Cohen's kappa, how many answers were first rejected
+  for a quote that is not in the text, and how often a second run gave the same answer. It is made from a recorded,
+  dated run, and says its limits: invented, tidy documents, a small set, English only. The first run (Claude through
+  Claude Code, 13 November 2026) gave the right verdict for 93% of the hypotheses and the right decision for 99% of
+  the codes, and a second run gave the same verdict for 97%. Changes no result.
+- **The manual is arranged by what you need.** *Start here* has a new walk-through, *Your first project, start to
+  finish*: six invented documents, from adding them to the Excel file. *How to…* holds the steps for each task,
+  *Look it up* the settings, glossary and command line, and *How it works* the explanations, which have moved out of the
+  task pages: how a check reaches its answer, how documents are read, how two copies of a project come together, and how
+  the AI is used and limited. Every old page keeps its place. Cannot change results.
+
+### Fixed
+
+- **A theory's concepts read top to bottom.** In *From a theory document*, a concept with examples showed its
+  definition and its examples side by side, which squeezed the definition into a narrow column on a phone. The
+  examples now sit under the definition.
+
+### For developers
+
+- **Rules on GitHub** (roadmap J1.2). A change reaches `main` through a pull request whose seven *Tests* jobs are
+  green, `main` cannot be force-pushed or deleted, and a release tag `v…` is never moved or deleted. Repository admins
+  may bypass both rules, so the owner's release order is unchanged. See *Rules on GitHub* in `docs/DEVELOPING.md`.
+- **`views/sources.js` is split along the pages it serves** (roadmap H6, tidier code). The Documents list stays in `sources.js`, which still exports `renderSources` and `renderDocument`. A document's page is `views/doc-page.js`, with its parts beside it: `doc-leave-out.js` (Restore and Leave out in place), `doc-reading.js` (the Reading and Page panels), `doc-codes.js` (Codes), `doc-lookup.js` (Key terms, References and Search) and `doc-shared.js` (what the list and the page share). The page hands its panels one `ctx` object instead of sharing a closure. Nothing changes on screen.
+- A new kind of AI task, `theory_codes` (prompt `theory-codes-v1`; Sonnet stepping up to Opus, the large local model;
+  the `enlens-namer` helper, whose instructions now cover it): one task per draft, its payload the document's Level-0
+  candidates and up to 12 of its passages (24,000 characters). `theorycodes.ai_offer`, `make_ai_task`, `draft_with_ai`
+  and `ai_drafts`; the answer stays with the task (`results`), and the drafts are read from it. Routes:
+  `GET` and `POST /api/projects/<p>/codebook-theory/<doc>/ai` (the second starts a `theory-codes` job). Settings'
+  table of models per task has a new row, *Codes from a theory document*. The research log's new kind is
+  `codebook-drafted` (group Codebooks).
+- **`enlens validate prepare | score | report`** (`validation.py`): a new project from the gold set in
+  `tools/validation/` with its checks and labels queued; the answered project (and a second pass, `--again`) scored
+  into `tools/validation/runs/<date>-<route>.json`, every answer with its model, prompt version, ENLENS version and
+  date; and the report made from the newest run file with no AI, as the release workflow does. When to record a new
+  run, and how: docs/DEVELOPING.md.
+
+### Not yet done
+
+- The AI drafts concepts from at most 12 passages of the theory: in a long book, concepts defined only in passages it
+  is not given are left to the list found without AI, or to you.
+- No reference set of real documents filled in by a person: the gold set is invented, small and in English only.
+- The recorded run is on Claude only. A run on a local model (Ollama) is not recorded yet: it needs a computer with
+  memory to spare for the model.
+
 ## 0.18.3 (November 2026): Nothing off to the side
 
 Wide grids tell you what is out of sight and open full screen, and the Documents page becomes a list of one-line

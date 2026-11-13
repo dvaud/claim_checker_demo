@@ -57,13 +57,11 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.3: Nothing off to the side
+## New in 0.18.4: A theory's concepts drafted by the AI, and how often the AI is right
 
-- **Wide grids say what is out of sight, and open full screen.** A grid wider than the page (the Evidence map, Codes by document, Themes) now says which columns it shows, with arrows and a **Full screen** button.
-- **Themes: documents run down the page.** In *Documents by theme* the documents are now the rows and the themes the columns, so a project with many documents runs down the page instead of off to the right.
-- **Tables in the reading view fit the column.** A table taken from a document wraps its words to the reading column; only cells that are figures stay on one line.
-- **Less scrolling sideways elsewhere.** Settings' table of models per task and a model test's results stack into labelled rows when space is short, like the other tables.
-- **The Documents page is a list of one-line documents that open.** Each document is one line: its title, who may read it with AI, its role, a wait for the owner and anything that needs a look.
+- **A codebook from a theory document: the AI can draft the concepts.** In *New codebook*, *From a theory document*, the list of concepts found without AI now has a **Draft with AI** button.
+- **The validation report's AI half.** Each release now carries `validation-report-ai.md` beside `validation-report.md`: how often ENLENS's AI gives the right answer on a small gold set of invented documents on remote work.
+- **The manual is arranged by what you need.** *Start here* has a new walk-through, *Your first project, start to finish*: six invented documents, from adding them to the Excel file. Cannot change results.
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
