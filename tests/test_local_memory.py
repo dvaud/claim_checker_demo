@@ -101,7 +101,9 @@ def test_the_page_shows_the_local_model_while_it_reads(mixed, monkeypatch):
     during = local.seen[0]
     # the heading and the model line say the local model reads, not "Waiting for Claude Code"
     assert during["message"].startswith("Your local model (local-model) is reading")
-    assert "Only a local AI" in during["message"]
+    # 0.18.1: "on this computer", as with the AI mix it also answers the mix's share, not only documents marked Only a
+    # local AI
+    assert "on this computer" in during["message"]
     assert during["model"]["who"] == "local" and during["model"]["plain"].startswith("Your local model")
     assert during["model"]["line"].startswith("Local model local-model is loading the model")
     end = tracker.state()
