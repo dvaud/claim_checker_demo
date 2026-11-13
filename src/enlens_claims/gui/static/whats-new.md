@@ -1,5 +1,7 @@
-# 0.18.2: Sharing you can find, and a team you can see
-*Share an item with one press and see where it goes, find your team without opening the research log.*
-- More of an excerpt is more… at its end
-- Sharing is a choice you can see
-- The team has its own row under the project's name
+# 0.18.3: Nothing off to the side
+*Wide grids tell you what is out of sight and open full screen.*
+- Wide grids say what is out of sight, and open full screen
+- Themes: documents run down the page
+- Tables in the reading view fit the column
+- Less scrolling sideways elsewhere
+- The Documents page is a list of one-line documents that open
