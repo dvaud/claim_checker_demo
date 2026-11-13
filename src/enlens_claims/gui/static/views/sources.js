@@ -725,7 +725,8 @@ export async function renderDocument(view, [docId], query) {
   // alternative text only), without page pictures, or when its picture cannot be drawn, it is folded as before.
   const figureFailed = new Set();      // figures whose picture could not be drawn: folded, as before
   const figureEls = new Map();         // n -> its <figure>, kept so a repaint does not load the picture again
-  const shownFigure = (b) => reading && b.kind === "figure" && !!b.box && !!d.page_images && !figureFailed.has(b.n);
+  // (reader 5 only: an earlier reader's "figure" is the words inside a figure, folded with its Restore, review 9)
+  const shownFigure = (b) => reading && (d.reader || 1) >= 5 && b.kind === "figure" && !!b.box && !!d.page_images && !figureFailed.has(b.n);
   // a figure's caption: the caption block just after it, else just before it
   function captionOf(b) {
     const i = loaded.indexOf(b);
@@ -825,7 +826,7 @@ export async function renderDocument(view, [docId], query) {
   }
   let showLeftOut = !!session(`leftout:${docId}`);
   function blockActions(b) {
-    if (b.kind === "figure") return null;   // 0.18.1: a figure is never read, so there is nothing to leave out or restore
+    if (b.kind === "figure" && (d.reader || 1) >= 5) return null;   // 0.18.1: a reader-5 figure is never read: nothing to leave out or restore
     const wrap = h("div", { class: "dv-act" });
     const where = b.label || `${b.kind_text || "text"}${b.page ? `, page ${b.page}` : ""}`;
     const btn = b.included === false

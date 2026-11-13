@@ -96,7 +96,11 @@ export function timeCard(project, termId) {
     const ticks = docs.map((d) => [d, h("input", { type: "checkbox", "aria-label": `${d.title || d.file} in the first set` }), h("input", { type: "checkbox", "aria-label": `${d.title || d.file} in the second set` })]);
     const run = button({ sm: true }, "Compare");
     run.addEventListener("click", async () => {
-      const groups = { [names[0].value || "Set A"]: ticks.filter((x) => x[1].checked).map((x) => x[0].doc_id), [names[1].value || "Set B"]: ticks.filter((x) => x[2].checked).map((x) => x[0].doc_id) };
+      // two sets of the same name stay two sets (review 17): the second gets a number
+      const a = names[0].value.trim() || "Set A";
+      let b = names[1].value.trim() || "Set B";
+      if (b === a) b = `${b} (2)`;
+      const groups = { [a]: ticks.filter((x) => x[1].checked).map((x) => x[0].doc_id), [b]: ticks.filter((x) => x[2].checked).map((x) => x[0].doc_id) };
       run.disabled = true;
       try {
         const r = await api("POST", `${base}/concept-groups/${P(termId)}`, { groups });

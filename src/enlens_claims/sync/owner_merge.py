@@ -134,7 +134,8 @@ class OwnerRules:
                 cx.execute(f"INSERT OR REPLACE INTO {table}({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
                            [r.get(c) for c in cols])
                 held[k] = {c: r.get(c) for c in cols}
-                taken += 1
+                # (a new owner's mark of the answers it held, `~restamped:<place>`, is no answer: not counted, review 12)
+                taken += 0 if table == "decisions" and str(r.get("proposal") or "").startswith("~") else 1
         return taken
 
     def _events_in_my_name(self, cx: sqlite3.Connection) -> list[tuple]:

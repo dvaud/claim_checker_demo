@@ -278,6 +278,9 @@ def shared_words(text: str, stems: set[str]) -> list[str]:
 def docs_matching(ws: Workspace, query_text: str, terms: list[str] | None, doc_ids: set[str]) -> set[str]:
     """Which of these documents have a readable passage that shares a word with the claim or its search words
     (one keyword query, nothing is read by a model)."""
+    from .docrole import theory_docs
+
+    doc_ids = set(doc_ids) - theory_docs(ws._conn())   # 0.18.1 (K2): a theory document added since is not evidence
     if not doc_ids:
         return set()
     idx = passage_index(ws)

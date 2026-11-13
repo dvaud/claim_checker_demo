@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import heapq
 import math
+import re
 from collections import Counter, defaultdict
 from typing import Iterable
 
@@ -32,6 +33,7 @@ NEIGHBOURS = 25        # the strongest co-occurrence neighbours a node is joined
 LINK_COST = 0.5        # a step along an accepted link
 MAX_STEPS = 5
 BRIDGES = 3            # bridge passages shown per step
+MAX_EXPANDED = 400     # nodes one search may open (a request stays quick on a large corpus, review 10)
 
 
 class _Graph:
@@ -60,6 +62,10 @@ class _Graph:
             if a != b:
                 self.links[a][b] = lk
                 self.links[b][a] = lk
+        # the passages of every term, at once (one query, not one per neighbour: review 10)
+        self._term_n = {r[0]: int(r[1]) for r in ws.query(
+            f"SELECT m.term_id, COUNT(DISTINCT m.passage_id) FROM term_mentions m JOIN passages p ON "
+            f"p.passage_id=m.passage_id WHERE {self.ev} GROUP BY m.term_id")}
         self._n: dict[str, int] = {}
         self._nb: dict[str, dict[str, float]] = {}
 
@@ -70,8 +76,11 @@ class _Graph:
         return self.members.get(node) or [node]
 
     def passages(self, node: str) -> int:
+        ts0 = self.terms_of(node)
+        if len(ts0) == 1:
+            return self._term_n.get(ts0[0], 0)
         if node not in self._n:
-            ts = self.terms_of(node)
+            ts = ts0
             q = ",".join("?" * len(ts))
             self._n[node] = int(self.ws.scalar(f"SELECT COUNT(DISTINCT m.passage_id) FROM term_mentions m JOIN passages "
                                                f"p ON p.passage_id=m.passage_id WHERE m.term_id IN ({q}) AND {self.ev}",
@@ -114,33 +123,34 @@ class _Graph:
 
 
 def _shortest(g: _Graph, a: str, b: str, banned_edges: set, banned_nodes: set) -> tuple[float, list[str]] | None:
-    dist = {a: 0.0}
-    prev: dict[str, str] = {}
-    heap = [(0.0, a)]
+    """The cheapest path from a to b of at most MAX_STEPS steps: Dijkstra over (node, steps taken), so a node reached
+    cheaply by a long way does not hide a dearer, shorter way on (review 15). At most MAX_EXPANDED nodes are opened."""
+    best = {(a, 0): 0.0}
+    prev: dict[tuple[str, int], tuple[str, int]] = {}
+    heap = [(0.0, a, 0)]
+    opened: set[str] = set()
     while heap:
-        d, u = heapq.heappop(heap)
+        d, u, hops = heapq.heappop(heap)
         if u == b:
-            path = [b]
-            while path[-1] != a:
-                path.append(prev[path[-1]])
+            path, st = [b], (b, hops)
+            while st in prev:
+                st = prev[st]
+                path.append(st[0])
             return d, path[::-1]
-        if d > dist.get(u, math.inf) or len(_path_to(prev, a, u)) > MAX_STEPS:
+        if d > best.get((u, hops), math.inf) or hops >= MAX_STEPS:
             continue
+        if u not in opened:
+            if len(opened) >= MAX_EXPANDED:
+                continue
+            opened.add(u)
         for v, c, _k in g.edges(u):
             if v in banned_nodes or (u, v) in banned_edges:
                 continue
-            nd = d + c
-            if nd < dist.get(v, math.inf):
-                dist[v], prev[v] = nd, u
-                heapq.heappush(heap, (nd, v))
+            nd, key = d + c, (v, hops + 1)
+            if nd < best.get(key, math.inf):
+                best[key], prev[key] = nd, (u, hops)
+                heapq.heappush(heap, (nd, v, hops + 1))
     return None
-
-
-def _path_to(prev: dict, a: str, u: str) -> list[str]:
-    out = [u]
-    while out[-1] != a and out[-1] in prev:
-        out.append(prev[out[-1]])
-    return out
 
 
 def _bridges(g: _Graph, u: str, v: str, k: int = BRIDGES) -> list[dict]:
@@ -236,10 +246,11 @@ def _years(ws: Workspace) -> dict[str, str | None]:
     out = {}
     for d, c in cites.items():
         y = c.get("year")
-        if y is None and c.get("cite"):   # (the year is the last number of "Meadows 2008" until doc_citations gives it)
-            nums = [w for w in str(c["cite"]).replace(",", " ").split() if w[:4].isdigit() and len(w) >= 4]
-            y = nums[-1][:4] if nums else None
-        out[d] = str(y)[:4] if y else None
+        if not y and c.get("cite"):   # (until doc_citations gives the year: the last year in "Lund (2019)", review 4)
+            found = re.findall(r"(?<!\d)(1[5-9]\d\d|20\d\d)(?!\d)", str(c["cite"]))
+            y = found[-1] if found else None
+        m = re.search(r"(1[5-9]\d\d|20\d\d)", str(y or ""))
+        out[d] = m.group(1) if m else None
     return out
 
 
@@ -263,7 +274,7 @@ def _profile(g: _Graph, node: str, docs: set[str] | None, top: int = 10) -> dict
     total = int(ws.scalar(f"SELECT COUNT(DISTINCT m.passage_id) FROM term_mentions m JOIN passages p ON "
                           f"p.passage_id=m.passage_id WHERE {g.ev}{dq}", sorted(docs) if docs else []) or 1)
     together: dict[str, set] = defaultdict(set)
-    per: dict[str, set] = defaultdict(set)
+    per: dict[str, int] = {}
     if mine:
         for tid, pid in ws.query(f"SELECT m.term_id, m.passage_id FROM term_mentions m JOIN passages p ON "
                                  f"p.passage_id=m.passage_id WHERE m.passage_id IN (SELECT m2.passage_id FROM "
@@ -271,18 +282,17 @@ def _profile(g: _Graph, node: str, docs: set[str] | None, top: int = 10) -> dict
             o = g.node(tid)
             if o != node:
                 together[o].add(pid)
-        others = list(together)
-        for o in others:
-            ots = g.terms_of(o)
-            oq = ",".join("?" * len(ots))
-            per[o] = {r[0] for r in ws.query(f"SELECT m.passage_id FROM term_mentions m JOIN passages p ON "
-                                             f"p.passage_id=m.passage_id WHERE m.term_id IN ({oq}) AND {g.ev}{dq}",
-                                             [*ots, *(sorted(docs) if docs else [])])}
+        # each neighbour's passages within these documents: one query for every term (review 10)
+        counts = {r[0]: int(r[1]) for r in ws.query(f"SELECT m.term_id, COUNT(DISTINCT m.passage_id) FROM term_mentions m "
+                                                    f"JOIN passages p ON p.passage_id=m.passage_id WHERE {g.ev}{dq} "
+                                                    f"GROUP BY m.term_id", sorted(docs) if docs else [])}
+        for o in together:   # (a concept of several wordings: their sum, an upper bound when two share a passage)
+            per[o] = sum(counts.get(t, 0) for t in g.terms_of(o))
     nb = []
     for o, ps in together.items():
         if len(ps) < MIN_TOGETHER:
             continue
-        pmi = math.log2(len(ps) * total / (max(1, len(mine)) * max(1, len(per[o]))))
+        pmi = math.log2(len(ps) * total / (max(1, len(mine)) * max(1, per[o])))
         if pmi > 0:
             nb.append({"node": o, "label": g.labels.get(o, o), "together": len(ps), "pmi": round(pmi, 2)})
     nb.sort(key=lambda x: (-x["pmi"], -x["together"], x["label"]))
@@ -321,7 +331,7 @@ def compare_groups(ws: Workspace, term: str, groups: dict[str, list[str]]) -> di
 
     if not ws.scalar("SELECT 1 FROM terms WHERE term_id=?", (term,)):
         raise KeyError(term)
-    if not groups or len(groups) > 6:
+    if len(groups or {}) < 2 or len(groups) > 6:
         raise ValueError("Pick two sets of documents to compare (at most six).")
     g = _Graph(ws)
     node = g.node(term)

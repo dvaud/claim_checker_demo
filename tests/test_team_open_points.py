@@ -241,3 +241,79 @@ def test_a_removal_kept_by_the_new_owners_row_is_the_new_owners_word(team):
         by = ben.ws.scalar("SELECT by FROM removed_docs WHERE doc_id=?", (doc,))
         assert ownership.role_of(ben.ws._conn(), by) in ("owner", "co"), by
         assert by == carol.id
+
+
+
+# ---- after the review ------------------------------------------------------------------------------------------------
+def test_a_spent_removal_stays_spent_after_a_take_over(team, tmp_path):
+    """Review 1: the new owner's rows keep the state event, and with it what its maker had seen: Carol's removal,
+    spent by Anna's out and in, is not waiting again in Ben's copy."""
+    anna, ben, carol = team
+    doc = add_doc(anna, tmp_path, "interview")
+    sync(anna, ben, carol)
+    _remove(carol, doc)
+    sync(carol, anna)
+    _out_and_in(anna, tmp_path, doc)
+    sync(anna, ben, carol, rounds=2)
+    with ben:
+        ownership.take_over(ben.ws)
+    view(ben)
+    sync(ben, anna, carol, rounds=2)
+    states = {p.name: [x["state"] for x in proposals(p, kind="remove") if x["by"]["id"] == carol.id]
+              for p in (anna, ben)}
+    assert states == {"Anna": ["moot"], "Ben": ["moot"]}, states
+
+
+def test_a_copy_of_the_owners_mark_never_empties_it(team):
+    """Review 3: a forged (or old) copy of the new owner's mark, refused, is answered by the owner's own mark again,
+    never by an empty one: the former owner's answers it held go on counting."""
+    import json
+
+    anna, ben, carol = team
+    doc = sorted(docs_of(carol))[0]
+    _remove(carol, doc)
+    sync(carol, anna, ben)
+    pid = proposals(anna, state="waiting", kind="remove")[0]["id"]
+    accept(anna, pid)
+    sync(anna, ben, carol, rounds=2)
+    with ben:
+        ownership.take_over(ben.ws)
+    view(ben)
+    mark = ownership.restamp_mark(2)
+    with ben:
+        n, knew = ben.ws.query("SELECT n, knew_json FROM decisions WHERE proposal=? AND by=?", (mark, ben.id))[0]
+        assert json.loads(knew)
+        forged = {"proposal": mark, "by": ben.id, "owner_seq": 2, "verdict": "withdrawn", "reason": "restamped",
+                  "at": "2026", "auto": 0, "n": n + 1, "grant": None, "knew_json": "[]"}
+        with ben.ws.connect() as cx:
+            cx.execute("INSERT INTO sync_refused(kind, key, via, n, at, what_json, state) VALUES "
+                       "('decisions', ?, ?, ?, '2026', ?, 'new')", (mark, carol.id, n + 1, json.dumps(forged)))
+    view(ben)
+    with ben:
+        rows = ben.ws.query("SELECT knew_json FROM decisions WHERE proposal=? AND by=?", (mark, ben.id))
+        assert json.loads(rows[0][0]) == json.loads(knew)
+    assert [x["state"] for x in proposals(ben) if x["id"] == pid] == ["accepted"]
+
+
+def test_the_claim_notice_names_only_changes_made_before_the_claim(tmp_path, monkeypatch):
+    """Review 7: a removal made long after the claim is a proposal like any other, without the notice."""
+    from owner_more_helpers import as_before_018, join_zip, small_project
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    anna = Person(tmp_path, "Anna", monkeypatch)
+    small_project(anna, tmp_path / "anna-project")
+    ben = Person(tmp_path, "Ben", monkeypatch)
+    join_zip(ben, anna, tmp_path / "ben-project")
+    for p in (anna, ben):
+        as_before_018(p)
+        with p:
+            folder.set_folder(p.ws, str(shared))
+    sync(anna, ben)
+    with anna:
+        ownership.claim(anna.ws)
+    sync(anna, ben, rounds=2)
+    _remove(ben, sorted(docs_of(ben))[0])            # after the claim
+    sync(ben, anna, rounds=2)
+    assert not [n for n in view(ben)["notices"] if n["kind"] == "claimed"]
+    assert [x["kind"] for x in proposals(anna, state="waiting")] == ["remove"]

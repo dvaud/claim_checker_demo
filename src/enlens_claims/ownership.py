@@ -73,6 +73,7 @@ ROLES_SEEN = "roles_seen"          # meta (this copy's own): the roles as this c
 FORMATS = "sync_formats"           # meta (this copy's own): {person id: the sync format of their last file}
 LOOSEN_USED = "loosen_used"        # meta (this copy's own, never sent to a colleague): the accepts of this person's
 #                                    loosen proposals whose event this copy has followed (review H1, follow-up)
+CLAIM_NOTED = "owner_claim_noted"  # meta (this copy's own): the claims whose notice this copy gave (0.18.1)
 LATER = "owner_later"              # meta (this copy's own): {person id: [ids of questions about the owner put off
 #                                    with *Not now*]}, so it holds in every browser (0.18.1)
 TAKE_OVER_DAYS = 14
@@ -1566,9 +1567,18 @@ class _Ctx:
         ai_list = [[n, levels.get((n, by), values["ai"]), by] for n, by in lists["ai"]]
         hist = {p: lists[p] for p in ("state", "read", "blocks")}
         own = (self.mine_rows.get(doc) or {}).get("seen") or set()
-        seen = set(own) | ({q["id"] for q in self.about("remove", doc) if not q["taken_back_at"]}
-                           if "state" in bump else set())
-        hist["seen"] = sorted(seen)[-SEEN_CAP:]
+        if "state" in bump:   # this writer's new state event: what it had seen now
+            hist["seen"] = sorted(set(own) | {q["id"] for q in self.about("remove", doc)
+                                              if not q["taken_back_at"]})[-SEEN_CAP:]
+        else:
+            # the state event is kept: so is what its maker had seen when making it (a restamp or another part's
+            # change must not empty it, review 1); a maker of ENLENS 0.18.0, who said nothing, is said nothing for
+            makers = [r for r in (base or {}).get("rows", []) if r["state"]["e"] == tuple(events["state"])]
+            sees = [r["seen"] for r in makers if r.get("seen") is not None]
+            if sees:
+                hist["seen"] = sorted(set().union(*sees))[-SEEN_CAP:]
+            elif not makers:
+                hist["seen"] = sorted(own)[-SEEN_CAP:]
         vv = {p: v for p, v in vias.items() if v}
         if vv:
             hist["via"] = vv
@@ -1649,7 +1659,7 @@ class _Ctx:
         return k
 
     # changes to this copy
-    def remove_here(self, doc: str, why: str, by: str | None, cause: str = "removed") -> None:
+    def remove_here(self, doc: str, why: str, by: str | None, cause: str = "removed", wish_of: str | None = None) -> None:
         """Remove a document from this copy because a colleague's word said so: as when a person removes it (its
         checks keep their grades as records; the research log says why). It can be restored for 30 days (removed.py:
         an archive of its rows and its file is made first); the note of its removal is the colleague's, not this
@@ -1659,7 +1669,10 @@ class _Ctx:
         title = self.docs[doc]["title"]
         removed.archive(self.ws, self.cx, doc, by, why, cause)  # (no longer a copy of the whole database)
         self.ws.remove_document(doc, why=why)
-        self.cx.execute("UPDATE sync_removed SET person_id=? WHERE kind='document' AND key=?", (by or self.owner, doc))
+        # whose removal it is: `wish_of` when given (0.18.1: a former owner's removal kept by this owner's own rows is
+        # noted as the owner's word, but it is not this person's own wish, review 13)
+        self.cx.execute("UPDATE sync_removed SET person_id=? WHERE kind='document' AND key=?",
+                        (wish_of or by or self.owner, doc))
         self.docs.pop(doc, None)
         self.choices.pop(doc, None)
         self.mark(doc, gone=1, came_from=None)
@@ -1696,10 +1709,22 @@ class _Ctx:
         self.cx.execute("DELETE FROM block_choices WHERE doc_id=?", (doc,))
         self.cx.executemany("INSERT OR REPLACE INTO block_choices(doc_id, fp, included, kind, person_id, at) VALUES "
                             "(?,?,?,?,?,?)", rows)
+        from . import docrole, researchlog
+
+        was = docrole.role_from_choices(self.choices.get(doc) or {})
         self.choices[doc] = dict(want)
         reader2.apply_choices(self.cx, doc)
         self.ws.bump_corpus(self.cx)
         self.report["applied"].append({"kind": "blocks", "doc": doc, "title": self.docs[doc]["title"]})
+        role = docrole.role_from_choices(want)
+        if role != was:  # 0.18.1 (K2): a theory mark the project took is a log entry of its own, as one's own mark is
+            who = self.names.get(by or self.owner, "the owner")
+            researchlog.record(self.cx, "document-role",
+                               f"Marked as theory by {who}: it is left out of themes, codebook labels, check excerpts "
+                               "and key terms from now on." if role else
+                               f"Marked as evidence again by {who}: it counts in themes, codebook labels, check excerpts "
+                               "and key terms from now on.", "document", doc, self.docs[doc]["title"],
+                               data={"role": role, "was": was, "by": by or self.owner})
 
 
 def _changed(k: dict, part: str, det: dict) -> bool:
@@ -1822,6 +1847,7 @@ def settle(ws: Workspace, apply: bool = True, moves: bool = False, leaving: bool
             ensure_owner(cx, me)
         pin_owner(cx, me)
         ctx = _Ctx(ws, cx, me)
+        ctx.applying = apply
         if ctx.owner is None:
             return ctx.report
         _answer_refused(ctx)
@@ -1903,7 +1929,7 @@ def _reconcile(ctx: _Ctx, doc: str, apply: bool) -> None:
                            f"({who}) keeps it removed.")
                 else:
                     why = f"{who[0].upper() + who[1:]} (a Co-owner) removed it from the project."
-                ctx.remove_here(doc, why, by)
+                ctx.remove_here(doc, why, by, wish_of=maker if by == me else None)
                 ctx.follow(doc, "state")
             return
         others = [p for p in ctx.about("add", doc) if p["by"] != me and _era(p, k)]
@@ -2313,6 +2339,18 @@ def _answer_refused(ctx: _Ctx) -> None:
             if (mine and (mine[0] or 0) > n) or n > ctx.dec_n + STEP:
                 continue
             ctx.dec_n = max(ctx.dec_n, n)
+            if key.startswith("~restamped:"):
+                # a copy of this owner's mark (forged, or an older one from a backup): never answered by an empty
+                # row, which would stop every former owner's answer counting (review 3); this copy's own mark is
+                # written again above it, or, when it has none yet, `restamp_decisions` writes it (after this)
+                if mine:
+                    ctx.cx.execute("INSERT OR REPLACE INTO decisions(proposal, by, owner_seq, verdict, reason, at, auto, "
+                                   "n, grant, knew_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                   (key, ctx.me, int(key.split(":", 1)[1]) if key.split(":", 1)[1].isdigit() else ctx.seq,
+                                    "withdrawn", "restamped",
+                                    now(), 0, ctx.next_dec_n(), None, mine[4] or "[]"))
+                    ctx.dec = _decisions(ctx.cx, ctx.chain, ctx.R)
+                continue
             m = ctx.next_dec_n()
             if mine and mine[1] in ("accept", "decline"):
                 knew = [tuple(x) for x in _json(mine[4], []) if isinstance(x, list) and len(x) == 2]
@@ -2511,6 +2549,14 @@ def _note_claimed(ctx: _Ctx, by_kind: dict[str, list[dict]]) -> None:
     first = ctx.chain[0] if ctx.chain else None
     if not first or first["kind"] != "claim" or first["owner"] == ctx.me:
         return
+    key = f"claimed:{first['seq']}:{first['by']}"
+    noted = _meta(ctx.cx, CLAIM_NOTED, [])
+    if key in noted or not getattr(ctx, "applying", False):
+        return
+    # decided once, in the first look at this copy that applies what the claim brings (the round, or the zip, that
+    # brought it): every earlier removal and Leave out of this person's is proposed in that look; a change made
+    # afterwards is a proposal like any other, without the notice (review 7)
+    _set_meta(ctx.cx, CLAIM_NOTED, (list(noted) + [key])[-20:])
     removed, left_out = len(by_kind.get("remove", [])), len(by_kind.get("blocks", []))
     if not removed and not left_out:
         return
@@ -2521,7 +2567,7 @@ def _note_claimed(ctx: _Ctx, by_kind: dict[str, list[dict]]) -> None:
                                f"copy before it had an owner {'is' if removed + left_out == 1 else 'are'} now your "
                                f"{'proposal' if removed + left_out == 1 else 'proposals'} to {who}. Your copy keeps "
                                "them as they are until they are answered; take back any you no longer want.",
-            f"claimed:{first['seq']}:{first['by']}")
+            key)
 
 
 def _log(ctx: _Ctx) -> None:

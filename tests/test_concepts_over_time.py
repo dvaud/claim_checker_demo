@@ -25,9 +25,11 @@ def _doc(ws, title: str) -> str:
 def test_by_year_with_the_documents_without_a_year_apart(ws, monkeypatch):
     solar, solar2 = _doc(ws, "Solar report"), _doc(ws, "Solar survey")
     storage, storage2 = _doc(ws, "Storage review"), _doc(ws, "Storage outlook")
+    cite = bibliography.cite   # the citations as the bibliography makes them: "Lund (2019)" (review 4)
     monkeypatch.setattr(bibliography, "doc_citations", lambda w: {
-        solar: {"cite": "Lund 2019"}, solar2: {"cite": "Lund and Berg 2019"},
-        storage: {"cite": "Okafor et al. 2023", "year": "2023"}, storage2: {"cite": "Ito, 2023"}})
+        solar: {"cite": cite([{"last": "Lund"}], "2019")}, solar2: {"cite": cite([{"last": "Lund"}, {"last": "Berg"}], "2019")},
+        storage: {"cite": cite([{"last": "Okafor"}, {"last": "Ito"}, {"last": "Abe"}], "2023"), "year": "2023"},
+        storage2: {"cite": cite([{"last": "Ito"}], "2023")}})
     gs = terms.find_term(ws, "grid storage")
     out = conceptpaths.over_time(ws, gs)
     assert out["label"].lower() == "grid storage" and out["with_year"] == 4
@@ -51,6 +53,8 @@ def test_two_sets_of_documents_picked_on_the_page(ws):
     assert g["Policy"]["mentions"] > 0 and g["Industry"]["mentions"] > 0
     with pytest.raises(ValueError):
         conceptpaths.compare_groups(ws, gs, {})
+    with pytest.raises(ValueError):          # two sets at least, as the API says
+        conceptpaths.compare_groups(ws, gs, {"Only": [solar]})
 
 
 def test_theory_documents_are_left_out(ws, monkeypatch):

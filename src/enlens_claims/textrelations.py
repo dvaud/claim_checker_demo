@@ -147,9 +147,10 @@ def find(cx: sqlite3.Connection) -> int:
             best[(a, b)] = (rel, ss)
     at = now()
     for (a, b), (rel, ss) in best.items():
-        if cx.execute("SELECT 1 FROM concept_links WHERE a=? AND b=? AND source IN ('person', 'abbreviation')",
-                      (a, b)).fetchone():
-            continue   # a person's own link, or an abbreviation, says it already
+        if cx.execute("SELECT 1 FROM concept_links WHERE a=? AND b=? AND source != ?", (a, b, SOURCE)).fetchone():
+            # the pair has a link already (a person's, an abbreviation, the AI's, search by meaning's): a person's
+            # decision is kept by the pair, so a second link of it would take that decision too (review 8)
+            continue
         ss = ss[:MAX_SENTENCES]
         cx.execute("INSERT OR REPLACE INTO concept_links VALUES (?,?,?,?,?,?,?,?,?)",
                    (a, b, rel, SOURCE, round(min(0.5, 0.2 + 0.1 * len(ss)), 2), ss[0]["quote"],

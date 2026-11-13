@@ -41,7 +41,8 @@ def test_reader_5_is_offered_where_it_can_change_the_reading(tmp_path):
 def test_a_figure_is_shown_in_the_text_with_its_caption_and_its_page():
     src = _src()
     # shown, not folded: in place(), the fold of the left-out blocks while changing them, and the greying
-    assert "const shownFigure = (b) => reading && b.kind === \"figure\" && !!b.box && !!d.page_images" in src
+    # (reader 5 only: an earlier reader's figure block is the words inside a figure, folded with its Restore)
+    assert "const shownFigure = (b) => reading && (d.reader || 1) >= 5 && b.kind === \"figure\" && !!b.box && !!d.page_images" in src
     assert 'b.included === false && b.kind !== "table" && !shownFigure(b)) {' in src           # place()
     assert 'const folds = (b) => b.included === false && b.kind !== "table" && !shownFigure(b);' in src
     assert 'b.kind !== "table" && !shownFigure(b);' in src                                     # greyNow
@@ -61,7 +62,7 @@ def test_a_figure_is_shown_in_the_text_with_its_caption_and_its_page():
     # the Page panel opens at the figure's page; nothing to leave out or restore on a figure
     assert "goTo: (p) => go(p, false)" in src and "panels.page.goTo(page)" in src
     acts = src[src.index("function blockActions(b) {"):]
-    assert acts.index('if (b.kind === "figure") return null;') < acts.index("Leave out")
+    assert acts.index('if (b.kind === "figure" && (d.reader || 1) >= 5) return null;') < acts.index("Leave out")
 
 
 def test_the_news_of_reader_5_is_said_to_documents_of_reader_4():

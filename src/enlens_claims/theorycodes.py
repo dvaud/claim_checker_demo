@@ -174,17 +174,17 @@ def candidates(ws: Workspace, doc_id: str, limit: int = MAX_CANDIDATES) -> dict:
         desc = f"“{d['quote']}” ({title}{page})" if d else f"A concept of {title}."
         out.append({**c, "code": {"code": c["term"][:40], "description": desc[:2000], "described": bool(d), "group": "",
                                   "keywords": [c["term"].lower()], "include": "", "exclude": "", "examples": []},
-                    "suggested": suggest_examples(ws, c["term"])})
+                    "suggested": suggest_examples(ws, c["term"], exclude_doc=doc_id)})
     return {"doc_id": doc_id, "title": title, "role": role, "concepts": out}
 
 
-def suggest_examples(ws: Workspace, term: str, k: int = MAX_EXAMPLES) -> list[dict]:
+def suggest_examples(ws: Workspace, term: str, k: int = MAX_EXAMPLES, exclude_doc: str | None = None) -> list[dict]:
     """Up to `k` sentences of the evidence documents that use the term (its words, by keyword), to offer as examples:
     never from a theory document. Each {"quote", "doc_id", "title", "page", "start", "end", "project"}."""
     from .docrole import theory_docs
     from .search import rank_passages
 
-    theory = theory_docs(ws._conn())
+    theory = theory_docs(ws._conn()) | ({exclude_doc} if exclude_doc else set())   # (never the theory itself, review 16)
     words = [w.lower() for w in re.findall(_W, term)]
     if not words:
         return []

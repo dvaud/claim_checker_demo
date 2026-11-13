@@ -466,3 +466,21 @@ def test_reader_5_reads_the_new_known_texts_better_than_reader_4_and_the_old_one
 def test_the_reading_test_of_the_earlier_readers_still_has_its_six_documents(tmp_path):
     res = measure.run(readers=[1, 2, 3, 4], work=tmp_path / "w")
     assert len(res["known"]) == 6
+
+
+def test_a_visible_caption_that_repeats_the_alt_text_stays_in_the_text(tmp_path):
+    """Review 5: of the inserted alternative text and a visible caption with the same words, one is the figure; the
+    caption's words stay in the passages, as reader 4 kept them."""
+    from enlens_claims import ingest
+
+    f = tmp_path / "map.html"
+    f.write_text("<html><body><p>Intro paragraph about the map and the region, long enough to be body text.</p>"
+                 "<figure><img src='m.png' alt='Map of the region in 2020'><figcaption>Map of the region in 2020"
+                 "</figcaption></figure><p>After the figure, more body text follows here about other matters.</p>"
+                 "</body></html>", encoding="utf-8")
+    for r in (4, 5):
+        doc = ingest.read_document(f, reader=r)
+        body = " ".join(doc.text[p.start:p.end] for p in doc.passages if p.section == "body")
+        assert "Map of the region in 2020" in body, r
+    doc = ingest.read_document(f, reader=5)
+    assert [b.kind for b in doc.blocks].count("figure") == 1

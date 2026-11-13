@@ -128,3 +128,16 @@ def test_the_glossary_proposes_them_with_their_sentences_and_a_person_decides(bu
     terms.build(ws)
     lk = next(x for x in terms.links(ws) if (x["a"], x["b"]) == (a, b) and x["source"] == "pattern")
     assert lk["confirmed"]
+
+
+def test_a_pair_with_a_link_already_gets_no_pattern_link(built):
+    """A person's decision is kept by the pair: a pattern link beside a meaning link of the same pair would take that
+    decision too (accepting "such as" would join the two as the same concept)."""
+    ws = built
+    hp, gb = terms.find_term(ws, "heat pumps"), terms.find_term(ws, "gas boilers")
+    a, b = sorted((hp, gb))
+    with ws.connect() as cx:
+        cx.execute("INSERT OR REPLACE INTO concept_links VALUES (?,?,'same','meaning',0.7,NULL,NULL,NULL,'2026')", (a, b))
+    terms.build(ws)
+    assert ws.query("SELECT source FROM concept_links WHERE a=? AND b=?", (a, b)) and \
+        not ws.query("SELECT 1 FROM concept_links WHERE a=? AND b=? AND source='pattern'", (a, b))

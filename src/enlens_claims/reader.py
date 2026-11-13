@@ -1147,7 +1147,7 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
         blocks.extend(Block(pno, [ln], kind="furniture") for ln in below)
         if numbers:
             blocks.append(Block(pno, numbers, kind="furniture"))
-    joined = reader5.join_tables(blocks, dims, body_size) if v5 and engine == "pdfminer" else 0
+    tables_joined = reader5.join_tables(blocks, dims, body_size) if v5 and engine == "pdfminer" else 0
     classify(blocks, body_size, dims, pdf, raw.headings if not pdf else None, version)
     if v5 and not pdf and getattr(raw, "figures", None):
         reader5.mark_text_figures(blocks, raw.figures)   # a Word file's or web page's image alternative texts
@@ -1209,7 +1209,7 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
     }
     if v5:
         report["figures"] = sum(1 for b in blocks if b.kind == "figure" and (b.box is not None or not pdf))
-        report["tables_joined"] = joined
+        report["tables_joined"] = tables_joined
     if v3:
         report["repairs"]["doubled"] = counts["doubled"]
         report["text_layout"] = layout

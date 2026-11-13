@@ -95,6 +95,10 @@ def test_a_check_reads_no_excerpt_of_a_theory_document_but_search_still_finds_it
     # a person who limits a check to the theory by hand means it
     only = search.rank_passages(ws, claim, ["jobs", "workers"], k=4, per_doc=4, doc_ids=[theory])
     assert only and {p["doc_id"] for p in only} == {theory}
+    # "Read the new documents" asks which new documents match the claim: never a theory document (review 2)
+    assert search.docs_matching(ws, claim, ["jobs", "workers"], {theory, *ev}) == \
+        search.docs_matching(ws, claim, ["jobs", "workers"], set(ev))
+    assert theory not in search.docs_matching(ws, claim, ["jobs", "workers", "stock"], {theory})
     # the Search page's search by meaning still finds it
     got = concordance.meaning(ws, "reinforcing feedback loop stock", None, k=10)
     assert theory in {p["doc_id"] for p in got["passages"]}
@@ -137,9 +141,10 @@ def test_the_mark_holds_when_the_document_is_read_with_the_new_reader(project):
     with ws.connect() as cx:
         cx.execute("UPDATE documents SET reader=1 WHERE doc_id=?", (theory,))
     docrole.set_role(ws, theory, "theory")
-    if reread.check(ws, theory).get("ok"):
-        reread.move(ws, theory)
-        assert ws.scalar("SELECT reader FROM documents WHERE doc_id=?", (theory,)) == was
+    c = reread.check(ws, theory)
+    assert c["ok"], c                              # (the move must happen, or the test proves nothing: review 18)
+    reread.move(ws, theory)
+    assert ws.scalar("SELECT reader FROM documents WHERE doc_id=?", (theory,)) == was
     assert docrole.role_of(ws, theory) == "theory"
 
 

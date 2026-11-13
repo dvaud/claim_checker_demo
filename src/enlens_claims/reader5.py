@@ -740,9 +740,16 @@ def _merge_into(a, b) -> None:
 def mark_text_figures(blocks: list, figures: set[str]) -> None:
     """Word files and web pages have no boxes, only text: the alternative texts of their images (`RawDoc.figures`, each
     a paragraph of its own) are blocks of kind `figure`, left out of passages like the words inside a PDF's figure."""
+    prev = None   # the text of the block just before, when it became a figure
     for b in blocks:
-        if b.kind != "furniture" and " ".join(" ".join(ln.text for ln in b.lines).split()) in figures:
+        t = " ".join(" ".join(ln.text for ln in b.lines).split())
+        if b.kind != "furniture" and t in figures and t != prev:
             b.kind = "figure"
+            prev = t
+        else:
+            # a visible caption that repeats the alternative text just inserted beside it stays in the text, as reader
+            # 4 kept it (review 5): of two such blocks side by side, one is the figure
+            prev = None
 
 
 
