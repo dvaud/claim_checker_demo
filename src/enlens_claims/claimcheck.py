@@ -2721,7 +2721,10 @@ def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | 
 
     hyp = ws.query("SELECT COALESCE(hyp_id, claim_id) FROM user_claims WHERE claim_id=?", (claim_id,))
     hyp_id = hyp[0][0] if hyp else None
-    before = hypothesis_result(ws, hyp_id) if hyp_id else None
+    try:  # a claim checked on its own (check_claim) has no hypothesis to say anything about
+        before = hypothesis_result(ws, hyp_id) if hyp_id else None
+    except KeyError:
+        before = None
     _set_judgement(ws, claim_id, passage_id, verdict, note, quote)
     if before is None:
         return {"hyp_id": None, "before": None, "after": None, "moved": None}
