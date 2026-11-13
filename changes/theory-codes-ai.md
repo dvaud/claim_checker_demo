@@ -28,3 +28,9 @@
 
 - The AI drafts concepts from at most 12 passages of the theory: in a long book, concepts defined only in passages it
   is not given are left to the list found without AI, or to you.
+
+### Fixed
+
+- **A theory's concepts read top to bottom.** In *From a theory document*, a concept with examples showed its
+  definition and its examples side by side, which squeezed the definition into a narrow column on a phone. The
+  examples now sit under the definition.
