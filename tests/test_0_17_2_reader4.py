@@ -150,7 +150,7 @@ def test_running_heads_of_a_pdf_read_as_before_the_guard(tmp_path):
 # reader 4
 # ------------------------------------------------------------------------------------------------------------------
 def test_the_reader_is_4():
-    assert ingest.READER == reader.READER == 4
+    assert ingest.READER == reader.READER >= 4   # (0.18.1: reader 5 is current; reader 4 stays as it was)
 
 
 def test_a_text_file_with_one_paragraph_per_line_is_read_paragraph_by_paragraph(tmp_path):
@@ -245,9 +245,9 @@ def test_a_document_of_reader_3_is_offered_reader_4_and_moves(tmp_path, monkeypa
     assert ws.scalar("SELECT reader FROM documents") == 3
     assert ws.scalar("SELECT COUNT(*) FROM blocks WHERE doc_id=? AND kind='body'", (doc_id,)) == 1
     c = reread.check(ws, doc_id)
-    assert c["ok"] and c["reader"] == 3 and c["new_reader"] == 4
+    assert c["ok"] and c["reader"] == 3 and c["new_reader"] == ingest.READER
     assert reread.move(ws, doc_id)["moved"] is not None
-    assert ws.scalar("SELECT reader FROM documents") == 4
+    assert ws.scalar("SELECT reader FROM documents") == ingest.READER
     assert ws.scalar("SELECT COUNT(*) FROM blocks WHERE doc_id=? AND kind='body'", (doc_id,)) == len(paras)
     assert not reread.check(ws, doc_id)["ok"]                          # already read by the newest reader
 
