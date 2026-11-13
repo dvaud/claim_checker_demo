@@ -761,7 +761,9 @@ def test_the_icon_starts_one_copy_without_a_terminal_and_quit_stops_it(home, tmp
                 break
             time.sleep(0.1)
         live = launcher.running()
-        assert live and live["port"] == port and live["pid"] == first.pid
+        from _started import is_started  # 0.18.1: on Windows uv's python.exe starts the interpreter as its child
+
+        assert live and live["port"] == port and is_started(live["pid"], first.pid)
         again = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=30)  # a second double-click
         assert again.returncode == 0 and "already running" in again.stdout
         token = launcher.read_token(live["port"])  # 0.17.2: the page carries none

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from _started import is_started
+
 from enlens_claims import __version__
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
@@ -168,7 +170,7 @@ def test_the_icon_replaces_an_older_running_copy(home, tmp_path):  # noqa: F811
     def wait_for(pid):
         for _ in range(600):  # 0.15: up to a minute (a cold start on a CI machine is slow)
             live = launcher.running()
-            if live and live["pid"] == pid:
+            if live and is_started(live["pid"], pid):  # 0.18.1: or its interpreter (uv's python.exe on Windows)
                 return live
             time.sleep(0.1)
         raise AssertionError("ENLENS did not start")
