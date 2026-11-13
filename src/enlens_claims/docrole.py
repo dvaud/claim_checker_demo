@@ -171,9 +171,6 @@ def impact(ws: Workspace, doc_id: str) -> dict[str, Any]:
 
 
 # ---- 0.18.6: Non-scientific ----------------------------------------------------------------------------------------
-MAX_ANSWERS = 25  # the checks whose answers are worked out before and after a mark (more: counted, not worked out)
-
-
 def _checks_reading(ws: Workspace, doc_id: str) -> list[str]:
     """The checks with an excerpt of the document, newest first."""
     return [r[0] for r in ws.query(
@@ -182,31 +179,36 @@ def _checks_reading(ws: Workspace, doc_id: str) -> list[str]:
         "ORDER BY h.created_at DESC", (doc_id,))]
 
 
-def _answers(ws: Workspace, hyp_ids: list[str]) -> dict[str, tuple[str, str]]:
-    from .check_results import hypothesis_result
+def _answers(ws: Workspace, hyp_ids: list[str]) -> dict[str, dict]:
+    """{hyp_id: its row of the checks list (status, status_text, status_all_sources, text)}: every check's answer in a
+    few queries (`claimcheck.history`), not one full result each."""
+    if not hyp_ids:
+        return {}
+    from .claimcheck import history
 
-    out = {}
-    for hid in hyp_ids[:MAX_ANSWERS]:
-        try:
-            r = hypothesis_result(ws, hid)
-        except Exception:  # noqa: BLE001 - a check that cannot be read now changes nothing here
-            continue
-        out[hid] = (r["status"], r.get("status_text") or "", r["text"])
-    return out
+    want = set(hyp_ids)
+    return {h["hyp_id"]: h for h in history(ws) if h["hyp_id"] in want}
+
+
+def _text(h: dict) -> str:
+    from .verdicts import STATUS_TEXT
+
+    return h.get("status_text") or STATUS_TEXT.get(h["status"], h["status"])
 
 
 def set_nonscientific(ws: Workspace, doc_id: str, on: bool, why: str | None = None) -> dict:
     """Mark a document as Non-scientific (`on`), or count it as any other again. Answers change at once: returns
     {"doc_id", "nonscientific", "changed", "checks" (how many read it), "answers": [{"hyp_id", "text", "was",
-    "was_text", "now", "now_text"}] (the answers the mark changed, of the first MAX_ANSWERS checks)}. Under an owner it
-    travels as *Leave out* does (a Member's mark is a proposal)."""
+    "was_text", "now", "now_text"}] (the answers the mark changed)}. Under an owner it travels as *Leave out* does (a
+    Member's mark is a proposal)."""
     from . import people, researchlog
     from . import reader as reader2
 
     on = bool(on)
-    title = ws.scalar("SELECT title FROM documents WHERE doc_id=?", (doc_id,))
-    if title is None and not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+    row = ws.query("SELECT title FROM documents WHERE doc_id=?", (doc_id,))
+    if not row:
         raise KeyError(doc_id)
+    title = row[0][0]
     checks = _checks_reading(ws, doc_id)
     if is_nonscientific(ws, doc_id) == on:
         return {"doc_id": doc_id, "nonscientific": on, "changed": False, "checks": len(checks), "answers": []}
@@ -219,36 +221,43 @@ def set_nonscientific(ws: Workspace, doc_id: str, on: bool, why: str | None = No
         reader2.apply_choices(cx, doc_id)
         sync_role(cx, doc_id)
         ws.bump_corpus(cx)
-    after = _answers(ws, checks)
-    answers = [{"hyp_id": hid, "text": after[hid][2], "was": before[hid][0], "was_text": before[hid][1],
-                "now": after[hid][0], "now_text": after[hid][1]}
-               for hid in checks if hid in before and hid in after and before[hid][:2] != after[hid][:2]]
-    text = ("Marked as non-scientific: it reports no method or data of its own. Its excerpts are still read and "
+        # the log entry is part of the change; the answers it changed are known only once it is made (below)
+        entry = researchlog.record(
+            cx, "document-mark",
+            "Marked as non-scientific: it reports no method or data of its own. Its excerpts are still read and "
             "judged, but no judgement of them counts in an answer from now on." if on else
-            "Counted as scientific again: its judgements count in answers from now on.")
+            "Counted as scientific again: its judgements count in answers from now on.",
+            "document", doc_id, title, data={"nonscientific": on}, why=why)
+    after = _answers(ws, checks)
+    answers = [{"hyp_id": hid, "text": after[hid]["text"], "was": before[hid]["status"], "was_text": _text(before[hid]),
+                "now": after[hid]["status"], "now_text": _text(after[hid])}
+               for hid in checks if hid in before and hid in after
+               and (before[hid]["status"], _text(before[hid])) != (after[hid]["status"], _text(after[hid]))]
     if answers:
-        text += " Answers changed: " + "; ".join(
-            f"“{a['text'][:80]}” from {a['was_text'] or a['was']} to {a['now_text'] or a['now']}" for a in answers) + "."
-    with ws.connect() as cx:
-        researchlog.record(cx, "document-mark", text, "document", doc_id, title,
-                           data={"nonscientific": on, "answers": answers}, why=why)
+        import json
+
+        more = " Answers changed: " + "; ".join(f"“{a['text'][:80]}” from {a['was_text']} to {a['now_text']}"
+                                                for a in answers) + "."
+        with ws.connect() as cx:
+            cx.execute("UPDATE research_log SET text=text || ?, data_json=? WHERE entry_id=?",
+                       (more, json.dumps({"nonscientific": on, "answers": answers}), entry))
     return {"doc_id": doc_id, "nonscientific": on, "changed": True, "checks": len(checks), "answers": answers}
 
 
 def counted_without(ws: Workspace, doc_id: str) -> list[dict]:
-    """The checks with an excerpt of a Non-scientific document, each with its answer now and the answer counting every
+    """The checks with an excerpt of the document, each with its answer now and the answer counting every
     non-scientific document (`status_all_sources`): [{"hyp_id", "text", "status", "status_text", "all", "all_text"}],
-    newest first, the first MAX_ANSWERS of them."""
-    from .check_results import hypothesis_result
+    newest first."""
     from .verdicts import STATUS_TEXT
 
+    checks = _checks_reading(ws, doc_id)
+    got = _answers(ws, checks)
     out = []
-    for hid in _checks_reading(ws, doc_id)[:MAX_ANSWERS]:
-        try:
-            r = hypothesis_result(ws, hid)
-        except Exception:  # noqa: BLE001
+    for hid in checks:
+        h = got.get(hid)
+        if h is None:
             continue
-        st_all = r.get("status_all_sources") or r["status"]
-        out.append({"hyp_id": hid, "text": r["text"], "status": r["status"], "status_text": r.get("status_text"),
+        st_all = h.get("status_all_sources") or h["status"]
+        out.append({"hyp_id": hid, "text": h["text"], "status": h["status"], "status_text": _text(h),
                     "all": st_all, "all_text": STATUS_TEXT.get(st_all, st_all)})
     return out

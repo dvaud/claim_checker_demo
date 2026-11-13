@@ -74,13 +74,13 @@ def set_aside(vs, docs) -> list:
     if not docs:
         return list(vs)
     return [{**dict(v), "verdict": "not_enough_info", "confidence": None, "user_verdict": None, "model": SET_ASIDE,
-             "set_aside": True} if v["doc_id"] in docs else v for v in vs]
+             "set_aside": True} if v["doc_id"] in docs and not _waits_for_person(v) else v for v in vs]
 
 
 def nonsci_text(status: str | None, status_all: str | None) -> str | None:
     """The status text when only non-scientific documents speak to a hypothesis (or a part): counting them, the answer
     would have been another one. None otherwise."""
-    if status in ("unsupported", "uncertain") and status_all in SPOKE:
+    if status == "unsupported" and status_all in SPOKE:
         return UNSUPPORTED_NONSCI
     return None
 

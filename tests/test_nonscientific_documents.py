@@ -194,3 +194,38 @@ def test_an_owners_mark_holds_at_once_and_a_members_is_a_proposal(anna_and_ben, 
 
 from test_shared_projects import anna_and_ben  # noqa: E402,F401  (fixture)
 from test_app import api, home  # noqa: E402,F401  (fixtures)
+
+
+# ---- review 1 (0.18.6) ---------------------------------------------------------------------------------------------
+def test_the_rule_in_small(project):
+    from enlens_claims.verdicts import PERSON, nonsci_text, set_aside
+
+    # only "No evidence found" becomes "No scientific evidence found": "Only uncertain evidence" stays itself
+    assert nonsci_text("unsupported", "supported") == UNSUPPORTED_NONSCI
+    assert nonsci_text("uncertain", "supported") is None and nonsci_text("unsupported", "uncertain") is None
+    # an excerpt no AI may read, that nobody has judged yet, still waits for the person (it is not "not about it")
+    waits = {"doc_id": "d", "verdict": "not_enough_info", "confidence": None, "model": PERSON, "user_verdict": None}
+    judged = {"doc_id": "d", "verdict": "supports", "confidence": 1.0, "model": "ai", "user_verdict": "supports"}
+    assert set_aside([waits, judged], {"d"})[0] == waits
+    assert set_aside([waits, judged], {"d"})[1]["verdict"] == "not_enough_info"
+
+
+def test_the_connector_says_which_quotes_count(project):
+    from enlens_claims import mcp_server
+
+    ws, news, _study, hid = project
+    _first(ws, hid, news, "supports")
+    docrole.set_nonscientific(ws, news, True)
+    cid = hypothesis_result(ws, hid)["parts"][0]["claim_id"]
+    out = mcp_server._summary(ws, cid)
+    assert out["status"] == "unsupported" and out["status_counting_non_scientific"] == "supported"
+    mine = [e for e in out["evidence"] if e.get("non_scientific")]
+    assert mine and all(e["counted"] is False for e in mine) and "non-scientific" in out["non_scientific_note"]
+    # the checks list and the document's page give the answer counting them too, without a full result each
+    row = next(h for h in claimcheck.history(ws) if h["hyp_id"] == hid)
+    assert row["status_all_sources"] == "supported"
+    assert docrole.counted_without(ws, news) == [{"hyp_id": hid, "text": CLAIM, "status": "unsupported",
+                                                  "status_text": UNSUPPORTED_NONSCI, "all": "supported",
+                                                  "all_text": "Supported by your documents"}]
+    log = ws.query("SELECT text, data_json FROM research_log WHERE kind='document-mark' AND subject_id=?", (news,))
+    assert len(log) == 1 and "Answers changed" in log[0][0] and hid in log[0][1]

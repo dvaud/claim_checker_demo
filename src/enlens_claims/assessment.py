@@ -247,8 +247,8 @@ def _not_counted(items: list[dict], thr: float) -> list[dict]:
 def _nonscientific(res: dict, items: list[dict], names: "_Names", thr: float) -> list[dict]:
     """0.18.6: what the documents marked Non-scientific say, which counts in no answer, and, when counting them would
     give another answer, which one."""
-    said = [x for x in items if x.get("nonscientific") and x.get("verdict") in GRADES
-            and (x.get("user_verdict") or (x.get("confidence") or 0) >= thr)]
+    said = [x for x in items if x.get("nonscientific") and x.get("verdict") in GRADES and _usable(x)
+            and (x.get("user_verdict") or ((x.get("confidence") or 0) >= thr and not x.get("round_failed")))]
     if not said:
         return []
     pos = {x["doc_id"] for x in said if x["verdict"] in ("supports", "partially_supports")}

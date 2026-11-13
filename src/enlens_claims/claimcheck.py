@@ -1301,11 +1301,14 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         for v in vs:
             f = first_reading(v)
             if f is not None:
-                first_of.setdefault(v["subject_id"], []).append(set_aside([effective(f)], nonsci)[0])
+                ef = effective(f)
+                first_of.setdefault(v["subject_id"], []).append(
+                    {**set_aside([ef], nonsci)[0], "_counts_as": ef} if nonsci else ef)
             e = effective(v)
             if nonsci:
                 ver_all.setdefault(v["subject_id"], []).append(e)
                 e = set_aside([e], nonsci)[0]
+                e["_counts_as"] = v  # the row as it was: whether it counts is asked of it (_counting needs user_verdict)
             # 0.14.3: "changed by you" counts your own changes only (a colleague's judgement counts where you made none)
             e["_mine"] = bool(v["user_verdict"]) and (v["user_by"] or me) == me
             e["_changed"] = changed_by_person(v) and e["_mine"]
@@ -1354,7 +1357,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             groups = _group_rounds(rs)  # by round, as the result page does (0.11.1: the two disagreed on "waiting")
             sts = [_round_status(g) for g in groups]
             counts_, _failed = _counting(groups, sts)  # 0.14.3: not the AI's judgements of a round that failed
-            vs = [v for v in ver.get(c["claim_id"], []) if counts_(v)]
+            vs = [v for v in ver.get(c["claim_id"], []) if counts_(v.get("_counts_as", v))]
             all_vs += vs
             wt = bool(groups) and _round_waiting(groups[-1])
             st.append(_status_of_rounds(sts, vs, thr, c["stage"], wt))
@@ -1364,7 +1367,8 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             st_any.append(_status_of_rounds(sts, vs, 0.0, c["stage"], wt))
             if c["claim_id"] in first_of:  # the stepped-up excerpts as first judged, the others as they are
                 firsts = {(x["passage_id"]) for x in first_of[c["claim_id"]]}
-                vf = [x for x in first_of[c["claim_id"]] if counts_(x)] + [x for x in vs if x["passage_id"] not in firsts]
+                vf = [x for x in first_of[c["claim_id"]] if counts_(x.get("_counts_as", x))] + \
+                     [x for x in vs if x["passage_id"] not in firsts]
                 st_first.append(_status_of_rounds(sts, vf, thr, c["stage"], wt))
             else:
                 st_first.append(st[-1])
@@ -1380,7 +1384,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             for v in ver.get(c["claim_id"], []):
                 corrected += v["_changed"]
                 reviewed += v["_mine"]  # 0.14.3: your own judgements, as on the result and in Excel
-                if v["verdict"] in counts and counts_(v):
+                if v["verdict"] in counts and counts_(v.get("_counts_as", v)):
                     if (v["confidence"] or 0) >= thr:
                         counts[v["verdict"]] += 1
                     else:
@@ -1412,6 +1416,8 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
                     "claim": h["text"], "text": h["text"], "framework": h["framework"] or "", "target": h["code"] or "",
                     "code": h["code"] or "", "code_label": label(h["framework"]) if h["code"] else "", "status": s,
                     "status_text": st_text,
+                    # 0.18.6: the answer counting the Non-scientific documents too
+                    "status_all_sources": (st_all[0] if len(st_all) == 1 else aggregate(st_all)) if st_all else s,
                     "status_any": st_any[0] if len(st_any) == 1 else aggregate(st_any),
                     "supports": counts["supports"], "partly": counts["partially_supports"], "refutes": counts["refutes"],
                     "uncounted": uncounted, "corrected": corrected, "reviewed": reviewed, "to_review": to_review,
