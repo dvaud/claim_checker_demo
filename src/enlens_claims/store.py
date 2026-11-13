@@ -426,6 +426,8 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               ("canon_seen", "blocks_by", "TEXT"), ("canon_seen", "blocks_base", "TEXT"),
               ("canon_seen", "ai_offer", "TEXT"),
               # 0.18.1 part A (documents, theory, concepts, team copies): new columns below this line
+              # K2: a document's role (docrole.py): NULL evidence, 'theory' (the lens the research is read through)
+              ("documents", "role", "TEXT"),
               # end of 0.18.1 part A
               # 0.18.1 part B (AI mix, checks, retractions): new columns below this line
               # end of 0.18.1 part B

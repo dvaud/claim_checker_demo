@@ -7,13 +7,112 @@ part adds, kept out of server.py so the two parts of 0.18.1, built side by side,
 the changes after which the shared folder's poller does not bring a round forward."""
 from __future__ import annotations
 
+from .api_common import ApiError
+
 P = r"([^/]+)"  # one path segment, as in server.py
 
 # (method, pattern without ^ and $, handler name), e.g. ("GET", rf"/api/projects/{P}/…", "get_…")
-ROUTES: list[tuple[str, str, str]] = []
-DOWNLOADS: set[str] = set()
+ROUTES: list[tuple[str, str, str]] = [
+    # K2 part 1: a document's role (theory or evidence; docrole.py)
+    ("GET", rf"/api/projects/{P}/document-roles", "get_document_roles"),
+    ("GET", rf"/api/projects/{P}/documents/{P}/role", "get_document_role"),
+    ("PUT", rf"/api/projects/{P}/documents/{P}/role", "put_document_role"),
+    # A7 (reader 5): a figure's picture, drawn from the original PDF when it is shown, never stored
+    ("GET", rf"/api/projects/{P}/documents/{P}/figures/{P}\.png", "get_figure_image"),
+]
+DOWNLOADS: set[str] = {"get_figure_image"}  # A7: in an <img>, as get_page_image is
 NOT_A_CHANGE: set[str] = set()
 
 
 class CorpusApi:
-    pass
+    # ---- K2 part 1: a document's role ---------------------------------------------------------------------------
+    def get_document_roles(self, name, q):
+        """{"roles": {doc id: "theory"}}: the documents with a role other than evidence, for the Documents list."""
+        ws = self.app.ws(name)
+        return {"roles": {r[0]: r[1] for r in ws.query("SELECT doc_id, role FROM documents WHERE role IS NOT NULL")}}
+
+    def get_document_role(self, name, doc_id, q):
+        """{"doc_id", "role" (null: evidence), "impact": what was made with it in (docrole.impact)}."""
+        from .. import docrole
+
+        ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+            raise ApiError(404, "No such document in this project.")
+        return {"doc_id": doc_id, "role": docrole.role_of(ws, doc_id), "impact": docrole.impact(ws, doc_id)}
+
+    def put_document_role(self, name, doc_id, q):
+        """{"role": "theory" | null, "why"?}: mark a document as theory, or as evidence again. Under an owner, a
+        Member's mark is a proposal (the Team tab's next look writes it), as *Leave out* is."""
+        from .. import docrole
+
+        body = self._body()
+        role = body.get("role")
+        if role is not None and role not in docrole.ROLES:
+            raise ApiError(400, "A document's role is \"theory\", or null (evidence).")
+        why = body.get("why")
+        try:
+            return docrole.set_role(self.app.ws(name), doc_id, role, str(why).strip() or None if why else None)
+        except KeyError:
+            raise ApiError(404, "No such document in this project.") from None
+
+    # ---- A7 (reader 5): a figure's picture ------------------------------------------------------------------------
+    def get_figure_image(self, name, doc_id, n, q):
+        """The picture of a block that has a box on its page (a figure; also a table found from its rules): the crop of
+        the original PDF's page the reader found (`blocks.x0..y1`, points from the top left), as a PNG. It is drawn
+        from the original when asked for, as the *Page* panel's picture is, and nothing of it is stored or sent to an
+        AI. `?scale=` (0.5 to 3, default 2)."""
+        from pathlib import Path
+
+        from .api_common import _float, page_images_available
+
+        ws = self.app.ws(name)
+        try:
+            n = int(n)
+        except ValueError:
+            raise ApiError(404, "No such block in this document.") from None
+        rows = ws.query("SELECT page, kind, x0, y0, x1, y1 FROM blocks WHERE doc_id=? AND n=?", (doc_id, n))
+        if not rows:
+            raise ApiError(404, "No such block in this document.")
+        b = rows[0]
+        if b["page"] is None or b["x0"] is None or b["kind"] not in ("figure", "table"):
+            raise ApiError(404, "This block has no place on a page to draw.")
+        info = self.app.original(ws, doc_id)
+        if not info["available"] or (info.get("kind") or "") != "pdf":
+            raise ApiError(404, info.get("reason") or "The original PDF is not available.")
+        if not page_images_available():
+            raise ApiError(404, "Pictures of pages need the OCR extra (pypdfium2), which is not installed.")
+        png = _render_crop(Path(info["path"]), int(b["page"]), (b["x0"], b["y0"], b["x1"], b["y1"]),
+                           min(3.0, max(0.5, _float(q, "scale", 2.0))))
+        if png is None:
+            raise ApiError(404, "No such page.")
+        return self._send(200, png, "image/png", {"Cache-Control": "private, max-age=3600"})
+
+
+def _render_crop(path, page: int, box: tuple[float, float, float, float], scale: float) -> bytes | None:
+    """The box (points from the top left of the page, with a margin of a few points) of a PDF page (1-based) as PNG
+    bytes, or None when there is no such page. The whole page is drawn at `scale` and the box cut from it."""
+    import io
+
+    import pypdfium2 as pdfium
+
+    from .api_common import _PDFIUM_LOCK
+
+    with _PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            if not 1 <= page <= len(pdf):
+                return None
+            pg = pdf[page - 1]
+            width, height = pg.get_size()
+            img = pg.render(scale=scale).to_pil()
+        finally:
+            pdf.close()
+    pad = 4.0
+    sx, sy = img.width / max(width, 1.0), img.height / max(height, 1.0)
+    left, top = max(0.0, box[0] - pad) * sx, max(0.0, box[1] - pad) * sy
+    right, bottom = min(width, box[2] + pad) * sx, min(height, box[3] + pad) * sy
+    if right - left < 2 or bottom - top < 2:
+        return None
+    buf = io.BytesIO()
+    img.crop((int(left), int(top), int(right) + 1, int(bottom) + 1)).save(buf, "PNG", optimize=True)
+    return buf.getvalue()

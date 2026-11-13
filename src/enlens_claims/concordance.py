@@ -464,7 +464,7 @@ def meaning(ws: Workspace, q: str, embedder, k: int = 20, docs: list[str] | None
     if len(q) < 2:
         raise ValueError("Type a word to search for.")
     picked = rank_passages(ws, q, k=max(1, min(int(k), 100)), per_doc=max(1, min(int(k), 100)), doc_ids=docs,
-                           embedder=embedder)
+                           embedder=embedder, evidence_only=False)  # (0.18.1: the Search page still finds theory)
     where = locate(ws, [(p["passage_id"], p["passage_id"], None) for p in picked])
     stems = set(tokens(q))  # the same words and stemmer as `rank_passages` and its `matched`
 

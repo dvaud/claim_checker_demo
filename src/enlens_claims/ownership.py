@@ -1761,10 +1761,12 @@ def _apply_delta(base: dict, delta: dict) -> dict:
 
 
 def _delta_words(delta: dict) -> dict:
-    out = {"left_out": 0, "restored": 0, "undone": 0, "bounds": 0}
+    out: dict[str, Any] = {"left_out": 0, "restored": 0, "undone": 0, "bounds": 0}
     for fp, v in delta.items():
         if fp.startswith(("start:", "end:")):
             out["bounds"] += 1
+        elif fp.startswith("role:"):  # 0.18.1 (K2, docrole.py): marked as theory (a role), or as evidence again
+            out["role"] = fp.split(":", 1)[1] if v is not None and v[0] else "evidence"
         elif v is None:
             out["undone"] += 1
         else:
@@ -2465,6 +2467,11 @@ _WHAT = {"add": "adding {t}", "remove": "removing {t} from the project",
 def what(p: dict) -> str:
     """A proposal in a few words: "removing “Annual report 2024” from the project"."""
     out = _WHAT[p["kind"]].format(t=_q(p.get("title")))
+    det = p.get("detail") or _json(p.get("detail_json"), {})
+    if p["kind"] == "blocks" and isinstance(det, dict) and det.get("role") and \
+            not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):
+        out = (f"marking {_q(p.get('title'))} as evidence again" if det["role"] == "evidence" else
+               f"marking {_q(p.get('title'))} as {det['role']} (the lens, not the evidence)")
     if p["kind"] == "loosen":
         from .researchlog import access_words
 

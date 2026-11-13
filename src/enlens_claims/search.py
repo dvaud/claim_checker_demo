@@ -176,7 +176,7 @@ def rerank(idx: "PassageIndex", query_text: str, ranked: list[tuple[int, float]]
 
 def rank_passages(ws: Workspace, query_text: str, terms: list[str] | None = None, k: int = 8, per_doc: int = 2,
                   doc_ids: list[str] | None = None, exclude: set[str] | None = None, embedder=None,
-                  require_terms: bool = False, second_pass: bool = False) -> list[dict]:
+                  require_terms: bool = False, second_pass: bool = False, evidence_only: bool = True) -> list[dict]:
     """The k passages that best match the claim and its search terms, at most `per_doc` from one document first.
 
     With `require_terms`, only passages containing at least one of the terms qualify (a search with other words a
@@ -186,12 +186,22 @@ def rank_passages(ws: Workspace, query_text: str, terms: list[str] | None = None
     Each row carries `score` (BM25, or the fused score) and `found_by`: "keywords", "meaning" or "both", and (0.7)
     `matched`: the words of the passage that it shares with the claim and its search terms, as the passage writes
     them (empty for a passage found by meaning alone).
+
+    0.18.1 (K2): `evidence_only` (the default, what a check reads) leaves out documents marked as theory, unless
+    `doc_ids` names them (a person who limits a check to a theory document by hand means it). The Search page's
+    search by meaning passes False: theory is still found there.
     """
     idx = passage_index(ws)
     rows = idx.rows
     if not rows:
         return []
     allowed = set(doc_ids) if doc_ids else None
+    if evidence_only and allowed is None:
+        from .docrole import theory_docs
+
+        theory = theory_docs(ws._conn())
+        if theory:
+            allowed = set(idx.doc_of) - theory
     skip = exclude or set()
     having = None
     if require_terms:

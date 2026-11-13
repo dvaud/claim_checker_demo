@@ -541,10 +541,21 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
             store.close()
 
 
+def _evidence() -> str:
+    """0.18.1 (K2): the condition that leaves out the passages of theory documents (docrole.py), which the glossary
+    and key terms never count."""
+    from .docrole import evidence_sql
+
+    return evidence_sql()
+
+
 def _body_docs(ws: Workspace) -> dict[str, int]:
-    """The documents with body text, in order, and the number of their body passages."""
-    return {r[0]: r[1] for r in ws.query("SELECT doc_id, COUNT(*) FROM passages WHERE section='body' "
-                                         "GROUP BY doc_id ORDER BY doc_id")}
+    """The documents with body text, in order, and the number of their body passages. 0.18.1 (K2): not the theory
+    documents, which never count for key terms or the glossary's counts."""
+    from .docrole import evidence_sql
+
+    return {r[0]: r[1] for r in ws.query(f"SELECT doc_id, COUNT(*) FROM passages WHERE section='body' AND "
+                                         f"{evidence_sql()} GROUP BY doc_id ORDER BY doc_id")}
 
 
 def _body_rows(ws: Workspace, doc_id: str) -> list:
@@ -1359,7 +1370,7 @@ def _related(ws: Workspace, ids: list[str], all_links: list[dict]) -> dict:
                        "a": lk["a"], "b": lk["b"], "decision": lk["decision"],
                        "this_term": mine})
     # co-occurrence
-    n_pass = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'") or 1)
+    n_pass = int(ws.scalar(f"SELECT COUNT(*) FROM passages WHERE section='body' AND {_evidence()}") or 1)
     q = ",".join("?" * len(ids))
     mine = int(ws.scalar(f"SELECT COUNT(DISTINCT passage_id) FROM term_mentions WHERE term_id IN ({q})", ids) or 0)
     co = []
@@ -1485,7 +1496,7 @@ def key_terms(ws: Workspace, doc_id: str | None = None, passage_id: str | None =
     else:
         rows = ws.query("SELECT m.term_id, COUNT(*) AS tf, t.label, t.stems, t.passages AS df FROM term_mentions m "
                         "JOIN terms t ON t.term_id=m.term_id WHERE m.passage_id=? GROUP BY m.term_id", (passage_id,))
-        total = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'") or 1)
+        total = int(ws.scalar(f"SELECT COUNT(*) FROM passages WHERE section='body' AND {_evidence()}") or 1)
     scored = []
     for r in rows:
         idf = math.log((1 + total) / (1 + r["df"])) + 1
