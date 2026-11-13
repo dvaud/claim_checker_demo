@@ -1773,6 +1773,22 @@ terms.
 Links found from the text (roadmap D2, `textrelations.py`) need no route of their own: they are rows of the concept
 page's `related.links` with `"source": "pattern"` and their `"sentences"` (`[{"doc_id", "title", "page", "start",
 "end", "quote"}]`); relations gain `effect`, `effect_of`, `replaces` and `replaced_by`.
+
+**Reader 5: figures and tables from their rules** (roadmap A6, `reader5.py`).
+
+- `GET /api/projects/{p}/documents/{d}/figures/{n}.png[?scale=0.5–3]` (also `&token=…`, for an `<img>`, as the page
+  pictures take it) → the picture of block `n`: the crop of the original PDF's page at the block's box (`x0..y1`,
+  points from the top left of the page, with a small margin), as a PNG; `scale` times 72 dots per inch, default 2. It
+  is drawn from the original each time it is asked for, as the *Page* panel's picture is: nothing of it is stored or
+  sent to an AI. It serves a block of kind `figure`, and also a `table` found from its rules. 404 with the reason when
+  there is no such block, the block is of another kind or has no box (a figure from a Word file or web page has only
+  its alternative text), the original is missing or not a PDF, or the OCR extra (pypdfium2) is not installed.
+- A document's blocks (`GET …/documents/{d}?view=blocks`) may hold `kind: "figure"`: `included: false` (never read
+  by searches, codes, themes or checks), its `page` and `box`, the words inside it as its `text`, and `label` *Text in
+  a figure*. A picture without words has `start == end` (and no passage). Its caption is the `caption` block just
+  after it (or, failing that, just before).
+- The reading report (`reading`, `documents.reading_json`) gains `figures` (how many were found) and
+  `tables_joined` (tables that ran over a page and were joined into one).
 <!-- end of 0.18.1 part A -->
 
 ### New in 0.18.1: the AI mix, checks and retractions
