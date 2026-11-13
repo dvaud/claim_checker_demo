@@ -2074,8 +2074,12 @@ def _ai(ctx: _Ctx, doc: str, k: dict, s: dict, apply: bool) -> None:
                 ctx.follow(doc, "ai")  # a document new here: as it came (a stricter setting it came with holds)
             elif ctx.made_here(doc, "ai", (k["ai_n"], k["ai_by"])) and \
                     ctx.mine_rows[doc]["ai"]["e"] == (k["ai_n"], k["ai_by"]) and ctx.mine_rows[doc]["ai"]["v"] == kv \
-                    and not ctx.mine_lost(doc, "ai"):
-                # this copy's own row holds that very event at that level (review, C2: proven here, not by a row)
+                    and ctx.moved_on(doc, "ai"):
+                # this copy's own row holds that very event at that level (review, C2: proven here, not by a row), and
+                # the project knew the event this copy followed. 0.18.1: a row written again from the project's
+                # (`_Ctx.restamp`: after taking the project back, or another owner of a place) can hold an old event
+                # of this person's that this copy went on from, by their own stricter setting or a colleague's: that
+                # is not their word now, and is offered (found by the randomised roles test, rule (b))
                 ctx.set_level(doc, kv, ", as you set it for the project.", {"from": "owner"})
                 ctx.follow(doc, "ai")
             elif _accepted_loosen(ctx, doc, k):
