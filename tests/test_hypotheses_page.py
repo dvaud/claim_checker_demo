@@ -196,9 +196,10 @@ def test_a_running_check_is_found_and_matched_to_its_answer_row(api, corpus):
     assert st == 200
     try:
         t0 = time.time()
+        # wait for the check's own row: the batch's rows can come first on a busy machine (CI, 0.18.4)
         while True:
             rows = api("GET", "/api/projects/Demo/hypotheses")[1]["hypotheses"]
-            if rows or time.time() - t0 > 20:
+            if any(" ".join(x["text"].split()) == " ".join(text.split()) for x in rows) or time.time() - t0 > 20:
                 break
             time.sleep(0.1)
         jobs = {j["id"]: j for j in api("GET", "/api/jobs")[1]["jobs"]}
