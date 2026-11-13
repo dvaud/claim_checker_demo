@@ -70,12 +70,14 @@ of a follow-up on a result (reading an excerpt again, reading new documents, a s
 - If a run ends with a problem (a usage limit, say), the page shows the end of its report.
 - The first start also adds the plugin, if that was not done yet.
 
-### How much thought, and how fast
+### How much thought
 
 **How much thought: Energy efficient · Balanced · Intelligence**, beside every *Start Claude Code*, says which Claude
 models answer each kind of task, and how hard they think ([Which model does what](models.md#how-much-thought)). The
 choice is kept: it is the same one as in *Settings → AI*, and picking it beside *Start Claude Code* changes it from
 that run on. It is for Claude only: a local model keeps its own choice.
+
+### How fast it works
 
 **Helpers at once** (Slower · Normal · Faster) is how many helpers work at once. You choose it in *Settings → AI*
 only; each *Start Claude Code* says it (*2 helpers at a time*) with a link there.
