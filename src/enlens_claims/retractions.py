@@ -18,7 +18,7 @@ import time
 from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import Request, build_opener
 
 from . import __version__, access, home
 from .store import Workspace, now
@@ -31,7 +31,8 @@ PAUSE = 0.15      # seconds between two requests: politeness
 ROWS = 1000
 TIMEOUT = 25
 SERIOUS = "retraction"  # what the page shows as serious; every other type is milder
-_OPENER = build_opener(ProxyHandler({}))  # no proxy settings of the system leak into a lookup
+_OPENER = build_opener()  # the system's proxy settings apply, as for the app's update check (a proxy is how some
+#                           universities reach the internet at all)
 
 TYPE_TEXT = {"retraction": "Retracted", "correction": "Corrected", "expression_of_concern": "Expression of concern",
              "erratum": "Corrected", "corrigendum": "Corrected", "addendum": "Addendum", "withdrawal": "Withdrawn",
