@@ -363,7 +363,10 @@ export async function renderSources(view) {
         c,
         h("div", { class: "doc-main" },
           h("div", { class: "doc-title", title: d.title && d.file ? `${d.title} · ${d.file}` : name }, link({ kind: "title", serif: true, href: docHref(d) }, name)),
-          h("div", { class: "doc-marks" }, accessBadge(d.ai_access), roleTag(roles[d.doc_id]), proposalChip(d.proposal), ...readingMarks(d))),
+          h("div", { class: "doc-marks" }, accessBadge(d.ai_access),
+            roleTag(roles[d.doc_id]),   // 0.18.1 K2: the lens, not the evidence
+            proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
+            ...readingMarks(d))),
         h("div", { class: "doc-end" }, toggle)));
       show(opened.has(d.doc_id));
       rows.set(d.doc_id, item);

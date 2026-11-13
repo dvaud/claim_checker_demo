@@ -453,7 +453,8 @@ def test_the_page_shell_and_documents():
                   "nothing goes over the internet", "Use an exported file instead"):
         assert words in page, words
     sources = (STATIC / "views" / "sources.js").read_text()
-    assert 'class: "doc-cite it"' in sources and 'class: "dv-bib"' in sources and "see Bibliography" in sources
+    # 0.18.2: a document's citation is named in its panel on the Documents page
+    assert 'h("dt", {}, "In the bibliography")' in sources and 'class: "dv-bib"' in sources and "see Bibliography" in sources
     defined = defined_tokens_all()
     used = set(re.findall(r"var\((--[a-z0-9-]+)", all_css()))
     assert used and used <= defined, used - defined

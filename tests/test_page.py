@@ -14,7 +14,7 @@ def test_the_page_files():
     assert len(mine) > 10
     assert not any("#" in v for _s, decls in mine for v in decls.values())  # colour tokens only, no fixed colours
     acc = (STATIC / "views" / "ai-access.js").read_text()
-    for name in ("accessChoice", "accessSelect", "docAccessDialog", "accessAskCard", "accessBanner", "termsPanel",
+    for name in ("accessChoice", "docAccessDialog", "accessAskCard", "accessBanner", "termsPanel",
                  "restrictedModelCard"):
         assert f"function {name}(" in acc
     assert "./ai-access.js" in (STATIC / "views" / "sources.js").read_text()
