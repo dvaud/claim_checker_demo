@@ -32,6 +32,11 @@ index, and words run together. `read_blocks(raw, version=2)` still reads exactly
 
 Reader 4 (ENLENS 0.17.2) adds the rule of `reader4.py` (a text file with one paragraph per line) and reads Word files'
 content controls and nested tables (`ingest._read_docx`). `read_blocks(raw, version=3)` still reads as reader 3 did.
+
+Reader 5 (ENLENS 0.18.1) adds the rules of `reader5.py`: tables from their ruled lines (the lines and boxes pdfminer
+gives besides the text), a table that runs over a page joined into one, and figures and images as blocks of their own
+(a page, a box, their words and their caption; no picture is stored). A Word file or web page keeps an image's caption
+and alternative text. `read_blocks(raw, version=4)` still reads as reader 4 did.
 """
 from __future__ import annotations
 
@@ -44,7 +49,7 @@ from dataclasses import dataclass, field
 
 from .textutil import split_sentences
 
-READER = 4   # 2: ENLENS 0.15.0; 3: ENLENS 0.15.1 (reader3.py); 4: ENLENS 0.17.2 (reader4.py)
+READER = 5   # 2: ENLENS 0.15.0; 3: ENLENS 0.15.1 (reader3.py); 4: ENLENS 0.17.2 (reader4.py); 5: ENLENS 0.18.1 (reader5.py)
 INCLUDED = ("body", "heading", "title", "abstract", "caption")
 KINDS = ("title", "heading", "abstract", "body", "caption", "table", "footnote", "front", "back", "references",
          "figure", "furniture", "contents", "index")
@@ -57,7 +62,7 @@ KIND_TEXT = {"title": "title", "heading": "heading", "abstract": "abstract", "bo
              "contents": "table of contents", "index": "index"}
 # the same, short, where a block left out is named beside it in the reading view
 KIND_LABEL = {"table": "Table", "footnote": "Footnote", "front": "Front matter", "back": "End notes",
-              "references": "Reference list", "figure": "Text in a figure", "furniture": "Running head",
+              "references": "Reference list", "figure": "Figure", "furniture": "Running head",
               "contents": "Contents", "index": "Index"}
 
 
@@ -102,11 +107,14 @@ class Block:
     end: int = 0
     continues: bool = False        # its sentence goes on in the next content block (a column or page turned)
     rows: list[list[str]] | None = None   # a table's rows of cells
-    caption: str | None = None     # a table's caption
+    caption: str | None = None     # a table's or a figure's caption
     n: int = 0
+    box: tuple[float, float, float, float] | None = None   # reader 5: a box set by what drew it (rules, a picture)
 
     @property
     def bbox(self) -> tuple[float, float, float, float] | None:
+        if self.box is not None:
+            return self.box
         xs = [ln for ln in self.lines if ln.x0 is not None and ln.top is not None]
         if not xs:
             return None
@@ -129,19 +137,25 @@ def pdfminer_available() -> bool:
     return True
 
 
-def _pdfminer_pages(path) -> tuple[list[list[Line]], list[tuple[float, float]]]:
-    """Every horizontal line of text of each page with its box, size and boldness (pdfminer)."""
+def _pdfminer_pages(path, shapes: list | None = None) -> tuple[list[list[Line]], list[tuple[float, float]]]:
+    """Every horizontal line of text of each page with its box, size and boldness (pdfminer). Reader 5 gives `shapes`
+    (a list): each page's lines, boxes and pictures (`reader5.PageShapes`) are appended to it; readers 2 to 4 do not."""
     from pdfminer.high_level import extract_pages
     from pdfminer.layout import LAParams, LTChar, LTFigure, LTTextLineHorizontal
 
     params = LAParams(line_margin=0.3, char_margin=1.6, word_margin=0.12, all_texts=True, detect_vertical=False)
+    from . import reader5
+
     pages: list[list[Line]] = []
     dims: list[tuple[float, float]] = []
     for pno, pg in enumerate(extract_pages(str(path), laparams=params)):
         height = float(pg.height)
         out: list[Line] = []
+        rec = reader5.PageShapes() if shapes is not None else None
 
         def walk(obj, in_fig: bool) -> None:
+            if rec is not None:
+                reader5.record(obj, rec, height, in_fig)
             if isinstance(obj, LTTextLineHorizontal):
                 text = obj.get_text().replace("\n", " ").rstrip()
                 if not text.strip():
@@ -173,6 +187,8 @@ def _pdfminer_pages(path) -> tuple[list[list[Line]], list[tuple[float, float]]]:
                 ln.figure = False
         pages.append(out)
         dims.append((float(pg.width), height))
+        if shapes is not None:
+            shapes.append(rec)
     return pages, dims
 
 
@@ -1005,12 +1021,14 @@ class Reading:
 
 def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
     """The blocks of a RawDoc in reading order, with their kinds and repaired text, and the reading report. `version`
-    2 reads as ENLENS 0.15.0 did; 3 adds the rules of `reader3.py`; 4 those of `reader4.py`."""
-    from . import reader3, reader4
+    2 reads as ENLENS 0.15.0 did; 3 adds the rules of `reader3.py`; 4 those of `reader4.py`; 5 those of `reader5.py`."""
+    from . import reader3, reader4, reader5
 
     raw = raw.as_read_by(version) if hasattr(raw, "as_read_by") else raw
 
     v3 = version >= 3
+    v5 = version >= 5
+    shapes: list | None = [] if v5 else None   # reader 5: each page's rules, boxes and pictures
     counts: Counter = Counter()
     pdf = raw.kind == "pdf"
     engine = "text"
@@ -1021,9 +1039,11 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
         got = None
         if pdfminer_available():
             try:
-                got = _pdfminer_pages(raw.path)
+                got = _pdfminer_pages(raw.path, shapes)
             except Exception:  # noqa: BLE001 - a PDF pdfminer cannot read: pypdf's text
                 got = None
+                if shapes is not None:
+                    shapes.clear()
         if got is not None and len(got[0]) == len(raw.pages):
             engine = "pdfminer"
             pages, dims = got
@@ -1073,8 +1093,15 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
 
     blocks: list[Block] = []
     multi_col = 0
+    # reader 5: images and forms that repeat on several pages (a logo, a seal) are not figures
+    skip_figures = reader5.candidate_keys(shapes, dims) if shapes and engine == "pdfminer" else set()
     for pno, lines in enumerate(pages):
         width = dims[pno][0] if pno < len(dims) else 0.0
+        objs: list = []
+        if shapes and engine == "pdfminer" and pno < len(shapes):
+            # reader 5: tables from rules and figures first; their lines leave the flow of the text and the block
+            # is put back where the object stands (`reader5.place`)
+            objs, lines = reader5.page_objects(shapes[pno], lines, dims[pno], body_size, skip_figures, pno)
         if pdf and width:
             lines, ncol = reading_order(lines, width)
             multi_col += ncol > 1
@@ -1113,12 +1140,17 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
             tl, grid = tables[k]
             page_blocks.append(Block(pno, sorted(tl, key=lambda x: (x.top, x.x0)), kind="table", rows=grid))
         flush_rest()
+        if objs:
+            page_blocks = reader5.place(page_blocks, objs, pno)
         blocks.extend(Block(pno, [ln], kind="furniture") for ln in above)
         blocks.extend(page_blocks)
         blocks.extend(Block(pno, [ln], kind="furniture") for ln in below)
         if numbers:
             blocks.append(Block(pno, numbers, kind="furniture"))
+    tables_joined = reader5.join_tables(blocks, dims, body_size) if v5 and engine == "pdfminer" else 0
     classify(blocks, body_size, dims, pdf, raw.headings if not pdf else None, version)
+    if v5 and not pdf and getattr(raw, "figures", None):
+        reader5.mark_text_figures(blocks, raw.figures)   # a Word file's or web page's image alternative texts
     parts: dict = {}
     if v3:
         # books and theses: the contents, front and end matter, the index
@@ -1142,7 +1174,7 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
             b.text = split_run_together(b.text, vocab, bigrams, counts)
             if damaged:
                 b.text = reader3.split_runs(b.text, vocab, bigrams, _COMMON | _CLOSED, counts)
-    blocks = [b for b in blocks if b.text.strip()]
+    blocks = [b for b in blocks if b.text.strip() or (b.kind == "figure" and b.box is not None)]
     # captions of tables: the caption block just before or after a table
     for i, b in enumerate(blocks):
         if b.kind == "table":
@@ -1150,6 +1182,8 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
                 if 0 <= j < len(blocks) and blocks[j].kind == "caption" and blocks[j].text.lower().startswith(("tab",)):
                     b.caption = blocks[j].text
                     break
+    if v5:
+        reader5.link_captions(blocks)
     # a paragraph that goes on in the next content block (a column or a page turned mid-sentence); a word
     # hyphenated across that turn is put together at the end of the first block ("complex-" + "ity. An" ->
     # "complexity." + "An")
@@ -1162,7 +1196,7 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
                 joined = join_lines([a.text, head], vocab, counts)
                 a.text = joined
                 c.text = rest.lstrip()
-    blocks = [b for b in blocks if b.text.strip()]
+    blocks = [b for b in blocks if b.text.strip() or (b.kind == "figure" and b.box is not None)]
     report = {
         "reader": version, "engine": engine, "pages": len(raw.pages),
         "pages_with_text": sum(1 for p in pages if sum(len(ln.text.strip()) for ln in p) >= 30),
@@ -1173,6 +1207,9 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
                                            "accents")},
         "tables": sum(1 for b in blocks if b.kind == "table"),
     }
+    if v5:
+        report["figures"] = sum(1 for b in blocks if b.kind == "figure" and (b.box is not None or not pdf))
+        report["tables_joined"] = tables_joined
     if v3:
         report["repairs"]["doubled"] = counts["doubled"]
         report["text_layout"] = layout
@@ -1296,7 +1333,9 @@ def build_document(raw, max_chars: int = 1100, min_chars: int = 200, version: in
     if t_block is not None and not raw.meta_title:
         title = t_block.text[:300]
     doc = Document("d" + raw.sha1[:10], raw, text, spans, title, guess_doi(raw, text, spans))
-    doc.passages = make_passages(text, blocks, spans, max_chars, min_chars)
+    # (a figure without words is a block of no text: it has a box and no passage)
+    doc.passages = make_passages(text, [b for b in blocks if b.end > b.start] if version >= 5 else blocks, spans,
+                                 max_chars, min_chars)
     lay = Layout()
     # Paragraphs, as quotes are cited ("page 2, paragraph 3"; "paragraph 7" in files without pages). In a file
     # without pages every block that counts is one, as reader 1 counted blocks between blank lines. In a PDF every
@@ -1441,6 +1480,9 @@ def apply_choices(cx, doc_id: str) -> list[int]:
     person said the text starts and ends, then their choices by fingerprint (`choose_inclusion`), and every passage's
     section from its blocks. A passage that holds several blocks (a heading and its paragraph, short paragraphs put
     together) is read when any of them is. Returns the blocks whose inclusion changed."""
+    from .docrole import sync_role
+
+    sync_role(cx, doc_id)  # 0.18.1 (K2): a role (theory) is kept among the choices, documents.role reads it
     rows = cx.execute("SELECT n, start, end, kind, included FROM blocks WHERE doc_id=? ORDER BY n", (doc_id,)).fetchall()
     if not rows:
         return []

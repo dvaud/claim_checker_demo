@@ -75,8 +75,11 @@ def _passages(ws: Workspace) -> tuple[list[dict], int]:
     seen: set[bytes] = set()
     out = []
     n = 0
+    from .docrole import evidence_sql
+
+    # 0.18.1 (K2): theory documents are the lens, not the evidence: never in a theme
     for pid, doc, seq, text in ws._conn().execute("SELECT passage_id, doc_id, seq, text FROM passages WHERE "
-                                                  "section='body' ORDER BY passage_id"):
+                                                  f"section='body' AND {evidence_sql()} ORDER BY passage_id"):
         n += 1
         key = hashlib.blake2b(fast_normalise(text).encode("utf-8", "surrogatepass"), digest_size=16).digest()
         if key in seen:

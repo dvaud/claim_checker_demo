@@ -298,7 +298,11 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             original = base_id(iid) if base_id(iid) in here else None
             theirs = inc_levels.get(iid) or "cloud"
             level = access.most([theirs, default_here] + ([levels_here.get(original)] if original else []))
+            # 0.18.1 (K2): the role is read from this copy's own block choices (docrole.sync_role, below), never
+            # taken from the sender's column: a Member's theory mark is only a proposal (review 6)
             row = dict(d, doc_id=local, ai_access=level, ai_budget=d.get("ai_budget"), path=None)
+            if "role" in row:
+                row["role"] = None
             if row["sha1"] in sha_here:  # the file is here already (another reading of it): sha1 is unique
                 row["sha1"] = f"{(row['sha1'] or '').split('~')[0]}~{fp[:6]}"
             sha_here.add(row["sha1"])
@@ -317,6 +321,9 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
                     continue  # 0.15: a colleague's copy from before 0.15 has no blocks
                 self._insert(cx, table, _rows(self.icx, f"SELECT * FROM {table} WHERE doc_id=?", (iid,)))
+            from ..docrole import sync_role
+
+            sync_role(cx, local)
 
     def _read_there(self, iid: str) -> int:
         return self.icx.execute("SELECT COUNT(DISTINCT passage_id) FROM ai_sent WHERE doc_id=?", (iid,)).fetchone()[0]

@@ -71,7 +71,7 @@ def calls(monkeypatch):
         return f
 
     for n in ("set_role", "set_same_as", "follow_owner", "keep_owner", "answer_loosening", "decide_again",
-              "take_project_back", "dismiss_refused"):
+              "take_project_back", "dismiss_refused", "put_off"):
         monkeypatch.setattr(ownership, n, rec(n))
     monkeypatch.setattr(ownership, "owner_questions", lambda cx: [{"id": "q1", "seq": 2, "kind": "takeover", "owner": "pben",
                                                                     "by": "pben", "why": None, "now": "panna"}])
@@ -100,7 +100,10 @@ def test_questions_are_answered_by_their_id(demo, calls):
     assert demo("POST", "/api/projects/Demo/owner/questions/q1", {"answer": "follow"})[0] == 200
     assert demo("POST", "/api/projects/Demo/owner/questions/q1", {"answer": "keep"})[0] == 200
     assert calls == [("follow_owner", (2, "pben")), ("keep_owner", (2, "pben"))]
-    assert demo("POST", "/api/projects/Demo/owner/questions/q1", {"answer": "later"})[0] == 400
+    # 0.18.1: Not now, kept for the person in the project
+    assert demo("POST", "/api/projects/Demo/owner/questions/q1", {"answer": "later"})[0] == 200
+    assert calls[-1] == ("put_off", ("q1",))
+    assert demo("POST", "/api/projects/Demo/owner/questions/q1", {"answer": "maybe"})[0] == 400
     assert demo("POST", "/api/projects/Demo/owner/questions/qgone", {"answer": "follow"})[0] == 404   # not asked any more
 
 

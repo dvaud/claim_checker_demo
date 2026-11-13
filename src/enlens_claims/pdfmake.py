@@ -41,6 +41,25 @@ class Page:
     width: float = 595.0   # A4 in points
     height: float = 842.0
     items: list[tuple[str, float, float, str, float]] = field(default_factory=list)  # text, x, y, font, size
+    # 0.18.1 (reader 5): ruled lines, boxes and pictures, for tables with rules and figures. A page without any writes
+    # the same bytes as before.
+    shapes: list[tuple] = field(default_factory=list)   # ("line", x0, y0, x1, y1, width) | ("box", x, y, w, h, fill, width)
+    images: list[tuple] = field(default_factory=list)   # x, y, w, h, pixels (grey, one byte each), columns, rows
+
+    def rule(self, x0: float, y0: float, x1: float, y1: float, width: float = 0.5) -> None:
+        """A straight line from (x0, y0) to (x1, y1), y counted from the bottom of the page."""
+        self.shapes.append(("line", float(x0), float(y0), float(x1), float(y1), float(width)))
+
+    def box(self, x: float, y: float, w: float, h: float, fill: float | None = None, width: float = 0.5) -> None:
+        """A rectangle with its lower left corner at (x, y): outlined, or (with `fill`, a grey from 0 to 1) filled
+        without an outline, as a bar of a chart or a shaded row."""
+        self.shapes.append(("box", float(x), float(y), float(w), float(h), fill, float(width)))
+
+    def image(self, x: float, y: float, w: float, h: float, pixels: bytes, cols: int, rows: int) -> None:
+        """A grey picture of `cols` by `rows` pixels (one byte each, row by row from the top) drawn in the box."""
+        if len(pixels) != cols * rows:
+            raise ValueError("a picture needs one byte for each pixel")
+        self.images.append((float(x), float(y), float(w), float(h), bytes(pixels), int(cols), int(rows)))
 
     def text(self, s: str, x: float, y: float, font: str = "Helvetica", size: float = 10) -> None:
         """One run of text with its baseline starting at (x, y), y counted from the bottom of the page."""
@@ -101,7 +120,22 @@ def write(pages: list[Page], path: str | Path | None = None, title: str | None =
     res = " ".join(f"/F{k} {font_refs[f]} 0 R" for k, f in enumerate(fonts))
     kids = []
     for pg in pages:
-        ops = [b"BT"]
+        ops: list[bytes] = []
+        for sh in pg.shapes:
+            if sh[0] == "line":
+                ops.append(b"q %s w %s %s m %s %s l S Q" % tuple(_num(v) for v in (sh[5], sh[1], sh[2], sh[3], sh[4])))
+            elif sh[5] is None:
+                ops.append(b"q %s w %s %s %s %s re S Q" % tuple(_num(v) for v in (sh[6], sh[1], sh[2], sh[3], sh[4])))
+            else:
+                ops.append(b"q %s g %s %s %s %s re f Q" % tuple(_num(v) for v in (sh[5], sh[1], sh[2], sh[3], sh[4])))
+        names = []
+        for k, (x, y, w, h, pixels, cols, rows) in enumerate(pg.images):
+            objs.append(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray "
+                        b"/BitsPerComponent 8 /Length %d >>\nstream\n" % (cols, rows, len(pixels)) + pixels
+                        + b"\nendstream")
+            names.append(f"/Im{k} {len(objs)} 0 R")
+            ops.append(b"q %s 0 0 %s %s %s cm /Im%d Do Q" % (_num(w), _num(h), _num(x), _num(y), k))
+        ops.append(b"BT")
         for s, x, y, font, size in pg.items:
             ops.append(b"/F%d %s Tf 1 0 0 1 %s %s Tm (" % (fonts.index(font), _num(size), _num(x), _num(y))
                        + _esc(s) + b") Tj")
@@ -109,8 +143,10 @@ def write(pages: list[Page], path: str | Path | None = None, title: str | None =
         stream = b"\n".join(ops)
         objs.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
         content = len(objs)
+        xobjects = f" /XObject << {' '.join(names)} >>" if names else ""
         objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {_num(pg.width).decode()} "
-                    f"{_num(pg.height).decode()}] /Resources << /Font << {res} >> >> /Contents {content} 0 R >>".encode())
+                    f"{_num(pg.height).decode()}] /Resources << /Font << {res} >>{xobjects} >> "
+                    f"/Contents {content} 0 R >>".encode())
         kids.append(len(objs))
     objs[1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>".encode()
     info = ""

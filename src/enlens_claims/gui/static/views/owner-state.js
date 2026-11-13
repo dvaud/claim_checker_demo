@@ -26,7 +26,7 @@ export const OWNER_API = {
   takeBack: (p, id) => `/api/projects/${p}/owner/proposals/${id}/take-back`, // POST {}
   // roles (DESIGN-roles §7 P4)
   role: (p, person) => `/api/projects/${p}/owner/roles/${person}`,           // PUT {role} | {same_as}
-  question: (p, id) => `/api/projects/${p}/owner/questions/${id}`,           // POST {answer: "follow" | "keep"}
+  question: (p, id) => `/api/projects/${p}/owner/questions/${id}`,           // POST {answer: "follow" | "keep" | "later"}
   loosening: (p) => `/api/projects/${p}/owner/loosening`,                    // POST {docs, allow}
   restore: (p, doc) => `/api/projects/${p}/owner/removed/${doc}/restore`,    // POST {}
   clash: (p, id) => `/api/projects/${p}/owner/clashes/${id}`,                // POST {} (Leave it so)
@@ -108,6 +108,8 @@ export function blocksLine(d) {
   if (d.undone) bits.push(`${bits.length ? d.undone : plural(d.undone, "passage")} back as the reader reads ${d.undone === 1 ? "it" : "them"}`);
   const out = bits.length ? [`${bits.join(", ")}.`] : [];
   if (d.bounds) out.push("Where the text starts or ends was changed.");
+  // 0.18.1 (K2): a document marked as theory (the lens the research is read through), or as evidence again
+  if (d.role) out.push(d.role === "evidence" ? "Marked as evidence again." : "Marked as theory: left out of themes, codebook labels, check excerpts and key terms.");
   return out.join(" ") || "Which passages are read was changed.";
 }
 

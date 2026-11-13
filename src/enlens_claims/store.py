@@ -256,6 +256,10 @@ CREATE TABLE IF NOT EXISTS sync_from(kind TEXT, key TEXT, fp TEXT, person TEXT, 
 CREATE TABLE IF NOT EXISTS sync_refused(kind TEXT, key TEXT, what_json TEXT, via TEXT, n INT, at TEXT, state TEXT,
   PRIMARY KEY(kind, key));
 -- 0.18.1 part A (documents, theory, concepts, team copies): new tables below this line
+-- D2 (textrelations.py): the sentences a link found from the text was proposed from (source 'pattern'), each with its
+-- document, page and document offsets; made again with the glossary
+CREATE TABLE IF NOT EXISTS concept_link_sentences(a TEXT, b TEXT, passage_id TEXT, doc_id TEXT, page INT, start INT,
+  end INT, quote TEXT, PRIMARY KEY(a, b, doc_id, start));
 -- end of 0.18.1 part A
 -- 0.18.1 part B (AI mix, checks, retractions): new tables below this line
 -- end of 0.18.1 part B
@@ -426,6 +430,8 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               ("canon_seen", "blocks_by", "TEXT"), ("canon_seen", "blocks_base", "TEXT"),
               ("canon_seen", "ai_offer", "TEXT"),
               # 0.18.1 part A (documents, theory, concepts, team copies): new columns below this line
+              # K2: a document's role (docrole.py): NULL evidence, 'theory' (the lens the research is read through)
+              ("documents", "role", "TEXT"),
               # end of 0.18.1 part A
               # 0.18.1 part B (AI mix, checks, retractions): new columns below this line
               # end of 0.18.1 part B

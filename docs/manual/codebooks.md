@@ -23,12 +23,13 @@ above them, with the reason.
 1. Press *New codebook*.
 2. Give it a *Title* (the *Short name*, the file's name, follows it) and choose where it is *Kept*: *With this project*,
    or *With all my projects* (every project can use it, and a change shows in each).
-3. Choose how it starts, then *Create* (*Next* for themes). The editor opens.
+3. Choose how it starts, then *Create* (*Next* for themes and theory). The editor opens.
 
 | Start | What you get |
 | --- | --- |
 | *Start fresh* | An empty codebook: add codes and groups yourself. |
 | *From the themes* | You tick themes found in the documents; each becomes a draft code (see below). |
+| *From a theory document* (0.18.1) | You tick the concepts of a theory you read the documents through; each becomes a draft code with its definition quoted from the theory (see below). |
 | *A copy of a codebook* | The SDG targets, or one of yours, to change. |
 | *From a CSV file* | A spreadsheet saved as CSV (see below). |
 
@@ -36,6 +37,15 @@ above them, with the reason.
 the theme, its key terms as *Words it is matched by* and its best passages as examples. Removed themes are left out.
 When the codebook is kept with all projects, the themes of every project are offered. Find the themes first (*Themes*
 in the sidebar): it takes seconds and needs no AI.
+
+**From a theory document (0.18.1).** Choose the document (those marked as theory come first: [Theory
+documents](explore.md#theory-documents)). ENLENS offers its concepts, without AI: the terms it defines ("a stock is
+…", "by a reinforcing loop we mean …", "X is defined as …", "X refers to …"), its headings, and the words and short
+phrases it uses often. Each comes with its definition **quoted from the theory, with its page** (the quote, then the
+document's title and the page), which becomes the code's description. Terms the text defines are ticked. Under each concept, sentences from the **evidence documents** that use
+its words are offered as examples, unticked: an example is kept only when you tick it, and never comes from a theory
+document. So the labeller learns what a reinforcing loop looks like in your field, not in the theory's own examples.
+Words set in italics are not offered (the readers do not keep slant). An AI draft of the concepts is not offered yet.
 
 **The short names (0.16.1).** A code's name is one or two words of the theme's name when your documents allow it, as
 short as an SDG goal's: "National green hydrogen strategies and markets" becomes *Hydrogen strategies*. ENLENS tries

@@ -202,10 +202,13 @@ def keyword_pass(ws: Workspace, framework: str = "sdg", embedder=None, doc_ids: 
     decisions on them are kept: label ids do not change)."""
     from .search import passage_index
 
+    from .docrole import theory_docs
+
     fw = frameworks.get(framework, ws)
     idx = passage_index(ws)
     only = set(doc_ids) if doc_ids else None
-    rows = idx.read([i for i, d in enumerate(idx.doc_of) if only is None or d in only])
+    theory = theory_docs(ws._conn())  # 0.18.1 (K2): theory documents are never labelled with a codebook
+    rows = idx.read([i for i, d in enumerate(idx.doc_of) if (only is None or d in only) and d not in theory])
     idf = idx.bm25.idf
     meaning = _meaning_candidates(ws, fw, embedder, [r["passage_id"] for r in rows]) if embedder is not None else {}
     out_rows = []
@@ -288,7 +291,9 @@ def label_plan(ws: Workspace, framework: str = "sdg", doc_ids: list[str] | None 
     """What a model pass would read: the passages (with at least one candidate unless `all_passages`) not read yet,
     and how long it is likely to take (from this project's recent label tasks, or the model test)."""
     st = pass1_status(ws, framework)
-    sql = ("SELECT p.passage_id FROM passages p WHERE p.section='body'" +
+    from .docrole import evidence_sql
+
+    sql = (f"SELECT p.passage_id FROM passages p WHERE p.section='body' AND {evidence_sql('p.doc_id')}" +
            (f" AND p.doc_id IN ({','.join('?' * len(doc_ids))})" if doc_ids else "") + " ORDER BY p.doc_id, p.seq")
     pids = [r[0] for r in ws.query(sql, doc_ids or [])]
     if passage_ids is not None:  # 0.16: only these (a code's passages labelled with its earlier wording)

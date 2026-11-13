@@ -73,6 +73,9 @@ ROLES_SEEN = "roles_seen"          # meta (this copy's own): the roles as this c
 FORMATS = "sync_formats"           # meta (this copy's own): {person id: the sync format of their last file}
 LOOSEN_USED = "loosen_used"        # meta (this copy's own, never sent to a colleague): the accepts of this person's
 #                                    loosen proposals whose event this copy has followed (review H1, follow-up)
+CLAIM_NOTED = "owner_claim_noted"  # meta (this copy's own): the claims whose notice this copy gave (0.18.1)
+LATER = "owner_later"              # meta (this copy's own): {person id: [ids of questions about the owner put off
+#                                    with *Not now*]}, so it holds in every browser (0.18.1)
 TAKE_OVER_DAYS = 14
 RANK = {"cloud": 0, "local": 1, "none": 2}
 PARTS = ("state", "read", "ai", "blocks")
@@ -510,6 +513,16 @@ def take_over(ws: Workspace, why: str | None = None) -> dict:
         if role_of(cx, me) != "co" and _co_heard_lately(cx, ch, me):
             raise NotAllowed("A Co-owner of this project was heard of lately: a Co-owner can take it over, or the "
                              "owner can hand it over to you.")
+        # 0.18.1: one record per person and place travels (a copy never replaces a record it holds), so a second
+        # take-over at the same place, after another owner, would never reach the colleagues who hold the first: the
+        # copies would disagree about the owner without a word (found by the randomised roles test)
+        mine = next((r for r in _records(cx).get(ch[-1]["seq"] + 1, []) if r["by"] == me and r["owner"] == me), None)
+        if mine is not None and (mine["after"] or None) != ch[-1]["owner"]:
+            earlier = people.names(ws).get(mine["after"] or "", "an earlier owner")
+            raise NotAllowed(f"You took this project over once before at this point of its history, from {earlier}. "
+                             f"Your colleagues keep that take-over, so a second one would not reach them. Ask "
+                             f"{people.names(ws).get(ch[-1]['owner'], 'the owner')} to hand the project over to you, "
+                             f"or follow your earlier take-over (Team tab).")
         _record(cx, ch[-1]["seq"] + 1, me, me, "takeover", ch[-1]["owner"], why or left,
                 "Took this project over from its owner. " + left)
     settle(ws, apply=False)
@@ -558,6 +571,23 @@ def keep_owner(ws: Workspace, seq: int, by: str) -> dict:
         if _pins(cx)[0].get(seq) == (r["by"], r["owner"]):
             raise ValueError("You follow this record: follow another one instead.")
         _pin(cx, r, "refused")
+    return view(ws)
+
+
+def put_off(ws: Workspace, qid: str) -> dict:
+    """*Not now* on a question about the owner (a take-over): it stays in the Team tab until answered, but no longer
+    counts on the tab. Kept for this person in the project (0.18.1; before, only in the browser that said it).
+    Returns the view."""
+    me = people.me()
+    with ws.connect() as cx:
+        if not any(q["id"] == qid for q in owner_questions(cx)):
+            raise KeyError(qid)
+        have = _meta(cx, LATER, {})
+        have = have if isinstance(have, dict) else {}
+        mine = [x for x in have.get(me) or [] if isinstance(x, str)]
+        if qid not in mine:
+            have[me] = (mine + [qid])[-200:]
+            _set_meta(cx, LATER, have)
     return view(ws)
 
 
@@ -907,6 +937,15 @@ def _decisions(cx: sqlite3.Connection, ch: list[dict], R: dict[str, dict] | None
         return {}
     R = roles(cx, ch) if R is None else R
     cols = {r[1] for r in cx.execute("PRAGMA table_info(decisions)")}
+    # 0.18.1 (roadmap L, after a take-over): once the latest place's owner has written its mark
+    # (`_Ctx.restamp_decisions`: the former owners' answers it held when it took the project), a former owner's
+    # answer counts only if the mark lists it. One given late (offline, still believing they own the project) then
+    # waits for the owner's word, as their late changes to the documents do (`_Ctx.restamp`), instead of showing as
+    # *Accepted* although it changes no document.
+    top_seq = max(owners)
+    mark = cx.execute("SELECT knew_json FROM decisions WHERE proposal=? AND by=? AND owner_seq=? LIMIT 1",
+                      (restamp_mark(top_seq), owners[top_seq], top_seq)).fetchone() if top_seq > 1 else None
+    held = {(x[0], x[1]) for x in _json(mark[0], []) if isinstance(x, list) and len(x) == 2} if mark else None
     by_p: dict[str, list[dict]] = {}
     markers: dict[str, list[dict]] = {}  # an Owner's row for a proposal answered both ways by a person made a Member
     for r in _rows(cx, "SELECT * FROM decisions"):
@@ -923,7 +962,7 @@ def _decisions(cx: sqlite3.Connection, ch: list[dict], R: dict[str, dict] | None
         if "grant" not in cols:
             r["grant"] = None
         t = _counts(r, owners, R)
-        if t is None:
+        if t is None or (held is not None and r["grant"] is None and t < top_seq and (r["by"], n) not in held):
             continue
         r["tier"] = t
         r["knew"] = {(x[0], x[1]) for x in _json(r.get("knew_json"), [])
@@ -960,6 +999,12 @@ def _decisions(cx: sqlite3.Connection, ch: list[dict], R: dict[str, dict] | None
             d.update(verdict=None, clash=True, by=None, reason=None, at=None, auto=0)
         out[pid] = d
     return out
+
+
+def restamp_mark(seq: int) -> str:
+    """The `proposal` of the row in which the owner of place `seq` lists the former owners' answers that counted when
+    it took the project as its own (`knew_json`; an answer to no proposal, which ENLENS 0.18.0 passes by)."""
+    return f"~restamped:{seq}"
 
 
 def _proposals(cx: sqlite3.Connection) -> dict[str, dict]:
@@ -1024,7 +1069,28 @@ def _parse_row(r: dict) -> dict:
         ok = isinstance(vv, dict) and isinstance(vv.get("p"), str) and isinstance(vv.get("d"), list) and \
             len(vv["d"]) == 2 and isinstance(vv["d"][0], str) and _num(vv["d"][1]) is not None
         out[p] = {"e": e, "v": v, "knew": knew | {e}, "via": vv if ok else None}
+    # 0.18.1: the removals proposed for the document that its writer had seen when it last changed the document's
+    # state (None: a row of ENLENS 0.18.0, which did not say)
+    seen = hist.get("seen")
+    out["seen"] = {x for x in seen if isinstance(x, str)} if isinstance(seen, list) else None
     return out
+
+
+SEEN_CAP = 200  # (removals proposed for one document; more would only make each row longer)
+
+
+def removal_spent(k: dict, pid: str) -> bool:
+    """Whether a proposed removal (`pid`) of a document the project has kept or taken in again since is spent: the
+    project went on knowing of it (a writer who had seen it changed the document's state), or the state's last change
+    was written by ENLENS 0.18.0, which did not say what it had seen. A change made without knowing of it (at the
+    same time) leaves the removal standing: the proposer's copy keeps it out and the proposal waits (roadmap L,
+    after 0.17.0)."""
+    rows = k.get("rows") or []
+    if any(pid in (r.get("seen") or ()) for r in rows):
+        return True
+    cur = (k["state_n"], k["state_by"])
+    maker = [r for r in rows if r["state"]["e"] == cur]
+    return not maker or all(r.get("seen") is None for r in maker)
 
 
 def _void(row: dict, dec: dict[str, dict]) -> tuple[dict | None, dict[str, set]]:
@@ -1500,6 +1566,19 @@ class _Ctx:
         levels[events["ai"]] = values["ai"]
         ai_list = [[n, levels.get((n, by), values["ai"]), by] for n, by in lists["ai"]]
         hist = {p: lists[p] for p in ("state", "read", "blocks")}
+        own = (self.mine_rows.get(doc) or {}).get("seen") or set()
+        if "state" in bump:   # this writer's new state event: what it had seen now
+            hist["seen"] = sorted(set(own) | {q["id"] for q in self.about("remove", doc)
+                                              if not q["taken_back_at"]})[-SEEN_CAP:]
+        else:
+            # the state event is kept: so is what its maker had seen when making it (a restamp or another part's
+            # change must not empty it, review 1); a maker of ENLENS 0.18.0, who said nothing, is said nothing for
+            makers = [r for r in (base or {}).get("rows", []) if r["state"]["e"] == tuple(events["state"])]
+            sees = [r["seen"] for r in makers if r.get("seen") is not None]
+            if sees:
+                hist["seen"] = sorted(set().union(*sees))[-SEEN_CAP:]
+            elif not makers:
+                hist["seen"] = sorted(own)[-SEEN_CAP:]
         vv = {p: v for p, v in vias.items() if v}
         if vv:
             hist["via"] = vv
@@ -1539,6 +1618,22 @@ class _Ctx:
             if not any(r["grant"] is None and r["tier"] == self.seq for r in k["rows"]):
                 self.put(doc, (), keep_own=False)
 
+    def restamp_decisions(self) -> None:
+        """A new owner's copy (place 2 or later) writes, once, its mark (`restamp_mark`): the former owners' answers
+        that count as it takes the project as its own. From then on a former owner's answer counts only if the mark
+        lists it (`_decisions`), so one that reaches this copy later shows as waiting. The answers themselves are not
+        written again: the documents' changes their accepts made name them (`via`)."""
+        if self.seq <= 1 or self.cx.execute("SELECT 1 FROM decisions WHERE proposal=? AND by=? AND owner_seq=?",
+                                            (restamp_mark(self.seq), self.me, self.seq)).fetchone():
+            return
+        held = sorted({(r["by"], r["n"]) for d in self.dec.values() for r in d["live"].values()
+                       if r["grant"] is None and r["tier"] < self.seq})
+        self.cx.execute("INSERT OR REPLACE INTO decisions(proposal, by, owner_seq, verdict, reason, at, auto, n, grant, "
+                        "knew_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (restamp_mark(self.seq), self.me, self.seq, "withdrawn", "restamped", now(), 0,
+                         self.next_dec_n(), None, json.dumps([list(x) for x in held])))
+        self.dec = _decisions(self.cx, self.chain, self.R)
+
     def restamp_roles(self) -> None:
         """A new owner (place 2 or later) writes, once, a row for every person the project knows with the role that
         counts (a Member's too): a former owner's late row then never counts for anyone this owner knew (§4.2)."""
@@ -1564,7 +1659,7 @@ class _Ctx:
         return k
 
     # changes to this copy
-    def remove_here(self, doc: str, why: str, by: str | None, cause: str = "removed") -> None:
+    def remove_here(self, doc: str, why: str, by: str | None, cause: str = "removed", wish_of: str | None = None) -> None:
         """Remove a document from this copy because a colleague's word said so: as when a person removes it (its
         checks keep their grades as records; the research log says why). It can be restored for 30 days (removed.py:
         an archive of its rows and its file is made first); the note of its removal is the colleague's, not this
@@ -1574,7 +1669,10 @@ class _Ctx:
         title = self.docs[doc]["title"]
         removed.archive(self.ws, self.cx, doc, by, why, cause)  # (no longer a copy of the whole database)
         self.ws.remove_document(doc, why=why)
-        self.cx.execute("UPDATE sync_removed SET person_id=? WHERE kind='document' AND key=?", (by or self.owner, doc))
+        # whose removal it is: `wish_of` when given (0.18.1: a former owner's removal kept by this owner's own rows is
+        # noted as the owner's word, but it is not this person's own wish, review 13)
+        self.cx.execute("UPDATE sync_removed SET person_id=? WHERE kind='document' AND key=?",
+                        (wish_of or by or self.owner, doc))
         self.docs.pop(doc, None)
         self.choices.pop(doc, None)
         self.mark(doc, gone=1, came_from=None)
@@ -1611,10 +1709,22 @@ class _Ctx:
         self.cx.execute("DELETE FROM block_choices WHERE doc_id=?", (doc,))
         self.cx.executemany("INSERT OR REPLACE INTO block_choices(doc_id, fp, included, kind, person_id, at) VALUES "
                             "(?,?,?,?,?,?)", rows)
+        from . import docrole, researchlog
+
+        was = docrole.role_from_choices(self.choices.get(doc) or {})
         self.choices[doc] = dict(want)
         reader2.apply_choices(self.cx, doc)
         self.ws.bump_corpus(self.cx)
         self.report["applied"].append({"kind": "blocks", "doc": doc, "title": self.docs[doc]["title"]})
+        role = docrole.role_from_choices(want)
+        if role != was:  # 0.18.1 (K2): a theory mark the project took is a log entry of its own, as one's own mark is
+            who = self.names.get(by or self.owner, "the owner")
+            researchlog.record(self.cx, "document-role",
+                               f"Marked as theory by {who}: it is left out of themes, codebook labels, check excerpts "
+                               "and key terms from now on." if role else
+                               f"Marked as evidence again by {who}: it counts in themes, codebook labels, check excerpts "
+                               "and key terms from now on.", "document", doc, self.docs[doc]["title"],
+                               data={"role": role, "was": was, "by": by or self.owner})
 
 
 def _changed(k: dict, part: str, det: dict) -> bool:
@@ -1651,7 +1761,7 @@ def state_of(p: dict, K: dict[str, dict], dec: dict[str, dict]) -> tuple[str, st
     if k["state"] == "removed":
         return ("accepted", "The owner removed it.") if kind == "remove" else \
             ("moot", "The document was removed from the project since.")
-    if kind == "remove" and _changed(k, "state", det):
+    if kind == "remove" and _changed(k, "state", det) and removal_spent(k, p["id"]):
         return "moot", "The document was removed from the project and added to it again since."
     if kind == "reread" and (k["reader"] or 1) >= (det.get("to_reader") or 0):
         return "accepted", "The project's reading of it is as new already."
@@ -1686,10 +1796,12 @@ def _apply_delta(base: dict, delta: dict) -> dict:
 
 
 def _delta_words(delta: dict) -> dict:
-    out = {"left_out": 0, "restored": 0, "undone": 0, "bounds": 0}
+    out: dict[str, Any] = {"left_out": 0, "restored": 0, "undone": 0, "bounds": 0}
     for fp, v in delta.items():
         if fp.startswith(("start:", "end:")):
             out["bounds"] += 1
+        elif fp.startswith("role:"):  # 0.18.1 (K2, docrole.py): marked as theory (a role), or as evidence again
+            out["role"] = fp.split(":", 1)[1] if v is not None and v[0] else "evidence"
         elif v is None:
             out["undone"] += 1
         else:
@@ -1735,10 +1847,12 @@ def settle(ws: Workspace, apply: bool = True, moves: bool = False, leaving: bool
             ensure_owner(cx, me)
         pin_owner(cx, me)
         ctx = _Ctx(ws, cx, me)
+        ctx.applying = apply
         if ctx.owner is None:
             return ctx.report
         _answer_refused(ctx)
         if ctx.is_owner:
+            ctx.restamp_decisions()
             ctx.restamp()
             ctx.restamp_roles()
         if ctx.is_owner and apply and accept_adds(ws):
@@ -1801,10 +1915,21 @@ def _reconcile(ctx: _Ctx, doc: str, apply: bool) -> None:
         elif again and not ctx.followed(doc, "state") and not ctx.mine_lost(doc, "state"):
             # the project removed it: not followed here yet
             if apply:
-                who = ctx.names.get(k["state_by"], "a colleague")
-                why = (f"The owner ({who}) removed it from the project." if k["state_by"] == ctx.owner else
-                       f"{who[0].upper() + who[1:]} (a Co-owner) removed it from the project.")
-                ctx.remove_here(doc, why, k["state_by"])
+                # 0.18.1: whose word it is, in this copy: the removal's maker while they are the owner or a Co-owner
+                # here; else (a former owner, a Co-owner made a Member since) the owner, whose rows keep it removed
+                # (they wrote the project's documents again under their own place: `_Ctx.restamp`). Found by the
+                # randomised roles test: a removal was noted in the name of someone who is a Member in this copy.
+                maker = k["state_by"]
+                by = maker if maker == ctx.owner or (ctx.R.get(maker) or {}).get("role") == "co" else ctx.owner
+                who = ctx.names.get(by, "a colleague")
+                if by == ctx.owner and maker == ctx.owner:
+                    why = f"The owner ({who}) removed it from the project."
+                elif by == ctx.owner:
+                    why = (f"{ctx.names.get(maker, 'A former owner')} removed it from the project, and the owner "
+                           f"({who}) keeps it removed.")
+                else:
+                    why = f"{who[0].upper() + who[1:]} (a Co-owner) removed it from the project."
+                ctx.remove_here(doc, why, by, wish_of=maker if by == me else None)
                 ctx.follow(doc, "state")
             return
         others = [p for p in ctx.about("add", doc) if p["by"] != me and _era(p, k)]
@@ -1859,7 +1984,8 @@ def _reconcile(ctx: _Ctx, doc: str, apply: bool) -> None:
                     ctx.follow(doc, "state")
                     ctx.mark(doc, gone=None)
                 return
-        if at and not ctx.followed(doc, "state") and ctx.moved_on(doc, "state"):
+        if at and not ctx.followed(doc, "state") and ctx.moved_on(doc, "state") and \
+                all(removal_spent(k, q["id"]) for q in ctx.mine("remove", doc) if q["detail"].get("removed_at") == at):
             # this person's removal is spent: the project went on since (took the document out and in again, or kept
             # it at the same time): it comes back here as to every copy
             if not apply:
@@ -1974,8 +2100,12 @@ def _ai(ctx: _Ctx, doc: str, k: dict, s: dict, apply: bool) -> None:
                 ctx.follow(doc, "ai")  # a document new here: as it came (a stricter setting it came with holds)
             elif ctx.made_here(doc, "ai", (k["ai_n"], k["ai_by"])) and \
                     ctx.mine_rows[doc]["ai"]["e"] == (k["ai_n"], k["ai_by"]) and ctx.mine_rows[doc]["ai"]["v"] == kv \
-                    and not ctx.mine_lost(doc, "ai"):
-                # this copy's own row holds that very event at that level (review, C2: proven here, not by a row)
+                    and ctx.moved_on(doc, "ai"):
+                # this copy's own row holds that very event at that level (review, C2: proven here, not by a row), and
+                # the project knew the event this copy followed. 0.18.1: a row written again from the project's
+                # (`_Ctx.restamp`: after taking the project back, or another owner of a place) can hold an old event
+                # of this person's that this copy went on from, by their own stricter setting or a colleague's: that
+                # is not their word now, and is offered (found by the randomised roles test, rule (b))
                 ctx.set_level(doc, kv, ", as you set it for the project.", {"from": "owner"})
                 ctx.follow(doc, "ai")
             elif _accepted_loosen(ctx, doc, k):
@@ -2209,6 +2339,18 @@ def _answer_refused(ctx: _Ctx) -> None:
             if (mine and (mine[0] or 0) > n) or n > ctx.dec_n + STEP:
                 continue
             ctx.dec_n = max(ctx.dec_n, n)
+            if key.startswith("~restamped:"):
+                # a copy of this owner's mark (forged, or an older one from a backup): never answered by an empty
+                # row, which would stop every former owner's answer counting (review 3); this copy's own mark is
+                # written again above it, or, when it has none yet, `restamp_decisions` writes it (after this)
+                if mine:
+                    ctx.cx.execute("INSERT OR REPLACE INTO decisions(proposal, by, owner_seq, verdict, reason, at, auto, "
+                                   "n, grant, knew_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                   (key, ctx.me, int(key.split(":", 1)[1]) if key.split(":", 1)[1].isdigit() else ctx.seq,
+                                    "withdrawn", "restamped",
+                                    now(), 0, ctx.next_dec_n(), None, mine[4] or "[]"))
+                    ctx.dec = _decisions(ctx.cx, ctx.chain, ctx.R)
+                continue
             m = ctx.next_dec_n()
             if mine and mine[1] in ("accept", "decline"):
                 knew = [tuple(x) for x in _json(mine[4], []) if isinstance(x, list) and len(x) == 2]
@@ -2388,11 +2530,44 @@ _WHAT = {"add": "adding {t}", "remove": "removing {t} from the project",
 def what(p: dict) -> str:
     """A proposal in a few words: "removing “Annual report 2024” from the project"."""
     out = _WHAT[p["kind"]].format(t=_q(p.get("title")))
+    det = p.get("detail") or _json(p.get("detail_json"), {})
+    if p["kind"] == "blocks" and isinstance(det, dict) and det.get("role") and \
+            not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):
+        out = (f"marking {_q(p.get('title'))} as evidence again" if det["role"] == "evidence" else
+               f"marking {_q(p.get('title'))} as {det['role']} (the lens, not the evidence)")
     if p["kind"] == "loosen":
         from .researchlog import access_words
 
         out += f" ({access_words(_level((p.get('detail') or _json(p.get('detail_json'), {})).get('to')))})"
     return out
+
+
+def _note_claimed(ctx: _Ctx, by_kind: dict[str, list[dict]]) -> None:
+    """0.18.1 (roadmap L, after 0.17.0): when a colleague became the owner of a project that had none (*Become the
+    owner*), what this person had removed or left out in their own copy before is their proposal now, all at once. Say
+    so once, in the Team tab, so the proposals do not come unexplained (the dialog said so to the one who claimed)."""
+    first = ctx.chain[0] if ctx.chain else None
+    if not first or first["kind"] != "claim" or first["owner"] == ctx.me:
+        return
+    key = f"claimed:{first['seq']}:{first['by']}"
+    noted = _meta(ctx.cx, CLAIM_NOTED, [])
+    if key in noted or not getattr(ctx, "applying", False):
+        return
+    # decided once, in the first look at this copy that applies what the claim brings (the round, or the zip, that
+    # brought it): every earlier removal and Leave out of this person's is proposed in that look; a change made
+    # afterwards is a proposal like any other, without the notice (review 7)
+    _set_meta(ctx.cx, CLAIM_NOTED, (list(noted) + [key])[-20:])
+    removed, left_out = len(by_kind.get("remove", [])), len(by_kind.get("blocks", []))
+    if not removed and not left_out:
+        return
+    who = ctx.names.get(first["owner"], "A colleague")
+    parts = ([f"{removed} {'document' if removed == 1 else 'documents'} you removed"] if removed else []) + \
+        ([f"what you left out of {left_out} {'document' if left_out == 1 else 'documents'}"] if left_out else [])
+    _notice(ctx.cx, "claimed", f"{who} became the owner of this project. {' and '.join(parts).capitalize()} in your "
+                               f"copy before it had an owner {'is' if removed + left_out == 1 else 'are'} now your "
+                               f"{'proposal' if removed + left_out == 1 else 'proposals'} to {who}. Your copy keeps "
+                               "them as they are until they are answered; take back any you no longer want.",
+            key)
 
 
 def _log(ctx: _Ctx) -> None:
@@ -2402,6 +2577,7 @@ def _log(ctx: _Ctx) -> None:
     by_kind: dict[str, list[dict]] = {}
     for p in ctx.new:
         by_kind.setdefault(p["kind"], []).append(p)
+    _note_claimed(ctx, by_kind)
     for kind, ps in by_kind.items():
         if len(ps) == 1:
             p = ps[0]
@@ -2784,6 +2960,9 @@ def view(ws: Workspace, light: bool = False) -> dict:
                          "by_name": names.get(q["by"], "a colleague"),
                          "now_name": names.get(q["now"], "a colleague") if q["now"] else None}
                         for q in owner_questions(cx)]
+    later = _meta(cx, LATER, {})
+    later = set((later.get(me) or []) if isinstance(later, dict) else [])
+    out["later"] = [q["id"] for q in out["questions"] if q["id"] in later]
     out["notices"] = [x for x in _meta(cx, NOTICES, []) if isinstance(x, dict)]
     out["refused"] = refused(cx)
     out["removed"] = _removed_listing(ws)

@@ -26,7 +26,8 @@ LOCAL_ONLY = {"meta", "embeddings", "code_vectors", "terms", "term_mentions", "c
               # roles (DESIGN-roles §3.2): the owner records this copy follows, documents removed here by a colleague's
               # word (restorable for 30 days), rows relayed by a third person, the state last taken from whom, and rows
               # a file brought under this copy's own id
-              "owner_pins", "removed_docs", "sync_via", "sync_from", "sync_refused"}
+              "owner_pins", "removed_docs", "sync_via", "sync_from", "sync_refused",
+              "concept_link_sentences"}  # 0.18.1 (D2): made again with each copy's glossary, from its own readings
 # merged by their own rules (merge.py); every other table (the SDG pack's, an add-on's) is merged row by row, keeping yours
 OWN_RULES = {"documents", "pages", "paragraphs", "headings", "passages", "blocks", "doc_tables", "labels", "mentions", "tasks", "results",
              "ai_sent", "hypotheses", "user_claims", "second_opinions", "judgements", "people", "theme_runs", "themes",

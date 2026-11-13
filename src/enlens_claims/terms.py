@@ -47,8 +47,11 @@ MAX_TERMS = 6000
 MEANING_TERMS = 3000      # terms embedded for "possibly the same"
 MEANING_MIN = 0.85        # cosine from which two mutual nearest neighbours are proposed
 _JOIN = re.compile(r"[\s\-‐‑]*")   # what may stand between two words of a term
-LINK_RELATIONS = ("same", "broader", "narrower", "related", "different")
-_INVERSE = {"broader": "narrower", "narrower": "broader"}
+LINK_RELATIONS = ("same", "broader", "narrower", "related", "different",
+                  # 0.18.1 (D2, textrelations.py): "X leads to Y" (from a to b; seen from b: effect_of), "X instead of Y"
+                  "effect", "effect_of", "replaces", "replaced_by")
+_INVERSE = {"broader": "narrower", "narrower": "broader", "effect": "effect_of", "effect_of": "effect",
+            "replaces": "replaced_by", "replaced_by": "replaces"}
 
 
 def term_id(stems: str) -> str:
@@ -541,10 +544,21 @@ def build(ws: Workspace, progress: Callable[[int, int], None] | None = None,
             store.close()
 
 
+def _evidence() -> str:
+    """0.18.1 (K2): the condition that leaves out the passages of theory documents (docrole.py), which the glossary
+    and key terms never count."""
+    from .docrole import evidence_sql
+
+    return evidence_sql()
+
+
 def _body_docs(ws: Workspace) -> dict[str, int]:
-    """The documents with body text, in order, and the number of their body passages."""
-    return {r[0]: r[1] for r in ws.query("SELECT doc_id, COUNT(*) FROM passages WHERE section='body' "
-                                         "GROUP BY doc_id ORDER BY doc_id")}
+    """The documents with body text, in order, and the number of their body passages. 0.18.1 (K2): not the theory
+    documents, which never count for key terms or the glossary's counts."""
+    from .docrole import evidence_sql
+
+    return {r[0]: r[1] for r in ws.query(f"SELECT doc_id, COUNT(*) FROM passages WHERE section='body' AND "
+                                         f"{evidence_sql()} GROUP BY doc_id ORDER BY doc_id")}
 
 
 def _body_rows(ws: Workspace, doc_id: str) -> list:
@@ -872,6 +886,11 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
             cx.execute("INSERT OR REPLACE INTO concept_links VALUES (?,?,?,?,?,?,?,?,?)",
                        (a, b, "same", "abbreviation", 1.0, f"{long} ({short})", short, None, now()))
             n_abbr += 1
+        # 0.18.1 (D2): links the sentences state ("X such as Y", "X leads to Y"), proposed, never confirmed by
+        # themselves
+        from . import textrelations
+
+        textrelations.find(cx)
         ws.set_meta("glossary_corpus_version", version, cx)   # 0.17.2: see store.GLOSSARY_META
         # an ENLENS before 0.17.2 notes its builds here: from now on this build is the one in force
         cx.execute("DELETE FROM meta WHERE key='terms_corpus_version'")
@@ -1354,12 +1373,17 @@ def _related(ws: Workspace, ids: list[str], all_links: list[dict]) -> dict:
         if lk["a"] != mine:  # relations are stored from a to b: seen from this concept, broader means narrower
             rel = _INVERSE.get(rel, rel)
         state = "confirmed" if lk["confirmed"] else "proposed"
-        linked.append({"term_id": other, "label": info[other]["label"], "relation": rel, "source": lk["source"],
-                       "state": state, "confidence": lk["confidence"], "quote_a": lk["quote_a"], "quote_b": lk["quote_b"],
-                       "a": lk["a"], "b": lk["b"], "decision": lk["decision"],
-                       "this_term": mine})
+        item = {"term_id": other, "label": info[other]["label"], "relation": rel, "source": lk["source"],
+                "state": state, "confidence": lk["confidence"], "quote_a": lk["quote_a"], "quote_b": lk["quote_b"],
+                "a": lk["a"], "b": lk["b"], "decision": lk["decision"],
+                "this_term": mine}
+        if lk["source"] == "pattern":  # 0.18.1 (D2): the sentences it was found in, each with its document and page
+            from . import textrelations
+
+            item["sentences"] = textrelations.sentences(ws._conn(), lk["a"], lk["b"])
+        linked.append(item)
     # co-occurrence
-    n_pass = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'") or 1)
+    n_pass = int(ws.scalar(f"SELECT COUNT(*) FROM passages WHERE section='body' AND {_evidence()}") or 1)
     q = ",".join("?" * len(ids))
     mine = int(ws.scalar(f"SELECT COUNT(DISTINCT passage_id) FROM term_mentions WHERE term_id IN ({q})", ids) or 0)
     co = []
@@ -1485,7 +1509,7 @@ def key_terms(ws: Workspace, doc_id: str | None = None, passage_id: str | None =
     else:
         rows = ws.query("SELECT m.term_id, COUNT(*) AS tf, t.label, t.stems, t.passages AS df FROM term_mentions m "
                         "JOIN terms t ON t.term_id=m.term_id WHERE m.passage_id=? GROUP BY m.term_id", (passage_id,))
-        total = int(ws.scalar("SELECT COUNT(*) FROM passages WHERE section='body'") or 1)
+        total = int(ws.scalar(f"SELECT COUNT(*) FROM passages WHERE section='body' AND {_evidence()}") or 1)
     scored = []
     for r in rows:
         idf = math.log((1 + total) / (1 + r["df"])) + 1

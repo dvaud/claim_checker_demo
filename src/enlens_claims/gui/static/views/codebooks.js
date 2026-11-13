@@ -78,6 +78,7 @@ export async function newCodebook(start = "fresh", opts = {}) {
   const whereSel = choice({ label: "Kept", value: where, options: [["project", "With this project"], ["home", "With all my projects"]], onPick: (w) => { where = w; } });
   const STARTS = [["fresh", "Start fresh", "An empty codebook: add codes and groups yourself.", "plus"],
     ["themes", "From the themes", "The themes found in the documents become draft codes: short names made of their names, their descriptions, key terms and best passages. Tick the ones to keep.", "shapes"],
+    ["theory", "From a theory document", "The concepts of a theory you read the documents through (terms it defines, its headings, words it uses often) become draft codes, each with its definition quoted from the theory and its page. Examples come only from the evidence, when you tick them. No AI.", "book-marked"],
     ["copy", "A copy of a codebook", "The SDG targets or one of yours, to change.", "copy"],
     ["csv", "From a CSV file", "Columns code and description (and group, group_name, when_to_use, when_not_to_use, keywords, examples).", "upload"]];
   let fws = [];
@@ -91,7 +92,7 @@ export async function newCodebook(start = "fresh", opts = {}) {
     onPick: (k) => {
       start = k; drawExtra();
       const go = startSel.closest("dialog") && startSel.closest("dialog").querySelector(".dialog-actions .btn-primary");
-      if (go) go.textContent = start === "themes" ? "Next" : "Create";   // themes: a second step to tick them
+      if (go) go.textContent = start === "themes" || start === "theory" ? "Next" : "Create";   // themes, theory: a second step to tick them
     } });
   drawExtra();
   const err = h("div", { class: "field-error", role: "alert" });
@@ -100,7 +101,7 @@ export async function newCodebook(start = "fresh", opts = {}) {
     body: h("div", { class: "stack" }, h("div", { class: "fields-2" }, field("Title", title), field("Short name", name, { help: "letters, digits, - and _ (the file's name)" })),
       h("div", { class: "field" }, h("span", { class: "field-label" }, "Kept"), whereSel, h("div", { class: "field-help" }, "All my projects: every project can use it, and a change shows in each. A project can still take its own copy later.")),
       h("div", { class: "field" }, h("span", { class: "field-label" }, "Start"), startSel, extra), err),
-    actions: [{ text: "Cancel", value: null }, { text: start === "themes" ? "Next" : "Create", value: true, primary: true, onClick: async () => {
+    actions: [{ text: "Cancel", value: null }, { text: start === "themes" || start === "theory" ? "Next" : "Create", value: true, primary: true, onClick: async () => {
       err.textContent = "";
       if (!title.value.trim()) { err.textContent = "Give the codebook a title."; title.focus(); return false; }
       return true;
@@ -119,6 +120,11 @@ export async function newCodebook(start = "fresh", opts = {}) {
     const picked = await pickThemes(where === "home");
     if (!picked) return;
     body.source = { codes: picked };
+  }
+  if (start === "theory") {   // 0.18.1 (K2 part 2)
+    const picked = await pickTheory();
+    if (!picked) return;
+    body.source = picked;
   }
   try {
     const res = await api("POST", base, body);
@@ -199,6 +205,47 @@ async function pickThemes(all) {
     if (n > 1) c.code = `${cutAtWord(c.code, 40 - ` (${n})`.length)} (${n})`;
   }
   return picked;
+}
+
+// 0.18.1 (K2 part 2): a theory document's concepts to start from (theorycodes.py, no AI). First the document (theory
+// documents first), then its candidate concepts: each with its definition quoted from the theory and its page, and
+// examples from the evidence documents offered unticked: an example is kept only when you tick it.
+async function pickTheory() {
+  const base = `/api/projects/${P(App.project)}/codebook-theory`;
+  let docs;
+  try { docs = (await api("GET", base)).documents; } catch (e) { showError(e); return null; }
+  if (!docs.length) { toast("Add the theory document to the project first.", "info"); return null; }
+  const theory = docs.filter((d) => d.theory);
+  const docSel = select({ "aria-label": "Theory document" }, docs.map((d) => h("option", { value: d.doc_id }, `${d.title}${d.theory ? " (theory)" : ""}`)));
+  const first = await dialog({ title: "Start from a theory document", body: h("div", { class: "stack" },
+    h("p", {}, theory.length ? "Which theory should the codes come from?" : "No document is marked as theory yet (Documents: a row’s menu, Mark as theory). You can still start from any document."),
+    field("Document", docSel)),
+    actions: [{ text: "Cancel", value: null }, { text: "Next", value: true, primary: true }] });
+  if (!first) return null;
+  let r;
+  try { r = await api("GET", `${base}/${P(docSel.value)}`); } catch (e) { showError(e); return null; }
+  if (!r.concepts.length) { toast("No concepts were found in this document: start fresh instead.", "info"); return null; }
+  const HOW = { defined: "defined in the text", heading: "a heading", frequent: "used often" };
+  const rows = [];
+  const list = h("div", { class: "cb-theme-pick cb-theory-pick" });
+  for (const c of r.concepts) {
+    const cb = h("input", { type: "checkbox", checked: c.how === "defined" });
+    const exBoxes = (c.suggested || []).map((e) => [h("input", { type: "checkbox", "aria-label": `Keep this example for ${c.term}` }), e]);
+    rows.push([cb, c, exBoxes]);
+    list.appendChild(h("div", { class: "cb-theme cb-theory" },
+      h("label", { class: "cb-theory-head" }, cb, h("span", {},
+        h("strong", { class: "cb-theme-code" }, c.code.code), h("span", { class: "muted small" }, ` · ${HOW[c.how] || c.how}`),
+        h("span", { class: "cb-theme-desc" }, c.definition ? c.code.description : "No definition found in the text: add one in the editor."))),
+      exBoxes.length ? h("div", { class: "cb-theory-examples" }, h("span", { class: "muted small" }, "Examples from the evidence (tick to keep):"),
+        exBoxes.map(([x, e]) => h("label", { class: "cb-theory-example small" }, x, h("span", {}, `“${e.quote}” `, h("span", { class: "muted" }, `${e.title}${e.page ? `, p. ${e.page}` : ""}`))))) : null));
+  }
+  const ok = await dialog({ title: `Concepts of “${r.title}”`, wide: true,
+    body: h("div", {}, h("p", {}, "Each concept you tick becomes a draft code with its definition quoted from the theory. Terms the text defines are ticked; headings and words it uses often are offered too. You edit them next."), list),
+    actions: [{ text: "Cancel", value: null }, { text: "Make the codebook", value: true, primary: true }] });
+  if (!ok) return null;
+  const codes = rows.filter(([cb]) => cb.checked).map(([, c, ex]) => ({ ...c.code, examples: ex.filter(([x]) => x.checked).map(([, e]) => e) }));
+  if (!codes.length) { toast("Tick at least one concept.", "info"); return null; }
+  return { codes, doc_id: r.doc_id };
 }
 
 // `text` in at most `n` characters, cut before a word (only a single word longer than `n` is cut inside)

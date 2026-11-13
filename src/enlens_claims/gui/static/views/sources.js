@@ -10,6 +10,7 @@ import { aiLabelCard, startKeywordPass, keywordLabel, SOURCE_WORDS, RELEVANCE_WO
 import { colourPicker, editNote, removeNote, useAsEvidence, noteCard } from "./notes.js";
 import { askWhy } from "./versions.js";
 import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
+import { documentRoles, roleTag, roleMenuItem, roleBox } from "./doc-role.js";   // 0.18.1 K2: theory documents
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
 const OK_EXT = ["pdf", "docx", "html", "htm", "txt", "md", "zip"];
@@ -261,9 +262,10 @@ export async function renderSources(view) {
   let pa = {};                // the project's AI-access info, as last drawn
   let countsEl = null, shieldNote = null, tbody = null;
   const rows = new Map();     // doc_id -> its row
+  let roles = {};             // 0.18.1 (K2): doc_id -> "theory"
   async function reloadDocs() {
     let r;
-    try { r = await api("GET", `/api/projects/${P(project)}/documents`); } catch (e) { failedLoad(docsBox, e); return; }
+    try { [r, roles] = await Promise.all([api("GET", `/api/projects/${P(project)}/documents`), documentRoles(project)]); } catch (e) { failedLoad(docsBox, e); return; }
     drawDocs(r);
   }
   const countsNode = () => {
@@ -316,13 +318,14 @@ export async function renderSources(view) {
         h("td", { class: "pick-col" }, c),
         h("td", { class: "doc-cell" }, h("div", { class: "doc-title", title: d.title || d.file }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
           proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
+          roleTag(roles[d.doc_id]),   // 0.18.1 K2: the lens, not the evidence
           h("div", { class: "doc-file" }, ...String(d.file || "").split(/(?<=[_-])/).flatMap((seg) => [seg, h("wbr")])),   // may break after _ or -, never before its extension
           d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null,
           // 0.14.3: a row's actions sit under its title, where they are always in view (the table was wider than the
           // page and its last column was out of sight). 0.17.0: the rare and lasting one, Remove, is in the row's menu,
           // not a red button under every title (DESIGN 4.20)
           h("div", { class: "doc-actions" },
-            menu({ label: `More for ${d.title || d.file}`, items: [{ text: "Remove…", icon: "trash", danger: true, onClick: () => removeDoc(d) }] }))),
+            menu({ label: `More for ${d.title || d.file}`, items: [roleMenuItem(project, d, roles[d.doc_id], () => reloadDocs()), { text: "Remove…", icon: "trash", danger: true, onClick: () => removeDoc(d) }] }))),
         h("td", { "data-label": "Type", class: "fact" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
         h("td", { "data-label": "Added", class: "fact small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
@@ -439,7 +442,7 @@ export async function renderSources(view) {
         h("p", {}, h("strong", {}, `${fmt.num(n)} ${n === 1 ? "document was" : "documents were"} read by an earlier reader of ENLENS.`),
           ` ${n === 1 ? "It keeps" : "They keep"} that reading, so your quotes and judgements stay where they are. `,
           older.some((d) => (d.reader || 1) < 3) ? "The new reader reads two columns in the right order, sets running heads, page numbers and the like aside, keeps tables as tables and repairs words broken over lines."
-            : READER_4_NEWS),
+            : older.some((d) => d.reader === 3) ? READER_4_NEWS : READER_5_NEWS),
         h("div", { class: "btn-row docs-nr-actions" },
           button({ kind: "main", sm: true, onClick: () => startNr(sel.length ? sel : older, !!sel.length) }, icon("layers", { size: 13 }),
             sel.length ? `Read the ${sel.length === 1 ? "selected one" : `${fmt.num(sel.length)} selected`} with the new reader` : n === 1 ? "Read it with the new reader" : `Read all ${fmt.num(n)} with the new reader`),
@@ -596,14 +599,17 @@ export async function renderSources(view) {
 // 0.15: how a document was read, in the list: one that read badly or has something to check (0.15.7: until the
 // person marks the reading as checked), or one read by an earlier reader (0.15.7: also 0.15.0's; its link opens the
 // preview of the move)
-let newReader = 4;  // ingest.READER, as the list of documents says it
+let newReader = 5;  // ingest.READER, as the list of documents says it
 // 0.17.2: what reader 4 reads otherwise than reader 3 (only text files and Word files can change)
 // 0.17.2: reader 4 reads only text and Word files otherwise than reader 3, so a reader-3 PDF or web page is not offered
 // it (it would read the same); documents of earlier readers are offered it whatever their kind
+// 0.18.1: from reader 5 a plain text file reads the same as by reader 4 (reader 5 changes tables, figures and pictures),
+// so a reader-4 text file is not offered the move
 function newReaderFor(d, latest) {
   const r = d.reader || 1;
-  return r < latest && !(r === 3 && latest === 4 && !["text", "docx"].includes(d.kind));
+  return r < latest && !(r === 3 && latest === 4 && !["text", "docx"].includes(d.kind)) && !(r === 4 && latest === 5 && d.kind === "text");
 }
+const READER_5_NEWS = "The new reader also finds tables from their ruled lines, joins a table that runs on to the next page, and shows figures and pictures with their captions (drawn from the original PDF, never stored). Other text reads the same.";
 const READER_4_NEWS = "The new reader takes each line of a text file without blank lines between its paragraphs as a paragraph of its own, and reads the text in a Word file's content controls and a table inside a table once. Other documents read the same.";
 function readingNote(d) {
   const href = `#/doc/${encodeURIComponent(d.doc_id)}?tab=reading`;
@@ -696,6 +702,7 @@ export async function renderDocument(view, [docId], query) {
         originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
         copyBtn),
       span ? h("p", { class: "muted small dv-span-note" }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null] }));
+  view.appendChild(await roleBox(project, docId, d.title || d.file || "this document"));   // 0.18.1 K2: theory or evidence
 
   // ----------------------------------------------------------------- the text, with layers of highlights
   const nodeAt = new WeakMap();        // text node -> document offset of its first character
@@ -712,6 +719,62 @@ export async function renderDocument(view, [docId], query) {
   // (running heads, page numbers, front and back matter, footnotes, tables...) is folded under "Left out of the text",
   // each with Restore; every block that counts has Leave out.
   let leftFold = null, lastPage = null;
+  // 0.18.1 (reader 5): a figure with its place on a PDF page whose pictures can be drawn shows its picture in the text,
+  // where it stands, with its caption and the way to its page; it is never read (its words stay out of the passages),
+  // so it is not folded under "Left out of the text". Without a box (a Word file's or web page's picture: its
+  // alternative text only), without page pictures, or when its picture cannot be drawn, it is folded as before.
+  const figureFailed = new Set();      // figures whose picture could not be drawn: folded, as before
+  const figureEls = new Map();         // n -> its <figure>, kept so a repaint does not load the picture again
+  // (reader 5 only: an earlier reader's "figure" is the words inside a figure, folded with its Restore, review 9)
+  const shownFigure = (b) => reading && (d.reader || 1) >= 5 && b.kind === "figure" && !!b.box && !!d.page_images && !figureFailed.has(b.n);
+  // a figure's caption: the caption block just after it, else just before it
+  function captionOf(b) {
+    const i = loaded.indexOf(b);
+    if (i < 0) return null;
+    for (const j of [i + 1, i - 1]) if (loaded[j] && loaded[j].kind === "caption") return loaded[j];
+    return null;
+  }
+  function figureBody(b, decos) {
+    const cap = captionOf(b);
+    let el = figureEls.get(b.n);
+    if (!el) {
+      const img = h("img", { class: "dv-figure-img", loading: "lazy", decoding: "async",
+        src: `${docBase}/figures/${b.n}.png?scale=1.5&token=${encodeURIComponent(TOKEN)}`,
+        alt: cap ? cap.text : `Figure on page ${b.page}` });
+      img.addEventListener("error", () => figureGone(b));
+      el = { fig: h("figure", { class: "dv-figure" }), img, capEl: h("figcaption", { class: "small muted dv-figure-cap" }),
+        words: h("div", { class: "dv-figure-words" }) };
+      el.fig.append(img, el.capEl,
+        h("div", { class: "dv-figure-act" }, link({ kind: "jump", onClick: () => openPageAt(b.page) }, icon("file-text", { size: 12 }), "Open the page")),
+        el.words);
+      figureEls.set(b.n, el);
+    }
+    if (cap) el.img.alt = cap.text;
+    el.capEl.textContent = cap ? cap.text : "";
+    el.capEl.hidden = !cap;
+    // the words inside the figure, when it has any: out of the passages, behind a small fold
+    replace(el.words, (b.text || "").trim() ? fold({ sm: true }, "Words in the figure", blockText({ ...b, kind: "figure-words" }, decos)) : null);
+    return el.fig;
+  }
+  // its picture could not be drawn (the original is gone, or the page cannot be read): folded as before, silently
+  function figureGone(b) {
+    if (figureFailed.has(b.n)) return;
+    figureFailed.add(b.n);
+    figureEls.delete(b.n);
+    const r = rows.get(b.n);
+    if (!r) return;
+    r.row.classList.add("dv-out");
+    r.row.classList.remove("dv-figure-row");
+    const f = h("details", { class: "dv-fold" }, h("summary", {}, icon("chevron-right", { size: 13 }), h("span", {}, "Left out of the text: ", kindCount("figure", 1))));
+    r.row.replaceWith(f);
+    f.appendChild(r.row);
+    r.sig = null;
+    replace(r.body, blockText(b, []));
+  }
+  function openPageAt(page) {
+    openTab("page");
+    if (panels.page && panels.page.goTo) panels.page.goTo(page);
+  }
   // the label column: where the block is cited, a mark when a person changed it, and (on hover) its actions
   function labelParts(b) {
     return [b.label ? h("b", {}, b.label) : null,
@@ -725,7 +788,7 @@ export async function renderDocument(view, [docId], query) {
     for (const b of bs) {
       if (rows.has(b.n)) continue;     // drawn already: a block is on the page once, so blockAt’s search holds
       const body = h("div", { class: "dv-body" });
-      const kindCls = b.kind ? ` dv-k-${b.kind}${b.included === false ? " dv-out" : ""}${b.changed ? " dv-changed" : ""}${b.joined ? " dv-joined" : ""}` : "";
+      const kindCls = b.kind ? ` dv-k-${b.kind}${b.included === false && !shownFigure(b) ? " dv-out" : ""}${shownFigure(b) ? " dv-figure-row" : ""}${b.changed ? " dv-changed" : ""}${b.joined ? " dv-joined" : ""}` : "";
       const label = h("div", { class: "pp" }, labelParts(b));
       const row = h("div", { class: "passage-row" + kindCls, "data-found": hit >= 0 && b.n === blocks[hit].n ? "true" : null }, label, body);
       row.id = `block-${b.n}`;
@@ -744,7 +807,7 @@ export async function renderDocument(view, [docId], query) {
       leftFold = null;
       list.insertBefore(h("div", { class: "dv-page-mark", id: `page-${b.page}` }, h("span", {}, `Page ${b.page}`)), selBar);
     }
-    if (reading && b.included === false && b.kind !== "table") {
+    if (reading && b.included === false && b.kind !== "table" && !shownFigure(b)) {
       if (!leftFold) {
         leftFold = { el: h("details", { class: "dv-fold" }), kinds: new Map() };
         leftFold.sum = h("summary", {});
@@ -763,6 +826,7 @@ export async function renderDocument(view, [docId], query) {
   }
   let showLeftOut = !!session(`leftout:${docId}`);
   function blockActions(b) {
+    if (b.kind === "figure" && (d.reader || 1) >= 5) return null;   // 0.18.1: a reader-5 figure is never read: nothing to leave out or restore
     const wrap = h("div", { class: "dv-act" });
     const where = b.label || `${b.kind_text || "text"}${b.page ? `, page ${b.page}` : ""}`;
     const btn = b.included === false
@@ -795,7 +859,7 @@ export async function renderDocument(view, [docId], query) {
   async function changeIncluded(b, included, btn, alike) {
     const hadFocus = list.contains(document.activeElement);
     const r0 = rows.get(b.n);
-    const greyNow = !included && r0 && r0.row.parentElement === list && b.kind !== "table";
+    const greyNow = !included && r0 && r0.row.parentElement === list && b.kind !== "table" && !shownFigure(b);
     if (greyNow) r0.row.classList.add("dv-leaving");  // at once: the answer from the app follows
     let r;
     try { r = await api("PUT", `${docBase}/blocks/${b.n}`, alike ? { included, alike: true } : { included }); }
@@ -854,7 +918,7 @@ export async function renderDocument(view, [docId], query) {
   // `clicked`: the block whose button was pressed. Returns whether a block that was on the screen folded away.
   async function showChange(res, clicked, hadFocus) {
     const now = new Map((res.blocks || []).map((x) => [x.n, x]));
-    const folds = (b) => b.included === false && b.kind !== "table";   // a left-out table stays in the text
+    const folds = (b) => b.included === false && b.kind !== "table" && !shownFigure(b);   // a left-out table (and a figure shown) stays in the text
     // which fold each left-out block will be in (named by its first block), laid out as place() will lay them out,
     // and which of those will be open: shown, or holding a block whose fold is open now
     const key = new Map();
@@ -1011,10 +1075,12 @@ export async function renderDocument(view, [docId], query) {
       open = open.filter((x) => x.end > b.start);   // ended before this block: no later block has it either
       const r = rows.get(b.n);
       const mine = open.filter((x) => x.start < b.end);
-      const sig = mine.map((x) => `${x.start}-${x.end}-${x.cls}-${x.term || ""}-${x.note || ""}`).join("|");
+      const fig = shownFigure(b);
+      const sig = mine.map((x) => `${x.start}-${x.end}-${x.cls}-${x.term || ""}-${x.note || ""}`).join("|")
+        + (fig ? `|fig:${(captionOf(b) || {}).n ?? ""}` : "");   // its caption may come with the next blocks loaded
       if (r.sig === sig) continue;
       r.sig = sig;
-      replace(r.body, blockText(b, mine));
+      replace(r.body, fig ? figureBody(b, mine) : blockText(b, mine));
     }
   }
   // A block’s text cut at its headings (as blockNode does), each piece under the decorations that cover it. The
@@ -1327,7 +1393,8 @@ export async function renderDocument(view, [docId], query) {
       older ? notice({ kind: "info" }, h("div", {},
         h("p", {}, before15 ? `Read by the reader of ENLENS before 0.15. ENLENS ${App.state.version || ""} has a new reader: it reads two columns in the right order, sets running heads, page numbers, author details, acknowledgements and the like aside, keeps tables as tables and repairs words broken over lines.`
           : d.reader === 2 ? `Read by the reader of ENLENS 0.15.0. The reader of ENLENS ${App.state.version || ""} also sets running heads, page numbers, contents pages and indexes aside in text files and books, finds their headings and paragraphs, and puts apart words that ran together.`
-          : `Read by the reader of ENLENS 0.15.1 to 0.17.1. ${READER_4_NEWS}`),
+          : d.reader === 3 ? `Read by the reader of ENLENS 0.15.1 to 0.17.1. ${READER_4_NEWS}`
+          : `Read by the reader of ENLENS 0.17.2 to 0.18.0. ${READER_5_NEWS}`),
         h("p", { class: "small" }, "Documents already in a project keep their reading, so every quote and judgement in them stays where it is, until you move one over."))) : null,
       // a reading to check needs you: an attention notice; a good one is a quiet line with the tick (DESIGN 3.3, 4.12)
       !before15 && qual ? (rep.quality === "good" ? h("p", { class: "dv-quality small" }, icon("check", { size: 14 }), ` ${qual}`)
@@ -1490,7 +1557,8 @@ export async function renderDocument(view, [docId], query) {
     rowWatchers.add(seen);
     cleanups.push(() => { rowWatchers.delete(seen); seen.disconnect(); });
     go((hit >= 0 && blocks[hit].page) || (loaded[0] && loaded[0].page) || 1, false);
-    return { el, live: drawBoxes };   // 0.16: Restore and Leave out change the outlines (solid or dashed)
+    // 0.16: Restore and Leave out change the outlines (solid or dashed); 0.18.1: a figure's "Open the page"
+    return { el, live: drawBoxes, goTo: (p) => go(p, false) };
   }
 
   // ---- Codes (F2)

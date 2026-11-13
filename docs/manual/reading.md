@@ -20,6 +20,7 @@ where it is.
 | 2 | 0.15.0 | PDFs by their layout: columns, tables, what to set aside. |
 | 3 | 0.15.1 | Reader 2, plus text files and books: running heads, page numbers, paragraphs and headings found from the text alone. |
 | 4 | 0.17.2 | Reader 3, plus: a text file with one paragraph per line, and a Word file's content controls and tables inside tables (see *What reader 4 changed* below). PDFs and web pages read as with reader 3. |
+| 5 | 0.18.1 | Reader 4, plus: tables found from their ruled lines and joined across pages, figures as blocks of their own with their captions, and a Word file's or web page's pictures by their alternative text (see *What reader 5 changed* below). Plain text files read as with reader 4. |
 
 ## What the reader does
 
@@ -33,8 +34,13 @@ has; without it, it reads the PDF's text layer, without columns or tables):
   licence notes (*end notes*), footnotes, and the reference list. They stay in the document and in a search of all
   its text, but searches, codes, themes and checks do not read them. So themes no longer form around journal names,
   and checks no longer read a funding note.
-- **Tables are kept as tables**, with their caption, rows and cells. They are left out of the passages (a table read
-  as prose garbles a passage), and each can be downloaded for Excel.
+- **Tables are kept as tables**, with their caption, rows and cells: found from the gaps between their columns, and
+  (reader 5) from the lines a PDF draws, a grid or rules above, under the header and below. A table that runs on to
+  the next page is one table, its header row once. Tables are left out of the passages (a table read as prose garbles
+  a passage), and each can be downloaded for Excel.
+- **Figures are blocks of their own** (reader 5): a chart drawn in lines and boxes, or a picture, with its page, where
+  it stands on the page and the words inside it. Those words stay out of the passages. Its caption (*Figure 3. …*)
+  stays a block of its own and counts for checks like any paragraph.
 - **Words are repaired**: a word cut at a line end is joined ("exam-ple" → "example"), a compound keeps its hyphen
   ("long-term"), words that ran together are split only where the document itself writes them apart ("ofthe" → "of
   the"), and ligatures (ﬁ, ﬂ), odd spaces and accents set apart from their letter are put right.
@@ -45,7 +51,9 @@ has; without it, it reads the PDF's text layer, without columns or tables):
 **Word files, web pages and text files** are read with the same repairs, their headings and reference list set aside
 in the same way. A Word file's tables are read row by row, a table inside a table's cell after the row that holds it;
 text in its content controls (a cover page, a contents box, form fields) is read like any other text, and Word's own
-table of contents is set aside as a book's is. Footnotes, comments and text boxes are not read.
+table of contents is set aside as a book's is. Footnotes, comments and text boxes are not read. A picture in a Word
+file or web page (reader 5) is kept by its alternative text, as a block left out of the passages, without the
+picture itself.
 
 **Text files and books.** Many `.txt` and `.md` files are text copied out of a PDF by a converter: every running
 head and page number is still in the text, while the pages, the headings and often the spaces between words are
@@ -68,6 +76,21 @@ gone. Reader 3 reads such files by rules on the text alone (no AI):
 - **A table inside a table's cell** in a Word file was read three times; it is now read once.
 - **Text in a Word file's content controls** (and in custom XML) was left out without a word; it is now read.
 
+**What reader 5 changed.** Reader 5 reads every document as reader 4 does, except:
+
+- **Tables from their rules.** A table whose cells hold sentences, or whose numbers are aligned on the right, was read
+  as paragraphs, because it has no clear gaps between its columns. Reader 5 also uses the lines and boxes the PDF
+  draws, so such a table is found with its rows and cells, and left out of the passages.
+- **A table over two pages** is one table: the table at the foot of a page and the one at the head of the next, with
+  the same columns and width, are joined, and a header row the next page repeats is kept once.
+- **Figures.** A chart or a picture is one block, with its caption beside it. Its words no longer slip into the text
+  around it.
+- **Pictures in Word files and web pages** are kept by their alternative text.
+
+The picture itself is never stored and never sent to an AI: the reading view draws it from the original PDF when it
+is shown, so a large corpus does not grow. Kept out on purpose: reading the text inside pictures (OCR of figures),
+storing pictures, and tables or figures on scanned pages (a page with no text layer).
+
 > [!TIP]
 > If you have the PDF of a text file, add the PDF instead: it reads better. The *Reading* panel says when a text
 > file looks copied out of a PDF, when many of its words still run together, and when a PDF was read without its
@@ -89,6 +112,12 @@ where it is cited you get:
 | **Text starts here** | On a block in the first third: leaves out everything before it (a book's title pages). *Undo start* takes it back. |
 | **Text ends here** | On a block in the last third: leaves out everything after it (notes, bibliography, index). *Undo end* takes it back. |
 | **Excel** | On a table: downloads it. |
+
+**A figure** (reader 5) shows its picture in the text, where it stands on the page: drawn from the original PDF when
+it is shown, never stored. Beneath it are its caption and **Open the page**, which opens the *Page* panel at its page;
+the words inside it, if any, are under a small fold *Words in the figure*. A figure is never read by searches, codes,
+themes or checks, so it has no *Leave out* or *Restore*. A picture of a Word file or web page, or one whose PDF is no
+longer there, shows only its alternative text or its words, folded under *Left out of the text* as before.
 
 A heading goes with the text under it, and short paragraphs that share a passage go together. Your choice is kept by
 the block's words, so it holds when the document is read again; *restored by you*, *left out by you* or *the text
@@ -114,8 +143,10 @@ as you scroll; click an outline to go to that block.
 
 A document read by an older reader keeps that reading, and the list of documents marks it (*read before 0.15*, or
 *read by an earlier reader*). Its *Reading* panel offers **Read with the new reader** (the mark in the list opens it
-with the preview already started; a PDF or web page read by reader 3 is not offered reader 4, as it would read the
-same):
+with the preview already started). It is offered only where the new reader can change the reading: a PDF or web page
+read by reader 3 was not offered reader 4, and a plain text file read by reader 4 is not offered reader 5, as each
+would read the same. Reader 5 changes PDFs with ruled tables, tables over two pages or figures, and Word files and web
+pages with pictures; the preview says what would change.
 
 ```mermaid
 flowchart LR
@@ -165,6 +196,23 @@ meanwhile, or stop it: documents already moved stay moved.
 two columns, running heads, line numbers, front and back matter, a table, footnotes), reads them with each reader,
 and reports the share of the words kept, the share that belong, whether they come in order, words run together or
 broken apart, and leftover boilerplate.
+
+From 0.18.1, when reader 5 is measured, four more documents of known text are added: a table ruled in a grid with
+sentences in its cells (g), a table with rules above, under the header and below (h), a ruled table over two pages
+with its header repeated (i), and a chart with labels and a picture, each with a caption (j). It then also counts the
+tables, their rows and the figures found. Reader 5 read the six earlier documents as reader 4 does, and the new ones
+better:
+
+| Document | Words that belong, reader 4 → 5 | Table or figure text left in passages | Found by reader 5 |
+| --- | --- | --- | --- |
+| (g) table ruled in a grid | 84.2% → 100% | 0 of 5 → 0 of 5 | 1 table (4 rows) |
+| (h) rules above, under the header, below | 100% → 100% | 0 of 6 → 0 of 6 | 1 table (5 rows) |
+| (i) ruled table over two pages | 97.3% → 100% | 1 of 42 → 0 of 42 | 1 table (41 rows; reader 4: 7) |
+| (j) a chart and a picture, with captions | 93.0% → 100% | 5 of 6 → 0 of 6 | 2 figures |
+
+Over the ten documents, the words that belong rose from 97.4% to 99.97%, and leftover running heads, notes and
+table or figure text fell from 0.6 to 0; the words kept, their order and words run together or broken apart stayed
+the same.
 
 | Option | Adds |
 | --- | --- |

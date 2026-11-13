@@ -225,15 +225,19 @@ class OwnerApi:
         return self._owner_view(name)
 
     def post_owner_question(self, name, qid, q):
-        """{"answer": "follow" | "keep"}: follow the owner record a question is about, or keep the one followed."""
+        """{"answer": "follow" | "keep" | "later"}: follow the owner record a question is about, keep the one followed,
+        or put the question off (*Not now*, 0.18.1: kept for the person in the project, so in every browser)."""
         body = self._body()
         answer = body.get("answer")
-        if answer not in ("follow", "keep"):
-            raise ApiError(400, "Send {\"answer\": \"follow\"} or {\"answer\": \"keep\"}.")
+        if answer not in ("follow", "keep", "later"):
+            raise ApiError(400, "Send {\"answer\": \"follow\"}, {\"answer\": \"keep\"} or {\"answer\": \"later\"}.")
         ws = self.app.ws(name)
         found = next((x for x in _guard(ownership.owner_questions, ws._conn()) if x.get("id") == qid), None)
         if found is None:
             raise ApiError(404, "This question is not asked any more.")
+        if answer == "later":
+            _guard(ownership.put_off, ws, qid)
+            return self._owner_view(name)
         _guard(ownership.follow_owner if answer == "follow" else ownership.keep_owner, ws, found["seq"], found["by"])
         start_due(self.app, name)  # following another owner may make new readings due here
         return self._owner_view(name)

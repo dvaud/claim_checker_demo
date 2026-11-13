@@ -35,7 +35,8 @@ URL = urllib.parse.quote(NAME)
 VIEW = {"owner", "me", "is_owner", "since", "how", "can_claim", "can_take_over", "accept_adds", "people", "proposals",
         "waiting", "to_apply", "documents", "job",
         # roles (DESIGN-roles §7 P1, builder P1): the role, questions, offers, removals, clashes, refused rows, notices
-        "role", "can_write", "can_set_roles", "questions", "offers", "removed", "clashes", "refused", "notices"}
+        "role", "can_write", "can_set_roles", "questions", "offers", "removed", "clashes", "refused", "notices",
+        "later"}  # 0.18.1: questions put off with Not now, kept per person
 PROPOSAL = {"id", "kind", "severity", "doc", "title", "what", "by", "at", "state", "note", "reason", "decided_by",
             "decided_at", "auto", "mine", "can_decide", "can_take_back", "here", "conflicts", "detail",
             "clash"}  # roles (builder P1): who accepted and who declined, when answered both ways

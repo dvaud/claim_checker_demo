@@ -7,12 +7,34 @@ answered both ways), a proposer takes one back; a person answers an offer of a l
 of the shared folder for a random subset in a random order; a zip from one copy to another, the same zip again, an
 older zip later. Person ids are fixed per seed, and the app's clock is a counter.
 
+0.18.1 added:
+- *Take-overs*: a Co-owner, or a Member when no Co-owner was heard of lately, takes the project over
+  (`ownership.take_over`). The app's wall-clock questions are made deterministic for the run: `owner_left` says the owner
+  left only while a take-over is tried (for the owner that copy's person believes in), and `_co_heard_lately` is a coin
+  the seeded generator tosses (no Co-owner heard of lately, or one was). A refusal must agree with that (a Co-owner is
+  never refused; a Member is refused exactly when a Co-owner was heard of). The other copies are then asked who owns
+  the project: a person follows, keeps their owner (`keep_owner`) or says *Not now* (`put_off`) -- also the other way
+  round, a copy that has not heard of the take-over at all. The former owner goes on working offline for a few steps
+  (no round of theirs, but every other step), which is the interesting case.
+- *Zips*: besides any zip between any two copies, a zip from a former owner (by take-over or hand-over) to the new
+  owner, and one the other way.
+- *The documents switch*: a copy turns `folder.set_keep_out` on or off. A person's switch changes only by their own
+  step.
+- *The Team tab opened offline*: a copy settles and views (the look writes proposals and rows without exchanging) and
+  then does no round for a few steps.
+
 After every step:
 (b) no copy's level of a document got looser except by a recorded click of its own person (their own setting, their
     own accept, *Allow here*, or their own proposal of that level);
-(c) no document left a copy except by its person's own removal or a colleague's word (a removal noted in the person's
-    name, kept restorable in `removed_docs` once removed.py is built).
-At the end, after open offers are allowed and rounds until nothing comes (at most 5):
+(c) no document left a copy except by its person's own removal (this step), or by the word of someone who, in that
+    copy's own view after the step, is the owner or a Co-owner. The removal's cause is read from `removed_docs` (the
+    archive every removal by a colleague's word makes: who, when, why), which must be new this step. A late word of a
+    former owner (a person whom the copy no longer follows as the owner, or who is only a Member there) removes
+    nothing.
+At the end every open question about the owner is answered (also one a person kept or put off), all copies following
+the same record for each place (the earliest place first, the smallest writer id among rival records; ids, never
+times), then, after open offers are allowed and rounds until no copy writes a file or a row (at most 5;
+`ENLENS_ROLES_ROUNDS` allows more):
 (a) all copies compute the same owner, roles and documents, and every copy holds the project's documents at the
     project's levels but for kept offers and its own proposals;
 (d) the last round wrote no row of `canon`, `decisions` or `roles`;
@@ -35,7 +57,7 @@ from pathlib import Path
 
 import pytest
 
-from enlens_claims import access, ingest, ownership, people, reread, store
+from enlens_claims import access, ingest, ownership, people, removed, reread, store
 from enlens_claims.sync import folder
 from owner_helpers import TEXTS, leave_out
 from owner_more_helpers import join_zip, send, small_project
@@ -73,6 +95,14 @@ class Run:
     def __init__(self, tmp: Path, mp, seed: int):
         self.tmp, self.seed = tmp, seed
         self.rng = random.Random(seed)
+        self.leaving: str | None = None          # the owner a take-over is being tried against (`owner_left` says "left")
+        self.quiet = True                        # whether no Co-owner was heard of lately (`_co_heard_lately` says not)
+        self.offline: dict[str, int] = {}        # name -> steps left without a round of their own
+        self.former: list[tuple[str, str]] = []  # (former owner, new owner) by take-over or hand-over, by name
+        self.switched: set[str] = set()          # names who turned the documents switch this step
+        mp.setattr(ownership, "owner_left", lambda ws, cx, ch: ("Nothing was heard of the owner for 20 days."
+                                                                if ch and self.leaving == ch[-1]["owner"] else None))
+        mp.setattr(ownership, "_co_heard_lately", lambda cx, ch, me: not self.quiet)
         self.step = 0
         self.trail: list[str] = []
         self.clicks: set[tuple[str, str, str]] = set()     # (person, doc, level) loosened by their own click
@@ -158,6 +188,12 @@ class Run:
             self.add(p, k, reader=1 if k == "old" else None, ai=ai)
             self.say(p, f"added {k} ({self.doc_of(k)}, ai {ai})")
 
+    def name_of(self, pid: str) -> str:
+        return next(q.name for q in self.people if q.id == pid)
+
+    def person(self, name: str) -> Person:
+        return next(q for q in self.people if q.name == name)
+
     def doc_of(self, key: str) -> str:
         return "d" + hashlib.sha1(POOL[key].encode("utf-8")).hexdigest()[:10]
 
@@ -228,6 +264,7 @@ class Run:
             to = self.rng.choice(others)
             with p:
                 ownership.hand_over(p.ws, to, "random")
+            self.former.append((p.name, self.name_of(to)))
             self.say(p, f"handed over to {to}")
 
     def s_decide(self, p: Person) -> None:
@@ -291,7 +328,8 @@ class Run:
 
     def s_rounds(self, p: Person) -> None:
         for q in self.rng.sample(self.people, self.rng.randint(1, 3)):
-            self.sync(q)
+            if q.name not in self.offline:      # (a copy working offline has no round)
+                self.sync(q)
 
     def s_zip(self, p: Person) -> None:
         to = self.rng.choice([q for q in self.people if q is not p])
@@ -308,19 +346,113 @@ class Run:
                 ownership.move_now(to.ws, d)
         self.say(to, f"brought in {f.name}")
 
+    # ---- 0.18.1: take-overs, the questions they ask, the documents switch, the Team tab offline ---------------------
+    def s_take_over(self, p: Person) -> None:
+        v = self.view(p)
+        if v["is_owner"] or not v["owner"]:
+            return
+        old = v["owner"]["id"]
+        member = v["role"] != "co"
+        self.leaving, self.quiet = old, self.rng.random() < 0.5
+        try:
+            with p:
+                ownership.take_over(p.ws, "random")
+            refused = None
+        except ownership.NotAllowed as e:
+            refused = str(e)
+        finally:
+            self.leaving = None
+        if refused is not None and "once before at this point" in refused:
+            # 0.18.1: a second take-over at the same place (after another owner) would not reach the others: refused
+            self.say(p, f"tried to take over from {self.name_of(old)} again at the same place: refused")
+            return
+        if refused is not None:
+            self.check(member and not self.quiet, f"{p.name} ({v['role']}) was refused a take-over: {refused}")
+            self.say(p, f"tried to take over from {self.name_of(old)}: refused (a Co-owner was heard of)")
+            return
+        self.check(not member or self.quiet, f"{p.name} (a Member) took the project over though a Co-owner was heard of")
+        self.check(self.view(p)["is_owner"], f"{p.name} took the project over and is not its owner")
+        self.former.append((self.name_of(old), p.name))
+        gone = self.person(self.name_of(old))
+        if gone is not p:
+            self.offline[gone.name] = self.rng.randint(2, 6)   # the former owner goes on working, offline
+        self.say(p, f"took the project over from {gone.name} ({v['role']}); {gone.name} offline for "
+                    f"{self.offline.get(gone.name)} steps")
+
+    def s_answer_owner(self, p: Person) -> None:
+        """A person answers a question about who owns the project: follow, keep their owner, or *Not now*."""
+        qs = sorted(self.view(p)["questions"], key=lambda q: (q["seq"], q["by"]))
+        if not qs:
+            return
+        q = self.rng.choice(qs)
+        how = self.rng.choices(["follow", "keep", "later"], [5, 2, 3])[0]
+        with p:
+            if how == "follow":
+                ownership.follow_owner(p.ws, q["seq"], q["by"])
+                for d in ownership.moves_due(p.ws):
+                    ownership.move_now(p.ws, d)
+            elif how == "keep":
+                ownership.keep_owner(p.ws, q["seq"], q["by"])
+            else:
+                ownership.put_off(p.ws, q["id"])
+        self.say(p, f"{how} {q['kind']} of place {q['seq']} by {self.name_of(q['by'])} (owner {self.name_of(q['owner'])})")
+
+    def s_keep_out(self, p: Person) -> None:
+        on = self.rng.random() < 0.5
+        with p:
+            folder.set_keep_out(p.ws, on)
+        self.switched.add(p.name)
+        self.say(p, f"documents switch {'on' if on else 'off'}")
+
+    def s_team_tab(self, p: Person) -> None:
+        """The Team tab opened in a copy that then does no round for a while (its look writes without exchanging)."""
+        self.view(p)
+        self.offline[p.name] = max(self.offline.get(p.name, 0), self.rng.randint(1, 5))
+        self.say(p, f"opened the Team tab, offline for {self.offline[p.name]} steps")
+
+    def s_zip_owner(self, p: Person) -> None:
+        """A zip between a former owner and the new one (either way), also an old one later."""
+        if not self.former:
+            return
+        old, new = (self.person(n) for n in self.rng.choice(self.former))
+        src, to = (old, new) if self.rng.random() < 0.5 else (new, old)
+        if src is to:
+            return
+        f = send(src)
+        self.zips.append((src.name, f))
+        to.bring_in(f)
+        with to:
+            for d in ownership.moves_due(to.ws):
+                ownership.move_now(to.ws, d)
+        self.say(to, f"brought in {f.name} (a zip of {src.name}, between a former owner and the new one)")
+
     STEPS = (("add", 2), ("remove", 2), ("tighten", 2), ("loosen", 3), ("blocks", 2), ("reread", 1), ("role", 1),
              ("hand_over", 0.3), ("decide", 5), ("both", 3), ("take_back", 1), ("offer", 2), ("rounds", 4),
-             ("zip", 2))
+             ("zip", 2), ("take_over", 3), ("answer_owner", 6), ("keep_out", 2), ("team_tab", 2), ("zip_owner", 2))
 
     def one_step(self) -> None:
         self.step += 1
-        before = {p.name: (set(self.docs(p)), self.levels(p)) for p in self.people}
-        self.removed_by = set()
+        before = {p.name: self.snapshot(p) for p in self.people}
+        self.removed_by, self.switched = set(), set()
+        for n in list(self.offline):
+            self.offline[n] -= 1
+            if self.offline[n] <= 0:
+                del self.offline[n]
         a = self.rng.choices([a for a, _w in self.STEPS], [w for _a, w in self.STEPS])[0]
         p = self.rng.choice(self.people)
-        if a in ("role", "hand_over", "decide"):  # (by someone who may, as far as their copy knows)
-            may = [q for q in self.people if (self.view(q)["is_owner"] if a != "decide" else
-                                              any(x["can_decide"] for x in self.view(q)["proposals"]))]
+        if a in ("role", "hand_over", "decide", "take_over", "answer_owner"):  # (by someone who may, as far as their
+            # copy knows)
+            def may_do(q: Person) -> bool:
+                v = self.view(q)
+                if a == "decide":
+                    return any(x["can_decide"] for x in v["proposals"])
+                if a == "take_over":
+                    return not v["is_owner"]
+                if a == "answer_owner":
+                    return bool(v["questions"])
+                return v["is_owner"]
+
+            may = [q for q in self.people if may_do(q)]
             if not may:
                 self.after_step(before)
                 return
@@ -331,43 +463,98 @@ class Run:
             getattr(self, f"s_{a}")(p)
         self.after_step(before)
 
+    def snapshot(self, p: Person) -> tuple:
+        """What a copy held before a step: its documents, its levels, its removal archives (`removed_docs`), its switch."""
+        with p:
+            archives = {r[0]: tuple(r[1:]) for r in p.ws.query("SELECT doc_id, at, by, cause, archive FROM removed_docs")}
+            switch = bool(folder.keep_out_state(p.ws)["mine"])
+        return set(self.docs(p)), self.levels(p), archives, switch
+
     def after_step(self, before: dict) -> None:
         for p in self.people:
-            docs_was, lv_was = before[p.name]
+            docs_was, lv_was, arch_was, switch_was = before[p.name]
             docs_now, lv_now = set(self.docs(p)), self.levels(p)
             with p:
-                mine = {r[0] for r in p.ws.query("SELECT key FROM sync_removed WHERE kind='document' AND person_id=?",
-                                                 (p.id,))}
-                kept = {r[0] for r in p.ws.query("SELECT doc_id FROM removed_docs")}
-                others = {r[0] for r in p.ws.query("SELECT key FROM sync_removed WHERE kind='document' AND "
-                                                   "person_id != ?", (p.id,))}
+                arch = {r[0]: tuple(r[1:]) for r in p.ws.query("SELECT doc_id, at, by, cause, archive FROM "
+                                                               "removed_docs")}
+                switch = bool(folder.keep_out_state(p.ws)["mine"])
+                owner = ownership.owner(p.ws._conn())
+                role = {x: ownership.role_of(p.ws._conn(), x) for x in {r[1] for r in arch.values() if r[1]}}
             # (b) no looser level but by a click of this copy's own person
             for d in docs_was & docs_now:
                 a, b = lv_was.get(d), lv_now.get(d)
                 if a and b and RANK[b] < RANK[a]:  # (a click asking for more may get less: a Member's is held)
                     self.check(any(RANK[b] >= RANK[c] for x, y, c in self.clicks if (x, y) == (p.name, d)),
                                f"{p.name}'s copy loosened {d} ({a} -> {b}) without a click of theirs")
-            # (c) no document left but by its person's own removal or a colleague's word
+            # (b) a person's documents switch changes only by their own hand
+            self.check(switch == switch_was or p.name in self.switched,
+                       f"{p.name}'s documents switch went {'on' if switch else 'off'} without them")
+            # (c) no document left but by its person's own removal, or by the word of someone who, in this copy's own view
+            # after the step, is the owner or a Co-owner (the cause is the archive this step made of it)
             for d in docs_was - docs_now:
-                self.check((p.name, d) in self.removed_by or d in kept or (d in others and d not in mine) or
-                           d in mine, f"{p.name}'s copy lost {d}")
+                if (p.name, d) in self.removed_by:
+                    continue
+                row = arch.get(d)
+                self.check(row is not None and row != arch_was.get(d),
+                           f"{p.name}'s copy lost {d} with no removal of its own and no word recorded for it")
+                at, by, cause, _archive = row
+                self.check(by is not None and role.get(by) in ("owner", "co"),
+                           f"{p.name}'s copy lost {d} by the word of {self.name_of(by) if by in {q.id for q in self.people} else by}"
+                           f" ({cause}), who is {role.get(by)} in {p.name}'s view (owner there: "
+                           f"{self.name_of(owner) if owner else None})")
 
     # ---- the end --------------------------------------------------------------------------------------------------
+    def follow_all(self, p: Person) -> None:
+        """Answer every question about the owner (also one the person kept or put off): this copy follows, place by
+        place, the record the copies agree on: of the rival records for a place, the smallest writer id (then owner id)."""
+        every: dict[int, list[tuple]] = {}
+        for q in self.people:
+            with q:
+                for seq, by, own, after in q.ws.query("SELECT seq, by, owner, after FROM ownership"):
+                    every.setdefault(seq, []).append((by, own, after))
+        prev, seq, want = None, 1, []
+        while True:
+            c = sorted(r for r in set(every.get(seq, [])) if (r[2] or None) == prev)
+            if not c:
+                break
+            want.append((seq, c[0][0], c[0][2]))
+            prev, seq = c[0][1], seq + 1
+        with p:
+            for seq, by, after in want:
+                ch = ownership.chain(p.ws._conn())
+                if len(ch) >= seq and ch[seq - 1]["by"] == by and not [x for x in ownership.owner_questions(p.ws._conn())
+                                                                      if x["seq"] == seq]:
+                    continue
+                if not p.ws.query("SELECT 1 FROM ownership WHERE seq=? AND by=? AND after IS ?", (seq, by, after)):
+                    return      # (the record has not reached this copy yet: a later round, a later try)
+                ownership.follow_owner(p.ws, seq, by)
+                for d in ownership.moves_due(p.ws):
+                    ownership.move_now(p.ws, d)
+        self.say(p, "followed the agreed record of every place")
+
     def quiesce(self) -> dict:
         self.step += 1
+        self.offline.clear()
         for _ in range(3):
             for p in self.people:
                 self.sync(p)
             for p in self.people:
+                self.follow_all(p)
+            for p in self.people:
                 self.s_offer(p, every=True)
         last = None
-        for _ in range(5):
+        for p in self.people:
+            self.follow_all(p)
+            self.check(not self.view(p)["questions"], f"{p.name} is still asked: {self.view(p)['questions']}")
+        for _ in range(int(os.environ.get("ENLENS_ROLES_ROUNDS") or 5)):
             last = {p.name: _rows(p) for p in self.people}
-            wrote = any((self.sync(p).get("wrote") or {}).get("seq") is not None for p in self.people)
-            if not wrote:
+            # every copy has its round (a list: any() over a generator stopped at the first copy that wrote)
+            wrote = any([(self.sync(p).get("wrote") or {}).get("seq") is not None for p in self.people])
+            # (a round may write a row of its own that only the next round sends: it is not the last one then)
+            if not wrote and {p.name: _rows(p) for p in self.people} == last:
                 break
         else:
-            self.fail("the copies still wrote after 5 rounds")
+            self.fail("the copies still wrote after the rounds allowed")
         # (d) the last round wrote no row of the tables that decide
         self.check({p.name: _rows(p) for p in self.people} == last, "the last round wrote rows")
         # (a) one project, held as it says
@@ -449,6 +636,8 @@ def _clock(monkeypatch, shift: dict[str, int]) -> None:
     for name, mod in list(sys.modules.items()):
         if name.startswith("enlens_claims") and getattr(mod, "now", None) is real:
             monkeypatch.setattr(mod, "now", fake)
+    # (a removal's archive is named and dated by its own clock: the test's too, so two never share a name)
+    monkeypatch.setattr(removed, "_now", lambda: dt.datetime.fromisoformat(fake()).replace(microsecond=0))
 
 
 def _run(tmp: Path, monkeypatch, seed: int, shift: dict[str, int]) -> dict:

@@ -835,7 +835,8 @@ def _free_name(ws: Workspace, name: str) -> str:
 def create(ws: Workspace, name: str, title: str = "", where: str = "project", start: str = "fresh",
            source: dict | None = None, label: str = "code") -> dict:
     """A new codebook. `start`: "fresh" (empty), "themes" (`source`: {"codes": [...]} drafts from `from_themes`, the
-    ones a person kept), "copy" (`source`: {"of": a codebook's name}), "csv" (`source`: {"csv": text})."""
+    ones a person kept), "theory" (0.18.1: `source`: {"codes": [...], "doc_id"} drafts from `theorycodes.candidates`,
+    the ones a person kept, examples from theory documents dropped), "copy" (`source`: {"of": a codebook's name}), "csv" (`source`: {"csv": text})."""
     from . import researchlog
 
     if where not in ("project", "home"):
@@ -862,8 +863,21 @@ def create(ws: Workspace, name: str, title: str = "", where: str = "project", st
             raise ValueError("Tick at least one theme to start from.")
         state["codes"] = picked
         how = f"{len(picked)} theme{'s' if len(picked) != 1 else ''}"
+    elif start == "theory":
+        # 0.18.1 (K2 part 2, theorycodes.py): the concepts of a theory document a person ticked, each with its
+        # definition quoted from the theory; examples only from the evidence documents
+        from . import theorycodes
+
+        picked = theorycodes.keep_evidence_examples(ws, [c for c in (source.get("codes") or []) if isinstance(c, dict)])
+        if not picked:
+            raise ValueError("Tick at least one concept to start from.")
+        state["codes"] = picked
+        doc = ws.query("SELECT title FROM documents WHERE doc_id=?", (str(source.get("doc_id") or ""),))
+        how = (f"{len(picked)} concept{'s' if len(picked) != 1 else ''} of the theory document "
+               f"{researchlog.quoted(doc[0]['title'], 80)}" if doc else
+               f"{len(picked)} concept{'s' if len(picked) != 1 else ''} of a theory document")
     elif start != "fresh":
-        raise ValueError("Start fresh, from themes, from a copy or from a CSV file.")
+        raise ValueError("Start fresh, from themes, from a theory document, from a copy or from a CSV file.")
     clean = _clean_state(state)
     for c in clean["codes"]:
         c["uid"] = _new_uid()

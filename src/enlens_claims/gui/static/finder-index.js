@@ -62,6 +62,10 @@ export const ACTIONS = [
   ["Copy my link", "in Settings › Technical", "#/settings/link", "link", "bookmark link address url open browser"],
   ["Read what's new in this version", "in Settings › Technical", "#/settings/updates", "sparkles", "changelog change log release notes news new version changes update updated whats"],
   // 0.18.1 part A: its actions below this line
+  ["Mark a document as theory", "in Documents, a row’s menu", "#/sources", "book-marked", "theory theoretical framework lens leave out evidence role nicolini meadows"],
+  ["Make a codebook from a theory document", "in Codes", "#/codebooks", "book-marked", "theory concepts definitions codebook framework codes from theory"],
+  ["Find the path between two concepts", "on a concept’s page, in Concepts", "#/concepts", "network", "path chain bridge link connect between two concepts route argument"],
+  ["See a concept over time or across groups", "on a concept’s page, in Concepts", "#/concepts", "clock", "year years time trend change groups compare sets policy academic country"],
   // end of 0.18.1 part A
   // 0.18.1 part B: its actions below this line
   // end of 0.18.1 part B
