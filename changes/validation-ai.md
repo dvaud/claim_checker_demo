@@ -18,3 +18,5 @@
 ### Not yet done
 
 - No reference set of real documents filled in by a person: the gold set is invented, small and in English only.
+- The recorded run is on Claude only. A run on a local model (Ollama) is not recorded yet: it needs a computer with
+  memory to spare for the model.
