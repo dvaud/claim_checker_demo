@@ -198,6 +198,7 @@ class Case:
     # reader 5: how many tables and figures the document holds (None: not counted for this case)
     tables: int | None = None
     figures: int | None = None
+    table_rows: int | None = None    # the rows of all its tables together (a table over two pages has them once)
 
 
 def _full_width(fl: "pdfmake.Flow", text: str, x: float, width: float, font: str, size: float, leading: float) -> None:
@@ -536,7 +537,7 @@ def _make_g(folder: Path) -> Case:
     fl.write(path, title)
     boiler = [" ".join(r) for r in rows]
     return Case("g_ruled_table", title, path, " ".join([title] + paras[:2] + [caption] + paras[2:]), [head] + boiler,
-                "a table ruled in a grid, with sentences in its cells", tables=1, figures=0)
+                "a table ruled in a grid, with sentences in its cells", tables=1, figures=0, table_rows=4)
 
 
 def _make_h(folder: Path) -> Case:
@@ -580,7 +581,7 @@ def _make_h(folder: Path) -> Case:
     boiler = [" ".join(r) for r in [header] + rows]
     return Case("h_booktabs_table", title, path, " ".join([title] + paras[:2] + [caption] + paras[2:]), [head] + boiler,
                 "a table with rules above, under the header and below, and numbers aligned on the right",
-                tables=1, figures=0)
+                tables=1, figures=0, table_rows=5)
 
 
 def _make_i(folder: Path) -> Case:
@@ -627,7 +628,7 @@ def _make_i(folder: Path) -> Case:
     boiler = [" ".join(r) for r in [header] + data]
     return Case("i_table_over_a_page", title, path, " ".join([title] + paras[:2] + [caption] + paras[2:]),
                 [head] + boiler, "a ruled table that runs on to the next page with its header repeated",
-                tables=1, figures=0)
+                tables=1, figures=0, table_rows=41)
 
 
 def _make_j(folder: Path) -> Case:
@@ -821,6 +822,7 @@ def measure_case(path: Path, reader: int, truth: str, boilerplate: list[str] | N
     blocks = getattr(doc, "blocks", None)
     if blocks is not None:
         out["tables_found"] = sum(1 for b in blocks if b.kind == "table")
+        out["table_rows"] = sum(len(b.rows or []) for b in blocks if b.kind == "table")
         out["figures_found"] = sum(1 for b in blocks if b.kind == "figure")
     return out
 
@@ -1071,7 +1073,8 @@ def run(readers: list[int] | None = None, folder: str | Path | None = None, proj
             ok, why = reader_available(r, cases[0].path)
             result["readers"][str(r)] = {"available": ok, "why_not": why}
         for c in cases:
-            row = {"title": c.title, "what": c.what, "readers": {}, "tables": c.tables, "figures": c.figures}
+            row = {"title": c.title, "what": c.what, "readers": {}, "tables": c.tables, "figures": c.figures,
+                   "table_rows": c.table_rows}
             for r in readers:
                 if not result["readers"][str(r)]["available"]:
                     continue
@@ -1180,8 +1183,8 @@ def to_markdown(result: dict) -> str:
     if any(v.get("tables") is not None or v.get("figures") is not None for v in result["known"].values()):
         L += ["### Tables and figures found", "",
               "Reader 5 finds tables from their ruled lines, joins a table that runs over a page, and makes each figure "
-              "or picture a block of its own. Tables and figures found, against how many the document holds "
-              "(for readers before 5, a figure is each piece of text inside a picture).", "",
+              "or picture a block of its own. Tables found (with the rows they hold), and figures found, against what the "
+              "document holds (for readers before 5, a figure is each piece of text inside a picture).", "",
               "| Document | Holds | " + " | ".join(f"Reader {r}" for r in readers) + " |",
               "|---|---|" + "---|" * len(readers)]
         for k, v in result["known"].items():
@@ -1191,9 +1194,10 @@ def to_markdown(result: dict) -> str:
             for r in readers:
                 f = v["readers"].get(r)
                 cells.append("not available" if not ok[r] else "-" if f is None else
-                             f"{f.get('tables_found', 0)} tables, {f.get('figures_found', 0)} figures")
-            L.append(f"| {v['title']} ({k.split('_')[0]}) | {v.get('tables') or 0} tables, {v.get('figures') or 0} "
-                     f"figures | " + " | ".join(cells) + " |")
+                             f"{f.get('tables_found', 0)} tables ({f.get('table_rows', 0)} rows), "
+                             f"{f.get('figures_found', 0)} figures")
+            L.append(f"| {v['title']} ({k.split('_')[0]}) | {v.get('tables') or 0} tables ({v.get('table_rows') or 0} "
+                     f"rows), {v.get('figures') or 0} figures | " + " | ".join(cells) + " |")
         L.append("")
     L += ["## 2. Same file, same reading", "",
           "A reading must not change from one run to the next. Each file was read twice by each reader and the two "

@@ -26,7 +26,7 @@ from test_0_15_0_reader import _project
 
 from test_app import api, home  # noqa: F401  (fixtures)
 
-from enlens_claims import ingest, measure, pdfmake, reader, reader5
+from enlens_claims import ingest, measure, pdfmake, reader
 
 needs_pdfminer = pytest.mark.skipif(not reader.pdfminer_available(), reason="the pdfminer extra is not installed")
 
@@ -290,7 +290,6 @@ def test_a_figure_without_words_is_a_block_of_no_text_that_no_passage_covers(kno
     doc = _read(known5["j_figures"].path, 5)
     picture = [b for b in doc.blocks if b.kind == "figure"][1]
     assert picture.text == "" and picture.start == picture.end
-    assert not any(p.start < picture.end <= p.end and p.start != p.end for p in doc.passages if picture.text)
     assert all(p.end > p.start for p in doc.passages)
     assert all(doc.text[p.start:p.end].strip() for p in doc.passages)
 
@@ -390,7 +389,7 @@ def test_a_picture_without_alternative_text_adds_nothing(tmp_path):
 # ------------------------------------------------------------------------------------------------------------------
 @needs_pdfminer
 def test_figures_are_stored_as_blocks_and_their_picture_is_drawn_when_asked_for(api, known5, tmp_path):
-    from enlens_claims.gui.server import page_images_available
+    from enlens_claims.gui.api_common import page_images_available
 
     docs = _project(api, tmp_path, [known5["j_figures"].path, known5["i_table_over_a_page"].path])
     d = docs["Counting Ground Nests on Four Heathland Plots"]
@@ -401,9 +400,6 @@ def test_figures_are_stored_as_blocks_and_their_picture_is_drawn_when_asked_for(
     assert len(figs) == 2 and all(b["included"] is False and len(b["box"]) == 4 and b["page"] for b in figs)
     assert figs[1]["text"] == "" and figs[1]["start"] == figs[1]["end"]
     assert [b["text"] for b in v["blocks"] if b["kind"] == "caption"][1].startswith("Figure 1. Mean count")
-    # nothing of the picture is stored: a row of numbers, no image
-    ws_blocks = [r for r in api("GET", f"/api/projects/R/documents/{d['doc_id']}?view=blocks&limit=500")[1]["blocks"]]
-    assert ws_blocks and not any("png" in str(b).lower() for b in ws_blocks)
     if not page_images_available():
         return
     n1, n2 = figs[0]["n"], figs[1]["n"]

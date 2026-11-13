@@ -336,6 +336,8 @@ def build_table(box, hs, vs, lines: list, drawings: list[Drawing], page_h: float
 def ruled_tables(rec: PageShapes, lines: list, page_h: float) -> list[Obj]:
     """The tables of a page that its rules make: grids first, then typesetters' stacks of horizontal rules."""
     hs, vs = rules(rec)
+    if len(hs) > 300 or len(vs) > 300:
+        return []   # hundreds of rules on a page: a plot's grid or a map, not a table (and slow to pair up)
     out: list[Obj] = []
     taken: list[tuple] = []   # the boxes of tables found
     left = set(id(ln) for ln in lines)
@@ -440,12 +442,13 @@ def _small_type(ln, body_size: float | None) -> bool:
 
 
 def _label_like(ln, long_lines: list, body_size: float | None) -> bool:
-    """Whether a line outside a figure's box may label it: type smaller than the body's, or a short line that no long
-    line of text runs on from (the last line of a paragraph above or below the figure has one)."""
+    """Whether a line outside a figure's box may label it: type smaller than the body's, or a short line in the body's
+    type that no long line of text runs on from (the last line of a paragraph above or below the figure has one) and
+    that is not a heading."""
     if _small_type(ln, body_size):
         return True
-    if len(ln.text.strip()) > 24:
-        return False
+    if len(ln.text.strip()) > 42 or ln.bold or (body_size and ln.size and ln.size > 1.05 * body_size):
+        return False      # a heading, or a line that may be a paragraph's
     x1 = ln.x1 if ln.x1 is not None else ln.x0
     gap = 1.8 * (ln.size or 10)
     return not any(o is not ln and abs(o.top - ln.top) <= gap and min(o.x1, x1) - max(o.x0, ln.x0) > 0
@@ -576,6 +579,9 @@ def figures(rec: PageShapes, lines: list, tables: list[Obj], dims: tuple[float, 
         if sum(len(ln.text) for ln in members) > 0.5 * page_chars and len(members) >= 8:
             continue      # a page wrapped in a form, or a page of mostly labels: not a figure
         if not image:
+            chars = sum(len(ln.text) for ln in members)
+            if chars > 900 or (chars > 300 and _area(box) > 0.5 * page_w * page_h):
+                continue  # more words than a chart has, or a page laid out with boxes (a slide): it is text
             inner = [ln for ln in members if box[0] <= _centre(ln)[0] <= box[2] and box[1] <= _centre(ln)[1] <= box[3]]
             if sum(1 for ln in inner if len(ln.text.strip()) >= 45 and not _small_type(ln, body_size)) >= 2:
                 continue  # paragraphs among the lines: a ruled form or a boxed text, not a figure
@@ -602,8 +608,6 @@ def page_objects(rec: PageShapes | None, lines: list, dims: tuple[float, float],
                  skip_keys: set, pno: int) -> tuple[list[Obj], list]:
     """The tables and figures a page's rules and drawings make, and the page's lines without theirs. Page furniture
     that stands inside a table's rules (a number of the last row at the foot of the page) is a cell, not furniture."""
-    from . import reader
-
     if rec is None or not lines or not dims[0]:
         return [], lines
     placed = [ln for ln in lines if ln.top is not None and ln.x0 is not None]
