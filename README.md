@@ -57,11 +57,10 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.2: Sharing you can find, and a team you can see
+## New in 0.18.3: Nothing off to the side
 
-- **More of an excerpt is *more…* at its end.** On a check's result page, the *In context* button in each excerpt card's row of actions is gone: the excerpt now ends in *more…*. Cannot change results.
-- **Sharing is a choice you can see.** Under the title of a check, a set of themes or a codebook of your own, the small *Private* tag and *Share* button are now one choice. Cannot change results.
-- **The team has its own row under the project's name.** In a project with a team, the sidebar shows *Team* and its state (*synced 15:44*, *syncing now…*, *3 new*, or in amber *offline*). Cannot change results.
+- **Less scrolling sideways.** Wide grids, tables and lines now keep important information in view: - **Themes, documents by theme.** Documents are now the rows and themes the columns.
+- **The Documents page is a list of one-line documents that open.** Each document is one line: its title, who may read it with AI, its role, a wait for the owner and anything that needs a look.
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
