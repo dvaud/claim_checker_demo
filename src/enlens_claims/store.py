@@ -515,7 +515,8 @@ GLOSSARY_META = ("glossary_corpus_version", "terms_corpus_version", "terms_built
 
 # roles (DESIGN-roles §3.4): rows `Workspace._document_rows` names that are made again, so a removal's archive
 # (removed.py) leaves them out
-REMADE = ("embeddings", "term_mentions")
+REMADE = ("embeddings", "term_mentions",
+          "concept_link_sentences")  # 0.18.1 (D2): made again with the glossary
 
 
 def passage_range(doc_id: str) -> tuple[str, str]:
