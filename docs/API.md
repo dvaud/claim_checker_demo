@@ -1784,8 +1784,8 @@ page's `related.links` with `"source": "pattern"` and their `"sentences"` (`[{"d
   there is no such block, the block is of another kind or has no box (a figure from a Word file or web page has only
   its alternative text), the original is missing or not a PDF, or the OCR extra (pypdfium2) is not installed.
 - A document's blocks (`GET …/documents/{d}?view=blocks`) may hold `kind: "figure"`: `included: false` (never read
-  by searches, codes, themes or checks), its `page` and `box`, the words inside it as its `text`, and `label` *Text in
-  a figure*. A picture without words has `start == end` (and no passage). Its caption is the `caption` block just
+  by searches, codes, themes or checks), its `page` and `box`, the words inside it as its `text`, and `label` *Figure*
+  (before 0.18.1: *Text in a figure*). A picture without words has `start == end` (and no passage). Its caption is the `caption` block just
   after it (or, failing that, just before).
 - The reading report (`reading`, `documents.reading_json`) gains `figures` (how many were found) and
   `tables_joined` (tables that ran over a page and were joined into one).

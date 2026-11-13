@@ -62,7 +62,7 @@ KIND_TEXT = {"title": "title", "heading": "heading", "abstract": "abstract", "bo
              "contents": "table of contents", "index": "index"}
 # the same, short, where a block left out is named beside it in the reading view
 KIND_LABEL = {"table": "Table", "footnote": "Footnote", "front": "Front matter", "back": "End notes",
-              "references": "Reference list", "figure": "Text in a figure", "furniture": "Running head",
+              "references": "Reference list", "figure": "Figure", "furniture": "Running head",
               "contents": "Contents", "index": "Index"}
 
 
