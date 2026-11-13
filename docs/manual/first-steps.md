@@ -60,7 +60,7 @@ Choose files or a folder. ENLENS reads:
 
 | Kind | Notes |
 | --- | --- |
-| PDF | Text, columns and tables are read from the layout ([How documents are read](reading.md)). Scanned pages need [Tesseract](install.md#scanned-pdfs-optional). |
+| PDF | Text, columns and tables are read from the layout ([How documents are read](how-documents-are-read.md)). Scanned pages need [Tesseract](install.md#scanned-pdfs-optional). |
 | Word (.docx) | Keeps its paragraphs, headings and the pages Word marked. Older .doc files are not read: save them as .docx or PDF. |
 | Web pages (HTML), text (.txt), Markdown (.md) | Files that are not UTF-8 (a Hungarian text saved by Notepad, an old Latin-1 page) are read as they were written. |
 | Zip | Opened, and the files inside are added. |
@@ -165,6 +165,8 @@ with the page you are on, and see that page's entries (*This page*) or all of th
 ([The research log](notes-and-log.md#the-research-log)). In a project with a team, the **Team** row under the
 project's name opens the panel's second tab, **Team**, where you work with colleagues (0.17.0;
 [Work together](together.md#through-a-shared-folder)).
+
+A walk through a whole first project, from adding documents to the Excel file, is in [Your first project, start to finish](first-project.md).
 
 ---
 

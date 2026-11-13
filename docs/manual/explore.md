@@ -35,7 +35,7 @@ document first.
 
 Every searched word is marked in the lines, and in the passages that search by meaning finds. A line shows its
 document's title; point at it for the place (page, paragraph). Click the title to open the document at its words. A *passage* is the stretch of text the app reads as one unit: a
-paragraph, up to about 1,100 characters ([How documents are read](reading.md)). The place shown (page, paragraph) is
+paragraph, up to about 1,100 characters ([How documents are read](how-documents-are-read.md)). The place shown (page, paragraph) is
 that of the original. Setting up search by meaning runs once per project: a second press, or a reload while it
 runs, follows the same job.
 
@@ -166,7 +166,7 @@ another. Removals and new themes belong to that set of themes only.
 
 ## In a document
 
-A document's page shows its text as the reader found it ([How documents are read](reading.md)), with panels beside
+A document's page shows its text as the reader found it ([How documents are read](how-documents-are-read.md)), with panels beside
 it:
 
 | Panel | What it does |
@@ -176,7 +176,7 @@ it:
 | **References** | *Follow the references*: the AI reads the document three passages at a time and links "it", "they" or "the study" to the name they stand for. Select a name in the text to see every later mention. |
 | **Search** | Search within the document. |
 | **Notes** | Your highlights and notes on this document's words ([Notes, the research log and earlier versions](notes-and-log.md#highlights-and-notes)). |
-| **Reading**, **Page** | How well it was read, and the original page beside the text ([How documents are read](reading.md)). |
+| **Reading**, **Page** | How well it was read, and the original page beside the text ([How documents are read](how-documents-are-read.md)). |
 
 *Download a highlighted copy* gives the PDF with highlights for the judgements, codes, concepts or references you
 choose (exact boxes with the PDF layout reader, whole lines otherwise, text recognition for scanned pages), and a note
@@ -232,4 +232,4 @@ The explore pages replace the Cross-Doc SDG Explorer, one of the two tools ENLEN
 
 ---
 
-Next: [How documents are read →](reading.md)
+Next: [Look at how a document was read →](reading.md)

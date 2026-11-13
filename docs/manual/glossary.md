@@ -14,7 +14,7 @@ The app speaks plain language; the command line, the API and the code use techni
 | **Part** | Claim | One statement that is checked: the hypothesis itself, or one of its parts. |
 | **Judgement** | Grade, verdict | What the AI says about one excerpt: *supports*, *partly supports* (an important part is stated; something remains to be inferred), *contradicts* (`refutes`), or *not about this hypothesis*. With a quote and a certainty. |
 | **Your judgement** | User verdict | Your own judgement of an excerpt. It replaces the AI's in the answer and the counts, always counts, and is kept next to the AI's. Agreeing with the AI is a review; choosing another judgement is a change. You can point to the sentence you mean. |
-| **Answer** | Status | What the documents say about the whole hypothesis: *supported*, *partly supported*, *mixed evidence* (`contested`), *contradicted*, and the rest ([The answers](check.md#the-answers)). |
+| **Answer** | Status | What the documents say about the whole hypothesis: *supported*, *partly supported*, *mixed evidence* (`contested`), *contradicted*, and the rest ([The answers](how-a-check-works.md#the-answers)). |
 | **AI certainty** | Confidence | The AI's own estimate (0–100%) of how sure it is: high (≥ 80%), medium (≥ 60%), low. Not a check of whether it is right. |
 | **Strictness** | Threshold | How sure the AI must be for a judgement to count (default 60%). Weaker judgements stay visible, marked *Not counted*. It applies to every result, old and new. |
 | **Search** (in a check) | Round | One set of excerpts read for a part. *Read more excerpts* and *Search with other words* add searches. |
