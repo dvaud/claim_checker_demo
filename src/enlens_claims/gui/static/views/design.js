@@ -11,7 +11,7 @@ import {
   h, icon, toast, dialog, confirmDialog, popNote, helpMark, field, switchControl, rangeControl, spinner, emptyState,
   statusBadge, gradeBadge, codeChip, pageHead, downloadLinks, heatCell, strongerMark,
   button, downloadButton, fileButton, iconButton, link, tag, notice, card, fold, choice, optionCards, input, select,
-  textarea, searchField, menu, workState, aiWhere, drawer, drawerButton, personMark, reviewedMark, severityTag, compare,
+  textarea, searchField, menu, workState, aiWhere, drawer, drawerButton, teamLine, personMark, reviewedMark, severityTag, compare,
   shareState, absentDocument, listRow, listGroup, noticeList, tabs, judgementIcon, readsLine, stopButton, proposalCard, decisionCard, inset,
   passageNode, foundWords
 } from "../lib.js";
@@ -43,6 +43,23 @@ const tokenSample = (cls, property, token) => {
 };
 // a piece of the sidebar, on the sidebar's ground and at its width
 const side = (...el) => h("div", { class: "dz-side" }, ...el);
+// the project switch as the sidebar draws it (app.js renderProjectSwitch), with its team line under it when given
+const projectSwitch = (line) => h("div", { class: "project-switch" }, menu({ label: "Project: Demo", listClass: "ps-menu",
+  trigger: [icon("folder", { size: 16 }), h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"),
+    h("span", { class: "ps-name-text" }, "Demo")), icon("chevron-down", { size: 14 })],
+  items: [{ text: "Demo", icon: "folder", current: true, meta: "3 documents · 3 answers" }, "sep",
+    { text: "New project…", icon: "plus" }, { text: "Join a team…", icon: "link" }, { text: "Manage projects", icon: "sliders", href: HERE },
+    { text: "Manage the team", icon: "users", href: HERE }] }), line || null);
+// a team line in one state (teamLine().set())
+const teamLineIn = (state) => { const t = teamLine({ onClick: () => {} }); t.set(state); return t; };
+// an item's sharing on its own page, for its maker: the choice as views/share.js shareChoice() builds it, the help mark,
+// and while it is shared the line that says where it goes
+const shareSample = (value, line) => h("div", { class: "share-bar", role: "group", "aria-label": "Sharing with your team" },
+  choice({ label: "Who sees this check", value, class: "share-choice", options: [
+    ["private", [icon("house", { size: 13 }), "Private"], null, "Only you see it"],
+    ["shared", [icon("users", { size: 13 }), "Shared with your team"], null, "Your team gets it with your work"]] }),
+  helpMark("About sharing", "Private: only you see it. Shared: your colleagues get it with your work."),
+  line ? h("p", { class: "share-where" }, line, " ", link({ kind: "jump", href: HERE }, "See what you shared")) : null);
 const navEntry = (ic, name, current) => h("a", { href: HERE, "aria-current": current ? "page" : null },
   h("span", { class: "nav-icon" }, icon(ic, { size: 18 })), h("span", {}, name));
 
@@ -416,12 +433,10 @@ export async function renderDesign(page) {
         actions: [button({ sm: true }, "Keep mine"), button({ sm: true }, "Keep theirs"), button({ kind: "quiet", sm: true }, "Keep both")] })),
 
     section("5.1", "The sidebar", "The places of the app. The live sidebar is beside this page; these are its pieces.",
-      sample("The project switch", side(h("div", { class: "project-switch" }, menu({ label: "Project: Demo", listClass: "ps-menu",
-        trigger: [icon("folder", { size: 16 }), h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"),
-          h("span", { class: "ps-name-text" }, "Demo")), icon("chevron-down", { size: 14 })],
-        items: [{ text: "Demo", icon: "folder", current: true, meta: "3 documents · 3 answers" }, "sep",
-          { text: "New project…", icon: "plus" }, { text: "Join a team…", icon: "link" }, { text: "Manage projects", icon: "sliders", href: HERE },
-          { text: "Manage the team", icon: "users", href: HERE }] })))),
+      sample("The project switch", side(projectSwitch())),
+      sample("The team line, in a project with a team (teamLine()): in step, news waiting, a round running, offline",
+        side(projectSwitch(teamLineIn({ words: "synced 15:44" }))), side(projectSwitch(teamLineIn({ count: "3 new" }))),
+        side(projectSwitch(teamLineIn({ kind: "running", words: "syncing now…" }))), side(projectSwitch(teamLineIn({ kind: "attention", words: "offline" })))),
       sample("Entries: a place, the current place; a group label with its AI mark",
         side(h("nav", { class: "nav", "aria-label": "A sample of the places" }, navEntry("grid", "Overview"), navEntry("book-open", "Documents", true),
           h("span", { class: "nav-group", role: "presentation" }, "Explore", aiTag("optional")), navEntry("text-search", "Search"))))),
@@ -450,8 +465,11 @@ export async function renderDesign(page) {
       answersTable()),
 
     section("5.5", "The pieces of working together", "Built from the elements above; none has a look of its own.",
-      sample("Sharing: a fact and its action", shareState("private"), button({ sm: true }, "Share"),
-        shareState("shared"), button({ kind: "quiet", sm: true }, "Unshare"), shareState("withdrawn")),
+      sample("Sharing your own item: a choice (Private, and Shared with the line that says where it goes)", h("div", { class: "stack" },
+        shareSample("private"), shareSample("shared", "Goes to Ben and Chloé at the next round, in about 2 min."))),
+      sample("Sharing in a row, and a colleague's item: a fact and its action", shareState("private"), button({ sm: true }, "Share"),
+        shareState("shared"), button({ kind: "quiet", sm: true }, "Unshare"), shareState("withdrawn"),
+        personMark(["Ben Okafor"], { name: "short", prefix: "By" })),
       sample("Who, where nothing else names them: a shared item's maker, a changed-by line (the name beside the mark)",
         shareState("shared"), personMark(["Anna de Vries"], { name: "short", prefix: "By" }), personMark(["Ben Okafor"], { name: "short", prefix: "Changed by" })),
       sample("A document not on this computer", absentDocument("Commuting less, emitting less?", { onAdd: noop })),

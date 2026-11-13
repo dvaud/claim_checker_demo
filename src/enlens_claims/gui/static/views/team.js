@@ -90,6 +90,7 @@ export function teamPanel({ onCount, sections = TEAM_SECTIONS, page = false } = 
   const ctx = { project: null, status: null, sharing: null, history: null, poller: null, poll: null, open: new Set(),
     setup: freshSetup(), refresh, startRound, markSeen, focusHeading, page, data: {} };   // 0.18 L2: data
   let shown = false, timer = null, token = 0, watching = null, drawn = null, said = null;
+  let reading = Promise.resolve();   // the refresh show() started: focusSection waits for it
   const gone = new Set();   // rounds that could not be followed (no such job any more): not followed again
 
   const seenKey = () => `team-seen:${ctx.project}`;
@@ -257,9 +258,17 @@ export function teamPanel({ onCount, sections = TEAM_SECTIONS, page = false } = 
 
   return {
     el: root,
-    show() { shown = true; refresh(); arm(); },
+    show() { shown = true; reading = refresh(); arm(); },
     hide() { shown = false; clearTimeout(timer); },
     refresh,
+    // a section's heading, once the current refresh has drawn: focused and brought into view (the sharing line's
+    // See what you shared opens the tab at "shared")
+    async focusSection(key) {
+      try { await reading; } catch (_) { /* what was drawn before stays */ }
+      focusHeading(key);
+      const head = body.querySelector(`#team-h-${key}`);
+      if (head) head.scrollIntoView({ block: "nearest" });
+    },
     // the page's panel is made again on each visit: it stops listening when the page goes
     destroy() { shown = false; clearTimeout(timer); window.removeEventListener("enlens-sync-news", news); if (watching) { watching.w.stop(); watching = null; } },
   };

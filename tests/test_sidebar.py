@@ -55,3 +55,25 @@ def test_a_wheel_over_the_sidebar_never_scrolls_the_page():
     assert "scrollTop" in fn and "scrollHeight" in fn  # a part that can still scroll that way keeps the turn
     boot = app[app.index("async function boot()"):]
     assert boot.index("drawerInit();") < boot.index("sidebarScrollInit();") < boot.index("navIcons();")
+
+
+def test_the_team_line_is_the_project_switchs_second_row():
+    """team-share piece B: in a project with a team the project switch has a second row, the team line. Its rules are
+    the sidebar's (components.css 5.1); app.js keeps it across the switch's redraws; still no counts beside entries."""
+    css = _read("components.css")
+    s51 = css[css.index("/* ==== 5.1 The sidebar */"):css.index("/* ==== 5.2")]
+    for sel in (".team-line {", ".team-line[hidden]", ".team-line-state {", '.team-line[data-kind="attention"] {',
+                ".project-switch:has(> .team-line:not([hidden])) summary"):
+        assert sel in s51, sel
+        assert len(re.findall(rf"^{re.escape(sel)}", css, flags=re.M)) == 1, sel   # one rule of its own
+    line = rule(".team-line")
+    assert line["background"] == "var(--surface-2)" and line["width"] == "100%" and line["margin-top"] == "-1px"
+    assert rule('.team-line[data-kind="attention"]')["background"] == "var(--attention-soft)"
+    app = _read("app.js")
+    fn = app[app.index("function renderProjectSwitch("):app.index("export async function switchProject(")]
+    assert 'replace(box, details, document.getElementById("team-line"));' in fn
+    # on a phone the line is in the menu sheet: pressing it, or a page opening the drawer, closes the sheet
+    drawer = app[app.index("function drawerInit("):app.index("const GROUP_AI")]
+    assert 'closest("#team-line")' in drawer and 'window.addEventListener("enlens-drawer", () => {' in drawer
+    # no counts beside the sidebar's entries: the only count is the team line's, in words, inside the project switch
+    assert "count" not in rule(".nav a") and ".nav a .chip" not in css

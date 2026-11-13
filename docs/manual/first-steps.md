@@ -162,8 +162,9 @@ and other technical facts sit under *Technical details* and *Settings → Techni
 
 The **Research log** button at the top right of every page opens a panel on the right: write an entry that is kept
 with the page you are on, and see that page's entries (*This page*) or all of them (*All*)
-([The research log](notes-and-log.md#the-research-log)). Its second tab, **Team**, is where you work with colleagues
-(0.17.0; [Work together](together.md#through-a-shared-folder)).
+([The research log](notes-and-log.md#the-research-log)). In a project with a team, the **Team** row under the
+project's name opens the panel's second tab, **Team**, where you work with colleagues (0.17.0;
+[Work together](together.md#through-a-shared-folder)).
 
 ---
 

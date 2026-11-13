@@ -1431,6 +1431,25 @@ export function drawerButton({ id, controls, label, icon: ic, onClick, title }) 
   return h("button", { class: `${UI.button.standard} ${UI.sm} btn-opens drawer-btn`, id, type: "button", "aria-expanded": "false",
     "aria-controls": controls, title: title || null, onClick }, icon(ic, { size: 15 }), h("span", { class: "drawer-btn-text" }, label));
 }
+// The team line: the project switch's second row in a project that has a team. A button of the "opens beside" kind:
+// it opens the drawer at its Team tab and is soft teal while that tab shows. Its end says the team's state in fixed
+// words. set({ kind, words, count }): kind "ok" | "running" | "attention"; count: what is new, in words ("3 new").
+export function teamLine({ id, controls, onClick }) {
+  const name = h("span", { class: "team-line-name" }, "Team");
+  const state = h("span", { class: "team-line-state" });
+  const el = h("button", { class: "btn-opens team-line", id, type: "button", "aria-expanded": "false", "aria-controls": controls, onClick });
+  el.set = ({ kind = "ok", words = "", count = null } = {}) => {
+    el.setAttribute("data-kind", kind);
+    replace(el, icon(kind === "attention" ? "alert-triangle" : "users", { size: 15 }), name, state);
+    replace(state, kind === "running" ? h("span", { class: "running-dot", "aria-hidden": "true" }) : null,
+      count ? tag({ kind: "count", class: "tab-count" }, count) : words);
+    const said = `Team${count || words ? `: ${count || words}` : ""}. Opens the Team tab beside the page`;
+    el.setAttribute("title", said);
+    el.setAttribute("aria-label", said);
+  };
+  el.set();
+  return el;
+}
 export function setDrawerOpen(open, btn) {
   if (open) document.body.dataset.drawer = "open"; else delete document.body.dataset.drawer;
   if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");

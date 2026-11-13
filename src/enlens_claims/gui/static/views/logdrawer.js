@@ -1,8 +1,9 @@
 // 0.17.0: the research log beside any page. A button fixed at the top right of the window opens a panel on the right:
 // write an entry while looking at anything, and see the entries kept with the page you are on (or all of them).
 // The whole log, with search, export and the rest, stays on its own page (#/log).
-import { App, api, h, icon, clear, session, fmt, toast, showError, P, button, link, textarea, choice, drawer, drawerButton, setDrawerOpen } from "../lib.js";
+import { App, api, h, icon, clear, session, fmt, toast, showError, P, button, link, textarea, choice, tag, drawer, drawerButton, setDrawerOpen, teamLine } from "../lib.js";
 import { subjectHref, entryText, entrySubject, entryWho } from "./log.js";
+import { whenText } from "./team-state.js";
 
 const PAGE = 30;
 const GROUP_ICON = { entries: "note", documents: "book-open", checks: "flask", themes: "shapes", codebooks: "book-marked",
@@ -26,6 +27,29 @@ export function pageContext(hash) {
   return null;
 }
 
+// What the team line says (lib.js teamLine().set()), from the poller's answer (GET …/sync-poller) and what is new on the
+// Team tab: the first that holds of a round running, offline, the last round not working, paused, what is new, when
+// the last round was, no round yet.
+export function teamWords(s, count = 0, now = new Date()) {
+  const r = s && s.round;
+  if (!s) return { kind: "ok", words: "no round yet" };
+  if ((r && (r.state === "running" || r.state === "queued")) || s.state === "due") return { kind: "running", words: "syncing now…" };
+  if (s.state === "offline" || s.offline) return { kind: "attention", words: "offline" };
+  if (s.last_round && s.last_round.state === "error") return { kind: "attention", words: "round did not work" };
+  if (s.paused || s.paused_all) return { kind: "ok", words: "paused" };
+  if (count > 0) return { kind: "ok", count: `${count} new` };
+  if (s.last_round) return { kind: "ok", words: syncedWords(s.last_round.finished_at, now) };
+  return { kind: "ok", words: "no round yet" };
+}
+// "synced 15:44" (today), "synced yesterday", "synced 12 Nov" (from whenText's "Today 15:44", "Yesterday …", "12 Nov …")
+function syncedWords(t, now) {
+  const w = whenText(t, now);
+  if (!w) return "synced";
+  if (w.startsWith("Today ")) return `synced ${w.slice(6)}`;
+  if (w.startsWith("Yesterday ")) return "synced yesterday";
+  return `synced ${w.slice(0, w.lastIndexOf(" "))}`;
+}
+
 export function initLogDrawer() {
   if (document.getElementById("logdrawer")) return;
   const shell = document.getElementById("shell");
@@ -37,18 +61,49 @@ export function initLogDrawer() {
   let token = 0;               // the newest refresh wins
   const docTitles = new Map(); // "project, document" -> its title, each asked for once when a document page is the context
 
-  // ---- the button (the drawer component's, docs/DESIGN.md: the drawer)
+  // ---- the two doors (docs/DESIGN.md 4.19 and 5.1): the button opens the Research log tab (the drawer component's
+  // button), the team line under the project's name opens the Team tab; each is soft teal while its own tab shows.
+  // Under 861 px the button carries the Team tab's count ("3 new") while news waits, and then opens that tab.
+  const phone = () => window.matchMedia("(max-width: 860px)").matches;
+  let teamCount = 0;            // what is new on the Team tab
+  let sync = null;              // the poller's last answer for this project (app.js, "enlens-sync-state")
+  const phoneCount = () => phone() && teamCount > 0;
   const btn = drawerButton({ id: "logdrawer-btn", controls: "logdrawer", label: "Research log", icon: "notebook",
-    title: "The research log, beside this page", onClick: () => (open ? close(true) : openIt(true)) });
+    title: "The research log, beside this page", onClick: () => press(phoneCount() ? "team" : "log", btn) });
+  const btnCount = tag({ kind: "count", class: "tab-count" }, "");
+  const placeCount = () => {
+    if (phoneCount()) { btnCount.textContent = `${teamCount} new`; if (btnCount.parentNode !== btn) btn.appendChild(btnCount); }
+    else btnCount.remove();
+  };
   const placeBtn = () => {
-    const phone = window.matchMedia("(max-width: 860px)").matches;
     const bar = document.getElementById("topbar");
-    if (phone && bar) { if (btn.parentNode !== bar) bar.appendChild(btn); }
+    if (phone() && bar) { if (btn.parentNode !== bar) bar.appendChild(btn); }
     else if (btn.parentNode !== body) {
       const skip = document.querySelector(".skip-link");
       if (skip) skip.after(btn); else body.prepend(btn);
     }
+    placeCount();
+    markDoors();
   };
+  const teamBtn = teamLine({ id: "team-line", controls: "logdrawer", onClick: () => press("team", teamBtn) });
+  teamBtn.hidden = true;        // until the poller says this project has a team
+  // the project switch's second row (app.js renderProjectSwitch keeps it across redraws)
+  const placeTeamLine = () => {
+    const box = document.getElementById("project-switch");
+    if (box && box.lastElementChild !== teamBtn) box.appendChild(teamBtn);
+  };
+  const drawTeam = () => { if (sync) teamBtn.set(teamWords(sync, teamCount)); };
+  // pressing a door: closed, it opens on its tab; open on its tab, it closes; open on the other tab, that tab shows
+  function press(which, door) {
+    if (!open) { tab = which; openIt(true); }
+    else if (tab === which) close(true, door);
+    else { tabRow.choose(which); tabOf(which).focus(); }
+  }
+  // each door is expanded while its own tab shows; under 861 px the top bar's button whenever the drawer is open
+  function markDoors() {
+    btn.setAttribute("aria-expanded", open && (tab === "log" || phone()) ? "true" : "false");
+    teamBtn.setAttribute("aria-expanded", open && tab === "team" ? "true" : "false");
+  }
 
   // ---- the drawer: its frame is the drawer component; its parts are the Research log page's own (the write box and
   // the list of entries, .log-new and .log-entries), so an entry looks the same on the page and here
@@ -85,12 +140,25 @@ export function initLogDrawer() {
   // what came in and was not seen yet (team.js, or the poller's news before the tab was first shown), in words on the
   // Team tab: "3 new" (a drawer tab's count, docs/DESIGN.md 4.5 and 5.5)
   let countFor = App.project;   // the project the count is of
-  const setTeamCount = (n) => tabRow.setCount("team", n ? `${n} new` : null);
+  // the same count on the team line and, under 861 px, in the button
+  const setTeamCount = (n) => { teamCount = n || 0; tabRow.setCount("team", n ? `${n} new` : null); placeCount(); drawTeam(); };
   window.addEventListener("enlens-sync-news", (e) => { if (!team && e.detail && e.detail.project === App.project) setTeamCount((e.detail.came_in || {}).count || 0); });
+  // the poller's state after each of app.js's looks (null when it could not look): the team line shows in a project
+  // with a team, and says its state
+  window.addEventListener("enlens-sync-state", (e) => {
+    const s = e.detail;
+    if (!s || s.project !== App.project) return;
+    sync = s;
+    teamBtn.hidden = !s.folder;
+    placeTeamLine();
+    // before the Team tab was first shown, what came in is the poller's count (the tab's own, once it is made)
+    if (!team && s.folder) setTeamCount((s.came_in || {}).count || 0); else drawTeam();
+  });
   // draws the tab chosen (tabs() calls it when a tab is pressed or chosen by its keys; code chooses with tabRow.choose)
   function showTab(value) {
     tab = value === "team" ? "team" : "log";
     session("logdrawer-tab", tab);
+    markDoors();
     foot.hidden = tab !== "log";
     aside.setSections(tab === "team" ? [teamPanelBox] : logSections);
     if (tab === "team") {
@@ -98,23 +166,33 @@ export function initLogDrawer() {
         import("./team.js").then((m) => {
           team = m.teamPanel({ onCount: setTeamCount });
           teamPanelBox.appendChild(team.el);
-          if (open && tab === "team") team.show();
+          if (open && tab === "team") { team.show(); focusWanted(); }
         }).catch((e) => { teamPanelBox.textContent = `The Team tab could not be loaded (${e.message}).`; });
-      } else if (open) team.show();
+      } else if (open) { team.show(); focusWanted(); }
     } else {
       if (team) team.hide();
       if (open) refresh();
     }
   }
-  // another page opens the drawer on a tab: window.dispatchEvent(new CustomEvent("enlens-drawer", {detail: {tab: "team"}}))
+  // another page opens the drawer on a tab: window.dispatchEvent(new CustomEvent("enlens-drawer", {detail: {tab: "team"}}));
+  // detail.section: a section of the Team tab to bring into view once it has drawn ("shared": What you shared)
+  let wantSection = null;
+  const focusWanted = () => {
+    if (!wantSection || !team || !open || tab !== "team") return;
+    const key = wantSection;
+    wantSection = null;
+    team.focusSection(key);
+  };
   window.addEventListener("enlens-drawer", (e) => {
     tab = (e.detail && e.detail.tab) === "team" ? "team" : "log";
+    wantSection = (tab === "team" && e.detail && e.detail.section) || null;
     if (open) tabRow.choose(tab); else openIt(false);
     tabOf(tab).focus();
   });
   /* end 0.18 Team tab */
   shell.appendChild(aside);
   placeBtn();
+  placeTeamLine();
   window.matchMedia("(max-width: 860px)").addEventListener("change", placeBtn);
 
   const overlay = () => window.matchMedia("(max-width: 999px)").matches;
@@ -123,18 +201,20 @@ export function initLogDrawer() {
     open = true;
     session("logdrawer-open", true);
     aside.hidden = false;
-    setDrawerOpen(true, btn);
+    setDrawerOpen(true, null);
+    markDoors();
     tabRow.choose(tab);   // 0.18 Team tab: reads the tab shown (the log's refresh, or the team's)
     if (byUser) (window.matchMedia("(max-width: 860px)").matches ? closeBtn : tab === "team" ? tabOf("team") : ta).focus();
   }
-  function close(returnFocus) {
+  function close(returnFocus, door) {
     const hadFocus = aside.contains(document.activeElement);
     open = false;
     session("logdrawer-open", false);
     if (team) team.hide();   // 0.18 Team tab
     aside.hidden = true;
-    setDrawerOpen(false, btn);
-    if (returnFocus || hadFocus) btn.focus();
+    setDrawerOpen(false, null);
+    markDoors();
+    if (returnFocus || hadFocus) (door && !door.hidden && door.isConnected ? door : btn).focus();
   }
 
   // ---- what this page is
@@ -245,12 +325,13 @@ export function initLogDrawer() {
   App.onChange(() => {
     if (open) { shown = PAGE; refresh(); }
     // 0.18 Team tab: another project's count is not this one's; the Team panel reads the new project's (even hidden)
-    if (App.project !== countFor) { countFor = App.project; setTeamCount(0); if (team) team.refresh(); }
+    // the team line hides until the poller's state of the new project arrives
+    if (App.project !== countFor) { countFor = App.project; sync = null; teamBtn.hidden = true; setTeamCount(0); if (team) team.refresh(); }
     else if (open && team && tab === "team") team.refresh();
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && open && !e.defaultPrevented && !document.querySelector("#dialogs dialog[open]")) close(aside.contains(document.activeElement)); });
   document.addEventListener("click", (e) => {
-    if (open && overlay() && !aside.contains(e.target) && !btn.contains(e.target) && !e.target.closest(".sidebar, .topbar, .toasts, #dialogs")) close(false);
+    if (open && overlay() && !aside.contains(e.target) && !btn.contains(e.target) && !teamBtn.contains(e.target) && !e.target.closest(".sidebar, .topbar, .toasts, #dialogs")) close(false);
   });
 
   if (session("logdrawer-open") === true) openIt(false);

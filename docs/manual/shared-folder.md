@@ -12,8 +12,8 @@
 ## The one who starts
 
 1. Open the **Team page**: *Manage the team* in the project menu at the top of the sidebar, or the *Team page* link on
-   the *Work together* card of *Projects*. (The *Research log* button at the top right of every page opens a panel with
-   two tabs, *Research log* and *Team*; the *Team* tab links to the page too.)
+   the *Work together* card of *Projects*. (Once the project has a team, the *Team* row under the project's name opens
+   the *Team* tab beside the page; that tab links to the page too.)
 2. Under *Or a folder your team already shares*, choose the folder your team shares:
    - **Cloud folders on this computer** lists the OneDrive, Google Drive, Box and Dropbox folders this computer has
      (on a Mac those in `~/Library/CloudStorage/` and `~/Dropbox`; on Windows those OneDrive and Dropbox name).

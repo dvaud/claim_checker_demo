@@ -163,7 +163,8 @@ function renderProjectSwitch() {
       { text: "Join a team…", icon: "link", onClick: () => joinDialog(null) },
       { text: "Manage projects", icon: "sliders", href: "#/projects" },
       current ? { text: "Manage the team", icon: "users", href: "#/team" } : null].filter(Boolean) });
-  replace(box, details);
+  // the team line (views/logdrawer.js, teamLine()) is the switch's second row: kept across redraws
+  replace(box, details, document.getElementById("team-line"));
 }
 
 export async function switchProject(name) {
@@ -620,6 +621,10 @@ function drawerInit() {
   });
   sc.addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sb.dataset.open === "true") { closeDrawer(); mb.focus(); } });
+  // under 861 px the team line sits in this menu sheet: pressing it opens the Team tab's sheet, so the menu closes; so
+  // does a page that opens the drawer on a tab (the "enlens-drawer" event)
+  sb.addEventListener("click", (e) => { if (e.target.closest && e.target.closest("#team-line") && sb.dataset.open === "true") closeDrawer(); });
+  window.addEventListener("enlens-drawer", () => { if (sb.dataset.open === "true") closeDrawer(); });
 }
 
 // 0.17.0: the sidebar's groups say once whether their places use the AI, with the one AI mark (features.js aiTag):
@@ -746,16 +751,24 @@ async function whatsNewInit() {
 
 // 0.18 (L3) what came in: a light look at the open project's poller every 30 s. When a round the app started by itself
 // brought something in, a small toast says so; when the count of what came in grows, the window event
-// "enlens-sync-news" (detail: the poller's state) lets the Team tab show it.
+// "enlens-sync-news" (detail: the poller's state) lets the Team tab show it. After every look the window event
+// "enlens-sync-state" carries the poller's state (null when it could not look), which the team line follows
+// (views/logdrawer.js); a change of project looks at once, so the line follows it without waiting 30 s.
 // 0.18 stage 5: it also looks just after the next round is due (nextSyncLook), and while a round runs it redraws the
 // sidebar's work box, which shows a round the app started by itself once it has run 20 s (drawStatus).
 function syncNewsInit() {
-  let project = null, round = null, count = null, timer = null;
+  let project = null, round = null, count = null, timer = null, lookedFor;
   const look = async () => {
     clearTimeout(timer);
+    lookedFor = App.project;
     let s = null;
-    try { s = await lookOnce(); } finally { timer = setTimeout(look, nextSyncLook(s)); }
+    try { s = await lookOnce(); } finally {
+      clearTimeout(timer);   // a look started meanwhile (a new project) set one too: one timer at a time
+      timer = setTimeout(look, nextSyncLook(s));
+      window.dispatchEvent(new CustomEvent("enlens-sync-state", { detail: s }));
+    }
   };
+  App.onChange(() => { if (App.project !== lookedFor) look(); });
   const lookOnce = async () => {
     const p = App.project;
     if (!p || Connection.down || document.hidden) return null;

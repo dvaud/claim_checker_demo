@@ -222,3 +222,14 @@ console.log(JSON.stringify([reg.jobRow({{ id: "j1", kind: "folder-sync", title: 
     # both run on this computer: the work box says so, not the AI's name; a round's row opens the Team tab
     assert 'LOCAL_JOB_KINDS = new Set(["index", "folder-sync", "new_reader"])' in APP
     assert 'new CustomEvent("enlens-drawer", { detail: { tab: w.drawer } })' in APP
+
+
+def test_every_look_at_the_poller_tells_the_team_line():
+    """team-share piece B: after each look (also one that could not look, with null) the window event
+    "enlens-sync-state" carries the poller's state; a change of project looks at once."""
+    news = APP[APP.index("function syncNewsInit()"):APP.index("async function boot()")]
+    assert 'window.dispatchEvent(new CustomEvent("enlens-sync-state", { detail: s }));' in news
+    look = news[news.index("const look = async () => {"):news.index("const lookOnce = ")]
+    assert "finally" in look and "enlens-sync-state" in look   # every look, whatever it found
+    assert "App.onChange(() => { if (App.project !== lookedFor) look(); });" in news
+    assert "lookedFor = App.project;" in look

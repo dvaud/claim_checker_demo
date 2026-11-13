@@ -38,8 +38,8 @@ it is set instead.
 ## The research log
 
 The *Research log* is a dated record of what was decided in the project. It is a view of *Overview*, and a
-*Research log* button at the top right of every page opens it as a panel on the right. ENLENS writes an entry by
-itself when you:
+*Research log* button at the top right of every page opens it as a panel on the right. It always opens the
+*Research log*; the *Team* tab has its own row under the project's name. ENLENS writes an entry by itself when you:
 
 | Group | What is written down |
 | --- | --- |
