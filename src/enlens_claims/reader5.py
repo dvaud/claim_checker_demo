@@ -439,11 +439,26 @@ def _small_type(ln, body_size: float | None) -> bool:
     return len(ln.text.strip()) <= 12
 
 
+def _label_like(ln, long_lines: list, body_size: float | None) -> bool:
+    """Whether a line outside a figure's box may label it: type smaller than the body's, or a short line that no long
+    line of text runs on from (the last line of a paragraph above or below the figure has one)."""
+    if _small_type(ln, body_size):
+        return True
+    if len(ln.text.strip()) > 24:
+        return False
+    x1 = ln.x1 if ln.x1 is not None else ln.x0
+    gap = 1.8 * (ln.size or 10)
+    return not any(o is not ln and abs(o.top - ln.top) <= gap and min(o.x1, x1) - max(o.x0, ln.x0) > 0
+                   for o in long_lines)
+
+
 def _absorb(box, lines: list, taken: set[int], body_size: float | None) -> list:
     """The lines that label a figure: inside its box, or in small type just left of it, right of it, above it, or
     below it (tick labels, a legend, a title, axis labels), until the first caption."""
     mine: list = []
     below: list = []
+    long_lines = [ln for ln in lines if ln.x0 is not None and ln.x1 is not None and ln.top is not None
+                  and len(ln.text.strip()) >= 40 and not _CAPTION.match(ln.text.strip())]
     for ln in lines:
         if id(ln) in taken or ln.x0 is None or ln.top is None or not ln.text.strip():
             continue
@@ -453,7 +468,7 @@ def _absorb(box, lines: list, taken: set[int], body_size: float | None) -> list:
             if not _CAPTION.match(t):
                 mine.append(ln)
             continue
-        if _CAPTION.match(t) or len(t) > 42 or not _small_type(ln, body_size):
+        if _CAPTION.match(t) or len(t) > 42 or not _label_like(ln, long_lines, body_size):
             continue
         x1 = ln.x1 if ln.x1 is not None else ln.x0
         bt = ln.bottom if ln.bottom is not None else ln.top
@@ -546,6 +561,7 @@ def figures(rec: PageShapes, lines: list, tables: list[Obj], dims: tuple[float, 
     page_w, page_h = dims
     out: list[Obj] = []
     taken: set[int] = set(id(ln) for t in tables for ln in t.lines)
+    page_chars = sum(len(ln.text) for ln in lines) or 1
     for cand in sorted(figure_candidates(rec, page_w, page_h, tables), key=lambda b: (b[1], b[0])):
         if (pno, _key(cand)) in skip_keys:
             continue
@@ -557,6 +573,8 @@ def figures(rec: PageShapes, lines: list, tables: list[Obj], dims: tuple[float, 
         if (cand[4] and w >= 0.7 * page_w and h >= 0.7 * page_h) or (w >= 0.95 * page_w and h >= 0.95 * page_h):
             continue
         members = _absorb(box, lines, taken, body_size)
+        if sum(len(ln.text) for ln in members) > 0.5 * page_chars and len(members) >= 8:
+            continue      # a page wrapped in a form, or a page of mostly labels: not a figure
         if not image:
             inner = [ln for ln in members if box[0] <= _centre(ln)[0] <= box[2] and box[1] <= _centre(ln)[1] <= box[3]]
             if sum(1 for ln in inner if len(ln.text.strip()) >= 45 and not _small_type(ln, body_size)) >= 2:
@@ -713,8 +731,17 @@ def _merge_into(a, b) -> None:
 
 
 # ------------------------------------------------------------------------------------------------------------------
-# captions
+# captions, and images in Word files and web pages
 # ------------------------------------------------------------------------------------------------------------------
+def mark_text_figures(blocks: list, figures: set[str]) -> None:
+    """Word files and web pages have no boxes, only text: the alternative texts of their images (`RawDoc.figures`, each
+    a paragraph of its own) are blocks of kind `figure`, left out of passages like the words inside a PDF's figure."""
+    for b in blocks:
+        if b.kind != "furniture" and " ".join(" ".join(ln.text for ln in b.lines).split()) in figures:
+            b.kind = "figure"
+
+
+
 def link_captions(blocks: list) -> None:
     """A figure's caption: the block of kind `caption` that begins "Figure 3." (and the like) just below it, else just
     above it, on the same page. The caption stays a block of its own; the figure keeps its text in `caption`."""

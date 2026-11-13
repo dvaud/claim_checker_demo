@@ -63,14 +63,23 @@ class RawDoc:
     # Word files whose text reader 4 reads otherwise (`_read_docx`): the pages, headings and pagination readers 1 to 3
     # read, so that an older reader number still reads the file byte for byte as it did (`as_read_by`)
     before_4: dict | None = None
+    # reader 5 (0.18.1) reads an image's alternative text in Word files and web pages: `figures` are those texts (as
+    # `" ".join(text.split())`), which sit in `pages` as paragraphs of their own; `before_5` is the pages, headings and
+    # pagination readers 2 to 4 read, when they differ (`as_read_by`)
+    before_5: dict | None = None
+    figures: set[str] | None = None
 
     def as_read_by(self, reader: int) -> "RawDoc":
-        """The file as the given reader reads it: itself, or for readers 1 to 3 the Word text they read."""
-        if reader >= 4 or not self.before_4:
-            return self
+        """The file as the given reader reads it: itself, or for readers before 5 the Word text and web page they
+        read (and for readers 1 to 3 the Word text of reader 3, as before)."""
+        raw = self
         import dataclasses
 
-        return dataclasses.replace(self, **self.before_4, before_4=None)
+        if reader < 5 and raw.before_5:
+            raw = dataclasses.replace(raw, **raw.before_5, before_5=None)
+        if reader < 4 and raw.before_4:
+            raw = dataclasses.replace(raw, **raw.before_4, before_4=None)
+        return raw
     page_sizes: list | None = None  # PDFs (0.15): per page, (width, height) in points
 
 
@@ -110,6 +119,13 @@ class _TextOnly(HTMLParser):
         self._in_title = False
         self.headings: set[str] = set()
         self._heading: list[str] | None = None
+        # reader 5: the same text with each image's alternative text as a paragraph of its own
+        self.parts5: list[str] = []
+        self.alts: set[str] = set()
+
+    def _emit(self, s: str) -> None:
+        self.parts.append(s)
+        self.parts5.append(s)
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style", "nav", "footer", "noscript"):
@@ -117,7 +133,12 @@ class _TextOnly(HTMLParser):
         if tag == "title":
             self._in_title = True
         if tag in self.BLOCK:
-            self.parts.append("\n")
+            self._emit("\n")
+        if tag == "img" and not self.skip:
+            alt = " ".join((dict(attrs).get("alt") or "").split())
+            if alt:
+                self.parts5.append("\n\n" + alt + "\n\n")  # a paragraph of its own
+                self.alts.add(alt)
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self._heading = []
 
@@ -132,13 +153,13 @@ class _TextOnly(HTMLParser):
                 self.headings.add(t)
             self._heading = None
         if tag in self.BLOCK:
-            self.parts.append("\n")
+            self._emit("\n")
 
     def handle_data(self, data):
         if self._in_title:
             self.title = (self.title or "") + data
         elif not self.skip:
-            self.parts.append(data)
+            self._emit(data)
             if self._heading is not None:
                 self._heading.append(data)
 
@@ -165,15 +186,18 @@ def read_file(path: Path, ocr: "OcrOptions | None" = None, should_stop=None) -> 
                       page_sizes=sizes or None)
     if ext == ".docx":
         sha1 = _sha1(path)
-        pages, title, heads, before = _read_docx(path)
-        return RawDoc(path, "docx", pages, title, sha1, paginated=len(pages) > 1, headings=heads, before_4=before)
+        pages, title, heads, before, before5, figs = _read_docx(path)
+        return RawDoc(path, "docx", pages, title, sha1, paginated=len(pages) > 1, headings=heads, before_4=before,
+                      before_5=before5, figures=figs or None)
     data = path.read_bytes()
     sha1 = hashlib.sha1(data).hexdigest()
     if ext in (".html", ".htm"):
         p = _TextOnly()
         p.feed(decode_text(data, html=True))
-        return RawDoc(path, "html", ["".join(p.parts)], (p.title or "").strip() or None, sha1, paginated=False,
-                      headings=p.headings)
+        text5, text = "".join(p.parts5), "".join(p.parts)
+        return RawDoc(path, "html", [text5], (p.title or "").strip() or None, sha1, paginated=False,
+                      headings=p.headings, before_5={"pages": [text]} if text5 != text else None,
+                      figures=p.alts or None)
     text = decode_text(data)
     heads = None
     if ext == ".md":
@@ -277,11 +301,12 @@ def decode_text(data: bytes, html: bool = False) -> str:
 
 
 _W ="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"   # reader 5: an image's docPr
 DOCX_MAX = 200 * 1024 ** 2   # bytes of XML read from one Word file (a zip): a bound against zip bombs
 DOCX_CORE_MAX = 1024 ** 2    # bytes of a Word file's document properties (where its title is): the same, for them
 
 
-def _read_docx(path: Path) -> tuple[list[str], str | None, set[str], dict | None]:
+def _read_docx(path: Path) -> tuple[list[str], str | None, set[str], dict | None, dict | None, set[str]]:
     """A Word file (.docx: a zip of XML) with the standard library: its paragraphs (separated by a blank line, as in a
     text file), its headings (paragraph styles Title and Heading 1 to 9), its pages where Word marked them (a page
     break, or where Word last laid out a new page), and its title (document properties). Tables are read row by row;
@@ -289,8 +314,12 @@ def _read_docx(path: Path) -> tuple[list[str], str | None, set[str], dict | None
 
     Reader 4 reads text inside content controls and custom XML around paragraphs and tables (readers 1 to 3 dropped
     it), and a table inside a table's cell once, its rows after the row that holds it (readers 1 to 3 read it three
-    times). The last value is what readers 1 to 3 read ({"pages", "headings", "paginated"}, for `RawDoc.before_4`)
-    when that differs, else None."""
+    times). The fourth value is what readers 1 to 3 read ({"pages", "headings", "paginated"}, for `RawDoc.before_4`)
+    when that differs from reader 4's, else None.
+
+    Reader 5 also keeps an image's alternative text (the `descr` or `title` of its `wp:docPr`) as a paragraph of its own
+    after the paragraph that holds the image: the fifth value is what readers 2 to 4 read (for `RawDoc.before_5`) when
+    that differs, the sixth the alternative texts."""
     import xml.etree.ElementTree as ET
 
     try:
@@ -320,11 +349,16 @@ def _read_docx(path: Path) -> tuple[list[str], str | None, set[str], dict | None
             title = None
     body = root.find(f"{_W}body")
     pages3, heads3 = _docx_text(body, 3)
-    pages, heads = _docx_text(body, 4)
+    pages4, heads4 = _docx_text(body, 4)
+    figs: set[str] = set()
+    pages, heads = _docx_text(body, 5, figs)
     before = None
-    if pages3 != pages or heads3 != heads:
+    if pages3 != pages4 or heads3 != heads4:
         before = {"pages": pages3, "headings": heads3, "paginated": len(pages3) > 1}
-    return pages, title, heads, before
+    before5 = None
+    if pages4 != pages or heads4 != heads:
+        before5 = {"pages": pages4, "headings": heads4, "paginated": len(pages4) > 1}
+    return pages, title, heads, before, before5, figs
 
 
 # block-level elements that only wrap other block-level elements: a content control (its content) and custom XML
@@ -354,8 +388,10 @@ def _docx_children(el, tag: str):
             yield child
 
 
-def _docx_text(body, version: int) -> tuple[list[str], set[str]]:
-    """The pages and headings of a Word file's body, as reader `version` reads them (see `_read_docx`)."""
+def _docx_text(body, version: int, figs: set[str] | None = None) -> tuple[list[str], set[str]]:
+    """The pages and headings of a Word file's body, as reader `version` reads them (see `_read_docx`). From version 5
+    the alternative text of the images (added to `figs`) is a paragraph of its own after the paragraph that holds
+    them."""
     pages: list[list[str]] = [[]]
     heads: set[str] = set()
 
@@ -405,6 +441,12 @@ def _docx_text(body, version: int) -> tuple[list[str], set[str]]:
         text, new_page = para_text(p)
         st = style(p).lower().replace(" ", "")
         add(text, new_page, st == "title" or bool(re.fullmatch(r"heading[1-9]", st)))
+        if version >= 5 and figs is not None:
+            for d in p.iter(f"{_WP}docPr"):
+                alt = " ".join((d.get("descr") or d.get("title") or "").split())
+                if alt and alt != d.get("name") and alt not in figs:
+                    figs.add(alt)
+                    add(alt, False, False)
 
     def table(tbl) -> None:
         # reader 4: each row once, its cells' own paragraphs; a table in a cell comes after the row that holds it

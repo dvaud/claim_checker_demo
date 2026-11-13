@@ -1149,6 +1149,8 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
             blocks.append(Block(pno, numbers, kind="furniture"))
     joined = reader5.join_tables(blocks, dims, body_size) if v5 and engine == "pdfminer" else 0
     classify(blocks, body_size, dims, pdf, raw.headings if not pdf else None, version)
+    if v5 and not pdf and getattr(raw, "figures", None):
+        reader5.mark_text_figures(blocks, raw.figures)   # a Word file's or web page's image alternative texts
     parts: dict = {}
     if v3:
         # books and theses: the contents, front and end matter, the index
@@ -1206,7 +1208,7 @@ def read_blocks(raw, version: int = READER) -> tuple[list[Block], dict]:
         "tables": sum(1 for b in blocks if b.kind == "table"),
     }
     if v5:
-        report["figures"] = sum(1 for b in blocks if b.kind == "figure" and b.box is not None)
+        report["figures"] = sum(1 for b in blocks if b.kind == "figure" and (b.box is not None or not pdf))
         report["tables_joined"] = joined
     if v3:
         report["repairs"]["doubled"] = counts["doubled"]
@@ -1478,6 +1480,9 @@ def apply_choices(cx, doc_id: str) -> list[int]:
     person said the text starts and ends, then their choices by fingerprint (`choose_inclusion`), and every passage's
     section from its blocks. A passage that holds several blocks (a heading and its paragraph, short paragraphs put
     together) is read when any of them is. Returns the blocks whose inclusion changed."""
+    from .docrole import sync_role
+
+    sync_role(cx, doc_id)  # 0.18.1 (K2): a role (theory) is kept among the choices, documents.role reads it
     rows = cx.execute("SELECT n, start, end, kind, included FROM blocks WHERE doc_id=? ORDER BY n", (doc_id,)).fetchall()
     if not rows:
         return []
