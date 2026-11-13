@@ -6,7 +6,7 @@
 > - Two or more researchers can work on one project, each on their own computer and their own Claude plan.
 > - Choose a folder your team already shares (OneDrive, Dropbox, a network drive), and ENLENS keeps your copies in
 >   step by itself, every couple of minutes (0.17.0). Or send each other a file. No server, no account.
-> - What you make is private until you press *Share* on it (0.17.0).
+> - What you make is private until you share it: choose *Shared with your team* on it (0.17.0).
 > - When you both changed the same thing, both versions are kept (a *sync clash*), so nothing is lost.
 > - A shared project has one **owner** (0.17.0), who decides which documents it holds and may make colleagues
 >   **Co-owners**. Everyone else is a **Member**: a Member's change to the documents is a proposal the owner or a
@@ -35,16 +35,18 @@ computer.
 What you make is yours alone until you share it (0.17.0): your checks, sets of themes, your own codebooks, notes and
 highlights, the entries you write in the research log, and the links you decide between terms.
 
-- **Share.** A check, a set of themes and a codebook have a small tag under their title (*Private*, *Shared* or
-  *Withdrawn by …*) with *Share* or *Unshare* beside it; each note, highlight, entry of your own and link between
-  terms has the same in its card. Sharing a check that uses a codebook of your own shares the codebook too, and ENLENS
-  says so.
-- **Unshare** asks first, with room for why (kept in the research log). The item stops going to your colleagues and
-  leaves the shared folder. What they already have stays with them, marked as withdrawn by you, and reaches nobody
-  else through them. *Share again* sends it again. A shared check or set of themes you remove is treated the same way.
-- **Only the person who made an item** can share it or take it back: a colleague's item says whose it is (*by Ben
-  Okafor*). An item made before ENLENS 0.16 in a project shared before 0.17.0 says *maker not known*: anyone in the team
-  may share it or take it back.
+- **Share.** A check, a set of themes and a codebook of your own have a choice under their title: *Private* or
+  *Shared with your team* (*Shared* while the project has no team). While it is shared, a line under it says where it
+  goes (*Goes to … at the next round*, then *Sent to your team …*); *See what you shared* opens the Team tab. Notes,
+  highlights, your own entries and links between terms have *Share* or *Unshare* in their card. Sharing a check shares
+  your codebook with it, and ENLENS says so.
+- **Unshare.** Choosing *Private* again (or *Unshare* in a card or in the Team tab) asks first, with room for why
+  (kept in the research log). The item stops going to your colleagues and leaves the shared folder. What they already
+  have stays with them, marked as withdrawn by you, and reaches nobody else through them. You can share it again. A
+  shared check or set of themes you remove is treated the same way.
+- **Only the person who made an item** can share it or take it back: a colleague's item says whose it is (*By Ben*)
+  and has no choice. An item made before ENLENS 0.16 in a project shared before 0.17.0 says *maker not known*: anyone
+  in the team may share it or take it back.
 - **Whose is what.** A colleague's judgements, notes and entries carry a small mark with their initials.
 - **What is no one's own stays shared**, as before: the documents, who may read each with AI, the bibliography, and the
   AI's work on the documents with people's reviews of it. Which documents the project holds is for the owner and the Co-owners to decide
@@ -52,7 +54,9 @@ highlights, the entries you write in the research log, and the links you decide 
 - **A project you shared before 0.17.0** counts as shared, item by item. A project you only kept to yourself starts
   private, even if you made zips of it to back it up or move it.
 
-The *Team* tab's *What you shared* lists everything you shared, by kind, each with *Unshare*.
+The *Team* tab's *What you shared* lists everything you shared, by kind, each with *Unshare*. In a project with a team,
+the *Team* row under the project's name in the sidebar shows its state (*synced 15:44*, *3 new*, *syncing now…*);
+press it to open the Team tab.
 
 ### Through a storage space of your team's own
 
@@ -90,25 +94,23 @@ shared folder](shared-folder.md#a-colleague-joins)).
 **A round** first brings in what your colleagues shared, then writes what you shared that changed, so your copy writes
 with their decisions in force (a stricter AI setting, something taken back). What comes in follows the rules
 [below](#how-two-copies-come-together), and the research log says whose work came in. A document's text and file go
-into the folder once for the whole team, not again every round. Choosing a folder and leaving it are written in your
-research log, and sent to no one.
+into the folder once for the whole team, not again every round. Choosing a folder and leaving it go only into your
+research log.
 
 #### By itself, every couple of minutes
 
 Once a project has a shared folder, ENLENS looks in it every 2 minutes, as if you pressed *Sync now*: also soon after
 ENLENS starts, and about 20 seconds after you change something in the project (share an item, edit a shared note),
-waiting while you keep working. Nothing runs between two looks, and a project without a shared folder is left alone.
-A look that finds nothing new costs almost nothing, also in a large project: ENLENS keeps count of what changes in the
-project and looks only at that. The first look after ENLENS starts looks at everything once.
+waiting while you keep working. A project without a shared folder is left alone, and a look that finds nothing new
+costs almost nothing, even in a large project: ENLENS looks only at what changed (the first look after it starts, at
+everything).
 
 - **How often.** *How often ENLENS looks*, on the Team page: from every minute to every 60 minutes, for all your
   projects.
 - **Pause.** *Pause* (in the *Team* tab) stops the rounds of this project; *Pause rounds for every project* (on the Team
-  page) stops them all, until you resume, also across a restart. *Sync now* still works
-  while paused.
-- **Offline.** When the folder cannot be reached (a network drive not connected, a laptop away from the office), the
-  tab says *Offline* and ENLENS tries less and less often (with the usual 2 minutes: after 2, 4, 8 and 16 minutes,
-  then every 30). Your work waits on your computer. The first round that reaches the folder, or a *Sync now* that
+  page) stops them all until you resume, also across a restart. *Sync now* still works.
+- **Offline.** When the folder cannot be reached (a drive not connected, a laptop away), the tab says *Offline* and
+  ENLENS tries less and less often (with the usual 2 minutes: after 2, 4, 8 and 16 minutes, then every 30). Your work waits on your computer. The first round that reaches the folder, or a *Sync now* that
   works, brings the usual rhythm back.
 
 #### Sync now, and work that waits its turn
@@ -177,8 +179,7 @@ sequenceDiagram
 ```
 
 1. **Send your work.** *Send what you shared* on the project, and send the file (e-mail, a USB stick). The file says
-   which project it is and who sent it. Since 0.17.0 it holds the documents and only the work you shared: what you have
-   not shared stays private.
+   which project it is and who sent it. Since 0.17.0 it holds the documents and only the work you shared.
 2. **Bring in a colleague's work.** The first time, your colleague chooses *Import a project (.zip)*, which makes
    their copy. From then on, each of you chooses *Bring in a colleague's work* on the same project and picks the
    other's newest file. A short report says what came in.
@@ -256,8 +257,8 @@ answers under *Hypotheses*, with a notice and a link to the other version on the
 - A copy you deleted does not come back unless they change it again. When you kept theirs and deleted yours, it goes
   on following their changes.
 - A result or set of themes still running in **your** copy (waiting for Claude Code, or being read) keeps your version
-  for now, even when your colleague's is newer, and the report says so. Bring in their file again when it is done (a
-  round of the shared folder does that by itself), and their version comes in beside yours.
+  for now, even when your colleague's is newer, and the report says so. Once it is done, their version comes in beside
+  yours with the next round or file.
 
 ### A codebook you both changed
 
@@ -271,10 +272,9 @@ them at once. When anyone else does, the codebook page shows a card: *Ben rename
 Follow for your 40 labels?* with **Follow** and **Keep mine**. Until you answer, your labels stay as they are. No
 rename or merge deletes a label.
 
-Where you both changed the same code, yours stays and the codebook editor shows the two versions side by side (name,
-definition, when to use it and when not, the words it is matched by, examples), says in words what differs, and offers
-**Keep mine** or **Keep theirs**. The research log says whose version was kept. A code you had removed shows as
-removed, and *Keep theirs* brings it back as they have it. Two codebooks that only share a name (made separately in
+Where you both changed the same code, yours stays and the codebook editor shows the two versions side by side, field by
+field, says in words what differs, and offers **Keep mine** or **Keep theirs**. The research log says whose version
+was kept. A code you had removed shows as removed, and *Keep theirs* brings it back as they have it. Two codebooks that only share a name (made separately in
 each copy) are kept side by side.
 
 ### Each person's judgements
@@ -323,7 +323,6 @@ yet, would refuse them.
 - **A late role setting of a former owner** for a person the new owner did not know yet is taken. A notice shows it,
   and the owner can change it.
 - **Work a Co-owner had not sent when they became a Member again** comes as proposals ([Roles](roles.md)).
-- **Files are not signed.** Someone who can write in the shared folder can still write in a colleague's name.
 - **ENLENS 0.17.0 to 0.18.0 open a newer zip as a new project** without a warning ([Project zips](#project-zips)).
 
 ## Project zips
