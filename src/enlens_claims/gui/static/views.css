@@ -96,6 +96,15 @@
 .docs-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 var(--space-4); }
 .docs-tools > .search-field { flex: 1 1 16em; max-width: 28em; }
 .docs-group-by { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* the groups' counts, each a jump to its group, and the way to the selection bar */
+.docs-jump-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+.docs-jumps { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
+.docs-to-bar[hidden] { display: none; }
+/* once the project has documents, Add documents is one line that opens */
+.docs-add-fold { margin: 0 0 var(--space-4); }
+/* the fact that tells a document apart, quiet, before its marks; not on a narrow line */
+.doc-fact { overflow: hidden; color: var(--muted); font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.doc-fact:empty { display: none; }
 .doc-group + .doc-group { margin-top: var(--space-5); }
 /* a group's head: its name, how many and the way to tick them all on one line, what it means on the next; it stays
    at the top while its documents scroll under it */
@@ -127,6 +136,7 @@
 .doc-file { font-size: var(--fs-xs); color: var(--muted); font-family: var(--font-mono); overflow-wrap: break-word; min-width: 0; }
 .owner-doc { margin: var(--space-1) 0 0; }   /* 0.18 (L2): Waiting for the owner, or In your copy only (views/owner.js proposalChip) */
 @container (max-width: 520px) {
+  .doc-fact { display: none; }
   .doc-main { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
   .doc-main .doc-title { -webkit-line-clamp: 2; }
   .doc-marks { justify-content: flex-start; max-width: none; }
@@ -146,7 +156,7 @@
 .tess-help .copy-line { margin: 4px 0; }
 .add-access { margin-top: 12px; }
 /* the bar stays in view under the page's top while rows are ticked; one button per setting */
-.bulk-bar.bulk-stick { position: sticky; bottom: 12px; z-index: 15; margin: var(--space-3) 0 0; box-shadow: var(--shadow-lg); }
+.bulk-bar.bulk-stick { position: sticky; bottom: 12px; z-index: 15; margin: var(--space-3) 0 0; box-shadow: 0 12px 0 var(--bg), var(--shadow-lg); }   /* the page's ground fills the 12 px under it */
 html:has(.bulk-stick:not([hidden])) { scroll-padding-bottom: 6rem; }
 .bulk-move { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .bulk-bar {
@@ -1744,3 +1754,7 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .model-choice-head, .model-choice-line { display: block; }
 .model-role { margin-left: var(--space-2); color: var(--accent-text); }
 .model-what { margin: 0 0 var(--space-1); }
+
+/* 0.18.5: on a phone the top bar is 49 px (its 32 px button, 8 px above and under, its edge): the group heads stick
+   right under it */
+@media (max-width: 860px) { .doc-group-head { top: 49px; } }

@@ -647,8 +647,8 @@ recognisable this way:
 
 1. The item's name is its [title link](#43-links); no *Open*.
 2. Row actions are small quiet buttons at the row's end, in the same place on every row; more than two go into a menu.
-   A lasting one (*Remove…*) is never a red button repeated on every row: it is a danger row of the row's menu
-   (Documents), and its dialog asks first.
+   A lasting one (*Remove…*) is never a red button repeated on every row: it is a danger row of the row's menu, or
+   (a list whose lines open, as Documents) a quiet button at the foot of the open panel, and its dialog asks first.
 3. The one action that matters most in a row (*Agree*) is small standard in the first place.
 4. A panel opens under the row that opened it, by a toggle; the row does not move.
 5. The smallest control is 24 × 24 px (the small icon button), 32 px on a touch screen.
