@@ -456,8 +456,8 @@ Linux only and without the anthropic, OCR and pdfminer extras.)
 10. **Rolling back.** A short runbook in `docs/DEVELOPING.md`: a bad release is marked as a pre-release so "latest"
     falls back to the one before, the update button skips it, and the fix follows as a patch release.
 11. **Tests named by topic, not version.** `tests/test_word_citations.py` rather than `test_m0_10_0_…`, never renamed.
-    *Why*: renaming at every release is churn, and a test's name should say what it guards. Existing files keep their
-    names.
+    *Why*: renaming at every release is churn, and a test's name should say what it guards. In 0.18.1 the existing
+    files were renamed too, once, at the owner's request.
 
 **Order:** 1, 3, 4 and 11 first (small, and the others build on them); then 2, 5 and 7; then 6, 8, 9 and 10. For
 ENLENS this changed (8 November 2026): what testing 0.15 needs comes first (items 1, 6 and 10, in 0.15), the rest in
