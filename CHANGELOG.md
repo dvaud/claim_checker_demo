@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.18.6 (November 2026): Non-scientific documents, and the documents your answers rest on
+
+### New
+
+- **See which documents your answers rest on.** The Documents list can now be grouped by the answers behind each
+  document (*Behind no answer*, *Behind answers*, *Theory*) or sorted by them (*Most answers*), and a document's panel
+  says how many of your answers an excerpt of it counts in. Once five hypotheses are checked, one quiet line above the
+  list says how many documents are behind none of them, with *Show them*; the evidence map's line on documents with
+  no excerpt that counts now links there too. A document behind no answer may be off your topic, or say it in other
+  words: the count says nothing about how good it is. Counted as the evidence map counts, at your strictness setting.
+  Changes no result.
+
+### Changes that can alter your results
+
+- **Mark a document as non-scientific.** A news article, a press release, a company brochure or a blog reports no
+  method or data of its own. In *Documents* (open a row → *Scientific*) or on the document's page, *Mark as
+  non-scientific*. It stays in themes, codebook labels, the excerpts a check reads and key terms, and its excerpts are
+  still judged, shown with *Not counted: non-scientific*, but no judgement of them counts in an answer, on either
+  side. A hypothesis only non-scientific documents support reads *No scientific evidence found*; a newspaper that
+  contradicts a study makes nothing *Mixed evidence*. The assessment under the answer says what they say, and what the
+  answer would be counting them. A document can be theory and non-scientific at once. Marking changes the answers of
+  the checks that read the document at once: the dialog says how many, and the document's page lists them. Travels
+  in a shared project as *Leave out* does. Can change results, only for documents you mark.
+
+### Tests
+
+- **Each test starts with no Claude Code runs in memory.** A run of project "Q" that one test had stopped was still
+  remembered by the next test of "Q" in the same worker, which then saw a stopped run instead of an idle queue (a
+  macOS CI failure). The tests now clear the runs before and after each test and stop any stand-in still at work.
+
 ## 0.18.5 (November 2026): Documents, grouped as you choose
 
 The Documents page groups its list as you choose and stays easy to use with hundreds of documents: calm one-line

@@ -1,4 +1,4 @@
-# 0.18.5: Documents, grouped as you choose
-*The Documents page groups its list as you choose and stays easy to use with hundreds of documents.*
-- Documents, grouped as you choose, with a filter
-- Made for long lists
+# 0.18.6: Non-scientific documents, and the documents your answers rest on
+*What changed since the last release.*
+- See which documents your answers rest on
+- Mark a document as non-scientific
