@@ -847,3 +847,23 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   against the corpus like any document, but never a source (not in search results used as evidence, the glossary, the
   themes or the evidence map). Still to settle: whether their claims are found by themselves, and how their codes are
   counted.
+
+**N4. The assessment in words** · Level 0
+- A short written assessment on each hypothesis's page, under its verdict, made by rules from the judgements and
+  never written by an AI: every sentence comes from the grades, the quotes and the person's own notes, so it reads the
+  same twice and can be traced. For example: "Mixed evidence. Three documents support the hypothesis and one
+  contradicts it: *no measurable change in yields* (Jones 2022, p. 12). Most of the support comes from one document
+  (Smith 2021, 4 of 6 excerpts). For the second part, *because irrigation expanded*, nothing was found."
+- Each sentence has one rule: the verdict and how many documents stand on each side (`claim_status`, `balance`); the
+  contradicting side always quoted, so mixed evidence shows both sides; a warning when one document, year or kind of
+  document carries most of the support; each part of the hypothesis, what holds and what has no evidence
+  (`aggregate`); and what is not counted (excerpts below the strictness setting, and those waiting for the person's
+  own judgement).
+- **It follows the person's judgement.** It is made again whenever a judgement changes (`effective`), and says what
+  the change did: "Your judgement on Jones 2022, p. 12 turned this from Supported to Mixed evidence." The verdict
+  with and without the person's judgements is compared to find the change that moved it, and the change goes into the
+  research log (F4).
+- Shown on the hypothesis page, and in the report and exports. It changes no verdict, so it is not a change to results.
+- *Left to the reader:* whether two excerpts that disagree concern a different place, group or period, and how strong
+  each source is. The text points to these and does not decide them. If an AI's wording is ever wanted, it is a
+  separate draft sentence marked as the AI's (as in K1), never mixed into the sentences made by rules.
