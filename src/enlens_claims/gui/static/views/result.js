@@ -2,7 +2,7 @@
 // what (documents, from `balance`), then the evidence as verified quotes. Every count on the page is computed from
 // the same `passages` the cards are drawn from, so sections and numbers always agree. A person's judgement
 // replaces the AI's; it is protected (no silent overwrite) and every save can be undone.
-import { App, api, h, icon, readsLine, aiWhere, judgementIcon, pageHead, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, cpToIndex, indexToCp, cpLength, breaksToIndex, latest, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark,
+import { App, api, h, icon, madeWithFact, readsLine, aiWhere, judgementIcon, pageHead, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, cpToIndex, indexToCp, cpLength, breaksToIndex, latest, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark,
   button, iconButton, link, tag, notice, card as cardBox, fold as foldBox, choice, helpMark, downloadButton, textarea, input as fieldInput, select as selectField, reviewedMark, emptyState, personMark } from "../lib.js";
 import { withAI } from "../features.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
@@ -329,7 +329,8 @@ export async function renderResult(view, [hypId], query) {
     box.appendChild(pageHead(r.text, { class: "result-head", display: true, titleClass: "result-hyp",
       back: from && from.eyebrow ? { href: from.href, text: from.eyebrow } : { href: "#/hypotheses", text: "All hypotheses" },
       sub: r.code ? codeChip(r.framework, r.code, r.code_description, r.code_label) : null,
-      facts: [`${r.status === "waiting" ? "Started" : "Checked"} ${fmt.date(r.created_at)}`, from && from.meta ? h("a", { href: from.href }, from.meta) : null], meta: sharing }));
+      facts: [`${r.status === "waiting" ? "Started" : "Checked"} ${fmt.date(r.created_at)}`, from && from.meta ? h("a", { href: from.href }, from.meta) : null,
+        madeWithFact(r.made_with)], meta: sharing }));   // 0.18.1 (J4.2)
 
     // 0.14: a sync clash: this is a colleague's version of a check you both changed, or one came in beside this one
     if (r.clash || (r.clash_copies || []).length) box.appendChild(clashNotice(r));

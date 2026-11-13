@@ -350,6 +350,8 @@ details.card > summary .muted { font-weight: var(--fw-regular); }
 /* facts about the item, in a line under the title, "·" between them (pageHead({ facts })); on a phone one under another */
 .page-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: .35rem 0 0; color: var(--muted); font-size: var(--fs-small); }
 .page-facts > .sep { color: var(--faint); }
+/* 0.18.1 (J4.2): "Made with ENLENS 0.17.2" on a result an earlier version made (lib.js madeWithFact) */
+.page-facts .made-with { display: inline-flex; align-items: center; gap: 4px; }
 /* the Display style: a page whose title is the research's own words (a hypothesis, a document's title) */
 .title-display { font-family: var(--font-serif); font-size: var(--fs-display); font-weight: var(--fw-regular); line-height: 1.3; letter-spacing: 0; }
 @media (max-width: 860px) {

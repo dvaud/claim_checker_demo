@@ -4,7 +4,7 @@
 // A theme that is not relevant can be removed (its passages are left out until it is brought back), and a new theme
 // found in its place, on this computer without AI (POST …/new, job "theme-new").
 import { featureEyebrow, withAI } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold, readsLine, stopButton, menu, inset, searchHref } from "../lib.js";
+import { App, api, h, icon, madeWithFact, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold, readsLine, stopButton, menu, inset, searchHref } from "../lib.js";
 import { simpleProgress, MiniJob, jobError } from "./progress.js";
 import { historyButton, askWhy } from "./versions.js";
 import { shareBar } from "./share.js";   // 0.18 (L1)
@@ -194,6 +194,7 @@ async function renderRun(view, runId, info, query) {
       sub: `${plural(v.themes.length, "theme")}${(v.removed || []).length ? ` (${(v.removed || []).length} removed)` : ""} in ${plural(r.passages, "passage")} of ${plural(nDocs, "document")}, found ${modeWords(r.mode)} on ${fmt.date(r.created_at)}. Open a theme to read its passages.`,
       actions: [withAI(nameBtn), historyButton("themes", runId, { onRestored: () => reload() }), xlsx],   // 0.16 (F5)
       ai: readsLine("the passages of each theme"),
+      facts: [madeWithFact(v.made_with)],   // 0.18.1 (J4.2)
     }), sharing);
     clear(notes);
     if (r.stale) notes.appendChild(notice({ kind: "attention", class: "th-status-notice" },

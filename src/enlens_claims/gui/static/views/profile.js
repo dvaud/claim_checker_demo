@@ -4,7 +4,7 @@
 // says why it is there; a person can agree, change or reject it (in the document viewer, Codes panel).
 // The pieces shared with the document viewer (the AI-labelling card, the keyword pass, wording) are exported from here.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
-import { App, api, h, icon, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice, readsLine, inset } from "../lib.js";
+import { App, api, h, icon, madeWithFact, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice, readsLine, inset } from "../lib.js";
 import { jobCard } from "./progress.js";
 
 // The largest count in a grid of rows of cells (at least 1), found by a loop: Math.max(...every cell) throws a
@@ -296,6 +296,7 @@ export async function renderProfile(view, params, query) {
     replace(head, pageHead("Codes", { eyebrow: featureEyebrow("profile"),
       sub: "Which codes of a codebook each document addresses, how much and where.",
       actions: xlsx,
+      facts: [madeWithFact(prof.made_with)],   // 0.18.1 (J4.2): labels an earlier ENLENS made
     }));
     drawControls();
     drawSummary();

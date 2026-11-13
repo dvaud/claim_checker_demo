@@ -1687,6 +1687,20 @@ export function downloadLinks(items, opts = {}) {
 //   meta: further lines (a bibliography line, a row of links), as given;
 //   actions: the page's actions at the right, never a link;
 //   class, titleClass: the page's own classes, for placement.
+// 0.18.1 (roadmap J4.2): on a result's own page, which earlier ENLENS made it, as one of the head's facts; nothing when
+// this version made it. `m` is one result's {app_version, label, version, older} (runs.made_with_one), or a list of
+// them with their counts `n` (a codebook's labels, runs.labels_made_with).
+export function madeWithFact(m) {
+  const older = [m || []].flat().filter((x) => x && x.older);
+  if (!older.length) return null;
+  const by = (x) => (x.app_version ? `ENLENS ${x.label}` : `an ENLENS ${x.label}`);
+  const text = Array.isArray(m)
+    ? `${older.map((x) => `${plural(x.n, "label")} made with ${by(x)}`).join(", ")}`
+    : `Made with ${by(older[0])}`;
+  return h("span", { class: "made-with", title: `You have ENLENS ${older[0].version}. A result stays as it was made; each Excel download names the version behind every answer.` },
+    icon("history", { size: 12 }), h("span", {}, text));
+}
+
 export function pageHead(title, opts = {}) {
   const backs = [opts.back || []].flat().filter(Boolean);
   const top = backs.length ? backs.map((b, i) => [i ? " " : null, link({ kind: "back", href: b.href }, b.text)]) : opts.eyebrow;

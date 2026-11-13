@@ -72,6 +72,9 @@ class ChecksApi:
             raise ApiError(404, "No such result.", extra={"in_project": other} if other else None)
         s = self.app.settings()
         res = claimcheck.hypothesis_result(ws, hyp_id, _float(q, "threshold", s["threshold"]))
+        from .. import runs  # 0.18.1 (J4.2): the version that started this check, on its own page
+
+        res["made_with"] = runs.made_with_one(ws.scalar("SELECT app_version FROM hypotheses WHERE hyp_id=?", (hyp_id,)))
         try:  # with smart search every excerpt not read yet can still be found; without it only keyword matches
             semantic = _usable_embedder(ws, home.make_embedder(s)) is not None
         except BackendError:

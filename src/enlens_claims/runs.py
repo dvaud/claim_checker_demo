@@ -215,6 +215,27 @@ def made_with(ws: Workspace) -> dict:
             "older": any(x["older"] for x in docs + res)}
 
 
+def made_with_one(app_version: str | None) -> dict:
+    """0.18.1 (J4.2): the ENLENS version behind one result, for that result's own page: {"app_version", "label",
+    "version" (this one), "older"}. Older when it was made before this version, or before versions were recorded."""
+    from . import __version__ as current
+    from .update import version_tuple
+
+    return {"app_version": app_version, "label": version_label(app_version), "version": current,
+            "older": not app_version or version_tuple(app_version) < version_tuple(current)}
+
+
+def labels_made_with(ws: Workspace, framework: str) -> list[dict]:
+    """0.18.1 (J4.2): the versions behind a codebook's labels (people's own labels left out: they do not depend on a
+    version), each as `made_with_one` gives it with its count `n`, oldest first."""
+    from .update import version_tuple
+
+    rows = ws.query("SELECT app_version, COUNT(*) FROM labels WHERE framework=? AND source != 'person' "
+                    "GROUP BY app_version", (framework,))
+    out = [{**made_with_one(v), "n": n} for v, n in rows if n]
+    return sorted(out, key=lambda r: version_tuple(r["app_version"]) if r["app_version"] else (0,))
+
+
 def hypothesis_task_ids(ws: Workspace, hyp_ids: list[str]) -> list[str]:
     from .tasks import check_task_ids_sql, id_range
 

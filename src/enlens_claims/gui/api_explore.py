@@ -105,7 +105,7 @@ class ExploreApi:
         return fw
 
     def get_profile(self, name, q):
-        from .. import profile
+        from .. import profile, runs
 
         from .. import codebooks
 
@@ -119,7 +119,9 @@ class ExploreApi:
                                                                                       frameworks.available(ws).values()],
                # 0.16: codes taken out whose labels wait, and codes the AI labelled with an earlier wording
                "removed_codes": [{"code": r["code"], "labels": r["labels"]} for r in codebooks.removed_codes(ws, fw)],
-               "stale_codes": codebooks.stale(ws, fw)}
+               "stale_codes": codebooks.stale(ws, fw),
+               # 0.18.1 (J4.2): the versions behind this codebook's AI labels, for the page to name older ones
+               "made_with": runs.labels_made_with(ws, fw)}
         if out["pass1"]["done"]:
             docs = _list(q, "docs")
             # 0.16: the labels that count are worked out once for the grid and the counts when both are of every
@@ -299,7 +301,13 @@ class ExploreApi:
         fw = _str(q, "framework")
         if fw:
             frameworks.get(fw, ws)
-        return themes.view(ws, run_id, fw)
+        out = themes.view(ws, run_id, fw)
+        from .. import runs  # 0.18.1 (J4.2): the version that made this run, on its own page
+
+        if isinstance(out, dict) and "made_with" not in out:
+            out["made_with"] = runs.made_with_one(ws.scalar("SELECT app_version FROM theme_runs WHERE run_id=?",
+                                                            (run_id,)))
+        return out
 
     def delete_theme_run(self, name, run_id, q):
         from .. import themes
