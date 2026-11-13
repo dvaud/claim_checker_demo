@@ -1484,6 +1484,8 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 /* an item's sharing: the row under its page's title (shareBar), and the quiet row in a card of a list (shareInline) */
 .share-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--space-2); margin: 0 0 var(--space-4); }
 .page-head + .share-bar, .result-head .share-bar { margin-top: 0; }
+/* an item's sharing choice and the line that says where a shared item goes */
+.share-bar .share-where { flex: 1 1 100%; margin: 0; color: var(--text-2); font-size: var(--fs-small); }
 .share-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 /* the Team tab: sections divided by a line, each under a small heading the panel can focus */
 .team-empty { margin: 4px 0 8px; }

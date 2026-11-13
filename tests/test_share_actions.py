@@ -1,6 +1,7 @@
 """0.18.0 (roadmap L1): Share / Unshare on each item's own page, its state as a small tag, and whose it is
 (views/share.js, and the item pages: a check, a set of themes, a codebook, notes, research log entries, links
-between terms), and the two downloads (what you shared, or the whole project).
+between terms), and the two downloads (what you shared, or the whole project). Since the sharing choice (SPEC 3.1),
+an item's maker has a choice on its page, Private | Shared with your team, and a line that says where it goes.
 
 - static checks of the pages, as the other UI tests here do;
 - the person mark's initials and an item's address, in Node when it is installed;
@@ -10,6 +11,7 @@ between terms), and the two downloads (what you shared, or the whole project).
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -33,6 +35,8 @@ def test_the_tag_says_private_shared_or_withdrawn_by_someone():
     assert 'private: "Private", shared: "Shared", withdrawn: "Withdrawn"' in SHARE
     assert "`Withdrawn by ${item.by}`" in SHARE
     assert 'role: "group", "aria-label": "Sharing with your team"' in SHARE        # the bar on an item's page
+    assert "your colleagues get it with your work, through the team's storage space or shared folder, or in the file" \
+           " “Send what you shared (.zip)”" in SHARE                                # SHARING_HELP names both ways and the file
     assert "only ${item.owner.name} can share it or take it back" in SHARE          # a colleague's item says whose
     assert "maker not known" in SHARE                                               # made before 0.18
 
@@ -64,6 +68,130 @@ def test_the_whole_project_asks_first_and_warns_about_0_17():
     assert 'if (scope === "shared") { downloadProject(project, "shared"); return; }' in zb
     assert "await confirmWholeProject(project)" in zb
     assert '"Send what you shared (.zip)"' in SHARE and '"Download the whole project (.zip)"' in SHARE
+
+
+# ------------------------------------------------------------------ the sharing choice (SPEC 3.1)
+def _fn(name: str) -> str:
+    fn = SHARE[SHARE.index(f"export function {name}("):]
+    return fn[:fn.index("\n}\n")]
+
+
+def test_the_maker_has_a_choice_of_two_named_values():
+    fn = _fn("shareChoice")
+    assert "choice({ label: `Who sees this ${KIND_WORDS[item.kind] || \"item\"}`" in fn
+    assert 'class: "share-choice"' in fn and "id," in fn and "sm:" not in fn            # the normal size
+    # an arrow key must not share an item by itself: two pressed-state buttons, not a radio group (SPEC 3.7)
+    assert "filter: true" in fn
+    assert '[icon("house", { size: 13 }), "Private"]' in fn
+    assert '[icon("users", { size: 13 }), opts.team ? "Shared with your team" : "Shared"]' in fn
+    assert '"Only you see it"' in fn and '"Your team gets it with your work"' in fn and '"Colleagues get it with your work"' in fn
+    # sharing, or taking back after the dialog; cancelled or failed: the choice is set back and the focus stays on it
+    assert 'v === "shared" ? await shareItem(item) : await unshareItem(item)' in fn
+    assert 'if (v === "private") c.set(now);' in fn                                     # the choice stays until the answer
+    assert "if (!r) {\n        c.set(now);" in fn and "b.disabled = false" in fn and "back.focus()" in fn
+    assert "if (onChanged) await onChanged(r);" in fn and "document.getElementById(id)" in fn
+    assert 'again.querySelector(\'[aria-pressed="true"]\')' in fn
+    assert re.search(r"^import \{[^}]*\bchoice, icon, link\b[^}]*\} from \"\.\./lib\.js\";", SHARE, flags=re.M)
+
+
+def test_the_bar_draws_the_choice_for_the_maker_only():
+    fn = _fn("shareBar")
+    mine = fn[fn.index("if (!item.can_change) {"):]
+    theirs, maker = mine[:mine.index("} else {")], mine[mine.index("} else {"):]
+    assert "shareChoice" not in theirs and "shareTag(item), ownerMark(item)" in theirs
+    assert "only ${item.owner.name} can share it or take it back" in theirs
+    # after a change the brief is read again: sharing moves the next round closer
+    assert "shareChoice(item, async () => { forgetBrief(App.project); await load(); if (opts.onChange) opts.onChange(); }," in maker
+    assert "{ team: !!(brief && brief.team) }" in maker
+    assert 'item.state === "withdrawn" ? shareTag(item) : null' in maker
+    assert "!item.mine && !item.owner ? ownerMark(item) : null" in maker                # "maker not known"
+    assert "help, shareWhere(item, brief)" in maker
+    assert "shareButton(" not in fn                                                     # no small button on the item's page
+    # the item and the team's brief read together; a brief that fails leaves the bar drawn
+    assert "await Promise.all([api(\"GET\", `/api/projects/${P(project)}/sharing/${kind}/${P(key)}`)," in fn
+    assert "teamBrief(project).catch(() => null)" in fn
+    assert 'import { teamBrief, forgetBrief, whenPhrase, inText, ms } from "./team-state.js";' in SHARE
+
+
+def test_the_line_says_where_a_shared_item_goes():
+    fn = _fn("shareWhere")
+    assert "Taken back: colleagues keep what they had, marked as withdrawn." in fn
+    assert "No team yet: it goes to colleagues in the file “Send what you shared (.zip)”. " in fn
+    assert 'link({ href: "#/team" }, "Set up a team")' in fn
+    assert "`Sent to your team ${whenPhrase(brief.sentAt)}.`" in fn
+    assert '`Goes to ${brief.names} at the next round${brief.nextAt ? ", " + inText(brief.nextAt) : ""}.`' in fn
+    assert 'link({ kind: "jump", class: "share-see"' in fn and '"See what you shared"' in fn
+    assert 'new CustomEvent("enlens-drawer", { detail: { tab: "team", section: "shared" } })' in fn
+    css = (STATIC / "views.css").read_text(encoding="utf-8")
+    block = css[css.index("/* ==== Working together */"):]
+    assert ".share-bar .share-where { flex: 1 1 100%; margin: 0; color: var(--text-2); font-size: var(--fs-small); }" in block
+
+
+def test_lists_and_the_team_tab_keep_the_small_buttons():
+    assert "shareButton(item, onChanged, { link: true })" in _fn("shareInline")
+    team = _js("views/team.js")
+    assert "shareButton(it, () => ctx.refresh({ force: true }), { link: true, idPrefix: \"team\" })" in team
+
+
+SHARE_WHERE_NODE = r"""
+import { shareWhere, shareChoice } from "./views/share.js";
+const NOW = Date.now();
+const iso = (s) => new Date(NOW + s * 1000).toISOString();
+const text = (n) => n === null || n === undefined ? null : typeof n === "string" ? n
+  : Array.isArray(n) ? n.map(text).join("") : n.link ? `[${text(n.c)}${n.link.href ? " -> " + n.link.href : ""}]` : text(n.c);
+const team = { team: true, names: "Ben and Chloé", nextAt: iso(120), sentAt: iso(-3600) };
+let seen = null;
+window.addEventListener = () => {};
+window.dispatchEvent = (e) => { seen = e.detail; };
+const shared = { kind: "check", key: "h1", state: "shared", at: iso(-60) };
+const line = shareWhere(shared, team);
+line.c[2].link.onClick();
+const pick = shareChoice({ kind: "themes", key: "r 1", state: "withdrawn" }, null, { team: true });
+console.log(JSON.stringify({
+  waits: text(line), sent: text(shareWhere({ ...shared, at: iso(-7200) }, { ...team, sentAt: iso(-60) })),
+  noNext: text(shareWhere(shared, { ...team, nextAt: null })),
+  noTeam: text(shareWhere(shared, null)), noTeam2: text(shareWhere(shared, { team: false })),
+  withdrawn: text(shareWhere({ ...shared, state: "withdrawn" }, team)), private: shareWhere({ ...shared, state: "private" }, team),
+  detail: seen, cls: line.attrs.class,
+  pick: { label: pick.label, value: pick.value, id: pick.id, filter: pick.filter, sm: pick.sm || false,
+    words: pick.options.map((o) => [o[0], text(o[1])]) },
+  noTeamWords: shareChoice({ kind: "check", key: "h1", state: "shared" }, null, {}).options.map((o) => text(o[1])),
+}));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is not installed")
+def test_the_line_and_the_choice_in_node(tmp_path):
+    (tmp_path / "views").mkdir()
+    (tmp_path / "package.json").write_text('{"type": "module"}')
+    (tmp_path / "views" / "share.js").write_text(SHARE, encoding="utf-8")
+    (tmp_path / "views" / "versions.js").write_text("export const askWhy = () => null;")
+    (tmp_path / "views" / "team-state.js").write_text(_js("views/team-state.js"), encoding="utf-8")
+    # a lib.js whose h() and link() make plain objects, and whose choice() gives back what it was asked for
+    (tmp_path / "lib.js").write_text(
+        "const n = () => {}; globalThis.window = globalThis.window || {};"
+        " globalThis.CustomEvent = class { constructor(t, o) { this.type = t; this.detail = o.detail; } };"
+        " export const App = {}, api = n, icon = () => '', replace = n, toast = n, showError = n, P = (x) => x,"
+        " shortTitle = (x) => x, helpMark = n, download = n, dialog = n, button = n, downloadButton = n, notice = n,"
+        " tag = n, personMark = n, shareState = n;"
+        " export const h = (t, attrs, ...c) => ({ t, attrs, c });"
+        " export const link = (o, ...c) => ({ link: o, c });"
+        " export const choice = (o) => ({ ...o, set: n });", encoding="utf-8")
+    (tmp_path / "run.mjs").write_text(SHARE_WHERE_NODE, encoding="utf-8")
+    r = subprocess.run([shutil.which("node"), str(tmp_path / "run.mjs")], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    got = json.loads(r.stdout)
+    assert got["waits"] == "Goes to Ben and Chloé at the next round, in about 2 min. [See what you shared]"
+    assert got["sent"].startswith("Sent to your team today at ") and got["sent"].endswith(". [See what you shared]")
+    assert got["noNext"] == "Goes to Ben and Chloé at the next round. [See what you shared]"
+    assert got["noTeam"] == got["noTeam2"] == ("No team yet: it goes to colleagues in the file “Send what you shared (.zip)”. "
+                                               "[Set up a team -> #/team]")
+    assert got["withdrawn"] == "Taken back: colleagues keep what they had, marked as withdrawn."
+    assert got["private"] is None and got["cls"] == "share-where"
+    assert got["detail"] == {"tab": "team", "section": "shared"}
+    assert got["pick"] == {"label": "Who sees this set of themes", "value": "private", "id": "share-themes-r_1", "filter": True,
+                           "sm": False, "words": [["private", "Private"], ["shared", "Shared with your team"]]}
+    assert got["noTeamWords"] == ["Private", "Shared"]
 
 
 # ------------------------------------------------------------------ the item pages
@@ -122,9 +250,11 @@ def test_initials_and_addresses_in_node(tmp_path):
     (tmp_path / "package.json").write_text('{"type": "module"}')
     (tmp_path / "views" / "share.js").write_text(SHARE, encoding="utf-8")
     (tmp_path / "views" / "versions.js").write_text("export const askWhy = () => null;")
+    (tmp_path / "views" / "team-state.js").write_text(_js("views/team-state.js"), encoding="utf-8")
     (tmp_path / "lib.js").write_text("const n = () => {}; export const App = {}, api = n, h = n, icon = n, replace = n, toast = n,"
                                      " showError = n, P = (x) => x, shortTitle = (x) => x, helpMark = n, download = n, dialog = n,"
-                                     " button = n, downloadButton = n, notice = n, tag = n, personMark = n, shareState = n;")
+                                     " button = n, downloadButton = n, notice = n, tag = n, personMark = n, shareState = n,"
+                                     " choice = n, link = n;")
     # 0.17.0 (design guide): the person mark is lib.js personMark(), which takes 0.18's initials: the function, as it is
     lib = _js("lib.js")
     fn = lib[lib.index("export function initials(name)"):]

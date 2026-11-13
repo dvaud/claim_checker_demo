@@ -259,3 +259,46 @@ export function nextSyncLook(poller, every = 30000) {
   const at = (due + 5) * 1000;
   return at < every ? Math.max(5000, at) : every;
 }
+
+// An item's sharing line (share.js shareWhere): who gets a shared item, and when. From GET …/shared-folder (`status`)
+// and GET …/sync-poller (`poller`), either null when it could not be read: {team, names, nextAt, sentAt}. team: the
+// project has a shared folder or a storage space; names: the colleagues' first names ("Ben", "Ben and Chloé", "your 4
+// colleagues", "your team" when none is known yet); nextAt: the next round, unless paused; sentAt: when your work
+// last went out (the poller's last round that worked, else the last time this copy wrote to the folder).
+export function briefOf(status, poller) {
+  const st = status || {};
+  const team = !!(status && (st.folder || st.space));
+  const members = ((st.space && st.space.members) || []).filter((m) => m && !m.me && !m.removed);
+  const people = members.length ? members : (st.people || []);
+  const first = people.map((x) => String((x && x.name) || "").trim().split(/\s+/)[0]).filter(Boolean);
+  const names = first.length === 0 ? "your team" : first.length === 1 ? first[0] : first.length === 2 ? `${first[0]} and ${first[1]}`
+    : `your ${first.length} colleagues`;
+  const p = poller && typeof poller === "object" ? poller : null;
+  const nextAt = p && !p.paused && !p.paused_all && p.next_round_at ? p.next_round_at : null;
+  const last = p && p.last_round;
+  const sentAt = (last && last.state === "done" && last.finished_at) || (st.me && st.me.last_written_at) || null;
+  return { team, names, nextAt, sentAt };
+}
+
+// The same, read for a project (kept 15 s per project, so a page drawn again does not ask again; forgetBrief() after a
+// share or unshare, which moves the next round closer). `get(path)`: GET a
+// path of the app (by default lib.js api(), loaded when first needed: this file has no imports, so it runs in Node).
+const BRIEF_TTL = 15000;
+const briefs = new Map();
+export async function teamBrief(project, get = null) {
+  const kept = briefs.get(project);
+  if (kept && Date.now() - kept.at < BRIEF_TTL) return kept.brief;
+  let read = get;
+  let p = encodeURIComponent;
+  if (!read) {
+    const lib = await import("../lib.js");
+    read = (path) => lib.api("GET", path);
+    p = lib.P;
+  }
+  const or = (x) => Promise.resolve().then(() => read(x)).catch(() => null);
+  const [status, poller] = await Promise.all([or(`/api/projects/${p(project)}/shared-folder`), or(POLLER_API.state(p(project)))]);
+  const brief = briefOf(status, poller);
+  briefs.set(project, { at: Date.now(), brief });
+  return brief;
+}
+export function forgetBrief(project) { briefs.delete(project); }

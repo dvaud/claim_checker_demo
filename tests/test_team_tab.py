@@ -386,3 +386,64 @@ def test_choosing_the_folder_again_keeps_the_switch(api, tmp_path):  # noqa: F81
     assert api("GET", "/api/projects/Demo/shared-folder")[1]["keep_out"]["mine"] is True
     st, r = api("PUT", "/api/projects/Demo/shared-folder", {"path": str(shared), "keep_out": False})
     assert st == 200 and r["keep_out"]["mine"] is False
+
+
+# ------------------------------------------------------------------ an item's sharing line: who gets it, and when (piece A)
+BRIEF_NODE = r"""
+import * as T from "./team-state.js";
+const NOW = Date.parse("2026-11-11T10:00:00Z");
+const iso = (s) => new Date(NOW + s * 1000).toISOString();
+const m = (name, x = {}) => ({ person: name.toLowerCase(), name, ...x });
+const folder = (people) => ({ folder: "/x", space: null, people: people.map((n) => ({ name: n })), me: { last_written_at: iso(-600) } });
+const space = (members) => ({ folder: null, space: { members }, people: [], me: {} });
+const poller = { state: "waiting", paused: false, paused_all: false, next_round_at: iso(100),
+  last_round: { state: "done", finished_at: iso(-30) } };
+const out = {};
+out.names = [
+  T.briefOf(space([m("Anna Smit", { me: true }), m("Ben Okafor")]), null).names,
+  T.briefOf(space([m("Anna", { me: true }), m("Ben Okafor"), m("Chloé Martin"), m("Dan", { removed: "2026-11-10" })]), null).names,
+  T.briefOf(folder(["Ben Okafor", "Chloé", "Dan Li", "Eva"]), null).names,
+  T.briefOf(folder([]), null).names,
+  T.briefOf(space([m("Anna", { me: true })]), null).names,
+];
+out.team = [T.briefOf(folder([]), null).team, T.briefOf(space([]), null).team, T.briefOf({ folder: null, space: null }, null).team,
+  T.briefOf(null, poller).team];
+out.times = [T.briefOf(folder(["Ben"]), poller), T.briefOf(folder(["Ben"]), { ...poller, paused: true, last_round: { state: "error", finished_at: iso(-30) } }),
+  T.briefOf(folder(["Ben"]), { ...poller, paused_all: true, last_round: null }), T.briefOf(space([]), null)].map((b) => [b.nextAt, b.sentAt]);
+// read for a project: both routes, a failed one counts as null, kept 15 s
+const asked = [];
+const get = async (path) => { asked.push(path); if (path.endsWith("/sync-poller")) throw new Error("404"); return folder(["Ben", "Chloé"]); };
+const b1 = await T.teamBrief("Green hydrogen", get);
+const b2 = await T.teamBrief("Green hydrogen", get);
+T.forgetBrief("Green hydrogen");
+await T.teamBrief("Green hydrogen", get);
+out.read = { b1, same: b1 === b2, asked };
+console.log(JSON.stringify(out));
+"""
+
+
+def test_the_brief_says_who_gets_a_shared_item_and_when(tmp_path):
+    fn = STATE[STATE.index("export function briefOf("):]
+    assert "const team = !!(status && (st.folder || st.space));" in fn
+    assert "!m.me && !m.removed" in fn and "st.people" in fn
+    assert "`your ${first.length} colleagues`" in fn and '"your team"' in fn
+    assert "p.next_round_at" in fn and 'last.state === "done" && last.finished_at' in fn and "st.me.last_written_at" in fn
+    rd = STATE[STATE.index("export async function teamBrief(project, get = null)"):]
+    assert "`/api/projects/${p(project)}/shared-folder`" in rd and "POLLER_API.state(p(project))" in rd
+    assert "const BRIEF_TTL = 15000;" in STATE and 'await import("../lib.js")' in rd
+    if shutil.which("node") is None:
+        pytest.skip("Node is not installed")
+    (tmp_path / "package.json").write_text('{"type": "module"}')
+    (tmp_path / "team-state.js").write_text(STATE, encoding="utf-8")
+    (tmp_path / "run.mjs").write_text(BRIEF_NODE, encoding="utf-8")
+    r = subprocess.run([shutil.which("node"), str(tmp_path / "run.mjs")], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    got = json.loads(r.stdout)
+    assert got["names"] == ["Ben", "Ben and Chloé", "your 4 colleagues", "your team", "your team"]
+    assert got["team"] == [True, True, False, False]
+    t = "2026-11-11T09:59:30.000Z"
+    assert got["times"] == [["2026-11-11T10:01:40.000Z", t], [None, "2026-11-11T09:50:00.000Z"],
+                            [None, "2026-11-11T09:50:00.000Z"], [None, None]]
+    assert got["read"]["b1"] == {"team": True, "names": "Ben and Chloé", "nextAt": None, "sentAt": "2026-11-11T09:50:00.000Z"}
+    assert got["read"]["same"] is True
+    assert got["read"]["asked"] == ["/api/projects/Green%20hydrogen/shared-folder", "/api/projects/Green%20hydrogen/sync-poller"] * 2

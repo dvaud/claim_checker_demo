@@ -1,20 +1,23 @@
 // 0.18 (roadmap L1): private until shared, on each item's own page and in the Team tab (team.js). An item is a check, a
 // set of themes, a codebook, a note or highlight, an entry you wrote in the research log, or a link between terms.
 // A small tag says whether it is private, shared or withdrawn (shared once, taken back) and whose it is; Share and
-// Unshare stand beside it, for its owner only. Built on GET/POST …/sharing (gui/api_sharing.py, docs/API.md).
+// Unshare stand beside it in a list, for its owner only. On an item's own page its maker has a choice instead (Private |
+// Shared with your team), and while it is shared a line says where it goes (shareWhere). Built on GET/POST …/sharing
+// (gui/api_sharing.py, docs/API.md).
 // 0.17.0's components (docs/DESIGN.md 5.5): the state is shareState(), whose it is a person mark (lib.js personMark(),
 // the initials and the name as its tooltip), Share and Unshare small buttons, the two zips download buttons. Placed in
 // views.css (the block "Working together").
 import { App, api, h, replace, toast, showError, P, shortTitle, helpMark, download, dialog, button, downloadButton, notice, tag,
-  personMark, shareState } from "../lib.js";
+  personMark, shareState, choice, icon, link } from "../lib.js";
 import { askWhy } from "./versions.js";
+import { teamBrief, forgetBrief, whenPhrase, inText, ms } from "./team-state.js";
 
 // the words for one item of each kind, in a sentence ("Shared the check …")
 export const KIND_WORDS = { check: "check", themes: "set of themes", codebook: "codebook", note: "note", log: "entry", link: "link between terms" };
 export const KIND_MANY = { check: "Checks", themes: "Sets of themes", codebook: "Codebooks", note: "Notes and highlights", log: "Research log entries", link: "Links between terms" };
 
 const STATE_TEXT = { private: "Private", shared: "Shared", withdrawn: "Withdrawn" };   // the words of shareState()
-export const SHARING_HELP = "Private: only you see it. Shared: your colleagues get it with your work, through the shared folder or in the file “Send what you shared”. Withdrawn: shared once and taken back; it is no longer sent, and colleagues keep what they had, marked as withdrawn. Only the person who made an item can share it or take it back.";
+export const SHARING_HELP = "Private: only you see it. Shared: your colleagues get it with your work, through the team's storage space or shared folder, or in the file “Send what you shared (.zip)”. Withdrawn: shared once and taken back; it is no longer sent, and colleagues keep what they had, marked as withdrawn. Only the person who made an item can share it or take it back.";
 
 // Where an item is shown ("#/h/…"), or null when it has no page of its own.
 export function itemHref(item) {
@@ -124,18 +127,76 @@ export function shareInline(item, onChanged, opts = {}) {
   return h("span", { class: "share-inline" }, shareTag(item), opts.owner === false ? null : ownerMark(item), shareButton(item, onChanged, { link: true }));
 }
 
-// The row on an item's own page: it reads the item's state itself and draws it again after Share or Unshare. Stays
+// The sharing choice on an item's own page, for its maker (or anyone, when its maker is not known): Private | Shared
+// with your team (Shared, while the project has no team), the chosen one soft teal (docs/DESIGN.md 4.6, 5.5). A group
+// of two pressed-state buttons (choice()'s filter kind): in its radio kind an arrow key would pick, and so share an
+// item by itself. Taking it back asks first (unshareItem): the choice stays where it was until the answer.
+// `onChanged(r)` may return a promise (the page drawn again): the focus then goes to the chosen value of the new choice.
+export function shareChoice(item, onChanged, opts = {}) {
+  const id = shareId(item, opts.idPrefix);
+  const now = item.state === "shared" ? "shared" : "private";
+  let busy = false;
+  const c = choice({ label: `Who sees this ${KIND_WORDS[item.kind] || "item"}`, value: now, id, class: "share-choice", filter: true,
+    options: [["private", [icon("house", { size: 13 }), "Private"], null, "Only you see it"],
+      ["shared", [icon("users", { size: 13 }), opts.team ? "Shared with your team" : "Shared"], null,
+        opts.team ? "Your team gets it with your work" : "Colleagues get it with your work"]],
+    onPick: async (v) => {
+      if (v === now || busy) { c.set(now); return; }
+      busy = true;
+      if (v === "private") c.set(now);   // the dialog asks first: nothing has changed yet
+      const btns = [...c.querySelectorAll("button")];
+      btns.forEach((b) => { b.disabled = true; });
+      const r = v === "shared" ? await shareItem(item) : await unshareItem(item);
+      busy = false;
+      if (!r) {
+        c.set(now);
+        btns.forEach((b) => { b.disabled = false; });
+        const back = c.querySelector(`[data-value="${now}"]`);
+        if (back) back.focus();
+        return;
+      }
+      if (onChanged) await onChanged(r);
+      const again = document.getElementById(id);
+      const chosen = again && again.querySelector('[aria-pressed="true"]');
+      if (chosen) chosen.focus();
+    } });
+  return c;
+}
+
+// The quiet line under a shared item's choice: who gets it and when, and where to see it (the Team tab, at What you
+// shared); a withdrawn item says what that means. `brief`: teamBrief()'s answer, or null. Null when there is nothing
+// to say (a private item).
+export function shareWhere(item, brief) {
+  if (item.state === "withdrawn") return h("p", { class: "share-where" }, "Taken back: colleagues keep what they had, marked as withdrawn.");
+  if (item.state !== "shared") return null;
+  if (!brief || !brief.team) {
+    return h("p", { class: "share-where" }, "No team yet: it goes to colleagues in the file “Send what you shared (.zip)”. ",
+      link({ href: "#/team" }, "Set up a team"));
+  }
+  const sent = brief.sentAt && ms(brief.sentAt) !== null && ms(brief.sentAt) > (ms(item.at) || 0);
+  const words = sent ? `Sent to your team ${whenPhrase(brief.sentAt)}.`
+    : `Goes to ${brief.names} at the next round${brief.nextAt ? ", " + inText(brief.nextAt) : ""}.`;
+  return h("p", { class: "share-where" }, words, " ",
+    link({ kind: "jump", class: "share-see", onClick: () => window.dispatchEvent(new CustomEvent("enlens-drawer", { detail: { tab: "team", section: "shared" } })) },
+      "See what you shared"));
+}
+
+// The row on an item's own page: it reads the item's state itself and draws it again after a change. For its maker,
+// the choice and the line under it; for anyone else, the tag, whose it is and that only they can change it. Stays
 // hidden for something that is not an item of the project (a codebook that comes with ENLENS, a removed check).
 // The same element can be put back into a page that draws its head again.
 export function shareBar(kind, key, opts = {}) {
   const box = h("div", { class: "share-bar", role: "group", "aria-label": "Sharing with your team", hidden: true });
   let item = null;
+  let brief = null;
   const load = async () => {
     const project = App.project;
     try {
-      const r = await api("GET", `/api/projects/${P(project)}/sharing/${kind}/${P(key)}`);
+      const [r, b] = await Promise.all([api("GET", `/api/projects/${P(project)}/sharing/${kind}/${P(key)}`),
+        teamBrief(project).catch(() => null)]);
       if (project !== App.project) return;
       item = r.item;
+      brief = b;
       draw();
     } catch (e) {
       box.hidden = true;
@@ -144,12 +205,17 @@ export function shareBar(kind, key, opts = {}) {
   };
   const draw = () => {
     if (!item) { box.hidden = true; return; }
-    const owner = ownerMark(item);
-    const btn = shareButton(item, async () => { await load(); if (opts.onChange) opts.onChange(); });
-    const colleague = !item.can_change && item.owner && !item.mine;
-    replace(box, shareTag(item), owner,
-      colleague ? h("span", { class: "muted small" }, `only ${item.owner.name} can share it or take it back`) : null,
-      btn, helpMark("About sharing", SHARING_HELP));
+    const help = helpMark("About sharing", SHARING_HELP);
+    if (!item.can_change) {
+      const colleague = item.owner && !item.mine;
+      replace(box, shareTag(item), ownerMark(item),
+        colleague ? h("span", { class: "muted small" }, `only ${item.owner.name} can share it or take it back`) : null, help);
+    } else {
+      const pick = shareChoice(item, async () => { forgetBrief(App.project); await load(); if (opts.onChange) opts.onChange(); },
+        { team: !!(brief && brief.team) });
+      replace(box, pick, item.state === "withdrawn" ? shareTag(item) : null,
+        !item.mine && !item.owner ? ownerMark(item) : null, help, shareWhere(item, brief));
+    }
     box.hidden = false;
   };
   box.reload = load;
