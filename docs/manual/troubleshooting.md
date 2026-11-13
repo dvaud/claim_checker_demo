@@ -71,7 +71,7 @@ Two files in the data folder (`~/enlens` unless you chose another) often say why
 | Problem | Fix |
 | --- | --- |
 | An empty document, or *Scanned: no text* | No text layer (a scanned PDF). Install Tesseract ([Install](install.md#scanned-pdfs-optional)) and add the file again, or run OCR yourself (`ocrmypdf in.pdf out.pdf`). |
-| A document reads badly | Look at its *Reading* panel and fix it with *Leave out*, *Restore*, *Text starts here* or *Text ends here* ([How documents are read](reading.md#the-reading-view)). For a text file, add the PDF instead if you have it. |
+| A document reads badly | Look at its *Reading* panel and fix it with *Leave out*, *Restore*, *Text starts here* or *Text ends here* ([Look at how a document was read](reading.md#the-reading-view)). For a text file, add the PDF instead if you have it. |
 | An error about vectors of different sizes | The embedding model changed since search by meaning was set up: on the Documents page, press *Set up search by meaning* (or run `enlens --ws FOLDER embed`). |
 | "Remove all documents" is refused | The project also holds results of the SDG pack (extracted claims, VCA verifications). Remove documents one by one, or run `enlens --ws FOLDER reset-corpus --yes` if you mean it. |
 

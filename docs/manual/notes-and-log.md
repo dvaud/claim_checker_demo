@@ -19,7 +19,7 @@ the words of the notes and of the passages they mark, filter by document and by 
 
 - **The words are checked.** A note holds words that are really in the document, as every quote is. A selection cut
   inside a word is widened to the whole word.
-- **A document read again.** When a document is read with the new reader ([How documents are read](reading.md)), each
+- **A document read again.** When a document is read with the new reader ([Read with the new reader](reading.md#read-with-the-new-reader)), each
   note follows its words. One whose words are no longer in the text says so, and is kept.
 - **A removed document.** Its notes are kept, marked *removed from the project*.
 - **Yours and a colleague's.** A note is yours alone until you share it (0.17.0). You can change only your own notes; a

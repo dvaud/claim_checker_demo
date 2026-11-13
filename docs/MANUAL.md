@@ -37,41 +37,73 @@ Three things hold everywhere:
 5. **Review**: *Next to review* takes you through the judgements that matter first: *Agree*, *Not about this* or
    *Judge differently…* → [Read and review a result](manual/review.md)
 
+Would you rather be walked through it, with sample documents? [Your first project, start to finish](manual/first-project.md).
+
 ## The manual
 
-| | Page | What it covers |
-| --- | --- | --- |
-| **Get going** | [Install and update](manual/install.md) | The one-line install, the files to double-click, scanned PDFs, updating, the icon |
-| | [First steps](manual/first-steps.md) | The first screen, adding documents, the sidebar, the finder, the AI mark |
-| **Your work** | [Check a hypothesis](manual/check.md) | The *Hypotheses* place: what a check does, the answers, hypotheses in parts, checking many at once |
-| | [Read and review a result](manual/review.md) | The result page, excerpt cards, second opinions, downloads, the list of answers, the evidence map |
-| | [Explore your documents](manual/explore.md) | Search, Codes, Concepts, Themes, a document's panels, theory documents, Quick look |
-| | [Make your own codebook](manual/codebooks.md) | Codes of your own: from the themes, a theory, a copy or a CSV file; try them, change them, labels follow |
-| | [How documents are read](manual/reading.md) | What is read and what is left out, the reading view, moving to a new reader |
-| | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find, retractions |
-| | [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights and notes, the dated record of decisions, compare and restore |
-| | [Work together](manual/together.md) | Sharing, the Team tab and page, the owner, clashes, moving |
-| | [A storage space of your team's own](manual/storage-space.md) | Set-up, invites, joining |
-| | [Choosing the shared folder](manual/shared-folder.md) | Cloud folders, the folder window |
-| | [Roles, proposals and what waits for your word](manual/roles.md) | Owner, Co-owner, Member; proposals; what the Team tab asks of you |
-| **The AI and your privacy** | [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI, working together, how it is enforced |
-| | [Claude Code](manual/claude-code.md) | Starting it, its speed and helpers, the queue; Claude in a chat (the connector) |
-| | [A model on your own computer](manual/local-models.md) | Getting one, choosing and tuning it, testing it |
-| | [Which model does what](manual/models.md) | The model of each task and of each Claude plan; what every answer records |
-| **Reference** | [Settings](manual/settings.md) | The five tabs, new versions early, reporting a problem, installing for others |
-| | [Glossary](manual/glossary.md) | The words of the app and their technical names |
-| | [Troubleshooting and limits](manual/troubleshooting.md) | Problems by topic, with their fixes; what ENLENS cannot promise |
-| | [The command line](manual/command-line.md) | `enlens-gui`, `enlens` and the project's database |
-| **SDG pack** | [The SDG pack](manual/sdg-pack.md) | Impact claims, the Value Chain Assessment pipeline and its report |
+Arranged by what you need: to **learn**, to **do** something, to **look something up**, or to **understand**.
+
+### Start here
+
+| Page | What it covers |
+| --- | --- |
+| [Your first project, start to finish](manual/first-project.md) | A walk through six invented documents, from adding them to the Excel file |
+| [Install and update](manual/install.md) | The install, scanned PDFs, updating |
+| [First steps](manual/first-steps.md) | The first screen, the sidebar, the finder, the AI mark |
+
+### How to…
+
+| Page | What it covers |
+| --- | --- |
+| [Check a hypothesis](manual/check.md) | Writing one, *Look before checking*, parts, many at once |
+| [Read and review a result](manual/review.md) | The result page, excerpt cards, downloads, the evidence map |
+| [Explore your documents](manual/explore.md) | Search, Codes, Concepts, Themes, theory documents |
+| [Make your own codebook](manual/codebooks.md) | Codes of your own, and how labels follow |
+| [Look at how a document was read](manual/reading.md) | The reading view, *Leave out*, a new reader |
+| [Your bibliography](manual/bibliography.md) | Zotero beside your documents, retractions |
+| [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights, notes, the log, compare and restore |
+| [Work together](manual/together.md) | Sharing, the Team tab, clashes, moving |
+| [A storage space of your team's own](manual/storage-space.md) | Set-up, invites, joining |
+| [Choosing the shared folder](manual/shared-folder.md) | Cloud folders, the folder window |
+| [Roles, proposals and what waits for your word](manual/roles.md) | Owner, Co-owner, Member |
+| [Claude Code](manual/claude-code.md) | Setting it up and starting it; Claude in a chat |
+| [A model on your own computer](manual/local-models.md) | Getting, tuning and testing one |
+
+### Look it up
+
+| Page | What it covers |
+| --- | --- |
+| [Settings](manual/settings.md) | The five tabs, reporting a problem, installing for others |
+| [Which model does what](manual/models.md) | The model of each task; what every answer records |
+| [Glossary](manual/glossary.md) | The words of the app and their technical names |
+| [Troubleshooting and limits](manual/troubleshooting.md) | Problems by topic; what ENLENS cannot promise |
+| [The command line](manual/command-line.md) | `enlens-gui`, `enlens` and the project's database |
+
+### How it works
+
+| Page | What it covers |
+| --- | --- |
+| [How a check reaches its answer](manual/how-a-check-works.md) | The steps, how sure the AI must be, what each answer means |
+| [How documents are read](manual/how-documents-are-read.md) | What is read and left out, the readers, measuring |
+| [How two copies of a project come together](manual/how-two-copies-come-together.md) | What happens to what a colleague sends |
+| [How the AI is used and limited](manual/how-the-ai-is-used.md) | Where it is used, how it is checked, what it cannot promise |
+| [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI |
+
+### SDG pack
+
+| Page | What it covers |
+| --- | --- |
+| [The SDG pack](manual/sdg-pack.md) | Impact claims, the Value Chain Assessment pipeline |
 
 ## I want to…
 
 | I want to… | Go to |
 | --- | --- |
+| learn ENLENS by doing one small project | [Your first project, start to finish](manual/first-project.md) |
 | find every place a word occurs | [Search](manual/explore.md#search) |
 | see which SDG targets (or codes of my own) a document addresses | [Codes](manual/explore.md#codes) |
 | test whether my documents back a statement | [Check a hypothesis](manual/check.md) |
-| make my own codebook | [Make your own codebook](manual/codebooks.md) |
+| understand what an answer means, and how it was reached | [How a check reaches its answer](manual/how-a-check-works.md) |
 | highlight or note words of a document | [Highlights and notes](manual/notes-and-log.md#highlights-and-notes) |
 | overrule the AI on an excerpt | [An excerpt card](manual/review.md#an-excerpt-card) |
 | write a methods section, or an ethics application | [METHODS.md](METHODS.md), [PRIVACY.md](PRIVACY.md) |
@@ -79,17 +111,10 @@ Three things hold everywhere:
 | keep a licensed PDF or an interview away from Claude | [Who may read each document with AI](manual/privacy.md#who-may-read-each-document-with-ai) |
 | use ENLENS with no cloud at all | [A model on your own computer](manual/local-models.md), [For whoever installs ENLENS](manual/settings.md#for-whoever-installs-enlens) |
 | fix a document that reads badly | [The reading view](manual/reading.md#the-reading-view) |
-| see which works of my Zotero library I still need to find | [Your bibliography](manual/bibliography.md#the-four-lists) |
 | find a feature or page without hunting for it | [The finder](manual/first-steps.md#the-finder) |
 | see what was decided in a project, and when | [The research log](manual/notes-and-log.md#the-research-log) |
 | go back to an earlier version of my themes, judgements or codebook | [Earlier versions](manual/notes-and-log.md#earlier-versions) |
-| share a project with a colleague | [Work together](manual/together.md) |
-| work through a folder the team shares | [Choosing the shared folder](manual/shared-folder.md) |
-| know what a shared folder holds | [Privacy: working together](manual/privacy.md#working-together) |
 | move ENLENS to a new computer | [Moving to another computer](manual/together.md#moving-to-another-computer) |
-| choose how much thought Claude gives, or share it with a local model | [Which model does what](manual/models.md#how-much-thought) |
-| keep theory books out of the evidence | [Theory documents](manual/explore.md#theory-documents) |
-| update ENLENS | [Update](manual/install.md#update) |
 | report a problem | [Reporting a problem](manual/settings.md#reporting-a-problem) |
 
 ---
