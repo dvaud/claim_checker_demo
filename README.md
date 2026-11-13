@@ -57,13 +57,11 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.1: theory documents, the assessment in words, and a mix of local and Claude
+## New in 0.18.2: Sharing you can find, and a team you can see
 
-- **Mark a document as theory: the lens, not the evidence.** A book or paper your research is read through (a theory of practice, a systems text) can be marked *Theory*, in the Documents list (each row's menu) or on the document's page. Cannot change results.
-- **A codebook from a theory document.** The codebook editor has a third way to start, beside *Start fresh* and *From the themes*: *From a theory document*. Cannot change results.
-- **The assessment in words.** Under a hypothesis's answer, a few sentences say what it rests on: how many documents stand on each side, the contradicting side quoted (and both sides when the evidence is mixed). Cannot change results.
-- **The mix of local and Claude.** With Claude Code and a local model both set, *Settings → AI → The mix of local and Claude* shares the work: *Mostly local* (the local model answers every kind of task but second opinions). Can change results.
-- **How much thought, not how fast.** Beside every *Start Claude Code*, *Energy efficient · Balanced · Intelligence* replaces *Slower · Normal · Faster*: it says which Claude models answer each kind of task, and how hard they think. Can change results.
+- **More of an excerpt is *more…* at its end.** On a check's result page, the *In context* button in each excerpt card's row of actions is gone: the excerpt now ends in *more…*. Cannot change results.
+- **Sharing is a choice you can see.** Under the title of a check, a set of themes or a codebook of your own, the small *Private* tag and *Share* button are now one choice. Cannot change results.
+- **The team has its own row under the project's name.** In a project with a team, the sidebar shows *Team* and its state (*synced 15:44*, *syncing now…*, *3 new*, or in amber *offline*). Cannot change results.
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
