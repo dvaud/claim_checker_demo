@@ -923,3 +923,22 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - *Left to the reader:* whether two excerpts that disagree concern a different place, group or period, and how strong
   each source is. The text points to these and does not decide them. If an AI's wording is ever wanted, it is a
   separate draft sentence marked as the AI's (as in K1), never mixed into the sentences made by rules.
+
+**N5. Documents behind no answer** · Level 0 · first half built (unreleased)
+- *The wish:* once several hypotheses are checked, see which documents the answers rest on, and which none do, so a
+  corpus is not read through the same three documents. A neutral count, never a verdict on a document: one behind no
+  answer may be off the hypotheses' topic, or say it in other words.
+- *Built:* how many answers each document is behind, counted as the evidence map counts (an excerpt that counts at the
+  strictness; a person's judgement always counts; `document_answers`, `GET /map/documents`). The Documents list can
+  be grouped by it (*Behind no answer*, *Behind answers*, *Theory*) and sorted by it (*Most answers*); the line then
+  says the number, and a document's panel says it always. After five checked hypotheses one quiet line above the list
+  says how many documents are behind none, with *Show them*; the evidence map's line on documents with no excerpt
+  that counts links to the same group.
+- *Still to build, the per-hypothesis half:* on a hypothesis's page, split the documents none of whose excerpts were
+  read into those that hold the check's search words (`docs_matching`, with a stricter bar than one shared word) and
+  those that share no word with it, with *Read these* for the first (a further round limited to them, as for
+  documents added since) and a hint to search with other words for the second. A check keeps only the excerpts it
+  picks (`rank_passages` drops the rest of the ranking), so "never came up in a search" cannot be said from what is
+  stored: it has to be asked again of the search, with the check's own words.
+- Leave out theory documents, documents added after the check, unreadable ones, and those a check was limited away
+  from.

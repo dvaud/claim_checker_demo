@@ -151,6 +151,8 @@
 .drop-title { font-size: var(--fs-section); margin: 8px 0; }
 .drop-choose { margin: 0 0 8px; }
 .docs-warned { margin: 0 0 var(--space-3); }
+/* roadmap N5: how many documents are behind none of the answers, one quiet line (not a notice: nothing needs you) */
+.docs-unused { margin: 0 0 var(--space-3); display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-1); }
 .tess-help { margin-top: 6px; }
 .tess-help p { margin: 4px 0; }
 .tess-help .copy-line { margin: 4px 0; }

@@ -11,13 +11,14 @@ from .verdicts import GRADES, STATUS_TEXT, _status_of_rounds, aggregate, effecti
 
 
 def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | None = None,
-                 hyp_ids: list[str] | None = None, cache=None) -> dict:
+                 hyp_ids: list[str] | None = None, cache=None, decide: bool = True) -> dict:
     """Which documents say what about which hypotheses, as a grid (computed in a few queries).
 
     `cells[hyp_id][doc_id]` = {"side": "supports" | "partly" | "refutes" | "both", "excerpts": n}, by the rule of
     `who_says_what` (judgements that count at this strictness; a person's always count). A hypothesis that rests on
     one document has `single_document`; a document `decides` an answer when leaving out its excerpts would change
-    that answer, and is `key` when it decides at least two answers and a fifth of them.
+    that answer, and is `key` when it decides at least two answers and a fifth of them. `decide=False` leaves that
+    out (every `decides` 0): the counts alone, for the Documents list (`document_answers`).
     """
     thr = _threshold(ws, threshold)
     checks = _cc._light_checks(ws, titles=True)  # read once, for the history below too
@@ -83,7 +84,7 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
             side = "both" if positive and c["refutes"] else positive or "refutes"
             row[doc] = {"side": side, "excerpts": sum(c.values())}
             answers[doc] = answers.get(doc, 0) + 1
-            if decided and status_of(hid, doc) != h["status"]:
+            if decide and decided and status_of(hid, doc) != h["status"]:
                 decides[doc] = decides.get(doc, 0) + 1
         cells[hid] = row
         hyps.append({"hyp_id": hid, "text": h["text"], "status": h["status"],
@@ -97,6 +98,21 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
                      "key": n >= 2 and n >= 0.2 * max(1, len(hyps)), "in_project": doc in in_project})
     return {"threshold": thr, "hypotheses": hyps, "documents": docs, "cells": cells,
             "documents_without_evidence": len(set(in_project) - set(answers))}
+
+
+def document_answers(ws: Workspace, threshold: float | None = None) -> dict:
+    """Roadmap N5 (first half): how many answers each document is behind, as the evidence map counts them (an excerpt
+    that counts at this strictness; a person's judgement always counts), for the Documents list. A neutral count, not
+    a verdict on the document: one behind no answer may be off the hypotheses' topic, or word it otherwise.
+
+    {"threshold", "answers": {doc_id: n} (only documents behind at least one answer), "hypotheses": how many were
+    checked, "last_check": when the latest check round was made (ISO) or None}. Theory documents are never behind an
+    answer (checks leave them out); the list says so itself.
+    """
+    m = evidence_map(ws, threshold, decide=False)
+    last = ws.scalar("SELECT MAX(created_at) FROM tasks WHERE kind='check'")
+    return {"threshold": m["threshold"], "answers": {d["doc_id"]: d["answers"] for d in m["documents"]},
+            "hypotheses": len(m["hypotheses"]), "last_check": last or None}
 
 
 MAP_SYMBOL = {"supports": "+", "partly": "(+)", "refutes": "−", "both": "±"}

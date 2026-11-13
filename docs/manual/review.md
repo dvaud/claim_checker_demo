@@ -194,6 +194,13 @@ Each cell gives the number of excerpts that count. The map flags answers that re
 that **decide** answers (leaving them out would change those answers): read those most carefully. The download arrow under
 each document's title gives it with the quotes marked.
 
+**The documents behind no answer.** A document none of whose excerpts counts in any answer has no column. The line
+under the map says how many there are, and *Show them in Documents* opens the Documents list grouped by the answers
+behind each document (*Group by: Answers behind them*; *Sort: Most answers* puts the busiest first). Once five
+hypotheses are checked, the Documents list says the same in one quiet line. A document behind no answer may be off
+your topic, or say it in other words than your hypotheses: a search with other words tells which. The count says
+nothing about how good a document is.
+
 ---
 
 Next: [Explore your documents →](explore.md)

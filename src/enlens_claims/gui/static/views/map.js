@@ -2,7 +2,7 @@
 // (judgements that count at the strictness; a person's always count), with symbols as well as colours. 0.17.0: a view
 // of the Hypotheses page (its tab beside Answers), with the page's head.
 import { featureEyebrow, viewTabs } from "../features.js";
-import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks, link, iconButton, tag, notice, heatGrid } from "../lib.js";
+import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks, link, iconButton, tag, notice, heatGrid, store, navigate } from "../lib.js";
 
 const SIDE = {
   supports: { symbol: "+", word: "supports", cls: "m-sup" },
@@ -52,7 +52,14 @@ export async function renderMap(view, params, query) {
   const notes = [];
   if (single) notes.push(h("p", {}, icon("info", { size: 13 }), ` ${single === 1 ? "1 answer rests" : `${single} answers rest`} on one document only (marked “rests on one document”): a second source would make ${single === 1 ? "it" : "them"} more solid.`));
   if (key.length) notes.push(h("p", {}, icon("star", { size: 13 }), ` ${key.length === 1 ? "1 document is a key document" : `${key.length} documents are key documents`} (marked “decides N answers”): leaving it out would change those answers, so it deserves a careful read.`));
-  if (m.documents_without_evidence) notes.push(h("p", { class: "muted" }, `${m.documents_without_evidence} ${m.documents_without_evidence === 1 ? "document has" : "documents have"} no excerpt that counts in any answer, so ${m.documents_without_evidence === 1 ? "it is" : "they are"} not shown as a column.`));
+  if (m.documents_without_evidence) notes.push(h("p", { class: "muted" }, `${m.documents_without_evidence} ${m.documents_without_evidence === 1 ? "document has" : "documents have"} no excerpt that counts in any answer, so ${m.documents_without_evidence === 1 ? "it is" : "they are"} not shown as a column.`,
+    // roadmap N5: the Documents list, grouped by the answers behind them, with those behind none open
+    " ", link({ kind: "jump", onClick: () => {
+      const fk = `docs-folded:${project}`;
+      store(fk, (store(fk) || "").split(",").filter((x) => x && x !== "answers:unused").join(","));
+      store(`docs-group:${project}`, "answers");
+      navigate("#/sources");
+    } }, "Show them in Documents")));
   if (notes.length) view.appendChild(h("div", { class: "map-notes" }, notes));
 
   // ---- the grid

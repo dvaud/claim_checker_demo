@@ -16,6 +16,7 @@ import { reader, newReaderFor, readingNote, READER_4_NEWS, READER_5_NEWS } from 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
 const OK_EXT = ["pdf", "docx", "html", "htm", "txt", "md", "zip"];
 const ocrState = () => (App.state && App.state.ocr) || {};
+const UNUSED_AFTER = 5;   // roadmap N5: checked hypotheses before the list says how many documents are behind none
 
 export async function renderSources(view) {
   const project = App.project;
@@ -273,6 +274,12 @@ export async function renderSources(view) {
   const rows = new Map();     // doc_id -> its row
   const opened = new Set();   // 0.18.2: the documents whose panel is open (kept across re-draws)
   let roles = {};             // 0.18.1 (K2): doc_id -> "theory"
+  // roadmap N5: how many answers each document is behind, as the evidence map counts them ({answers, hypotheses,
+  // last_check}; null while unknown). A neutral count: a document behind no answer may be off the topic, or word it
+  // otherwise. Never a mark of its own on a line; the list groups or sorts by it when asked, and says it in the panel.
+  let use = null;
+  const answersOf = (d) => (use && use.answers[d.doc_id]) || 0;
+  const afterLastCheck = (d) => Boolean(use && use.last_check && String(d.added_at || "") > use.last_check);
   // 0.18.5: what needs a look, for the grouping and the notice above the list: a fact that needs you (a check, a sync
   // clash, a scan with no text, a reading done badly), a reading to look over, or nothing
   const lookOf = (d) => {
@@ -293,12 +300,20 @@ export async function renderSources(view) {
       { key: "attention", name: "Needs a look", needsYou: true, sub: "Something about the file or its reading needs you: point at the mark on each, or open it, to see what." },
       { key: "reading", name: "To check in its reading", icon: "info", sub: "Read with a few doubts: open the reading to see where, then mark it as checked." },
       { key: "clear", name: "Fine", icon: "check", sub: "Read well: nothing about them needs you." }] },
+    // roadmap N5: by the answers they are behind (offered once that is known); theory documents are never behind one
+    answers: { label: "Answers behind them", always: false, of: (d) => (roles[d.doc_id] === "theory" ? "theory" : answersOf(d) ? "used" : "unused"), groups: [
+      { key: "unused", name: "Behind no answer", short: "Behind none", icon: "text-search", sub: "No excerpt of them counts in any of your answers. They may be off your hypotheses’ topic, or say it in other words: a search with other words tells which. It says nothing about how good they are." },
+      { key: "used", name: "Behind answers", icon: "layers", sub: "An excerpt of each counts in at least one answer; the line says in how many, the evidence map in which." },
+      { key: "theory", name: "Theory", icon: "book-marked", sub: "Not evidence: checks leave them out, so they are behind no answer." }] },
     none: { label: "None", always: true, of: () => "all", groups: [{ key: "all", name: "All documents", icon: null, sub: null }] },
   };
   if (!GROUPINGS[grouping]) grouping = "ai";   // a grouping kept from an earlier version, named otherwise now
   async function reloadDocs() {
     let r;
-    try { [r, roles] = await Promise.all([api("GET", `/api/projects/${P(project)}/documents`), documentRoles(project)]); } catch (e) { failedLoad(docsBox, e); return; }
+    // roadmap N5: the answers behind each document come along; the list draws without them if they fail
+    const threshold = App.settings().threshold ?? 0.6;
+    const useReq = api("GET", `/api/projects/${P(project)}/map/documents?threshold=${threshold}`).catch(() => null);
+    try { [r, roles, use] = await Promise.all([api("GET", `/api/projects/${P(project)}/documents`), documentRoles(project), useReq]); } catch (e) { failedLoad(docsBox, e); return; }
     drawDocs(r);
   }
   // the whole list: after adding or removing documents (a change of one document's AI setting patches its row)
@@ -327,6 +342,19 @@ export async function renderSources(view) {
     };
     docsBox.appendChild(warnedNote);
     drawWarned();
+    // roadmap N5: once a few hypotheses are checked, one quiet line says how many documents are behind none of the
+    // answers (those there at the last check, theory left out), with a way to see them; not when the list shows it
+    let unusedNote = h("div");
+    const drawUnused = () => {
+      const pool = !use || use.hypotheses < UNUSED_AFTER ? [] : docs.filter((d) => roles[d.doc_id] !== "theory" && !afterLastCheck(d));
+      const none = pool.filter((d) => !answersOf(d)).length;
+      const n = !none || grouping === "answers" ? h("div", { hidden: true }) : h("p", { class: "muted small docs-unused" },
+        icon("text-search", { size: 13 }), ` ${none} of ${plural(pool.length, "document")} ${none === 1 ? "is" : "are"} behind none of your ${plural(use.hypotheses, "answer")}. `,
+        link({ kind: "jump", onClick: () => { folded.delete("answers:unused"); store(`docs-folded:${project}`, [...folded].join(",")); setGrouping("answers"); groupsBox.scrollIntoView({ block: "start" }); } }, "Show them"));
+      unusedNote.replaceWith(n); unusedNote = n;
+    };
+    docsBox.appendChild(unusedNote);
+    drawUnused();
     nr.older = docs.filter((d) => newReaderFor(d, reader.latest));
     docsBox.appendChild(nrBox);
     drawNr();
@@ -374,6 +402,13 @@ export async function renderSources(view) {
     // the panel the line opens. What needs you keeps the needs-you look (an amber tag with its icon, no words).
     const iconMark = (ic, label, cls) => h("span", { class: `doc-icon-mark${cls ? ` ${cls}` : ""}`, role: "img", "aria-label": label, title: label }, icon(ic, { size: 14 }));
     const needsYou = (label) => tag({ kind: "attention", class: "doc-icon-tag", role: "img", "aria-label": label, title: label });
+    // roadmap N5: the answers it is behind, in words, on its line only when the list is grouped or sorted by them
+    const useFacts = (d) => {
+      if (!use || roles[d.doc_id] === "theory" || (grouping !== "answers" && sorting !== "answers")) return [];
+      const n = answersOf(d);
+      if (n) return [h("span", { class: "doc-fact", title: "An excerpt of it counts in this many answers (the evidence map shows which)" }, `behind ${plural(n, "answer")}`)];
+      return afterLastCheck(d) ? [h("span", { class: "doc-fact", title: "Added after the latest check: no check has read it yet" }, "added after the last check")] : [];
+    };
     const rowMarks = (d) => {
       const unchecked = !d.reading_checked && (d.reading_quality === "poor" || d.reading_quality === "fair");
       const chip = docChip(d.proposal);
@@ -406,6 +441,11 @@ export async function renderSources(view) {
           d.proposal && docChip(d.proposal) ? [h("dt", {}, "The owner"), h("dd", {},
             proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
           )] : null,
+          // roadmap N5: the answers it is behind, said plainly (a theory document is behind none, by design)
+          use && use.hypotheses && roles[d.doc_id] !== "theory" ? [h("dt", {}, "Behind answers"), h("dd", {},
+            h("span", {}, answersOf(d) ? `${answersOf(d)} of your ${plural(use.hypotheses, "answer")}: an excerpt of it counts in each`
+              : afterLastCheck(d) ? "None yet: it was added after the last check" : `None of your ${plural(use.hypotheses, "answer")}`),
+            answersOf(d) ? link({ href: "#/map", class: "small" }, "Open the evidence map") : null)] : null,
           h("dt", {}, "Role"), h("dd", {}, roles[d.doc_id] === "theory" ? "Theory: the lens the research is read through, not evidence" : "Evidence",
             button({ kind: "quiet", sm: true, class: "doc-role-btn", onClick: role.onClick }, role.text)),
           d.bib && d.bib.cite ? [h("dt", {}, "In the bibliography"), h("dd", {}, h("span", { class: "it", title: d.bib.title || null }, icon("library", { size: 13 }), d.bib.cite),
@@ -460,6 +500,7 @@ export async function renderSources(view) {
             // 0.18.5: the file name when another document has the same title (the one fact that tells them apart)
             sameTitle.has((d.title || "").trim().toLowerCase()) ? h("span", { class: "doc-fact", title: d.file || null }, d.file) : null,
             grouping === "role" || roles[d.doc_id] !== "theory" ? null : iconMark("book-marked", "Theory: the lens the research is read through, not evidence"),   // 0.18.1 K2
+            ...useFacts(d),   // roadmap N5: only when the list is grouped or sorted by the answers
             ...rowMarks(d))),
         h("div", { class: "doc-end" }, toggle)));
       show(opened.has(d.doc_id));
@@ -529,19 +570,21 @@ export async function renderSources(view) {
     // each group under what it means and with a way to tick it all; a box above it keeps the documents whose title or
     // file name holds every word typed. A change that moves a document to another group keeps the page where it was:
     // every group draws again as far as it was drawn, and the moved rows glow where they land.
+    if (!use && grouping === "answers") grouping = "ai";   // roadmap N5: the answers are not known this time
+    if (!use && sorting === "answers") sorting = "title";
     const view = () => GROUPINGS[grouping] || GROUPINGS.ai;
     const filterBox = searchField({ placeholder: "Filter by title or file name", "aria-label": "Filter the documents by title or file name", value: filterText });
     let filterTimer = null;
     filterBox.input.addEventListener("input", () => { clearTimeout(filterTimer); filterTimer = setTimeout(() => { filterText = filterBox.input.value; drawGroups(); }, 150); });
     const groupChoice = choice({ sm: true, label: "Group the documents by", value: grouping,
-      options: Object.entries(GROUPINGS).map(([k, g]) => [k, g.label]), onPick: (k) => setGrouping(k) });
+      options: Object.entries(GROUPINGS).filter(([k]) => k !== "answers" || use).map(([k, g]) => [k, g.label]), onPick: (k) => setGrouping(k) });
     const setGrouping = (k) => {
       grouping = k; store(`docs-group:${project}`, k);
       groupChoice.set(k);   // its value and which option Tab reaches
-      drawWarned(); drawGroups();
+      drawWarned(); drawUnused(); drawGroups();
     };
     const sortChoice = choice({ sm: true, label: "Sort the documents by", value: sorting,
-      options: [["title", "Title"], ["new", "Newest"]], onPick: (k) => { sorting = k; store(`docs-sort:${project}`, k); drawGroups(); } });
+      options: [["title", "Title"], ["new", "Newest"], ...(use ? [["answers", "Most answers"]] : [])], onPick: (k) => { sorting = k; store(`docs-sort:${project}`, k); drawGroups(); } });
     const jumps = h("nav", { class: "docs-jumps small", "aria-label": "The groups" });
     docsBox.appendChild(h("div", { class: "docs-tools" }, filterBox,
       h("div", { class: "docs-group-by" }, h("span", { class: "muted small" }, "Group by"), groupChoice),
@@ -561,6 +604,7 @@ export async function renderSources(view) {
       // 0.18.5: sorted as chosen: by title (as the server lists them) or the newest first
       const seen = docs.filter(hit);
       if (sorting === "new") seen.sort((a, b) => String(b.added_at || "").localeCompare(String(a.added_at || "")));
+      if (sorting === "answers" && use) seen.sort((a, b) => answersOf(b) - answersOf(a));   // roadmap N5: the most first (a stable sort: titles within)
       // a moved document is never left in a folded group: its group opens
       for (const id of movedIds || []) { const d = docs.find((x) => x.doc_id === id); if (d && folded.delete(`${grouping}:${v.of(d)}`)) store(FOLD_KEY, [...folded].join(",")); }
       shownIds = new Set(seen.filter((d) => !folded.has(`${grouping}:${v.of(d)}`)).map((d) => d.doc_id));

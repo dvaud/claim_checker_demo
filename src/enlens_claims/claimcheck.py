@@ -1509,7 +1509,7 @@ from .check_results import (  # noqa: E402,F401
     models_used, models_text, _second_opinions, _shown_docs, new_documents,
 )
 from .check_exports import (  # noqa: E402,F401
-    evidence_map, MAP_SYMBOL, map_table, CALIBRATION_BINS, calibration, export_rows, hypothesis_rows,
+    evidence_map, document_answers, MAP_SYMBOL, map_table, CALIBRATION_BINS, calibration, export_rows, hypothesis_rows,
     _assessment_text, JUDGEMENT_TEXT, _local_dt, ResultCache, export_table, not_read_text, _part_text,
     _earlier, strictness_text, summary_table, write_xlsx,
 )
