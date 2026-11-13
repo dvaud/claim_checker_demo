@@ -289,6 +289,13 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 @keyframes dv-glow { from { background-color: var(--accent-soft); box-shadow: 0 0 0 6px var(--accent-soft); } to { background-color: transparent; box-shadow: 0 0 0 6px transparent; } }
 .doc-view .dv-glow { animation: dv-glow 1.6s ease-out; border-radius: var(--radius-sm); }
 .doc-view .dv-table-wrap { overflow-x: auto; max-width: 100%; }
+/* 0.18.1 (reader 5): a figure shown in the text, where it stands: its picture (drawn from the original PDF), its caption
+   repeated beneath it, the way to its page, and the words inside it behind a small fold */
+.doc-view .dv-figure { margin: 2px 0 4px; }
+.doc-view .dv-figure-img { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius-xs); }
+.doc-view .dv-figure-cap { margin: 6px 0 0; }
+.doc-view .dv-figure-act { margin-top: 4px; }
+.doc-view .dv-figure-words { margin-top: 4px; }
 .doc-view .dv-table { border-collapse: collapse; font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
 .doc-view .dv-table th, .doc-view .dv-table td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; white-space: nowrap; }
 .doc-view .dv-table th { background: var(--surface-2); font-weight: var(--fw-strong); }
