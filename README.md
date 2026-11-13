@@ -57,10 +57,10 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.5: Documents, grouped as you choose
+## New in 0.18.6: Non-scientific documents, and the documents your answers rest on
 
-- **Documents, grouped as you choose, with a filter.** The Documents page now groups its list: by who may read the documents with AI (the first time), by their role (evidence or theory), by what needs a look, or not at all.
-- **Made for long lists.** Under the filter, each group's count takes you to it ("Claude: 266 documents · Local AI: 27 documents · No AI: 14 documents"); a group's head stays under the page's top while its documents scroll.
+- **See which documents your answers rest on.** The Documents list can now be grouped by the answers behind each document (*Behind no answer*, *Behind answers*, *Theory*) or sorted by them (*Most answers*).
+- **Mark a document as non-scientific.** A news article, a press release, a company brochure or a blog reports no method or data of its own. Can change results.
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
