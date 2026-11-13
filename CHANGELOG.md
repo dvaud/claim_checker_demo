@@ -2,6 +2,10 @@
 
 ## 0.18.5 (November 2026): Documents, grouped as you choose
 
+The Documents page groups its list as you choose and stays easy to use with hundreds of documents: calm one-line
+documents with small marks, every fact in words when a line opens, and a bar for many at once that can be undone.
+Nothing in this release changes results.
+
 ### New
 
 - **Documents, grouped as you choose, with a filter.** The Documents page now groups its list: by who may read the
