@@ -58,7 +58,7 @@ SHOTS = [
     ("reading-view", ("--reading",), "a document in the reading view, with the Reading panel and Leave out on a hovered block"),
     ("bibliography", ("--corpus", "social", "--zotero"), "Bibliography after bringing in the stand-in Zotero library"),
     ("waiting", ("--corpus", "social", "--claude-code-paused"), "a check waiting for Claude Code: Start Claude Code and the speed choice"),
-    ("documents", ("--mixed",), "Documents with the AI column: who may read each document with AI"),
+    ("documents", ("--mixed",), "Documents: each one a line that opens; who may read it with AI in its panel"),
 ]
 
 VIEWPORT = {"width": 1280, "height": 860}
@@ -300,7 +300,12 @@ def shot_waiting(page, server):
 def shot_documents(page, server):
     go(page, server, "#/sources")
     settled(page, 1000)
-    return ("from", page.get_by_role("heading", name=re.compile("^In this project")).first, 640)
+    # 0.18.3: a document is a line that opens; the picture shows one open, a document kept from Claude if there is one
+    page.evaluate("""() => { const items = [...document.querySelectorAll('.doc-item')];
+      const it = items.find((li) => /Local AI|No AI/.test(li.querySelector('.access-badge')?.textContent || '')) || items[0];
+      if (it) it.querySelector('.doc-toggle').click(); }""")
+    settled(page, 400)
+    return ("from", page.get_by_role("heading", name=re.compile("documents? in this project$")).first, 640)
 
 
 # --- taking and saving the picture -----------------------------------------------------------------------------------------
