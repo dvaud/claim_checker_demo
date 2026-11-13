@@ -85,7 +85,8 @@ the project over to Ben: Ben is the owner now.*). Anything else comes to *Waitin
 
 - **A take-over** (tag *A take-over*): *Ben took the project over: "Nothing was heard of the owner for 14 days." You
   follow Anna. If you follow Ben, Ben decides about the documents from now on.* **Follow Ben** or **Not now** (*Not
-  now* leaves it in the list, and it no longer counts in the tab's number). In the owner's own copy it says *Here you are still the owner.*
+  now* leaves it in the list, and it no longer counts in the tab's number; since 0.18.1 it is kept for you in the
+  project, so it holds in every browser). In the owner's own copy it says *Here you are still the owner.*
 - **Two records for one place.** A record your copy follows is never replaced by a file's. When a file holds another
   record of the same person for the same place (another owner after Anna, say), it is asked about like another first
   owner, and your copy goes on following the one it follows. Should the record your copy follows ever be gone from it,
@@ -98,6 +99,16 @@ the project over to Ben: Ben is the owner now.*). Anything else comes to *Waitin
   nothing was changed here.* **Take the project back** (it writes a take-over of your own, which every copy is asked
   about) or **Dismiss**. For a document: *Carol's file held a change to "Jobs" in your name. It was not taken, and
   your own word was sent again.* **Dismiss**.
+
+**After a take-over, a former owner's late answer** to a proposal the new owner had not answered (given offline, while
+they still believed they owned the project) counts for nothing: the proposal waits for the new owner (0.18.1; before,
+its card said *Accepted* although no document changed). The new owner's copy keeps, once, the list of the answers
+the former owners had given that it held when it took the project; those still count.
+
+**A colleague's removal undone.** When a Member removed a document and the owner then took the same document out and
+put it back, the Member's removal is spent only if the owner had seen it: the card then says *The document was removed
+from the project and added to it again since*, and the document comes back to the Member's copy. If the owner went on
+without knowing of it, the removal stands in the Member's copy and their proposal waits (0.18.1).
 
 ### More AI is offered, never applied
 
@@ -134,6 +145,12 @@ every copy). The document's title opens it, to change it.
 | removed against kept | the document stays. *To remove it, use its menu on Documents.* |
 | read again with the new reader | the newer reader's reading |
 | which passages are read | the choices of the person with the larger id hold, with yours on top where they differ |
+
+## Become the owner
+
+A project exchanged with an ENLENS before 0.17.0 has no owner until someone presses **Become the owner** (Team page).
+What each colleague removed or left out in their own copy before then becomes their proposal to the new owner, all at
+once: the dialog says so, and each colleague's Team tab says once how many of their changes became proposals (0.18.1).
 
 ## The people list: roles and the hand-over
 

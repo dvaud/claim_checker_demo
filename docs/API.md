@@ -1735,6 +1735,44 @@ pass; …"], "table": [{"measure": "Usable answers on the first try", "Checking 
 ### New in 0.18.1: documents, theory documents, concepts and team copies
 
 <!-- 0.18.1 part A: its routes below this line (gui/api_corpus.py); integration moves them to their places -->
+
+**A document's role** (roadmap K2 part 1, `docrole.py`). A document marked as theory is the lens the research is read
+through: still read, searched and noted, but left out of themes, codebook labels, the excerpts a check reads and key
+terms.
+
+- `GET /api/projects/{p}/document-roles` → `{"roles": {doc id: "theory"}}` (only the documents with a role).
+- `GET /api/projects/{p}/documents/{d}/role` → `{"doc_id", "role": "theory" | null, "impact": {"themes": [{"run_id",
+  "created_at", "passages"}], "labels": [{"framework", "name", "passages"}], "checks": [{"hyp_id", "text",
+  "excerpts"}]}}`: what was made with the document in.
+- `PUT /api/projects/{p}/documents/{d}/role` `{"role": "theory" | null, "why"?}` → `{"doc_id", "role", "changed",
+  "impact"}`. 400 for any other role, 404 for no such document. Under an owner, a Member's mark becomes a proposal at
+  the Team tab's next look (as *Leave out* does).
+
+**A codebook from a theory document** (roadmap K2 part 2, `theorycodes.py`, no AI).
+
+- `GET /api/projects/{p}/codebook-theory` → `{"documents": [{"doc_id", "title", "theory"}]}`, theory documents first.
+- `GET /api/projects/{p}/codebook-theory/{d}` → `{"doc_id", "title", "role", "concepts": [{"term", "how": "defined" |
+  "heading" | "frequent", "count", "definition": {"quote", "start", "end", "page"} | null, "code": {a draft code},
+  "suggested": [examples from the evidence documents: {"quote", "doc_id", "title", "page", "start", "end",
+  "project"}]}]}`.
+- Then `POST /api/projects/{p}/codebooks` with `"start": "theory"` and `"source": {"codes": [the drafts kept, with the
+  examples ticked], "doc_id"}`; an example from a theory document is dropped.
+
+**Concepts: paths, time and groups** (roadmap D3, D4, `conceptpaths.py`).
+
+- `GET /api/projects/{p}/concept-paths?from={term id}&to={term id}[&k=3]` → `{"from", "to", "paths": [{"cost", "steps":
+  [{"from": {"node", "label"}, "to", "kind": "link" | "together", "relation", "pmi", "bridges": [{"passage_id",
+  "doc_id", "title", "page", "location", "text", "start"}], "sentences"?}]}]}`. 400 without both terms, 404 for a term
+  the glossary does not know.
+- `GET /api/projects/{p}/concept-time/{term id}` → `{"node", "label", "with_year", "years": [{"year",
+  "documents_in_group", "documents", "passages", "mentions", "wordings": [{"label", "mentions"}], "neighbours":
+  [{"node", "label", "together", "pmi"}]}], "no_year": {the same} | null}`; years from the bibliography.
+- `POST /api/projects/{p}/concept-groups/{term id}` `{"groups": {name: [doc ids]}}` (two to six sets, not stored) →
+  `{"node", "label", "groups": [{"name", "documents_in_group", "theory_left_out", …the same profile}]}`.
+
+Links found from the text (roadmap D2, `textrelations.py`) need no route of their own: they are rows of the concept
+page's `related.links` with `"source": "pattern"` and their `"sentences"` (`[{"doc_id", "title", "page", "start",
+"end", "quote"}]`); relations gain `effect`, `effect_of`, `replaces` and `replaced_by`.
 <!-- end of 0.18.1 part A -->
 
 ### New in 0.18.1: the AI mix, checks and retractions

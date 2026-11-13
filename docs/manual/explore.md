@@ -79,12 +79,40 @@ furniture are left out), grouped into **concepts**:
 
 - abbreviations and their long forms ("proton exchange membrane (PEM)");
 - wordings close in meaning (with an embedding model);
+- links found in the sentences themselves (0.18.1, see below);
 - links the AI proposes and you accept, and links of your own.
 
 A concept card shows how the documents write it (*Not the same* splits a wording off), which documents discuss it and
 where it first appears, every line where it occurs, and related concepts (the same, broader, narrower, related,
 often together). *Ask the AI for other wordings* lists wordings the documents use: add them, or say *Not the same*
 and they are not proposed again.
+
+**Links found in the text (0.18.1).** When the glossary is made, ENLENS proposes links from the sentences, without AI,
+only between two terms the glossary knows and only when the connecting words alone stand between them:
+
+| The sentence says | The link proposed |
+| --- | --- |
+| "X such as Y, Z and W" | X is broader than Y, Z and W |
+| "Y, Z and other X" | Y and Z are part of X |
+| "X, also called Y", "X (also known as Y)", "X, i.e. Y" | the same |
+| "X leads to / causes / reduces / increases / results in Y" | X *leads to* Y |
+| "X instead of Y" | X *replaces* Y |
+
+Words inside quotation marks are passed by. Each proposal, marked *found in the text*, shows the sentences it was
+found in with their document and page, and waits for *Yes, right* or *No* like any proposed link. English sentences
+only, for now.
+
+**Paths to another concept (0.18.1).** On a concept's card, type another concept and *Find the paths*: the shortest
+chains between them, through links you accepted and concepts the documents mention together more often than by chance
+(pointwise mutual information). Each step shows the passages that mention both its concepts: a way into an argument
+the corpus already makes. A list, not a drawn map.
+
+**Over time and across groups (0.18.1).** *By year* shows, for each publication year, how many documents mention the
+concept, how they word it and what it is mentioned with. The year is that of the work the document is in your
+[bibliography](bibliography.md); documents without one are counted apart. *Compare two sets of documents* does the
+same for two sets you tick (policy against academic, one country against another); the sets are not kept.
+
+Theory documents are left out of the glossary, of key terms and of both cards.
 
 ### Words the glossary leaves out
 
@@ -153,6 +181,23 @@ it:
 *Download a highlighted copy* gives the PDF with highlights for the judgements, codes, concepts or references you
 choose (exact boxes with the PDF layout reader, whole lines otherwise, text recognition for scanned pages), and a note
 listing any quote it could not place. Other documents come as an HTML copy.
+
+### Theory documents
+
+A book or paper your research is read *through* (a theory of practice, a systems text) is not evidence about your
+field. Mark it as **theory** (0.18.1): in *Documents*, a row's menu → *Mark as theory…*, or on the document's page,
+*Mark as theory*. A small *Theory* tag then stands beside its title.
+
+A theory document is still read, searched (*Search* finds it), opened and noted as any other. It is **left out** of
+the themes, the labelling with codebooks, the excerpts a check reads, key terms and the glossary's counts, and so of
+the evidence map. You mark it; ENLENS never guesses: a study that *uses* a theory is still evidence. A check you
+limit to the theory document by hand still reads it.
+
+Marking or unmarking changes no result by itself. The document's page lists what was made with it in (sets of themes,
+codebook labels, checks), with links to make them again without it; a check is run again from its own page. *Mark as
+evidence* takes the mark back. In a shared project the mark travels like *Leave out*: the owner's or a Co-owner's
+holds at once, a Member's is a proposal ([Roles](roles.md)). A theory is also where a codebook can start
+([Make your own codebook](codebooks.md#make-one)).
 
 ## Quick look
 

@@ -203,17 +203,16 @@ There are three roles:
 
 - **Who the owner is.** Whoever made the project, when it was made in ENLENS 0.17.0 or never left their computer before.
   A project exchanged with an earlier ENLENS has no owner yet and works as before: the Team page says *No owner yet*
-  and offers **Become the owner** on that card.
+  and offers **Become the owner** on that card ([what then becomes a proposal](roles.md#become-the-owner)).
 - **Roles change by no click of yours.** A notice says it once (*Anna made Ben a Co-owner.*). A Co-owner whose ENLENS
   is older than this release cannot act as one: their changes still arrive as proposals.
-- **A Co-owner made a Member again** keeps what the project has taken. What they change from then on is a proposal.
 - **A Member's change to the documents** happens in their own copy at once and is a **proposal**. How much it matters
   decides how it is shown:
 
 | Severity | What a Member did | Until the owner or a Co-owner answers |
 | --- | --- | --- |
 | **Low** | added a document | It is in every copy for now. Declined, it stays in their copy only. The owner's setting *Accept documents collaborators add, at once* (on by default) accepts it without a click. |
-| **Medium** | read a document again with the new reader; *Leave out* or *Restore* a passage; moved where the text starts or ends | Only their copy has the change. Accepted, every copy reads it so (a new reading is made in each copy, and its results move with it). |
+| **Medium** | read a document again with the new reader; *Leave out* or *Restore* a passage; moved where the text starts or ends; marked a document as theory (0.18.1) | Only their copy has the change. Accepted, every copy reads it so (a new reading is made in each copy, and its results move with it). |
 | **High** | removed a document | Only their copy is without it. Accepted, it leaves every copy; checks keep what they read of it. |
 | **High** | let more AI read a document (*No AI* → *Claude may read it*, say) | Nothing changes anywhere, not even in their copy. On the *Documents* page the setting stays as it was and a note says *a looser setting is the owner's to decide*. |
 
@@ -221,8 +220,8 @@ A **stricter** AI setting is never a proposal: it holds in every copy at once, a
 owner or a Co-owner makes it or accepts it, is never put into force in your copy without your click
 ([below](roles.md#more-ai-is-offered-never-applied)).
 
-The details (what the Team tab asks of you, how a proposal is answered, what happens when two people answer or change
-the same thing at once, and the people list) are on [Roles, proposals and what waits for your word](roles.md).
+What the Team tab asks of you, answers given at once and the people list: [Roles, proposals and what waits for your
+word](roles.md).
 
 ## How two copies come together
 
@@ -325,7 +324,7 @@ yet, would refuse them.
   and the owner can change it.
 - **Work a Co-owner had not sent when they became a Member again** comes as proposals ([Roles](roles.md)).
 - **Files are not signed.** Someone who can write in the shared folder can still write in a colleague's name.
-- **An older ENLENS opens a newer zip as a new project** without a warning ([Project zips](#project-zips)).
+- **ENLENS 0.17.0 to 0.18.0 open a newer zip as a new project** without a warning ([Project zips](#project-zips)).
 
 ## Project zips
 
@@ -337,11 +336,11 @@ On the *Projects* page (the project menu → *Manage projects*):
   files, the codebooks, your private work too. It is for moving the project to another computer of yours: a colleague on
   ENLENS 0.17.0rc5 or earlier would see all of it. The file of a document you removed is not in it. Both are also on a
   check's page (under *Download*) and on the Team page.
-- **Import a project (.zip)** opens such a file as a new project. A damaged zip, or one whose database cannot be
-  read, is refused with a plain message and leaves nothing behind.
+- **Import a project (.zip)** opens such a file as a new project. A damaged zip, one whose database cannot be read,
+  or (0.18.1) one made by a newer ENLENS is refused with a plain message and leaves nothing behind.
 
 > [!WARNING]
-> Update ENLENS before you open a project zip made by a newer ENLENS. ENLENS 0.17.0 and 0.17.1 open such a zip *as a
+> Update ENLENS before you open a project zip made by a newer ENLENS. ENLENS 0.17.0 to 0.18.0 open such a zip *as a
 > new project* without a warning, and the new project then disagrees with the team. (Bringing such a zip into a
 > project, and the shared folder, do say *update ENLENS first*, and change nothing.)
 
