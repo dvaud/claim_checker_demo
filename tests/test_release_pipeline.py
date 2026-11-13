@@ -143,7 +143,6 @@ def test_an_update_to_a_new_tag_reinstalls_so_the_installed_version_follows(copi
     assert len(pip.calls) == 1 and pip.calls[0][-1].startswith(str(user))   # the metadata is made again, from the new tag
 
 
-@pytest.mark.skip(reason="server.py is integration's: handover-B.md item 3 makes _installed_version read the metadata")
 def test_the_installed_version_is_read_from_the_metadata(monkeypatch):
     import importlib.metadata as md
 

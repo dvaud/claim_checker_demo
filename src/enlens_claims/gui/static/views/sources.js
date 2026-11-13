@@ -2,7 +2,7 @@
 // rarely needed things (folder path, exclude patterns, remove everything) folded away.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { tesseractHelp, App, api, h, icon, readsLine, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, navigate, batchId, confirmDialog, field, emptyState, TERMINAL, KIND_TEXT,
-  dialog, certainty, breakSegments, breaksToIndex, textPositions, wordSpan, cpLength, safeHref, searchHref, session, download, plural, shortTitle, cap, runningJob, TOKEN, drawInSteps, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
+  dialog, certainty, breakSegments, breaksToIndex, textPositions, wordSpan, cpLength, safeHref, searchHref, session, download, plural, shortTitle, cap, runningJob, TOKEN, lazyList, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
@@ -388,11 +388,12 @@ export async function renderSources(view) {
     tbody = h("tbody");
     // 0.16 (H5): the rows are drawn as the list scrolls into view (hundreds of documents drew thousands of controls
     // before the page showed); ticking, the counts and the AI settings work on every document all the same
-    drawInSteps(tbody, docs, rowFor, { first: 60, step: 120, more: (left, onClick) => h("tr", { class: "draw-more-row" },
-      h("td", { colspan: "8" }, button({ kind: "quiet", sm: true, onClick }, icon("chevron-down", { size: 13 }), `Show more documents (${left} more)`))) });
-    docsBox.appendChild(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
+    // 0.18.1 (H5): the lazy list every long list uses: more rows as the end comes into view, and a line under the table
+    // that says how many are shown
+    const lazy = lazyList({ items: docs, render: rowFor, list: tbody, pageSize: 120, firstSize: 60, noun: ["document", "documents"] });
+    docsBox.append(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"))),
-      tbody)));
+      tbody)), lazy.footer);
   }
 
   // 0.15.7: the documents an earlier reader read, offered to the new one; the job's progress; what it did

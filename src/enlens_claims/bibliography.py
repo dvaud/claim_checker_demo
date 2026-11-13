@@ -1269,7 +1269,8 @@ def doc_citations(ws: Workspace) -> dict[str, dict]:
             continue
         w = _work_view(r)
         out[r["doc_id"]] = {"cite": w["cite"], "title": w["title"], "doi": w["doi"], "link": w["link"],
-                            "url": w["url"], "type": w["type"], "container": w["container"]}
+                            "url": w["url"], "type": w["type"], "container": w["container"],
+                            "year": r["year"]}  # 0.18.1 (D4): concepts over time read it
     return out
 
 

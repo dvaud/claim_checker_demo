@@ -975,7 +975,7 @@ class Workspace:
             for t in ("documents", "pages", "paragraphs", "headings", "passages", "embeddings", "doc_refs", "claims",
                       "claim_targets", "evidence", "interactions", "verifications", "labels", "terms", "term_mentions",
                       "concepts", "concept_terms", "theme_runs", "themes", "theme_members", "mentions", "bib_links",
-                      "blocks", "doc_tables", "block_choices"):
+                      "blocks", "doc_tables", "block_choices", "concept_link_sentences"):
                 out[t] = cx.execute(f"DELETE FROM {t}").rowcount
             kinds = ("('extract','verify','verify_set','expand','check','decompose','reread','second','label','link',"
                      "'theme','resolve')")

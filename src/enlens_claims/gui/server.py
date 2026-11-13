@@ -828,8 +828,10 @@ class App(LibraryMixin, QueueMixin):
             return False
 
         def started(model: str, n: int) -> None:
-            tracker.say(f"Your local model ({model}) is reading {n} {'excerpt' if n == 1 else 'excerpts'} from "
-                        "documents marked Only a local AI, on this computer")
+            # 0.18.1: with the AI mix (I1, I2) these can be the mix's share of a check too, not only excerpts of
+            # documents marked Only a local AI
+            tracker.say(f"Your local model ({model}) is reading {n} {'excerpt' if n == 1 else 'excerpts'} on this "
+                        "computer")
 
         n = sum(w["passages"] for w in waiting)
         before = readers.read
@@ -842,12 +844,12 @@ class App(LibraryMixin, QueueMixin):
         if readers.memory_short:
             tracker.step("note", f"{readers.memory_short} {claimcheck._waiting_words(n)}", {"keep": True})
         elif done and readers.read > before:
-            tracker.step("note", f"Your local model read {n} {'excerpt' if n == 1 else 'excerpts'} from documents "
-                                 "marked Only a local AI, on this computer", {})
+            tracker.step("note", f"Your local model read {n} {'excerpt' if n == 1 else 'excerpts'} on this computer",
+                         {})
         elif done:
             tracker.step("note", (f"The local model could not be used ({readers.local_problem}); " if
                                   readers.local_problem else "No local model read them; ") +
-                         f"the {n} {'excerpt' if n == 1 else 'excerpts'} from documents marked Only a local AI "
+                         f"the {n} {'excerpt' if n == 1 else 'excerpts'} for the local model "
                          f"{'waits' if n == 1 else 'wait'} for your judgement", {})
         return True
 
@@ -1906,6 +1908,12 @@ UPDATE_LOOK_EVERY = 100
 def _installed_version() -> str:
     """0.10.2: the version now on disk. It differs from the running __version__ when ENLENS was updated (git pull,
     the install line, enlens update) while this copy kept running; the page then says to quit and reopen."""
+    try:  # 0.18.1 (J1.3): the version is in the package's metadata (made from the tag), read afresh each time
+        from importlib import metadata
+
+        return metadata.version("enlens-claims")
+    except Exception:  # noqa: BLE001 - not installed as a package: an older copy wrote it in __init__.py
+        pass
     try:
         text = (Path(__file__).resolve().parent.parent / "__init__.py").read_text(encoding="utf-8")
     except OSError:

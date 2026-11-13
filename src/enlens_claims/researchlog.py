@@ -29,7 +29,7 @@ from .store import Workspace, now
 GROUPS = {
     "entry": "entries",
     "documents-added": "documents", "document-removed": "documents", "ai-access": "documents", "reread": "documents",
-    "check-added": "checks", "check-removed": "checks", "evidence-added": "checks",
+    "check-added": "checks", "check-removed": "checks", "evidence-added": "checks", "verdict-moved": "checks",
     "themes-found": "themes", "themes-removed": "themes", "theme-removed": "themes", "theme-restored": "themes",
     "theme-renamed": "themes", "theme-merged": "themes", "theme-separated": "themes",
     "codebook-added": "codebooks", "codebook-changed": "codebooks", "codebook-removed": "codebooks",

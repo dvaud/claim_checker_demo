@@ -19,6 +19,7 @@ from typing import Any, Iterable
 
 from pydantic import ValidationError
 
+from .docrole import evidence_sql
 from . import __version__, access, prompts, taskkinds
 from .retrieve import BM25, H2_RE
 from .schema import (CheckOut, DecomposeOut, ExpandOut, ExtractOut, ImpactClaimOut, InteractionOut, SplitOut,
@@ -158,7 +159,9 @@ def select_per_target(ws: Workspace, n: int, only_screened: bool = True, hydroge
     before (which the task shows as CONTEXT); without it, general energy passages crowd out the value chain.
     """
     sql = ("SELECT p.passage_id, p.text, q.text AS prev FROM passages p LEFT JOIN passages q "
-           "ON q.doc_id = p.doc_id AND q.seq = p.seq - 1 WHERE p.section='body'" + (" AND p.screened=1" if only_screened else ""))
+           "ON q.doc_id = p.doc_id AND q.seq = p.seq - 1 WHERE p.section='body' AND "
+           + evidence_sql("p.doc_id")  # 0.18.1 (K2): a theory document is no evidence for the SDG pack either
+           + (" AND p.screened=1" if only_screened else ""))
     rows = ws.query(sql)
     if hydrogen_only:
         rows = [r for r in rows if H2_RE.search(r["text"]) or H2_RE.search((r["prev"] or "")[-500:])]
@@ -233,7 +236,8 @@ def make_verify_vca(ws: Workspace, model: str | None = None, k: int | None = Non
     made, missing, no_ai = 0, 0, 0
     tdesc = targets()
     vcs = ws.query("SELECT * FROM vca_claims ORDER BY target, seq")
-    all_docs = [r["doc_id"] for r in ws.query("SELECT doc_id FROM documents")]
+    # 0.18.1 (K2): beyond the cited sources, only evidence documents (a cited one is kept, as one named by hand)
+    all_docs = [r["doc_id"] for r in ws.query(f"SELECT doc_id FROM documents WHERE {evidence_sql()}")]
     docs_by_target = {t: (all_docs if beyond_cited else docs_for_target(ws, t)) for t in {vc["target"] for vc in vcs}}
     # the passages of a set of sources and their index, built once per set (every target, with --beyond-cited)
     indexes: dict[tuple, tuple[list, BM25 | None]] = {}

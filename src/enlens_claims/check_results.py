@@ -649,8 +649,10 @@ def new_documents(ws: Workspace, hyp_id: str, matching: bool = True, _seen: set[
     # `_seen`: the documents its rounds read, when the caller has read them (hypothesis_result)
     seen_docs = _seen if _seen is not None else _shown_docs([t for c in claims
                                                              for t in _cc._check_tasks(ws, c["claim_id"])])
-    rows = [d for d in ws.query("SELECT doc_id, title, added_at FROM documents WHERE added_at > ? "
-                                "ORDER BY added_at, title", (cutoff,)) if d["doc_id"] not in seen_docs]
+    from .docrole import evidence_sql  # 0.18.1 (K2): a theory document added since is no new evidence
+
+    rows = [d for d in ws.query("SELECT doc_id, title, added_at FROM documents WHERE added_at > ? AND "
+                                f"{evidence_sql()} ORDER BY added_at, title", (cutoff,)) if d["doc_id"] not in seen_docs]
     hits: set[str] = set()
     if matching and rows:
         from .search import docs_matching
