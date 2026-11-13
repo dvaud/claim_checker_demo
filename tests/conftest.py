@@ -53,11 +53,28 @@ def loaded(ws: Workspace, corpus: Path, vca_xlsx: Path) -> Workspace:
 @pytest.fixture(autouse=True)
 def _no_real_claude_code(tmp_path, monkeypatch):
     """0.9: ENLENS finds and sets up Claude Code by itself. Tests never touch a real Claude Code: the `claude` program
-    is "not found" unless a test points ENLENS_CLAUDE at the stand-in (tests/fake_claude_cli.py)."""
+    is "not found" unless a test points ENLENS_CLAUDE at the stand-in (tests/fake_claude_cli.py).
+
+    The runs started from the app (`claude_setup._RUNS`) live in the process's memory, keyed by project name, and many
+    tests name their project "Q": a run one test stopped was still there for the next test of "Q" in the same worker,
+    whose fresh queue then reported that stopped run (a macOS CI failure, 2026-11-13). Each test starts with none and
+    leaves none behind, stopping any stand-in still at work."""
     monkeypatch.setenv("ENLENS_CLAUDE", str(tmp_path / "no-claude-here"))
     from enlens_claims import claude_setup
 
     claude_setup._STATUS.update(at=0.0, value=None)
+    with claude_setup._RUNS_LOCK:
+        claude_setup._RUNS.clear()
+        claude_setup._START_LOCKS.clear()
+    yield
+    with claude_setup._RUNS_LOCK:
+        left = list(claude_setup._RUNS.values())
+        claude_setup._RUNS.clear()
+        claude_setup._START_LOCKS.clear()
+    for r in left:
+        proc = r.get("proc")
+        if proc is not None and proc.poll() is None:
+            claude_setup._end_process(proc.pid, proc, wait=5.0)
 
 
 @pytest.fixture(autouse=True)
