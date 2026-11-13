@@ -4,13 +4,14 @@
   the list of concepts found without AI now has a **Draft with AI** button. The AI reads the passages of the theory
   where those concepts are defined or used most, and drafts the theory's own concepts: each with a short name, its
   definition quoted exactly from the theory with its page, and one line on why it is a concept of the theory. Every
-  quote is checked against the document, and a quote that is not there goes back to the AI to be fixed. The AI's
+  quote is checked against the document, and a quote that is not there, is shorter than three words or only repeats
+  the concept's name goes back to the AI to be fixed. The AI's
   concepts join the end of the list **unticked and marked *AI draft***; a concept already on the list is not offered
   twice. Their examples still come only from your evidence documents, never from the theory and never from the AI,
   and only when you tick them. The document's own AI setting decides who reads it: Claude, only a local AI on this
   computer, or none (then the button is not offered, and the dialog says why). The draft waits its turn like any AI
   job, goes to Claude Code's queue when Claude Code is your AI, is written in the research log, and asking again for
-  the same document reuses the answer. Nothing changes until you tick a concept and make the codebook, so nothing here
+  the same document reuses the answer; closing the dialog stops a draft still running. Nothing changes until you tick a concept and make the codebook, so nothing here
   changes results.
 
 ### For developers
