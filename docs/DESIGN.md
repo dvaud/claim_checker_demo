@@ -627,8 +627,10 @@ drawer open beside the page) the rows of `.table-responsive` stack with their la
 type, a date, a short state) flows on one line with the others; no column hides
 behind a sideways scroll. A table's name column keeps room for two lines of its names (a `min-width` in em on its cell,
 in the page's block); a file name under a name breaks after `_` or `-`, never before its extension, so it never
-squeezes the name. A grid whose first column stays while it scrolls (the [heat grid](#425-the-heat-grid)) is
-the one thing that scrolls sideways. Lists of entries (the research log, notes, answers) keep the same rhythm.
+squeezes the name. A long word a person typed (a name, a group) breaks in its cell (`overflow-wrap: anywhere`) rather
+than widen the table. A grid whose first column stays while it scrolls (the [heat grid](#425-the-heat-grid)) is
+the one thing that scrolls sideways, and it says so (4.25). A table inside a document's own text (the reading view)
+wraps its words to the reading column; only a cell that is a figure stays on one line. Lists of entries (the research log, notes, answers) keep the same rhythm.
 
 **Dense places** (the answers, excerpt cards, the codebook editor, the reading view, tables) keep their actions
 recognisable this way:
@@ -729,7 +731,8 @@ matching outside the reading view; the reading view (`views/sources.js`) draws h
 **Means:** every place some words occur, one line each, the words centred. **Use:** Search, a concept's lines, a
 document's Search panel. **Not for:** passages read as wholes (excerpt cards), counts per document (the heat grid).
 **Looks:** a table in a frame; the words before and after in grey serif, cut with "…"; the words found in
-600 on soft teal (other words searched for in a lighter tint); the line's document as the title column (`kw-where kw-where-title`: its title link, two lines at most, and where in it
+600 on soft teal (other words searched for in a lighter tint), a long hit cut with "…" after 22 em (12 em in a
+document's Search panel, where the place, too, is cut after 11 em) so the line never outgrows its frame; the line's document as the title column (`kw-where kw-where-title`: its title link, two lines at most, and where in it
 under the title, small, `.kw-place`), never a one-line column that grows and squeezes the words around the hit;
 at its end the line's way on, *Check this*, a link to Hypotheses with the line written in (it checks nothing yet).
 **Make it:** no helper: the page builds `h("div", { class: "kwic-wrap" }, h("table", { class: "kwic" }, …))`, one row per
@@ -741,8 +744,15 @@ place, as `views/search.js` does. **Lives in:** `components.css` § 4.24.
 map). **Use:** those three pages. **Not for:** a single count (a count tag), a list of passages (concordance lines).
 **Looks:** a grid in a frame whose first column (the row's name, a title link) stays while it scrolls sideways; a
 cell is shaded in the teal by its level (`heat-l1` … `heat-l4`, on a log scale) and is a button when it has passages; an
-evidence-map cell holds the judgements as small symbols in their own colours. **Make it:** `heatCell(n, max, label,
-prefix, onClick)`. **Lives in:** `components.css` § 4.25.
+evidence-map cell holds the judgements as small symbols in their own colours. The long side runs down the page: the
+documents are the rows wherever the columns would be few (Codes by document, Themes' documents by theme); only the
+Evidence map, where both sides can be long, has documents as columns. A grid wider than its frame never hides columns
+silently: a bar above it says which show ("Documents 1–6 of 23"), with arrows that move it a frame at a time, the
+frame's right edge shades while there is more that way, and **Full screen** lays the grid over the whole window
+(`.grid-full`), where it scrolls every way like a spreadsheet, its header row and first column held in place; Escape,
+*Exit full screen* or following a link from it closes it. A grid that fits shows no bar. **Make it:** the cells with
+`heatCell(n, max, label, prefix, onClick)`, the grid in its frame with `heatGrid(table, { label, unit })` (never a
+`.map-wrap` by hand). **Lives in:** `components.css` § 4.25.
 
 ### 4.26 Excerpt cards
 
@@ -987,7 +997,7 @@ else may reach it.
 | Drawer | `drawer()`, `drawerButton()`, `teamLine()`, `setDrawerOpen()` |
 | Quotes and words found | `passageNode()`, `foundWords()` |
 | A decision that is not a proposal | `decisionCard({ what, flag, person, time, said, body, actions, ai })`: a decision that is not a proposal, in a proposal card's shape |
-| Lists, grids, work | `listRow()`, `listGroup()`, `proposalCard()`, `drawInSteps()`, `heatCell()`, `workState()`, `spinner()`, `fold()` |
+| Lists, grids, work | `listRow()`, `listGroup()`, `proposalCard()`, `drawInSteps()`, `heatCell()`, `heatGrid()`, `workState()`, `spinner()`, `fold()` |
 
 ### 9.4 The promise to forks and add-ons
 
@@ -1025,7 +1035,7 @@ A few rules have exceptions, each argued for once. They are listed here and in t
 | `.dz-side` | #/design: a piece of the sidebar on the sidebar's ground |
 | `.dz-corner` | #/design: the sample of a corner token |
 | `.dz-shadow` | #/design: the sample of a shadow token |
-| `.doc-view .dv-table th, .doc-view .dv-table td` | A table inside a document's own text, drawn as the document has it |
+| `.doc-view .dv-table th, .doc-view .dv-table td` | A table inside a document's own text, its words wrapped to the reading column |
 | `.dz-frame` | #/design: the frame of a sample |
 
 **Soft teal in a page's block** ([3.1](#31-colour)): each is *here*, *chosen* or *found*.

@@ -9,7 +9,7 @@
 // page: its links point at this page.
 import {
   h, icon, toast, dialog, confirmDialog, popNote, helpMark, field, switchControl, rangeControl, spinner, emptyState,
-  statusBadge, gradeBadge, codeChip, pageHead, downloadLinks, heatCell, strongerMark,
+  statusBadge, gradeBadge, codeChip, pageHead, downloadLinks, heatCell, heatGrid, strongerMark,
   button, downloadButton, fileButton, iconButton, link, tag, notice, card, fold, choice, optionCards, input, select,
   textarea, searchField, menu, workState, aiWhere, drawer, drawerButton, teamLine, personMark, reviewedMark, severityTag, compare,
   shareState, absentDocument, listRow, listGroup, noticeList, tabs, judgementIcon, readsLine, stopButton, proposalCard, decisionCard, inset,
@@ -418,9 +418,9 @@ export async function renderDesign(page) {
           kwLine("Policy brief: hybrid working at the Municipality", "…two office days. Hybrid", "work", "is the rule since 2023 for most teams…"))))),
 
     section("4.25", "The heat grid", "How much each document addresses each code, theme or hypothesis.",
-      h("div", { class: "map-wrap" }, h("table", { class: "map-table" }, h("tbody", {}, h("tr", {},
+      heatGrid(h("table", { class: "map-table" }, h("tbody", {}, h("tr", {},
         h("th", { class: "map-hyp" }, link({ kind: "title", serif: true, href: HERE }, "A document")),
-        ...[0, 1, 3, 8, 20].map((n) => heatCell(n, 20, `Code ${n}`, "pf", n ? noop : null))))))),
+        ...[0, 1, 3, 8, 20].map((n) => heatCell(n, 20, `Code ${n}`, "pf", n ? noop : null))))), { label: "A heat grid", unit: "codes" })),
 
     section("4.26", "Excerpt cards", "One excerpt the AI read for a hypothesis.",
       sample("The quote takes its grade's tint and line; Agree first, the toggles last",

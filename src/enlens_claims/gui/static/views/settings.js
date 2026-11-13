@@ -596,8 +596,8 @@ function routingSection(s, servers) {
         selects[row.row] = ctl;
       }
       const up = !row.step_up ? "none" : (r.route === "claude_code" && ["check", "split", "verify"].includes(row.row) ? `${row.step_up} (auditor)` : row.step_up);
-      return h("tr", {}, h("td", {}, row.title), h("td", { class: "mono small" }, row.model || "the main model"), h("td", { class: "mono small" }, up),
-        r.route === "claude_code" ? h("td", { class: "mono small" }, row.helper || "") : null, h("td", {}, ctl));
+      return h("tr", {}, h("td", {}, h("strong", {}, row.title)), h("td", { class: "mono small fact", "data-label": "Model" }, row.model || "the main model"), h("td", { class: "mono small fact", "data-label": "Steps up to" }, up),
+        r.route === "claude_code" ? h("td", { class: "mono small fact", "data-label": "Helper" }, row.helper || "") : null, h("td", { "data-label": "Your choice" }, ctl));
     });
     const small = fieldInput({ mono: true, type: "text", list: "routing-models", value: r.local_small_model || "", placeholder: "none: the main model does everything" });
     const one = switchControl("Use the model of each task (recommended)", r.routing, { help: "Off: one model for everything, as in ENLENS 0.7." });
@@ -618,7 +618,7 @@ function routingSection(s, servers) {
     replace(body,
       h("p", { class: "small" }, `Route now: ${r.route_name}. ${claude ? (r.route === "claude_code" ? "Each kind of task starts on the model recommended for your Claude plan and goes up one step on its own when it is hard." : "Each kind of task starts on the cheapest model that is good enough and goes up one step on its own when it is hard.") : "With a small model chosen, labels and links start on it and go up to the main model when they are hard; without one the main model does everything, as in 0.7."}`),
       r.route === "claude_code" ? planField(r.plan || {}) : null,
-      h("div", { class: "table-wrap" }, h("table", { class: "table routing-table" },
+      h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive routing-table" },
         h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Task"), h("th", { scope: "col" }, "Model"), h("th", { scope: "col" }, "Steps up to"), r.route === "claude_code" ? h("th", { scope: "col" }, "Helper") : null, h("th", { scope: "col" }, "Your choice"))),
         h("tbody", {}, rows))),
       h("datalist", { id: "routing-models" }, chat.map((m) => h("option", { value: m }))),
@@ -830,8 +830,8 @@ function testSection(s, watchers) {
     replace(holder.querySelector(".pb"),
       h("p", {}, h("strong", {}, `${r.model || ""}`), h("span", { class: "muted" }, ` (${r.backend || ""})`)),
       h("ul", { class: "plain-steps" }, (r.verdict || []).map((l) => h("li", {}, l))),
-      cols.length ? h("div", { class: "table-wrap" }, h("table", { class: "table bench-table" }, h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Measure"), cols.map((c) => h("th", { scope: "col", class: "num" }, c)))),
-        h("tbody", {}, (r.table || []).map((row) => h("tr", {}, h("td", {}, row.measure), cols.map((c) => h("td", { class: "num" }, String(row[c] ?? "–")))))))) : null,
+      cols.length ? h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive bench-table" }, h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Measure"), cols.map((c) => h("th", { scope: "col", class: "num" }, c)))),
+        h("tbody", {}, (r.table || []).map((row) => h("tr", {}, h("td", {}, row.measure), cols.map((c) => h("td", { class: "num", "data-label": c }, String(row[c] ?? "–")))))))) : null,
       h("div", { class: "btn-row set-result-actions" }, downloadButton({ onClick: () => {
         const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
         saveBlob(blob, `benchmark_${(r.model || "model").replace(/[^A-Za-z0-9_-]/g, "_")}.json`);
@@ -957,7 +957,7 @@ function problemRow() {
     try {
       const r = await api("GET", "/api/technical-details");
       try { await navigator.clipboard.writeText(r.text); toast("Copied. Paste it in your problem report.", "ok", { ttl: 2500 }); }
-      catch (_) { replace(box, h("pre", { class: "mono small" }, r.text)); toast("Select the text and copy it with Ctrl+C (or Cmd+C).", "info"); }
+      catch (_) { replace(box, h("pre", { class: "mono small tech-details" }, r.text)); toast("Select the text and copy it with Ctrl+C (or Cmd+C).", "info"); }
     } catch (e) { showError(e); }
   });
   const box = h("div", {});

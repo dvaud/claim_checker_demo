@@ -1087,6 +1087,8 @@ export async function renderDocument(view, [docId], query) {
   // A block’s text cut at its headings (as blockNode does), each piece under the decorations that cover it. The
   // decorations and headings are the app’s offsets: cut here at the indices of the block’s own text, and each piece
   // remembers the app’s offset of its first character (nodeAt).
+  // a cell that holds only a figure (a number, a share, an amount): it stays on one line, right-aligned
+  const FIGURE = /^[\s\d.,%€$£+\-–−()]+$/;
   function blockText(b, decos) {
     const text = b.text || "";
     const pos = textPositions(text);
@@ -1094,7 +1096,7 @@ export async function renderDocument(view, [docId], query) {
       const rowsT = b.table.rows || [];
       return h("div", { class: "dv-table-wrap" }, h("table", { class: "dv-table" },
         rowsT.length ? h("thead", {}, h("tr", {}, rowsT[0].map((c) => h("th", { scope: "col" }, c)))) : null,
-        h("tbody", {}, rowsT.slice(1).map((r) => h("tr", {}, r.map((c) => h("td", {}, c)))))));
+        h("tbody", {}, rowsT.slice(1).map((r) => h("tr", {}, r.map((c) => h("td", { class: FIGURE.test(c || "") ? "num" : null }, c)))))));
     }
     const breaks = breaksToIndex(text, (b.headings || []).map((x) => ({ at: x.at, end: x.end, kind: "heading" })));
     const segs = breakSegments(text, breaks);
@@ -2092,7 +2094,7 @@ export async function renderDocument(view, [docId], query) {
           h("td", { class: "kw-left" }, h("span", {}, l.left)),
           h("td", { class: "kw-node" }, h("button", { class: "dv-node", type: "button", title: `Go to ${l.location || "it"}`, onClick: () => go(i) }, h("mark", {}, l.node))),
           h("td", { class: "kw-right" }, l.right),
-          h("td", { class: "kw-where" }, l.location || "")))))));
+          h("td", { class: "kw-where", title: l.location || null }, h("span", {}, l.location || ""))))))));
       if (lines.length < res.total) results.appendChild(button({ kind: "quiet", sm: true, class: "dv-more-hits-btn", onClick: () => run(true) }, icon("chevron-down", { size: 13 }), `Show more hits (${fmt.num(res.total - lines.length)} more)`));
       results.appendChild(h("p", { class: "small dv-search-note" }, h("a", { href: searchHref(res.query, { mode: mode.value !== "any" ? mode.value : null }) }, icon("text-search", { size: 12 }), " Search the whole project for it")));
     }

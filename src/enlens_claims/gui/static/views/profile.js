@@ -4,7 +4,7 @@
 // says why it is there; a person can agree, change or reject it (in the document viewer, Codes panel).
 // The pieces shared with the document viewer (the AI-labelling card, the keyword pass, wording) are exported from here.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
-import { App, api, h, icon, madeWithFact, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice, readsLine, inset } from "../lib.js";
+import { App, api, h, icon, madeWithFact, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice, readsLine, inset, heatGrid } from "../lib.js";
 import { jobCard } from "./progress.js";
 
 // The largest count in a grid of rows of cells (at least 1), found by a loop: Math.max(...every cell) throws a
@@ -447,8 +447,7 @@ export async function renderProfile(view, params, query) {
     gridBox.appendChild(h("div", { class: "pf-grid-key muted small" },
       h("span", {}, g.provisional ? tag({ kind: "attention" }, "provisional") : null, g.provisional ? " Includes codes found by keywords that the AI has not checked yet. " : ""),
       h("span", {}, "The darker the cell, the more passages. Hover over a column for its text; click a cell to see those passages in the document.")));
-    gridBox.appendChild(h("p", { class: "muted small map-scroll-hint" }, icon("arrow-right", { size: 12 }), ` The grid scrolls sideways: drag or swipe it to see every ${unit}.`));
-    gridBox.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": `Documents by ${unit} (scrolls sideways)` }, table));
+    gridBox.appendChild(heatGrid(table, { label: `Documents by ${unit}`, unit: unit === "code" ? "codes" : `${unit}s` }));
   }
 
   async function drawCalibration() {

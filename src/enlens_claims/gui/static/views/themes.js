@@ -4,7 +4,7 @@
 // A theme that is not relevant can be removed (its passages are left out until it is brought back), and a new theme
 // found in its place, on this computer without AI (POST …/new, job "theme-new").
 import { featureEyebrow, withAI } from "../features.js";
-import { App, api, h, icon, madeWithFact, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold, readsLine, stopButton, menu, inset, searchHref } from "../lib.js";
+import { App, api, h, icon, madeWithFact, replace, clear, toast, showError, fmt, pageHead, watchJob, P, emptyState, TERMINAL, dialog, download, rangeControl, passageNode, navigate, store, plural, shortTitle, runningJob, heatCell, downloadLinks, button, choice, link, tag, notice, card, input, select, textarea, fold, readsLine, stopButton, menu, inset, searchHref, drawInSteps, heatGrid } from "../lib.js";
 import { simpleProgress, MiniJob, jobError } from "./progress.js";
 import { historyButton, askWhy } from "./versions.js";
 import { shareBar } from "./share.js";   // 0.18 (L1)
@@ -277,19 +277,23 @@ async function renderRun(view, runId, info, query) {
     const max = gridMax(grid);
     const wrap = h("div");
     wrap.appendChild(h("p", { class: "muted small th-docs-grid-help" }, "How many passages of each document fall in each theme. The darker the cell, the more passages."));
+    // 0.18.2: a document is a row and a theme a column. A project has a handful of themes but may have hundreds of
+    // documents: the long side runs down the page, as in Codes by document, instead of off to the right.
+    const tbody = h("tbody");
     const table = h("table", { class: "map-table th-grid" },
-      h("caption", { class: "visually-hidden" }, "Themes by document: the number of passages"),
-      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "map-hyp-head" }, "Theme"),
-        docs.map((d) => h("th", { scope: "col", class: "map-doc-head" }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}`, title: d.title || "untitled" }, h("span", { class: "map-doc-title" }, shortTitle(d.title, 60))))))),
-      h("tbody", {}, v.themes.map((t) => {
-        const row = grid[String(t.theme_id)] || {};
-        const href = themeHref(runId, t.theme_id);
-        return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a")) return; location.hash = href; } },
-          h("th", { scope: "row", class: "map-hyp" }, link({ kind: "title", serif: true, href }, t.name), h("div", { class: "map-hyp-meta muted small" }, plural(t.size, "passage"))),
-          docs.map((d) => heatCell(row[d.doc_id] || 0, max, `${shortTitle(d.title, 60)} in “${t.name}”`, "th")));
-      })));
-    wrap.appendChild(h("p", { class: "muted small map-scroll-hint" }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every document."));
-    wrap.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": "Themes by document (scrolls sideways)" }, table));
+      h("caption", { class: "visually-hidden" }, "Documents by theme: the number of passages"),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "map-hyp-head" }, "Document"),
+        v.themes.map((t) => h("th", { scope: "col", class: "map-doc-head" }, link({ kind: "title", serif: true, href: themeHref(runId, t.theme_id), title: `${t.name} · ${plural(t.size, "passage")}` },
+          h("span", { class: "map-doc-title" }, t.name), h("span", { class: "map-flag-text" }, plural(t.size, "passage"))))))),
+      tbody);
+    drawInSteps(tbody, docs, (d) => {
+      const href = `#/doc/${encodeURIComponent(d.doc_id)}`;
+      return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a")) return; location.hash = href; } },
+        h("th", { scope: "row", class: "map-hyp" }, link({ kind: "title", serif: true, href, title: d.title || "untitled" }, shortTitle(d.title, 90))),
+        v.themes.map((t) => heatCell((grid[String(t.theme_id)] || {})[d.doc_id] || 0, max, `${shortTitle(d.title, 60)} in “${t.name}”`, "th")));
+    }, { first: 40, step: 80, more: (left, onClick) => h("tr", { class: "draw-more-row" }, h("th", { scope: "row", class: "map-hyp" },
+      button({ kind: "quiet", sm: true, onClick }, icon("chevron-down", { size: 13 }), `Show more documents (${left} more)`))) });
+    wrap.appendChild(heatGrid(table, { label: "Documents by theme", unit: "themes" }));
     return wrap;
   }
 
@@ -327,8 +331,7 @@ async function renderRun(view, runId, info, query) {
           h("th", { scope: "row", class: "map-hyp" }, link({ kind: "title", serif: true, href }, t.name)),
           cg.codes.map((code) => heatCell(row[code] || 0, max, `${fwLabel} ${code} in “${t.name}”`, "th")));
       })));
-    wrap.appendChild(h("p", { class: "muted small map-scroll-hint" }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every code."));
-    wrap.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": `Themes by ${fwLabel} (scrolls sideways)` }, table));
+    wrap.appendChild(heatGrid(table, { label: `Themes by ${fwLabel}`, unit: `${fwLabel}s` }));
     return wrap;
   }
 

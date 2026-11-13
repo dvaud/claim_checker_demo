@@ -2,7 +2,7 @@
 // (judgements that count at the strictness; a person's always count), with symbols as well as colours. 0.17.0: a view
 // of the Hypotheses page (its tab beside Answers), with the page's head.
 import { featureEyebrow, viewTabs } from "../features.js";
-import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks, link, iconButton, tag, notice } from "../lib.js";
+import { App, api, h, icon, showError, download, pageHead, statusBadge, emptyState, P, strictness, shortTitle, downloadLinks, link, iconButton, tag, notice, heatGrid } from "../lib.js";
 
 const SIDE = {
   supports: { symbol: "+", word: "supports", cls: "m-sup" },
@@ -87,7 +87,6 @@ export async function renderMap(view, params, query) {
       }));
   }));
   table.append(h("caption", { class: "visually-hidden" }, "Evidence map: hypotheses by documents"), thead, tbody);
-  view.appendChild(h("p", { class: "muted small map-scroll-hint" }, icon("arrow-right", { size: 12 }), " The grid scrolls sideways: drag or swipe it to see every document."));
-  view.appendChild(h("div", { class: "map-wrap", tabindex: "0", role: "region", "aria-label": "Evidence map grid (scrolls sideways)" }, table));
+  view.appendChild(heatGrid(table, { label: "Evidence map", unit: "documents" }));
   view.appendChild(h("p", { class: "muted small map-help" }, "Click a hypothesis to open its result, or a document title to open the document; the download arrow under a document title gives its PDF with the quotes marked. The Excel download of all answers has this map as a sheet called “Map”."));
 }

@@ -594,7 +594,7 @@ def test_every_helper_is_on_the_reference_page():
     helpers = ["button", "downloadButton", "fileButton", "iconButton", "link", "tag", "notice", "card", "fold", "choice",
                "optionCards", "input", "select", "textarea", "searchField", "menu", "workState", "aiWhere", "drawer",
                "drawerButton", "field", "switchControl", "rangeControl", "spinner", "emptyState", "statusBadge", "gradeBadge",
-               "codeChip", "pageHead", "downloadLinks", "helpMark", "popNote", "toast", "dialog", "confirmDialog", "heatCell",
+               "codeChip", "pageHead", "downloadLinks", "helpMark", "popNote", "toast", "dialog", "confirmDialog", "heatCell", "heatGrid",
                "strongerMark", "aiTag", "viewTabs", "featureEyebrow", "personMark", "reviewedMark", "severityTag", "compare",
                "shareState", "absentDocument", "listRow", "listGroup", "noticeList", "teamLine"]
     for name in helpers:
@@ -1233,7 +1233,7 @@ PAGE_BOXES = {
     ".dz-side": "#/design: a piece of the sidebar on the sidebar's ground",
     ".dz-corner": "#/design: the sample of a corner token",
     ".dz-shadow": "#/design: the sample of a shadow token",
-    ".doc-view .dv-table th, .doc-view .dv-table td": "a table inside a document's own text, drawn as the document has it",
+    ".doc-view .dv-table th, .doc-view .dv-table td": "a table inside a document's own text, its words wrapped to the reading column",
     ".dz-frame": "#/design: the frame of a sample",
 }
 

@@ -1639,6 +1639,93 @@ export function heatCell(n, max, label, prefix, onClick) {
       : [h("span", { class: "visually-hidden" }, `${label}: `), n ? String(n) : h("span", { "aria-label": "none" }, "·")]);
 }
 
+// 0.18.2: a heat grid in its frame (components.css, 4.25 The heat grid). Both of its axes are data, so a grid wider
+// than the page still scrolls sideways, but never silently: while columns are out of sight, a bar above it says which
+// show ("Documents 1–6 of 23"), with arrows that move it a frame at a time, and Full screen, which lays the grid over
+// the whole window. There it scrolls every way, like a spreadsheet, with its header row and first column held in place.
+// The grid itself moves into the full-screen layer and back (never a copy), so rows drawn in steps and the cells'
+// buttons keep working; following a link from there (a cell, a title) closes the layer, as the page changes under it.
+// `label` names the grid (its region, the layer's title); `unit` is what its columns are, in the plural.
+export function heatGrid(table, { label, unit = "columns" } = {}) {
+  const wrap = h("div", { class: "map-wrap", role: "region", "aria-label": label }, table);
+  const frame = h("div", { class: "heat-frame" }, wrap);
+  const where = h("span", { class: "heat-where" });
+  // the part of the frame the columns scroll through: right of the first column (it stays), up to the frame's edge
+  const view = () => {
+    const row = table.tHead && table.tHead.rows[0];
+    const w = wrap.getBoundingClientRect();
+    return { row, heads: row ? [...row.cells].slice(1) : [], left: w.left + (row ? row.cells[0].offsetWidth : 0), right: w.left + wrap.clientWidth };
+  };
+  // a step on: the first column not wholly in sight comes to the left; a step back: the last one hidden on the left
+  // comes to the right edge. So no column is ever stepped over.
+  const step = (dir) => {
+    const { heads, left, right } = view();
+    let by = dir * Math.max(80, (right - left) * 0.9);
+    const rects = heads.map((c) => c.getBoundingClientRect());
+    const next = dir > 0 ? rects.find((r) => r.right > right + 1) : rects.filter((r) => r.left < left - 1).pop();
+    if (next) by = dir > 0 ? next.left - left : next.right - right;
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    wrap.scrollBy({ left: by, behavior: smooth ? "smooth" : "auto" });
+  };
+  const back = iconButton({ icon: "chevron-left", sm: true, label: `Earlier ${unit}`, onClick: () => step(-1) });
+  const on = iconButton({ icon: "chevron-right", sm: true, label: `More ${unit}`, onClick: () => step(1) });
+  const fullBtn = button({ sm: true, class: "heat-full-btn", onClick: () => openFull() }, icon("maximize", { size: 13 }), "Full screen");
+  const box = h("div", { class: "heat-grid" }, h("div", { class: "heat-bar" }, where, h("span", { class: "heat-nav" }, back, on), fullBtn), frame);
+
+  // which columns show: those whose head lies whole between the first column (it stays) and the frame's right edge
+  const measure = () => {
+    const over = wrap.scrollWidth > wrap.clientWidth + 1;
+    box.toggleAttribute("data-over", over);
+    if (over) wrap.setAttribute("tabindex", "0"); else wrap.removeAttribute("tabindex");
+    const { heads, left, right } = view();
+    if (!over || !heads.length) { delete frame.dataset.more; return; }
+    let a = -1, b = -1;
+    heads.forEach((c, i) => { const r = c.getBoundingClientRect(); if (r.left >= left - 2 && r.right <= right + 2) { if (a < 0) a = i; b = i; } });
+    const name = unit.charAt(0).toUpperCase() + unit.slice(1);
+    where.textContent = a < 0 ? `${heads.length} ${unit}` : `${name} ${a + 1}${b > a ? `–${b + 1}` : ""} of ${heads.length}`;
+    back.disabled = wrap.scrollLeft <= 1;
+    on.disabled = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 1;
+    frame.dataset.more = on.disabled ? "" : "end";
+  };
+  let queued = false;
+  const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; measure(); }); };
+  wrap.addEventListener("scroll", later, { passive: true });
+  if ("ResizeObserver" in window) { const ro = new ResizeObserver(later); ro.observe(wrap); ro.observe(table); }
+  else window.addEventListener("resize", later);
+
+  let layer = null, stand = null;
+  // a frame taken out of the page and put back forgets how far it was scrolled: it is carried over by hand
+  const move = (fn) => { const x = wrap.scrollLeft, y = wrap.scrollTop; fn(); wrap.scrollLeft = x; wrap.scrollTop = y; };
+  const closeFull = () => {
+    if (!layer) return;
+    const dlg = layer;
+    layer = null;
+    window.removeEventListener("hashchange", closeFull);
+    move(() => { if (stand && stand.isConnected) stand.replaceWith(box); });
+    stand = null;
+    dlg.close();
+    dlg.remove();
+    if (fullBtn.isConnected) fullBtn.focus({ preventScroll: true });
+    later();
+  };
+  function openFull() {
+    if (layer) return;
+    // the grid's place in the page keeps its height while it is away, so the page does not move under the layer
+    stand = h("div", { class: "heat-stand", style: { height: `${box.offsetHeight}px` } });
+    layer = h("dialog", { class: "grid-full", "aria-label": label },
+      h("div", { class: "grid-full-head" }, h("h2", {}, label),
+        button({ sm: true, onClick: closeFull }, icon("minimize", { size: 13 }), "Exit full screen")));
+    layer.addEventListener("cancel", (e) => { e.preventDefault(); closeFull(); });
+    // a link followed from the layer (a title) leads to another place, even to the page under it: the layer goes
+    layer.addEventListener("click", (e) => { if (e.target.closest("a[href]")) setTimeout(closeFull, 0); });
+    window.addEventListener("hashchange", closeFull);
+    (document.getElementById("dialogs") || document.body).appendChild(layer);
+    move(() => { box.replaceWith(stand); layer.appendChild(box); layer.showModal(); });
+    later();
+  }
+  return box;
+}
+
 // 0.16 (H5): a long list drawn in steps, so a project of hundreds of documents opens its page at once: the first
 // `first` items now, then `step` more whenever the end of what is drawn comes within about a screen of the window
 // (or "Show more" is used, from the keyboard or where the page cannot tell). `more(left, onClick)` makes the element
