@@ -1,5 +1,5 @@
 // Entry point: boots the shell, routes the hash, keeps the sidebar (project, jobs, privacy, theme) current.
-import { App, api, h, icon, setButtonKind, menu, plural, emptyState, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice , cancelJob, ensureToken, keyWasStale, copyLine, WhatsNew, loadWhatsNew, showWhatsNew } from "./lib.js";
+import { App, api, h, icon, setButtonKind, menu, plural, emptyState, Connection, replace, clear, toast, showError, store, navigate, parseQuery, onJobsChanged, fmt, TERMINAL, confirmDialog, P, watchJob, startClaudeNow, claudeStatus, claudeSeenNow, rememberClaude, claudeAccount, brand, appName, Updates, checkUpdate, onUpdateSeen, UPDATE_EVERY, button, iconButton, link, notice , cancelJob, ensureToken, keyWasStale, copyLine, WhatsNew, loadWhatsNew, showWhatsNew, markWhatsNewRead } from "./lib.js";
 import { FEATURES, SECTIONS, PLACES, aiTag } from "./features.js";
 import { PAGE_ROUTES, applyExtensions, jobRow } from "./registry.js";
 import { quietRound, quietRoundAgainIn, nextSyncLook } from "./views/team-state.js";   // 0.18 stage 5
@@ -714,33 +714,33 @@ function connectionInit() {
   setInterval(() => { if (Connection.down) api("GET", "/api/state").catch(() => {}); }, 5000);
 }
 
-// 0.15.1: what is new after an update. After 0.17.2 it is read only when asked: no note in the corner, but What's new
-// above Settings until it is opened (lib.js showWhatsNew; Settings, beside the version, has it always).
-// 0.15.4: why an update on Windows did not finish (`note`, `kind: "problem"`) still shows by itself, once: it says what
-// to do.
+// 0.15.1: what is new, after an update, in a small note in the corner. After 0.18.0rc1 the note holds only the
+// version's title and subtitle and *Read what's new*, which opens the points in a dialog (lib.js showWhatsNew;
+// Settings, beside the version, has it always). It stays until it is read or closed (x or Escape): either marks it
+// read, so it comes once.
+// 0.15.4: or why an update on Windows did not finish (`note`, `kind: "problem"`), with what to do, in full.
 async function whatsNewInit() {
   const r = await loadWhatsNew();
-  const btn = document.getElementById("news-btn");
-  if (btn && WhatsNew.unread) {
-    replace(btn, icon("sparkles", { size: 13 }), h("span", {}, `What's new in ${WhatsNew.changes.version}`));
-    btn.title = `What ${appName()} ${WhatsNew.changes.version} brings. It goes once you have read it; Settings has it too.`;
-    btn.addEventListener("click", () => showWhatsNew());
-    window.addEventListener("enlens-whats-new-read", () => { btn.hidden = true; });
-    btn.hidden = false;
-  }
   const note = r && r.note;
-  if (!note || note.kind !== "problem" || !Array.isArray(note.points) || !note.points.length) return;
+  const problem = !!(note && note.kind === "problem" && Array.isArray(note.points) && note.points.length);
+  if (!problem && !WhatsNew.unread) return;
+  const n = WhatsNew.changes;
   const onKey = (ev) => { if (ev.key === "Escape") close(); };
-  const close = () => { document.removeEventListener("keydown", onKey); card.remove(); };
-  const card = h("div", { class: "release-note release-note-problem", role: "status", "aria-live": "polite", "aria-label": "The update did not finish" },
+  const remove = () => { document.removeEventListener("keydown", onKey); window.removeEventListener("enlens-whats-new-read", remove); card.remove(); };
+  const close = () => { if (!problem && WhatsNew.unread) markWhatsNewRead(); remove(); };
+  const card = h("div", { class: problem ? "release-note release-note-problem" : "release-note", role: "status",
+    "aria-live": "polite", "aria-label": problem ? "The update did not finish" : "What is new" },
     h("div", { class: "release-note-head" },
-      icon("alert-triangle", { size: 15 }),
-      h("p", { class: "release-note-title" }, note.title),
+      problem ? icon("alert-triangle", { size: 15 }) : null,
+      h("p", { class: "release-note-title" }, problem ? note.title : `${n.version}: ${n.title}`),
       iconButton({ icon: "x", size: 14, label: "Close", class: "release-note-close", onClick: close })),
-    note.subtitle ? h("p", { class: "release-note-sub" }, note.subtitle) : null,
-    h("ul", { class: "release-note-list" }, ...note.points.map((t) => h("li", {}, t))));
+    problem ? [note.subtitle ? h("p", { class: "release-note-sub" }, note.subtitle) : null,
+      h("ul", { class: "release-note-list" }, ...note.points.map((t) => h("li", {}, t)))]
+      : [n.subtitle ? h("p", { class: "release-note-sub" }, n.subtitle) : null,
+        button({ kind: "quiet", sm: true, class: "release-note-read", "aria-haspopup": "dialog", onClick: () => { remove(); showWhatsNew(); } }, "Read what's new")]);
   document.addEventListener("keydown", onKey);
-  document.querySelectorAll(".update-popup").forEach((el) => el.remove());  // the same corner
+  if (problem) document.querySelectorAll(".update-popup").forEach((el) => el.remove());  // the same corner
+  else window.addEventListener("enlens-whats-new-read", remove);   // read from Settings: the note goes
   document.body.appendChild(card);
 }
 

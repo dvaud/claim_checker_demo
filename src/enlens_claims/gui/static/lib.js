@@ -802,9 +802,9 @@ export function checkUpdate(fresh = false) {
 }
 export function onUpdateSeen(fn) { Updates.listeners.add(fn); return () => Updates.listeners.delete(fn); }
 
-// What is new in this version (gui/static/whats-new.md), read only when asked: after 0.17.2 it is no longer a note in
-// the corner after an update. After an update the sidebar offers What's new until it is opened; Settings (beside the
-// version) and Find (which goes to Settings › Technical) offer it always. One look (GET /api/whats-new) for them all:
+// What is new in this version (gui/static/whats-new.md), its points read only when asked. After an update a small note
+// in the corner says the version and its title, with Read what's new (app.js whatsNewInit), until it is read or closed;
+// Settings (beside the version) and Find (which goes to Settings › Technical) offer it always. One look (GET /api/whats-new) for them all:
 // it also brings, once, the note of an update on Windows that did not finish (`note`, which app.js shows by itself).
 export const WhatsNew = { changes: null, unread: false, pending: null };
 export function loadWhatsNew() {
@@ -817,14 +817,16 @@ export function loadWhatsNew() {
   }
   return WhatsNew.pending;
 }
+export function markWhatsNewRead() {
+  if (!WhatsNew.unread) return;
+  WhatsNew.unread = false;
+  api("POST", "/api/whats-new/read").catch(() => {});
+  window.dispatchEvent(new CustomEvent("enlens-whats-new-read"));
+}
 export function showWhatsNew() {
   const n = WhatsNew.changes;
   if (!n) return Promise.resolve(null);
-  if (WhatsNew.unread) {
-    WhatsNew.unread = false;
-    api("POST", "/api/whats-new/read").catch(() => {});
-    window.dispatchEvent(new CustomEvent("enlens-whats-new-read"));
-  }
+  markWhatsNewRead();
   return dialog({ title: `What's new in ${n.version}`, body: h("div", { class: "news-note" },
     h("p", { class: "news-title" }, n.title),
     n.subtitle ? h("p", { class: "news-sub" }, n.subtitle) : null,

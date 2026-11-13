@@ -206,9 +206,9 @@ since 0.13.6 only when there is an update).
   the Windows problem above (once) or `null`; `changes` is the running version's note, `{"version", "title",
   "subtitle", "points", "url"}` (`url`: the version's release page on GitHub), or `null`, served every time and marking
   nothing; `unread` is true when an update brought it and this person has not opened it (`whats_new_seen` is not the
-  running version; never on a new installation, which is still marked silently). The sidebar offers *What's new*
-  while `unread`; Settings has it always.
-- `POST /api/whats-new/read` `{}` (after 0.17.2) → `{"unread": false}`: *What's new* was opened; `whats_new_seen`
+  running version; never on a new installation, which is still marked silently). While `unread` the page shows a small note in the
+  corner (after 0.18.0rc1: the title and *Read what's new*; in 0.18.0rc1 a sidebar button); Settings has it always.
+- `POST /api/whats-new/read` `{}` (after 0.17.2) → `{"unread": false}`: the note was read or closed; `whats_new_seen`
   becomes the running version.
 
 - `POST /api/update` `{}` → `{"updated": true, "restarting": true, "handover": false, "from", "version",

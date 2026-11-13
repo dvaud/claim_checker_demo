@@ -135,10 +135,10 @@ often Claude Code still had ENLENS connected, which holds its files: close Claud
 The details are in `logs/update.log` in the data folder. If ENLENS cannot open at all after an update, a PowerShell
 window opens by itself and installs it again.
 
-**What is new.** After an update, *What's new in 0.X.Y* waits above *Settings* at the foot of the sidebar: it opens
-a short note of what the version brings, with a link to every change on GitHub, and goes once you have read it.
-Nothing pops up by itself. The note is also beside the version on every Settings tab, and Find has it (type
-*changelog* or *what's new*).
+**What is new.** After an update, a small note in the bottom right corner names the new version and what it is
+about. *Read what's new* opens the list of what it brings, with a link to every change on GitHub; the x (or Escape)
+closes the note, and it does not come back. The list is also beside the version on every Settings tab, and Find has it
+(type *changelog* or *what's new*).
 
 **Looking yourself.** *Settings → Technical → Updates → Check for updates* looks now and says why a look failed (the
 version at the top right of every Settings tab opens it). Looks that fail (offline, files of a git copy edited by

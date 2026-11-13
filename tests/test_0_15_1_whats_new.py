@@ -117,21 +117,23 @@ def test_the_route_and_the_page():
     lib = (STATIC / "lib.js").read_text(encoding="utf-8")
     js = (STATIC / "app.js").read_text(encoding="utf-8")
     assert '"/api/whats-new"' in lib and '"/api/whats-new/read"' in lib
-    # after 0.17.2 what is new is read only when asked, in a dialog: never a note in the corner by itself
+    # after 0.18.0rc1: a short note in the corner (the title, not the points) with Read what's new, which opens the
+    # points in a dialog; reading or closing it marks it read
     show = lib[lib.index("export function showWhatsNew"):lib.index("export function whatsNewLink")]
-    assert "dialog({" in show and "/api/whats-new/read" in show
+    assert "dialog({" in show and "markWhatsNewRead()" in show
+    mark = lib[lib.index("export function markWhatsNewRead"):lib.index("export function showWhatsNew")]
+    assert '"/api/whats-new/read"' in mark
     init = js[js.index("async function whatsNewInit"):js.index("function syncNewsInit")]
-    assert "showWhatsNew()" in init and "WhatsNew.unread" in init and "WhatsNew.changes.title" not in init
-    assert 'note.kind !== "problem"' in init   # the corner keeps only an update that did not finish
-    # the problem note still closes with its icon button or Escape
+    assert '"release-note"' in init and "Read what's new" in init and "showWhatsNew()" in init
+    assert "n.points" not in init                 # the points are in the dialog only
+    assert "markWhatsNewRead()" in init           # closing it marks it read: it comes once
+    assert 'note.kind === "problem"' in init      # an update that did not finish is still said in full
     assert 'label: "Close"' in js and '"Escape"' in js
 
 
-def test_what_is_new_is_offered_in_the_sidebar_settings_and_find():
+def test_what_is_new_is_offered_in_settings_and_find():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    btn = html[html.index('id="news-btn"') - 80:html.index('id="news-btn"') + 80]
-    assert "hidden" in btn and 'aria-haspopup="dialog"' in btn   # shown only while unread
-    assert html.index('id="news-btn"') < html.index('class="sidebar-app-row"')   # above the last row, not in it
+    assert 'id="news-btn"' not in html   # 0.18.0rc1's sidebar button gave way to the note in the corner
     settings = (STATIC / "views" / "settings.js").read_text(encoding="utf-8")
     assert "whatsNewLink()" in settings and "showWhatsNew()" in settings
     finder = (STATIC / "finder-index.js").read_text(encoding="utf-8")
