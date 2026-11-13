@@ -65,31 +65,83 @@
 .doc-list { margin: 0; padding: 0; list-style: none; }
 .doc-item { border-bottom: 1px solid var(--border); }
 .doc-item:last-child { border-bottom: 0; }
-.doc-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 8px 10px 8px 14px; cursor: pointer; }
+.doc-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 12px 10px 12px 14px; cursor: pointer; }   /* 0.18.5: room to breathe on a closed line */
 .doc-row:hover { background: var(--surface-2); }
 .doc-item[data-open="true"] > .doc-row { background: var(--accent-soft); }
-.doc-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
-.doc-main .doc-title { flex: 1 1 16em; min-width: 0; font-size: var(--fs-doc); line-height: 1.35; -webkit-line-clamp: 1; overflow-wrap: anywhere; }
+/* the open document's edge runs down its line and its panel together */
+.doc-item[data-open="true"] { box-shadow: inset 3px 0 0 var(--accent); }
+/* a document that just moved to another group glows where it lands (the reading view's glow); a jump to it or to the
+   groups stops below the page's top band and a group's sticky head */
+.doc-item.doc-glow > .doc-row { animation: dv-glow 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .doc-item.doc-glow > .doc-row { animation: none; } }
+.doc-item, .doc-groups { scroll-margin-top: 104px; }
+/* the tick, and who may read it with AI as an icon in a gutter of its own when the list is grouped by something else */
+.doc-lead { display: inline-flex; align-items: center; gap: 8px; }
+/* the tick drawn in the app's colours, so an empty one reads as empty in the dark theme too */
+.doc-tick { flex: none; display: inline-grid; place-content: center; width: 16px; height: 16px; margin: 0; border: 1.5px solid var(--border-strong); border-radius: var(--radius-xs); background: var(--surface); appearance: none; cursor: pointer; }
+.doc-tick:checked { border-color: var(--accent); background: var(--accent); }
+.doc-tick:checked::before { content: ""; width: 9px; height: 9px; background: var(--on-accent); clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%); }
+.doc-tick:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.doc-ai { display: inline-flex; width: 14px; color: var(--text); }
+/* 0.18.5: the title takes the line and ends in "…" (whole when the row is open); the marks keep to the right, at most
+   half the row, so every title starts and ends in the same place whatever the marks say */
+.doc-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-width: 0; }
+.doc-main .doc-title { min-width: 0; font-size: var(--fs-doc); line-height: 1.35; -webkit-line-clamp: 1; overflow-wrap: anywhere; }
 .doc-item[data-open="true"] .doc-main .doc-title { -webkit-line-clamp: unset; }
-.doc-marks { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
-.doc-marks .owner-doc { display: contents; }
+.doc-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 8px; min-width: 0; max-width: 50cqw; }
+.doc-marks:empty { display: none; }
+/* above the list: the filter by words, and the choice of how to group it */
+.docs-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 var(--space-4); }
+.docs-tools > .search-field { flex: 1 1 16em; max-width: 28em; }
+.docs-group-by { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* the groups' counts, each a jump to its group, and the way to the selection bar */
+.docs-jump-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+.docs-jumps { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
+.docs-to-bar[hidden] { display: none; }
+/* once the project has documents, Add documents is one line that opens */
+.docs-add-fold { margin: 0 0 var(--space-4); }
+/* the fact that tells a document apart, quiet, before its marks; not on a narrow line */
+.doc-fact { overflow: hidden; color: var(--muted); font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.doc-fact:empty { display: none; }
+/* 0.18.5: a closed line's marks are icons (named in their tooltips; the open panel says them in words) */
+.doc-icon-mark { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--radius-sm); color: var(--text-2); }
+.doc-icon-tag { justify-content: center; min-width: 24px; }
+.doc-icon-tag > .icon { margin-top: 0; }
+.doc-group + .doc-group { margin-top: var(--space-5); }
+.doc-group { scroll-margin-top: 50px; }   /* a jump to a group stops under the page's top band */
+/* the head sticks under the page's top band (50 px, the drawer button's band; the phone's top bar is as tall) and holds
+   only the group's name, count and Select, so it stays one short line; the name folds the group */
+.doc-group-head { position: sticky; top: 50px; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; background: var(--bg); }
+.doc-group-head > h3 { min-width: 0; margin: 0; font-size: var(--fs-body); }
+.doc-group-head > .doc-group-pick { flex: none; white-space: nowrap; }
+.doc-group-fold { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 4px 2px 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text); font: inherit; font-weight: var(--fw-strong); text-align: left; cursor: pointer; }
+.doc-group-fold:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.doc-group-fold > .icon { color: var(--text-2); }
+.doc-group-chev { transition: transform .15s; }
+.doc-group-fold[aria-expanded="false"] .doc-group-chev { transform: rotate(-90deg); }
+.doc-group-body[hidden] { display: none; }
+.doc-group-sub { margin: 0 0 var(--space-2); color: var(--text-2); font-size: var(--fs-small); }
+.doc-group-none { margin: 0 0 0 var(--space-4); }
 .doc-toggle .icon { transition: transform .15s; }
 .doc-toggle[aria-expanded="true"] .icon { transform: rotate(180deg); }
-.doc-detail { padding: 4px 14px 14px 44px; box-shadow: inset 3px 0 0 var(--accent); }
+.doc-detail { display: flex; flex-direction: column; padding: 4px 14px 14px 44px; }
 .doc-detail[hidden] { display: none; }
 .doc-detail-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 12px 24px; margin: 12px 0 0; }
 .doc-detail-grid dt { color: var(--muted); font-size: var(--fs-small); }
 .doc-detail-grid dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; margin: 0; }
 .doc-detail-grid .seg { min-width: 0; flex-wrap: wrap; }
 .doc-detail-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
-.doc-why { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.docs-pick-all { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 var(--space-2) 16px; }
+.doc-why { max-width: 100%; margin-left: var(--space-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* a long file name breaks after _ or - (its <wbr>), and only a part longer than the line breaks inside */
 .doc-file { font-size: var(--fs-xs); color: var(--muted); font-family: var(--font-mono); overflow-wrap: break-word; min-width: 0; }
 .owner-doc { margin: var(--space-1) 0 0; }   /* 0.18 (L2): Waiting for the owner, or In your copy only (views/owner.js proposalChip) */
 @container (max-width: 520px) {
-  .doc-main .doc-title { flex-basis: 100%; -webkit-line-clamp: 2; }
+  .doc-fact { display: none; }
+  .doc-main { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .doc-main .doc-title { -webkit-line-clamp: 2; }
+  .doc-marks { justify-content: flex-start; max-width: none; }
   .doc-detail { padding-left: 14px; }
+  .doc-detail-foot { order: -1; margin: 8px 0 4px; padding: 0 0 8px; border-top: 0; border-bottom: 1px solid var(--border); }   /* on a phone, Open first */
   .doc-detail-grid { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
   .doc-detail-grid dd { margin-bottom: 8px; }
 }
@@ -103,8 +155,9 @@
 .tess-help p { margin: 4px 0; }
 .tess-help .copy-line { margin: 4px 0; }
 .add-access { margin-top: 12px; }
-/* the bar stays in view under the page's top while rows are ticked; one button per setting */
-.bulk-bar.bulk-stick { position: sticky; top: 8px; z-index: 5; }
+/* the bar for the ticked documents stays at the window's foot while they are ticked; one button per setting */
+.bulk-bar.bulk-stick { position: sticky; bottom: 12px; z-index: 15; margin: var(--space-3) 0 0; box-shadow: 0 12px 0 var(--bg), var(--shadow-lg); }   /* the page's ground fills the 12 px under it */
+html:has(.bulk-stick:not([hidden])) { scroll-padding-bottom: 6rem; }
 .bulk-move { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .bulk-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px;
@@ -121,7 +174,6 @@
 .terms-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
 .terms-panel p { margin: 4px 0; }
 .terms-pick { gap: 6px; margin: 6px 0; }
-.access-counts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 12px; }
 .access-options { margin-top: 6px; }
 .access-banner, .access-ask { margin-bottom: 12px; }
 .access-ask h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
@@ -1702,3 +1754,7 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .model-choice-head, .model-choice-line { display: block; }
 .model-role { margin-left: var(--space-2); color: var(--accent-text); }
 .model-what { margin: 0 0 var(--space-1); }
+
+/* 0.18.5: on a phone the top bar is 49 px (its 32 px button, 8 px above and under, its edge): the group heads stick
+   right under it */
+@media (max-width: 860px) { .doc-group-head { top: 49px; } .doc-group { scroll-margin-top: 49px; } }

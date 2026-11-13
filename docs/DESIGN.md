@@ -634,15 +634,27 @@ wraps its words to the reading column; only a cell that is a figure stays on one
 several facts and settings (the Documents page) is no table at all: an item is one line (its tick, its title, the
 marks of what is true of it now and of what needs a look, an arrow), and the arrow or a click on the line opens a panel
 under it that names each fact and holds its controls (`.doc-item`, `.doc-detail`), so a fact never needs a column
-header to be understood. Lists of entries (the research log, notes, answers) keep the same rhythm.
+header to be understood. A title is one line ending in "…" (whole when open), and the marks keep to at most half the
+line; on a closed line they are icons (what needs you keeps its amber tag look, without words), each named in its
+tooltip and to a screen reader, and the open panel says each in words. Such a list may be grouped by a choice above it (the
+Documents page: *AI setting*, *Role*, *Needs a look*, *None*) and sorted (*Title*, *Newest*), beside a box that
+filters it by words; a line under them names each group with its count ("Claude: 266 documents"), each a jump to the
+group. A group's head stays under the page's top band while its items scroll and holds one short line: a chevron and
+its name (which fold the group, remembered per project), a count tag, and *Select these N* (*Clear these N* once
+all are ticked); what the group means is one sentence under the head, which scrolls. An empty group the grouping
+always has says *None.*. What the grouping says is not repeated on the line: who may read it shows as an icon beside
+the tick, only for what is kept from Claude, only when the list is grouped by something else. On a phone a title may
+take two lines. A change that moves an item to another group keeps the page where it was, opens that group, and the
+item glows where it lands. The bar that changes the ticked items sticks to the window's foot, says how many ticked
+items the filter or a fold hides, and its change can be undone. Lists of entries (the research log, notes, answers) keep the same rhythm.
 
 **Dense places** (the answers, excerpt cards, the codebook editor, the reading view, tables) keep their actions
 recognisable this way:
 
 1. The item's name is its [title link](#43-links); no *Open*.
 2. Row actions are small quiet buttons at the row's end, in the same place on every row; more than two go into a menu.
-   A lasting one (*Remove…*) is never a red button repeated on every row: it is a danger row of the row's menu
-   (Documents), and its dialog asks first.
+   A lasting one (*Remove…*) is never a red button repeated on every row: it is a danger row of the row's menu, or
+   (a list whose lines open, as Documents) a quiet button at the foot of the open panel, and its dialog asks first.
 3. The one action that matters most in a row (*Agree*) is small standard in the first place.
 4. A panel opens under the row that opened it, by a toggle; the row does not move.
 5. The smallest control is 24 × 24 px (the small icon button), 32 px on a touch screen.
@@ -1024,6 +1036,7 @@ A few rules have exceptions, each argued for once. They are listed here and in t
 | --- | --- |
 | `.ov-card` | The Overview's place cards: a page's link card, the whole card its link (DESIGN 4.11) |
 | `.dv-selbar` | The reading view's floating bar over a selection (a toolbar, with its shadow) |
+| `.doc-tick` | A document's tick in the Documents list, in the app's colours (an empty one reads as empty when dark) |
 | `.dv-chain-btn` | A reference chain's chooser in the reading view, pressed when shown |
 | `.doc-view .dv-act` | The floating actions beside a selected passage in the reading view |
 | `.dv-page-frame` | The reading view's page frame: the document's own page |
