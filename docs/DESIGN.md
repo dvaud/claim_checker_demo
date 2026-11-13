@@ -727,7 +727,7 @@ Their meanings and looks never swap:
 A sentence you picked as the quote and have not saved yet keeps the quote's look with a dashed outline
 (`.passage-pending mark.quote`); the message about it is an info [notice](#412-notices) with the highlighter icon, never a
 yellow box. **Make it:** `passageNode(text, start, end)` marks the quote; `foundWords(text)` marks words found by
-matching outside the reading view; the reading view (`views/sources.js`) draws highlights and hits. **Lives in:**
+matching outside the reading view; the reading view (`views/doc-page.js`) draws highlights and hits. **Lives in:**
 `components.css` § 4.23.
 
 ### 4.24 Concordance lines

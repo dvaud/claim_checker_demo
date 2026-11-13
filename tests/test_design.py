@@ -861,7 +861,7 @@ AI_LINE_DRAWN_BY = {
     ("result.js", "secondModelPicker"): ["modelsCard"],
     ("result.js", "readLocalButton"): ["partView", "readLocalNotice"],
     ("concepts.js", "linkRow"): ["relatedCard"],
-    ("sources.js", "lookup"): ["refsPanel"],
+    ("doc-lookup.js", "lookup"): ["refsPanel"],   # 0.18.4: the References panel moved from sources.js
 }
 
 

@@ -14,18 +14,19 @@ from test_app import api, home  # noqa: F401  (fixtures)
 
 from enlens_claims import measure, reader
 
-SOURCES = Path(__file__).resolve().parents[1] / "src" / "enlens_claims" / "gui" / "static" / "views" / "sources.js"
+VIEWS = Path(__file__).resolve().parents[1] / "src" / "enlens_claims" / "gui" / "static" / "views"
 needs_pdfminer = pytest.mark.skipif(not reader.pdfminer_available(), reason="the pdfminer extra is not installed")
 
 
-def _src() -> str:
-    return SOURCES.read_text(encoding="utf-8")
+def _src(*files: str) -> str:
+    """The text of these view files (0.18.4 split sources.js: the list, the document page and its parts)."""
+    return "\n".join((VIEWS / f).read_text(encoding="utf-8") for f in files)
 
 
 @pytest.mark.skipif(not NODE, reason="node is not installed")
 def test_reader_5_is_offered_where_it_can_change_the_reading(tmp_path):
-    m = re.search(r"^function newReaderFor\(d, latest\) \{.*?^\}", _src(), re.S | re.M)
-    assert m, "newReaderFor is gone from sources.js"
+    m = re.search(r"^export function newReaderFor\(d, latest\) \{.*?^\}", _src("doc-shared.js"), re.S | re.M)
+    assert m, "newReaderFor is gone from doc-shared.js"
     docs = [{"reader": r, "kind": k} for r in (1, 2, 3, 4, 5) for k in ("pdf", "html", "text", "docx")]
     probe = tmp_path / "probe.mjs"
     probe.write_text(m.group(0) + f"\nconsole.log(JSON.stringify({json.dumps(docs)}.map((d) => newReaderFor(d, 5))));\n",
@@ -35,11 +36,11 @@ def test_reader_5_is_offered_where_it_can_change_the_reading(tmp_path):
     offered = {(d["reader"], d["kind"]) for d, yes in zip(docs, json.loads(r.stdout)) if yes}
     every = {(r, k) for r in (1, 2, 3) for k in ("pdf", "html", "text", "docx")}  # reader 3 text: offered 4 and 5
     assert offered == every | {(4, "pdf"), (4, "html"), (4, "docx")}  # a reader-4 text file reads the same by reader 5
-    assert re.search(r"^let newReader = 5;", _src(), re.M)
+    assert re.search(r"^export const reader = \{ latest: 5 \};", _src("doc-shared.js"), re.M)
 
 
 def test_a_figure_is_shown_in_the_text_with_its_caption_and_its_page():
-    src = _src()
+    src = _src("doc-page.js", "doc-leave-out.js", "doc-reading.js")
     # shown, not folded: in place(), the fold of the left-out blocks while changing them, and the greying
     # (reader 5 only: an earlier reader's figure block is the words inside a figure, folded with its Restore)
     assert "const shownFigure = (b) => reading && (d.reader || 1) >= 5 && b.kind === \"figure\" && !!b.box && !!d.page_images" in src
@@ -66,7 +67,7 @@ def test_a_figure_is_shown_in_the_text_with_its_caption_and_its_page():
 
 
 def test_the_news_of_reader_5_is_said_to_documents_of_reader_4():
-    src = _src()
+    src = _src("sources.js", "doc-reading.js", "doc-shared.js")
     assert "const READER_5_NEWS = " in src and "shows figures and pictures with their captions" in src
     assert ": READER_5_NEWS)" in src and "`Read by the reader of ENLENS 0.17.2 to 0.18.0. ${READER_5_NEWS}`" in src
     assert "`Read by the reader of ENLENS 0.15.1 to 0.17.1. ${READER_4_NEWS}`" in src  # reader 3 keeps its sentence

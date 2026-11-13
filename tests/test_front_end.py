@@ -152,28 +152,29 @@ def test_an_older_page_of_search_results_is_not_drawn_over_a_newer_one():
 
 # ---- the reading view ---------------------------------------------------------------------------------------------
 def test_two_loads_at_once_add_the_next_blocks_once():
-    js = _js("views/sources.js")
+    js = _js("views/doc-page.js")   # 0.18.4: the document page left sources.js
     more = _fn(js, "function loadMore()")
     assert "if (!loading) loading = loadNext().finally(() => { loading = null; });" in more
     assert "if (rows.has(b.n)) continue;" in _fn(js, "function addBlocks(bs)")
 
 
 def test_the_page_beside_the_text_follows_the_rows_added_later():
-    js = _js("views/sources.js")
+    js = _js("views/doc-page.js")
     assert "for (const w of rowWatchers) w.observe(row);" in _fn(js, "function addBlocks(bs)")
-    assert "rowWatchers.add(seen);" in js and "rowWatchers.delete(seen)" in js
+    page = _js("views/doc-reading.js")   # the Page panel
+    assert "rowWatchers.add(seen);" in page and "rowWatchers.delete(seen)" in page
 
 
 def test_painting_sweeps_the_decorations_once_and_next_hit_moves_the_current_row():
-    js = _js("views/sources.js")
+    js = _js("views/doc-page.js")
     paint = _fn(js, "  function paint() {")
     assert "all.filter(" not in paint and "while (next < all.length && all[next].start < b.end)" in paint
-    go = _fn(js, "    function go(i) {", "\n    }\n")
+    go = _fn(_js("views/doc-lookup.js"), "  function go(i) {", "\n  }\n")   # in the Search panel
     assert "draw()" not in go and 'classList.add("dv-cur")' in go
 
 
 def test_the_reading_view_turns_the_apps_offsets_into_indices_of_each_block():
-    js = _js("views/sources.js")
+    js = _js("views/doc-page.js")
     block = _fn(js, "  function blockText(b, decos)")
     assert "pos.index(x.start - b.start)" in block and "b.start + pos.point(a)" in block
     assert "breaksToIndex(text," in block
@@ -190,7 +191,7 @@ def test_cancelling_let_claude_read_this_puts_the_rows_choice_back_in_place():
 
 
 def test_a_zotero_link_with_another_scheme_is_not_a_link():
-    js = _js("views/sources.js")
+    js = _js("views/doc-page.js")
     assert 'safeHref(d.bib.link, ["http", "https", "zotero"])' in js and "href: d.bib.link" not in js
 
 
@@ -310,5 +311,5 @@ def test_the_shared_helpers_are_used_where_this_batch_needs_them():
     lib = _js("lib.js")
     assert "saveBlob(blob, filename || dispositionName(" in _fn(lib, "export async function download", "\n}\n")
     assert 'document.addEventListener("click", outside)' not in lib
-    sources = _js("views/sources.js")
+    sources = "\n".join(_js(f"views/{f}") for f in ("sources.js", "doc-page.js", "doc-reading.js", "doc-codes.js", "doc-lookup.js"))   # 0.18.4: split
     assert "searchHref(" in sources and "#/search?q=${encodeURIComponent" not in sources

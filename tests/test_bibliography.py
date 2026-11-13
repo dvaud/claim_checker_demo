@@ -452,7 +452,8 @@ def test_the_page_shell_and_documents():
                   "Same work", "Not the same", "Link a document", "Download the list", "Update from Zotero",
                   "nothing goes over the internet", "Use an exported file instead"):
         assert words in page, words
-    sources = (STATIC / "views" / "sources.js").read_text()
+    # the list (sources.js) and the document page (doc-page.js, split out of sources.js in 0.18.4)
+    sources = "\n".join((STATIC / "views" / f).read_text() for f in ("sources.js", "doc-page.js"))
     # 0.18.2: a document's citation is named in its panel on the Documents page
     assert 'h("dt", {}, "In the bibliography")' in sources and 'class: "dv-bib"' in sources and "see Bibliography" in sources
     defined = defined_tokens_all()

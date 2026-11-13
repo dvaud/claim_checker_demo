@@ -1,0 +1,3 @@
+### For developers
+
+- **`views/sources.js` is split along the pages it serves** (roadmap H6, tidier code). The Documents list stays in `sources.js`, which still exports `renderSources` and `renderDocument`. A document's page is `views/doc-page.js`, with its parts beside it: `doc-leave-out.js` (Restore and Leave out in place), `doc-reading.js` (the Reading and Page panels), `doc-codes.js` (Codes), `doc-lookup.js` (Key terms, References and Search) and `doc-shared.js` (what the list and the page share). The page hands its panels one `ctx` object instead of sharing a closure. Nothing changes on screen.

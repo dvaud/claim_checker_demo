@@ -154,7 +154,9 @@ def test_each_warning_says_where_to_look():
 def test_the_page_offers_the_move_and_the_checked_mark():
     from pathlib import Path
 
-    js = (Path(ingest.__file__).parent / "gui" / "static" / "views" / "sources.js").read_text(encoding="utf-8")
+    views = Path(ingest.__file__).parent / "gui" / "static" / "views"
+    # the list (sources.js), the Reading panel (doc-reading.js) and what they share (doc-shared.js)
+    js = "\n".join((views / f).read_text(encoding="utf-8") for f in ("sources.js", "doc-reading.js", "doc-shared.js"))
     assert '`/api/projects/${P(project)}/new-reader`' in js and "j.kind === \"new_reader\"" in js
     assert "`${docBase}/reading-checked`" in js and "Checked: it reads well enough" in js
     assert 'query.preview === "1"' in js and "&preview=1" in js
