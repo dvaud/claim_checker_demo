@@ -1,4 +1,4 @@
-### Working together
+### New
 
 - **Sharing is a choice you can see.** Under the title of a check, a set of themes or a codebook of your own, the
   small *Private* tag and *Share* button are now one choice: *Private* or *Shared with your team* (*Shared* while the
