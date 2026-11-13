@@ -12,8 +12,9 @@ from .reread import is_tombstone
 from .store import Workspace
 from .textutil import find_quote
 from .verdicts import (
-    GRADES, PERSON, STATUS_TEXT, WAITING_LOCAL, WAITING_YOU, _before_stronger, _queued_open,
-    _status_of_rounds, aggregate, balance, changed_by_person, effective, stronger_eligible, who_says_what,
+    GRADES, PERSON, STATUS_TEXT, UNSUPPORTED_NONSCI, WAITING_LOCAL, WAITING_YOU, _before_stronger, _queued_open,
+    _status_of_rounds, aggregate, balance, changed_by_person, effective, nonsci_text, set_aside, stronger_eligible,
+    who_says_what,
 )
 
 
@@ -302,12 +303,18 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
                                         (claim_id,))]
     access_of = access.levels(ws, list({p["doc_id"] for t in rounds for p in json.loads(t["payload_json"])["passages"]}))
     counts, failed = _cc._counting(groups)  # 0.14.3: the AI's judgements in a round that failed count nowhere
-    vs = [effective(v) for v in raw_vs if counts(v)]
+    vs_all = [effective(v) for v in raw_vs if counts(v)]
+    # 0.18.6 (docrole.py): the judgements of excerpts of Non-scientific documents are read and shown, never counted
+    from .docrole import nonscientific_docs
+
+    nonsci = nonscientific_docs(ws)
+    vs = set_aside(vs_all, nonsci)
     out["balance"] = balance(vs, thr)
     stage = uc.get("stage")
     extra = {"vs": vs, "groups": groups, "stage": stage}
     if not rounds:
         out["status"] = out["status_any"] = "waiting" if stage in ("terms", "rank", "judge") else "no_passages"
+        out["status_all_sources"] = out["status"]
         return out, extra
     readers_of = _readers_of(ws, rounds)
     shown = []
@@ -428,7 +435,9 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
                     item.update(quote_start=s0, quote_end=s0 + len(v["user_quote"]))
             if earlier:
                 _place_kept(item, p, v)
-            item["counted"] = bool(item["verdict"]) and (eff["confidence"] or 0) >= thr and counts(v)
+            item["counted"] = (bool(item["verdict"]) and (eff["confidence"] or 0) >= thr and counts(v)
+                               and p["doc_id"] not in nonsci)
+        item["nonscientific"] = p["doc_id"] in nonsci  # 0.18.6: its judgement is shown, never counted
         if earlier and is_tombstone(p["passage_id"]):
             item["not_placed"] = True  # its quote has no place in the document as it reads now
         so = seconds.get(p["passage_id"])
@@ -441,8 +450,12 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
     waiting = _cc._round_waiting(groups[-1])
     out["status"] = _status_of_rounds(statuses, vs, thr, stage, waiting)
     out["status_any"] = _status_of_rounds(statuses, vs, 0.0, stage, waiting)
+    # 0.18.6: the answer counting the Non-scientific documents too (what the mark changed)
+    out["status_all_sources"] = (_status_of_rounds(statuses, vs_all, thr, stage, waiting)
+                                 if any(v["doc_id"] in nonsci for v in vs_all) else out["status"])
     # 0.11.2: the answer before a stronger model read the excerpts again (its reading counts; the first is kept)
     vs_first, out["stronger"] = _before_stronger([v for v in raw_vs if counts(v)])
+    vs_first = set_aside(vs_first, nonsci) if vs_first else vs_first
     out["status_first"] = _status_of_rounds(statuses, vs_first, thr, stage, waiting) if vs_first else out["status"]
     out["waiting"] = out["status"] == "waiting"
     open_ = [t for g in groups for t in g if t["status"] in ("pending", "retry")]
@@ -451,6 +464,8 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
         out["status_text"] = WAITING_LOCAL  # 0.13.11: Claude (Code) is done with this part
     elif out["status"] == "not_checked" and out["waiting_for_you"] and "done" in statuses:
         out["status_text"] = WAITING_YOU  # 0.14.3: read by no AI, and not judged by you yet
+    elif nonsci_text(out["status"], out["status_all_sources"]):
+        out["status_text"] = UNSUPPORTED_NONSCI  # 0.18.6: only Non-scientific documents speak to it
     out["rounds_task_ids"] = [r["task_id"] for r in rounds]
     out["stepped_up"] = {r["task_id"]: {"step": int(r["step"] or 0), "again": bool(r["again"])} for r in rounds}
     out["round_status"] = statuses[-1]
@@ -500,12 +515,14 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
         except ValueError:
             pass
     if not parts and h.get("queue") == "waiting":
-        out["status"] = out["status_any"] = "waiting"
+        out["status"] = out["status_any"] = out["status_all_sources"] = "waiting"
     elif len(parts) == 1:
         out["status"], out["status_any"] = parts[0]["status"], parts[0]["status_any"]
+        out["status_all_sources"] = parts[0]["status_all_sources"]
     else:
         out["status"] = aggregate([p["status"] for p in parts])
         out["status_any"] = aggregate([p["status_any"] for p in parts])
+        out["status_all_sources"] = aggregate([p["status_all_sources"] for p in parts])
     # 0.14.3: as each part counts them (not the AI's judgements of a round that failed): the parts worked them out
     out["balance"] = balance([v for cid in part_ids for v in extras[cid]["vs"]], thr)
     out["documents_in_project"] = int(ws.scalar("SELECT COUNT(*) FROM documents") or 0)
@@ -524,6 +541,8 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     elif out["status"] == "not_checked" and any(p.get("status_text") == WAITING_YOU for p in parts) and all(
             p.get("status_text") == WAITING_YOU for p in parts if p["status"] == "not_checked"):
         out["status_text"] = WAITING_YOU
+    elif nonsci_text(out["status"], out["status_all_sources"]):
+        out["status_text"] = UNSUPPORTED_NONSCI  # 0.18.6: only Non-scientific documents speak to it
     out["models_used"] = models_used(ws, hyp_id, parts)  # 0.14.3: every model whose answer the check used
     # 0.11.2: the answer the first model gave, when a stronger model read excerpts again and changed it
     firsts = [p.get("status_first", p["status"]) for p in parts]

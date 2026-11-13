@@ -17,6 +17,8 @@ ROUTES: list[tuple[str, str, str]] = [
     ("GET", rf"/api/projects/{P}/document-roles", "get_document_roles"),
     ("GET", rf"/api/projects/{P}/documents/{P}/role", "get_document_role"),
     ("PUT", rf"/api/projects/{P}/documents/{P}/role", "put_document_role"),
+    # 0.18.6: a document marked Non-scientific (docrole.py): read and judged, never counted in an answer
+    ("PUT", rf"/api/projects/{P}/documents/{P}/nonscientific", "put_document_nonscientific"),
     # K2 part 2: a codebook from a theory document (theorycodes.py)
     ("GET", rf"/api/projects/{P}/codebook-theory", "get_codebook_theory_docs"),
     ("GET", rf"/api/projects/{P}/codebook-theory/{P}", "get_codebook_theory"),
@@ -37,9 +39,13 @@ NOT_A_CHANGE: set[str] = set()
 class CorpusApi:
     # ---- K2 part 1: a document's role ---------------------------------------------------------------------------
     def get_document_roles(self, name, q):
-        """{"roles": {doc id: "theory"}}: the documents with a role other than evidence, for the Documents list."""
+        """{"roles": {doc id: "theory"}, "nonscientific": [doc ids]}: the documents with a role other than evidence,
+        and (0.18.6) those marked Non-scientific, for the Documents list."""
+        from .. import docrole
+
         ws = self.app.ws(name)
-        return {"roles": {r[0]: r[1] for r in ws.query("SELECT doc_id, role FROM documents WHERE role IS NOT NULL")}}
+        return {"roles": {r[0]: r[1] for r in ws.query("SELECT doc_id, role FROM documents WHERE role IS NOT NULL")},
+                "nonscientific": sorted(docrole.nonscientific_docs(ws))}
 
     def get_document_role(self, name, doc_id, q):
         """{"doc_id", "role" (null: evidence), "impact": what was made with it in (docrole.impact)}."""
@@ -48,7 +54,10 @@ class CorpusApi:
         ws = self.app.ws(name)
         if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
             raise ApiError(404, "No such document in this project.")
-        return {"doc_id": doc_id, "role": docrole.role_of(ws, doc_id), "impact": docrole.impact(ws, doc_id)}
+        ns = docrole.is_nonscientific(ws, doc_id)
+        return {"doc_id": doc_id, "role": docrole.role_of(ws, doc_id), "impact": docrole.impact(ws, doc_id),
+                # 0.18.6: marked Non-scientific, and (when it is) each check that read it, now and counting it
+                "nonscientific": ns, "answers": docrole.counted_without(ws, doc_id) if ns else []}
 
     def put_document_role(self, name, doc_id, q):
         """{"role": "theory" | null, "why"?}: mark a document as theory, or as evidence again. Under an owner, a
@@ -62,6 +71,21 @@ class CorpusApi:
         why = body.get("why")
         try:
             return docrole.set_role(self.app.ws(name), doc_id, role, str(why).strip() or None if why else None)
+        except KeyError:
+            raise ApiError(404, "No such document in this project.") from None
+
+    def put_document_nonscientific(self, name, doc_id, q):
+        """{"nonscientific": true | false, "why"?}: mark a document as Non-scientific, or count it again. Answers
+        change at once: the reply lists those it changed (docrole.set_nonscientific)."""
+        from .. import docrole
+
+        body = self._body()
+        on = body.get("nonscientific")
+        if not isinstance(on, bool):
+            raise ApiError(400, "\"nonscientific\" is true or false.")
+        why = body.get("why")
+        try:
+            return docrole.set_nonscientific(self.app.ws(name), doc_id, on, str(why).strip() or None if why else None)
         except KeyError:
             raise ApiError(404, "No such document in this project.") from None
 

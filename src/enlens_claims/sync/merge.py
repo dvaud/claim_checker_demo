@@ -303,6 +303,8 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             row = dict(d, doc_id=local, ai_access=level, ai_budget=d.get("ai_budget"), path=None)
             if "role" in row:
                 row["role"] = None
+            if "nonscientific" in row:  # 0.18.6: the Non-scientific mark too (docrole.py)
+                row["nonscientific"] = None
             if row["sha1"] in sha_here:  # the file is here already (another reading of it): sha1 is unique
                 row["sha1"] = f"{(row['sha1'] or '').split('~')[0]}~{fp[:6]}"
             sha_here.add(row["sha1"])

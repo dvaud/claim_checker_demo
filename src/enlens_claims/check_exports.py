@@ -7,7 +7,7 @@ import json
 from typing import Callable
 
 from .store import Workspace
-from .verdicts import GRADES, STATUS_TEXT, _status_of_rounds, aggregate, effective
+from .verdicts import GRADES, STATUS_TEXT, _status_of_rounds, aggregate, effective, set_aside
 
 
 def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | None = None,
@@ -51,10 +51,13 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     in_project = {r["doc_id"]: r["title"] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
     titles.update(in_project)
     ver: dict[str, list[dict]] = {}
+    from .docrole import nonscientific_docs
+
+    nonsci = nonscientific_docs(ws)  # 0.18.6: their judgements never decide an answer (verdicts.set_aside)
     for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model FROM "
                       "verifications WHERE subject_kind='user_claim'"):
         if counting.get(v["subject_id"], lambda _v: True)(v):
-            ver.setdefault(v["subject_id"], []).append(effective(v))
+            ver.setdefault(v["subject_id"], []).append(set_aside([effective(v)], nonsci)[0])
 
     def status_of(hid: str, leave_out: str | None = None) -> str:
         sts = []
@@ -319,7 +322,9 @@ def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[st
                     "Judged by": judged_by,
                     "AI's own judgement": (unread or JUDGEMENT_TEXT.get(p["ai_verdict"])) if p else "",
                     "AI certainty": f"{cert} ({round(p['confidence'] * 100)}%)" if cert else "",
-                    "Counted in the answer": ("yes" if p["counted"] else "no") if p else "",
+                    "Counted in the answer": ("yes" if p["counted"] else  # 0.18.6: why not, for a Non-scientific one
+                                              "no: a non-scientific document" if p.get("nonscientific") and p["verdict"]
+                                              else "no") if p else "",
                     "Quote": (p["quote"] or "") if p else "",
                     "Quote chosen by": (p["quote_by"] or "") if p and p["quote"] else "",
                     "Document": p["title"] if p else "",

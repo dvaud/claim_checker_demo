@@ -625,6 +625,23 @@ its own)
   *Theoretical framework* as section headings (`reader.py`). Nothing marks a whole document as theory, and every
   document counts as evidence everywhere.
 
+**K3. Non-scientific documents: read, never counted** · Level 0 · built (13 November 2026, unreleased)
+(`docrole.py` for the mark, `verdicts.set_aside` for the rule)
+- **Why.** A news article, a press release or a company brochure can say what a hypothesis says, but it reports no
+  method or data of its own. It should not make a hypothesis supported, mixed or contradicted by itself.
+- **The rule** (chosen by the researcher on a second opinion from Fable, 13 November 2026). A document marked
+  *Non-scientific* stays in themes, codebook labels, the excerpts a check reads and key terms, and its excerpts are
+  judged as any other, but no judgement of them counts in an answer, on either side, the person's own neither. Support
+  from non-scientific documents only gives *No scientific evidence found*; beside scientific support they do not raise
+  *Partly supported*; a non-scientific contradiction makes nothing *Mixed evidence*. Each answer keeps the one it would
+  have counting them (`status_all_sources`), and the assessment in words says what they say and that answer.
+- The mark sits beside the role (a theory document can carry it too), set by the researcher, never guessed. Unlike the
+  role it changes answers at once: the reply and the research log list the answers it changed. It travels as *Leave
+  out* does.
+- Not done: a per-hypothesis exception (when newspapers are the material a hypothesis is about, they are its
+  evidence), a suggestion from the bibliography's item type (newspaper, blog, web page), and a mark of its own on the
+  evidence map (non-scientific documents leave it, as documents that decide nothing).
+
 ## L. Working together, live
 
 The owner's model (9 November 2026). Until 0.17.0 (0.14, `sync.py`) colleagues exchanged a project as one zip file by

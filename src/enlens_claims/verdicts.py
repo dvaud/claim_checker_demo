@@ -60,6 +60,31 @@ GRADES = ("supports", "partially_supports", "refutes")
 
 USER_VERDICTS = ("supports", "partially_supports", "refutes", "not_relevant")
 
+# 0.18.6 (docrole.py): a document marked Non-scientific reports no method or data of its own (a news article, a
+# press release, a brochure). Its excerpts are read, judged and shown, but no judgement of them sets an answer, on
+# either side: `set_aside` turns its rows into ones read and found not about the hypothesis. The status a check
+# would have counting them is kept beside (`status_all_sources`); when only they speak to it, the status text says so.
+SET_ASIDE = "non-scientific"  # the `model` a set-aside row wears (never PERSON: nothing waits for a person in it)
+UNSUPPORTED_NONSCI = "No scientific evidence found"
+SPOKE = ("supported", "partially_supported", "contested", "contradicted")
+
+
+def set_aside(vs, docs) -> list:
+    """The rows of `vs` with those of documents in `docs` (marked Non-scientific) set aside: read, and not about it."""
+    if not docs:
+        return list(vs)
+    return [{**dict(v), "verdict": "not_enough_info", "confidence": None, "user_verdict": None, "model": SET_ASIDE,
+             "set_aside": True} if v["doc_id"] in docs else v for v in vs]
+
+
+def nonsci_text(status: str | None, status_all: str | None) -> str | None:
+    """The status text when only non-scientific documents speak to a hypothesis (or a part): counting them, the answer
+    would have been another one. None otherwise."""
+    if status in ("unsupported", "uncertain") and status_all in SPOKE:
+        return UNSUPPORTED_NONSCI
+    return None
+
+
 
 def effective(v) -> dict:
     """A verification row with a person's judgement applied: theirs replaces the AI's and always counts."""

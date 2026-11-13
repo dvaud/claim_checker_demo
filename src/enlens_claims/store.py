@@ -443,6 +443,9 @@ MIGRATIONS = [("documents", "declared_ref", "TEXT"), ("vca_refs", "alias_of", "T
               # end of 0.18.1 part A
               # 0.18.1 part B (AI mix, checks, retractions): new columns below this line
               # end of 0.18.1 part B
+              # 0.18.6: a document marked Non-scientific (docrole.py): 1, or NULL. Its excerpts are read and judged,
+              # and no judgement of them counts in an answer
+              ("documents", "nonscientific", "INT"),
               ]
 
 

@@ -167,12 +167,12 @@ def test_the_routes(api, tmp_path):  # noqa: F811
     assert st == 200 and body["role"] is None and set(body["impact"]) == {"themes", "labels", "checks"}
     st, body = api("PUT", f"/api/projects/Lens/documents/{theory}/role", {"role": "theory", "why": "our lens"})
     assert st == 200 and body["role"] == "theory" and body["changed"]
-    assert api("GET", "/api/projects/Lens/document-roles")[1] == {"roles": {theory: "theory"}}
+    assert api("GET", "/api/projects/Lens/document-roles")[1] == {"roles": {theory: "theory"}, "nonscientific": []}
     assert api("PUT", f"/api/projects/Lens/documents/{theory}/role", {"role": "framework"})[0] == 400
     assert api("PUT", "/api/projects/Lens/documents/nope/role", {"role": "theory"})[0] == 404
     st, body = api("PUT", f"/api/projects/Lens/documents/{theory}/role", {"role": None})
     assert st == 200 and body["role"] is None
-    assert api("GET", "/api/projects/Lens/document-roles")[1] == {"roles": {}}
+    assert api("GET", "/api/projects/Lens/document-roles")[1] == {"roles": {}, "nonscientific": []}
 
 
 # ---- between copies: a decision about the document, like Leave out -------------------------------------------------
