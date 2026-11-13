@@ -36,10 +36,12 @@ SUPPORTED = {".pdf", ".html", ".htm", ".txt", ".md", ".docx"}
 # text or passages raises this number: documents already in a project keep the reading they have, so every result in
 # them stays where it is, until a person has one read with the new reader (planned with the next reader); only new
 # documents get the new reader.
-READER = 4  # 1: ENLENS 0.5 to 0.14 (pypdf's page text, cut by sentences); 2: ENLENS 0.15.0 (reader.py);
+READER = 5  # 1: ENLENS 0.5 to 0.14 (pypdf's page text, cut by sentences); 2: ENLENS 0.15.0 (reader.py);
             # 3: ENLENS 0.15.1 (reader.py with reader3.py: text-only files, books, words run together);
             # 4: ENLENS 0.17.2 (reader4.py: a text file's lines as paragraphs; Word's nested tables read once, and
             #    its content controls read)
+            # 5: ENLENS 0.18.1 (reader5.py: tables from their ruled lines, a table over a page joined, figures and
+            #    images as blocks of their own; a Word file's or web page's image captions and alternative text)
 REF_HEADING = re.compile(
     r"(?:^|\s)(References|REFERENCES|Bibliography|BIBLIOGRAPHY|Literature [Cc]ited|Works [Cc]ited|Reference [Ll]ist)"
     r"\s*:?\s+(?=\[?\(?\d|[A-Z][A-Za-z'\-]+,?\s+[A-Z]|[A-Z]{2,})"

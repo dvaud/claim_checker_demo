@@ -195,6 +195,9 @@ class Case:
     body: str
     boilerplate: list[str] = field(default_factory=list)
     what: str = ""
+    # reader 5: how many tables and figures the document holds (None: not counted for this case)
+    tables: int | None = None
+    figures: int | None = None
 
 
 def _full_width(fl: "pdfmake.Flow", text: str, x: float, width: float, font: str, size: float, leading: float) -> None:
@@ -421,12 +424,277 @@ def _make_f(folder: Path) -> Case:
                 "footnotes in a smaller font at the foot of a page")
 
 
+# ---------------------------------------------------------------------------------------------
+# reader 5 (0.18.1): tables with ruled lines, a table that runs on to the next page, figures. Kept apart from
+# `make_known_texts`, which stays the six documents of 0.15 (what readers 1 to 4 were measured on); `run` adds these
+# when reader 5 is among the readers.
+# ---------------------------------------------------------------------------------------------
+_P5 = {
+    "grid": [
+        "Farmers choose a crop partly from the soil under it, and the choice shows up in the tables that extension "
+        "services print for them. We collected the guidance sheets of five advisory offices and compared what each "
+        "one says about the main soils of the region.",
+        "The sheets agree on the broad pattern. Light soils warm early and suit early crops, while heavy soils hold "
+        "water through a dry summer and suit late ones. Table 2 gives the three soils that appear on every sheet.",
+        "Where the sheets differ is in what they say about drainage. Two offices advise drains on any heavy soil, "
+        "while a third warns that drains can dry a field too early in a dry year.",
+        "We therefore treat drainage as a matter for the farmer's own field notes, and we return to the question "
+        "of local variation in the last section of this paper.",
+    ],
+    "booktabs": [
+        "Tides along a rocky shore sort the animals that live there by how long each can stay out of the water. "
+        "Surveys of one headland over two summers counted what lived at four heights above the low-tide line.",
+        "Counts fell steadily with height for most animals, and Table 3 shows the three groups we followed. Limpets "
+        "were found highest of all, which agrees with older surveys of other shores.",
+        "The differences between the two summers were small. The warmer summer moved the upper limit of the barnacles "
+        "by a few centimetres, and no other group changed in a way we could measure.",
+        "These counts are a baseline, not a finding about change. They show what a later survey would need to "
+        "compare, and they set the heights at which it should look.",
+    ],
+    "continued": [
+        "A town's rainfall record is a patient piece of work: a gauge, a notebook and someone to read it at the same "
+        "hour every morning. The record we studied was kept by a waterworks over forty years.",
+        "We copied the monthly totals into a table and checked each against the daily entries. The full table is "
+        "printed below, and it runs over the page.",
+        "Wet years were not evenly spread. Three of the five wettest years came in the last decade, which is "
+        "also when the waterworks widened its reservoir.",
+        "We cannot say that the two facts are connected. The gauge stood in the same place throughout, so the "
+        "change in the totals is a change in the weather, not in the way it was measured.",
+    ],
+    "figure": [
+        "Birds that nest on the ground are hard to count because their nests are hidden by the plants around them. "
+        "We searched four plots of heathland every spring for three years, walking the plots in lines a few metres "
+        "apart.",
+        "The searches turned up between forty and ninety nests in a year. Most nests were found in the first "
+        "fortnight of May, before the new growth of the heather closed over them.",
+        "Figure 1 shows the mean count for each plot. The two northern plots held the most nests in every year, "
+        "which fits what local wardens had told us about the ground there.",
+        "A second picture, Figure 2, shows the edge of the northern plots as seen from the road. It was taken "
+        "to help later surveys to find the same ground again.",
+        "Counts like these cannot give the size of the whole population. They give a measure that can be repeated, "
+        "and a repeatable measure is what a long study needs.",
+    ],
+}
+
+
+def _cell_lines(text: str, width: float, size: float = 9) -> list[str]:
+    return pdfmake.wrap(text, width, "Helvetica", size)
+
+
+def _grid_table(fl: "pdfmake.Flow", x_edges: list[float], rows: list[list[str]], size: float = 9, pad: float = 4,
+                header: bool = True) -> None:
+    """A table with a rule between every row and every column, set at the flow's current place: cells wrap inside
+    their rules, the first row in bold. Moves the flow below it."""
+    leading = size + 2.5
+    wrapped = [[_cell_lines(c, x_edges[k + 1] - x_edges[k] - 2 * pad, size) for k, c in enumerate(r)] for r in rows]
+    heights = [max(len(c) for c in r) * leading + 2 * pad - 2 for r in wrapped]
+    fl._advance(sum(heights))
+    top = fl._y
+    ys = [top]
+    for h in heights:
+        ys.append(ys[-1] - h)
+    pg = fl.page
+    for y in ys:
+        pg.rule(x_edges[0], y, x_edges[-1], y, 0.6)
+    for x in x_edges:
+        pg.rule(x, ys[0], x, ys[-1], 0.6)
+    for i, r in enumerate(wrapped):
+        for k, cell in enumerate(r):
+            for j, ln in enumerate(cell):
+                pg.text(ln, x_edges[k] + pad, ys[i] - pad - size + 1 - j * leading,
+                        "Helvetica-Bold" if header and i == 0 else "Helvetica", size)
+    fl._y = ys[-1] - 8
+
+
+def _make_g(folder: Path) -> Case:
+    """A table with a rule between every row and column and sentences in its cells, so its columns have no clear gap
+    between them, with its caption between body paragraphs."""
+    paras = _P5["grid"]
+    title = "What the Soil Sheets Say: Advice to Farmers Compared"
+    head = "Farm Advisory Notes"
+    caption = "Table 2. Three soils of the region, as the advisory sheets describe their water and their crops."
+    rows = [["Soil", "How the sheets describe its water", "Crops the sheets suggest"],
+            ["Sandy loam", "Drains quickly after rain and dries out early in a hot summer, so it needs watering.",
+             "Early potatoes, carrots, and barley sown in spring."],
+            ["Clay loam", "Holds water through dry spells but stays cold and wet late into the spring.",
+             "Winter wheat, field beans, and grass for hay."],
+            ["Silt loam", "Holds water well and drains steadily, though it can seal over after heavy rain.",
+             "Sugar beet, oilseed rape, and most vegetables."]]
+    cuts = _hyphenation(paras)
+    fl = pdfmake.Flow(columns=[(72, 451)], running_head=head, page_numbers=True)
+    fl.heading(title, 14)
+    fl.paragraph(paras[0], hyphenate=cuts)
+    fl.paragraph(paras[1], hyphenate=cuts)
+    fl.gap(2)
+    fl.line(caption, "Times-Roman", 9.5)
+    fl.gap(4)
+    _grid_table(fl, [72, 150, 345, 523], rows)
+    fl.gap(8)
+    fl.paragraph(paras[2], hyphenate=cuts)
+    fl.paragraph(paras[3], hyphenate=cuts)
+    path = folder / "g_ruled_table.pdf"
+    fl.write(path, title)
+    boiler = [" ".join(r) for r in rows]
+    return Case("g_ruled_table", title, path, " ".join([title] + paras[:2] + [caption] + paras[2:]), [head] + boiler,
+                "a table ruled in a grid, with sentences in its cells", tables=1, figures=0)
+
+
+def _make_h(folder: Path) -> Case:
+    """A table set as typesetters do it: a rule above, one under the header and one below, numbers aligned on their
+    right edge, no vertical rules."""
+    paras = _P5["booktabs"]
+    title = "Who Lives Where on a Rocky Shore: Counts by Height"
+    head = "Shore Ecology Letters"
+    caption = "Table 3. Animals counted per square metre at four heights above the low-tide line."
+    header = ["Group", "0.5 m", "1.0 m", "1.5 m", "2.0 m"]
+    rows = [["Barnacles", "412", "388", "251", "96"], ["Limpets", "38", "44", "52", "61"],
+            ["Winkles", "120", "97", "35", "8"], ["Mussels", "205", "140", "22", "0"]]
+    cuts = _hyphenation(paras)
+    fl = pdfmake.Flow(columns=[(72, 451)], running_head=head, page_numbers=True)
+    fl.heading(title, 14)
+    fl.paragraph(paras[0], hyphenate=cuts)
+    fl.paragraph(paras[1], hyphenate=cuts)
+    fl.gap(2)
+    fl.line(caption, "Times-Roman", 9.5)
+    fl.gap(6)
+    left, right_edges = 120, [270, 330, 390, 450]
+    x0, x1 = 100, 470
+    fl._advance(5 * 15 + 12)
+    pg = fl.page
+    y = fl._y
+    pg.rule(x0, y + 8, x1, y + 8, 1.0)
+    for k, row in enumerate([header] + rows):
+        pg.text(row[0], left, y - 4, "Helvetica-Bold" if k == 0 else "Helvetica", 9.5)
+        for cell, rx in zip(row[1:], right_edges):
+            pg.text(cell, rx - pdfmake.text_width(cell, "Helvetica-Bold" if k == 0 else "Helvetica", 9.5), y - 4,
+                    "Helvetica-Bold" if k == 0 else "Helvetica", 9.5)
+        y -= 15
+        if k == 0:
+            pg.rule(x0, y + 8, x1, y + 8, 0.5)
+    pg.rule(x0, y + 8, x1, y + 8, 1.0)
+    fl._y = y - 6
+    fl.paragraph(paras[2], hyphenate=cuts)
+    fl.paragraph(paras[3], hyphenate=cuts)
+    path = folder / "h_booktabs_table.pdf"
+    fl.write(path, title)
+    boiler = [" ".join(r) for r in [header] + rows]
+    return Case("h_booktabs_table", title, path, " ".join([title] + paras[:2] + [caption] + paras[2:]), [head] + boiler,
+                "a table with rules above, under the header and below, and numbers aligned on the right",
+                tables=1, figures=0)
+
+
+def _make_i(folder: Path) -> Case:
+    """A ruled table that begins low on a page and goes on at the top of the next, its header row repeated."""
+    paras = _P5["continued"]
+    title = "Forty Years of Rain at One Waterworks"
+    head = "Hydrology Field Reports"
+    caption = "Table 4. Monthly rainfall at the waterworks gauge, in millimetres, by year."
+    header = ["Year", "Spring", "Summer", "Autumn"]
+    data = [[str(1970 + i), str(110 + 7 * i % 53), str(95 + 11 * i % 61), str(130 + 5 * i % 47)] for i in range(40)]
+    cuts = _hyphenation(paras)
+    fl = pdfmake.Flow(columns=[(72, 451)], running_head=head, page_numbers=True)
+    fl.heading(title, 14)
+    fl.paragraph(paras[0], hyphenate=cuts)
+    fl.paragraph(paras[1], hyphenate=cuts)
+    fl.gap(2)
+    fl.line(caption, "Times-Roman", 9.5)
+    fl.gap(4)
+    xs = [150, 230, 310, 390, 470]
+
+    def part(rows: list[list[str]], y: float) -> float:
+        pg = fl.page
+        top = y
+        for k, row in enumerate(rows):
+            for x, cell in zip(xs, row):
+                pg.text(cell, x + 6, y - 11, "Helvetica-Bold" if row is header else "Helvetica", 9.5)
+            y -= 16
+        for yy in [top - 16 * k for k in range(len(rows) + 1)]:
+            pg.rule(xs[0], yy, xs[-1], yy, 0.6)
+        for x in xs:
+            pg.rule(x, top, x, y, 0.6)
+        return y
+
+    # the first part runs down to the foot of the page; the rest, with the header again, starts the next page
+    room = min(int((fl._y - 84) // 16), len(data) - 3)
+    part([header] + data[:room - 1], fl._y)
+    fl.new_page()
+    y = part([header] + data[room - 1:], fl._y)
+    fl._y = y - 8
+    fl.paragraph(paras[2], hyphenate=cuts)
+    fl.paragraph(paras[3], hyphenate=cuts)
+    path = folder / "i_table_over_a_page.pdf"
+    fl.write(path, title)
+    boiler = [" ".join(r) for r in [header] + data]
+    return Case("i_table_over_a_page", title, path, " ".join([title] + paras[:2] + [caption] + paras[2:]),
+                [head] + boiler, "a ruled table that runs on to the next page with its header repeated",
+                tables=1, figures=0)
+
+
+def _make_j(folder: Path) -> Case:
+    """Two figures between body paragraphs: a bar chart drawn in lines and boxes with its labels inside it, and a
+    picture without any words; each with its caption below."""
+    paras = _P5["figure"]
+    title = "Counting Ground Nests on Four Heathland Plots"
+    head = "Heathland Bird Survey"
+    cap1 = "Figure 1. Mean count of nests on each plot, over the three years of the survey."
+    cap2 = "Figure 2. The edge of the northern plots as seen from the road."
+    labels = ["Plot North", "Plot South", "Plot East", "Plot West", "Mean nests found", "0", "20", "40", "60"]
+    cuts = _hyphenation(paras)
+    fl = pdfmake.Flow(columns=[(72, 451)], running_head=head, page_numbers=True)
+    fl.heading(title, 14)
+    fl.paragraph(paras[0], hyphenate=cuts)
+    fl.paragraph(paras[1], hyphenate=cuts)
+    fl.paragraph(paras[2], hyphenate=cuts)
+    # the chart: axes, ticks, four bars, the labels of the plots below and of the scale to the left
+    fl.gap(6)
+    fl._advance(150)
+    pg = fl.page
+    base, left = fl._y - 120, 140
+    pg.rule(left, base, left + 260, base, 0.8)
+    pg.rule(left, base, left, base + 110, 0.8)
+    for k, v in enumerate((0, 20, 40, 60)):
+        yy = base + v * 1.6
+        pg.rule(left - 4, yy, left, yy, 0.6)
+        pg.text(str(v), left - 18 - 4 * (len(str(v)) - 1), yy - 3, "Helvetica", 8)
+    for k, (name, h) in enumerate((("Plot North", 92), ("Plot South", 55), ("Plot East", 40), ("Plot West", 28))):
+        x = left + 14 + 62 * k
+        pg.box(x, base, 40, h, 0.55)
+        pg.text(name, x - 2, base - 11, "Helvetica", 8)
+    pg.text("Mean nests found", left + 70, base + 118, "Helvetica-Bold", 8.5)
+    fl._y = base - 26
+    fl.line(cap1, "Times-Roman", 9.5)
+    fl.gap(6)
+    fl.paragraph(paras[3], hyphenate=cuts)
+    fl.new_page()
+    # a picture: grey squares of different greys
+    fl._advance(130)
+    pixels = bytes(40 + ((x // 4 + y // 4) % 2) * 120 + (y * 3) % 40 for y in range(16) for x in range(16))
+    fl.page.image(140, fl._y - 100, 150, 100, pixels, 16, 16)
+    fl._y -= 114
+    fl.line(cap2, "Times-Roman", 9.5)
+    fl.gap(6)
+    fl.paragraph(paras[4], hyphenate=cuts)
+    path = folder / "j_figures.pdf"
+    fl.write(path, title)
+    return Case("j_figures", title, path, " ".join([title] + paras[:3] + [cap1] + paras[3:4] + [cap2] + paras[4:]),
+                [head] + labels[:5], "a drawn chart with its labels, and a picture, each with a caption below",
+                tables=0, figures=2)
+
+
 def make_known_texts(folder: str | Path) -> list[Case]:
     """Make the documents of the reading test in `folder` (created if need be) and return them with their truth.
     The same bytes every time."""
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     return [f(folder) for f in (_make_a, _make_b, _make_c, _make_d, _make_e, _make_f)]
+
+
+def make_table_figure_texts(folder: str | Path) -> list[Case]:
+    """The four documents of reader 5 (ruled tables, a table over a page, figures) made in `folder`, with their truth.
+    The same bytes every time."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    return [f(folder) for f in (_make_g, _make_h, _make_i, _make_j)]
 
 
 # =============================================================================================
@@ -548,6 +816,12 @@ def measure_case(path: Path, reader: int, truth: str, boilerplate: list[str] | N
     reading = reading_summary(doc)
     if reading:
         out["reading"] = reading
+    # reader 5: tables found (a table that runs over a page counts once) and figures found (blocks of kind figure:
+    # for readers 2 to 4 these are the pieces of text inside a picture, for reader 5 each picture or chart)
+    blocks = getattr(doc, "blocks", None)
+    if blocks is not None:
+        out["tables_found"] = sum(1 for b in blocks if b.kind == "table")
+        out["figures_found"] = sum(1 for b in blocks if b.kind == "figure")
     return out
 
 
@@ -790,11 +1064,14 @@ def run(readers: list[int] | None = None, folder: str | Path | None = None, proj
                     "readers": {}, "known": {}, "determinism": {}}
     with tempfile.TemporaryDirectory(prefix="enlens-known-") as tmp:
         cases = make_known_texts(Path(work) if work else Path(tmp))
+        if any(5 <= r <= ingest.READER for r in readers):
+            # the documents of reader 5 (ruled tables, a table over a page, figures) are read by every reader asked for
+            cases += make_table_figure_texts(Path(work) if work else Path(tmp))
         for r in readers:
             ok, why = reader_available(r, cases[0].path)
             result["readers"][str(r)] = {"available": ok, "why_not": why}
         for c in cases:
-            row = {"title": c.title, "what": c.what, "readers": {}}
+            row = {"title": c.title, "what": c.what, "readers": {}, "tables": c.tables, "figures": c.figures}
             for r in readers:
                 if not result["readers"][str(r)]["available"]:
                     continue
@@ -837,6 +1114,10 @@ _FIGURES = (
      "but are still in it. Fewer is better; 0 is perfect."),
 )
 _PERCENT = {"recall", "precision", "order"}
+
+
+def _count_word(n: int) -> str:
+    return {6: "Six", 10: "Ten"}.get(n, str(n))
 
 
 def _fmt(key: str, v) -> str:
@@ -882,7 +1163,7 @@ def to_markdown(result: dict) -> str:
         L.append("")
     cases = [(f"{v['title']} ({k.split('_')[0]})", v["readers"]) for k, v in result["known"].items()]
     L += ["## 1. The reading test", "",
-          "Six small documents were made from text we know, each with a layout that makes reading hard: " +
+          f"{_count_word(len(result['known']))} small documents were made from text we know, each with a layout that makes reading hard: " +
           "; ".join(f"({k.split('_')[0]}) {v['what']}" for k, v in result["known"].items()) + ". "
           "Each is read by each reader and compared, word by word, with the text we put in.", ""]
     for key, label, words_ in _FIGURES:
@@ -890,11 +1171,29 @@ def to_markdown(result: dict) -> str:
         L += _table(cases, readers, key, ok, "boilerplate_total" if key == "boilerplate_left" else None)
         L.append("")
     if result.get("summary"):
-        L += ["### Average over the six documents", "", "| Figure | " + " | ".join(f"Reader {r}" for r in readers) + " |",
+        L += [f"### Average over the {_count_word(len(result['known'])).lower()} documents", "", "| Figure | " + " | ".join(f"Reader {r}" for r in readers) + " |",
               "|---|" + "---|" * len(readers)]
         for key, label, _w in _FIGURES:
             L.append(f"| {label} | " + " | ".join(_fmt(key, result["summary"].get(r, {}).get(key)) if ok[r]
                                                  else "not available" for r in readers) + " |")
+        L.append("")
+    if any(v.get("tables") is not None or v.get("figures") is not None for v in result["known"].values()):
+        L += ["### Tables and figures found", "",
+              "Reader 5 finds tables from their ruled lines, joins a table that runs over a page, and makes each figure "
+              "or picture a block of its own. Tables and figures found, against how many the document holds "
+              "(for readers before 5, a figure is each piece of text inside a picture).", "",
+              "| Document | Holds | " + " | ".join(f"Reader {r}" for r in readers) + " |",
+              "|---|---|" + "---|" * len(readers)]
+        for k, v in result["known"].items():
+            if v.get("tables") is None and v.get("figures") is None:
+                continue
+            cells = []
+            for r in readers:
+                f = v["readers"].get(r)
+                cells.append("not available" if not ok[r] else "-" if f is None else
+                             f"{f.get('tables_found', 0)} tables, {f.get('figures_found', 0)} figures")
+            L.append(f"| {v['title']} ({k.split('_')[0]}) | {v.get('tables') or 0} tables, {v.get('figures') or 0} "
+                     f"figures | " + " | ".join(cells) + " |")
         L.append("")
     L += ["## 2. Same file, same reading", "",
           "A reading must not change from one run to the next. Each file was read twice by each reader and the two "
