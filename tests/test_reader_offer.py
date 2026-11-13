@@ -12,14 +12,14 @@ import pytest
 
 from _fakedom import NODE
 
-SOURCES = Path(__file__).resolve().parents[1] / "src" / "enlens_claims" / "gui" / "static" / "views" / "sources.js"
+SOURCES = Path(__file__).resolve().parents[1] / "src" / "enlens_claims" / "gui" / "static" / "views" / "doc-shared.js"   # newReaderFor lives here since 0.18.4 (it was in sources.js)
 
 
 @pytest.mark.skipif(not NODE, reason="node is not installed")
 def test_reader_4_is_offered_only_where_it_can_change_the_reading(tmp_path):
     src = SOURCES.read_text(encoding="utf-8")
-    m = re.search(r"^function newReaderFor\(d, latest\) \{.*?^\}", src, re.S | re.M)
-    assert m, "newReaderFor is gone from sources.js"
+    m = re.search(r"^export function newReaderFor\(d, latest\) \{.*?^\}", src, re.S | re.M)
+    assert m, "newReaderFor is gone from doc-shared.js"
     docs = [{"reader": r, "kind": k} for r in (1, 2, 3, 4) for k in ("pdf", "html", "text", "docx")]
     probe = tmp_path / "probe.mjs"
     probe.write_text(m.group(0) + f"\nconsole.log(JSON.stringify({json.dumps(docs)}.map((d) => newReaderFor(d, 4))));\n",

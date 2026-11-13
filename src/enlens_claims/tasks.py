@@ -1029,6 +1029,15 @@ for _kind, _store in {"extract": _store_extract, "split": _store_split, "verify"
                      "label": _store_label, "link": _store_link, "theme": _store_theme,
                      "resolve": _store_resolve}.items():
     taskkinds.attach(_kind, store=_store)
+# 0.18.4 (K2 part 2): the AI's draft of a theory document's concepts (theorycodes.py), its offline answer and size
+from . import theorycodes as _theorycodes  # noqa: E402 - after the store functions it may import
+
+
+def _store_theory_codes(cx, t, payload, obj, model):
+    return _theorycodes.store_ai_draft(cx, t, payload, obj, model)
+
+
+taskkinds.attach("theory_codes", store=_store_theory_codes, demo=_theorycodes.demo_answer, size=_theorycodes.prompt_size)
 # 0.13.6: the store function of each kind, ENLENS's and the add-ons', from the registry
 HANDLERS = taskkinds.Table("store")
 

@@ -20,6 +20,9 @@ ROUTES: list[tuple[str, str, str]] = [
     # K2 part 2: a codebook from a theory document (theorycodes.py)
     ("GET", rf"/api/projects/{P}/codebook-theory", "get_codebook_theory_docs"),
     ("GET", rf"/api/projects/{P}/codebook-theory/{P}", "get_codebook_theory"),
+    # 0.18.4 (K2 part 2, the optional AI part): whether the AI may draft a theory document's concepts, and the draft
+    ("GET", rf"/api/projects/{P}/codebook-theory/{P}/ai", "get_codebook_theory_ai"),
+    ("POST", rf"/api/projects/{P}/codebook-theory/{P}/ai", "post_codebook_theory_ai"),
     # D3 and D4: paths between two concepts, a concept over time and across groups (conceptpaths.py)
     ("GET", rf"/api/projects/{P}/concept-paths", "get_concept_paths"),
     ("GET", rf"/api/projects/{P}/concept-time/{P}", "get_concept_time"),
@@ -119,6 +122,35 @@ class CorpusApi:
             return theorycodes.candidates(self.app.ws(name), doc_id)
         except KeyError:
             raise ApiError(404, "No such document in this project.") from None
+
+    def get_codebook_theory_ai(self, name, doc_id, q):
+        """{"offered", "why", "reader", "level"}: whether the AI may draft this document's concepts (its own AI
+        setting decides: Claude, a local AI, or none), and in one line why not (theorycodes.ai_offer)."""
+        from .. import theorycodes
+
+        try:
+            return theorycodes.ai_offer(self.app.ws(name), doc_id, self.app.settings())
+        except KeyError:
+            raise ApiError(404, "No such document in this project.") from None
+
+    def post_codebook_theory_ai(self, name, doc_id, q):
+        """{"job"}: the AI drafts the concepts of a theory document (theorycodes.draft_with_ai), as a job that waits
+        its turn like every AI job; its result holds the drafts, to join the list unticked."""
+        from .. import theorycodes
+
+        ws = self.app.ws(name)
+        title = ws.scalar("SELECT title FROM documents WHERE doc_id=?", (doc_id,))
+        if title is None:
+            raise ApiError(404, "No such document in this project.")
+        offer = theorycodes.ai_offer(ws, doc_id, self.app.settings())
+        if not offer["offered"]:
+            raise ApiError(400, offer["why"])
+        job = self.app.start_queued_job(
+            "theory-codes", f"The AI drafts the concepts of “{title[:60]}”", name,
+            lambda job, be, model, prog: theorycodes.draft_with_ai(ws, doc_id, be, model, prog, job.cancel.is_set),
+            withdraw=(theorycodes.AI_KIND,))
+        job.scope = doc_id
+        return {"job": job.view()}
 
     # ---- A7 (reader 5): a figure's picture ------------------------------------------------------------------------
     def get_figure_image(self, name, doc_id, n, q):

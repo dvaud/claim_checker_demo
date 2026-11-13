@@ -101,7 +101,7 @@ counts against your plan's limits; with a local model it costs only time.
 | The route (Claude Code, the Claude API, a local server) and the helper | With Claude Code, also the model set for that helper and when its batch was claimed and answered. |
 | Whether the answer came from the stronger model | |
 | The ENLENS version that made it | Every answer, codebook label and set of themes; each check records the version that started it. |
-| The reader that read each document | See [How documents are read](reading.md). |
+| The reader that read each document | See [How documents are read](how-documents-are-read.md). |
 
 *How these results were made* (at the end of every Excel download, and in the app) lists them per kind of task. The
 acceptance runs (`enlens acceptance queue … --again`) measure how much two readings by Claude Code differ.
@@ -114,7 +114,7 @@ Researchers compare results across versions, so ENLENS never redoes anything by 
   results stay as they were made.
 - A new reader reads only documents added after the update. The documents you have keep their text, and every quote
   and judgement in them stays where it is, until you move one to the new reader
-  ([How documents are read](reading.md#read-with-the-new-reader)).
+  ([Read with the new reader](reading.md#read-with-the-new-reader)).
 - A change that can give other answers for the same documents is listed in the changelog under *Changes that can
   alter your results*, and announced one minor release ahead.
 

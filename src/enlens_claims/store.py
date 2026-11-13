@@ -980,7 +980,7 @@ class Workspace:
                       "ai_cache"):  # 0.18.1: the AI's answers kept so as not to ask again, with their quotes
                 out[t] = cx.execute(f"DELETE FROM {t}").rowcount
             kinds = ("('extract','verify','verify_set','expand','check','decompose','reread','second','label','link',"
-                     "'theme','resolve')")
+                     "'theme','resolve','theory_codes')")
             out["results"] = cx.execute(f"DELETE FROM results WHERE kind IN {kinds}").rowcount
             out["tasks"] = cx.execute(f"DELETE FROM tasks WHERE kind IN {kinds}").rowcount
             out["user_claims"] = cx.execute("DELETE FROM user_claims").rowcount
@@ -1031,6 +1031,9 @@ class Workspace:
         head = f"resolve:{doc_id}:"
         for tbl in ("results", "tasks"):
             out.append((tbl, "kind='resolve' AND substr(task_id, 1, ?) = ?", (len(head), head)))
+        head = f"theory_codes:{doc_id}:"  # 0.18.4: the AI's drafts of its concepts hold its text
+        for tbl in ("results", "tasks"):
+            out.append((tbl, "kind='theory_codes' AND substr(task_id, 1, ?) = ?", (len(head), head)))
         out += [(tbl, "doc_id=?", (doc_id,)) for tbl in ("passages", "pages", "paragraphs", "headings", "doc_refs",
                                                           "bib_links",  # 0.13: its work goes back to "to find"
                                                           "documents")]

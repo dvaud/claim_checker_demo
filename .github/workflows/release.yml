@@ -130,6 +130,10 @@ jobs:
       # known text, and that reading is the same twice; a file of the release, beside its notes
       - name: Measure how documents are read
         run: uv run --frozen --no-sync python -m enlens_claims.cli measure --report dist/validation-report.md
+      # 0.18.4 (J4.3): its AI half, from the newest recorded run in tools/validation/runs (no AI here); with none
+      # recorded yet it says so and writes nothing
+      - name: Report on the recorded AI run
+        run: uv run --frozen --no-sync python -m enlens_claims.cli validate report --latest tools/validation/runs --out dist/validation-report-ai.md
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: enlens-release

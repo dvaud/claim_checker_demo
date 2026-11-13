@@ -40,6 +40,7 @@ share (`ingest.py`, `terms.py`, `routing.py`, `llm.py`, the task queue), is buil
 | **0.17** | Released as 0.17.0 (12 November 2026): the sidebar of seven places, key terms without each language's common words, small fixes from use (M1, M2, M4, M6), the design guide (`docs/DESIGN.md`) with one look on every page, and working together, live: L1 to L5 (private until shared, one owner, a shared folder looked at every couple of minutes, the Team tab). Its release candidates were 0.17.0rc1 to rc5. Not tried yet between two computers on a real OneDrive, Dropbox or network drive, nor on a real Windows PC; four smaller points wait for a later release ([below](#017-working-together-live)). |
 | **0.18** | Released as 0.18.0 (13 November 2026), after three candidates: Owner, Co-owner and Member roles with merges no file can abuse; a storage space of the team's own (L6, at Backblaze or Cloudflare, sealed and signed), an easier shared folder (L7), M3, M7, M8 and N1. Not tried yet with real accounts at the two services, nor by a team on real computers. |
 | **0.18.1** | Every open item that was not an XL, entirely new feature (planned 13 November 2026, built in two parts side by side): A6 (reader 5), B5, D2 to D4, H4, H5, H6 for `claimcheck.py`, I1, I2, I4, I5, K2 (Level 0), N2, N4, the rest of J4.2, J4.4, J1 items 3 to 5, 7 to 9 and 11, J2 items 2, 5 and 6, and the open points of L after 0.17.0. Left: D1, G5 and N3 (large new features), J4.3's AI half, J1.2 and J2.4 (below). |
+| **0.18.4** | The half-built items (13 November 2026): K2's AI draft of a theory's concepts, the AI half of the validation report (J4.3: an invented gold set and a recorded run on Claude), branch and tag rules on GitHub (J1.2), the manual arranged by purpose (J2.4), and `views/sources.js` split (H6). Left: D1, G5 and N3 (large new features), a recorded run on a local model, and the tries only a team can make. |
 
 ## Releases 0.15 to 0.17
 
@@ -337,7 +338,7 @@ G1 to G4 (the rest of Margin's writing companion) are Margin's.
 - Long lists (passages, search lines, claims) load as you scroll; heavy views compute in the background with
   progress; startup kept short.
 
-**H6. Tidier code** · ENLENS candidate · `gui/server.py` split in 0.16, `claimcheck.py` in 0.18.1
+**H6. Tidier code** · ENLENS candidate · `gui/server.py` split in 0.16, `claimcheck.py` in 0.18.1, `views/sources.js` in 0.18.4
 - Split the largest modules along the features they serve, so later changes stay small and syncs conflict less. The
   largest are `gui/server.py` (3,410 lines) and `claimcheck.py` (2,829). Not left to the end: each release splits
   the module it changes most, and the new reader starts in its own module (A1).
@@ -422,7 +423,9 @@ Linux only and without the anthropic, OCR and pdfminer extras.)
 2. **Work on branches, merge through pull requests.** Each feature gets a branch (`feature/word-citations`) and a
    pull request into `main` that CI must pass. Merge with *squash*, so `main` keeps one commit per feature. *Why*: even
    alone, `main` then stays releasable, and each change has a record of what and why. A branch ruleset can
-   require the checks to pass before a merge; without one, the habit and CI's red mark do the job.
+   require the checks to pass before a merge; without one, the habit and CI's red mark do the job. *Done in 0.18.4:*
+   a ruleset on `main` asks for a pull request whose seven *Tests* jobs are green, another keeps release tags from
+   being moved or deleted; repository admins may bypass both (`docs/DEVELOPING.md`, *Rules on GitHub*).
 3. **One version number, from the tag.** The version comes from the git tag (`setuptools-scm`, which fits
    the setuptools build), and `enlens_claims.__version__` reads it from the installed package (`importlib.metadata`).
    *Why*: nothing to bump by hand, and `release.py check` has one thing less to compare. The changelog heading stays
@@ -504,9 +507,10 @@ task, reference to look up, explanations to understand). Contributor material li
    README's *New in* matches the changelog.
 
 Items 1 and 3 are done in ENLENS (0.14.0: the README of about 100 lines, `docs/DEVELOPING.md`); items 2, 5 and 6 in
-0.18.1 (*New in* between markers, written by `release.py sync-notes`; `tests/test_doc_links.py`). Item 4 is in part:
-the manual has been a hub with a page per topic, grouped as *Get going*, *Your work*, *The AI and your privacy* and
-*Reference*, since 0.15.5; a split by Diátaxis's four kinds is not done. Items 3 to 6 are
+0.18.1 (*New in* between markers, written by `release.py sync-notes`; `tests/test_doc_links.py`). Item 4 in 0.18.4:
+the hub groups its pages by what the reader needs (*Start here*, a tutorial with the demo documents; *How to…*;
+*Look it up*; *How it works*, four explanation pages), and the task pages keep the steps. A published site (MkDocs)
+is not made: the manual stays in the repository, where Margin's sync finds it. Items 3 to 6 are
 shared files, built in ENLENS and synced. The README order in the main release guide (Part A)
 changes to ENLENS's new one; Margin's order goes into Part B.
 
@@ -528,9 +532,12 @@ What a tool needs when its users publish with it, review with it, or have to jus
 3. **A validation report per release.** The parts that need no AI (reading documents, search, terms, themes, their
    determinism) are measured by the release workflow on the demo and pilot corpora; figures that need AI come from a
    recorded, dated run. The report goes with the release notes, so a change in accuracy is seen, not guessed. The
-   half that needs no AI comes in 0.15 with H1, as 0.15 is the first release that changes results. The AI half waits:
-   it needs a set of right answers to score against and a recorded run on Claude (I5 now measures agreement between
-   the local model and Claude, which is not the same as being right).
+   half that needs no AI comes in 0.15 with H1, as 0.15 is the first release that changes results. The AI half came in
+   0.18.4: `enlens validate` scores a recorded run against an invented gold set in `tools/validation/` (30
+   hypotheses, 110 labelled passages, written by one agent and checked by another, neither seeing a model's answers),
+   and the release attaches its report beside the first half. The first run (Claude through Claude Code, 13 November
+   2026): 93% right verdicts and 99% right code decisions, the same verdict on a second pass for 97% of hypotheses.
+   Not yet: a recorded run on a local model, and right answers from a real project labelled by a person.
 4. **Methods and privacy documents.** `docs/METHODS.md`: how a check, labels, concepts and themes work, with their
    references, written so it can back a methods section. `docs/PRIVACY.md`: what leaves the computer, when, to whom,
    and what never does, written for ethics applications and data protection assessments. *Built in 0.18.1.*
@@ -579,7 +586,7 @@ its own)
   sync. The themes page shows which codes each theme holds. Nothing edits a codebook in the app, and themes cannot
   become codes.
 
-**K2. Theory documents: the lens, not the evidence** · Level 0, Level 2 or 3 optional · built in 0.18.1, Level 0 only (the AI draft waits)
+**K2. Theory documents: the lens, not the evidence** · Level 0, Level 2 or 3 optional · built in 0.18.1 (Level 0) and 0.18.4 (the AI draft)
 (`store.py` for the mark; `themes.py`, `profile.py`, `retrieve.py` and `terms.py` for leaving theory out;
 `codebooks.py` and the K1 editor for codes from theory)
 - **Why** (the Tovertafel project, 13 November 2026). Nicolini's *Practice theory, work, and organization* and

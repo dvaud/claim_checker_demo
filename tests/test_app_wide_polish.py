@@ -137,7 +137,9 @@ def test_page_subtitles_are_one_short_line():
 
 
 def test_the_document_page_has_two_quiet_links_and_no_extra_lines():
-    src = view("sources")
+    # 0.18.4 (H6): the document page lives in doc-page.js and its panels beside it; the list stays in sources.js
+    src = "\n".join(view(n) for n in ("sources", "doc-page", "doc-leave-out", "doc-reading", "doc-codes", "doc-lookup",
+                                       "doc-shared"))
     btn = src[src.index("const copyBtn = "):]
     # 0.17.0 (design guide): a download is a quiet small button (downloadButton), no longer a link-btn
     assert btn.split("\n")[0].count("downloadButton(") == 1 and "link-btn" not in btn.split("\n")[0]

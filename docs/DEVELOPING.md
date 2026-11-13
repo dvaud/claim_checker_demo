@@ -220,6 +220,12 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   also works: the release workflow's *tests* job waits for the Tests run of that commit while the package is built and
   tried beside it, and a failed run stops the draft. It runs the suite itself, on Linux only, when the commit has no
   Tests run (none, or one cancelled by a later push to `main`).
+- **Rules on GitHub (0.18.4, roadmap J1.2).** Two rulesets guard the repository. On `main`: a change comes in through
+  a pull request whose seven *Tests* jobs are green, and `main` cannot be deleted or force-pushed. On `v*` tags: a
+  release tag is never moved or deleted. Repository admins may bypass both, so the order above (push the release
+  commit to `main`, wait for green, push the tag) still works for the owner; everyone else, and every agent working
+  for someone who is not an admin, goes through a pull request. `gh api repos/dvaudorg/claim_checker_demo/rulesets`
+  lists them; a renamed CI job must be renamed in the `main` ruleset too, or no pull request can merge.
 - **Repeatable builds (0.18.1).** `uv.lock` pins every package CI installs: the workflows run `uv lock --check` and
   `uv sync --frozen --extra …`, the Linux every-extra job takes every extra (a test checks it still does). After
   changing a dependency in `pyproject.toml` run `uv lock` and commit the file. The `ci` extra holds what only CI's
@@ -266,7 +272,27 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   for real later and left it then.
 - **The validation report (0.15).** The release workflow runs `enlens measure --report` and attaches
   `validation-report.md` to the release: how well each reader reads the documents of known text, and that reading is
-  the same twice. The half that needs AI comes with 0.16.
+  the same twice.
+- **Its AI half (0.18.4).** The release workflow also runs `enlens validate report --latest tools/validation/runs` and
+  attaches `validation-report-ai.md`, made with no AI from the newest run file committed in `tools/validation/runs/`
+  (with none, it says so and attaches nothing). Record a new run before a release that changes a prompt (a
+  `prompt_version`), a default model of a kind, or how a check or a label is made; otherwise the last run stands. In a
+  git copy, with Claude Code and the ENLENS plugin set up:
+
+  ```sh
+  enlens validate prepare --project "Validation 2026-11-13"        # a new project: the gold documents, tasks queued
+  # in Claude Code:  /enlens-run "Validation 2026-11-13"
+  enlens validate prepare --project "Validation 2026-11-13 again"  # once more, for repeatability
+  # in Claude Code:  /enlens-run "Validation 2026-11-13 again"
+  enlens validate score --project "Validation 2026-11-13" --again "Validation 2026-11-13 again"
+  enlens validate report                                           # look at it; then commit the run file
+  ```
+
+  `score` writes `tools/validation/runs/<date>-<route>.json` with every answer, its model, prompt version, ENLENS
+  version and date. A local model answers the same projects with `enlens --ws "<project folder>" queue run --backend
+  ollama` instead of `/enlens-run`. Delete the two projects afterwards. The gold set itself (`tools/validation/`, its
+  README says how it was made) changes only on purpose: its fingerprint is in every run file, and a report made from
+  a run on an older gold set says so.
 
 ## Rolling back a release
 
@@ -367,7 +393,8 @@ can stop reading once they have their answer.
 **Its shape.** A hub and short pages, not one long file:
 
 - **`docs/MANUAL.md`, the hub.** What ENLENS is, a diagram of how it fits together, a five-minute start, the table of
-  pages (grouped: *Get going*, *Your work*, *The AI and your privacy*, *Reference*, *SDG pack*) and *I want to…* (a
+  pages (grouped by what the reader needs, after Diátaxis: *Start here* (a tutorial), *How to…* (tasks), *Look it up*
+  (reference), *How it works* (explanations), *SDG pack*) and *I want to…* (a
   task, and the page and heading that answers it). It holds no fact of its own beyond the five-minute start, and stays
   under 1,200 words.
 - **`docs/manual/<topic>.md`, one page per task or question.** Each stays under 5,000 words (a test holds both
@@ -377,13 +404,14 @@ can stop reading once they have their answer.
 | Page | Covers |
 | --- | --- |
 | `install.md` | The one-line install, the files to double-click, Tesseract, a git copy, updating, the icon |
+| `first-project.md` | The tutorial: a first project with the demo documents, from adding them to a judged excerpt and its download |
 | `first-steps.md` | The first screen (*Set up Claude*, a project, documents), the sidebar (places and views, the finder, the AI mark, the status area) and the rest of the app's frame |
-| `check.md` | *Hypotheses*: writing and checking one hypothesis or several, what a check does, the answers, parts |
+| `check.md` | *Hypotheses*: writing and checking one hypothesis or several, while it runs, checking many at once |
 | `review.md` | The result page, excerpt cards and their actions, other AI models, downloads, the list of answers, the evidence map |
 | `explore.md` | Search, Codes (by document), Concepts, Themes, a document's panels, Quick look, FlexiConc |
-| `reading.md` | The readers, the reading view, *Read with the new reader*, `enlens measure` |
+| `reading.md` | Looking at how a document was read: the reading view, *Read with the new reader* |
 | `bibliography.md` | Zotero and exported bibliographies, the four lists, matching |
-| `together.md` | Shared projects (private until shared, the shared folder and the Team tab, the three roles), sync clashes, project zips, moving to another computer |
+| `together.md` | Shared projects (private until shared, the shared folder and the Team tab, the three roles), sync clashes, project zips, moving to another computer, safety |
 | `storage-space.md` | A storage space of the team's own (0.18.0rc2): which company, the owner's set-up at Backblaze or Cloudflare, invites and *Join a team*, the Team tab's section, removing a colleague, moving |
 | `shared-folder.md` | Choosing the shared folder (cloud folders by name, the system's folder window, how a colleague finds the team's folder, making a shared folder available offline) |
 | `roles.md` | Roles in a shared project: proposals and who answers them, what *Waiting for your word* holds (answered both ways, changes of owner, AI offers, 30-day removals, settled at the same time), the people list, a second computer |
@@ -395,6 +423,7 @@ can stop reading once they have their answer.
 | `glossary.md`, `troubleshooting.md` | Look-up pages: the words of the app; problems by topic, and the limits |
 | `command-line.md` | `enlens-gui`, `enlens` and the project's database |
 | `sdg-pack.md` | The SDG pack: its pipeline, report, configuration and tables |
+| `how-a-check-works.md`, `how-documents-are-read.md`, `how-the-ai-is-used.md`, `how-two-copies-come-together.md` | Explanations: how a check reaches its answer, the readers and `enlens measure`, how the AI is used and limited, how two copies of a project are merged. The task pages keep the steps and link here |
 
 **The current version only.** The manual says what ENLENS does now; the changelog is the history. No version after a
 feature ("Themes (0.7)") and no "before, it …": when behaviour changes, the page is rewritten, not annotated. A

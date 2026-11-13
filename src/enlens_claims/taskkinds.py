@@ -296,6 +296,13 @@ _core(name="resolve", prompt_version="resolve-v1", claude=("sonnet", "opus"), lo
       bulk=True, row="resolve", row_title="References in a document", batch=4, order=9,
       noun=("window of references", "windows of references"), short="windows of references",
       title="References in documents", run_name="References in a document", output_cap=2500, corpus=True)
+# 0.18.4 (roadmap K2 part 2, the optional AI part): the concepts of a theory document and their definitions, each
+# quoted from it, drafted for the codebook editor's *From a theory document* (theorycodes.py). One task per draft.
+_core(name="theory_codes", prompt_version="theory-codes-v1", claude=("sonnet", "opus"), local="large",
+      helper="enlens-namer", row="theory_codes", row_title="Codes from a theory document", batch=1, order=6.5,
+      noun=("theory document to draft codes from", "theory documents to draft codes from"),
+      short="theory documents to draft codes from", title="Codes from a theory document",
+      run_name="Codes from a theory document", output_cap=3000)
 # checks start on Sonnet (its helper runs at high effort, see agents/enlens-checker.md); an unsure or twice rejected
 # judgement goes to the auditor, so the second opinion and the step-up stay on Opus (or Fable)
 _core(name="check", prompt_version="check-v5", certainty="evidence", claude=("sonnet", "auditor"), local="large",

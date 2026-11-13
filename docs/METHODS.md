@@ -41,11 +41,11 @@ Tables are found from aligned columns and ruled lines, figures are blocks of the
 **passages**, the units every feature reads (`reader.INCLUDED`): short paragraphs are joined up to about 200
 characters and long ones are cut between sentences at about 1,100 (`reader.make_passages`). Everything else stays in
 the text but out of the passages. A person can see every block and *Leave out* or *Restore* it
-([What the reader does](manual/reading.md#what-the-reader-does)).
+([What the reader does](manual/how-documents-are-read.md#what-the-reader-does)).
 
 The same file gives the same text on every computer with the same reader. `enlens measure` tests this and reports
 reading quality against documents of known text
-([Measuring how well ENLENS reads](manual/reading.md#measuring-how-well-enlens-reads)).
+([Measuring how well ENLENS reads](manual/how-documents-are-read.md#measuring-how-well-enlens-reads)).
 
 ## Search and retrieval
 
@@ -76,7 +76,7 @@ pointwise mutual information, log2 of observed over expected frequency (Church a
 ## Checking a hypothesis
 
 The code is in `claimcheck.py`, `verdicts.py`, `check_results.py`, `judgements.py` and `assessment.py`; the manual
-pages are [Check a hypothesis](manual/check.md#what-a-check-does) and [Read and review a result](manual/review.md).
+pages are [Check a hypothesis](manual/how-a-check-works.md#what-a-check-does) and [Read and review a result](manual/review.md).
 
 1. **Parts (optional, off by default).** A model splits a compound hypothesis into the claims that must all hold.
 2. **Search words (optional, on by default).** A model writes other words a source might use: synonyms, technical
@@ -98,9 +98,9 @@ pages are [Check a hypothesis](manual/check.md#what-a-check-does) and [Read and 
    model, whose judgements replace the first; both are kept (`routing.STEP_UP_BELOW`, `tasks.step_up`).
 7. **People's judgements.** A person's judgement replaces the AI's in the answer and always counts
    (`verdicts.effective`); the AI's stays beside it in the downloads. In a shared project, the person's own judgement
-   counts first, then the latest colleague's ([Each person's judgements](manual/together.md#each-persons-judgements)).
+   counts first, then the latest colleague's ([Each person's judgements](manual/how-two-copies-come-together.md#each-persons-judgements)).
 8. **Strictness.** An AI judgement counts only when its certainty is at least the strictness, 0.6 by default; weaker
-   ones stay visible as *Not counted* ([How sure the AI must be](manual/check.md#how-sure-the-ai-must-be)). After 20
+   ones stay visible as *Not counted* ([How sure the AI must be](manual/how-a-check-works.md#how-sure-the-ai-must-be)). After 20
    of a person's judgements, ENLENS suggests the lowest strictness from which the person agreed with at least 80% of
    the AI's judgements (`check_exports.calibration`).
 
@@ -112,7 +112,7 @@ claim gives *No evidence found*. Excerpts of documents no AI may read wait for t
 **A hypothesis in parts** (`verdicts.aggregate`): a part contradicted makes the whole contradicted; otherwise a part
 with mixed evidence makes it mixed; every part supported makes it supported; some parts (partly) supported make it
 partly supported. A part not known yet (failed or waiting) makes the whole at most *Partly supported*
-([A hypothesis checked in parts](manual/check.md#a-hypothesis-checked-in-parts)).
+([A hypothesis checked in parts](manual/how-a-check-works.md#a-hypothesis-checked-in-parts)).
 
 **Who says what.** A document is on the supporting side if one of its counted excerpts supports, partly supporting if
 none does, and contradicting if one contradicts; it can be on both sides. The *lean*, from −1 to +1, summarises the
@@ -230,7 +230,18 @@ from 0.6 as fair (`benchmark.kappa`; [Agreement between routes](manual/models.md
 
 **The validation report.** `enlens measure` reports on reading documents, with no AI: documents of known text,
 determinism, quotes that still find their place, and timings (`measure.py`). Each release carries it as
-`validation-report.md`.
+`validation-report.md`. Its AI half (0.18.4, `validation.py`) scores the AI's answers against known right answers: a
+gold set of invented documents on remote work (`tools/validation/`), in which every name and figure is fictional, so
+each right answer is known by construction. It holds about 30 hypotheses with their verdicts (supported, partly
+supported, contradicted, mixed, nothing found; some compound) and about 100 passages with the codes of a codebook of
+10 codes made for it, written by one AI from the documents alone, checked against the text by a second, and settled by
+hand, with neither ever seeing a model's answers. A recorded, dated run checks every hypothesis and labels every
+passage as the app does, through the task queue, and keeps every answer with its model, prompt version and ENLENS
+version; `enlens validate report` then gives, per kind, the share of right answers and Cohen's kappa against the gold
+set, the share of answers first rejected for a quote not in the text, and, from a second pass, how often the same
+answer came again. Each release carries it as `validation-report-ai.md`, made from the newest recorded run with no
+AI. Its limits: the documents are invented and tidier than real ones, the set is small (one hypothesis is about three
+points), and it is in English only.
 
 **Across versions.** ENLENS never redoes work by itself: results made by an earlier version stay as they were made
 ([Results across versions](manual/models.md#results-across-versions)).
@@ -243,7 +254,8 @@ determinism, quotes that still find their place, and timings (`measure.py`). Eac
   words. *Read more excerpts* and *Search with other words* look further.
 - **The quote check proves that the words are there**, not that the grade is right. The person's review checks the
   grade.
-- **The default models are not yet validated** on a filled-in reference set ([MODEL_CHOICE.md](MODEL_CHOICE.md)).
+- **The default models are validated only on a small invented gold set** (`validation-report-ai.md`), not on a
+  filled-in reference set of real documents ([MODEL_CHOICE.md](MODEL_CHOICE.md)).
 - **Agreement is not correctness**: kappa compares two readers, neither of them a gold standard.
 - **Claude's answers are not repeatable** the way a seeded local model's are.
 - **The stemmer is English.** It strips English endings from words in every language, so forms in other languages may

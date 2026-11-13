@@ -80,4 +80,4 @@ never comes into your project, and the card says so (more under *Technical detai
 **Stop using the storage space here** (the last card of the Team page, *Leave the storage space*) stops this copy and
 forgets its keys; nothing in the space is removed. To come back, ask the owner for a new invite.
 
-The same rules as with a shared folder decide how your copies come together: [Work together](together.md#how-two-copies-come-together).
+The same rules as with a shared folder decide how your copies come together: [How two copies of a project come together](how-two-copies-come-together.md).

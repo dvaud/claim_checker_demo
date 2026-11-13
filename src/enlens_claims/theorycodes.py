@@ -17,13 +17,23 @@ The candidates, from the document's own structure and words, best first:
    ends), with the first sentence that uses each as the definition.
 
 Every quote is a span of the document's own text (checked by finding it again, as quotes are everywhere). Words set in
-italics are not offered: the readers do not keep fonts' slant (only boldness). The optional AI draft of the roadmap
-(Level 2 or 3) is not built yet.
+italics are not offered: the readers do not keep fonts' slant (only boldness).
+
+0.18.4: **the optional AI draft** (Level 2 or 3, `ai_offer`, `draft_with_ai`). An AI task (`theory_codes`, prompt
+theory-codes-v1) gets these candidates and the passages of the document where they are defined or used most, and
+drafts the theory's concepts: each a short name, a definition quoted exactly from the document (at least three whole
+words; the quote check sends a quote that is not there back to be fixed, as for every kind) and a one-line reason. The
+document's own AI setting picks the reader (Claude, a local AI, or none: then no draft is offered). The drafts join the
+Level-0 list unticked and marked as the AI's, without the candidates already there; their examples still come only
+from the evidence (`suggest_examples`), never from the AI. A draft asked again with the same input reuses its answer.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections import Counter
+from typing import Callable
 
 from .store import Workspace
 from .textutil import split_sentences
@@ -55,6 +65,20 @@ def _stop() -> frozenset[str]:
 def _norm(term: str) -> str:
     t = term.lower().strip(" .,:;'\"’()")
     return t[:-1] if len(t) > 4 and t.endswith("s") and not t.endswith("ss") else t
+
+
+MIN_DEFINITION_WORDS = 3
+
+
+def _words(quote: str) -> int:
+    """Whole words in a quote; in a script written without spaces (Chinese, Thai…) a character counts as a word."""
+    from .textutil import _unspaced
+
+    n = 0
+    for tok in quote.split():
+        u = sum(1 for c in tok if _unspaced(c))
+        n += u + any(c.isalnum() and not _unspaced(c) for c in tok) if u else 1
+    return n
 
 
 def _clean_term(term: str, stop: frozenset[str]) -> str | None:
@@ -93,11 +117,12 @@ def _body_sentences(ws: Workspace, doc_id: str, text: str) -> list[tuple[int, in
     return out
 
 
-def candidates(ws: Workspace, doc_id: str, limit: int = MAX_CANDIDATES) -> dict:
+def candidates(ws: Workspace, doc_id: str, limit: int = MAX_CANDIDATES, with_examples: bool = True) -> dict:
     """The candidate concepts of a theory document as draft codes: {"doc_id", "title", "role", "concepts": [{"term",
     "how" ("defined" | "heading" | "frequent"), "count", "definition": {"quote", "start", "end", "page"} | None,
     "code": {code, description, described, group, keywords, include, exclude, examples: []}, "suggested":
-    [examples from the evidence documents, to tick]}]}."""
+    [examples from the evidence documents, to tick]}]}. `with_examples` False: no examples looked for (0.18.4: the
+    candidates the AI draft is given)."""
     row = ws.query("SELECT title, text, role FROM documents WHERE doc_id=?", (doc_id,))
     if not row:
         raise KeyError(doc_id)
@@ -167,15 +192,17 @@ def candidates(ws: Workspace, doc_id: str, limit: int = MAX_CANDIDATES) -> dict:
         c["count"] = grams.get(k, 0)
     order = {"defined": 0, "heading": 1, "frequent": 2}
     picked = sorted(found.values(), key=lambda c: (order[c["how"]], -c["count"], c["term"].lower()))[:limit]
-    out = []
-    for c in picked:
-        d = c["definition"]
-        page = f", p. {d['page']}" if d and d.get("page") else ""
-        desc = f"“{d['quote']}” ({title}{page})" if d else f"A concept of {title}."
-        out.append({**c, "code": {"code": c["term"][:40], "description": desc[:2000], "described": bool(d), "group": "",
-                                  "keywords": [c["term"].lower()], "include": "", "exclude": "", "examples": []},
-                    "suggested": suggest_examples(ws, c["term"], exclude_doc=doc_id)})
+    out = [{**c, "code": _draft_code(c["term"], c["definition"], title),
+            "suggested": suggest_examples(ws, c["term"], exclude_doc=doc_id) if with_examples else []} for c in picked]
     return {"doc_id": doc_id, "title": title, "role": role, "concepts": out}
+
+
+def _draft_code(term: str, d: dict | None, title: str) -> dict:
+    """A draft code: the term as its name, its definition quoted with the document and page as its description."""
+    page = f", p. {d['page']}" if d and d.get("page") else ""
+    desc = f"“{d['quote']}” ({title}{page})" if d else f"A concept of {title}."
+    return {"code": term[:40], "description": desc[:2000], "described": bool(d), "group": "",
+            "keywords": [term.lower()], "include": "", "exclude": "", "examples": []}
 
 
 def suggest_examples(ws: Workspace, term: str, k: int = MAX_EXAMPLES, exclude_doc: str | None = None) -> list[dict]:
@@ -227,3 +254,267 @@ def keep_evidence_examples(ws: Workspace, codes: list[dict]) -> list[dict]:
         ex = [e for e in (c.get("examples") or []) if isinstance(e, dict) and e.get("doc_id") not in theory]
         out.append({**c, "examples": ex})
     return out
+
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.18.4 (K2 part 2, Level 2 or 3): the optional AI draft
+# ---------------------------------------------------------------------------------------------
+AI_KIND = "theory_codes"
+AI_MAX_CANDIDATES = 30   # the Level-0 candidates the AI is given as hints
+AI_MAX_PASSAGES = 12     # the passages of the document it reads: where the candidates are defined or used most
+AI_MAX_CHARS = 24000     # and at most this much of its text
+AI_MAX_CONCEPTS = 25
+
+NO_AI = "This document is marked No AI, so no AI drafts its concepts."
+WITHDRAWN = ("The request was taken back before the AI answered (the document's AI setting changed, or a draft "
+             "was stopped). Nothing was drafted: try again.")
+NO_LOCAL = ("Only a local AI may read this document, and no local AI is chosen (Settings, AI: the local model for "
+            "documents kept on this computer).")
+
+
+def _h(*parts: str) -> str:
+    return hashlib.sha1("\x1f".join(parts).encode("utf-8")).hexdigest()
+
+
+def _level(ws: Workspace, doc_id: str) -> str:
+    from . import access
+
+    return access.levels(ws, [doc_id]).get(doc_id) or access.default(ws)
+
+
+def ai_offer(ws: Workspace, doc_id: str, settings: dict | None = None) -> dict:
+    """Whether the AI may draft this document's concepts, and who would read it: {"offered", "why" (one line when
+    not), "reader": "claude" | "local" | "main" | None}. The document's own AI setting decides, as everywhere: Claude
+    may read it (the main AI), only a local AI (the local model, or the main one when it runs on this computer), or no
+    AI (not offered)."""
+    from . import home
+
+    if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+        raise KeyError(doc_id)
+    s = settings if settings is not None else home.load_settings()
+    lv = _level(ws, doc_id)
+    if lv == "none":
+        return {"offered": False, "why": NO_AI, "reader": None, "level": lv}
+    from .routing import OFF_COMPUTER
+
+    claude = (s.get("backend") or "auto") in OFF_COMPUTER
+    if lv == "local":
+        if home.main_reads_local(s) or home.restricted_choice(s):
+            return {"offered": True, "why": None, "reader": "local", "level": lv}
+        return {"offered": False, "why": NO_LOCAL, "reader": None, "level": lv}
+    return {"offered": True, "why": None, "reader": "claude" if claude else "main", "level": lv}
+
+
+def _ai_passages(ws: Workspace, doc_id: str, terms: list[str], defined_at: list[int]) -> list[dict]:
+    """The passages of the document the AI reads: those where a candidate is defined first, then those that use the
+    candidates most, at most AI_MAX_PASSAGES and AI_MAX_CHARS in all, in the document's order."""
+    rows = ws.query("SELECT passage_id, start, end, page, text FROM passages WHERE doc_id=? AND section='body' "
+                    "ORDER BY start", (doc_id,)) or \
+        ws.query("SELECT passage_id, start, end, page, text FROM passages WHERE doc_id=? ORDER BY start", (doc_id,))
+    if not rows:
+        return []
+    rxs = [re.compile(r"\b" + r"\W+".join(re.escape(w) for w in re.findall(_W, t)) + r"\w*", re.I)
+           for t in terms if re.findall(_W, t)]
+    defines = {i for i, r in enumerate(rows) for at in defined_at if r["start"] <= at < r["end"]}
+    score = []
+    for i, r in enumerate(rows):
+        hits = [len(rx.findall(r["text"] or "")) for rx in rxs]
+        score.append((i not in defines, -(sum(1 for x in hits if x) * 3 + sum(hits)), r["start"], i))
+    picked, size = [], 0
+    for _d, _s, _a, i in sorted(score):
+        if len(picked) >= AI_MAX_PASSAGES:
+            break
+        n = len(rows[i]["text"] or "")
+        if picked and size + n > AI_MAX_CHARS:
+            continue
+        picked.append(i)
+        size += n
+    return [{"n": k, "passage_id": rows[i]["passage_id"], "page": rows[i]["page"], "text": rows[i]["text"]}
+            for k, i in enumerate(sorted(picked), 1)]
+
+
+def ai_payload(ws: Workspace, doc_id: str) -> dict:
+    """What the AI is given: the document's title, its Level-0 candidates (names only) and its passages."""
+    c = candidates(ws, doc_id, AI_MAX_CANDIDATES, with_examples=False)
+    terms = [x["term"] for x in c["concepts"]]
+    defined_at = [x["definition"]["start"] for x in c["concepts"] if x["how"] == "defined" and x["definition"]]
+    return {"doc_id": doc_id, "title": c["title"], "candidates": terms,
+            "passages": _ai_passages(ws, doc_id, terms, defined_at)}
+
+
+def make_ai_task(ws: Workspace, doc_id: str, model: str) -> str:
+    """The draft's task (made once per input: the same document text, candidates, prompt version and model give the
+    same task, so a draft asked again reuses its answer). Returns its id."""
+    from . import prompts
+    from .tasks import replace_task
+
+    payload = ai_payload(ws, doc_id)
+    if not payload["passages"]:
+        raise ValueError("This document has no text to read: read it again first.")
+    tid = f"{AI_KIND}:{doc_id}:" + _h(json.dumps(payload, sort_keys=True, ensure_ascii=False),
+                                       prompts.VERSIONS.get(AI_KIND) or "", model or "")[:12]
+    with ws.connect() as cx:
+        replace_task(cx, tid, AI_KIND, model, payload)
+    return tid
+
+
+def store_ai_draft(cx, t, payload: dict, obj: dict, model: str) -> tuple[bool, list[str]]:
+    """Check the AI's draft (theory-codes-v1): every definition a quote of at least three whole words, found in the
+    passage it names. The answer itself is kept with the task (`results`), and `ai_drafts` reads it."""
+    from .schema import TheoryCodesOut
+    from .textutil import find_quote, grade_quote_problem, partial_word_hint
+
+    out = TheoryCodesOut.model_validate(obj)
+    ps = payload.get("passages") or []
+    errors = []
+    for i, c in enumerate(out.concepts):
+        ev = c.definition
+        if ev.passage > len(ps):
+            errors.append(f"concepts[{i}] ({c.name}): there is no passage P{ev.passage}")
+            continue
+        short = grade_quote_problem(ev.quote)
+        if short or _words(ev.quote) < MIN_DEFINITION_WORDS:  # a definition needs words: 15 characters are not enough
+            errors.append(f"concepts[{i}] ({c.name}): the quote {' '.join(ev.quote.split())[:80]!r} is too short to "
+                          f"define the concept: quote at least {MIN_DEFINITION_WORDS} whole words, copied exactly")
+            continue
+        if _norm(ev.quote) == _norm(c.name):
+            errors.append(f"concepts[{i}] ({c.name}): the quote only repeats the concept's name: quote the sentence "
+                          "or part of it that says what the concept is")
+            continue
+        text = ps[ev.passage - 1]["text"]
+        if not find_quote(text, ev.quote):
+            errors.append(f"concepts[{i}] ({c.name}): quote not found in passage P{ev.passage}: {ev.quote[:80]!r}"
+                          + partial_word_hint(text, ev.quote) + ". Copy it character for character, or quote a "
+                          "shorter contiguous piece of it.")
+    return not errors, errors
+
+
+def ai_drafts(ws: Workspace, task_id: str, skip: set[str] | None = None) -> list[dict]:
+    """The concepts of a draft's accepted answer, shaped as `candidates` shapes them (each "how": "ai", "ai": True, with
+    its "reason"), without those whose normalised name is in `skip` (the Level-0 candidates) or repeated. Their
+    examples are offered from the evidence documents only (`suggest_examples`), as for every candidate."""
+    from .schema import TheoryCodesOut
+    from .tasks import parse_json
+    from .textutil import find_quote
+
+    t = ws.query("SELECT payload_json, status FROM tasks WHERE task_id=?", (task_id,))
+    if not t or t[0]["status"] != "done":
+        return []
+    r = ws.query("SELECT raw_json, model FROM results WHERE task_id=? AND valid=1 ORDER BY attempt DESC LIMIT 1",
+                 (task_id,))
+    if not r:
+        return []
+    payload = json.loads(t[0]["payload_json"])
+    doc_id, title = payload["doc_id"], payload.get("title") or ""
+    out_ = TheoryCodesOut.model_validate(parse_json(r[0]["raw_json"]))
+    starts = {p["passage_id"]: s for p in payload["passages"]
+              for s in [ws.scalar("SELECT start FROM passages WHERE passage_id=?", (p["passage_id"],))]}
+    seen = set(skip or ())
+    out = []
+    for c in out_.concepts[:AI_MAX_CONCEPTS]:
+        k = _norm(c.name)
+        if not k or k in seen:
+            continue
+        p = payload["passages"][c.definition.passage - 1]
+        hit = find_quote(p["text"], c.definition.quote)
+        if not hit:
+            continue
+        seen.add(k)
+        base = starts.get(p["passage_id"])
+        a, z = (base + hit[0], base + hit[1]) if base is not None else (None, None)
+        d = {"quote": " ".join(p["text"][hit[0]:hit[1]].split()), "start": a, "end": z,
+             "page": (_page(ws, doc_id, a) if a is not None else None) or p.get("page")}
+        term = c.name[0].upper() + c.name[1:] if c.name[:1].islower() else c.name
+        out.append({"term": term, "how": "ai", "ai": True, "reason": c.reason, "count": 0, "definition": d,
+                    "code": _draft_code(term, d, title), "model": r[0]["model"],
+                    "suggested": suggest_examples(ws, term, exclude_doc=doc_id)})
+    return out
+
+
+def draft_with_ai(ws: Workspace, doc_id: str, backend, model: str, progress: Callable | None = None,
+                  should_stop: Callable[[], bool] | None = None, readers=None) -> dict:
+    """The AI drafts the concepts of a theory document (one task, see the module's notes). The reader is the one the
+    document's AI setting allows (`access.Readers`: Claude, or the local model for a document only a local AI may
+    read); a document marked No AI is never sent. Written to the research log. Returns {"doc_id", "title", "task_id",
+    "ok", "stopped", "problems", "reused", "model", "concepts": [drafts, unticked, without the Level-0 candidates]}."""
+    from . import access, researchlog
+    from . import runs as runs_mod
+    from . import tasks
+
+    title = ws.scalar("SELECT title FROM documents WHERE doc_id=?", (doc_id,))
+    if title is None:
+        raise KeyError(doc_id)
+    lv = _level(ws, doc_id)
+    if lv == "none":
+        raise ValueError(NO_AI)
+    readers = readers or access.Readers(backend, model, should_stop=should_stop)
+    got = readers.for_level(lv)
+    if got is None:
+        raise ValueError(NO_LOCAL if lv == "local" else NO_AI)
+    be, call = got
+    if progress:
+        progress(0, 1)
+    tid = make_ai_task(ws, doc_id, call)
+    with ws.connect() as cx:  # worked out again as the text is about to leave (an add-on's floor may hold it back)
+        now_lv = access.recheck(cx, tid)
+    if now_lv is None or now_lv not in access.backend_levels(be):
+        raise ValueError(NO_AI if now_lv == "none" else "This document may not be sent to this AI.")
+    before = ws.scalar("SELECT status FROM tasks WHERE task_id=?", (tid,))
+    rid = runs_mod.start(ws, AI_KIND, doc_id, be, call, 1)
+    ok, problems = tasks.run_one(ws, tid, be, call)
+    runs_mod.finish(ws, rid, 1)
+    if progress:
+        progress(1, 1)
+    last = ws.query("SELECT model, route FROM results WHERE task_id=? AND valid=1 ORDER BY attempt DESC LIMIT 1", (tid,))
+    used = last[0]["model"] if last else call
+    reused = before == "done" or bool(last and "kept answer" in (last[0]["route"] or ""))
+    if not ok and ws.scalar("SELECT status FROM tasks WHERE task_id=?", (tid,)) != "failed":
+        # stopped, or taken back from the queue: nothing was drafted, and there is nothing to log. Only a stop the
+        # person asked for is quiet; a task taken back for another reason (another draft's job stopped, or the
+        # document's AI setting changed while it waited) says so.
+        stopped = bool(should_stop and should_stop())
+        return {"doc_id": doc_id, "title": title, "task_id": tid, "ok": False, "stopped": stopped,
+                "withdrawn": not stopped, "why": None if stopped else WITHDRAWN,
+                "problems": problems[:5], "reused": False, "model": used, "concepts": []}
+    level0 = {_norm(c["term"]) for c in candidates(ws, doc_id, with_examples=False)["concepts"]}
+    concepts = ai_drafts(ws, tid, level0) if ok else []
+    with ws.connect() as cx:
+        if ok:
+            text = (f"The AI ({used}) drafted {len(concepts)} concept{'s' if len(concepts) != 1 else ''} of the theory "
+                    f"document {researchlog.quoted(title, 80)} for a codebook, each with its definition quoted from it"
+                    + (" (the answer kept from the same request before)" if reused else "")
+                    + ". They are drafts, offered unticked: none is a code until you tick it.")
+        else:
+            text = (f"The AI ({used}) could not draft the concepts of the theory document "
+                    f"{researchlog.quoted(title, 80)}: its quotes were not found in the text.")
+        researchlog.record(cx, "codebook-drafted", text, "document", doc_id, title,
+                           data={"task_id": tid, "model": used, "concepts": [c["term"] for c in concepts],
+                                 "reused": reused, "ok": ok})
+    return {"doc_id": doc_id, "title": title, "task_id": tid, "ok": ok, "stopped": False, "problems": problems[:5],
+            "reused": reused, "model": used, "concepts": concepts}
+
+
+def demo_answer(payload: dict) -> dict:
+    """The offline demo's draft: each candidate the passages use, with the first sentence that uses it (no reading)."""
+    out = []
+    for term in payload.get("candidates") or []:
+        rx = re.compile(r"\b" + re.escape(term), re.I)
+        for p in payload["passages"]:
+            m = rx.search(p["text"])
+            if not m:
+                continue
+            a, z = next(((a, z) for a, z in split_sentences(p["text"]) if a <= m.start() < z), (0, len(p["text"])))
+            q = " ".join(p["text"][a:z].split())
+            if len(q.split()) >= 3 and len(q) <= 600:
+                out.append({"name": " ".join(term.split()[:6]), "definition": {"passage": p["n"], "quote": q},
+                            "reason": "Offline demo: a candidate the passages use, not read."})
+            break
+        if len(out) >= 10:
+            break
+    return {"concepts": out, "note": "Offline demo: the candidates found without AI, with a sentence that uses each."}
+
+
+def prompt_size(k: int, max_chars: int) -> int:
+    """The longest prompt of a draft, in characters (home.prompt_tokens)."""
+    return 600 + AI_MAX_CHARS + AI_MAX_CANDIDATES * 40

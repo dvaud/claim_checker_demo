@@ -17,7 +17,7 @@ answers listed under it and an *Evidence map* tab ([Read and review a result](re
 
 The box takes one hypothesis, or several ([below](#checking-many-at-once)). One sentence that could be true or false: *Remote work lowers commuting emissions in large cities*, *Green hydrogen
 production increases water stress in arid regions*. When it contains "and", "but" or a semicolon, the app offers to
-**check each part separately**. *What happens when you check* explains the steps.
+**check each part separately**. [How a check reaches its answer](how-a-check-works.md) explains the steps.
 
 *More options*:
 
@@ -31,26 +31,10 @@ words that do not fit and add words your documents use; then *Check*. The result
 
 ## What a check does
 
-```mermaid
-flowchart LR
-    H["Your hypothesis"] --> P["1. Split into parts<br/>(optional)"]
-    P --> W["2. Other words<br/>(optional)"]
-    W --> F["3. Find the best excerpts<br/>by words and meaning"]
-    F --> J["4. The AI judges each one<br/>with a quote and a certainty"]
-    J --> V["5. Every quote checked<br/>against the source"]
-    V --> A["6. The answer"]
-```
-
-1. *(optional)* The AI splits the hypothesis into the claims that must all hold.
-2. *(optional)* It writes other words for each claim: synonyms, technical words, the opposite phrasing.
-3. The best excerpts are picked by their words (BM25), together with search by meaning when the project has it, and
-   at most a few per document, so one long report cannot fill every place.
-4. The AI judges each excerpt that bears on the claim: *supports*, *partly supports* or *contradicts*, with a quote
-   and a certainty.
-5. Every quote is checked character by character against the excerpt, as whole words ("legal" is not found in
-   "illegal"), and has at least three words (or 15 characters) and at most 600. An answer that fails is sent back with its problems
-   listed, and so is one a local model could not finish (cut off, stuck); the check goes on with its other parts.
-6. The answer counts the judgements the AI is sure enough about, and yours ([below](#the-answers)).
+The hypothesis is split into parts if you asked (and the AI can), the AI may think of other words, the best excerpts
+are found by their words and by meaning, the AI judges each with a quote and a certainty, and every quote is checked
+against the source. The six steps, with the checks a quote must pass:
+[What a check does](how-a-check-works.md#what-a-check-does).
 
 **While it runs**, the page shows each step as it finishes: the parts, the other words searched for, how many
 excerpts from how many documents, the AI reading them. *Technical details* shows what the model does second by
@@ -63,32 +47,16 @@ With Claude Code as the AI, the check may wait for you to press *Start Claude Co
 
 ## How sure the AI must be
 
-Each judgement comes with the AI's **certainty**: its own estimate (0–100%) of how sure it is, shown as high
-(≥ 80%), medium (≥ 60%) or low. It is not a check of whether the AI is right.
-
-The **strictness** (60% by default) is how sure the AI must be for a judgement to count. Weaker judgements stay
-visible, marked *Not counted*. Strictness applies to every result, old and new; change it in
-[*Settings → Checking*](settings.md#the-five-tabs), where ENLENS also shows how often you agreed with the AI at each
-certainty and, after 20 of your judgements, may suggest a strictness.
-
-**Your own judgement always counts**, whatever the strictness.
+Each judgement comes with the AI's **certainty**, and counts only when it reaches the **strictness** (60% by default).
+Change it in [*Settings → Checking*](settings.md#the-five-tabs). **Your own judgement always counts.** What the two
+mean: [How sure the AI must be](how-a-check-works.md#how-sure-the-ai-must-be).
 
 ## The answers
 
-| | The app says | Meaning |
-| --- | --- | --- |
-| 🟢 | **Supported by your documents** | At least one excerpt says what the hypothesis says (and counts), and none says the opposite. |
-| 🟠 | **Partly supported** | No excerpt says it all, but one says an important part of it. |
-| 🟣 | **Mixed evidence** | Some excerpts support the hypothesis (fully or partly) and others contradict it. Read both sides: do they concern the same place, group or period? |
-| 🔴 | **Contradicted by your documents** | An excerpt says the opposite, and none supports it. |
-| ⚪ | **Only uncertain evidence** | Excerpts were judged, but the AI was not sure enough about any of them for your strictness. Judge them yourself, or lower the strictness. |
-| ⚪ | **No evidence found** | None of the excerpts read was about the hypothesis. This is not proof that no document says it: read more, search with other words, or add documents. |
-| ⚪ | **Nothing in your documents matched** | No excerpt shares words (or meaning) with the hypothesis. |
-| ⚪ | **Not finished yet** | No excerpt has been judged yet. *Waiting for your judgement* when every excerpt read comes from documents no AI may read: judge them yourself. |
-| ⚪ | **The check did not work** | The AI's answers did not pass the checks three times. |
-
-Excerpts waiting for your own judgement (from documents marked *No AI*) count towards no answer until you judge them.
-Nobody has read them, so they are not "not about the hypothesis" either.
+The answer under the box is one of nine: *Supported by your documents*, *Partly supported*, *Mixed evidence*,
+*Contradicted by your documents*, and the grey ones, *Only uncertain evidence*, *No evidence found*, *Nothing in your
+documents matched*, *Not finished yet* and *The check did not work*. What each means, and what to do about each:
+[The answers](how-a-check-works.md#the-answers).
 
 > [!TIP]
 > *No evidence found* is about the excerpts read, not about your documents. Under the evidence, *Read more excerpts*
@@ -96,28 +64,10 @@ Nobody has read them, so they are not "not about the hypothesis" either.
 
 ### A hypothesis checked in parts
 
-The parts must all hold. The first row that applies decides:
-
-| If… | the whole hypothesis is… |
-| --- | --- |
-| a part is contradicted | **contradicted**, even when other parts are supported |
-| otherwise, a part has mixed evidence | **mixed evidence** |
-| every part is supported | **supported** |
-| some parts are supported or partly supported | **partly supported** |
-| there is only uncertain evidence | **only uncertain evidence** |
-| otherwise | **no evidence found** |
-
-The app says which part decides (*Part 2 has mixed evidence, so the whole hypothesis has mixed evidence*). A part
-whose check failed, or that waits for your judgement, gives no evidence either way, but the whole hypothesis
-is then at most partly supported: it holds only if every part does, and that part is not known yet. A failed part
-also makes the result say it is incomplete.
-
-### Who says what
-
-The documents behind an answer, by side. A document counts as **supporting** if one of its counted excerpts
-supports, as **partly supporting** only if none supports, and as **contradicting** if one contradicts. So a document
-can be on both sides, and the app says so. The **lean** (−1 only contradicting, +1 only supporting) summarises the
-excerpts read; it is not a measure of truth.
+The parts must all hold: one contradicted part contradicts the whole, and every part supported supports it. The app
+says which part decides. The full rules: [A hypothesis checked in
+parts](how-a-check-works.md#a-hypothesis-checked-in-parts). *Who says what*, the documents behind an answer by side:
+[Who says what](how-a-check-works.md#who-says-what).
 
 ## Checking many at once
 
