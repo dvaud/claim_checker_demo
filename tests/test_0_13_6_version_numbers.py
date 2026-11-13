@@ -39,7 +39,9 @@ def test_the_changelog_lists_no_withdrawn_version():
     from enlens_claims.update import version_tuple
 
     versions = release.changelog_versions()
-    assert versions[0] == __version__
+    # 0.18.1 (J1.3): the version is made from the git tag, so a commit after a tag is "0.18.0.post3", and the changelog
+    # may already hold the entry of the release being prepared (the release pull request, before its tag)
+    assert update.version_tuple(versions[0]) >= update.version_tuple(__version__)
     for v in set(versions) & update.WITHDRAWN:  # 0.15: only a release of that number made after the withdrawal
         assert versions.index(v) < versions.index("0.14.6"), v
     assert [version_tuple(v) for v in versions] == sorted((version_tuple(v) for v in versions), reverse=True)

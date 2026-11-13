@@ -106,9 +106,32 @@ def _digest(path: Path) -> str:
         return ""
 
 
+def _written_in_source(root: Path) -> bool:
+    """Whether `__init__.py` still writes the version (a copy from before 0.18.1, and the tests' stand-ins)."""
+    try:
+        return bool(re.search(r'^__version__\s*=\s*"', (root / "src" / "enlens_claims" / "__init__.py").read_text("utf-8"), re.M))
+    except OSError:
+        return False
+
+
 def version_in(root: Path) -> str:
-    m = re.search(r'__version__\s*=\s*"([^"]+)"', (root / "src" / "enlens_claims" / "__init__.py").read_text("utf-8"))
-    return m.group(1) if m else "?"
+    """The ENLENS version of a git copy. 0.18.1 (J1.3): it comes from the git tag, so no source file holds it: the
+    newest release tag the copy contains (`git describe`). A copy from before that, and the tests' stand-in copies,
+    still write `__version__ = "x"` in `__init__.py`, which is read first."""
+    try:
+        text = (root / "src" / "enlens_claims" / "__init__.py").read_text("utf-8")
+    except OSError:
+        text = ""
+    m = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.M)
+    if m:
+        return m.group(1)
+    try:
+        r = _run(["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"], root)
+        if r.returncode == 0 and r.stdout.strip().lstrip("v"):
+            return r.stdout.strip().lstrip("v")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "?"
 
 
 def _extras_in(text: str) -> dict[str, list[str]]:
@@ -238,7 +261,10 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
         deps_before = _digest(py)
         extras = installed_extras(py)  # before the merge (0.11.1): an extra whose packages grew must stay installed
         _git(run, root, "merge", "--ff-only", "--quiet", upstream)
-        if _digest(py) != deps_before:
+        # 0.18.1: the installed package's version is made from the tag when it is installed, so a new release also
+        # reinstalls (the same extras): without it `__version__` would keep the old number until the next reinstall.
+        # (A copy that still writes its version in __init__.py needs no reinstall for a change of code only.)
+        if _digest(py) != deps_before or (not _written_in_source(root) and version_in(root) != before):
             # 0.15.1: and the layout reader (pdfminer), which the one-line install has always brought: without it
             # PDFs are read from their text alone (a git copy installed with `pip install -e .` lacked it)
             layout = {"pdfminer"} if "pdfminer" in _extras_in(py.read_text("utf-8")) else set()

@@ -1,0 +1,61 @@
+# ENLENS: tag a release when its pull request is merged (0.18.1, roadmap J1.5). `python tools/release.py prepare X.Y.Z`
+# opens a pull request from the branch release/X.Y.Z (the changelog entry, README's New in and the app's What's new).
+# Merging it makes the tag vX.Y.Z on the merge commit, and starts release.yml for that tag.
+#
+# Why release.yml is started by hand here: a tag pushed with this workflow's own token (GITHUB_TOKEN) does not start
+# the workflows that listen for tags, a rule GitHub has so that workflows cannot start each other in a loop. The one
+# exception is a dispatch, so this workflow dispatches release.yml with the tag as its ref (`gh workflow run`); the
+# run then has github.ref_type == "tag", as if the tag had been pushed. (A personal token or a GitHub App would also
+# do, but it is a secret to keep; this needs none.)
+#
+# release.yml waits for the Tests run of the merge commit (the push to main starts one), so the draft is made only
+# when the tests passed. Nothing is published: the draft release is published by a person.
+name: Tag release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: Tag the merge commit
+    # merged (not just closed), from a branch of this repository named release/<version>
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # the tag
+      actions: write    # to dispatch release.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+      - name: Check that the merge commit is this release, then tag it and start the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}      # (through env: never pasted into the script)
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          version="${BRANCH#release/}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?$'; then
+            echo "::error::the branch $BRANCH is not release/X.Y.Z (or release/X.Y.ZrcN): no tag made"; exit 1
+          fi
+          tag="v$version"
+          # the changelog's top entry of the merge commit is this version, and no fragments were left behind
+          python3 tools/release.py check "$tag"
+          python3 tools/release.py fragments --check
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "::error::the tag $tag exists already: nothing was changed"; exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" > /dev/null
+          echo "Tagged $SHA as $tag."
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+          echo "Started release.yml for $tag."

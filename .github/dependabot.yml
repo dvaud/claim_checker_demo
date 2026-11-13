@@ -1,0 +1,28 @@
+# Dependabot (0.18.1, roadmap J1.7): a pull request when a package or a GitHub Action has a new version, so an update
+# is a change you see and CI tests, not a surprise next month. Packages are pinned in uv.lock; actions by commit hash
+# (the tag is the comment after the hash, which Dependabot keeps up to date).
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      python-packages:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"

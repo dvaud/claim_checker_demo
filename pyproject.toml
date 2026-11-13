@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "enlens-claims"
-version = "0.18.0"
+dynamic = ["version"]   # 0.18.1 (J1.3): from the git tag vX.Y.Z, see [tool.setuptools_scm]
 description = "Explore your documents (search, code profiles, concepts, themes) and check hypotheses against them with Claude Code on your own plan or a local model, with verified quotes (ENLENS); includes the SDG value chain assessment pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,12 +23,23 @@ anthropic = ["anthropic>=0.40"]        # the Claude API (cloud, opt-in)
 connector = ["mcp>=2,<3"]
 pdfminer = ["pdfminer.six>=20231228"]
 ocr = ["pypdfium2>=4.20", "pillow>=10"]  # read scanned PDF pages; also needs the program tesseract (see the manual)
+ci = ["pyyaml>=6", "ruff>=0.6"]          # 0.18.1 (J1.7): what only CI's every-extra job adds (the shape of the workflows, the lint); in uv.lock
 dev = ["pytest>=8", "pytest-xdist>=3.5", "pytest-timeout>=2.3", "pytest-testmon>=2.1"]  # 2026-11-12: tests side by side (-n), a time limit per test; 2026-11-12: only the tests a change affects (--testmon)
 
 [project.scripts]
 enlens = "enlens_claims.cli:main"
 enlens-gui = "enlens_claims.gui.launch:main"
 enlens-mcp = "enlens_claims.mcp_server:main"
+
+# One version, from the tag (0.18.1, roadmap J1.3): a build at the tag v0.18.1 is 0.18.1, and v0.18.1rc1 is 0.18.1rc1.
+# A build after a tag (a git copy between releases) is 0.18.1.post3: later than 0.18.1, earlier than 0.18.2, and with
+# no "dev" or hash in it, which the app's version order (update.version_tuple) would read as a pre-release. Without
+# git (a source archive) the version is "0.0.0", which the app treats as older than every release.
+[tool.setuptools_scm]
+version_scheme = "post-release"
+local_scheme = "no-local-version"
+tag_regex = '^v(?P<version>\d+\.\d+\.\d+(?:rc\d+)?)$'
+fallback_version = "0.0.0"
 
 [tool.setuptools.packages.find]
 where = ["src"]

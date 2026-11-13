@@ -1,0 +1,124 @@
+# ENLENS: the install of what was really published (0.18.1, roadmap J1.9). release.yml tries the install on the built
+# files before the release exists; this one tries the real install line of the published release, which downloads
+# from GitHub's release page as a person's computer does, on Linux, macOS and Windows. It runs when a release is
+# published, and once a week: the weekly run also finds what changed outside ENLENS (uv's installer, a runner's
+# Python, GitHub's release downloads), and the macOS runners that hold up a release are tried here, not on release day.
+# A red run here does not undo a release: see "Rolling back a release" in docs/DEVELOPING.md.
+# A published release's own tag is installed, so a pre-release (a release candidate) is tried too; the weekly run
+# takes the latest full release, as the line on the README does.
+name: Published install
+
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: "41 5 * * 1"   # Mondays
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release to try (v0.18.1), or empty for the latest"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  which:
+    name: Which release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      base: ${{ steps.tag.outputs.base }}
+    steps:
+      - name: Find the tag and the address of its files
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        run: |
+          tag="$EVENT_TAG"
+          if [ -z "$tag" ]; then tag="$(gh release view --json tagName --jq .tagName)"; fi   # the latest full release
+          case "$tag" in v[0-9]*) ;; *) echo "::error::not a version tag: $tag"; exit 1 ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$EVENT_TAG" ]; then   # a release's own files (a pre-release is not "latest")
+            echo "base=https://github.com/$GITHUB_REPOSITORY/releases/download/$tag" >> "$GITHUB_OUTPUT"
+          else                            # the line as the README gives it
+            echo "base=https://github.com/$GITHUB_REPOSITORY/releases/latest/download" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Trying $tag"
+
+  install-unix:
+    name: Install line on ${{ matrix.os }}
+    needs: which
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      ENLENS_NO_OPEN: "1"
+    steps:
+      - name: The install line (macOS, Linux)
+        shell: bash
+        run: curl -fsSL "${{ needs.which.outputs.base }}/install.sh" | sh
+      - name: ENLENS starts, and is the release that was published
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          BIN="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
+          "$BIN/enlens" --help > /dev/null
+          PY="$(uv tool dir)/enlens-claims/bin/python"
+          want="${{ needs.which.outputs.tag }}"
+          "$PY" -c "import sys, enlens_claims as e; print('ENLENS', e.__version__); sys.exit(0 if e.__version__ == '${want#v}' else 'the release says ${want#v}, the install is ' + e.__version__)"
+          "$PY" -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
+          "$PY" -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
+
+  install-windows:
+    name: Install line on windows-latest
+    needs: which
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      ENLENS_NO_OPEN: "1"
+    steps:
+      - name: The install line (Windows PowerShell)
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -c "irm '${{ needs.which.outputs.base }}/install.ps1' | iex"
+          if ($LASTEXITCODE -ne 0) { throw "the install line ended with $LASTEXITCODE" }
+      - name: ENLENS starts, and is the release that was published
+        shell: pwsh
+        run: |
+          $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
+          $bin = (uv tool dir --bin).Trim()
+          & "$bin\enlens.exe" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "enlens did not start" }
+          $py = Join-Path (uv tool dir).Trim() 'enlens-claims\Scripts\python.exe'
+          $want = "${{ needs.which.outputs.tag }}".TrimStart('v')
+          & $py -c "import sys, enlens_claims as e; print('ENLENS', e.__version__); sys.exit(0 if e.__version__ == '$want' else 1)"
+          if ($LASTEXITCODE -ne 0) { throw "the installed ENLENS is not $want" }
+          & $py -c "from enlens_claims import installation as i; assert i.kind() == 'script', i.kind(); print(i.info())"
+          if ($LASTEXITCODE -ne 0) { throw "not recorded as a one-line install" }
+          & $py -c "from enlens_claims import claude_setup as c; c.write_plugin(); r = c.check_connector(); print(r); assert r['ok']"
+          if ($LASTEXITCODE -ne 0) { throw "the connector did not start" }
+
+  provenance:
+    name: The release's files come from this repository
+    needs: which
+    # a release made before attestations (0.18.0 and earlier) has none: only a release event checks them
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check the wheel's attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir files && cd files
+          gh release download "${{ needs.which.outputs.tag }}" --pattern 'enlens_claims-*.whl' --pattern SHA256SUMS
+          sha256sum --check --ignore-missing SHA256SUMS
+          gh attestation verify enlens_claims-*.whl --repo "$GITHUB_REPOSITORY"

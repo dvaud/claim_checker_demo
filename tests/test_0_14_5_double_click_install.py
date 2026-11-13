@@ -23,7 +23,8 @@ from pathlib import Path
 
 import pytest
 
-from test_0100_setup_and_moving import ROOT, VERSION, Runs, _releases, sandbox  # noqa: F401  (fixture)
+# (0.18.1: the files of the release being made are named by the changelog's top entry, not by the running version)
+from test_0100_setup_and_moving import ROOT, RELEASE as VERSION, Runs, _releases, sandbox  # noqa: F401  (fixture)
 
 import release  # tools/, put on the path by test_0100_setup_and_moving
 

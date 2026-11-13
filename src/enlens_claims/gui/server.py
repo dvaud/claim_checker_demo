@@ -1906,6 +1906,12 @@ UPDATE_LOOK_EVERY = 100
 def _installed_version() -> str:
     """0.10.2: the version now on disk. It differs from the running __version__ when ENLENS was updated (git pull,
     the install line, enlens update) while this copy kept running; the page then says to quit and reopen."""
+    try:  # 0.18.1: the version is in the package's metadata (made from the tag), which is read afresh each time
+        from importlib import metadata
+
+        return metadata.version("enlens-claims")
+    except Exception:  # noqa: BLE001 - not installed as a package: an older copy wrote it in __init__.py
+        pass
     try:
         text = (Path(__file__).resolve().parent.parent / "__init__.py").read_text(encoding="utf-8")
     except OSError:

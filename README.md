@@ -56,21 +56,17 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **[The SDG and value chain pack](docs/manual/sdg-pack.md)**:
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
-## New in 0.18: working together as a team
+<!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
+## New in 0.18.0: working together as a team
 
-- **A storage space of your team's own** (Backblaze or Cloudflare, free at a team's size): set up once by the owner,
-  joined from a link with *Join a team…* in the project menu, filled and read by ENLENS by itself, and locked on your
-  computer before it leaves it. An easier shared folder beside it. Cannot change results.
-- **Owner, Co-owner and Member**, and a *Team* page for the team itself: people and roles, invites, where the team
-  works. The *Team* tab keeps the day-to-day: sync, what came in, what you shared. Cannot change results.
-- **Near-duplicate hypotheses**: lines that say nearly the same, and a hypothesis checked before (a colleague's too),
-  are pointed out before a check; lines that differ in strength stay apart. An offer only: cannot change results.
-- **0.17: one look on every page**, *Find* (Ctrl+K or ⌘K), the research log beside every page, and Reader 4 for text
-  and Word files (can change results for the documents you move to it): see the changelog.
+- **Join a team… in the project menu**, under *New project…*: paste the invite link a colleague sent, and a new project fills in by itself.
+- **A Team page for the team itself** (*Manage the team* in the project menu, or the link at the foot of the Team tab): where the team works (storage space or shared folder, with *Technical details*).
+- **The Team tab keeps the day-to-day, in few words**: what waits for your word (only when something does), the sync state in one line with *Sync now* and *Pause*, what needs your attention, what came in and what you shared.
+- **Near-duplicate hypotheses** (roadmap N1). Under the Hypotheses box, as a list is typed: *Lines 1 and 2 are very close: check them as one?*, with *Check as one*.
+<!-- new-in:end -->
 
-How it works: [Work together](docs/manual/together.md) and
-[what a shared folder holds](docs/manual/privacy.md#working-together) in the manual. Every release, with what was not
-tested: [CHANGELOG.md](CHANGELOG.md).
+How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
+[CHANGELOG.md](CHANGELOG.md).
 
 ## How to cite ENLENS
 
