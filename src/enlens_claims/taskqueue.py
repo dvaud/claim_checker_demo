@@ -785,9 +785,13 @@ def advance(ws: Workspace, hyp_ids: list[str] | None = None) -> list[str]:
 # ---------------------------------------------------------------------------------------------
 # waiting in the app
 # ---------------------------------------------------------------------------------------------
-def wait_for(ws: Workspace, task_id: str, backend, poll: float = 1.5) -> tuple[bool, list[str]]:
+QUEUE_POLL = 1.5  # seconds between two looks at a task Claude Code has not answered yet (2026-11-12: tests shorten it)
+
+
+def wait_for(ws: Workspace, task_id: str, backend, poll: float | None = None) -> tuple[bool, list[str]]:
     """Wait until Claude Code has answered a task (through the connector, in another program): the app's own runs
     call this instead of a model. Stop (`backend.should_stop`) ends the wait; the progress line says what waits."""
+    poll = QUEUE_POLL if poll is None else poll
     from .llm import BackendError
     from .tasks import mark_queued
 

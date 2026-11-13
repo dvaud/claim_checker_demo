@@ -1037,8 +1037,8 @@ def test_fetching_a_document_leaves_no_connection_to_its_scratch_project_open(wi
     made: list[Workspace] = []
     real = Workspace.create.__func__
 
-    def create(cls, root):
-        ws = real(cls, root)
+    def create(cls, root, **kw):
+        ws = real(cls, root, **kw)
         made.append(ws)
         return ws
 

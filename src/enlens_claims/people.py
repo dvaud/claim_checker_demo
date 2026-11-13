@@ -54,13 +54,23 @@ def my_name() -> str:
     return (home.load_settings().get("your_name") or "").strip()
 
 
+SEEN_EVERY = 3600   # seconds: when a person was last heard of is noted again only after this long
+
+
 def remember(cx: sqlite3.Connection, person_id: str, name: str | None) -> None:
-    """Note a person's name in the project (the latest name they sent counts)."""
+    """Note a person's name in the project (the latest name they sent counts).
+
+    2026-11-12: the row is written only when the name changed or it was last noted more than SEEN_EVERY ago: every
+    round of the shared folder notes the person who runs it, and rewriting the same row with a new second each time
+    was what an idle round still wrote to disk (a page of the database every two minutes, all day)."""
     if not person_id:
         return
+    stamp = now()
+    before = (_dt.datetime.fromisoformat(stamp) - _dt.timedelta(seconds=SEEN_EVERY)).isoformat()
     cx.execute("INSERT INTO people(person_id, name, seen_at) VALUES (?,?,?) ON CONFLICT(person_id) DO UPDATE SET "
-               "name=COALESCE(NULLIF(excluded.name, ''), people.name), seen_at=excluded.seen_at",
-               (person_id, (name or "").strip()[:60], now()))
+               "name=COALESCE(NULLIF(excluded.name, ''), people.name), seen_at=excluded.seen_at "
+               "WHERE people.name IS NOT COALESCE(NULLIF(excluded.name, ''), people.name) OR people.seen_at IS NULL "
+               "OR people.seen_at < ?", (person_id, (name or "").strip()[:60], stamp, before))
 
 
 def names(ws: Workspace) -> dict[str, str]:

@@ -88,7 +88,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from .. import __version__, people, sharing
-from ..store import Workspace, now
+from ..store import Workspace, now, scratch as scratch_settings
 from . import changes, formats
 from .common import (DOC_ID, LOCAL_ONLY, READING_TABLES as _READING_TABLES, UNFINISHED, _TOKEN, _cols, _pk, _rows, _sha,
                      base_id, text_fp)
@@ -1203,8 +1203,12 @@ class _Writer:
         (`_leaks`), so nothing that is not shared can be in it."""
         tmp = Path(tempfile.mkdtemp(prefix="enlens-bundle-"))
         try:
-            db = Workspace.create(tmp / "b").db_path
-            bcx = sqlite3.connect(db)
+            db = Workspace.create(tmp / "b", scratch=True).db_path
+            bcx = scratch_settings(sqlite3.connect(db))
+            # 2026-11-12: a file of its own, thrown away if anything fails: its rows are written once (in WAL mode they
+            # went to the log and then into the file) and VACUUM's copy is made in memory; a bundle of 4.7 MB wrote
+            # 11 MB instead of 27 MB. Not WAL in the zip either: a colleague's ENLENS reads it as one plain file.
+            bcx.execute("PRAGMA journal_mode=MEMORY")
             known = set(self.stubs) | set(self.absent) | set(self.removed)
             named: set[str] = set()
             try:
@@ -1230,7 +1234,6 @@ class _Writer:
                 if problem:
                     raise FolderProblem("ENLENS stopped before writing to the shared folder: " + problem +
                                         " Nothing was written. Please report this.", "leak")
-                bcx.execute("PRAGMA journal_mode=DELETE")
                 bcx.execute("VACUUM")  # nothing left in free pages
             finally:
                 bcx.close()
@@ -1509,7 +1512,7 @@ def fetch_documents(ws: Workspace, doc_ids: Iterable[str]) -> list[str]:
         tmp = Path(tempfile.mkdtemp(prefix="enlens-fetch-"))
         scratch = None
         try:
-            scratch = Workspace.create(tmp / "work")
+            scratch = Workspace.create(tmp / "work", scratch=True)
             with scratch.connect() as scx:
                 scratch.set_meta("project_uid", ws.project_uid(), scx)
                 try:
@@ -2016,7 +2019,7 @@ def _merge_bundles(ws: Workspace, team: Path, pid: str, who_name: str, person: d
     tmp = Path(tempfile.mkdtemp(prefix="enlens-folder-"))
     scratch = None
     try:
-        scratch = Workspace.create(tmp / "work")
+        scratch = Workspace.create(tmp / "work", scratch=True)
         stubs: dict[str, dict] = {}
         latest: dict[tuple[str, str], str] = {}
         with scratch.connect() as scx:

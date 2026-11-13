@@ -84,6 +84,7 @@ from .api_common import (  # noqa: F401 - the names are importable from here as 
 )
 
 STATIC = Path(__file__).with_name("static")
+FOLLOW_POLL = 2.0  # seconds between two looks at checks that wait for Claude Code (`follow_queued`; tests shorten it)
 
 
 
@@ -799,10 +800,11 @@ class App(LibraryMixin, QueueMixin):
 
         return self.jobs.start("check", text[:120], name, run, uses_model=True)
 
-    def follow_queued(self, job: Job, ws, hyp_ids: list[str], tracker: Tracker, poll: float = 2.0) -> None:
+    def follow_queued(self, job: Job, ws, hyp_ids: list[str], tracker: Tracker, poll: float | None = None) -> None:
         """Follow checks by queue until Claude Code has answered their steps; their steps are taken as the answers
         arrive (here, or in the connector). Stop withdraws the checks that are still waiting. (0.13.6: public;
-        `_follow_queued` before.)"""
+        `_follow_queued` before.) It looks every FOLLOW_POLL seconds (2026-11-12: tests shorten it)."""
+        poll = FOLLOW_POLL if poll is None else poll
         shown: dict[str, str] = {}
         t0 = time.time()
         # 0.11: the local model for restricted documents (Claude reads the rest). 0.13.11: it shows what it does and

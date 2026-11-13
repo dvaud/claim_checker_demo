@@ -16,6 +16,15 @@ When a round is due:
   run beside (adding documents, the new reader, another round: api_common.LANES): then the round waits, without
   queueing a job, and starts at the first look after that job ended (state "busy").
 
+Idle (2026-11-12): after IDLE_AFTER rounds in a row by the poller that found nothing to write, nothing to read, no
+file to fetch and no problem, the wait doubles each further idle round, up to four times the interval and never past
+IDLE_MAX unless the interval itself is longer (2, 2, 2, then 4, then 8 minutes with the default interval; with a
+storage space's 10 minutes, 10 then 15). An idle round writes nothing to disk any more (tests/test_idle_writes.py),
+but it still lists the folder, which a cloud service's program may then look through too, all day for a project
+nobody is working on; a colleague's work then arrives at most eight minutes later than it would, while a change made
+here still brings a round in DEBOUNCE seconds. The normal interval comes back at once with any change made through the
+app in the project (the debounce path), a round that found something (or met a problem), and a round by hand.
+
 Offline: a round whose problems are all `unreachable` (the drive is not connected, the folder was moved) means the
 folder cannot be reached. The next try waits twice as long each time (2, 4, 8, 16, then 30 minutes with the default
 interval) and changes in the project do not bring it forward; the first round that reaches the folder brings the
@@ -44,6 +53,9 @@ TICK = 5.0              # seconds between two looks of the thread
 START_DELAY = 15.0      # the first round, after the app starts
 DEBOUNCE = 20.0         # a round after the last change made in the project
 MAX_BACKOFF = 30 * 60   # offline: the longest wait between two tries (unless the interval itself is longer)
+IDLE_AFTER = 3          # idle rounds in a row at the usual interval before the wait grows
+IDLE_FACTOR = 4         # idle: at most this many intervals between two rounds
+IDLE_MAX = 15 * 60      # idle: and never longer than this (unless the interval itself is longer)
 TITLE = "Working together: the shared folder"   # as api_folder names a round by hand
 SEEN = "sync_came_in_seen"                       # meta: the last sync_log entry the person has seen
 EVERY = "sync_every_minutes"
@@ -93,6 +105,17 @@ def offline(result: Any) -> bool:
         any(not x.get("person") for x in probs)
 
 
+def idle(result: Any) -> bool:
+    """2026-11-12: a round that found nothing: it wrote no bundle, brought in nothing, fetched no file and met no
+    problem (one waiting for a colleague's documents expects something soon) and was not stopped."""
+    if not isinstance(result, dict) or result.get("stopped") or result.get("problems") or _int(result.get("files")):
+        return False
+    wrote = result.get("wrote")
+    if isinstance(wrote, dict) and wrote.get("seq") is not None:
+        return False
+    return not any(isinstance(e, dict) and e.get("report") for e in result.get("read") or [])
+
+
 def _round(ws, job: Job) -> dict | None:
     """One round as a job. Stopped (the person stops it, the app quits), it ends between two steps of the round
     (`folder.sync_now`'s `should_stop`) and returns None, so the job ends as cancelled ("Last round stopped")."""
@@ -112,6 +135,7 @@ class _Project:
         self.touched: float | None = None     # the last change made through the app
         self.touched_wall: float | None = None  # the same, on the computer's clock (time.time, as a job's `started`)
         self.failures = 0                     # rounds in a row that could not reach the folder
+        self.idle = 0                         # the poller's rounds in a row that found nothing (`idle`)
         self.offline_since: float | None = None   # wall clock
         self.last: dict | None = None         # the last round's summary
         self.round: Job | None = None         # the round the poller started or found, until it ends
@@ -198,7 +222,8 @@ class Poller:
     def _wait(self, p: _Project) -> float:
         every = max(self.every(), p.min_every)
         if p.failures <= 0:
-            return every
+            grown = every * 2 ** min(max(0, p.idle - IDLE_AFTER), 16)   # (16: no overflow after months idle)
+            return min(grown, max(every, min(IDLE_FACTOR * every, IDLE_MAX)))
         return min(every * 2 ** min(p.failures - 1, 16), max(self.max_backoff, every))   # (weeks offline: no overflow)
 
     def _due(self, p: _Project) -> float:
@@ -284,6 +309,12 @@ class Poller:
             p.offline_since = p.offline_since or self.wall()
         elif job.state == "done":
             p.failures, p.offline_since = 0, None
+        # idle: only the poller's own rounds that found nothing count; a round by hand, one that found something, one
+        # offline (backed off as such) or one that failed brings the usual interval back (a stopped one changes nothing)
+        if job.state == "done" and not off and job.background and idle(res):
+            p.idle += 1
+        elif job.state != "cancelled":
+            p.idle = 0
         p.last = {"job": job.id, "background": job.background, "state": job.state, "finished_at": _iso(job.finished),
                   "offline": off, "problems": res.get("problems") or [],
                   "came_in": sum(things(e.get("report")) for e in res.get("read") or [] if isinstance(e, dict)),
@@ -296,6 +327,7 @@ class Poller:
         with self.lock:
             p = self._project(name)
             p.touched, p.touched_wall = self.clock(), time.time()
+            p.idle = 0   # the usual interval again
 
     # -- what the Team tab shows ----------------------------------------------------------------------------------
     def _job_now(self, name: str) -> Job | None:

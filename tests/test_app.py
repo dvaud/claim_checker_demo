@@ -206,6 +206,33 @@ class Api:
         raise AssertionError("job did not finish")
 
 
+def _wait_until(cond, timeout=30, step=0.02):
+    """2026-11-12: poll for a condition (a generous timeout: CI machines are slow) instead of sleeping a fixed time."""
+    t0 = time.monotonic()
+    while not cond():
+        if time.monotonic() - t0 > timeout:
+            raise AssertionError("the condition was not met in time")
+        time.sleep(step)
+
+
+class _SkewedDatetime:
+    """Stands in for `datetime` inside `store`, so that `store.now()` runs `seconds` ahead of the real clock."""
+
+    def __init__(self, seconds):
+        import datetime as real
+        self._real, self._skew = real, real.timedelta(seconds=seconds)
+        outer = self
+
+        class _DT:
+            @staticmethod
+            def now(tz=None):
+                return outer._real.datetime.now(tz) + outer._skew
+        self.datetime = _DT
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
 @pytest.fixture
 def api(home):
     from enlens_claims.gui.server import make_server
@@ -322,8 +349,10 @@ def test_api_check_with_a_local_server_semantic_index_and_cancel(api, corpus):
         assert {p["found_by"] for p in h["parts"][0]["passages"]} & {"both", "meaning"}
 
         srv.delay = 0.2  # slow enough to stop it midway
+        seen = len(srv.requests)
         st, r = api("POST", "/api/projects/P/checks", {"text": CLAIM, "k": 3})
-        time.sleep(0.5)
+        # 2026-11-12: wait until the model has begun to answer (it streams for seconds at this delay), not a fixed 0.5 s
+        _wait_until(lambda: any(p == "/api/chat" for p, _ in srv.requests[seen:]), 30)
         api("POST", f"/api/jobs/{r['job']['id']}/cancel")
         job = api.wait(r["job"]["id"])
         assert job["state"] == "cancelled"
@@ -625,7 +654,7 @@ def test_api_second_model_keeps_one_model_in_memory_and_shows_disagreements(api)
         srv.shutdown()
 
 
-def test_api_map_calibration_new_documents_and_project_zip(api, tmp_path):
+def test_api_map_calibration_new_documents_and_project_zip(api, tmp_path, monkeypatch):
     srv, url = fake_servers.start("ollama")
     srv.varied = True
     try:
@@ -640,8 +669,9 @@ def test_api_map_calibration_new_documents_and_project_zip(api, tmp_path):
         cal = api("GET", "/api/projects/Z/calibration")[1]
         assert cal["total"] == 0 and cal["suggestion"] is None and len(cal["bins"]) == 6 and "20" in cal["note"]
 
-        import time
-        time.sleep(1.1)
+        # 2026-11-12: stored times have whole seconds, so the clock jumps 2 s instead of the test sleeping past a second
+        from enlens_claims import store
+        monkeypatch.setattr(store, "_dt", _SkewedDatetime(2))
         (tmp_path / "late").mkdir()
         (tmp_path / "late" / "late_commute_study.txt").write_text(
             "A late study of commuting. Working from home reduces commuting emissions by a fifth in our sample. " * 3)

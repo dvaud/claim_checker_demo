@@ -30,26 +30,55 @@ commit on `main` that never needs a new venv, and a published GitHub Release wit
 
 ```bash
 pip install -e '.[dev,fast,connector,anthropic,pdfminer,ocr]'   # every extra, so no test is skipped for a missing one
-python -m pytest -q -rs -n 4   # four side by side (pytest-xdist): about 2 minutes on a Mac; without -n, one at a time
+python -m pytest -q --testmon tests/test_<what you changed>.py   # while working: the tests your change affects
+python -m pytest -q -rs -n 4 --durations=15                      # the whole suite, alone on the computer, before a release
 ```
 
-`.github/workflows/tests.yml` runs the suite on every push to `main` and every pull request, on Linux (Python 3.10
-and 3.13), macOS and Windows (0.15; required since 0.15.7, when the suite first passed on all three), with the extras `dev,connector,fast,pdfminer` and a quick `ruff` check for syntax
-errors and undefined names. Each machine runs the tests side by side (`-n auto`), each test with a 10-minute limit
-(`--timeout=600`: a test that hangs fails with its stack), and Windows, the slowest, is split over four machines
-(`ENLENS_TEST_SHARD=k/4`, a split made in `tests/conftest.py`), so a run takes about 8 minutes (it took 30 to 35 one
-test at a time). The 25 slowest tests of each machine are listed at the end of its log: read them before guessing why
-a run got slower. Side by side, the heaviest tests take several times longer than alone, so a test that waits for a
-job, a thread or a process to end waits for that end, not for a fixed time. The release workflow does not run the
-suite again: it takes the result of this run on the tagged commit (*Releases*). Neither installs `anthropic` or the OCR
-extra, so the tests that need them are skipped there: run the whole suite on your own computer before a release. Tests never touch a real Claude Code, uv or
-the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere, gives every test its own `ENLENS_HOME` (and keeps
-secrets in files there, `ENLENS_KEYCHAIN=file`, never the computer's keychain) and reads
-added documents one at a time (`ENLENS_READ_WORKERS=1`, so a stand-in a test puts in this process is what reading
-sees; `tests/test_0_16_0_speed.py` reads at once on purpose);
-`tests/fake_claude_cli.py`, `tests/fake_claude_installer.py`, `tests/fake_servers.py` and `tests/fake_zotero.py` stand
-in for the real programs. A release's tests go in a new file `tests/test_<X>_<Y>_<Z>_<topic>.py`; older files keep
-their names. [docs/USER_TESTS.md](USER_TESTS.md) has the first-time user tests behind the app (0.5.1 to 0.7.0).
+**CI is where the whole suite runs** (2026-11-12). `.github/workflows/tests.yml` runs it on every push to `main` and
+every pull request, on Linux (Python 3.10, and 3.13 with every optional extra: the Claude API, OCR with Tesseract,
+PyYAML), macOS and Windows (0.15; required since 0.15.7), with a quick `ruff` check for syntax errors and undefined
+names. Each machine runs the tests side by side (`-n auto`), each test with a 10-minute limit (`--timeout=600`: a test
+that hangs fails with its stack), and Windows, the slowest, is split over four machines (`ENLENS_TEST_SHARD=k/4`, a
+split made in `tests/conftest.py`), so a run takes about 8 minutes. The 25 slowest tests of each machine are listed at
+the end of its log: read them before guessing why a run got slower. Side by side, the heaviest tests take several
+times longer than alone, so a test that waits for a job, a thread or a process to end waits for that end, not for a
+fixed time. The jobs other than Linux 3.13 install only `dev,connector,fast,pdfminer`, so a test that needs another
+extra must skip without it (`pytest.importorskip`). `.github/workflows/nightly.yml` runs the random runs (below) with
+30 seeds each night. The release workflow does not run the suite again: it takes the result of the Tests run on the
+tagged commit (*Releases*).
+
+**On a laptop, run little.** A full run once wrote ~25 GB and, three at a time, ran a 16 GB Mac out of memory. So:
+- while working, run the tests of what you changed; `pytest-testmon` (in the `dev` extra) records which tests touch
+  which code, and `--testmon` reruns only those (its first run is a full one; its data is `.testmondata` in the
+  copy). pytest's cache is on, one per git copy: `--lf` reruns the last failures and `--ff` runs them first;
+- a run of the whole suite (no test file named, no `-m`) leaves out the tests marked `heavy`; CI runs them, and
+  `ENLENS_ALL_TESTS=1`, or naming their file, runs them here. Mark a test `heavy` when it writes hundreds of MB or
+  runs for many seconds;
+- the seeded random runs of the 0.18 roles (`random`: `test_0_18_0_roles_random.py`, `test_0_18_0_owner_random.py`)
+  run 2 seeds here, 10 in CI (`CI` set) and 30 with `ENLENS_LONG_RANDOM=1`;
+- one test run at a time on the computer, at most `-n 4`; the whole suite only once, after merging and before a
+  release;
+- a passing test's `tmp_path` is removed when it ends (`tmp_path_retention_policy = "failed"`); a failing one's stays;
+- tests use SQLite without forced flushes (`ENLENS_TEST_FAST_SQLITE`, set by `tests/conftest.py`); a test that needs
+  the real flushes and journal is marked `durable`;
+- `ENLENS_TEST_TMP=<folder>`, or a volume named `ENLENS-TESTS`, puts every test file there instead of the system's
+  temporary folder. On a Mac a 1 GB RAM disk stops test runs wearing the SSD:
+  `diskutil erasevolume APFS ENLENS-TESTS $(hdiutil attach -nomount ram://2097152)`; it takes that much memory until
+  ejected (`diskutil eject ENLENS-TESTS`), so make one only when memory is free.
+
+**How much a test writes.** `tools/writemeter.py`, loaded by `tests/conftest.py`, measures the bytes each test writes
+(macOS, Linux and Windows). A test not marked `heavy` that writes more than `ENLENS_WRITE_BUDGET_MB` (default 200)
+warns (`WriteBudgetWarning`), so a new heavy test is caught the day it is added; `ENLENS_WRITES=15` lists the 15 tests
+that wrote the most at the end of a run, `ENLENS_WRITES_JSON=<file>` keeps every test's number, and `--durations=15`
+the slowest.
+
+Tests never touch a real Claude Code, uv or the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere, gives
+every test its own `ENLENS_HOME` (and keeps secrets in files there, `ENLENS_KEYCHAIN=file`, never the computer's
+keychain) and reads added documents one at a time (`ENLENS_READ_WORKERS=1`, so a stand-in a test puts in this process
+is what reading sees; `tests/test_0_16_0_speed.py` reads at once on purpose); `tests/fake_claude_cli.py`,
+`tests/fake_claude_installer.py`, `tests/fake_servers.py` and `tests/fake_zotero.py` stand in for the real programs. A
+release's tests go in a new file `tests/test_<X>_<Y>_<Z>_<topic>.py`; older files keep their names.
+[docs/USER_TESTS.md](USER_TESTS.md) has the first-time user tests behind the app (0.5.1 to 0.7.0).
 
 ## Trying the app
 
@@ -67,7 +96,9 @@ their names. [docs/USER_TESTS.md](USER_TESTS.md) has the first-time user tests b
 | `--reading` | a project *Reading* with the PDFs of known text of `enlens measure`, one of them read by the reader of 0.14 and with a check on it (0.15: the reading view, *Read with the new reader*) |
 | `--zotero`, `--update`, `--ollama`, `--low-memory` | a stand-in Zotero (0.13), a stand-in newer version (0.13.1; `--update windows`, `windows-fails`: the hand-over of Windows, 0.15.4), a local model still to get (0.13.7), too little memory for it (0.13.11) |
 
-`--home FOLDER` keeps its data apart and `--port` sets the port. Look at every page you touched in the light and dark
+`--home FOLDER` keeps its data apart and `--port` sets the port. The dev server stops by itself after 60 minutes
+(`--max-minutes`, 0 = never) and when the Claude Code process that started it ends (`--watch-pid` names another), so a
+forgotten one does not keep running. Look at every page you touched in the light and dark
 themes and at 390 px wide.
 
 ## Layout
@@ -154,7 +185,8 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   `SHA256SUMS`, a try of the install line on Linux, macOS and Windows and of the files on Windows and macOS, and a
   draft GitHub Release. Publish
   the draft by hand; never make a release by hand, which would lack the files the install line needs.
-- **The order of a release** (2026-11-12): run the whole suite on your own computer (*Tests*: about 2 minutes), push
+- **The order of a release** (2026-11-12): run the whole suite on your own computer, alone (*Tests*: about 2 minutes;
+  optional now that CI runs every extra, but it catches a defect before it costs a push), push
   the release commit to `main` (`git push origin <commit>:refs/heads/main`), wait for its Tests run to be green (about
   8 minutes: `gh run list --workflow tests.yml`, then `gh run watch <id> --exit-status`), and only then push the tag.
   The release workflow then takes about 2 minutes: it finds that Tests has passed on the tagged commit and does not

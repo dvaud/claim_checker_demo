@@ -15,9 +15,10 @@ After **every** round (plan §9.2):
 - the chain agrees: copies that hold the same records of who the owner is name the same owner.
 At the end the team goes quiet (everyone syncs until nothing is written, at most 8 rounds) and the copies converge.
 
-The default run (CI) is 10 seeds x 40 rounds x 3 copies, about 45 s (a round of the folder is ~80 ms; 0-2 copies sync
+The default run is 10 seeds in CI (`CI` set) and 2 on this computer, x 40 rounds x 3 copies; in CI about 45 s (a round of the folder is ~80 ms; 0-2 copies sync
 per round). `ENLENS_LONG_RANDOM=1` runs 30 seeds x 80 rounds x 4 copies (1-4 sync per round), about 12 min of CPU;
-`ENLENS_L2_SEEDS`, `ENLENS_L2_ROUNDS`, `ENLENS_L2_PEOPLE` and `ENLENS_L2_FIRST_SEED` set each. A failure names the seed
+`ENLENS_L2_SEEDS`, `ENLENS_L2_ROUNDS`, `ENLENS_L2_PEOPLE` and `ENLENS_L2_FIRST_SEED` set each. Marked `heavy` (each seed
+writes ~300 MB): a local run of the whole suite leaves it out. A failure names the seed
 and the round, and prints the last actions (`ENLENS_L2_TAIL=<n>` more of them; `ENLENS_L2_DUMP=<doc id>` what every copy
 says of one document). Person ids and the app's clock are fixed, so a seed is the same run every time.
 """
@@ -40,8 +41,8 @@ from owner_helpers import TEXTS, leave_out
 from owner_more_helpers import join_zip, small_project
 from test_0_14_0_shared_projects import Person
 
-LONG = os.environ.get("ENLENS_LONG_RANDOM") == "1"
-SEEDS = int(os.environ.get("ENLENS_L2_SEEDS") or (30 if LONG else 10))
+LONG = "1" in (os.environ.get("ENLENS_LONG_RANDOM"), os.environ.get("ENLENS_L2_LONG"))
+SEEDS = int(os.environ.get("ENLENS_L2_SEEDS") or (30 if LONG else 10 if os.environ.get("CI") else 2))
 ROUNDS = int(os.environ.get("ENLENS_L2_ROUNDS") or (80 if LONG else 40))
 PEOPLE = int(os.environ.get("ENLENS_L2_PEOPLE") or (4 if LONG else 3))
 FIRST = int(os.environ.get("ENLENS_L2_FIRST_SEED") or 0)
@@ -661,6 +662,8 @@ def _seeds():
             yield s
 
 
+@pytest.mark.heavy
+@pytest.mark.random
 @pytest.mark.parametrize("seed", list(_seeds()))
 def test_a_long_random_run_keeps_every_result_every_secret_and_the_stricter_setting(seed, tmp_path, monkeypatch, clock):
     run = Run(tmp_path, monkeypatch, seed, PEOPLE)

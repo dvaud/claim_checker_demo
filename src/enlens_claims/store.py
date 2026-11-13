@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import sqlite3
 import threading
 import weakref
@@ -568,12 +569,74 @@ def _setup_addons(cx: sqlite3.Connection) -> None:
             cx.executescript(db["indexes"])
 
 
+def fast_tests() -> bool:
+    """2026-11-12: set by the test suite (tests/conftest.py `_fast_sqlite`) for every test not marked `durable`."""
+    return os.environ.get("ENLENS_TEST_FAST_SQLITE") == "1"
+
+
+# 2026-11-12: the write-ahead log is cut back to this size when it starts again from its beginning. Without a limit it
+# keeps the size of the largest transaction it ever held (adding many documents, a new glossary: hundreds of MB) for as
+# long as the app has the project open. Twice the size at which SQLite copies the log into the file by itself (1000
+# pages of 4 KB), so everyday writing never cuts and regrows it; only the log of a big write is trimmed.
+JOURNAL_SIZE_LIMIT = 8 * 1024 * 1024
+
+
+def tune(cx: sqlite3.Connection) -> sqlite3.Connection:
+    """2026-11-12: the settings of every connection that writes to a project database. NORMAL is safe with WAL and
+    saves a flush per commit. In tests (`fast_tests`) nothing is flushed (synchronous=OFF: a test's files are thrown
+    away, and a test process that ends abruptly still leaves what it wrote with the system) and temporary tables and
+    sorts stay in memory. The journal stays WAL in tests too: measured on four of the 0.18 test files, a rollback
+    journal in memory wrote 5% less but four tests failed and the files took four times as long (readers and writers
+    wait for each other there)."""
+    if fast_tests():
+        cx.execute("PRAGMA synchronous=OFF")
+        cx.execute("PRAGMA temp_store=MEMORY")
+    else:
+        cx.execute("PRAGMA synchronous=NORMAL")
+    cx.execute(f"PRAGMA journal_size_limit={JOURNAL_SIZE_LIMIT}")
+    return cx
+
+
+def trim_log(cx: sqlite3.Connection, db_path: Path) -> bool:
+    """2026-11-12: after a write, a log grown past JOURNAL_SIZE_LIMIT is copied into the database and emptied at once,
+    not at the next write (which may be hours away while the app idles). Only when nothing else reads an older state
+    of the project right now: it never waits (busy_timeout 0) and, if something does, is left for SQLite's own
+    checkpoints. One look at the log's size per transaction otherwise. Returns whether it emptied the log."""
+    try:
+        if os.stat(f"{db_path}-wal").st_size <= JOURNAL_SIZE_LIMIT:
+            return False
+    except OSError:
+        return False
+    wait = cx.execute("PRAGMA busy_timeout").fetchone()[0]
+    try:
+        cx.execute("PRAGMA busy_timeout=0")
+        busy = cx.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        return bool(busy) and busy[0] == 0
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        cx.execute(f"PRAGMA busy_timeout={int(wait)}")
+
+
+def scratch(cx: sqlite3.Connection) -> sqlite3.Connection:
+    """2026-11-12: the settings of a connection to a database that is thrown away when the work ends (a bundle being
+    put together, the copy a zip is made from): no flushes, and temporary tables, sorts and VACUUM's copy in memory.
+    A computer that stops in the middle loses only the scratch file, which is made again."""
+    cx.execute("PRAGMA synchronous=OFF")
+    cx.execute("PRAGMA temp_store=MEMORY")
+    return cx
+
 _ONE_TRANSACTION = True  # a new database is set up in one transaction (False: a statement at a time, as before)
-_EMPTY: dict[str, bytes] = {}
+_EMPTY: dict[tuple[str, int | None], bytes] = {}
 _EMPTY_LOCK = threading.Lock()
+# 2026-11-12: a scratch project's pages are 1 KB, not SQLite's 4 KB: an empty project is one page per table and index
+# (164 of them), so its empty database is 181 KB instead of 672 KB, and a round makes one per colleague whose work it
+# reads and one for the bundle it writes. Its rows are few in nearly every round; a large first bundle is read a little
+# more slowly. A bundle's database keeps the size (VACUUM does), which a colleague's ENLENS reads as any other.
+SCRATCH_PAGE_SIZE = 1024
 
 
-def _copy_empty_database(dest: Path) -> None:
+def _copy_empty_database(dest: Path, page_size: int | None = None) -> None:
     """2026-11-13: a new project's database is a copy of an empty one that this process made once, the usual way
     (`Workspace._setup`), and keeps in memory as the file's bytes. Setting one up takes about 17 ms on a Mac and many
     times that on Windows, most of it the columns added after a table was made (each makes SQLite read the whole
@@ -586,12 +649,15 @@ def _copy_empty_database(dest: Path) -> None:
     when first asked for).
 
     The copy is written beside `dest` and put in place only if there is no database there yet, so two creations of the
-    same new project at once never copy an empty database over what the other already wrote (after review)."""
+    same new project at once never copy an empty database over what the other already wrote (after review).
+
+    `page_size`: of the empty database (None: SQLite's own, 4 KB), for scratch projects (SCRATCH_PAGE_SIZE)."""
     import os
 
     from .addons import database
 
-    key = repr((SCHEMA, INDEXES, MIGRATIONS, database()))
+    layout = repr((SCHEMA, INDEXES, MIGRATIONS, database()))
+    key = (layout, page_size)
     with _EMPTY_LOCK:
         empty = _EMPTY.get(key)
         if empty is None:
@@ -601,6 +667,13 @@ def _copy_empty_database(dest: Path) -> None:
             tmp = Path(tempfile.mkdtemp(prefix="enlens-empty-"))
             try:
                 made = Workspace(tmp)
+                if page_size:
+                    cx = sqlite3.connect(made.db_path)
+                    try:
+                        cx.execute(f"PRAGMA page_size={int(page_size)}")
+                        cx.execute("PRAGMA journal_mode=WAL")  # the file is made, with that page size
+                    finally:
+                        cx.close()
                 made._setup()  # closes its connection: the log is written into the file and removed
                 left = [f.name for f in tmp.iterdir() if f.name != made.db_path.name]
                 if left:
@@ -608,7 +681,8 @@ def _copy_empty_database(dest: Path) -> None:
                 empty = made.db_path.read_bytes()
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
-            _EMPTY.clear()  # only the latest layout is wanted
+            for k in [k for k in _EMPTY if k[0] != layout]:
+                del _EMPTY[k]  # only the latest layout is wanted
             _EMPTY[key] = empty
     part = dest.with_name(f"{dest.name}.{os.getpid()}-{threading.get_ident()}.new")
     part.write_bytes(empty)
@@ -639,8 +713,12 @@ class Workspace:
     Nested `connect()` blocks become savepoints, so an inner block that fails undoes only its own writes.
     """
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, scratch: bool = False):
         self.root = Path(root)
+        # 2026-11-12: a scratch project (the copy a round of the shared folder puts a colleague's bundles together in),
+        # used by one thread and thrown away when the work ends: its connections write each change once (a rollback
+        # journal in memory, where WAL writes it to the log and again into the file) and never flush (`scratch`)
+        self.scratch = scratch
         self.db_path = self.root / "enlens.sqlite"
         self.config_path = self.root / "config.json"
         self._local = threading.local()
@@ -655,8 +733,8 @@ class Workspace:
 
     # ---- lifecycle -------------------------------------------------------------------------
     @classmethod
-    def create(cls, root: str | Path) -> "Workspace":
-        ws = cls(root)
+    def create(cls, root: str | Path, scratch: bool = False) -> "Workspace":
+        ws = cls(root, scratch=scratch)
         ws.root.mkdir(parents=True, exist_ok=True)
         for sub in ("tasks", "results", "exports", "report"):
             (ws.root / sub).mkdir(exist_ok=True)
@@ -664,7 +742,10 @@ class Workspace:
             ws.config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=2))
         if not ws.db_path.exists():
             try:
-                _copy_empty_database(ws.db_path)
+                if scratch:
+                    _copy_empty_database(ws.db_path, SCRATCH_PAGE_SIZE)
+                else:
+                    _copy_empty_database(ws.db_path)
             except (OSError, sqlite3.Error):
                 pass  # (no temporary folder, say) `_setup` makes it the usual way
         ws._setup()  # as for any project: whatever the copy lacks is added here
@@ -685,7 +766,7 @@ class Workspace:
             # each statement of the schema below is a transaction of its own: with the default FULL each one is
             # flushed to disk (about a second per new project on Windows, and a round of the shared folder makes
             # one to three scratch projects); NORMAL, as every connection of `_conn`, is safe with WAL
-            cx.execute("PRAGMA synchronous=NORMAL")
+            tune(cx)
             doc_cols = {r[1] for r in cx.execute("PRAGMA table_info(documents)")}
             before_011 = bool(doc_cols) and "ai_access" not in doc_cols  # a project made before 0.11, opened now
             before_018 = not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='shares'").fetchone()
@@ -725,7 +806,11 @@ class Workspace:
             # thread: each connection is still used by the thread that opened it alone
             cx = sqlite3.connect(self.db_path, timeout=60, isolation_level=None, factory=_Cx, check_same_thread=False)
             cx.row_factory = sqlite3.Row
-            cx.execute("PRAGMA synchronous=NORMAL")  # safe with WAL; much faster commits
+            if self.scratch:
+                scratch(cx)
+                cx.execute("PRAGMA journal_mode=MEMORY")
+            else:
+                tune(cx)  # synchronous=NORMAL: safe with WAL; much faster commits
             # a project may have come from someone else: nothing its database's own definitions name (in a default, an
             # index, a check) may call functions that reach outside the database
             cx.execute("PRAGMA trusted_schema=OFF")
@@ -793,6 +878,8 @@ class Workspace:
             raise
         self._local.depth = depth
         cx.execute("COMMIT" if depth == 0 else f"RELEASE sp{depth}")
+        if depth == 0 and not self.scratch:
+            trim_log(cx, self.db_path)
 
     # ---- small helpers ---------------------------------------------------------------------
     def query(self, sql: str, args: tuple | list = ()) -> list[sqlite3.Row]:
