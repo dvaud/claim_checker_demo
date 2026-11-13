@@ -31,14 +31,15 @@ by `--local-only`.
 release with its sync (`tools/sync_enlens.py` in Margin), so a feature both apps need, or one that changes code they
 share (`ingest.py`, `terms.py`, `routing.py`, `llm.py`, the task queue), is built here once and never twice.
 
-## Where things stand (12 November 2026)
+## Where things stand (13 November 2026)
 
 | Release | What it built, and what waits |
 | --- | --- |
 | **0.15** | Released as 0.15.0 (8 November 2026), with patches up to 0.15.7: A0 to A5, H1, CI on three systems and the beta channel (J1 items 1 and 6), the rollback runbook (J1 item 10), versions on results (J4.2), issue forms and `SECURITY.md` (J4.5), and the half of the validation report that needs no AI (J4.3). J4.1 is dropped: ENLENS gives no citation file or DOI, by choice. |
 | **0.16** | Released as 0.16.0 (9 November 2026) and 0.16.1: H3, H2, H6 for `gui/server.py`, F4, F2, F5 and K1. Not built yet, and waiting for a later release: A6, D1 to D4, B5, G5, the AI mix (I5, H4, I1, I2, I4), H5, and `docs/METHODS.md` and `docs/PRIVACY.md` (J4.4). |
 | **0.17** | Released as 0.17.0 (12 November 2026): the sidebar of seven places, key terms without each language's common words, small fixes from use (M1, M2, M4, M6), the design guide (`docs/DESIGN.md`) with one look on every page, and working together, live: L1 to L5 (private until shared, one owner, a shared folder looked at every couple of minutes, the Team tab). Its release candidates were 0.17.0rc1 to rc5. Not tried yet between two computers on a real OneDrive, Dropbox or network drive, nor on a real Windows PC; four smaller points wait for a later release ([below](#017-working-together-live)). |
-| **0.18** | Candidates: 0.18.0rc1 (12 November 2026), Owner, Co-owner and Member roles with merges no file can abuse; 0.18.0rc2 (12 November 2026), a storage space of the team's own (L6, at Backblaze or Cloudflare, sealed and signed), an easier shared folder (L7), and M3, M7, M8. Not tried yet with real accounts at the two services, nor by a team on real computers. |
+| **0.18** | Released as 0.18.0 (13 November 2026), after three candidates: Owner, Co-owner and Member roles with merges no file can abuse; a storage space of the team's own (L6, at Backblaze or Cloudflare, sealed and signed), an easier shared folder (L7), M3, M7, M8 and N1. Not tried yet with real accounts at the two services, nor by a team on real computers. |
+| **0.18.1** | Every open item that was not an XL, entirely new feature (planned 13 November 2026, built in two parts side by side): A6 (reader 5), B5, D2 to D4, H4, H5, H6 for `claimcheck.py`, I1, I2, I4, I5, K2 (Level 0), N2, N4, the rest of J4.2, J4.4, J1 items 3 to 5, 7 to 9 and 11, J2 items 2, 5 and 6, and the open points of L after 0.17.0. Left: D1, G5 and N3 (large new features), J4.3's AI half, J1.2 and J2.4 (below). |
 
 ## Releases 0.15 to 0.17
 
@@ -119,7 +120,7 @@ order, each step tested before the next:
 4. **L2**: one owner, and proposals by severity.
 5. **Finishing**: a round that stops part-way when ENLENS quits, the work box, and the manual's pages.
 
-Built in 0.17.0 (November 2026). Still to do, after 0.17.0:
+Built in 0.17.0 (November 2026). Still to do, after 0.17.0 (the last four built in 0.18.1):
 
 - Try it between two computers through a real OneDrive, Dropbox and network drive, and on a real Windows PC. The
   first try on OneDrive (12 November 2026) found the set-up clunky: [L6 and L7](#l-working-together-live).
@@ -224,7 +225,7 @@ sync only brings ENLENS into Margin, so nothing could take it the other way, and
 - How well the document was read: share of text recovered, columns found, words repaired, blocks left out by kind,
   tables found, pages that needed OCR. A warning on documents that read badly, before they spoil a check.
 
-**A6. Tables, figures and images, kept light** · Level 0 · ENLENS candidate (`reader.py`) · ⚠ results · ENLENS 0.16
+**A6. Tables, figures and images, kept light** · Level 0 · ⚠ results · built in 0.18.1 (`reader5.py`, reader 5)
 - Added 9 November 2026, after using 0.15: tables are found only when their columns have clear gaps between them, and
   figures and images do not come in at all. The user wants them "as intended", but only if the project does not
   grow: it is meant to hold a very large corpus.
@@ -244,7 +245,7 @@ sync only brings ENLENS into Margin, so nothing could take it the other way, and
 
 B1 to B4 and B6 (citations in Word, reference lists, the reference-list check, re-checking a draft) are Margin's.
 
-**B5. Retractions and corrections** · Level 0 (online lookup, not AI) · ENLENS candidate
+**B5. Retractions and corrections** · Level 0 (online lookup, not AI) · built in 0.18.1 (`retractions.py`; works with a DOI only)
 - Check every work in the bibliography and every cited work against Crossref's Retraction Watch data; warn on the
   claim's card and in the bibliography.
 - *Review note:* this is ENLENS's first online lookup of works (it has no Crossref or OpenAlex code yet), so the
@@ -260,17 +261,17 @@ D5 (concepts in the writing) is Margin's.
   narrower, related, needs, shapes, clashes with). Filter by document, theme, code or year.
 - *Already in ENLENS:* `concordance.py` computes PMI, and `concept_links` stores typed relations with quotes.
 
-**D2. Relations found from the text** · Level 0 · ENLENS candidate
+**D2. Relations found from the text** · Level 0 · built in 0.18.1 (`textrelations.py`)
 - Propose links from the sentences themselves, without AI: "X such as Y", "Y and other X" (broader and narrower),
   "X, also called Y" (the same), "X leads to / causes / reduces Y" (an effect), "X instead of Y" (replaces). Each
   proposal comes with its sentences; you accept or reject it as you do now.
 
-**D3. Paths between two concepts** · Level 0 · ENLENS candidate
+**D3. Paths between two concepts** · Level 0 · built in 0.18.1 (`conceptpaths.py`)
 - Pick two concepts and see how the documents get from one to the other: the chain of concepts between them, and
   for each step the passages that join them (the bridge passages). This is a way into an argument the corpus already
   makes.
 
-**D4. Concepts over time and across groups** · Level 0 · ENLENS candidate
+**D4. Concepts over time and across groups** · Level 0 · built in 0.18.1 (`conceptpaths.py`)
 - How a concept's wording and its neighbours change by publication year (from the bibliography) or between groups of
   documents you define (policy against academic, one country against another).
 
@@ -324,7 +325,7 @@ G1 to G4 (the rest of Margin's writing companion) are Margin's.
 - Adding one document should not redo terms, embeddings, profiles or themes for all of them: cache by passage hash
   and update incrementally.
 
-**H4. Fewer and smaller AI tasks** · Level 0 · ENLENS candidate
+**H4. Fewer and smaller AI tasks** · Level 0 · built in 0.18.1 (kept answers, a small codebook once per batch)
 - Screen passages on this computer (keywords, embeddings, rules) so the AI reads only those that can matter; never
   ask twice for the same passage, prompt and model (cache by hash); send small codebooks once per batch, not once
   per passage. Every AI task avoided is faster, cheaper and more private.
@@ -332,11 +333,11 @@ G1 to G4 (the rest of Margin's writing companion) are Margin's.
   passage (`label:<codebook>:<passage>`). What this adds is a cache by passage text, prompt and model, so the same
   text is not asked again under another id.
 
-**H5. A lighter page** · Level 0 · ENLENS candidate
+**H5. A lighter page** · Level 0 · built in 0.18.1 (lists that load as you scroll, a judgement updated in place)
 - Long lists (passages, search lines, claims) load as you scroll; heavy views compute in the background with
   progress; startup kept short.
 
-**H6. Tidier code** · ENLENS candidate
+**H6. Tidier code** · ENLENS candidate · `gui/server.py` split in 0.16, `claimcheck.py` in 0.18.1
 - Split the largest modules along the features they serve, so later changes stay small and syncs conflict less. The
   largest are `gui/server.py` (3,410 lines) and `claimcheck.py` (2,829). Not left to the end: each release splits
   the module it changes most, and the new reader starts in its own module (A1).
@@ -352,11 +353,11 @@ per kind of task, honours Settings, has defaults for each Claude plan, and steps
 rejected answers or on request; new are the presets and the step from the local model to Claude. I5 has its core:
 `benchmark.py` compares a model with reference answers by kappa, and I5 runs that on a sample of real work.
 
-**I1. A route per kind of task**
+**I1. A route per kind of task** · built in 0.18.1 (with Claude Code as the main route)
 - In *Settings → AI*: for example labels, links and theme names on the local model; checks and second opinions on
   Claude. Presets: *Mostly local*, *Balanced*, *Best quality*.
 
-**I2. Step up only when unsure**
+**I2. Step up only when unsure** · built in 0.18.1
 - The local model answers first; when it is unsure (the certainty ENLENS already measures), the quote check fails,
   or its answer would change a decision, the task goes to Claude, but only for documents Claude may read. Otherwise
   it goes to a larger local model or waits for you.
@@ -365,10 +366,10 @@ rejected answers or on request; new are the presets and the step from the local 
 - A task's passages decide its route: a check over documents with mixed settings sends to Claude only the passages
   Claude may read, and the rest to the local model, with the result saying which route read what.
 
-**I4. When the plan's limit is reached**
+**I4. When the plan's limit is reached** · built in 0.18.1
 - Carry on locally, or wait and continue later, as you choose, instead of stopping.
 
-**I5. Agreement between routes**
+**I5. Agreement between routes** · built in 0.18.1 (results not kept between visits)
 - A sample of tasks answered by both routes, with their agreement (kappa, which ENLENS already computes), so you can
   see whether the local model is good enough for each kind of task on your own corpus.
 
@@ -462,6 +463,11 @@ Linux only and without the anthropic, OCR and pdfminer extras.)
 ENLENS this changed (8 November 2026): what testing 0.15 needs comes first (items 1, 6 and 10, in 0.15), the rest in
 0.16.
 
+**Built in 0.18.1:** items 3 (setuptools-scm), 4 (`changes/`), 5 (`release.py prepare` and `tag-release.yml`), 7
+(`uv.lock`, Dependabot, actions pinned by hash), 8 (provenance), 9 (`published-install.yml`) and 11 (the tests renamed
+by topic, the old files included, at the owner's request). Item 2 waits for a branch ruleset, which only the owner can
+switch on.
+
 ### J2. README and documentation (both apps)
 
 **Now.** Both READMEs have the same layout (Margin's about 320 lines, ENLENS's about 350), set by the main release
@@ -497,7 +503,10 @@ task, reference to look up, explanations to understand). Contributor material li
 6. **Checked by CI:** links between documents resolve; every feature in `features.js` has a manual section; the
    README's *New in* matches the changelog.
 
-Items 1 and 3 are done in ENLENS (0.14.0: the README of about 100 lines, `docs/DEVELOPING.md`). Items 3 to 6 are
+Items 1 and 3 are done in ENLENS (0.14.0: the README of about 100 lines, `docs/DEVELOPING.md`); items 2, 5 and 6 in
+0.18.1 (*New in* between markers, written by `release.py sync-notes`; `tests/test_doc_links.py`). Item 4 is in part:
+the manual has been a hub with a page per topic, grouped as *Get going*, *Your work*, *The AI and your privacy* and
+*Reference*, since 0.15.5; a split by Diátaxis's four kinds is not done. Items 3 to 6 are
 shared files, built in ENLENS and synced. The README order in the main release guide (Part A)
 changes to ENLENS's new one; Margin's order goes into Part B.
 
@@ -514,16 +523,17 @@ What a tool needs when its users publish with it, review with it, or have to jus
    rule). Every result already records how it was made; it also records the ENLENS version, and a project opened in a
    newer version says which of its results were made with an older one. Old results stay readable. *ENLENS 0.15,
    built:* every AI answer, run, label and theme run records `app_version`, and a check the version that started it;
-   *How these results were made* names it; the Overview says which results an earlier version made. Not yet on each
-   result's own page.
+   *How these results were made* names it; the Overview says which results an earlier version made, and since 0.18.1
+   a check's, a set of themes' and the Codes page's own head.
 3. **A validation report per release.** The parts that need no AI (reading documents, search, terms, themes, their
    determinism) are measured by the release workflow on the demo and pilot corpora; figures that need AI come from a
    recorded, dated run. The report goes with the release notes, so a change in accuracy is seen, not guessed. The
-   half that needs no AI comes in 0.15 with H1, as 0.15 is the first release that changes results; the AI half in
-   0.16, with the AI mix.
+   half that needs no AI comes in 0.15 with H1, as 0.15 is the first release that changes results. The AI half waits:
+   it needs a set of right answers to score against and a recorded run on Claude (I5 now measures agreement between
+   the local model and Claude, which is not the same as being right).
 4. **Methods and privacy documents.** `docs/METHODS.md`: how a check, labels, concepts and themes work, with their
    references, written so it can back a methods section. `docs/PRIVACY.md`: what leaves the computer, when, to whom,
-   and what never does, written for ethics applications and data protection assessments.
+   and what never does, written for ethics applications and data protection assessments. *Built in 0.18.1.*
 5. **Reporting a problem without knowing GitHub.** Issue forms in plain language (what you did, what you expected,
    and the app's technical details pasted with one button), a contact for privacy and security problems
    (`SECURITY.md`), and a note on which versions get fixes.
@@ -569,7 +579,7 @@ its own)
   sync. The themes page shows which codes each theme holds. Nothing edits a codebook in the app, and themes cannot
   become codes.
 
-**K2. Theory documents: the lens, not the evidence** · Level 0, Level 2 or 3 optional · ENLENS candidate
+**K2. Theory documents: the lens, not the evidence** · Level 0, Level 2 or 3 optional · built in 0.18.1, Level 0 only (the AI draft waits)
 (`store.py` for the mark; `themes.py`, `profile.py`, `retrieve.py` and `terms.py` for leaving theory out;
 `codebooks.py` and the K1 editor for codes from theory)
 - **Why** (the Tovertafel project, 13 November 2026). Nicolini's *Practice theory, work, and organization* and
@@ -877,7 +887,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   Key words only, no AI. An offer, never an automatic merge: lines that differ in strength (*can be observed*,
   *indicates*, *predicts*) stay apart.
 
-**N2. How much thought, not how fast** · Level 3
+**N2. How much thought, not how fast** · Level 3 · built in 0.18.1 (*Let the auditor use Fable* stays its own switch)
 - The choice beside *Start Claude Code* becomes *Energy efficient*, *Balanced* and *Intelligence*: which models, and
   how much effort, answer each kind of task. How many helpers run at once moves to Settings.
 
@@ -887,7 +897,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   themes or the evidence map). Still to settle: whether their claims are found by themselves, and how their codes are
   counted. Build it with K2's theory mark: one role per document with three values.
 
-**N4. The assessment in words** · Level 0
+**N4. The assessment in words** · Level 0 · built in 0.18.1
 - A short written assessment on each hypothesis's page, under its verdict, made by rules from the judgements and
   never written by an AI: every sentence comes from the grades, the quotes and the person's own notes, so it reads the
   same twice and can be traced. For example: "Mixed evidence. Three documents support the hypothesis and one
