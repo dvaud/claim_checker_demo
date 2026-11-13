@@ -60,7 +60,10 @@ _LOCAL_TABLES = ("embeddings", "code_vectors", "terms", "term_mentions", "concep
                  "sync_log", "versions", "sync_written", "sync_folder_read", "sync_folder_docs",
                  # roles (DESIGN-roles §3.2): a new copy from a zip starts without them. Not `owner_pins` and
                  # `canon_seen`: the zip a copy is made from is where its trust starts
-                 "removed_docs", "sync_via", "sync_from", "sync_refused")
+                 "removed_docs", "sync_via", "sync_from", "sync_refused",
+                 # 0.18.1: the sentences of links found in the text (quotes from this copy's readings) and the AI's
+                 # answers kept so as not to ask again (raw answers with quotes, of any document's setting)
+                 "concept_link_sentences", "ai_cache")
 # the keys of `meta` a zip for a colleague keeps (besides `codebook_followed:` of shared codebooks and `read_again:`
 # of documents): what a colleague's merge or import reads
 _META_KEPT = {"project_uid", "project_uids_known", "bibliography", "corpus_version",
