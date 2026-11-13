@@ -44,8 +44,6 @@ this computer needs no terminal:
    progress bar and *Stop* (Ollama keeps what it has and goes on from there). A model that does not fit is not offered.
 3. The downloaded model becomes the AI and is tested at once.
 
-3. The downloaded model becomes the AI and is tested at once.
-
 Ollama fetches the model from ollama.com; none of your documents are sent. When whoever installed the app already
 chose a local model that answers, this step is skipped. More in [A model on your own computer](local-models.md).
 

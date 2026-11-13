@@ -45,7 +45,18 @@ phrases it uses often. Each comes with its definition **quoted from the theory, 
 document's title and the page), which becomes the code's description. Terms the text defines are ticked. Under each concept, sentences from the **evidence documents** that use
 its words are offered as examples, unticked: an example is kept only when you tick it, and never comes from a theory
 document. So the labeller learns what a reinforcing loop looks like in your field, not in the theory's own examples.
-Words set in italics are not offered (the readers do not keep slant). An AI draft of the concepts is not offered yet.
+Words set in italics are not offered (the readers do not keep slant).
+
+**Draft with AI.** Beside the concepts found without AI, *Draft with AI* asks the AI to draft the theory's concepts.
+It reads the passages of the theory where those concepts are defined or used most, and gives each concept a short
+name, its definition quoted exactly from the theory with its page, and one line on why it is a concept of the theory.
+Every quote is checked against the document, and a definition must be at least three words that say more than the
+concept's name. The AI's concepts join the end of the list unticked and marked *AI draft*, and a concept already on
+the list is not offered twice. Read each one before you tick it. Examples still come only from your evidence
+documents, never from the theory or the AI. The document's own AI setting decides who reads it: Claude, only a local
+AI on this computer, or no AI, in which case the button is not offered and the dialog says why. The draft is written
+in the research log, and asking again for the same document reuses the answer. Closing the dialog stops a draft that
+is still running. Nothing changes until you tick concepts and make the codebook.
 
 **The short names (0.16.1).** A code's name is one or two words of the theme's name when your documents allow it, as
 short as an SDG goal's: "National green hydrogen strategies and markets" becomes *Hydrogen strategies*. ENLENS tries

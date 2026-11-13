@@ -83,6 +83,7 @@ enlens --ws myproject resolve <doc_id> [--name "the plant"]                     
 enlens --ws myproject annotate <doc_id> --hyp <hyp_id> --layers judgements labels --out highlighted.pdf
 enlens --ws myproject export-flexiconc project.sqlite [--no-embeddings]
 enlens measure [--folder DIR] [--ws PROJECT] [--timings] [--report FILE.md]       # how well ENLENS reads
+enlens validate prepare|score|report [--project NAME] [--again NAME] [--latest DIR] [--out FILE.md]   # the AI's answers against known right answers
 ```
 
 ## Projects, Claude Code and the queue
