@@ -512,6 +512,16 @@ def take_over(ws: Workspace, why: str | None = None) -> dict:
         if role_of(cx, me) != "co" and _co_heard_lately(cx, ch, me):
             raise NotAllowed("A Co-owner of this project was heard of lately: a Co-owner can take it over, or the "
                              "owner can hand it over to you.")
+        # 0.18.1: one record per person and place travels (a copy never replaces a record it holds), so a second
+        # take-over at the same place, after another owner, would never reach the colleagues who hold the first: the
+        # copies would disagree about the owner without a word (found by the randomised roles test)
+        mine = next((r for r in _records(cx).get(ch[-1]["seq"] + 1, []) if r["by"] == me and r["owner"] == me), None)
+        if mine is not None and (mine["after"] or None) != ch[-1]["owner"]:
+            earlier = people.names(ws).get(mine["after"] or "", "an earlier owner")
+            raise NotAllowed(f"You took this project over once before at this point of its history, from {earlier}. "
+                             f"Your colleagues keep that take-over, so a second one would not reach them. Ask "
+                             f"{people.names(ws).get(ch[-1]['owner'], 'the owner')} to hand the project over to you, "
+                             f"or follow your earlier take-over (Team tab).")
         _record(cx, ch[-1]["seq"] + 1, me, me, "takeover", ch[-1]["owner"], why or left,
                 "Took this project over from its owner. " + left)
     settle(ws, apply=False)

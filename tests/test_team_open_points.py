@@ -191,3 +191,26 @@ def test_not_now_on_a_take_over_holds_for_the_person_in_the_project(team):
     assert view(anna)["later"] == []                  # Carol's alone
     follow(carol)
     assert view(carol)["later"] == []                 # answered: nothing put off is left to show
+
+
+# ---- a second take-over at the same place (found by the randomised roles test, seed 34) ----------------------------
+def test_a_second_take_over_at_the_same_place_is_refused_in_words(team):
+    """Carol took the project over from Ben at place 3; she then followed Dana for place 2 (a rival of Ben's). Her
+    second take-over at place 3, after Dana, would never reach colleagues who hold the first (a copy never replaces a
+    record it holds): it is refused, and says what to do instead."""
+    anna, ben, carol = team
+    dana = "p" + "d" * 12
+    with carol:
+        with carol.ws.connect() as cx:
+            cx.execute("INSERT INTO ownership(seq, owner, by, at, kind, after, why) VALUES (2, ?, ?, '2026', "
+                       "'takeover', ?, NULL)", (ben.id, ben.id, anna.id))
+            cx.execute("INSERT INTO ownership(seq, owner, by, at, kind, after, why) VALUES (2, ?, ?, '2026', "
+                       "'takeover', ?, NULL)", (dana, dana, anna.id))
+            cx.execute("INSERT INTO ownership(seq, owner, by, at, kind, after, why) VALUES (3, ?, ?, '2026', "
+                       "'takeover', ?, NULL)", (carol.id, carol.id, ben.id))
+            cx.execute("INSERT OR REPLACE INTO owner_pins(seq, by, owner, state, at) VALUES (2, ?, ?, 'followed', "
+                       "'2026')", (dana, dana))
+        assert ownership.owner(carol.ws._conn()) == dana
+        with pytest.raises(ownership.NotAllowed, match="once before at this point.*would not reach them"):
+            ownership.take_over(carol.ws)
+        assert ownership.owner(carol.ws._conn()) == dana          # nothing written

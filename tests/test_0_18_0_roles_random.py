@@ -362,6 +362,10 @@ class Run:
             refused = str(e)
         finally:
             self.leaving = None
+        if refused is not None and "once before at this point" in refused:
+            # 0.18.1: a second take-over at the same place (after another owner) would not reach the others: refused
+            self.say(p, f"tried to take over from {self.name_of(old)} again at the same place: refused")
+            return
         if refused is not None:
             self.check(member and not self.quiet, f"{p.name} ({v['role']}) was refused a take-over: {refused}")
             self.say(p, f"tried to take over from {self.name_of(old)}: refused (a Co-owner was heard of)")
