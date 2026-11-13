@@ -258,10 +258,10 @@ async function pickTheory() {
   let aiPart = null;
   if (offer && offer.offered) {
     const draftBtn = button({ onClick: () => draftWithAI(draftBtn) }, "Draft with AI");
-    const line = offer.reader === "local"
-      ? aiWhere("The AI on this computer reads the passages of this document where its concepts are defined or used most: the text never leaves it.", "local")
-      : readsLine("the passages of this document where its concepts are defined or used most");
-    aiPart = h("div", { class: "cb-theory-ai" }, h("div", { class: "btn-row" }, withAI(draftBtn)), line);
+    aiPart = h("div", { class: "cb-theory-ai" }, h("div", { class: "btn-row" }, withAI(draftBtn)),
+      offer.reader === "local"   // the AI line under the action, as everywhere (DESIGN.md 4.4)
+        ? aiWhere("The AI on this computer reads the passages of this document where its concepts are defined or used most: the text never leaves it.", "local")
+        : readsLine("the passages of this document where its concepts are defined or used most"));
   } else if (offer && offer.why) {
     aiPart = h("p", { class: "muted small cb-theory-ai" }, offer.why);
   }
