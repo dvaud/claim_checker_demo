@@ -103,12 +103,12 @@ MIX_LOCAL_ROWS = {"best": frozenset(),
                   "balanced": frozenset({"label", "link", "expand", "theme", "resolve"}),
                   "mostly_local": frozenset({"label", "link", "expand", "theme", "resolve", "check", "extract", "split",
                                              "verify"})}
-MIX_ROUTES = ("claude_code", "anthropic")  # the main routes a mix can lend work from
+MIX_ROUTES = ("claude_code",)  # the main routes a mix lends work from (the Claude API: not yet, see the changelog)
 
 
 def mix_rows(settings: dict) -> frozenset[str]:
     """The rows of Settings' table the local model answers first under the chosen mix: none unless the main route is
-    Claude (Claude Code or the Claude API) and a local model is chosen (Settings' local model for restricted
+    Claude Code and a local model is chosen (Settings' local model for restricted
     documents, on this computer)."""
     mix = settings.get("ai_mix") or "best"
     if mix not in MIX_LOCAL_ROWS or mix == "best":

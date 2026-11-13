@@ -53,6 +53,7 @@ def test_mix_needs_claude_and_a_local_model():
     assert routing.mix_kinds({**MIX, "ai_mix": "best"}) == frozenset()
     assert routing.mix_kinds({**MIX, "restricted_model": ""}) == frozenset()
     assert routing.mix_kinds({**MIX, "backend": "ollama"}) == frozenset()
+    assert routing.mix_kinds({**MIX, "backend": "anthropic"}) == frozenset()  # Claude Code only, for now
     bal = routing.mix_kinds({**MIX, "ai_mix": "balanced"})
     assert {"label", "link", "expand", "decompose", "theme", "resolve"} <= bal and "check" not in bal
     most = routing.mix_kinds(MIX)

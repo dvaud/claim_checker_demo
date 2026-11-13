@@ -33,7 +33,7 @@ change of model can: each answer records its model.
 
 ### The mix of local and Claude
 
-With Claude Code (or the Claude API) and a local model for restricted documents both set, *Settings → AI → The mix of
+With Claude Code and a local model for restricted documents both set, *Settings → AI → The mix of
 local and Claude* shares the work:
 
 | Mix | The local model answers first | Claude answers |
