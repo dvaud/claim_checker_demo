@@ -2,6 +2,10 @@
 
 ## 0.18.6 (November 2026): Non-scientific documents, and the documents your answers rest on
 
+News articles and company brochures can be marked as non-scientific, so they never decide an answer on their own.
+They are still read and judged. The Documents list also shows which documents your answers rest on. Answers change only
+for the documents you mark.
+
 ### New
 
 - **See which documents your answers rest on.** The Documents list can now be grouped by the answers behind each
