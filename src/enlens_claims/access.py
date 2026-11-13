@@ -807,7 +807,7 @@ def record_passages(ws: Workspace, passage_ids: Iterable[str], route: str, featu
 FEATURES = {"check": "Check", "reread": "Read again", "second": "Second opinion", "label": "Profile (AI pass)",
             "theme": "Theme names", "link": "Concept links", "resolve": "References", "extract": "SDG pack",
             "split": "SDG pack", "verify": "SDG pack", "verify_set": "SDG pack", "expand": "Search words",
-            "decompose": "Parts of a hypothesis"}
+            "decompose": "Parts of a hypothesis", "theory_codes": "Codes from a theory document"}
 
 
 def ledger(ws: Workspace, doc_id: str | None = None) -> list[dict]:

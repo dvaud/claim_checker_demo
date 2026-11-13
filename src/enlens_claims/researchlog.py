@@ -34,6 +34,7 @@ GROUPS = {
     "theme-renamed": "themes", "theme-merged": "themes", "theme-separated": "themes",
     "codebook-added": "codebooks", "codebook-changed": "codebooks", "codebook-removed": "codebooks",
     "codebook-moved": "codebooks", "codebook-copied": "codebooks",
+    "codebook-drafted": "codebooks",  # 0.18.4 (K2 part 2): the AI drafted a theory document's concepts
     "glossary-words": "themes",
     "restored": "history",
     "sync": "together",

@@ -37,15 +37,33 @@ SNAPSHOT_014 = {
     'llm.OUTPUT_CAP': {'expand': 400, 'decompose': 800, 'check': 1500, 'verify_set': 1500, 'verify': 600, 'split': 1500, 'extract': 3000, 'reread': 600, 'second': 1500, 'label': 1500, 'link': 700, 'theme': 500, 'resolve': 2500},
 }
 
+# 0.18.4 (K2 part 2): the one kind added since, the AI's draft of a theory document's concepts (theorycodes.py)
+_TC = "theory_codes"
+SNAPSHOT = {k: dict(v) if isinstance(v, dict) else v for k, v in SNAPSHOT_014.items()}
+SNAPSHOT["routing.KINDS"] += (_TC,)
+SNAPSHOT["tasks.KINDS"] += (_TC,)
+_rows = list(SNAPSHOT["routing.ROWS"])
+_rows.insert(5, (_TC, (_TC,), "Codes from a theory document"))  # after References in a document
+SNAPSHOT["routing.ROWS"] = tuple(_rows)
+_order = list(SNAPSHOT["taskqueue.ORDER"])
+_order.insert(_order.index("theme") + 1, _TC)  # after the theme names, before the links
+SNAPSHOT["taskqueue.ORDER"] = tuple(_order)
+for _key, _value in {"routing.ROW_OF": _TC, "routing.CLAUDE_DEFAULTS": ("sonnet", "opus"), "routing.LOCAL_DEFAULTS": "large",
+                     "routing.HELPERS": "enlens-namer", "prompts.VERSIONS": "theory-codes-v1", "taskqueue.BATCH": 1,
+                     "taskqueue.NOUN": ("theory document to draft codes from", "theory documents to draft codes from"),
+                     "taskqueue.SHORT": "theory documents to draft codes from",
+                     "taskqueue.KIND_TITLE": "Codes from a theory document", "llm.OUTPUT_CAP": 3000}.items():
+    SNAPSHOT[_key][_TC] = _value
+
 
 def _table(key):
     mod, name = key.split(".")
     return getattr({"routing": routing, "prompts": prompts, "tasks": tasks, "taskqueue": taskqueue, "llm": llm}[mod], name)
 
 
-@pytest.mark.parametrize("key", sorted(SNAPSHOT_014))
+@pytest.mark.parametrize("key", sorted(SNAPSHOT))
 def test_every_table_is_built_from_the_registry_and_equals_0_14(key):
-    old, new = SNAPSHOT_014[key], _table(key)
+    old, new = SNAPSHOT[key], _table(key)
     if key in ("routing.KINDS", "tasks.KINDS"):
         assert set(new) == set(old) and len(new) == len(old)
     elif isinstance(old, tuple):
@@ -60,14 +78,15 @@ def test_the_other_tables_too():
         "expand": "Search words", "decompose": "Splitting a hypothesis", "label": "Codebook labels",
         "link": "How concepts relate", "theme": "Theme names", "resolve": "References in a document",
         "extract": "Extracting claims (SDG pack)", "verify_set": "Checking VCA claims (SDG pack)",
-        "verify": "Checking claims (SDG pack)", "split": "Splitting justifications (SDG pack)"}
+        "verify": "Checking claims (SDG pack)", "split": "Splitting justifications (SDG pack)",
+        "theory_codes": "Codes from a theory document"}
     assert dict(tasks.HANDLERS) == {"extract": tasks._store_extract, "split": tasks._store_split,
                                     "verify": tasks._store_verify, "verify_set": tasks._store_verify_set,
                                     "expand": tasks._store_expand, "check": tasks._store_check,
                                     "decompose": tasks._store_decompose, "reread": tasks._store_reread,
                                     "second": tasks._store_second, "label": tasks._store_label,
                                     "link": tasks._store_link, "theme": tasks._store_theme,
-                                    "resolve": tasks._store_resolve}
+                                    "resolve": tasks._store_resolve, "theory_codes": tasks._store_theory_codes}
     assert dict(routing.HELPER_MODEL)["enlens-checker"] == "sonnet" and len(routing.HELPER_MODEL) == 7
     # the certainty of an answer, as 0.13.5 read it
     assert routing.certainty("verify", {"confidence": 0.4}) == 0.4

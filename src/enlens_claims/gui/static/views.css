@@ -659,6 +659,8 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .cb-theme { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; cursor: pointer; }
 .cb-theme input { margin-top: 4px; }
 .cb-theme-desc { display: block; color: var(--text-2); font-size: var(--fs-small); }
+.cb-theory-why { display: block; }   /* 0.18.4: why the AI offers a drafted concept */
+.cb-theory-ai { margin: var(--space-2) 0 var(--space-3); }
 .cb-theme-name { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
 .cb-steps { display: inline-flex; gap: 2px; }
 .cb-step { min-height: 0; }

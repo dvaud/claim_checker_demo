@@ -337,6 +337,31 @@ class ThemeOut(BaseModel):
         return " ".join(str(v or "").split())
 
 
+class TheoryConcept(BaseModel):
+    """0.18.4 (K2 part 2): one concept of a theory document, as the AI drafts it (theory-codes-v1)."""
+    name: str = Field(min_length=2, max_length=60)
+    definition: QuoteRef
+    reason: str = Field(default="", max_length=300)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _name(cls, v):
+        v = " ".join(str(v or "").split()).strip(" .\"'")
+        if len(v.split()) > 6:
+            raise ValueError("the name must have at most six words")
+        return v
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def _reason(cls, v):
+        return " ".join(str(v or "").split())[:300]
+
+
+class TheoryCodesOut(BaseModel):
+    concepts: list[TheoryConcept] = Field(default_factory=list, max_length=40)
+    note: Optional[str] = None
+
+
 class Mention(BaseModel):
     passage: int = Field(ge=1)
     span: str = Field(min_length=3, max_length=300)
@@ -424,6 +449,8 @@ def output_schema(kind: str) -> dict:
         s = _inline(ThemeOut.model_json_schema())
     elif kind == "resolve":
         s = _inline(ResolveOut.model_json_schema())
+    elif kind == "theory_codes":
+        s = _inline(TheoryCodesOut.model_json_schema())
     else:
         raise ValueError(f"no output schema for task kind {kind!r}")
     return _require_all(s)
