@@ -635,7 +635,8 @@ several facts and settings (the Documents page) is no table at all: an item is o
 marks of what is true of it now and of what needs a look, an arrow), and the arrow or a click on the line opens a panel
 under it that names each fact and holds its controls (`.doc-item`, `.doc-detail`), so a fact never needs a column
 header to be understood. A title is one line ending in "…" (whole when open), and the marks keep to at most half the
-line. Such a list may be grouped by a choice above it (the Documents page: *AI setting*, *Role*, *Needs a look*,
+line; on a closed line they are icons (what needs you keeps its amber tag look, without words), each named in its
+tooltip and to a screen reader, and the open panel says each in words. Such a list may be grouped by a choice above it (the Documents page: *AI setting*, *Role*, *Needs a look*,
 *None*), beside a box that filters it by words: each group under a head that stays at the top while it scrolls (its
 name, a count tag, a way to tick it all, and what it means in one sentence), an empty one saying *None.* when the
 grouping always has it; what the grouping says is not repeated on the line (who may read it shows as an icon beside the

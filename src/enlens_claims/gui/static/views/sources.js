@@ -9,6 +9,7 @@ import { forgetOriginals } from "./result.js";
 import { LEVEL, accessChoice, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
 import { askWhy } from "./versions.js";
 import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
+import { docChip } from "./owner-state.js";   // 0.18.5: the owner's word as an icon on a closed line
 import { documentRoles, roleTag, roleMenuItem } from "./doc-role.js";   // 0.18.1 K2: theory documents
 import { reader, newReaderFor, readingNote, READER_4_NEWS, READER_5_NEWS } from "./doc-shared.js";
 
@@ -288,7 +289,7 @@ export async function renderSources(view) {
       { key: "evidence", name: "Evidence", icon: "file-text", sub: "What hypotheses are checked against, and what themes, codes and key terms are made from." },
       { key: "theory", name: "Theory", icon: "book-marked", sub: "The lens the research is read through: left out of themes, codebook labels, the excerpts a check reads and key terms." }] },
     look: { label: "Problems", always: false, of: lookOf, groups: [
-      { key: "attention", name: "Needs a look", icon: "eye", sub: "Something about the file or its reading needs you: the tag on each says what." },
+      { key: "attention", name: "Needs a look", icon: "eye", sub: "Something about the file or its reading needs you: point at the mark on each, or open it, to see what." },
       { key: "reading", name: "Something to check in its reading", short: "To check", icon: "layers", sub: "Read with a few doubts: open the reading to see where, then mark it as checked." },
       { key: "clear", name: "Nothing to look at", short: "Fine", icon: "check", sub: "Read well: nothing about them needs you." }] },
     none: { label: "None", always: true, of: () => "all", groups: [{ key: "all", name: "All documents", icon: null, sub: null }] },
@@ -362,22 +363,23 @@ export async function renderSources(view) {
       d.scanned ? (/no text/i.test(d.scanned) ? tag({ kind: "attention", class: "it scanned-note" }, d.scanned) : h("span", { class: "it scanned-note muted small" }, icon("eye", { size: 12 }), d.scanned)) : null,
       readingNote(d)].filter(Boolean);
     const docHref = (d) => `#/doc/${encodeURIComponent(d.doc_id)}`;
-    const added = (d) => { const t = fmt.dateShort(d.added_at || "") || d.added || ""; return t ? `added ${t}` : ""; };
     const sameTitle = new Set();   // titles two documents share (lower case)
     { const seenT = new Set(); for (const d of docs) { const t = (d.title || "").trim().toLowerCase(); if (t && seenT.has(t)) sameTitle.add(t); seenT.add(t); } }
-    // 0.18.5: the same, short enough for a row beside a title: what needs you as a tag, a reading to look at as two or
-    // three words; the panel under the row says it in full
+    // 0.18.5: the same on a closed line, as icons: each named in its tooltip and to a screen reader, and said in words in
+    // the panel the line opens. What needs you keeps the needs-you look (an amber tag with its icon, no words).
+    const iconMark = (ic, label, cls) => h("span", { class: `doc-icon-mark${cls ? ` ${cls}` : ""}`, role: "img", "aria-label": label, title: label }, icon(ic, { size: 14 }));
+    const needsYou = (label) => tag({ kind: "attention", class: "doc-icon-tag", role: "img", "aria-label": label, title: label });
     const rowMarks = (d) => {
-      const href = `${docHref(d)}?tab=reading`;
-      const why = `${(d.reading_warnings || []).join(" ")} Open it to see where to look, then mark the reading as checked.`.trim();
       const unchecked = !d.reading_checked && (d.reading_quality === "poor" || d.reading_quality === "fair");
+      const chip = docChip(d.proposal);
       return [
-        d.clash ? tag({ kind: "attention", title: "The same file as another document here, read into other text on another computer. Open the details." }, "sync clash") : null,
-        d.check ? tag({ kind: "attention", title: d.check }, d.check.split(":")[0]) : null,
-        d.scanned && /no text/i.test(d.scanned) ? tag({ kind: "attention", title: d.scanned }, "no text found") : null,
-        unchecked && d.reading_quality === "poor" ? tag({ kind: "attention", title: why }, "read badly") : null,
-        unchecked && d.reading_quality === "fair" ? link({ href, title: why, class: "it small doc-flag" }, icon("info", { size: 12 }), "check its reading") : null,
-        !unchecked && newReaderFor(d, reader.latest) ? link({ href: `${href}&preview=1`, class: "it small doc-flag", title: "Read by an earlier reader of ENLENS: open it to see what the new reader would change." }, icon("layers", { size: 12 }), "earlier reader") : null,
+        d.clash ? needsYou("Sync clash: the same file, read into other text on another computer") : null,
+        d.check ? needsYou(d.check) : null,
+        d.scanned && /no text/i.test(d.scanned) ? needsYou(d.scanned) : null,
+        unchecked && d.reading_quality === "poor" ? needsYou("Read badly: look at its reading") : null,
+        unchecked && d.reading_quality === "fair" ? iconMark("info", "Something to check in its reading") : null,
+        !unchecked && newReaderFor(d, reader.latest) ? iconMark("layers", "Read by an earlier reader of ENLENS") : null,
+        chip ? iconMark(chip.kind === "declined" ? "minus" : "clock", `${chip.label}${chip.text ? `: ${chip.text}` : ""}`) : null,
       ].filter(Boolean);
     };
     // 0.18.2: everything about one document, each fact under its name, in a panel under its row (DESIGN 4.20)
@@ -396,6 +398,9 @@ export async function renderSources(view) {
           h("dt", {}, "Sent to Claude"), h("dd", {}, h("span", {}, sentWords(d)), d.sent ? button({ kind: "quiet", sm: true, title: "What Claude has read of this document, and who may read it", onClick: about }, "See what it read") : null),
           h("dt", {}, "Reading"), h("dd", {}, marks.length ? marks : h("span", { class: "it" }, icon("check", { size: 13 }), "readable"),
             readingNote(d) ? null : link({ href: `${docHref(d)}?tab=reading`, class: "small" }, "How it was read")),
+          d.proposal && docChip(d.proposal) ? [h("dt", {}, "The owner"), h("dd", {},
+            proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
+          )] : null,
           h("dt", {}, "Role"), h("dd", {}, roles[d.doc_id] === "theory" ? "Theory: the lens the research is read through, not evidence" : "Evidence",
             button({ kind: "quiet", sm: true, class: "doc-role-btn", onClick: role.onClick }, role.text)),
           d.bib && d.bib.cite ? [h("dt", {}, "In the bibliography"), h("dd", {}, h("span", { class: "it", title: d.bib.title || null }, icon("library", { size: 13 }), d.bib.cite),
@@ -447,10 +452,9 @@ export async function renderSources(view) {
         h("div", { class: "doc-main" },
           h("div", { class: "doc-title", title: d.title && d.file ? `${d.title} · ${d.file}` : name }, link({ kind: "title", serif: true, href: docHref(d) }, name)),
           h("div", { class: "doc-marks" },
-            // 0.18.5: a fact that tells it apart: the file name when another document has its title, else when it was added
-            h("span", { class: "doc-fact", title: d.file || null }, sameTitle.has((d.title || "").trim().toLowerCase()) ? d.file : added(d)),
-            grouping === "role" ? null : roleTag(roles[d.doc_id]),   // 0.18.1 K2: the lens, not the evidence
-            proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
+            // 0.18.5: the file name when another document has the same title (the one fact that tells them apart)
+            sameTitle.has((d.title || "").trim().toLowerCase()) ? h("span", { class: "doc-fact", title: d.file || null }, d.file) : null,
+            grouping === "role" || roles[d.doc_id] !== "theory" ? null : iconMark("book-marked", "Theory: the lens the research is read through, not evidence"),   // 0.18.1 K2
             ...rowMarks(d))),
         h("div", { class: "doc-end" }, toggle)));
       show(opened.has(d.doc_id));
