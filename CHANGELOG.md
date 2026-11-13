@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.18.2 (November 2026): Sharing you can find, and a team you can see
+
+Share an item with one press and see where it goes, find your team without opening the research log, and read more of
+an excerpt where the excerpt ends. Nothing in this release changes results.
+
+### New
+
+- **More of an excerpt is *more…* at its end.** On a check's result page, the *In context* button in each excerpt
+  card's row of actions is gone: the excerpt now ends in *more…*, which shows the whole excerpt the AI read with the
+  ways into the document under it (the document at this place, the original file, a highlighted copy), and then reads
+  *less*. The row keeps *Agree*, *Not about this*, *Judge differently…* and *Details*. Selecting a sentence to quote
+  never takes *more…* along. Cannot change results.
+- **Sharing is a choice you can see.** Under the title of a check, a set of themes or a codebook of your own, the
+  small *Private* tag and *Share* button are now one choice: *Private* or *Shared with your team* (*Shared* while the
+  project has no team). The one that holds is highlighted; press the other to change it, and taking a shared item
+  back still asks first. While an item is shared, a line under the choice says where it goes (*Goes to Ben and Chloé
+  at the next round*, then *Sent to your team today at 15:44*) and *See what you shared* opens the Team tab. A
+  colleague's item shows whose it is and has no choice. Notes, log entries and links between terms keep *Share* and
+  *Unshare* in their cards. Cannot change results.
+- **The team has its own row under the project's name.** In a project with a team, the sidebar shows *Team* and its
+  state (*synced 15:44*, *syncing now…*, *3 new*, or in amber *offline*). Press it to open the Team tab beside the
+  page. The *Research log* button now always opens the research log. On a phone the row is in the menu, and the
+  button in the top bar says *3 new* when work came in. A project without a team looks as before. Cannot change
+  results.
+
+### For developers
+
+- `tools/manual_screenshots.py`: a picture of one element clips the page where the element is (after scrolling,
+  `excerpt-card.png` showed the Evidence heading above the card). The picture is taken again, with *more…*.
+- `briefOf()` and `forgetBrief()` (views/team-state.js): the sharing line's words from the folder's state and the
+  poller, and a fresh look after each share or unshare.
+- `teamLine()` (lib.js, DESIGN.md 5.1), `shareChoice()` and `shareWhere()` (views/share.js), `teamBrief()`
+  (views/team-state.js); the window event `enlens-sync-state` carries the poller's state after each look, and
+  `enlens-drawer` takes `detail.section`.
+
+### Not yet done
+
+- The team line does not yet turn amber for a question that waits for your word: it counts it in *N new*, as the
+  Team tab does.
+
 ## 0.18.1 (November 2026): theory documents, the assessment in words, and a mix of local and Claude
 
 Keep your theory out of the evidence, read each answer in words, and share the AI's work with a local model. Theory
