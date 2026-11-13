@@ -78,14 +78,15 @@ class OwnerRules:
                         rep["new"].append({"id": p["id"], "kind": p["kind"], "title": p["title"], "by": p["by"]})
                 elif p["taken_back_at"] and not have[p["id"]]:
                     cx.execute("UPDATE proposals SET taken_back_at=? WHERE id=?", (p["taken_back_at"], p["id"]))
-            # answers, rows of the documents, roles: one row per key and writer, the higher number stays
+            # answers, rows of the documents, roles: one row per key and writer, the higher number stays. A writer
+            # numbers each row above every row of its own (`_Ctx.put`, `_own_role_n`), so the number alone says which
+            # is newer; the place a row names does not (0.18.1: rival take-overs settled on an earlier place made the
+            # owner's new rows of that place lose, in every other copy, to their own older rows of a later place)
             rep["decided"] = self._own_rows(cx, "decisions", ("proposal", "by"), lambda r: (_n0(r.get("n")),),
                                             refused)
-            self._own_rows(cx, "canon", ("doc", "by"), lambda r: (r.get("owner_seq") or 0, _n1(r.get("n"))),
-                           refused)
+            self._own_rows(cx, "canon", ("doc", "by"), lambda r: (_n1(r.get("n")),), refused)
             if "roles" in there:
-                self._own_rows(cx, "roles", ("person", "by"), lambda r: (r.get("owner_seq") or 0, _n1(r.get("n"))),
-                               refused)
+                self._own_rows(cx, "roles", ("person", "by"), lambda r: (_n1(r.get("n")),), refused)
             refused += self._events_in_my_name(cx)
             for kind, key, row, n in refused:
                 ownership.record_refused(cx, kind, key, row, via, n)
