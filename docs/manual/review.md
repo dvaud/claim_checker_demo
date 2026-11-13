@@ -84,8 +84,10 @@ Each card shows, from top to bottom:
    before it). A short heading that opens the paragraph (*Recommendations.*) shows as a small heading above it. An
    excerpt also read for another part says *also in part 1* (hover it for your judgement there).
 
-Cards that count come first; cards you have judged sit back (no fill, a dashed edge). Every card has the same row of
-actions:
+Cards that count come first; cards you have judged sit back (no fill, a dashed edge). A long list shows its first 40
+cards and draws more as you scroll (a line under the list says *40 of 120 excerpts*, with *Show more*); *Next to
+review*, *Show* and the other jumps draw the card they go to, and printing draws them all. Every card has the same row
+of actions:
 
 | Action | What it does |
 | --- | --- |
@@ -94,6 +96,10 @@ actions:
 | **Judge differently…** | The other judgements (each saves at once, with *Undo*), a comment (saved on <kbd>Enter</kbd> or when you leave the field), and the sentence you mean when the AI highlighted the wrong one: select it in the excerpt and press *Use it*, or pick it from a list. Called *Edit judgement…* once you have judged, and *Judge this excerpt…* when no AI may read it. |
 | **In context** | The whole excerpt the AI read, with *Open the whole document at this place* (the quote highlighted; *Back to the result* returns), *the original file* (a PDF at the page, a text file with the quote highlighted, a web page scrolled to the quote where the browser can) and *a highlighted copy* of the document with this hypothesis's judgements marked. |
 | **Details** | *Ask the AI to read this again* (this excerpt alone, with your comment as a hint; the card then shows what it was and what it is now, and your own judgement still counts), the certainty as a percentage, how the excerpt was found, and technical facts (span, id, earlier judgements). |
+
+When you judge an excerpt, only what the judgement changes is drawn again: its card, the answer, and the counts. The
+page stays where it is, and a judgement that changed the answer says so once, under the answer, as *Just now: …*. An
+excerpt that moves to another list (*Not about this*) draws the page again, with a note where the card went.
 
 > [!NOTE]
 > A comment without a judgement stays a comment: it is not a review. Your judgement replaces the AI's in the answer

@@ -1,7 +1,7 @@
 // The answers: every hypothesis checked in the project, newest first, with the checks still running or waiting their
 // turn at the top. 0.17.0: no page of its own any more (it was Results): the Hypotheses page shows it under the box
 // where hypotheses are written. Counts come from the API at the current strictness.
-import { App, api, h, icon, replace, clear, showError, failedLoad, toast, fmt, statusBadge, P, debounce, emptyState, watchJob, latest, drawInSteps, norm, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark, helpMark, judgementIcon, onJobsChanged, button, link, input, workState , choice, searchField, readsLine, notice, card, tag } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, failedLoad, toast, fmt, statusBadge, P, debounce, emptyState, watchJob, latest, norm, TERMINAL, STATUS_SHORT, strictness, auditorName, strongerMark, helpMark, judgementIcon, onJobsChanged, button, link, input, workState , choice, lazyList, searchField, readsLine, notice, card, tag } from "../lib.js";
 import { ProgressPanel } from "./progress.js";
 import { withAI } from "../features.js";
 
@@ -21,7 +21,7 @@ export async function answersList(box, query, opts = {}) {
   const threshold = App.settings().threshold ?? 0.6;
   const watchers = [];
   let rowsNow = [], countsNow = {}, running = [], drawn = false, stopped = false, timer = null;
-  let steps = null;         // the rows drawn so far: a table drawn again (a check changed) keeps as many as were shown
+  let steps = null;         // the lazy list of the rows (0.18.1: lazyList): a table drawn again (a check changed) keeps as many as were shown
   const fresh = latest();   // the newest look at the answers: an older answer never draws over it
 
   const searchBox = searchField({ placeholder: "Find a hypothesis…", value: q, "aria-label": "Find a hypothesis" });
@@ -215,12 +215,13 @@ export async function answersList(box, query, opts = {}) {
     const table = h("table", { class: "table hist-table table-responsive" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Hypothesis"), h("th", { scope: "col" }, "Answer"), h("th", { scope: "col" }, "Excerpts that count"), h("th", { scope: "col" }, "Checked"))),
       tbody);
-    // a project of hundreds of answers draws the first rows at once and the rest as the table scrolls into view; the
-    // running checks stay at the top, drawn whole
-    const keep = steps ? steps.drawn() : 0;
-    steps = drawInSteps(tbody, rows, answerRow, { first: Math.max(60, keep), step: 120, more: (left, onClick) => h("tr", { class: "draw-more-row" },
-      h("td", { colspan: "4" }, button({ kind: "quiet", sm: true, onClick }, icon("chevron-down", { size: 13 }), `Show more answers (${left} more)`))) });
+    // a project of hundreds of answers draws the first rows at once and the rest as the table scrolls into view (0.18.1:
+    // lazyList, whose footer says how many are shown); the running checks stay at the top, drawn whole. The rows are
+    // all here: the actions above work on every answer shown, so the list is paged in the page, not by the server.
+    const keep = steps ? steps.shown() : 0;
+    steps = lazyList({ items: rows, render: answerRow, list: tbody, pageSize: 120, firstSize: Math.max(60, keep), noun: ["answer", "answers"] });
     tableBox.appendChild(h("div", { class: "table-wrap" }, table));
+    tableBox.appendChild(steps.footer);
     tableBox.appendChild(h("p", { class: "muted small hist-count-line" }, `${rows.length} ${rows.length === 1 ? "answer" : "answers"}${jobs.length ? `; ${jobs.length} still being checked` : ""}`));
   }
 

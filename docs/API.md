@@ -1773,4 +1773,9 @@ that poor.
 | `GET /api/projects/<name>/agreement/plan` | `{"kinds": [{"kind", "answered", "name", "noun"}], "problem": a sentence when it cannot start (Claude not the main AI, no local model, local-only) or null, "claude": the main backend, "plan": null}`. With `?kind=label&n=30` (n 10 to 100), `plan` is `{"kind", "n" (tasks compared), "ask_local", "ask_claude" (tasks each route would be asked), "left_out" (answered tasks Claude may not read)}`. 400 for a kind without a decision. |
 | `POST /api/projects/<name>/agreement` | Body `{"kind", "n"}`. Starts a job (`{"job"}`, kind `agreement`; `progress` has `done` and `total` tasks). Its result: `{"kind", "n", "compared", "failed", "kappa" (null when undefined), "agree" (share of identical decisions), "decisions", "verdict" (a plain sentence), "left_out", "asked": {"local", "claude"}, "items": [{"task_id", "decisions", "same", "local", "claude" ("stored" or "asked")} or {"task_id", "error"}], "thresholds": {"good": 0.8, "fair": 0.6}}`. 400 when it cannot start. |
 
+**The answers a page at a time (H5).** `GET …/hypotheses?offset=<n>&limit=<n>` (with the same `q`, `status`, `batch`
+and `threshold`) answers one page of the list: `hypotheses` holds at most `limit` rows (100 when not given, at most
+1,000) from row `offset`, in the same order as the whole list, and `total` (the rows after the filters), `offset` and
+`limit` are added. `counts` still cover every hypothesis. Without `offset` the answer is what it always was.
+
 <!-- end of 0.18.1 part B -->
