@@ -19,7 +19,7 @@ import pytest
 from enlens_claims import bundle, claimcheck, codebooks, notes, people, researchlog, sharing, sync
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.store import Workspace
-from test_0_14_0_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
 from test_app import api, home  # noqa: F401  (fixtures)
 
 

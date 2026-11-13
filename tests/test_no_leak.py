@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from helpers_0110 import LOCAL_MARK, NONE_MARK, Cloud, Local, mixed_project, use_local_model
+from helpers_mixed_corpus import LOCAL_MARK, NONE_MARK, Cloud, Local, mixed_project, use_local_model
 
 from enlens_claims import access, claimcheck, home, profile, references, tasks, terms, themes
 from enlens_claims.store import Workspace

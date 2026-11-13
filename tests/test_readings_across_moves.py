@@ -1,6 +1,6 @@
 """0.18.1 (roadmap A0's open point, Part A, A2): one document across old and new readings, also after more than one
 move. 0.18.0 built the rule (sync/readings.py: a reading among the other's earlier ones is the same document) and
-tested it for one move (tests/test_0_18_0_old_readings.py). Here a document moved twice (reader 1, then 3, then the
+tested it for one move (tests/test_old_readings.py). Here a document moved twice (reader 1, then 3, then the
 current one) is still known as one with a colleague's copy that never moved it, in both directions, and the newer
 reading is the one the mover keeps."""
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from enlens_claims import ingest, reread
-from test_0_18_0_old_readings import _doc_text, paper_shared  # noqa: F401  (fixture)
+from test_old_readings import _doc_text, paper_shared  # noqa: F401  (fixture)
 
 
 def _move_twice(p, doc) -> list[str]:

@@ -14,7 +14,7 @@ import pytest
 import enlens_claims
 from enlens_claims import update
 
-from test_082_update_and_grid import Pip, _g, copies, needs_git  # noqa: F401  (fixtures)
+from test_update_and_grid import Pip, _g, copies, needs_git  # noqa: F401  (fixtures)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))

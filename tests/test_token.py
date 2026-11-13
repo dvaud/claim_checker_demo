@@ -203,7 +203,7 @@ def test_update_on_windows_hands_the_token_to_the_hand_over_and_nothing_else(mon
     only: never in the job file, and never in the app's own environment (a job's programs would inherit it)."""
     from enlens_claims import handover, update
     from enlens_claims.gui import server
-    from test_0100_setup_and_moving import _releases
+    from test_setup_and_moving import _releases
 
     # (each step stubs only what it needs and puts the real function back; never monkeypatch.undo(), which would also
     # undo the temporary data folder conftest.py sets)

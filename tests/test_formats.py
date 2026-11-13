@@ -22,7 +22,7 @@ from enlens_claims.store import Workspace
 from enlens_claims.sync import folder, formats
 from owner_helpers import add_doc, set_level, set_role, sync as rounds, view
 from owner_more_helpers import as_before_018, canon_of, join_zip, send, small_project, states_of
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 _NEW_TABLES = ("roles", "owner_pins", "removed_docs", "sync_via", "sync_from", "sync_refused")
 _NEW_COLS = {"ownership": ("sig",), "decisions": ("n", "grant", "knew_json", "sig"),

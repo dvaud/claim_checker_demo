@@ -18,7 +18,7 @@ from owner_helpers import (accept, add_doc, allow, choices, decline, has, leave_
                            reader_of, set_level, sync, view)
 from owner_more_helpers import canon_of
 from roles_helpers import doc_of, make_crew
-from test_0_18_0_owner_more import NOTE
+from test_owner_more import NOTE
 
 
 @pytest.fixture

@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from test_08_queue import _queued_labels
-from test_090_subscription_first import fake_claude  # noqa: F401  (fixture)
+from test_queue import _queued_labels
+from test_subscription_first import fake_claude  # noqa: F401  (fixture)
 from test_app import CLAIM, Api, api, home  # noqa: F401  (fixtures)
 
 

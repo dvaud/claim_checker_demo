@@ -24,9 +24,9 @@ import pytest
 from enlens_claims import bundle, claimcheck, codebooks, frameworks, notes, profile, reread, researchlog, sharing
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.store import Workspace
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_15_0_read_with_new_reader import HEAD, Q_WATER, _add, _check as _graded, _paper
-from test_0_18_0_old_readings import _doc_text, _placed
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_read_with_new_reader import HEAD, Q_WATER, _add, _check as _graded, _paper
+from test_old_readings import _doc_text, _placed
 
 
 def _check(ws, text: str) -> str:

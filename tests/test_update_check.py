@@ -20,8 +20,8 @@ import pytest
 from enlens_claims import __version__
 
 from test_app import Api, home  # noqa: F401  (fixtures)
-from test_0131_update_button import served  # noqa: F401  (fixture)
-from test_0100_setup_and_moving import NEXT, Runs, _releases
+from test_update_button import served  # noqa: F401  (fixture)
+from test_setup_and_moving import NEXT, Runs, _releases
 from _static import release_sheets
 from helpers import manual_text
 

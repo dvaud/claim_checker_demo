@@ -6,7 +6,7 @@ from pathlib import Path
 
 from enlens_claims import claimcheck, ingest
 from enlens_claims import home as ehome
-from test_0112_stronger_model import HYP, Hedging  # noqa: F401
+from test_stronger_model import HYP, Hedging  # noqa: F401
 from test_app import api, home  # noqa: F401,E402  (fixtures)
 
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"
@@ -124,7 +124,7 @@ def test_a_failed_request_is_never_no_documents():
 def test_the_queue_panel_scrolls_into_view_and_the_skip_link_works():
     app = _js("app.js")
     # 0.17.0: the foot of the sidebar stays in the window, so an open panel is always in view: keepInView went
-    # (tests/test_0_17_0_sidebar.py)
+    # (tests/test_sidebar.py)
     assert "keepInView(" not in app and "sidebarScrollInit();" in app
     assert 'querySelector(".skip-link")' in app and "e.preventDefault()" in app
     assert "main.inert = open" in app and "main.inert = false" in app

@@ -16,7 +16,7 @@ import zlib
 from pathlib import Path
 
 import pytest
-from helpers_0110 import Cloud, use_local_model
+from helpers_mixed_corpus import Cloud, use_local_model
 
 from enlens_claims import access, terms, themes
 from enlens_claims import home as core

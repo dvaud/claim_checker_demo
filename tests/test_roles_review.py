@@ -18,10 +18,10 @@ from enlens_claims import claimcheck, ownership
 from enlens_claims.sync import folder
 from owner_helpers import accept, add_doc, decline, has, level, proposals, set_level, set_role, sync, view
 from roles_helpers import doc_of, make_crew
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_14_3_privacy_and_sync import _claim, _excerpts
-from test_0_18_0_owner import shared_dir, team  # noqa: F401  (fixtures)
-from test_0_18_0_owner_more import NOTE
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_privacy_and_sync import _claim, _excerpts
+from test_owner import shared_dir, team  # noqa: F401  (fixtures)
+from test_owner_more import NOTE
 
 
 def _forge_canon(p: Person, doc: str, by: str, n: int = 10 ** 6, bump=(), ev_by: str | None = None, **change) -> None:
@@ -251,7 +251,7 @@ def test_a_file_does_not_take_back_this_persons_own_judgement(anna_and_ben):
 
 
 # ---- third batch --------------------------------------------------------------------------------------------------
-# the builders' own H3 proof (test_0_18_0_roles_proofs.py), with the forged row numbered 2**53 instead of 10**6
+# the builders' own H3 proof (test_roles_proofs.py), with the forged row numbered 2**53 instead of 10**6
 def test_a_forged_removal_numbered_at_the_top_is_still_answered_by_the_owner(team, tmp_path, monkeypatch):
     anna, ben, carol = team
     doc = add_doc(anna, tmp_path, "jobs")

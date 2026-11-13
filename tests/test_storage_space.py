@@ -16,7 +16,7 @@ import pytest
 from enlens_claims import claimcheck, home, people, sharing
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder, seal, space
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
 
 
 def _round(p: Person, ok_kinds=("documents",)) -> dict:

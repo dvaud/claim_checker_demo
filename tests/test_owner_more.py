@@ -22,7 +22,7 @@ from owner_helpers import (TEXTS, accept, add_doc, allow, check, choices, declin
 from owner_more_helpers import (PersonAt, as_017_zip, as_before_018, canon_of, everything, file_names, join_zip,
                                 levels_of, log_rows, owner_of, readers_of, results_of, send, small_project, states_of,
                                 waiting, zips)
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 NOTE = ("Field notes from the coastal site\n\n"
         "The desalination plant at the coastal site ran at half its capacity in the dry season. Operators blamed "
@@ -462,7 +462,7 @@ def test_a_copy_made_from_a_zip_follows_the_owners_first_loosening(tmp_path, mon
 def _paper_team(tmp_path, monkeypatch, shared):
     """Anna's project holds a two-column paper read by reader 1 (its running head in the text); Ben and Carol have
     copies; Carol has a check with a quote across the running head (a result the new reader has no place for)."""
-    from test_0_15_0_read_with_new_reader import HEAD, Q_WATER, _check, _paper
+    from test_read_with_new_reader import HEAD, Q_WATER, _check, _paper
 
     anna = Person(tmp_path, "Anna", monkeypatch)
     with anna:
@@ -1087,7 +1087,7 @@ def test_adding_a_removed_document_again_a_second_time_is_a_proposal_again(trio,
         assert all(has(q, doc) for q in (anna, ben, carol)), cycle
 
 
-# ---- found by the randomised run (tests/test_0_18_0_owner_random.py), each made small ----------------------------
+# ---- found by the randomised run (tests/test_owner_random.py), each made small ----------------------------
 def _restore(p: Person, doc: str, fp: str) -> None:
     """Restore the passage with fingerprint `fp` (as Restore on the document's page)."""
     from enlens_claims import reader as reader2

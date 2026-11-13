@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 from helpers import PAPER_A_PAGES, make_pdf
-from helpers_0110 import LOCAL_MARK, Local, mixed_project, use_local_model
-from test_0_14_0_shared_projects import CLAIM, Person, _claim, _excerpts, anna_and_ben  # noqa: F401 (fixture)
+from helpers_mixed_corpus import LOCAL_MARK, Local, mixed_project, use_local_model
+from test_shared_projects import CLAIM, Person, _claim, _excerpts, anna_and_ben  # noqa: F401 (fixture)
 
 from enlens_claims import access, bundle, claimcheck, concordance, home, ingest, mcp_server, sync, tasks, terms
 from enlens_claims.llm import BaselineBackend

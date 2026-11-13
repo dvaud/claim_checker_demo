@@ -14,10 +14,10 @@ from enlens_claims import access, claimcheck, ingest, sharing, sync
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
 from enlens_claims.sync.common import text_fp
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_folder_privacy import _everything
-from test_0_18_0_folder_robustness import _bundles, _note_here, _note_round, _upto, started  # noqa: F401  (fixture)
-from test_0_18_0_shared_folder import _check, _has, _join, _round, pair, shared_dir, trio  # noqa: F401  (fixtures)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_folder_privacy import _everything
+from test_folder_robustness import _bundles, _note_here, _note_round, _upto, started  # noqa: F401  (fixture)
+from test_shared_folder import _check, _has, _join, _round, pair, shared_dir, trio  # noqa: F401  (fixtures)
 
 
 def _interview(p: Person, tmp_path: Path) -> tuple[str, str, str, str]:
@@ -199,7 +199,7 @@ def test_a_colleague_never_writes_back_a_document_just_taken_out_of_the_folder(p
 @pytest.mark.parametrize("backwards", [False, True])
 def test_a_check_its_owner_removed_is_never_passed_on_by_a_colleague_who_keeps_it(trio, shared_dir, monkeypatch,
                                                                                     backwards):
-    from test_0_18_0_shared_folder import _bundle_rows
+    from test_shared_folder import _bundle_rows
 
     anna, ben, carol = trio
     real = folder._people_dirs  # (colleagues are read in the order of their ids: either may come first)
@@ -435,7 +435,7 @@ def test_a_shared_check_its_owner_removed_leaves_the_owners_bundles(pair, shared
         claimcheck.delete_hypothesis(anna.ws, hid)
     w = _round(anna)["wrote"]
     assert w["snapshot"]
-    from test_0_18_0_shared_folder import _bundle_rows
+    from test_shared_folder import _bundle_rows
 
     assert not _bundle_rows(_bundles(shared_dir, anna).parent, "SELECT 1 FROM hypotheses WHERE hyp_id=?", (hid,))
     assert not _round(anna)["wrote"]["snapshot"]  # once

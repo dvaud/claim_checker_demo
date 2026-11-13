@@ -15,7 +15,7 @@ from enlens_claims import claimcheck, home, keychain, sharing
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import b2, folder, space
 from enlens_claims.sync.storage import DENIED, StorageProblem
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
 
 sys.path.insert(0, str(Path(__file__).parent))
 import fake_b2  # noqa: E402

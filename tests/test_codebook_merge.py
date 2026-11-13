@@ -10,14 +10,14 @@ two copies exchanged before:
   the labels of both copies;
 - the version before the merge is kept, as before any change of a codebook.
 
-A codebook of the same name made separately in each copy is still kept twice (tests/test_0_14_0_shared_projects.py).
+A codebook of the same name made separately in each copy is still kept twice (tests/test_shared_projects.py).
 """
 from __future__ import annotations
 
 import pytest
 
 from enlens_claims import bundle, codebooks, frameworks, profile
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 from test_app import api, home  # noqa: F401  (fixtures)
 
 

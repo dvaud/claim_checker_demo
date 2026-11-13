@@ -17,8 +17,8 @@ import re
 import pytest
 
 from enlens_claims import bundle, claimcheck, notes, reread
-from test_0_14_0_shared_projects import Person
-from test_0_15_0_read_with_new_reader import HEAD, Q_DESAL, Q_JUDGE, Q_WATER, _add, _check, _paper, _same
+from test_shared_projects import Person
+from test_read_with_new_reader import HEAD, Q_DESAL, Q_JUDGE, Q_WATER, _add, _check, _paper, _same
 
 
 @pytest.fixture

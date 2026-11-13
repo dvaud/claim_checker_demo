@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from helpers_0110 import Cloud
+from helpers_mixed_corpus import Cloud
 
 from enlens_claims import claimcheck, ingest, tasks
 from enlens_claims import home as ehome

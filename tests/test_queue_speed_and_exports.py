@@ -230,7 +230,7 @@ def test_the_queues_counts_per_kind_and_model_are_the_same_as_before(ws):
 
 
 def test_a_batch_takes_the_same_tasks_when_it_reads_the_queue_a_page_at_a_time(tmp_path, monkeypatch):
-    from helpers_0110 import mixed_project
+    from helpers_mixed_corpus import mixed_project
 
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("ENLENS_LOCAL_ONLY", raising=False)
@@ -392,7 +392,7 @@ def test_the_local_parts_that_wait_are_the_same_as_before(ws):
 # a changed setting: every open task worked out again, as each would be on its own
 # ---------------------------------------------------------------------------------------------
 def test_one_documents_new_setting_relabels_the_tasks_as_working_each_out_on_its_own_does(tmp_path, monkeypatch):
-    from helpers_0110 import mixed_project
+    from helpers_mixed_corpus import mixed_project
 
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("ENLENS_LOCAL_ONLY", raising=False)

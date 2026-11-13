@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from test_0_15_3_no_console_windows import AsWindows
-from test_0100_setup_and_moving import NEXT, _releases
-from test_0131_update_button import served  # noqa: F401  (fixture)
+from test_no_console_windows import AsWindows
+from test_setup_and_moving import NEXT, _releases
+from test_update_button import served  # noqa: F401  (fixture)
 from test_app import home  # noqa: F401  (fixture)
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -39,7 +39,7 @@ from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
 from owner_helpers import TEXTS, leave_out
 from owner_more_helpers import join_zip, small_project
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 LONG = "1" in (os.environ.get("ENLENS_LONG_RANDOM"), os.environ.get("ENLENS_L2_LONG"))
 SEEDS = int(os.environ.get("ENLENS_L2_SEEDS") or (30 if LONG else 10 if os.environ.get("CI") else 2))
@@ -649,7 +649,7 @@ def clock(monkeypatch):
     return fake
 
 
-# seeds of the default run that show a defect, each also a small test in test_0_18_0_owner_more.py, marked
+# seeds of the default run that show a defect, each also a small test in test_owner_more.py, marked
 # xfail(strict=True) with the defect (when it is fixed the seed passes and its mark must go)
 KNOWN: dict[int, str] = {}   # (seeds 1, 3, 4 and 8 showed four defects of 14af59e; fixed by builder A in 5e3dc72)
 

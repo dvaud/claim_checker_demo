@@ -16,7 +16,7 @@ from pathlib import Path
 from enlens_claims import sharing
 from enlens_claims.store import Workspace
 from enlens_claims.sync import common, folder, formats
-from test_0_14_0_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
 
 # DESIGN-roles §3.1 and §3.2: table -> its columns as the design names them
 TRAVEL = {

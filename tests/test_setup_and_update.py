@@ -27,7 +27,7 @@ import pytest
 from enlens_claims import __version__, update
 
 from test_app import Api, api, home  # noqa: F401  (fixtures)
-from test_082_update_and_grid import Pip, _g, _release, copies, needs_git  # noqa: F401  (fixtures)
+from test_update_and_grid import Pip, _g, _release, copies, needs_git  # noqa: F401  (fixtures)
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE = str(Path(__file__).with_name("fake_claude_cli.py"))

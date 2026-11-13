@@ -17,8 +17,8 @@ import pytest
 from enlens_claims.gui.poller import Poller, things
 from enlens_claims.sync import folder
 
-from test_0_14_0_shared_projects import anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_shared_folder import pair, shared_dir  # noqa: F401  (fixtures)
+from test_shared_projects import anna_and_ben  # noqa: F401  (fixture)
+from test_shared_folder import pair, shared_dir  # noqa: F401  (fixtures)
 from test_app import Api, home  # noqa: F401  (fixtures)
 
 
@@ -308,7 +308,7 @@ def test_what_came_in_is_counted_until_marked_seen(setup):
 
 def test_what_came_in_from_a_real_round(pair):
     """Ben's round brings Anna's shared check in: it is counted, under her name, until Ben marks it seen."""
-    from test_0_18_0_shared_folder import _check, _round, _share
+    from test_shared_folder import _check, _round, _share
 
     anna, ben = pair
     with anna:

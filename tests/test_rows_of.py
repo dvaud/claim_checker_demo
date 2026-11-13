@@ -17,7 +17,7 @@ from enlens_claims import bundle, claimcheck, codebooks, notes, profile, researc
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
 from enlens_claims.sync.common import LOCAL_ONLY
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 
 def _check(ws, text: str) -> str:

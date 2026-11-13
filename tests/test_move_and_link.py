@@ -13,8 +13,8 @@ from enlens_claims import bundle, home, people
 from enlens_claims.store import Workspace
 from enlens_claims.sync import folder
 from owner_helpers import choices, leave_out, sync
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_owner import shared_dir, team  # noqa: F401  (fixtures)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_owner import shared_dir, team  # noqa: F401  (fixtures)
 
 
 def _move_zip(p: Person, tmp: Path, name: str = "Shared", settings: dict | None = None) -> Path:
@@ -293,4 +293,4 @@ def test_a_zip_of_a_project_with_an_owner_needs_format_4(anna_and_ben, tmp_path)
 
     with anna:
         assert anna.ws.scalar("SELECT COUNT(*) FROM ownership")  # (Anna made it and sent it: she is its owner)
-    assert needs(anna) == 4  # (a project with no owner: formats.zip_needs says 1, test_0_18_0_roles_schema)
+    assert needs(anna) == 4  # (a project with no owner: formats.zip_needs says 1, test_roles_schema)

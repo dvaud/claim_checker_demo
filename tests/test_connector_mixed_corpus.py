@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("mcp")
 
-from helpers_0110 import mixed_project, use_local_model, write_corpus  # noqa: E402
+from helpers_mixed_corpus import mixed_project, use_local_model, write_corpus  # noqa: E402
 from mcp import Client  # noqa: E402
 
 from enlens_claims import access, home  # noqa: E402

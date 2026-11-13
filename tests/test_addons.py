@@ -14,7 +14,7 @@ import time
 import pytest
 
 import fake_claude_code as fcc
-from test_08_queue import _project, _settings
+from test_queue import _project, _settings
 from test_app import api, home  # noqa: F401  (fixtures)
 
 from enlens_claims import access, addons, claimcheck, tasks

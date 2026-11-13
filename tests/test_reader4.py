@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape
 
 import pytest
 from helpers import make_pdf
-from test_0_15_1_reader3 import _sentence
+from test_reader3 import _sentence
 
 from test_app import api, home  # noqa: F401  (fixtures)
 
@@ -48,7 +48,7 @@ def lines_txt(folder: Path, n: int = 120) -> tuple[Path, list[str]]:
 
 
 def heads_pdf(folder: Path) -> Path:
-    """Two columns, a running head and page numbers on every page (as test_0_15_0_read_with_new_reader's paper)."""
+    """Two columns, a running head and page numbers on every page (as test_read_with_new_reader's paper)."""
     rng = random.Random(7)
     fl = pdfmake.Flow(columns=[(56, 230), (310, 230)], running_head="Journal of Dry Regions 12 (2026)",
                       page_numbers=True)
@@ -169,7 +169,7 @@ def test_a_text_file_with_one_paragraph_per_line_is_read_paragraph_by_paragraph(
 
 
 def test_hard_wrapped_and_blank_line_text_files_read_as_reader_3_did(tmp_path):
-    from test_0_15_1_reader3 import make_book
+    from test_reader3 import make_book
 
     rng = random.Random(9)
     paras = [" ".join(_sentence(rng) for _ in range(4)) for _ in range(40)]
@@ -253,7 +253,7 @@ def test_a_document_of_reader_3_is_offered_reader_4_and_moves(tmp_path, monkeypa
 
 
 def test_the_reading_view_still_shows_a_document_of_reader_3(api, tmp_path, monkeypatch):
-    from test_0_15_0_reader import _project
+    from test_reader import _project
 
     path = controls_docx(tmp_path)
     monkeypatch.setattr(ingest, "READER", 3)

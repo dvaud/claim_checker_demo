@@ -17,7 +17,7 @@ import json
 import time
 
 import pytest
-from helpers_0110 import Cloud, Local, mixed_project, use_local_model
+from helpers_mixed_corpus import Cloud, Local, mixed_project, use_local_model
 
 from enlens_claims import access, claimcheck, taskqueue, tasks
 from enlens_claims import home as core

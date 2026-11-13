@@ -451,7 +451,7 @@ def test_a_note_keeps_the_occurrence_selected(demo):
 
 def test_a_colleagues_labels_under_a_name_changed_here_follow_it(tmp_path, monkeypatch):
     from enlens_claims import bundle
-    from test_0_14_0_shared_projects import Person
+    from test_shared_projects import Person
 
     anna, ben = Person(tmp_path, "Anna", monkeypatch), Person(tmp_path, "Ben", monkeypatch)
     with anna:
@@ -499,7 +499,7 @@ def test_names_that_are_not_names_never_reach_a_path(api):  # noqa: F811
 def test_a_colleagues_labels_follow_only_the_changes_their_copy_had_not_followed(tmp_path, monkeypatch):
     """The review's second look: swapped names, and a name used again, are followed once by each copy's labels."""
     from enlens_claims import bundle, claimcheck
-    from test_0_14_0_shared_projects import Person
+    from test_shared_projects import Person
 
     anna, ben = Person(tmp_path, "Anna", monkeypatch), Person(tmp_path, "Ben", monkeypatch)
     with anna:
@@ -537,7 +537,7 @@ def test_a_colleagues_labels_follow_only_the_changes_their_copy_had_not_followed
 
 def test_a_name_used_again_is_followed_right_by_a_colleagues_labels(tmp_path, monkeypatch):
     from enlens_claims import bundle, claimcheck
-    from test_0_14_0_shared_projects import Person
+    from test_shared_projects import Person
 
     anna, ben = Person(tmp_path, "Anna", monkeypatch), Person(tmp_path, "Ben", monkeypatch)
     with anna:

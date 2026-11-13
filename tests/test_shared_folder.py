@@ -14,7 +14,7 @@ import pytest
 from enlens_claims import claimcheck, codebooks, people, sharing
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
-from test_0_14_0_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
 
 
 def _check(ws, text: str) -> str:
@@ -254,7 +254,7 @@ def test_judgements_by_two_people_on_one_check_reach_both_and_a_third(trio, shar
 # --- a codebook edited on both sides -------------------------------------------------------------------------------
 def test_a_codebook_edited_on_both_sides_is_merged_code_by_code(pair):
     from enlens_claims import frameworks
-    from test_0_18_0_codebook_merge import _edit, _set
+    from test_codebook_merge import _edit, _set
 
     anna, ben = pair
     with anna:
@@ -314,8 +314,8 @@ def test_a_document_added_by_one_copy_comes_with_its_file_once(pair, shared_dir,
 
 def test_a_document_moved_to_the_new_reader_by_one_copy_stays_one_document(tmp_path, monkeypatch, shared_dir):
     from enlens_claims import reread
-    from test_0_18_0_old_readings import _doc_text, _placed
-    from test_0_15_0_read_with_new_reader import Q_DESAL, _check as _paper_check
+    from test_old_readings import _doc_text, _placed
+    from test_read_with_new_reader import Q_DESAL, _check as _paper_check
 
     anna, ben = _paper_pair(tmp_path, monkeypatch)
     for p in (anna, ben):
@@ -353,7 +353,7 @@ def _paper_pair(tmp_path, monkeypatch):
     readings tests' fixture, as a function)."""
     from enlens_claims import bundle
     from enlens_claims.store import Workspace
-    from test_0_15_0_read_with_new_reader import Q_WATER, _add, _check as _paper_check, _paper
+    from test_read_with_new_reader import Q_WATER, _add, _check as _paper_check, _paper
 
     anna, ben = Person(tmp_path, "Anna", monkeypatch), Person(tmp_path, "Ben", monkeypatch)
     with anna:
@@ -536,7 +536,7 @@ def test_a_check_naming_a_document_one_copy_removed_is_not_churned(pair):
     assert rep["documents"]["removed_there"]
     with ben:
         # 0.18 L2: Anna made the project, so she is its owner, and a document the owner removes leaves every copy
-        # (a collaborator's removal would stay theirs, as a proposal: tests/test_0_18_0_owner.py)
+        # (a collaborator's removal would stay theirs, as a proposal: tests/test_owner.py)
         assert not ben.ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc,))
         claimcheck.set_note(ben.ws, h2, "Ben's reply")
     _round(ben)

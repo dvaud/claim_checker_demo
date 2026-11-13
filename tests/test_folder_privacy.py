@@ -14,8 +14,8 @@ from pathlib import Path
 from enlens_claims import bundle, claimcheck, notes, sharing
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
-from test_0_14_0_shared_projects import Person
-from test_0_18_0_rows_of import rich  # noqa: F401  (fixture)
+from test_shared_projects import Person
+from test_rows_of import rich  # noqa: F401  (fixture)
 
 
 def _everything(shared_dir: Path) -> list[tuple[str, bytes]]:

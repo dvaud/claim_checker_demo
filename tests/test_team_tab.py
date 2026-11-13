@@ -55,7 +55,7 @@ def test_the_drawer_has_two_tabs_in_a_marked_block():
     # 0.17.0 (design guide 4.5): tabs without an address are the whole tab pattern, made by tabs({ onTab, panel }) in
     # lib.js; drawer({ tabs }) makes its tabs with it and the drawer's body is their panel. Before, this block made the
     # roles, ids, aria-controls, roving tabindex and keys by hand and these checks read them here; they now read them
-    # in the one helper that makes them (and test_0_17_0_place_pieces.py keeps any page from spelling them).
+    # in the one helper that makes them (and test_place_pieces.py keeps any page from spelling them).
     lib = (STATIC / "lib.js").read_text(encoding="utf-8")
     tabs_fn = lib[lib.index("export function tabs("):]
     tabs_fn = tabs_fn[:tabs_fn.index("\n}\n")]

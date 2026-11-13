@@ -13,8 +13,8 @@ from pathlib import Path
 
 from enlens_claims import ingest, reread
 
-from test_0_15_0_read_with_new_reader import _dump  # noqa: F401
-from test_0_15_7_documents_reading import _project
+from test_read_with_new_reader import _dump  # noqa: F401
+from test_documents_reading import _project
 from test_app import Api, api, home  # noqa: F401  (fixtures)
 
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"

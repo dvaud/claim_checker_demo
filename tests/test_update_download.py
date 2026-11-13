@@ -17,8 +17,8 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from test_0100_setup_and_moving import NEXT, Runs
-from test_0131_update_button import served  # noqa: F401  (fixture)
+from test_setup_and_moving import NEXT, Runs
+from test_update_button import served  # noqa: F401  (fixture)
 from test_app import home  # noqa: F401  (fixture)
 
 LATEST = "https://api.github.com/repos/dvaud/claim_checker_demo/releases/latest"

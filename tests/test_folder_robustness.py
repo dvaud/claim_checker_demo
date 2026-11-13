@@ -17,8 +17,8 @@ import pytest
 
 from enlens_claims import bundle, claimcheck, sharing
 from enlens_claims.sync import folder, formats
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_shared_folder import _check, _join, _round, pair, shared_dir, trio  # noqa: F401  (fixtures)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_folder import _check, _join, _round, pair, shared_dir, trio  # noqa: F401  (fixtures)
 
 
 def _bundles(shared_dir: Path, p: Person) -> Path:

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from test_0100_setup_and_moving import ROOT, Runs
+from test_setup_and_moving import ROOT, Runs
 
 from enlens_claims import home, installation, update  # noqa: E402,F401
 

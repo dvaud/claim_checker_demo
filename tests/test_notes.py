@@ -21,7 +21,7 @@ import pytest
 from enlens_claims import claimcheck, ingest, notes, researchlog
 from enlens_claims.store import Workspace
 
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixtures)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixtures)
 from test_app import Api, api, home  # noqa: F401  (fixtures)
 
 DEMO = Path(__file__).resolve().parents[1] / "tools" / "demo_corpus"

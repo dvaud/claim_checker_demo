@@ -18,8 +18,8 @@ import pytest
 
 from enlens_claims import ownership
 from owner_helpers import add_doc, has, level, set_level, sync, view
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_owner import shared_dir, team  # noqa: F401  (fixtures)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_owner import shared_dir, team  # noqa: F401  (fixtures)
 
 
 def _forge_owner(p: Person, follow: bool = False) -> None:

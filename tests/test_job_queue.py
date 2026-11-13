@@ -312,7 +312,7 @@ def _stop(srv):
 
 def test_the_new_reader_for_several_documents_waits_instead_of_being_refused(home, tmp_path, monkeypatch):  # noqa: F811
     pytest.importorskip("pdfminer")
-    from test_0_15_7_documents_reading import _project
+    from test_documents_reading import _project
 
     name, one, two = _project(home, tmp_path, monkeypatch, lost=False)
     srv, app, api = _server()
@@ -340,7 +340,7 @@ def test_the_new_reader_for_several_documents_waits_instead_of_being_refused(hom
 
 def test_a_new_theme_for_another_removed_theme_waits_for_the_first(home, tmp_path, monkeypatch):  # noqa: F811
     from enlens_claims import themes
-    from test_0_13_9_remove_themes import topics_corpus
+    from test_remove_themes import topics_corpus
 
     srv, app, api = _server()
     try:
@@ -418,7 +418,7 @@ def test_quitting_cancels_the_jobs_waiting_their_turn(home):  # noqa: F811
 
 def test_a_move_whose_document_was_removed_while_it_waited_says_so(home, tmp_path, monkeypatch):  # noqa: F811
     pytest.importorskip("pdfminer")
-    from test_0_15_7_documents_reading import _project
+    from test_documents_reading import _project
 
     name, one, two = _project(home, tmp_path, monkeypatch, lost=False)
     srv, app, api = _server()

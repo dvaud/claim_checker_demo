@@ -107,7 +107,7 @@ def test_a_failed_uv_install_says_to_close_claude_code():
 
 
 def test_the_windows_update_message_says_to_close_claude_code():
-    from test_0100_setup_and_moving import Runs, _releases
+    from test_setup_and_moving import Runs, _releases
 
     from enlens_claims import update
 

@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 
 import pytest
-from helpers_0110 import Cloud, Local, mixed_project, use_local_model
+from helpers_mixed_corpus import Cloud, Local, mixed_project, use_local_model
 
 import fake_servers
 from helpers import manual_text

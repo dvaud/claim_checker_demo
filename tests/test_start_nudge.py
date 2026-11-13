@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from test_090_subscription_first import _queued_labels, _waiting, fake_claude  # noqa: F401  (fixture)
+from test_subscription_first import _queued_labels, _waiting, fake_claude  # noqa: F401  (fixture)
 from test_app import api, home  # noqa: F401  (fixtures)
 
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"

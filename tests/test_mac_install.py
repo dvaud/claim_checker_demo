@@ -8,7 +8,7 @@ installs a local package and skips the download step) did not see it.
 
 - install.sh is plain ASCII, so no character can run into a name again, whatever shell reads it;
 - piped into sh as the install line does, in UTF-8 language settings, it downloads, checks and installs (stand-ins
-  for uv and curl, as in test_0100_setup_and_moving.py; no network);
+  for uv and curl, as in test_setup_and_moving.py; no network);
 - a script error ends as a failure: macOS's sh ran the clean-up trap after an unbound variable with $? already 0, so
   the broken install line even ended "successfully". The temporary folder goes either way.
 """
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from test_0100_setup_and_moving import ROOT, sandbox  # noqa: F401  (fixture)
+from test_setup_and_moving import ROOT, sandbox  # noqa: F401  (fixture)
 
 
 def test_install_sh_is_plain_ascii():

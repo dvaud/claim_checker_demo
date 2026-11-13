@@ -20,8 +20,8 @@ from pathlib import Path
 from enlens_claims import claimcheck, codebooks, profile
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync.fingerprints import _canon, _check_unit, _fingerprints
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_codebook_merge import _edit, _set, shared_codebook  # noqa: F401  (fixture)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_codebook_merge import _edit, _set, shared_codebook  # noqa: F401  (fixture)
 
 BENS = "Ben's own later work on his check"
 ANNAS = "Anna's version"

@@ -17,8 +17,8 @@ import pytest
 
 from enlens_claims import access, bundle, claimcheck, codebooks, notes, people, profile, researchlog, sharing, themes
 from enlens_claims.sync import changes, fingerprints, folder
-from test_0_14_0_shared_projects import anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_shared_folder import _check, _claim, _excerpts, _round, pair, shared_dir  # noqa: F401  (fixtures)
+from test_shared_projects import anna_and_ben  # noqa: F401  (fixture)
+from test_shared_folder import _check, _claim, _excerpts, _round, pair, shared_dir  # noqa: F401  (fixtures)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -202,7 +202,7 @@ def test_a_set_of_themes_is_written_when_a_theme_is_renamed(shared):
 
 
 def test_a_codebook_is_written_when_a_label_or_a_code_changes(shared):
-    from test_0_18_0_codebook_merge import _edit, _set
+    from test_codebook_merge import _edit, _set
 
     anna, _ben = shared
     with anna:

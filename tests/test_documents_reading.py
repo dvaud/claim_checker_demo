@@ -21,7 +21,7 @@ import pytest
 from enlens_claims import ingest, pdfmake, reader, reread
 from enlens_claims.store import Workspace
 
-from test_0_15_0_read_with_new_reader import HEAD, Q_WATER, SITES, _add, _check, _dump, _para, _paper  # noqa: F401
+from test_read_with_new_reader import HEAD, Q_WATER, SITES, _add, _check, _dump, _para, _paper  # noqa: F401
 from test_app import Api, api, home  # noqa: F401  (fixtures)
 
 

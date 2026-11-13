@@ -15,7 +15,7 @@ import pytest
 
 from enlens_claims import themes
 
-from test_0_13_9_remove_themes import topics_corpus
+from test_remove_themes import topics_corpus
 from test_app import Api, api, home  # noqa: F401  (fixtures)
 
 np = pytest.importorskip("numpy")

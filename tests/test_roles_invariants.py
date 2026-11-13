@@ -25,8 +25,8 @@ from owner_helpers import (add_doc, allow, choices, has, leave_out, level, move,
                            set_role, sync, view)
 from owner_more_helpers import send
 from roles_helpers import A, B, C, K, answer, bare, clash_entries, doc_of, make_crew, project, put_row, row_keys
-from test_0_14_0_shared_projects import Person
-from test_0_18_0_owner_more import NOTE
+from test_shared_projects import Person
+from test_owner_more import NOTE
 
 
 @pytest.fixture

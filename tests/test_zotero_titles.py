@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from test_0130_bibliography import PANEL_TITLE, _documents, _library, zotero  # noqa: F401  (fixture)
+from test_bibliography import PANEL_TITLE, _documents, _library, zotero  # noqa: F401  (fixture)
 from test_app import api, home  # noqa: F401  (fixtures)
 
 ROOT = Path(__file__).resolve().parent.parent

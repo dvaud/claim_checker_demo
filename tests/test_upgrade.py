@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from helpers_0110 import mixed_project, write_corpus
+from helpers_mixed_corpus import mixed_project, write_corpus
 
 from enlens_claims import access, bundle, claimcheck, home, ingest, tasks
 from enlens_claims.store import Workspace
@@ -26,7 +26,7 @@ def _make_010(path, corpus) -> Workspace:
     """A project as 0.10 left it: no AI settings, no ledger; a check answered by Claude Code; a task in the queue."""
     ws = Workspace.create(path)
     ingest.ingest(ws, [write_corpus(corpus)])
-    from helpers_0110 import Cloud
+    from helpers_mixed_corpus import Cloud
 
     claimcheck.check_hypothesis(ws, HYP, Cloud(), "claude-opus", k=6, per_doc=2, expand=False)
     with ws.connect() as cx:

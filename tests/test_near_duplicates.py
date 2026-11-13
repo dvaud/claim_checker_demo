@@ -16,8 +16,8 @@ from _fakedom import NODE, STATIC, run
 from enlens_claims import claimcheck, nearduplicates as nd, sharing
 from enlens_claims.llm import BaselineBackend
 from test_app import api, home  # noqa: F401  (fixtures)
-from test_0_18_0_storage_space import _round, _share, owner, store_dir, team  # noqa: F401  (fixtures)
-from test_0_14_0_shared_projects import anna_and_ben  # noqa: F401  (fixture)
+from test_storage_space import _round, _share, owner, store_dir, team  # noqa: F401  (fixtures)
+from test_shared_projects import anna_and_ben  # noqa: F401  (fixture)
 
 needs_node = pytest.mark.skipif(not NODE, reason="node is not installed")
 

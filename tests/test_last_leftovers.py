@@ -1,5 +1,5 @@
 """Deep dive leftovers (E3): an index on the answers' route, and the reading view's word picking. (E2's leftovers are
-in test_0_17_2_small_leftovers.py.)"""
+in test_small_leftovers.py.)"""
 from __future__ import annotations
 
 import pytest

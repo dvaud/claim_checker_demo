@@ -1,6 +1,6 @@
 """0.11.1: the defects found in the deep review, each proved by the behaviour it broke.
 
-The project of helpers_0110 (one document per AI setting, markers in every sentence of the restricted ones) is used
+The project of helpers_mixed_corpus (one document per AI setting, markers in every sentence of the restricted ones) is used
 where a defect concerned what Claude may see.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 import pytest
-from helpers_0110 import LOCAL_MARK, Cloud, Local, mixed_project, use_local_model
+from helpers_mixed_corpus import LOCAL_MARK, Cloud, Local, mixed_project, use_local_model
 
 from enlens_claims import access, claimcheck, home, taskqueue, tasks
 from enlens_claims.llm import BackendError

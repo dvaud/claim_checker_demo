@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 from helpers import make_pdf
-from test_0_15_0_read_with_new_reader import Q_DESAL, Q_WATER, _add, _check, _paper
+from test_read_with_new_reader import Q_DESAL, Q_WATER, _add, _check, _paper
 
 from enlens_claims import claimcheck, ingest, pdfmake, reread
 from enlens_claims.store import Workspace

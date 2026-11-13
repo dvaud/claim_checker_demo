@@ -1,5 +1,5 @@
 """Views of GET …/owner that follow the roles contract (DESIGN-roles §7, P1's `view()` fields), for the page's tests
-(`test_0_18_0_roles_ui.py`) and its screenshots, while P1's rules are built beside them. The people and documents are
+(`test_roles_ui.py`) and its screenshots, while P1's rules are built beside them. The people and documents are
 those of the mock-ups (Anna the Owner, her laptop and Ben Co-owners, Carol, Eszter and Tomás Members)."""
 from __future__ import annotations
 

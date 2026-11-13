@@ -3,7 +3,7 @@
 - Bibliography's four lists are a filter choice with counts, no longer tiles that spelled the tab roles by hand.
 - Tab roles come only from tabs(): no page spells them.
 - A download row's files wrap as one group; a theme card's "and N other documents" never breaks.
-- A place's icon sits on a grey tile: soft teal means here, chosen or found (tested in test_0_17_0_design.py).
+- A place's icon sits on a grey tile: soft teal means here, chosen or found (tested in test_design.py).
 """
 from __future__ import annotations
 

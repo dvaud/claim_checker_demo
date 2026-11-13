@@ -26,10 +26,10 @@ import pytest
 from enlens_claims import access, bundle, claimcheck, researchlog, sharing
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_folder_privacy import _everything
-from test_0_18_0_folder_robustness import _bundles, _note_here, _upto, started  # noqa: F401  (fixture)
-from test_0_18_0_shared_folder import _check, _join, _round, pair, shared_dir, trio  # noqa: F401  (fixtures)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_folder_privacy import _everything
+from test_folder_robustness import _bundles, _note_here, _upto, started  # noqa: F401  (fixture)
+from test_shared_folder import _check, _join, _round, pair, shared_dir, trio  # noqa: F401  (fixtures)
 
 
 # 1 ------------------------------------------------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from enlens_claims.llm import BaselineBackend
 from enlens_claims.sync import folder
 from owner_helpers import add_doc, join, sync
 from owner_more_helpers import as_before_018, small_project
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 
 def _excerpts(p: Person, hid: str) -> list[tuple[str, str]]:

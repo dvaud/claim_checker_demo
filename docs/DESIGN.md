@@ -998,7 +998,7 @@ else may reach it.
 ### 9.5 Named exceptions
 
 A few rules have exceptions, each argued for once. They are listed here and in the design test
-(`tests/test_0_17_0_design.py`), which holds the two lists equal: a new one is argued for in both, in the same commit.
+(`tests/test_design.py`), which holds the two lists equal: a new one is argued for in both, in the same commit.
 
 **Boxes a page still draws** ([9.2](#92-the-rules), rule 2): pieces no component means.
 
@@ -1067,7 +1067,7 @@ there. The navigation's pieces (5.1 to 5.3) have no helper: they are drawn there
 state, and the live ones are beside the page. No sample leads away from the page: its links point at the page itself.
 A new element gets its section there in the commit that gives it its section here.
 
-**The checks** (`tests/test_0_17_0_design.py`, part of the suite) keep the rules of [9.2](#92-the-rules) true:
+**The checks** (`tests/test_design.py`, part of the suite) keep the rules of [9.2](#92-the-rules) true:
 
 - the stylesheets are `tokens.css`, `app.css`, `components.css`, `views.css`, then `site.css` last, and no other;
 - every section of `components.css` is a section of this guide, in its order; a component's class is styled in one

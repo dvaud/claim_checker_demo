@@ -7,7 +7,7 @@ be reached) the local excerpts wait for a person too.
 from __future__ import annotations
 
 import pytest
-from helpers_0110 import Cloud, Local, mixed_project, use_local_model
+from helpers_mixed_corpus import Cloud, Local, mixed_project, use_local_model
 
 from enlens_claims import claimcheck, home
 from enlens_claims.llm import BackendError

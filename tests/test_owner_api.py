@@ -3,7 +3,7 @@ routes of gui/server.py), over HTTP, as the Team tab and the Documents page use 
 
 Each person has their own app (their own server in their own ENLENS folder, with their copy of the project linked
 in), so what one copy answers is what that person would see. The work between the copies goes through the shared
-folder (owner_helpers.sync) or a zip, as in tests/test_0_18_0_owner.py.
+folder (owner_helpers.sync) or a zip, as in tests/test_owner.py.
 
 - the view: every field the plan names, for the owner and for a collaborator; a project never exchanged; one with no
   owner;
@@ -27,7 +27,7 @@ import pytest
 from enlens_claims import ingest, ownership, reread
 from enlens_claims.sync import folder
 from owner_helpers import add_doc, follow, has, join, level, move, reader_of, sync
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
 from test_app import Api, home  # noqa: F401  (fixture)
 
 NAME = "Közös projekt"  # a project name with accents and a space, as a researcher names one

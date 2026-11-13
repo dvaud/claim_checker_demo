@@ -55,7 +55,7 @@ tagged commit (*Releases*).
 - a run of the whole suite (no test file named, no `-m`) leaves out the tests marked `heavy`; CI runs them, and
   `ENLENS_ALL_TESTS=1`, or naming their file, runs them here. Mark a test `heavy` when it writes hundreds of MB or
   runs for many seconds;
-- the seeded random runs of the 0.18 roles (`random`: `test_0_18_0_roles_random.py`, `test_0_18_0_owner_random.py`)
+- the seeded random runs of the 0.18 roles (`random`: `test_roles_random.py`, `test_owner_random.py`)
   run 2 seeds here, 10 in CI (`CI` set) and 30 with `ENLENS_LONG_RANDOM=1`;
 - one test run at a time on the computer, at most `-n 4`; the whole suite only once, after merging and before a
   release;
@@ -76,7 +76,7 @@ the slowest.
 Tests never touch a real Claude Code, uv or the network: `tests/conftest.py` points `ENLENS_CLAUDE` nowhere, gives
 every test its own `ENLENS_HOME` (and keeps secrets in files there, `ENLENS_KEYCHAIN=file`, never the computer's
 keychain) and reads added documents one at a time (`ENLENS_READ_WORKERS=1`, so a stand-in a test puts in this process
-is what reading sees; `tests/test_0_16_0_speed.py` reads at once on purpose); `tests/fake_claude_cli.py`,
+is what reading sees; `tests/test_speed.py` reads at once on purpose); `tests/fake_claude_cli.py`,
 `tests/fake_claude_installer.py`, `tests/fake_servers.py` and `tests/fake_zotero.py` stand in for the real programs. A
 release's tests go in a new file `tests/test_<X>_<Y>_<Z>_<topic>.py`; older files keep their names.
 [docs/USER_TESTS.md](USER_TESTS.md) has the first-time user tests behind the app (0.5.1 to 0.7.0).
@@ -139,11 +139,11 @@ themes and at 390 px wide.
 | `handover.py` | The update on Windows (0.15.4): run outside ENLENS's own folder with the Python uv installed, it waits for the app to quit, installs the new version, starts the app again and leaves what happened in `updates/result.json`. Standard library only (a test holds it to that); `ENLENS_RELEASE_API` points the update at a stand-in for GitHub (the release's Windows test) |
 | `procs.py` | `no_window()`: every program the package starts gets no console window on Windows (0.15.3; a test holds every `subprocess` call to it, or to a `# console: …` reason) |
 | `home.py` | Settings, projects, the optional cloud key |
-| `gui/static/` (the look) | `tokens.css` (the tokens, light and dark), `app.css` (base elements, the shell, layout utilities), `components.css` (every component, one section each, numbered as in [DESIGN.md](DESIGN.md)), `views.css` (each page's own pieces and their placement), `site.css` (an installation's own look, last); `lib.js` makes each component (`button()`, `link()`, `card()`…), `views/design.js` is the live reference at `#/design`. New CSS goes into its component's section, or into its page's block of `views.css` when only that page has the piece; never a new sheet, never an inline style. [DESIGN.md](DESIGN.md) says which element to use; `tests/test_0_17_0_design.py` keeps its rules |
+| `gui/static/` (the look) | `tokens.css` (the tokens, light and dark), `app.css` (base elements, the shell, layout utilities), `components.css` (every component, one section each, numbered as in [DESIGN.md](DESIGN.md)), `views.css` (each page's own pieces and their placement), `site.css` (an installation's own look, last); `lib.js` makes each component (`button()`, `link()`, `card()`…), `views/design.js` is the live reference at `#/design`. New CSS goes into its component's section, or into its page's block of `views.css` when only that page has the piece; never a new sheet, never an inline style. [DESIGN.md](DESIGN.md) says which element to use; `tests/test_design.py` keeps its rules |
 | `gui/` | The local app: `server.py` (the server, `App`, `Handler`, the routes), `api_documents.py`, `api_explore.py`, `api_checks.py`, `api_setup.py`, `api_record.py`, `api_sharing.py`, `api_folder.py`, `api_poller.py`, `api_owner.py` and `api_space.py` (the endpoints of `Handler`: documents and reading, search and profiles, checks and the queue, settings and setup, the research log, notes, history and codebooks, what is shared, the shared folder, the poller, the owner and the proposals, with the job that makes a new reading the owner accepted, and the storage space), `app_library.py` and `app_queue.py` (bibliography and search, the task queue: parts of `App`), `api_common.py` (errors, jobs and the queue in which a project's jobs wait their turn, shared helpers), `poller.py` (the thread that looks in each project's shared folder every couple of minutes), `static/` (the page; `features.js` describes each feature once), `progress.py`, `launcher.py` (the ENLENS icon), `icons/` (its picture, drawn by `tools/make_icons.py`) |
 | `concordance.py` | Search (0.7): concordance lines, modes, other forms, collocates |
 | `profile.py` | Codebook profiles: the keyword and meaning pass, the AI's labels, grids, a person's labels |
-| `terms.py` | The glossary (C-value terms, abbreviations), concepts and their links, key terms. 0.16 (H3): each document's reading kept in `cache/glossary.sqlite` and used again while its text and the joiner's decisions for it are unchanged; only changed mentions are written; the result is a build from scratch's, mention for mention (`tests/test_0_16_0_recompute.py`). 0.17.2: `term_mentions` is WITHOUT ROWID with one index (`store.PLACES_TABLE`); a document's places are a range of passage ids (`store.passage_range`) and `doc_id` stays empty (kept, with the table's name, for an older ENLENS that opens the file: never rename it or give another table no rowid, as an older ENLENS reads every table it does not know by rowid); the rows are written in key order. A table of the old shape, or a glossary an older ENLENS made, is dropped on opening and the glossary made again; the file is made smaller once (`store._drop_old_places`, `tests/test_0_17_2_db_size.py`) |
+| `terms.py` | The glossary (C-value terms, abbreviations), concepts and their links, key terms. 0.16 (H3): each document's reading kept in `cache/glossary.sqlite` and used again while its text and the joiner's decisions for it are unchanged; only changed mentions are written; the result is a build from scratch's, mention for mention (`tests/test_recompute.py`). 0.17.2: `term_mentions` is WITHOUT ROWID with one index (`store.PLACES_TABLE`); a document's places are a range of passage ids (`store.passage_range`) and `doc_id` stays empty (kept, with the table's name, for an older ENLENS that opens the file: never rename it or give another table no rowid, as an older ENLENS reads every table it does not know by rowid); the rows are written in key order. A table of the old shape, or a glossary an older ENLENS made, is dropped on opening and the glossary made again; the file is made smaller once (`store._drop_old_places`, `tests/test_db_size.py`) |
 | `themes.py` | Themes: spherical k-means (numpy or pure Python: `_kmeans_sparse_np` does the same float operations in the same order as `_kmeans_sparse_py`, which defines the result, so both give the same themes to the last bit), c-TF-IDF names, a person's edits |
 | `references.py` | References inside a document (chains), and what a quote's "it" refers to |
 | `bibliography.py` | The bibliography (0.13): Zotero read through its local API, BibTeX / RIS / CSL JSON / CSV files, matching works with documents |
@@ -156,7 +156,7 @@ themes and at 390 px wide.
 | `addons.py` | The local layer for apps built on ENLENS (0.13.5): see [EXTENDING.md](EXTENDING.md) |
 | `vca.py`, `sources.py`, `analysis.py`, `review.py`, `report.py`, `benchmark.py` | The SDG / value chain assessment pack |
 
-**Where new CSS goes** (the rules are [DESIGN.md](DESIGN.md), section 9; `tests/test_0_17_0_design.py` holds them):
+**Where new CSS goes** (the rules are [DESIGN.md](DESIGN.md), section 9; `tests/test_design.py` holds them):
 
 | What you are adding | Where it goes |
 | --- | --- |

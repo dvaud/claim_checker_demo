@@ -7,7 +7,7 @@ carried a start or end mark, and the reading's figures (what is left out, by kin
 """
 from __future__ import annotations
 
-from test_0_15_1_reader3 import _project, make_book
+from test_reader3 import _project, make_book
 from test_app import api, home  # noqa: F401  (fixtures)
 
 

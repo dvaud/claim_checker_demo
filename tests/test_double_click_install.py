@@ -6,7 +6,7 @@
   in the console's code page);
 - Install-ENLENS-macOS.zip: install.sh as "Install ENLENS.command", which Terminal runs on a double-click, in a zip
   that keeps its "may run" mark (a browser drops it from a bare download). Unzipped as Archive Utility does, it runs
-  and installs (stand-ins for uv and curl, as in test_0100_setup_and_moving.py; no network). Gatekeeper still asks
+  and installs (stand-ins for uv and curl, as in test_setup_and_moving.py; no network). Gatekeeper still asks
   once, since the file is not signed by an Apple developer: the release notes say how to allow it;
 - SHA256SUMS lists both, the release notes link both files of that release, and the release workflow tries both;
 - on Windows, where ENLENS cannot update itself, the update message names the file to double-click.
@@ -24,9 +24,9 @@ from pathlib import Path
 import pytest
 
 # (0.18.1: the files of the release being made are named by the changelog's top entry, not by the running version)
-from test_0100_setup_and_moving import ROOT, RELEASE as VERSION, Runs, _releases, sandbox  # noqa: F401  (fixture)
+from test_setup_and_moving import ROOT, RELEASE as VERSION, Runs, _releases, sandbox  # noqa: F401  (fixture)
 
-import release  # tools/, put on the path by test_0100_setup_and_moving
+import release  # tools/, put on the path by test_setup_and_moving
 
 WIN, MAC, COMMAND = "Install-ENLENS-Windows.cmd", "Install-ENLENS-macOS.zip", "Install ENLENS.command"
 

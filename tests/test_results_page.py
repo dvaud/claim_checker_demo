@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 import fake_claude_code as fcc
-from test_08_queue import _project
+from test_queue import _project
 from test_app import CLAIM, api, home  # noqa: F401  (fixtures)
 
 STATIC = Path(__file__).resolve().parent.parent / "src" / "enlens_claims" / "gui" / "static"

@@ -12,7 +12,7 @@ import json
 import re
 
 import pytest
-from helpers_0110 import Cloud, Local, mixed_project
+from helpers_mixed_corpus import Cloud, Local, mixed_project
 
 from enlens_claims import access, home, ingest, taskqueue, tasks
 from enlens_claims.store import Workspace
@@ -114,7 +114,7 @@ def test_a_changed_setting_applies_to_tasks_not_answered_yet(mixed):
 def test_project_default_and_the_question_once(tmp_path, monkeypatch):
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("ENLENS_LOCAL_ONLY", raising=False)
-    from helpers_0110 import write_corpus
+    from helpers_mixed_corpus import write_corpus
 
     ws = home.create_project("New")
     assert not access.default_chosen(ws) and access.default(ws) == "cloud"   # as 0.10 did, until answered
@@ -137,7 +137,7 @@ def test_project_default_and_the_question_once(tmp_path, monkeypatch):
 
 def test_the_manifest_sets_the_setting_per_file(tmp_path, monkeypatch):
     monkeypatch.setenv("ENLENS_HOME", str(tmp_path / "home"))
-    from helpers_0110 import write_corpus
+    from helpers_mixed_corpus import write_corpus
 
     folder = write_corpus(tmp_path / "c")
     (folder / "manifest.csv").write_text("file,reference,ai_access,ai_note\nlicensed_study.txt,Study,local,publisher "

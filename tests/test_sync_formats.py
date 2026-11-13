@@ -14,7 +14,7 @@ import pytest
 
 from enlens_claims import sync
 from enlens_claims.sync import formats
-from test_0_14_0_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import CLAIM, Person, anna_and_ben  # noqa: F401  (fixture)
 
 
 def _rewrite(f: Path, out: Path, change) -> Path:

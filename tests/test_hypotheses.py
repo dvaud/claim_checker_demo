@@ -595,7 +595,7 @@ A second paragraph of the discussion says that public transport lost riders.
 def test_layout_finds_paragraphs_and_headings_without_changing_the_text(ws, tmp_path, monkeypatch):
     from helpers import make_pdf
 
-    monkeypatch.setattr(ingest, "READER", 1)  # 0.15: reader 1's layout (reader 2's: tests/test_0_15_0_reader.py)
+    monkeypatch.setattr(ingest, "READER", 1)  # 0.15: reader 1's layout (reader 2's: tests/test_reader.py)
 
     (tmp_path / "r.txt").write_text(REPORT_WITH_HEADINGS)
     (tmp_path / "w.html").write_text("<html><body><h1>Rush hour is back</h1><p>Dateline, 2025</p>"

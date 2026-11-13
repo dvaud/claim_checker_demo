@@ -16,9 +16,9 @@ import shutil
 
 import pytest
 
-from test_0100_setup_and_moving import ROOT, Runs
+from test_setup_and_moving import ROOT, Runs
 
-import release  # tools/, put on the path by test_0100_setup_and_moving
+import release  # tools/, put on the path by test_setup_and_moving
 
 # loaded before any test changes enlens_claims.__version__: a module that copies it on import keeps the real one
 from enlens_claims import installation, update  # noqa: E402,F401

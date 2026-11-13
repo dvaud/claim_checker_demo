@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from helpers_0110 import LOCAL_MARK, MARKS, NONE_MARK, Cloud, Local, Recorder, mixed_project, use_local_model
+from helpers_mixed_corpus import LOCAL_MARK, MARKS, NONE_MARK, Cloud, Local, Recorder, mixed_project, use_local_model
 
 from enlens_claims import access, claimcheck, embed, llm, tasks
 from enlens_claims import home as core

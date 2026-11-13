@@ -62,7 +62,7 @@ from enlens_claims.sync import folder
 from owner_helpers import TEXTS, leave_out
 from owner_more_helpers import join_zip, send, small_project
 from roles_helpers import OLD
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 LONG = "1" in (os.environ.get("ENLENS_LONG_RANDOM"), os.environ.get("ENLENS_L2_LONG"))
 SEEDS = int(os.environ.get("ENLENS_ROLES_SEEDS") or (30 if LONG else 10 if os.environ.get("CI") else 2))

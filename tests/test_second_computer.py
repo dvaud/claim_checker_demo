@@ -14,8 +14,8 @@ from enlens_claims import home, people
 from enlens_claims.store import Workspace
 from enlens_claims.sync import folder
 from owner_helpers import add_doc
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
-from test_0_18_0_owner import shared_dir, team  # noqa: F401  (fixtures)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_owner import shared_dir, team  # noqa: F401  (fixtures)
 
 
 def _files(d: Path) -> dict[str, str]:
