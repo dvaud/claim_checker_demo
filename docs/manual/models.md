@@ -97,7 +97,7 @@ counts against your plan's limits; with a local model it costs only time.
 | --- | --- |
 | The model and its exact version (digest) | Claude Code gives no digest. |
 | The prompt version | Changes when a prompt changes, so old and new answers stay apart. |
-| The seed (42 by default) and temperature 0 | Claude Code takes no seed, so its answers are not repeatable the way a seeded local model's are. |
+| The seed (42 by default) and temperature 0 | Only a local model takes them. Claude Code and the Claude API take no seed and are sent no temperature, so their answers are not repeatable the way a seeded local model's are. |
 | The route (Claude Code, the Claude API, a local server) and the helper | With Claude Code, also the model set for that helper and when its batch was claimed and answered. |
 | Whether the answer came from the stronger model | |
 | The ENLENS version that made it | Every answer, codebook label and set of themes; each check records the version that started it. |

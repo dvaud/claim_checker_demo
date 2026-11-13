@@ -1337,8 +1337,9 @@ def provenance(backend, model: str) -> dict:
     from .routing import ROUTE_NAMES
 
     settings = {"backend": name, "temperature": 0, "route": ROUTE_NAMES.get(name, name)}
-    if name == "claude_code":
-        settings.pop("temperature")  # Claude Code sets no temperature and no seed
+    if name in ("claude_code", "anthropic"):
+        # Claude Code sets no temperature and no seed; nor does the Claude API request (0.18.1: it was recorded as 0)
+        settings.pop("temperature")
     if getattr(backend, "num_ctx", None):
         settings["num_ctx"] = int(backend.num_ctx)
     if name == "ollama":

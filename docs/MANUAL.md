@@ -1,11 +1,9 @@
 # ENLENS manual
 
-ENLENS helps you **explore** your own documents and **check hypotheses** against them. Exploring comes first: every
-place a word occurs, the codes each document addresses (the SDG targets or your own codebook), concepts you follow
-across documents, themes. Most of it needs no AI. When you have a statement that could be true or false, ENLENS finds
-the passages that bear on it, has an AI judge each one, verifies every quoted word against the source, and tells you
-whether your documents support, partly support, contest or contradict it, with the document, page and quote behind
-every judgement.
+ENLENS helps you **explore** your own documents and **check hypotheses** against them. Exploring comes first: search,
+codes (the SDG targets or your own codebook), concepts and themes, mostly without AI. To check a statement, ENLENS
+finds the passages that bear on it, has an AI judge each one, verifies every quoted word, and tells you whether your
+documents support, partly support, contest or contradict it, with the document, page and quote behind every judgement.
 
 ![The Overview of a project in ENLENS](images/overview.png)
 
@@ -22,13 +20,11 @@ flowchart LR
 
 Three things hold everywhere:
 
-- **Your judgement wins.** You review the AI's judgements as you would a co-coder's. Yours replace the AI's, always
-  count, and are kept beside the AI's in the Excel download.
-- **Every quote is checked.** A judgement whose quote is not word for word in the source is sent back to the AI and
-  never used.
-- **You decide what the AI may read.** The AI is Claude, through Claude Code on your own Claude plan; only the
-  passages in its tasks leave your computer. Any document can be kept to a model on your own computer, or from AI
-  altogether, and an installation can rule out the cloud for good.
+- **Your judgement wins.** You review the AI as you would a co-coder. Your judgements replace its own, always count,
+  and are kept beside them in the Excel download.
+- **Every quote is checked.** A quote that is not word for word in the source is sent back and never used.
+- **You decide what the AI may read.** Only the passages in its tasks leave your computer. Any document can be kept to
+  a model on your own computer, or from AI altogether, and an installation can rule out the cloud for good.
 
 ## Five-minute start
 
@@ -48,11 +44,11 @@ Three things hold everywhere:
 | **Get going** | [Install and update](manual/install.md) | The one-line install, the files to double-click, scanned PDFs, updating, the icon |
 | | [First steps](manual/first-steps.md) | The first screen, adding documents, the sidebar, the finder, the AI mark |
 | **Your work** | [Check a hypothesis](manual/check.md) | The *Hypotheses* place: what a check does, the answers, hypotheses in parts, checking many at once |
-| | [Read and review a result](manual/review.md) | The result page, the assessment in words, excerpt cards, second opinions, downloads, the list of answers, the evidence map |
-| | [Explore your documents](manual/explore.md) | Search, Codes, Concepts (links found in the text, paths between concepts, over time), Themes, a document's panels, theory documents, Quick look |
-| | [Make your own codebook](manual/codebooks.md) | Codes of your own: from the themes, a theory document, a copy or a CSV file; try them, change them, labels follow |
-| | [How documents are read](manual/reading.md) | What is read and what is left out, tables and figures, the reading view, moving to a new reader |
-| | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find, retractions and corrections |
+| | [Read and review a result](manual/review.md) | The result page, excerpt cards, second opinions, downloads, the list of answers, the evidence map |
+| | [Explore your documents](manual/explore.md) | Search, Codes, Concepts, Themes, a document's panels, theory documents, Quick look |
+| | [Make your own codebook](manual/codebooks.md) | Codes of your own: from the themes, a theory, a copy or a CSV file; try them, change them, labels follow |
+| | [How documents are read](manual/reading.md) | What is read and what is left out, the reading view, moving to a new reader |
+| | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find, retractions |
 | | [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights and notes, the dated record of decisions, compare and restore |
 | | [Work together](manual/together.md) | Sharing, the Team tab and page, the owner, clashes, moving |
 | | [A storage space of your team's own](manual/storage-space.md) | Set-up, invites, joining |
@@ -61,7 +57,7 @@ Three things hold everywhere:
 | **The AI and your privacy** | [Privacy](manual/privacy.md) | What leaves your computer, who may read each document with AI, working together, how it is enforced |
 | | [Claude Code](manual/claude-code.md) | Starting it, its speed and helpers, the queue; Claude in a chat (the connector) |
 | | [A model on your own computer](manual/local-models.md) | Getting one, choosing and tuning it, testing it |
-| | [Which model does what](manual/models.md) | The model of each task and of each Claude plan, how much thought, the mix of local and Claude; what every answer records |
+| | [Which model does what](manual/models.md) | The model of each task and of each Claude plan; what every answer records |
 | **Reference** | [Settings](manual/settings.md) | The five tabs, new versions early, reporting a problem, installing for others |
 | | [Glossary](manual/glossary.md) | The words of the app and their technical names |
 | | [Troubleshooting and limits](manual/troubleshooting.md) | Problems by topic, with their fixes; what ENLENS cannot promise |
@@ -78,6 +74,7 @@ Three things hold everywhere:
 | make my own codebook | [Make your own codebook](manual/codebooks.md) |
 | highlight or note words of a document | [Highlights and notes](manual/notes-and-log.md#highlights-and-notes) |
 | overrule the AI on an excerpt | [An excerpt card](manual/review.md#an-excerpt-card) |
+| write a methods section, or an ethics application | [METHODS.md](METHODS.md), [PRIVACY.md](PRIVACY.md) |
 | know which AI models a result used, for a methods section | [Notes and downloads](manual/review.md#notes-and-downloads), [What every answer records](manual/models.md#what-every-answer-records) |
 | keep a licensed PDF or an interview away from Claude | [Who may read each document with AI](manual/privacy.md#who-may-read-each-document-with-ai) |
 | use ENLENS with no cloud at all | [A model on your own computer](manual/local-models.md), [For whoever installs ENLENS](manual/settings.md#for-whoever-installs-enlens) |
@@ -90,13 +87,8 @@ Three things hold everywhere:
 | work through a folder the team shares | [Choosing the shared folder](manual/shared-folder.md) |
 | know what a shared folder holds | [Privacy: working together](manual/privacy.md#working-together) |
 | move ENLENS to a new computer | [Moving to another computer](manual/together.md#moving-to-another-computer) |
-| make Claude Code go faster, or easier on my plan's limits | [How fast it works](manual/claude-code.md#how-fast-it-works) |
-| choose how much thought Claude gives the tasks | [How much thought](manual/models.md#how-much-thought) |
-| share the work between a local model and Claude | [The mix of local and Claude](manual/models.md#the-mix-of-local-and-claude) |
-| carry on when my plan's limit is reached | [At your plan's usage limit](manual/claude-code.md#at-your-plans-usage-limit) |
-| see what an answer rests on, in words | [The assessment in words](manual/review.md#the-assessment-in-words) |
-| keep the theory I read through out of the evidence | [Theory documents](manual/explore.md#theory-documents) |
-| check my sources for retractions | [Retractions and corrections](manual/bibliography.md#retractions-and-corrections) |
+| choose how much thought Claude gives, or share it with a local model | [Which model does what](manual/models.md#how-much-thought) |
+| keep theory books out of the evidence | [Theory documents](manual/explore.md#theory-documents) |
 | update ENLENS | [Update](manual/install.md#update) |
 | report a problem | [Reporting a problem](manual/settings.md#reporting-a-problem) |
 

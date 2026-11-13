@@ -94,12 +94,15 @@ colleagues, only what you share goes to them, with the documents: in a file you 
 that you choose, which holds the documents' text and files and only what you share of your own work, so whoever can
 open that folder (and the cloud service behind it) can read it; you can keep documents marked *Only a local AI* or *No
 AI* out of it ([what it holds](docs/manual/privacy.md#working-together)). The details, and what Anthropic's terms say
-for each plan, are in [Privacy](docs/manual/privacy.md) in the manual.
+for each plan, are in [Privacy](docs/manual/privacy.md) in the manual; for an ethics application or a data protection
+assessment, [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Documentation
 
 - [The manual](docs/MANUAL.md): a one-page start, then a short page per task: the app, Claude Code, local models,
   privacy, the command line and the SDG pack.
+- [How ENLENS works, for a methods section](docs/METHODS.md), and [what leaves the computer, for an ethics
+  application](docs/PRIVACY.md).
 - [Which model each task needs](docs/MODEL_CHOICE.md): how the models are chosen, and (once made) the runs on the pilot.
 - [The app's HTTP API](docs/API.md), for scripts and other programs.
 - Add-ons: [building an app on ENLENS](docs/EXTENDING.md), with an add-on's own [manual](docs/ADDON_MANUAL.md) and

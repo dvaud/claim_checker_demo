@@ -93,7 +93,7 @@ only between two terms the glossary knows and only when the connecting words alo
 | The sentence says | The link proposed |
 | --- | --- |
 | "X such as Y, Z and W" | X is broader than Y, Z and W |
-| "Y, Z and other X" | Y and Z are part of X |
+| "Y, Z and other X" | Y and Z are kinds of X (narrower) |
 | "X, also called Y", "X (also known as Y)", "X, i.e. Y" | the same |
 | "X leads to / causes / reduces / increases / results in Y" | X *leads to* Y |
 | "X instead of Y" | X *replaces* Y |

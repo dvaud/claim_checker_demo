@@ -9,7 +9,7 @@ seed, so two runs with the same seed and the same passages give the same themes.
   project.
 
 Steps of a run: the body passages, without exact repeats (the same normalised text: running headers and footers);
-k themes (default 20, from 5 to 60); every passage assigned to its nearest centre with its similarity. Each theme is
+k themes (default 20, from 2 to 60); every passage assigned to its nearest centre with its similarity. Each theme is
 named without a model by its key terms (class-based TF-IDF on the term index) and shown with the three passages
 nearest its centre, from different documents where possible. An optional model pass (`theme` tasks, prompt
 theme-v1) gives each theme a name of at most six words and a one-sentence description, each with a quote from the

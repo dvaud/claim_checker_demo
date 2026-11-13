@@ -9,6 +9,10 @@
 > - ENLENS records every passage it sends to Claude, and you can download that list.
 > - Working together, only what you share goes to colleagues, with the documents (0.17.0): never your private work.
 
+
+For an ethics application or a data protection assessment, the same in their terms, with what ENLENS cannot
+promise: [PRIVACY.md](../PRIVACY.md).
+
 ## What goes where
 
 | Where it goes | What |
@@ -21,7 +25,8 @@
 | **Nowhere** | With a model on this computer, every word stays on it. |
 
 Apart from the AI you chose, ENLENS itself goes online only to look for a new version on GitHub, and, when you ask for
-them, to get Claude Code or a local model. There is no telemetry. The app is a small server on `127.0.0.1` with a key
+them, to get Claude Code or a local model, to ask Crossref about retractions (DOIs only, never under local-only) and to
+reach your team's storage space (sealed on this computer first). There is no telemetry. The app is a small server on `127.0.0.1` with a key
 (an access token) per run, and the page loads nothing from the internet (no CDN, fonts or analytics). Bringing in a colleague's work reads
 the file on this computer and sends nothing. A shared folder is written and read on this computer too: ENLENS itself
 sends nothing for it, and your cloud service or network drive carries what is in it. Zotero is only read (never
