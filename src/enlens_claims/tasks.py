@@ -452,7 +452,7 @@ def _errs(e: ValidationError) -> list[str]:
 def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = None,
                   provenance: dict | None = None, route: str | None = None, helper: str | None = None,
                   claimed_at: str | None = None, problem: str | None = None, claim: str | None = None,
-                  free: bool = False) -> tuple[bool, list[str]]:
+                  free: bool = False, cached: bool = False) -> tuple[bool, list[str]]:
     """Validate and store one answer. `provenance` (0.7): the model's digest, the seed and the settings that
     produced it (`llm.provenance`), kept with the raw answer. 0.8: `route` (Claude Code, Claude API, local model
     server, file queue), the plugin's `helper` agent and when its batch was claimed, kept with it too.
@@ -504,6 +504,8 @@ def ingest_result(ws: Workspace, task_id: str, raw: Any, model: str | None = Non
         if not ok:
             cx.execute("ROLLBACK TO handler")
         cx.execute("RELEASE handler")
+        if ok and not problem:  # 0.18.1 (H4): kept by the question asked, or counted as a task avoided
+            _cache_store(cx, t, payload, model, version, raw, cached)
         if again:  # a second reading by the stronger model: the first answer stays unless this one is accepted
             status = "done"
             keep_again = 0 if ok or attempt >= MAX_ATTEMPTS else 1
@@ -1147,8 +1149,10 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
             return True, errors
         if t["status"] == "failed":
             break
-        system, user = render(ws, t)
         call = model_for(t, backend, model)
+        if not t["attempts"] and t["status"] != "done" and answer_from_cache(ws, task_id, call, _route_name(backend)):
+            return True, []  # 0.18.1 (H4): the same question was answered before, and the answer fits this text
+        system, user = render(ws, t)
         _send(ws, t, backend)
         raw, problem = _complete(backend, t, system, user, call)
         used = "baseline" if getattr(backend, "name", "") == "baseline" else call
@@ -1170,6 +1174,81 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
     if ws.scalar("SELECT status FROM tasks WHERE task_id=?", (task_id,)) == "done":
         return True, errors
     return False, errors
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.18.1 (H4): fewer AI tasks. An accepted answer is kept by the question asked: the kind, its prompt version, the
+# model and the prompt's own text (the passage, the codebook, the claim; not the task id). A task that asks the same
+# question again, under another id (a check run again, a document read again by a new reader, the same text in two
+# documents), is answered from it instead of a model, and the answer is checked against its own passage like any other
+# (a cached answer that fails the check is not used: the model is asked). Never for a reading asked again on purpose
+# (`again`, a reread, a second opinion), nor for a task forced onto a model (a model test), nor for the demo model.
+# ---------------------------------------------------------------------------------------------
+NO_CACHE_KINDS = frozenset({"reread", "second", "audit"})
+
+
+def cache_key(kind: str, version: str | None, model: str | None, payload: dict) -> str:
+    text = "\x1f".join([kind, version or "", model or "", prompts.system_prompt(kind), prompts.user_prompt(kind, payload)])
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _cacheable(t, model: str | None) -> bool:
+    try:
+        forced = t["forced_model"]
+    except (KeyError, IndexError):
+        forced = None
+    return bool(model) and model != "baseline" and t["kind"] not in NO_CACHE_KINDS and not forced and not (
+        t["status"] == "done" and t["again"])
+
+
+def cached_answer(ws: Workspace, t, model: str | None) -> str | None:
+    """The kept answer to the question task `t` asks of `model`, or None."""
+    if not _cacheable(t, model):
+        return None
+    key = cache_key(t["kind"], prompts.VERSIONS.get(t["kind"]) or t["prompt_version"], model,
+                    json.loads(t["payload_json"]))
+    r = ws.query("SELECT raw_json FROM ai_cache WHERE key=?", (key,))
+    return r[0][0] if r else None
+
+
+def _cache_store(cx, t, payload: dict, model: str | None, version: str | None, raw: Any, cached: bool) -> None:
+    if not _cacheable(t, model):
+        return
+    key = cache_key(t["kind"], version, model, payload)
+    if cached:
+        cx.execute("UPDATE ai_cache SET hits=hits+1 WHERE key=?", (key,))
+    else:
+        cx.execute("INSERT OR IGNORE INTO ai_cache(key, kind, prompt_version, model, raw_json, at) VALUES (?,?,?,?,?,?)",
+                   (key, t["kind"], version, model, raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False),
+                    now()))
+
+
+def answer_from_cache(ws: Workspace, task_id: str, model: str | None, route: str | None = None) -> bool:
+    """Answer a task from the kept answer to the same question, when there is one and it passes the checks against
+    this task's own text. True when it did (the task is done); nothing changes otherwise."""
+    t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))
+    if not t or t[0]["status"] not in ("pending", "retry") or int(t[0]["attempts"] or 0):
+        return False
+    raw = cached_answer(ws, t[0], model)
+    if raw is None:
+        return False
+    ok, _e = ingest_result(ws, task_id, raw, model=model, provenance={"settings": {"from_cache": True}},
+                           route=(route or "") + " (kept answer)" if route else "kept answer", cached=True)
+    if not ok:  # a kept answer that does not fit this text: as if it had not been tried
+        with ws.connect() as cx:
+            cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=? AND status IN ('retry', 'failed')",
+                       (task_id,))
+            cx.execute("DELETE FROM results WHERE task_id=? AND valid=0 AND attempt=(SELECT MAX(attempt) FROM results "
+                       "WHERE task_id=?)", (task_id, task_id))
+    return ok
+
+
+def avoided(ws: Workspace) -> dict[str, int]:
+    """The AI tasks answered from kept answers instead of a model, per kind (`enlens measure`, the validation report)."""
+    try:
+        return {r[0]: int(r[1]) for r in ws.query("SELECT kind, SUM(hits) FROM ai_cache GROUP BY kind HAVING SUM(hits)>0")}
+    except sqlite3.Error:
+        return {}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1230,8 +1309,12 @@ def answer_locally_first(ws: Workspace, task_id: str, backend, model: str) -> st
     from .routing import STEP_UP_BELOW, certainty, judging_changes, task_kind
 
     raw, ok = None, False
+    t0 = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
+    kept = cached_answer(ws, t0, model) if not t0["attempts"] else None
+    if kept is not None and answer_from_cache(ws, task_id, model, _route_name(backend)):
+        raw, ok = kept, True  # 0.18.1 (H4): answered before by this model; it steps up as it would have then
     try:
-        for _ in range(MAX_ATTEMPTS):
+        for _ in range(0 if ok else MAX_ATTEMPTS):
             t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
             if t["status"] in ("done", "failed"):
                 break

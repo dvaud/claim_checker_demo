@@ -567,6 +567,18 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
                     and (helper is None or effective_helper(t, r) == helper) and not _lent(t, lent)]
         if not cand:
             continue
+        # 0.18.1 (H4): a task whose question was answered before (another task id, the same text, the same model) is
+        # answered from that answer here, if it fits this text, instead of going to Claude Code
+        from .tasks import answer_from_cache
+
+        kept = [t for t in cand[:max(2 * int(n or BATCH.get(k, 5)), 20)] if not t["attempts"] and t["status"] != "done"
+                and answer_from_cache(ws, t["task_id"], effective_model(t, r), "Claude Code")]
+        if kept:
+            gone = {t["task_id"] for t in kept}
+            cand = [t for t in cand if t["task_id"] not in gone]
+            after_store(ws, {k})
+            if not cand:
+                continue
         m = effective_model(cand[0], r)
         hp = effective_helper(cand[0], r)
         cand = [t for t in cand if effective_model(t, r) == m and effective_helper(t, r) == hp]
@@ -609,7 +621,7 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
                 got = cx.execute(f"UPDATE tasks SET claimed_by=?, claimed_at=? WHERE task_id=? AND {WAITING} AND "
                                  f"{_FREE.replace('t.', '')}", (cid, at, t["task_id"], _cutoff())).rowcount
                 if got:
-                    picked.append({"task_id": t["task_id"], "prompt": user})
+                    picked.append({"task_id": t["task_id"], "prompt": user, "payload_json": full["payload_json"]})
                     budget += cost
                     # 0.11: the passages of this task leave the computer now, with the batch
                     access.record_sent(cx, t["task_id"], json.loads(full["payload_json"]), "Claude Code", k)
@@ -619,9 +631,19 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
                        "expires_at) VALUES (?,?,?,?,?,?,?,?,?)",
                        (cid, k, m, hp, "Claude Code", (taken_by or "")[:120],
                         json.dumps([p["task_id"] for p in picked]), at, expires))
+        # 0.18.1 (H4): a small codebook once per batch: the codes' descriptions go with the batch's instruction, and
+        # each passage names only its candidate codes
+        shared = prompts.shared_codebook(k, [json.loads(p.pop("payload_json")) for p in picked])
+        if shared:
+            system = f"{system}\n\n{shared['codebook']}"
+            for p, user in zip(picked, shared["prompts"]):
+                p["prompt"] = user
+        else:
+            for p in picked:
+                p.pop("payload_json", None)
         left = _waiting_count(ws, k)
         return {"claim": cid, "kind": k, "model": m, "helper": hp, "prompt_version": prompts.VERSIONS[k],
-                "system": system, "tasks": picked, "expires_at": expires,
+                "system": system, "tasks": picked, "expires_at": expires, "codebook_once": bool(shared),
                 "still_waiting": left,
                 "how_to_answer": ("Answer every task as the system instruction says: one JSON object per task, quotes "
                                   "copied exactly from that task's text. Then call submit_answers with this claim and "

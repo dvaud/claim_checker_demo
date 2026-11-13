@@ -340,6 +340,7 @@ def test_an_unsure_answer_steps_up_once_by_queue(home, corpus):
     with ws.connect() as cx:
         cx.execute("UPDATE tasks SET status='pending', attempts=0, step=0, again=0, queued=1 WHERE task_id=?",
                    (f"label:sdg:{pids[0]}",))
+        cx.execute("DELETE FROM ai_cache")  # 0.18.1 (H4): else the kept answer to the same question answers it
     got = taskqueue.next_tasks(ws, "label")
     bad = [{"task_id": t["task_id"], "answer": {"labels": [{"code": "6.4", "relevance": "main", "direction": "not_stated",
                                                               "confidence": 0.9, "quote": "not in the passage at all",
