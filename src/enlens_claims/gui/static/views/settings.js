@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere, myLink, WhatsNew, loadWhatsNew, showWhatsNew, whatsNewLink } from "../lib.js";
+import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, thoughtPicker, saveThought, choice, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere, myLink, WhatsNew, loadWhatsNew, showWhatsNew, whatsNewLink } from "../lib.js";
 import { withAI } from "../features.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -392,10 +392,39 @@ function modelSection(s, servers, watchers, info = { servers }) {
       st.textContent = "Saving…";
       try { await saveSpeed(v); s.claude_speed = v; st.textContent = "Saved."; } catch (e) { st.textContent = ""; throw e; }
     }, { label: null });
+    // 0.18.1 (N2): how much thought, also beside every Start Claude Code (the same kept setting)
+    const st2 = h("span", { class: "save-state", "aria-live": "polite" });
+    const thought = thoughtPicker(s.claude_thought, async (v) => {
+      st2.textContent = "Saving…";
+      try { await saveThought(v); s.claude_thought = v; st2.textContent = "Saved."; } catch (e) { st2.textContent = ""; throw e; }
+    }, { label: null });
     return h("div", { class: "stack set-claude-code-box" }, claudeSetupCard({ watchers, kind: "standard" }),
-      h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Speed of Claude Code"), h("div", { class: "row" }, speed, st),
-        h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code (each Start Claude Code says its speed and links here). Faster is done sooner and uses your plan's limits faster. ",
-          helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model (labels on Haiku, checks on Sonnet, second opinions on Opus). Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))));
+      h("div", { class: "field", id: "s-thought" }, h("div", { class: "field-label" }, "How much thought"), h("div", { class: "row" }, thought, st2),
+        h("div", { class: "field-help" }, "Which Claude models answer each kind of task, and how hard they think. It is also beside every Start Claude Code. Models you choose per task below come first; a local model keeps its own choice. ",
+          helpMark("About how much thought", "Balanced uses the recommended model for each kind of task (labels on Haiku, checks on Sonnet, second opinions on Opus). Energy efficient starts each kind one model lower (never below Sonnet for judging excerpts), Intelligence one higher, and asks the helpers for low or high effort. An unsure answer always goes to a stronger model."))),
+      h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Helpers at once"), h("div", { class: "row" }, speed, st),
+        h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code. More is done sooner and uses your plan's limits faster. ",
+          helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model. Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))),
+      mixBox());
+  }
+
+  // 0.18.1 (I1, I2, I4): which route answers each kind of task when Claude and a local model are both set, and what
+  // happens at the plan's usage limit. Saved when picked.
+  function mixBox() {
+    const local = !!(s.restricted_server && s.restricted_model);
+    const st = h("span", { class: "save-state", "aria-live": "polite" });
+    const pick = (key) => async (v) => { st.textContent = "Saving…"; try { await save({ [key]: v }, st); s[key] = v; } catch (e) { st.textContent = ""; throw e; } };
+    const mix = choice({ sm: true, label: "The mix of local and Claude", value: s.ai_mix || "best",
+      options: [["mostly_local", "Mostly local"], ["balanced", "Balanced"], ["best", "Best quality"]], onPick: pick("ai_mix") });
+    const limit = choice({ sm: true, label: "At your plan's usage limit", value: s.at_limit || "wait",
+      options: [["wait", "Wait and continue later"], ["local", "Carry on with the local model"]], onPick: pick("at_limit") });
+    return h("div", { class: "stack", id: "s-mix" },
+      h("div", { class: "field" }, h("div", { class: "field-label" }, "The mix of local and Claude"), h("div", { class: "row" }, mix, st),
+        h("div", { class: "field-help" }, local ? "Mostly local: your local model answers every kind of task but second opinions. Balanced: it answers labels, links, search words, theme names and references; Claude judges excerpts. Best quality: Claude answers everything (your local model reads only documents marked Only a local AI). An answer your local model is unsure of, that fails the quote check, or that judges an excerpt as contradicting goes to Claude, only for documents Claude may read. Can change results. "
+          : "Choose a local model for documents marked Only a local AI (under AI model) to share the work between it and Claude. ",
+          helpMark("About the mix", "The local model answers first, on this computer; its answer counts unless it goes up to Claude, who then reads the task again. Each answer records which model gave it (Technical details, and the Excel file's How these results were made). Settings › AI › Agreement between routes shows, on your own documents, how often the two agree."))),
+      h("div", { class: "field" }, h("div", { class: "field-label" }, "At your plan's usage limit"), h("div", { class: "row" }, limit),
+        h("div", { class: "field-help" }, "When Claude Code stops because your plan's usage limit is reached: wait (the queue keeps the work; start Claude Code again when the limit resets), or let your local model answer what waits, where it may.")));
   }
 
   function keyBox() {

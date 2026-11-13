@@ -30,6 +30,9 @@ class QueueMixin:
                         "max_per_helper": taskqueue.MAX_PER_HELPER,
                         "helpers": taskqueue.helper_rows(out["groups"], out["kinds"]),
                         "all_helpers": list(taskqueue.routing.HELPER_MODEL)}
+        # 0.18.1 (N2): how much thought Claude gives the tasks, chosen beside Start Claude Code and kept
+        out["thought"] = {"chosen": self.settings().get("claude_thought") or "balanced",
+                          "options": dict(taskqueue.routing.THOUGHT_TITLES)}
         out["runner"] = claude_setup.run_state(name)
         out["at_limit"] = self._at_limit(name, ws, out["runner"])  # 0.18.1 (I4)
         if out["route"] == "claude_code" and not home.local_only():
