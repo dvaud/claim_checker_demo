@@ -1030,6 +1030,7 @@ A few rules have exceptions, each argued for once. They are listed here and in t
 | --- | --- |
 | `.ov-card` | The Overview's place cards: a page's link card, the whole card its link (DESIGN 4.11) |
 | `.dv-selbar` | The reading view's floating bar over a selection (a toolbar, with its shadow) |
+| `.doc-tick` | A document's tick in the Documents list, in the app's colours (an empty one reads as empty when dark) |
 | `.dv-chain-btn` | A reference chain's chooser in the reading view, pressed when shown |
 | `.doc-view .dv-act` | The floating actions beside a selected passage in the reading view |
 | `.dv-page-frame` | The reading view's page frame: the document's own page |

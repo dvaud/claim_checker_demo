@@ -1236,6 +1236,7 @@ PAGE_BOXES = {
     ".dz-shadow": "#/design: the sample of a shadow token",
     ".doc-view .dv-table th, .doc-view .dv-table td": "a table inside a document's own text, its words wrapped to the reading column",
     ".dz-frame": "#/design: the frame of a sample",
+    ".doc-tick": "a document's tick in the Documents list, in the app's colours (an empty one reads as empty when dark)",
 }
 
 

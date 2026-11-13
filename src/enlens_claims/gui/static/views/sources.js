@@ -263,6 +263,8 @@ export async function renderSources(view) {
   let groupsBox = null;
   let grouping = store(`docs-group:${project}`) || "ai";   // 0.18.5: how the list is grouped, kept per project
   let filterText = "";
+  let shownIds = new Set();    // 0.18.5: the documents the list shows now (the filter and the folded groups hide others)
+  let lastTick = null;         // 0.18.5: the tick a shift-click runs from
   const rows = new Map();     // doc_id -> its row
   const opened = new Set();   // 0.18.2: the documents whose panel is open (kept across re-draws)
   let roles = {};             // 0.18.1 (K2): doc_id -> "theory"
@@ -275,7 +277,7 @@ export async function renderSources(view) {
   };
   const GROUPINGS = {
     ai: { label: "AI setting", always: true, of: (d) => d.ai_access, groups: [
-      { key: "cloud", name: "Claude may read them", icon: "cloud", sub: "The AI you chose reads them: Claude Code, the Claude API, or a local model if you chose one." },
+      { key: "cloud", name: "Claude may read them", icon: "cloud", sub: "Claude may read them when Claude is the AI you use; when you use a local model, it reads them instead." },
       { key: "local", name: "Only a local AI", icon: "house", sub: "Read only by a model on this computer, or by you. Never sent to Claude." },
       { key: "none", name: "No AI", icon: "eye-off", sub: "Only you judge their excerpts. Search, the keyword codes, concepts and themes still work." }] },
     role: { label: "Role", always: true, of: (d) => (roles[d.doc_id] === "theory" ? "theory" : "evidence"), groups: [
@@ -284,7 +286,7 @@ export async function renderSources(view) {
     look: { label: "Needs a look", always: false, of: lookOf, groups: [
       { key: "attention", name: "Needs a look", icon: "eye", sub: "Something about the file or its reading needs you: the tag on each says what." },
       { key: "reading", name: "Something to check in its reading", icon: "layers", sub: "Read with a few doubts: open the reading to see where, then mark it as checked." },
-      { key: "clear", name: "Nothing to look at", icon: "check", sub: null }] },
+      { key: "clear", name: "Nothing to look at", icon: "check", sub: "Read well: nothing about them needs you." }] },
     none: { label: "None", always: true, of: () => "all", groups: [{ key: "all", name: "All documents", icon: null, sub: null }] },
   };
   async function reloadDocs() {
@@ -301,15 +303,22 @@ export async function renderSources(view) {
     for (const id of [...picked]) if (!docs.some((d) => d.doc_id === id)) picked.delete(id);
     if (pa.ask) docsBox.appendChild(accessAskCard(project, pa, reloadDocs));
     else if (pa.banner && docs.length) { const b = accessBanner(project, () => b.remove()); docsBox.appendChild(b); }
-    docsBox.appendChild(h("div", { class: "section-title" }, h("h2", {}, `${docs.length} ${docs.length === 1 ? "document" : "documents"} in this project`)));
+    const countHead = h("h2", {}, `${docs.length} ${docs.length === 1 ? "document" : "documents"} in this project`);
+    docsBox.appendChild(h("div", { class: "section-title" }, countHead));
     if (!docs.length) { docsBox.appendChild(emptyState("book-open", "No documents yet", "Add the reports, papers and web pages you want to check hypotheses against. PDFs keep their page numbers.")); return; }
     reader.latest = r.new_reader || reader.latest;
-    const warned = docs.filter((d) => lookOf(d) === "attention").length;
     // a sentence that needs you is a one-line notice; the tag beside each document says what (docs/DESIGN.md 4.10, 4.12).
-    // 0.18.5: Show them groups the list by what needs a look, so the documents meant are together at its top
-    if (warned) docsBox.appendChild(notice({ kind: "attention", class: "docs-warned" },
-      h("p", {}, `${warned} ${warned === 1 ? "document needs" : "documents need"} a look.`),
-      button({ sm: true, onClick: () => { setGrouping("look"); groupsBox.scrollIntoView({ block: "start" }); } }, "Show them")));
+    // 0.18.5: Show them, at the sentence's end, groups the list by what needs a look (not shown when it already is)
+    let warnedNote = h("div");
+    const drawWarned = () => {
+      const warned = docs.filter((d) => lookOf(d) === "attention").length;
+      const n = !warned ? h("div", { hidden: true }) : notice({ kind: "attention", class: "docs-warned" },
+        h("p", {}, `${warned} ${warned === 1 ? "document needs" : "documents need"} a look. `,
+          grouping === "look" ? null : link({ kind: "jump", onClick: () => { setGrouping("look"); groupsBox.scrollIntoView({ block: "start" }); } }, "Show them")));
+      warnedNote.replaceWith(n); warnedNote = n;
+    };
+    docsBox.appendChild(warnedNote);
+    drawWarned();
     nr.older = docs.filter((d) => newReaderFor(d, reader.latest));
     docsBox.appendChild(nrBox);
     drawNr();
@@ -321,7 +330,9 @@ export async function renderSources(view) {
       button({ kind: "quiet", sm: true, onClick: () => clearPicked() }, "Clear"));
     const drawBulk = () => {
       bulk.hidden = !picked.size;
-      bulkCount.textContent = `${picked.size} selected. Who may read ${picked.size === 1 ? "it" : "them"} with AI?`;
+      // ticks the filter or a folded group hides still count: the bar says how many, so a change never surprises
+      const unseen = [...picked].filter((id) => !shownIds.has(id)).length;
+      bulkCount.textContent = `${picked.size} selected${unseen ? ` (${unseen} not shown)` : ""}. Who may read ${picked.size === 1 ? "it" : "them"} with AI?`;
       for (const f of groupsBox ? groupsBox.querySelectorAll(".doc-group") : []) if (f.paintPick) f.paintPick();
       drawNr();
     };
@@ -361,7 +372,7 @@ export async function renderSources(view) {
       const access = choice({ sm: true, class: "doc-access", label: `Who may read ${name} with AI`, value: d.ai_access,
         options: accessLevels().map((lv) => [lv, [icon(LEVEL[lv].icon, { size: 13 }), LEVEL[lv].title]]), onPick: (lv) => setAccess([d.doc_id], lv) });
       const marks = readingMarks(d);
-      const role = roleMenuItem(project, d, roles[d.doc_id], () => reloadDocs());
+      const role = roleMenuItem(project, d, roles[d.doc_id], async () => { try { roles = await documentRoles(project); } catch (_) { /* as it was */ } drawGroups([d.doc_id]); });
       const facts = [KIND_TEXT[d.kind] || d.kind || "", d.pages ? plural(d.pages, "page") : null, (fmt.dateShort(d.added_at || "") || d.added) ? `added ${fmt.dateShort(d.added_at || "") || d.added}` : null].filter(Boolean).join(" · ");
       return h("div", { class: "doc-detail", id: `doc-detail-${d.doc_id}` },
         h("dl", { class: "doc-detail-grid" },
@@ -375,7 +386,14 @@ export async function renderSources(view) {
           d.bib && d.bib.cite ? [h("dt", {}, "In the bibliography"), h("dd", {}, h("span", { class: "it", title: d.bib.title || null }, icon("library", { size: 13 }), d.bib.cite),
             link({ href: "#/bibliography", class: "small" }, "Open the Bibliography"))] : null),
         h("div", { class: "doc-detail-foot" }, link({ kind: "next", href: docHref(d) }, "Open the document"),
-          button({ kind: "quiet", sm: true, onClick: () => removeDoc(d) }, icon("trash", { size: 13 }), "Remove…")));
+          button({ kind: "quiet", sm: true, onClick: () => removeDoc(d, () => {
+            // 0.18.5: gone from the list where it stood; the page stays where it was
+            const at = docs.findIndex((x) => x.doc_id === d.doc_id);
+            if (at >= 0) docs.splice(at, 1);
+            picked.delete(d.doc_id); opened.delete(d.doc_id);
+            countHead.textContent = `${docs.length} ${docs.length === 1 ? "document" : "documents"} in this project`;
+            drawWarned(); drawGroups([]); drawBulk();
+          }) }, icon("trash", { size: 13 }), "Remove…")));
     };
     // 0.18.2: a document is one line: its tick, its title, what is true of it now (its role, a wait for the owner) and
     // what needs a look; the arrow (or a click on the row) opens the panel under it. No column hides anything, at any
@@ -384,7 +402,15 @@ export async function renderSources(view) {
     const rowFor = (d) => {
       const name = d.title || d.file;
       const c = h("input", { type: "checkbox", class: "doc-tick", value: d.doc_id, "aria-label": `Select ${name}`, checked: picked.has(d.doc_id) });
-      c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); });
+      c.addEventListener("click", (e) => {
+        // 0.18.5: shift-click ticks (or unticks) every document between the last one ticked and this one, in its group
+        const ticks = [...(c.closest(".doc-list")?.querySelectorAll(".doc-tick") || [])];
+        const from = ticks.indexOf(lastTick), to = ticks.indexOf(c);
+        if (e.shiftKey && from >= 0 && to >= 0) for (const t of ticks.slice(Math.min(from, to), Math.max(from, to) + 1)) t.checked = c.checked;
+        for (const t of e.shiftKey && from >= 0 && to >= 0 ? ticks : [c]) { if (t.checked) picked.add(t.value); else picked.delete(t.value); }
+        lastTick = c;
+        drawBulk();
+      });
       const item = h("li", { class: "doc-item" });
       let detail = null;
       const toggle = iconButton({ icon: "chevron-down", sm: true, class: "doc-toggle", label: `Details of ${name}`, title: "Details", "aria-controls": `doc-detail-${d.doc_id}` });
@@ -400,7 +426,9 @@ export async function renderSources(view) {
       item.append(h("div", { class: "doc-row", onClick: (e) => { if (!e.target.closest("a, button, input, label, select, summary")) show(!opened.has(d.doc_id)); } },
         h("span", { class: "doc-lead" }, c,
           // 0.18.5: who may read it, as its icon in a gutter of its own (the group says it when the list is grouped by it)
-          grouping === "ai" ? null : h("span", { class: "doc-ai", "data-level": d.ai_access, role: "img", "aria-label": lv.title, title: lv.title }, icon(lv.icon, { size: 14 }))),
+          // and only for the documents kept from Claude, so those stand out; Claude's place stays empty, titles in line
+          grouping === "ai" ? null : d.ai_access === "cloud" ? h("span", { class: "doc-ai", "aria-hidden": "true" })
+            : h("span", { class: "doc-ai", "data-level": d.ai_access, role: "img", "aria-label": lv.title, title: lv.title }, icon(lv.icon, { size: 14 }))),
         h("div", { class: "doc-main" },
           h("div", { class: "doc-title", title: d.title && d.file ? `${d.title} · ${d.file}` : name }, link({ kind: "title", serif: true, href: docHref(d) }, name)),
           h("div", { class: "doc-marks" },
@@ -459,8 +487,6 @@ export async function renderSources(view) {
         drawBulk();
       } catch (e) { showError(e); await reloadDocs(); }
     }
-    docsBox.appendChild(bulk);
-    drawBulk();
     // 0.18.5: the list grouped by a choice (who may read them with AI, their role, what needs a look, or not at all),
     // each group under what it means and with a way to tick it all; a box above it keeps the documents whose title or
     // file name holds every word typed. A change that moves a document to another group keeps the page where it was:
@@ -473,11 +499,14 @@ export async function renderSources(view) {
       options: Object.entries(GROUPINGS).map(([k, g]) => [k, g.label]), onPick: (k) => setGrouping(k) });
     const setGrouping = (k) => {
       grouping = k; store(`docs-group:${project}`, k);
-      for (const b of groupChoice.querySelectorAll("[data-value]")) b.setAttribute("aria-checked", b.dataset.value === k ? "true" : "false");
-      drawGroups();
+      groupChoice.set(k);   // its value and which option Tab reaches
+      drawWarned(); drawGroups();
     };
     docsBox.appendChild(h("div", { class: "docs-tools" }, filterBox, h("div", { class: "docs-group-by" }, h("span", { class: "muted small" }, "Group by"), groupChoice)));
     const lazies = new Map();   // group key -> its lazy list, as last drawn
+    // folded groups, per project and grouping ("ai:local"), kept between visits
+    const FOLD_KEY = `docs-folded:${project}`;
+    const folded = new Set((store(FOLD_KEY) || "").split(",").filter(Boolean));
     function drawGroups(movedIds = null) {
       const y = window.scrollY;
       const reach = new Map([...lazies].map(([k, l]) => [k, l.shown()]));   // how far each group was drawn
@@ -485,6 +514,7 @@ export async function renderSources(view) {
       const words = filterText.toLowerCase().split(/\s+/).filter(Boolean);
       const hit = (d) => !words.length || words.every((w) => `${d.title || ""} ${d.file || ""}`.toLowerCase().includes(w));
       const v = view(), seen = docs.filter(hit);
+      shownIds = new Set(seen.filter((d) => !folded.has(`${grouping}:${v.of(d)}`)).map((d) => d.doc_id));
       const parts = v.groups.map((g) => {
         const mine = seen.filter((d) => v.of(d) === g.key);
         const all = docs.filter((d) => v.of(d) === g.key).length;
@@ -499,14 +529,24 @@ export async function renderSources(view) {
           for (const c of list.querySelectorAll(".doc-tick")) c.checked = !every;
           drawBulk();
         } });
-        const box = h("section", { class: "doc-group", "data-group": g.key, "aria-label": g.name },
-          h("div", { class: "doc-group-head" },
-            h("h3", {}, g.icon ? icon(g.icon, { size: 16 }) : null, g.name,
-              tag({ kind: "count" }, words.length && mine.length !== all ? `${mine.length} of ${all}` : plural(mine.length, "document"))),
-            pick,
-            g.sub ? h("p", { class: "doc-group-sub" }, g.sub) : null),
+        const fkey = `${grouping}:${g.key}`;
+        const body = h("div", { class: "doc-group-body", id: `doc-group-${g.key}`, hidden: folded.has(fkey) },
+          g.sub ? h("p", { class: "doc-group-sub" }, g.sub) : null,
           mine.length ? [h("div", { class: "table-wrap" }, list), lazy.footer]
             : h("p", { class: "muted small doc-group-none" }, words.length && all ? "No title or file name here holds those words." : "None."));
+        const fold = h("button", { class: "doc-group-fold", type: "button", "aria-expanded": folded.has(fkey) ? "false" : "true", "aria-controls": body.id,
+          onClick: () => {
+            const shut = !folded.has(fkey);
+            if (shut) folded.add(fkey); else folded.delete(fkey);
+            store(FOLD_KEY, [...folded].join(","));
+            body.hidden = shut; fold.setAttribute("aria-expanded", shut ? "false" : "true");
+            shownIds = new Set(docs.filter(hit).filter((d) => !folded.has(`${grouping}:${v.of(d)}`)).map((d) => d.doc_id));
+            drawBulk();
+          } },
+          icon("chevron-down", { size: 14, class: "doc-group-chev" }), g.icon ? icon(g.icon, { size: 16 }) : null, g.name,
+          mine.length ? tag({ kind: "count" }, words.length && mine.length !== all ? `${mine.length} of ${plural(all, "document")}` : plural(mine.length, "document")) : null);   // an empty group says None. under its head
+        const box = h("section", { class: "doc-group", "data-group": g.key, "aria-label": g.name },
+          h("div", { class: "doc-group-head" }, h("h3", {}, fold), pick), body);
         // its button says what it will do: tick them all, or take the ticks off again
         box.paintPick = () => { const every = mine.length && mine.every((d) => picked.has(d.doc_id)); pick.textContent = every ? (mine.length === 1 ? "Clear it" : `Clear these ${mine.length}`) : (mine.length === 1 ? "Select it" : `Select these ${mine.length}`); };
         box.paintPick();
@@ -518,12 +558,18 @@ export async function renderSources(view) {
         window.scrollTo({ top: y });
         const moved = movedIds.map((id) => rows.get(id)).filter(Boolean);
         for (const it of moved) { it.classList.remove("doc-glow"); void it.offsetWidth; it.classList.add("doc-glow"); }
-        if (moved.length === 1) moved[0].scrollIntoView({ block: "nearest" });
+        if (moved.length === 1) {
+          moved[0].scrollIntoView({ block: "nearest" });
+          // the focus stays with what was used: the setting just chosen in the moved document's panel, or its arrow
+          const f = moved[0].querySelector('.doc-access [aria-checked="true"]') || moved[0].querySelector(".doc-toggle");
+          if (f) f.focus({ preventScroll: true });
+        }
       }
     }
     groupsBox = h("div", { class: "doc-groups" });
-    docsBox.append(groupsBox);
+    docsBox.append(groupsBox, bulk);
     drawGroups();
+    drawBulk();
   }
 
   // 0.15.7: the documents an earlier reader read, offered to the new one; the job's progress; what it did
@@ -683,13 +729,13 @@ export async function renderSources(view) {
       iconButton({ icon: "x", size: 14, label: "Close this note", title: null, onClick: () => { nr.done = null; drawNr(); } }));
   }
 
-  async function removeDoc(d) {
+  async function removeDoc(d, gone) {
     // 0.16 (F4): the reason goes into the research log
     const proposal = await removalNote(project, d);   // 0.18 L2: in a collaborator's copy, a proposal to the owner
     const ok = await askWhy({ title: "Remove this document?", confirmText: "Remove", placeholder: "For example: a duplicate, the wrong version, outside the scope",
       message: h("div", {}, h("p", {}, h("strong", {}, d.title || d.file)), h("p", {}, "It is no longer searched. Results you already have keep their quotes, marked as coming from a removed document. Your notes on it are kept in Notes."), proposal) });
     if (!ok) return;
-    try { await api("DELETE", `/api/projects/${P(project)}/documents/${P(d.doc_id)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast(proposal ? "Removed from your copy. For the project it waits for the owner (Team tab)." : "Document removed.", "ok"); await reloadDocs(); await App.refresh(); }   // 0.18 L2: proposal
+    try { await api("DELETE", `/api/projects/${P(project)}/documents/${P(d.doc_id)}${ok.why ? `?why=${encodeURIComponent(ok.why)}` : ""}`); toast(proposal ? "Removed from your copy. For the project it waits for the owner (Team tab)." : "Document removed.", "ok"); if (gone) gone(); else await reloadDocs(); await App.refresh(); }   // 0.18 L2: proposal
     catch (e) { showError(e); }
   }
 

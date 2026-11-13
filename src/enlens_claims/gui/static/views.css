@@ -70,13 +70,19 @@
 .doc-item[data-open="true"] > .doc-row { background: var(--accent-soft); }
 /* the open document's edge runs down its line and its panel together */
 .doc-item[data-open="true"] { box-shadow: inset 3px 0 0 var(--accent); }
-/* a document that just moved to another group glows where it lands (the reading view's glow) */
+/* a document that just moved to another group glows where it lands (the reading view's glow); a jump to it or to the
+   groups stops below the page's top band and a group's sticky head */
 .doc-item.doc-glow > .doc-row { animation: dv-glow 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .doc-item.doc-glow > .doc-row { animation: none; } }
+.doc-item, .doc-groups { scroll-margin-top: 104px; }
 /* the tick, and who may read it with AI as an icon in a gutter of its own when the list is grouped by something else */
 .doc-lead { display: inline-flex; align-items: center; gap: 8px; }
-.doc-tick { accent-color: var(--accent); }
-.doc-ai { display: inline-flex; color: var(--muted); }
-.doc-ai[data-level="local"], .doc-ai[data-level="none"] { color: var(--text); }
+/* the tick drawn in the app's colours, so an empty one reads as empty in the dark theme too */
+.doc-tick { flex: none; display: inline-grid; place-content: center; width: 16px; height: 16px; margin: 0; border: 1.5px solid var(--border-strong); border-radius: var(--radius-xs); background: var(--surface); appearance: none; cursor: pointer; }
+.doc-tick:checked { border-color: var(--accent); background: var(--accent); }
+.doc-tick:checked::before { content: ""; width: 9px; height: 9px; background: var(--on-accent); clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%); }
+.doc-tick:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.doc-ai { display: inline-flex; width: 14px; color: var(--text); }
 /* 0.18.5: the title takes the line and ends in "…" (whole when the row is open); the marks keep to the right, at most
    half the row, so every title starts and ends in the same place whatever the marks say */
 .doc-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-width: 0; }
@@ -93,10 +99,18 @@
 .doc-group + .doc-group { margin-top: var(--space-5); }
 /* a group's head: its name, how many and the way to tick them all on one line, what it means on the next; it stays
    at the top while its documents scroll under it */
-.doc-group-head { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; margin: 0 0 var(--space-2); padding: 6px 0; background: var(--bg); }
-.doc-group-head > h3 { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-body); }
-.doc-group-head > h3 > .icon { color: var(--text-2); }
-.doc-group-sub { grid-column: 1 / -1; margin: 0; color: var(--text-2); font-size: var(--fs-small); }
+/* the head sticks under the page's top band (50 px, the drawer button's band; the phone's top bar is as tall) and holds
+   only the group's name, count and Select, so it stays one short line; the name folds the group */
+.doc-group-head { position: sticky; top: 50px; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; background: var(--bg); }
+.doc-group-head > h3 { min-width: 0; margin: 0; font-size: var(--fs-body); }
+.doc-group-head > .doc-group-pick { flex: none; white-space: nowrap; }
+.doc-group-fold { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 4px 2px 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text); font: inherit; font-weight: var(--fw-strong); text-align: left; cursor: pointer; }
+.doc-group-fold:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.doc-group-fold > .icon { color: var(--text-2); }
+.doc-group-chev { transition: transform .15s; }
+.doc-group-fold[aria-expanded="false"] .doc-group-chev { transform: rotate(-90deg); }
+.doc-group-body[hidden] { display: none; }
+.doc-group-sub { margin: 0 0 var(--space-2); color: var(--text-2); font-size: var(--fs-small); }
 .doc-group-none { margin: 0 0 0 var(--space-4); }
 .doc-marks .owner-doc { display: contents; }
 .doc-toggle .icon { transition: transform .15s; }
@@ -132,7 +146,8 @@
 .tess-help .copy-line { margin: 4px 0; }
 .add-access { margin-top: 12px; }
 /* the bar stays in view under the page's top while rows are ticked; one button per setting */
-.bulk-bar.bulk-stick { position: sticky; top: 8px; z-index: 5; }
+.bulk-bar.bulk-stick { position: sticky; bottom: 12px; z-index: 15; margin: var(--space-3) 0 0; box-shadow: var(--shadow-lg); }
+html:has(.bulk-stick:not([hidden])) { scroll-padding-bottom: 6rem; }
 .bulk-move { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .bulk-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px;
