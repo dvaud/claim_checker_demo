@@ -15,6 +15,17 @@
   ENLENS first and changes nothing, as bringing it into a project and the shared folder already did. (ENLENS 0.17.0
   to 0.18.0 still open such a zip without a warning: that cannot be changed after the fact.) Cannot change results.
 
+- **Taking a project back never loosens an AI setting.** After *Take the project back*, a looser setting that your
+  copy had gone on from (by your own stricter setting) could be put into force again without your click. It is now
+  only offered, as every looser setting is. Cannot change results. (Found by the randomised roles test.)
+- **A second take-over at the same point is refused in words.** Taking a project over twice at the same point of its
+  history, after two different owners, left the copies disagreeing about the owner without a word (a copy keeps the
+  first record it holds). ENLENS now refuses the second and says what to do: ask the owner to hand it over, or follow
+  your earlier take-over. Cannot change results.
+- **A removal is noted as the word of whoever keeps it.** A document a former owner removed, kept removed by the new
+  owner's copy, was noted as removed "by" the former owner, who may be a Member in your copy by then; it is now the
+  owner's word that is noted. Cannot change results.
+
 ### New
 
 - ***Become the owner* says what becomes a proposal.** Its dialog now says that what colleagues removed or left out
