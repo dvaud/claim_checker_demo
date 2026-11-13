@@ -1,0 +1,11 @@
+code,description
+WELLBEING,"Employees' subjective and physical wellbeing: life satisfaction, stress, work-life balance, sleep, burnout, physical complaints, sick leave and recovery. Does not cover loneliness (LONELINESS) or the number of hours worked (WORKING_HOURS)."
+LONELINESS,"Loneliness, social isolation and feeling cut off from colleagues, including the number of colleagues a person actually meets. Does not cover how well teams coordinate their work (TEAMWORK)."
+PRODUCTIVITY,"Output, performance, efficiency and quality of work, whether measured or reported, for individuals or organisations. Does not cover the number of hours worked (WORKING_HOURS) or learning on the job (LEARNING)."
+WORKING_HOURS,"How long and when people work: overtime, unpaid hours, evening work and being available outside working hours. Does not cover output per hour (PRODUCTIVITY), nor work-life balance as people feel it (WELLBEING)."
+COMMUTE,"The journey to work: travel time, distance, mode of transport, congestion, public transport demand and where people live relative to the workplace. Does not cover the environmental effect of travel (EMISSIONS)."
+EMISSIONS,"Environmental effects of where people work: carbon emissions, energy use and the climate effect of commuting, home heating and offices. Does not cover traffic or crowding as such (COMMUTE)."
+RECRUITMENT,"Hiring and keeping staff: vacancies, applicants, time to fill a position, resignations and turnover."
+MANAGEMENT,"How managers and employers supervise, evaluate, trust and monitor staff, including monitoring software, targets and managers' own difficulties in leading remote staff. Does not cover managers' hours or health unless the passage is about how they manage."
+LEARNING,"Learning and development at work: onboarding, training, mentoring, picking up unwritten rules from colleagues and the situation of new employees. Does not cover productivity as such (PRODUCTIVITY)."
+TEAMWORK,"Collaboration, communication and coordination between colleagues: team days and shared office days kept so that colleagues work together, informal contact as a way of working, and decision-making in teams. Does not cover the feeling of loneliness (LONELINESS)."

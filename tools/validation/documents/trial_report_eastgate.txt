@@ -1,0 +1,23 @@
+Home or office? A randomised trial of home-working days in a public benefits agency Eastgate Institute for Applied Economics (fictional), working paper 31, 2025
+
+Summary. We randomly assigned 640 employees of a public benefits agency in Eastgate either to work from home two days a week or to keep working at the office every day, and followed them for twelve months. Home workers processed 0.4 percent more cases than office workers, a difference that is statistically indistinguishable from zero. The quality of decisions and the number of complaints from clients did not differ between the groups.
+
+Background. Earlier evidence on home working comes mostly from surveys and company records, in which employees who choose to work from home may differ from those who do not. Randomised designs are rare because employers seldom agree to assign home days by lottery. The agency's cooperation was therefore essential, and it was given on condition that no employee was assigned against a strong objection.
+
+Method. Employees applied to take part and were then assigned by lottery, stratified by team. Of the 640 participants, 318 were assigned to work from home two days a week and 322 to the office. Outcomes came from the agency's case system and from questionnaires at the start and after six and twelve months. Attrition was 7 percent and similar in both groups.
+
+Experience. Cases processed per week and the share of decisions overturned on appeal did not differ between the groups. However, employees with the least experience (under two years) processed 9 percent fewer cases at home than at the office, while employees with more than ten years of experience processed 5 percent more. The result is based on 580 participants with full records.
+
+Wellbeing. After twelve months home workers rated their life satisfaction 0.3 points higher on a ten-point scale than office workers. The difference was the same for men and women, and for people with and without children. Participants who lived with a partner and those who lived alone also gained to the same extent. The scale ran from zero to ten and was answered anonymously.
+
+Sick leave. Sick leave days per employee over the year were 4.8 for home workers and 5.1 for office workers. The trial finds no effect of home working on sick leave: the difference is well within what chance alone would produce. The groups also did not differ in the share of employees with more than ten days of sick leave. Sick leave was taken from the agency's personnel records.
+
+Travel. Home workers saved on average 2.8 hours of travel a week. Employees who lived more than 30 kilometres from the office saved the most, and their life satisfaction rose by 0.6 points, twice the average gain. Employees who lived within five kilometres gained 0.1 points. The saving was similar for men and women. Travel time was reported in the questionnaires.
+
+Social contact. Home workers did not report more loneliness than office workers at any point in the trial. Loneliness was measured with a six-item scale; scores after twelve months were 2.1 for home workers and 2.2 for office workers. Participants under 30 were too few (41 in all) to be analysed separately. Higher scores mean more loneliness.
+
+New hires. New hires with less than one year of service who worked from home reported fewer chances to learn from colleagues: 34 percent agreed that they had enough, against 58 percent of new hires at the office. Mentoring sessions held online were rated as useful as those held in person. Too few new hires took part to say whether the gap in learning affected the number of cases they processed.
+
+Managers. Managers of home workers did not rate their staff lower in performance reviews than managers of office workers did: the average rating was 3.6 on a five-point scale in both groups. Managers did say that they spent more time on scheduling, about 1.5 hours a week, and that it took longer to reach people on home days.
+
+Limitations. Applicants may differ from the average employee, home days were fixed in advance, and the agency's work consists mostly of cases handled by individuals, so the results may not hold for work that depends on teams. The design says nothing about employees who work from home five days a week. These limits should be kept in mind when the results are compared with other studies.

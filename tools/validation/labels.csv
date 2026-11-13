@@ -1,0 +1,111 @@
+file,anchor,codes,mentioned,note
+commuting_emissions_report.txt,"Commuting less, emitting less? A survey of 4,000 workers in",EMISSIONS;COMMUTE,,title line only
+commuting_emissions_report.txt,"Summary. Remote work reduces commuting emissions, but by less than",EMISSIONS;COMMUTE,,
+commuting_emissions_report.txt,Findings. Average commuting emissions per worker fell by 18 percent,EMISSIONS,COMMUTE,
+commuting_emissions_report.txt,Home energy. Working from home raises home heating and electricity,EMISSIONS,,
+commuting_emissions_report.txt,"Method. The institute surveyed 4,012 workers in 2019 and again",EMISSIONS,COMMUTE,method plus who works from home
+commuting_emissions_report.txt,"Rebound effects. On home-working days, 41 percent of respondents made",COMMUTE,EMISSIONS,rebound trips; emissions not stated
+commuting_emissions_report.txt,Recommendations. Employers can make the most of remote work by,EMISSIONS,COMMUTE,
+hybrid_productivity_review.txt,Overview. Studies of hybrid work report mixed effects on productivity.,PRODUCTIVITY,,
+hybrid_productivity_review.txt,Where productivity fell. Productivity fell in jobs that depend on,PRODUCTIVITY,TEAMWORK;LEARNING,
+hybrid_productivity_review.txt,Conclusion. There is no evidence that hybrid work reduces productivity,PRODUCTIVITY,,
+hybrid_productivity_review.txt,"Experiments. The six field experiments, in which employers assigned home-working",PRODUCTIVITY,TEAMWORK,
+hybrid_productivity_review.txt,Hours worked. Several studies found that remote workers worked longer,WORKING_HOURS;PRODUCTIVITY,LEARNING;TEAMWORK,
+municipal_policy_brief.txt,"Policy brief: hybrid working at the Municipality of Northbridge (fictional),",,,
+municipal_policy_brief.txt,"Staff wellbeing. In the 2024 staff survey, 78 percent of",TEAMWORK;WELLBEING,LONELINESS,review: half the passage is teams losing contact and fixed team days
+municipal_policy_brief.txt,Recruitment. Vacancies were filled faster than before: the average time,RECRUITMENT,,
+municipal_policy_brief.txt,Office space. The municipality closed one of its three office,PRODUCTIVITY,EMISSIONS,review: most of the passage is service quality (organisational output)
+municipal_policy_brief.txt,Points of attention. Managers found it harder to notice when,MANAGEMENT;TEAMWORK,WELLBEING,
+news_article_traffic.html,"Rush hour is back in Rivermouth, despite home working",COMMUTE,,
+news_article_traffic.html,"""Remote work has not reduced congestion on the days that",COMMUTE,EMISSIONS,climate benefit is others' claim
+news_article_traffic.html,Public transport operators report the same pattern. Trains into the,COMMUTE,,
+news_article_traffic.html,The province is now talking to large employers about spreading,COMMUTE,,spreading office days to ease traffic
+panel_study_wellbeing.txt,"Abstract. We follow 6,200 employees of the Lowland Household Panel",WELLBEING,,
+panel_study_wellbeing.txt,1. Data. The panel interviews the same households every year.,WELLBEING;LONELINESS;COMMUTE,,
+panel_study_wellbeing.txt,3. Discussion. The results suggest that hybrid work improves wellbeing,WELLBEING;LONELINESS,,
+panel_study_wellbeing.txt,4. Heterogeneity. Women with children under twelve gained most from,WELLBEING,COMMUTE,
+panel_study_wellbeing.txt,5. Health. We find no change in self-reported physical health.,WELLBEING,,physical health under WELLBEING; limitations part is method
+panel_study_wellbeing.txt,"7. Conclusion. For most employees, two or three days of",WELLBEING;LONELINESS,,
+young_employees_interviews.txt,"""You never really meet anyone"": young employees on remote work",,LONELINESS,title and sample description
+young_employees_interviews.txt,Loneliness. Many respondents described feeling lonely and cut off. Several,LONELINESS,,
+young_employees_interviews.txt,Learning. Respondents said that remote work made it harder to,LEARNING;TEAMWORK,,
+young_employees_interviews.txt,We conclude that remote work increases loneliness among young employees,LONELINESS,TEAMWORK,conclusion plus method
+young_employees_interviews.txt,Wellbeing. Respondents valued the flexibility of remote work and the,WELLBEING,COMMUTE;LONELINESS,
+young_employees_interviews.txt,Career worries. Many respondents worried that managers would not notice,MANAGEMENT;TEAMWORK,LEARNING,"review: its recommendations (team days, informal conversation) are most of the passage"
+union_survey_overtime.txt,Background. The Rivermouth Federation of Employees (fictional) is a trade,,,
+union_survey_overtime.txt,"Method. A questionnaire was sent to 9,800 members and 2,312",,WORKING_HOURS,
+union_survey_overtime.txt,Hours. Members who work from home at least three days,WORKING_HOURS,,
+union_survey_overtime.txt,Availability. Almost half of the respondents who work from home,WORKING_HOURS,MANAGEMENT,
+union_survey_overtime.txt,Boundaries. Members explained the longer hours mainly by the lack,WORKING_HOURS,PRODUCTIVITY,mechanism for long hours; output not measured
+union_survey_overtime.txt,Stress. Among members who work from home three or more,WELLBEING,WORKING_HOURS,
+union_survey_overtime.txt,Travel. Members who work from home three days a week,COMMUTE,WORKING_HOURS,
+union_survey_overtime.txt,Family. Members with caring responsibilities were more likely to say,WELLBEING,,work-life balance counted as wellbeing
+union_survey_overtime.txt,Monitoring. Seventeen percent of respondents who work from home said,MANAGEMENT,PRODUCTIVITY,
+union_survey_overtime.txt,Office days. Members were divided about compulsory office days. Where,TEAMWORK,COMMUTE,
+union_survey_overtime.txt,Recommendations. The federation asks employers to agree in writing when,WORKING_HOURS;MANAGEMENT,,recommendations; both subjects are the point
+employer_evaluation_halden.txt,"Background. Halden Mutual Insurance (fictional) employs about 1,900 people in",,,
+employer_evaluation_halden.txt,Method. We compared 2022 with 2024 using company records on,,PRODUCTIVITY;RECRUITMENT,
+employer_evaluation_halden.txt,Productivity. Claims handled per full-time employee rose by 6 percent,PRODUCTIVITY,,
+employer_evaluation_halden.txt,Resignations. The annual resignation rate fell from 14 percent in,RECRUITMENT,,retention counted under RECRUITMENT; confounded
+employer_evaluation_halden.txt,"Hiring. Applications per vacancy rose from 18 to 27, and",RECRUITMENT,COMMUTE,
+employer_evaluation_halden.txt,Collaboration. Teams whose members did not share an office day,TEAMWORK,,
+employer_evaluation_halden.txt,Office space. Halden gave up one of its two floors,,EMISSIONS,office space has no code
+employer_evaluation_halden.txt,New staff. Employees with less than one year of service,LEARNING,TEAMWORK,
+employer_evaluation_halden.txt,"Staff satisfaction. In the questionnaire, 83 percent said that the",WELLBEING,,
+employer_evaluation_halden.txt,Management. Eleven of the 46 team leaders said that they,MANAGEMENT,,
+employer_evaluation_halden.txt,"Conclusion. The board is advised to keep the policy, to",TEAMWORK,LEARNING,recommendation of a fixed office day for every team
+trial_report_eastgate.txt,Summary. We randomly assigned 640 employees of a public benefits,PRODUCTIVITY,,
+trial_report_eastgate.txt,Background. Earlier evidence on home working comes mostly from surveys,,,
+trial_report_eastgate.txt,Method. Employees applied to take part and were then assigned,,PRODUCTIVITY,
+trial_report_eastgate.txt,Experience. Cases processed per week and the share of decisions,PRODUCTIVITY,LEARNING,
+trial_report_eastgate.txt,Wellbeing. After twelve months home workers rated their life satisfaction,WELLBEING,,
+trial_report_eastgate.txt,Sick leave. Sick leave days per employee over the year,WELLBEING,,sick leave counted under WELLBEING
+trial_report_eastgate.txt,Travel. Home workers saved on average 2.8 hours of travel,COMMUTE;WELLBEING,,
+trial_report_eastgate.txt,Social contact. Home workers did not report more loneliness than,LONELINESS,,
+trial_report_eastgate.txt,New hires. New hires with less than one year of,LEARNING,,
+trial_report_eastgate.txt,Managers. Managers of home workers did not rate their staff,MANAGEMENT,,
+trial_report_eastgate.txt,"Limitations. Applicants may differ from the average employee, home days",,PRODUCTIVITY,
+city_transport_memo.txt,Purpose. This memo summarises the travel data of the Northbridge,COMMUTE,,framing of the travel data
+city_transport_memo.txt,Rail. Rail passengers into Northbridge on Fridays fell by 31,COMMUTE,,
+city_transport_memo.txt,Car traffic. Ring road counts at the morning peak are,COMMUTE,,
+city_transport_memo.txt,"Distance. In the household survey, the average one-way commuting distance",COMMUTE,EMISSIONS,
+city_transport_memo.txt,Emissions. The office estimates that transport emissions from commuting in,EMISSIONS,COMMUTE,
+city_transport_memo.txt,"Peak crowding. On Tuesdays and Wednesdays, trains between half past",COMMUTE,,
+city_transport_memo.txt,Active travel. The share of cycling in commuting trips rose,COMMUTE,EMISSIONS,mechanism without a link to home working
+city_transport_memo.txt,"Pilot. In September 2025 three employers with 5,200 employees began",COMMUTE,,
+city_transport_memo.txt,Costs. The cost of the rail service run by the,COMMUTE,,rail finances and timetable; hard call
+city_transport_memo.txt,Recommendations. The office recommends adding two trains on Tuesday and,COMMUTE,,
+city_transport_memo.txt,"Limitations. The household survey is answered by about 1,100 working",,COMMUTE,"review: only the limits of the data, as other method/limitations passages"
+managers_study_stonebridge.txt,Background. Hybrid working has changed what it means to manage,MANAGEMENT,,frames the subject
+managers_study_stonebridge.txt,Method. Interviews lasted between 45 and 80 minutes and were,,,
+managers_study_stonebridge.txt,Visibility. Most managers said that they had to give up,MANAGEMENT,,
+managers_study_stonebridge.txt,Trust. Managers who had known their staff before the pandemic,MANAGEMENT,TEAMWORK,
+managers_study_stonebridge.txt,"Monitoring. Four managers used software that logs activity, all at",MANAGEMENT,,
+managers_study_stonebridge.txt,Overload. Managers said that they found it harder to see,MANAGEMENT,WELLBEING,
+managers_study_stonebridge.txt,Teams. Managers described a loss of informal contact between team,TEAMWORK,COMMUTE,mechanism without a measured outcome
+managers_study_stonebridge.txt,Performance. Most managers believed that their teams were as productive,PRODUCTIVITY,,"managers' beliefs, no measurement; label kept because the passage is about productivity"
+managers_study_stonebridge.txt,New staff. Managers worried most about employees in their first,LEARNING,,
+managers_study_stonebridge.txt,Managers themselves. Sixteen managers said that they now worked more,WORKING_HOURS;WELLBEING,,
+managers_study_stonebridge.txt,"Conclusion. Managing hybrid teams is not harder or easier, but",MANAGEMENT,PRODUCTIVITY,
+occupational_health_report.txt,"Background. The Rivermouth Occupational Health Service (fictional) provides health checks,",,,
+occupational_health_report.txt,"Method. We analysed 5,412 consultations and 1,860 sickness absence episodes.",,,
+occupational_health_report.txt,Back and neck. The share of consultations for back or,WELLBEING,,physical health counted under WELLBEING
+occupational_health_report.txt,Sickness absence. Absence episodes per 100 employees were 41 for,WELLBEING,,
+occupational_health_report.txt,Burnout. Physicians diagnosed burnout in 3.9 percent of patients who,WELLBEING,WORKING_HOURS,
+occupational_health_report.txt,Equipment. Only 38 percent of employees who worked from home,WELLBEING,,ergonomic equipment; bears on physical health
+occupational_health_report.txt,Sleep. Employees who worked from home reported fewer sleep problems,WELLBEING,,
+occupational_health_report.txt,Isolation. Physicians noted social isolation as a contributing factor in,LONELINESS,,
+occupational_health_report.txt,"Return to work. After long sickness absence, employees who could",WELLBEING,WORKING_HOURS,recovery counted under WELLBEING
+occupational_health_report.txt,Commuting. Employees with a commute of more than 90 minutes,COMMUTE;WELLBEING,,
+occupational_health_report.txt,Recommendations. Employers should check the home workstation of everyone who,WELLBEING,WORKING_HOURS;LONELINESS;TEAMWORK,workstation check is the main point
+opinion_column_courier.txt,Opening. Every Monday morning I walk past the glass tower,,,colour; no code
+opinion_column_courier.txt,Culture. Offices were never only about desks. They are where,LEARNING,TEAMWORK,"opinion, no evidence"
+opinion_column_courier.txt,Loneliness. Readers write to me every week to say that,LONELINESS,,"opinion, no evidence"
+opinion_column_courier.txt,Productivity. Managers tell me over lunch that nothing gets done,PRODUCTIVITY,,"opinion, no evidence"
+opinion_column_courier.txt,Commuting. Defenders of home working say that nobody misses the,COMMUTE,WELLBEING,"opinion, no evidence"
+opinion_column_courier.txt,Climate. We are told that home working is good for,EMISSIONS,,"opinion, no evidence"
+opinion_column_courier.txt,The high street. The cost to the city is already,,,local economy; no code
+opinion_column_courier.txt,Employers. Employers who force everyone back for four days will,RECRUITMENT,,"opinion, anecdote"
+opinion_column_courier.txt,Managers. Good managers do not need to see their staff,MANAGEMENT,,"opinion, no evidence"
+opinion_column_courier.txt,Evenings. I notice that my colleagues who work from home,WORKING_HOURS,,"opinion, anecdote"
+opinion_column_courier.txt,Verdict. My modest proposal is three days in the office,TEAMWORK,,closing proposal: same three days for everyone
