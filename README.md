@@ -57,11 +57,10 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.4: A theory's concepts drafted by the AI, and how often the AI is right
+## New in 0.18.5: Documents, grouped as you choose
 
-- **A codebook from a theory document: the AI can draft the concepts.** In *New codebook*, *From a theory document*, the list of concepts found without AI now has a **Draft with AI** button.
-- **The validation report's AI half.** Each release now carries `validation-report-ai.md` beside `validation-report.md`: how often ENLENS's AI gives the right answer on a small gold set of invented documents on remote work.
-- **The manual is arranged by what you need.** *Start here* has a new walk-through, *Your first project, start to finish*: six invented documents, from adding them to the Excel file. Cannot change results.
+- **Documents, grouped as you choose, with a filter.** The Documents page now groups its list: by who may read the documents with AI (the first time), by their role (evidence or theory), by what needs a look, or not at all.
+- **Made for long lists.** Under the filter, each group's count takes you to it ("Claude: 266 documents · Local AI: 27 documents · No AI: 14 documents"); a group's head stays under the page's top while its documents scroll.
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
