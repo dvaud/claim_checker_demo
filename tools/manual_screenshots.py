@@ -323,10 +323,11 @@ def take(page, what, path: Path) -> None:
             "x": SIDEBAR, "y": max(0, top), "width": page.viewport_size["width"] - SIDEBAR, "height": h})
     else:                                                   # a locator: its box with a little air
         what.scroll_into_view_if_needed()
-        box = what.bounding_box()
+        box = what.bounding_box()   # in the window's coordinates; a full-page clip takes the page's
+        sx, sy = page.evaluate("[window.scrollX, window.scrollY]")
         pad = 8
         page.screenshot(path=str(path), full_page=True, clip={
-            "x": max(0, box["x"] - pad), "y": max(0, box["y"] - pad), "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad})
+            "x": max(0, sx + box["x"] - pad), "y": max(0, sy + box["y"] - pad), "width": box["width"] + 2 * pad, "height": box["height"] + 2 * pad})
 
 
 QUANTISE = (
