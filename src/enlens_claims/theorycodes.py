@@ -67,6 +67,20 @@ def _norm(term: str) -> str:
     return t[:-1] if len(t) > 4 and t.endswith("s") and not t.endswith("ss") else t
 
 
+MIN_DEFINITION_WORDS = 3
+
+
+def _words(quote: str) -> int:
+    """Whole words in a quote; in a script written without spaces (Chinese, Thai…) a character counts as a word."""
+    from .textutil import _unspaced
+
+    n = 0
+    for tok in quote.split():
+        u = sum(1 for c in tok if _unspaced(c))
+        n += u + any(c.isalnum() and not _unspaced(c) for c in tok) if u else 1
+    return n
+
+
 def _clean_term(term: str, stop: frozenset[str]) -> str | None:
     words = term.strip(" .,:;'\"’()").split()
     while words and words[0].lower() in stop:
@@ -253,6 +267,8 @@ AI_MAX_CHARS = 24000     # and at most this much of its text
 AI_MAX_CONCEPTS = 25
 
 NO_AI = "This document is marked No AI, so no AI drafts its concepts."
+WITHDRAWN = ("The request was taken back before the AI answered (the document's AI setting changed, or a draft "
+             "was stopped). Nothing was drafted: try again.")
 NO_LOCAL = ("Only a local AI may read this document, and no local AI is chosen (Settings, AI: the local model for "
             "documents kept on this computer).")
 
@@ -358,8 +374,13 @@ def store_ai_draft(cx, t, payload: dict, obj: dict, model: str) -> tuple[bool, l
             errors.append(f"concepts[{i}] ({c.name}): there is no passage P{ev.passage}")
             continue
         short = grade_quote_problem(ev.quote)
-        if short:
-            errors.append(f"concepts[{i}] ({c.name}): {short.replace('to show the judgement', 'to define the concept')}")
+        if short or _words(ev.quote) < MIN_DEFINITION_WORDS:  # a definition needs words: 15 characters are not enough
+            errors.append(f"concepts[{i}] ({c.name}): the quote {' '.join(ev.quote.split())[:80]!r} is too short to "
+                          f"define the concept: quote at least {MIN_DEFINITION_WORDS} whole words, copied exactly")
+            continue
+        if _norm(ev.quote) == _norm(c.name):
+            errors.append(f"concepts[{i}] ({c.name}): the quote only repeats the concept's name: quote the sentence "
+                          "or part of it that says what the concept is")
             continue
         text = ps[ev.passage - 1]["text"]
         if not find_quote(text, ev.quote):
@@ -449,8 +470,12 @@ def draft_with_ai(ws: Workspace, doc_id: str, backend, model: str, progress: Cal
     used = last[0]["model"] if last else call
     reused = before == "done" or bool(last and "kept answer" in (last[0]["route"] or ""))
     if not ok and ws.scalar("SELECT status FROM tasks WHERE task_id=?", (tid,)) != "failed":
-        # stopped, or taken back from the queue: nothing was drafted, and there is nothing to log
-        return {"doc_id": doc_id, "title": title, "task_id": tid, "ok": False, "stopped": True,
+        # stopped, or taken back from the queue: nothing was drafted, and there is nothing to log. Only a stop the
+        # person asked for is quiet; a task taken back for another reason (another draft's job stopped, or the
+        # document's AI setting changed while it waited) says so.
+        stopped = bool(should_stop and should_stop())
+        return {"doc_id": doc_id, "title": title, "task_id": tid, "ok": False, "stopped": stopped,
+                "withdrawn": not stopped, "why": None if stopped else WITHDRAWN,
                 "problems": problems[:5], "reused": False, "model": used, "concepts": []}
     level0 = {_norm(c["term"]) for c in candidates(ws, doc_id, with_examples=False)["concepts"]}
     concepts = ai_drafts(ws, tid, level0) if ok else []

@@ -266,29 +266,37 @@ async function pickTheory() {
     aiPart = h("p", { class: "muted small cb-theory-ai" }, offer.why);
   }
   let drafting = false;
+  let draftJob = null;   // the running draft's job: stopped if the dialog closes before it ends
   async function draftWithAI(btn) {
     if (drafting) return;
     drafting = true;
+    let drafted = false;
     setBusy(btn, true);
     try {
       const res = await api("POST", `${base}/${P(r.doc_id)}/ai`);
+      draftJob = res.job.id;
       const job = await watchJob(res.job.id).promise;
       if (!list.isConnected) return;   // the dialog was closed meanwhile
       if (job.state !== "done") { if (job.error) toast(job.error, "error"); return; }
       const got = job.result || {};
-      if (got.stopped) return;   // stopped, or taken back from the queue: nothing was drafted
+      if (got.stopped) return;   // stopped by the person: nothing was drafted
+      if (got.withdrawn) { toast(got.why || "The request was taken back before the AI answered. Try again.", "warn"); return; }
       if (!got.ok) { toast("The AI’s definitions could not be found in the document, so nothing was added. Try again, or tick the concepts found without AI.", "warn"); return; }
       const added = (got.concepts || []).filter(addRow).length;
       if (empty) empty.remove();
       toast(added ? `The AI drafted ${plural(added, "concept")}, added at the end of the list, unticked. Read each before you tick it.`
         : "The AI found no concepts beyond those already listed.", added ? "ok" : "info");
-      if (added) { btn.disabled = true; btn.textContent = "Drafted with AI"; }
+      drafted = true;   // asked once is enough: asking again only gives the kept answer back
     } catch (e) { showError(e); }
-    finally { drafting = false; if (btn.isConnected) setBusy(btn, false); }
+    finally {
+      drafting = false; draftJob = null;
+      if (btn.isConnected) { setBusy(btn, false); if (drafted) { btn.disabled = true; btn.textContent = "Drafted with AI"; } }
+    }
   }
   const ok = await dialog({ title: `Concepts of “${r.title}”`, wide: true,
     body: h("div", {}, h("p", {}, "Each concept you tick becomes a draft code with its definition quoted from the theory. Terms the text defines are ticked; headings and words it uses often are offered too. You edit them next."), aiPart, empty, list),
     actions: [{ text: "Cancel", value: null }, { text: "Make the codebook", value: true, primary: true }] });
+  if (draftJob) api("POST", `/api/jobs/${P(draftJob)}/cancel`).catch(() => {});   // closed while the AI drafts: stop it
   if (!ok) return null;
   const codes = rows.filter(([cb]) => cb.checked).map(([, c, ex]) => ({ ...c.code, examples: ex.filter(([x]) => x.checked).map(([, e]) => e) }));
   if (!codes.length) { toast("Tick at least one concept.", "info"); return null; }

@@ -291,3 +291,29 @@ def test_the_routes_offer_it_and_run_it_as_a_job(api, tmp_path):  # noqa: F811
 
 
 from test_app import api, home  # noqa: E402,F401  (fixtures)
+
+
+def test_a_definition_needs_three_whole_words_and_more_than_the_name(project):
+    """Review of 0.18.4: two long words passed the judgement rule (3 words or 15 characters); a definition needs words."""
+    ws, theory, _ev = project
+    tid = theorycodes.make_ai_task(ws, theory, "claude-sonnet-5-5")
+    ps = [" ".join(p["text"].split()) for p in theorycodes.ai_payload(ws, theory)["passages"]]
+    n, two = next((i + 1, f"{a} {b}") for i, t in enumerate(ps) for a, b in zip(t.split(), t.split()[1:])
+                  if len(f"{a} {b}") >= 15)
+    bad = {"concepts": [{"name": "Long words", "definition": {"passage": n, "quote": two}, "reason": "x"},
+                        {"name": "memory of the history", "definition": {"passage": 1, "quote": "memory of the history"},
+                         "reason": "x"}]}
+    ok, errors = tasks.ingest_result(ws, tid, json.dumps(bad), model="claude-sonnet-5-5")
+    assert not ok and len(errors) == 2
+    assert "at least 3 whole words" in errors[0]
+    assert "only repeats the concept's name" in errors[1]
+
+
+def test_a_draft_taken_back_says_so_and_a_stop_stays_quiet(project, monkeypatch):
+    ws, theory, _ev = project
+    monkeypatch.setattr(tasks, "run_one", lambda *a, **k: (False, ["taken back from the queue"]))
+    r = theorycodes.draft_with_ai(ws, theory, FakeModel(), "claude-sonnet-5-5")
+    assert r["ok"] is False and r["stopped"] is False and r["withdrawn"] is True and r["why"] == theorycodes.WITHDRAWN
+    r = theorycodes.draft_with_ai(ws, theory, FakeModel(), "claude-sonnet-5-5", should_stop=lambda: True)
+    assert r["stopped"] is True and r["withdrawn"] is False and r["why"] is None
+    assert ws.query("SELECT 1 FROM research_log WHERE kind='codebook-drafted'") == []
