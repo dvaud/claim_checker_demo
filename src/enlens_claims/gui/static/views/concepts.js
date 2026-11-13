@@ -4,6 +4,7 @@
 import { featureEyebrow, withAI } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob, button, link, notice, card, tag, input, select, textarea, fold, readsLine, inset, searchHref } from "../lib.js";
 import { MiniJob, jobCard as jobCardOf } from "./progress.js";
+import { pathsCard, timeCard } from "./concept-paths.js";   // 0.18.1: D3 and D4
 import { shareInline, sharingOf } from "./share.js";   // 0.18 (L1)
 
 const PAGE = 50;       // glossary entries per page
@@ -323,7 +324,7 @@ export async function renderConcept(view, [termId], query) {
       body.appendChild(notice({ kind: "attention", class: "ct-status-notice" },
         h("div", {}, h("p", {}, "Documents were added or removed since the glossary was made, so these counts may be out of date."), btn)));
     }
-    body.append(wordingsCard(), docsSection(), relatedCard(), linesSection());
+    body.append(wordingsCard(), docsSection(), relatedCard(), pathsCard(project, termId, c.label), timeCard(project, termId), linesSection());
   }
 
   // ---- wordings, and other wordings the AI proposes

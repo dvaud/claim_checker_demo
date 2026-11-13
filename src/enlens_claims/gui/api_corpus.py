@@ -7,7 +7,7 @@ part adds, kept out of server.py so the two parts of 0.18.1, built side by side,
 the changes after which the shared folder's poller does not bring a round forward."""
 from __future__ import annotations
 
-from .api_common import ApiError
+from .api_common import ApiError, _str
 
 P = r"([^/]+)"  # one path segment, as in server.py
 
@@ -20,6 +20,10 @@ ROUTES: list[tuple[str, str, str]] = [
     # K2 part 2: a codebook from a theory document (theorycodes.py)
     ("GET", rf"/api/projects/{P}/codebook-theory", "get_codebook_theory_docs"),
     ("GET", rf"/api/projects/{P}/codebook-theory/{P}", "get_codebook_theory"),
+    # D3 and D4: paths between two concepts, a concept over time and across groups (conceptpaths.py)
+    ("GET", rf"/api/projects/{P}/concept-paths", "get_concept_paths"),
+    ("GET", rf"/api/projects/{P}/concept-time/{P}", "get_concept_time"),
+    ("POST", rf"/api/projects/{P}/concept-groups/{P}", "post_concept_groups"),
     # A7 (reader 5): a figure's picture, drawn from the original PDF when it is shown, never stored
     ("GET", rf"/api/projects/{P}/documents/{P}/figures/{P}\.png", "get_figure_image"),
 ]
@@ -64,6 +68,47 @@ class CorpusApi:
         ws = self.app.ws(name)
         rows = ws.query("SELECT doc_id, title, role FROM documents ORDER BY role IS NULL, title")
         return {"documents": [{"doc_id": r["doc_id"], "title": r["title"], "theory": r["role"] == "theory"} for r in rows]}
+
+    # ---- D3 and D4 -----------------------------------------------------------------------------------------------
+    def get_concept_paths(self, name, q):
+        """?from=<term id>&to=<term id>[&k=3]: the shortest chains between two concepts (conceptpaths.paths)."""
+        from .. import conceptpaths
+
+        a, b = _str(q, "from"), _str(q, "to")
+        if not a or not b:
+            raise ApiError(400, "Say both concepts: ?from=<term id>&to=<term id>.")
+        try:
+            k = max(1, min(5, int(_str(q, "k") or 3)))
+        except ValueError:
+            k = 3
+        try:
+            return conceptpaths.paths(self.app.ws(name), a, b, k)
+        except KeyError:
+            raise ApiError(404, "No such term in the glossary: make the glossary again.") from None
+
+    def get_concept_time(self, name, term, q):
+        """A concept by publication year (conceptpaths.over_time)."""
+        from .. import conceptpaths
+
+        try:
+            return conceptpaths.over_time(self.app.ws(name), term)
+        except KeyError:
+            raise ApiError(404, "No such term in the glossary: make the glossary again.") from None
+
+    def post_concept_groups(self, name, term, q):
+        """{"groups": {name: [doc ids]}}: a concept in sets of documents picked on the page, not stored."""
+        from .. import conceptpaths
+
+        groups = self._body().get("groups")
+        if not isinstance(groups, dict) or not all(isinstance(v, list) for v in groups.values()):
+            raise ApiError(400, "Send {\"groups\": {name: [document ids]}}.")
+        try:
+            return conceptpaths.compare_groups(self.app.ws(name), term, {str(k): [str(x) for x in v]
+                                                                         for k, v in groups.items()})
+        except KeyError:
+            raise ApiError(404, "No such term in the glossary: make the glossary again.") from None
+        except ValueError as e:
+            raise ApiError(400, str(e)) from None
 
     def get_codebook_theory(self, name, doc_id, q):
         """The candidate concepts of a document, as draft codes with their quoted definitions and the evidence's
