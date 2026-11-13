@@ -10,6 +10,7 @@ import { aiLabelCard, startKeywordPass, keywordLabel, SOURCE_WORDS, RELEVANCE_WO
 import { colourPicker, editNote, removeNote, useAsEvidence, noteCard } from "./notes.js";
 import { askWhy } from "./versions.js";
 import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
+import { documentRoles, roleTag, roleMenuItem, roleBox } from "./doc-role.js";   // 0.18.1 K2: theory documents
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
 const OK_EXT = ["pdf", "docx", "html", "htm", "txt", "md", "zip"];
@@ -261,9 +262,10 @@ export async function renderSources(view) {
   let pa = {};                // the project's AI-access info, as last drawn
   let countsEl = null, shieldNote = null, tbody = null;
   const rows = new Map();     // doc_id -> its row
+  let roles = {};             // 0.18.1 (K2): doc_id -> "theory"
   async function reloadDocs() {
     let r;
-    try { r = await api("GET", `/api/projects/${P(project)}/documents`); } catch (e) { failedLoad(docsBox, e); return; }
+    try { [r, roles] = await Promise.all([api("GET", `/api/projects/${P(project)}/documents`), documentRoles(project)]); } catch (e) { failedLoad(docsBox, e); return; }
     drawDocs(r);
   }
   const countsNode = () => {
@@ -316,13 +318,14 @@ export async function renderSources(view) {
         h("td", { class: "pick-col" }, c),
         h("td", { class: "doc-cell" }, h("div", { class: "doc-title", title: d.title || d.file }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
           proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
+          roleTag(roles[d.doc_id]),   // 0.18.1 K2: the lens, not the evidence
           h("div", { class: "doc-file" }, ...String(d.file || "").split(/(?<=[_-])/).flatMap((seg) => [seg, h("wbr")])),   // may break after _ or -, never before its extension
           d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null,
           // 0.14.3: a row's actions sit under its title, where they are always in view (the table was wider than the
           // page and its last column was out of sight). 0.17.0: the rare and lasting one, Remove, is in the row's menu,
           // not a red button under every title (DESIGN 4.20)
           h("div", { class: "doc-actions" },
-            menu({ label: `More for ${d.title || d.file}`, items: [{ text: "Remove…", icon: "trash", danger: true, onClick: () => removeDoc(d) }] }))),
+            menu({ label: `More for ${d.title || d.file}`, items: [roleMenuItem(project, d, roles[d.doc_id], () => reloadDocs()), { text: "Remove…", icon: "trash", danger: true, onClick: () => removeDoc(d) }] }))),
         h("td", { "data-label": "Type", class: "fact" }, KIND_TEXT[d.kind] || d.kind || ""),
         h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
         h("td", { "data-label": "Added", class: "fact small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
@@ -696,6 +699,7 @@ export async function renderDocument(view, [docId], query) {
         originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
         copyBtn),
       span ? h("p", { class: "muted small dv-span-note" }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null] }));
+  view.appendChild(await roleBox(project, docId, d.title || d.file || "this document"));   // 0.18.1 K2: theory or evidence
 
   // ----------------------------------------------------------------- the text, with layers of highlights
   const nodeAt = new WeakMap();        // text node -> document offset of its first character
