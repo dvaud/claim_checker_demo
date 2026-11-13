@@ -168,8 +168,24 @@ function windowNode(text, start, end, cls, breaks, [a, b]) {
   return el;
 }
 
+// 0.18.1 (B5): a retracted or corrected work's document says so on its excerpts. The notices of the last lookup
+// (Bibliography › Check for retractions) are read once when the page opens; no lookup happens here.
+let retractedDocs = {};
+async function loadRetractions(project) {
+  try { retractedDocs = (await api("GET", `/api/projects/${P(project)}/retractions`)).by_doc || {}; } catch { retractedDocs = {}; }
+}
+function retractedMark(docId) {
+  const ns = retractedDocs[docId];
+  if (!ns || !ns.length) return null;
+  const bad = ns.some((n) => ["retraction", "withdrawal", "removal"].includes(n.type));
+  const what = [...new Set(ns.map((n) => (n.type || "notice").replace(/_/g, " ")))].join(", ");
+  return tag({ kind: "attention", title: `Crossref lists a ${what} for the work this document is${ns[0].date ? ` (notice dated ${ns[0].date})` : ""}. Checked ${fmt.dateShort(ns[0].checked_at)}. Read the notice before relying on this excerpt.` },
+    bad ? "work retracted" : "work corrected or flagged");
+}
+
 export async function renderResult(view, [hypId], query) {
   const project = App.project;
+  await loadRetractions(project);
   const setting = App.settings().threshold ?? 0.6;
   let threshold = query.threshold !== undefined ? Number(query.threshold) : setting;
   if (Number.isNaN(threshold)) threshold = setting;
@@ -1074,7 +1090,7 @@ export async function renderResult(view, [hypId], query) {
       h("tbody", {}, rows.map(([part, p], i) => h("tr", { class: `row-link ex-row ex-${p.verdict || "none"}${p.reviewed ? " ex-reviewed" : ""}`, tabindex: "0", onClick: () => open(part, p), onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(part, p); } } },
         h("td", { class: "num muted" }, String(i + 1)),
         split ? h("td", { "data-label": "Part" }, `Part ${part.part}`) : null,
-        h("td", { "data-label": "Document", class: "ex-doc" }, h("span", { class: "serif" }, p.title || "untitled"), p.scope_note ? h("div", { class: "small" }, tag({ kind: "attention" }, `about another group: ${p.scope_note}`)) : null),
+        h("td", { "data-label": "Document", class: "ex-doc" }, h("span", { class: "serif" }, p.title || "untitled"), retractedMark(p.doc_id), p.scope_note ? h("div", { class: "small" }, tag({ kind: "attention" }, `about another group: ${p.scope_note}`)) : null),
         h("td", { "data-label": "Where", class: "small muted" }, p.location || p.span || ""),
         h("td", { "data-label": "AI's judgement" }, h("span", { class: "it" }, judgementIcon(p.ai_verdict, 12), gradeWords(p.ai_verdict, p.confidence)), p.reread ? h("div", { class: "small muted" }, "read again") : null),
         h("td", { "data-label": "Your judgement" }, yours(p)),
@@ -1240,6 +1256,7 @@ export async function renderResult(view, [hypId], query) {
     const span = quoteSpan(p);
     card.appendChild(h("div", { class: "ev-src" },
       h("span", { class: "title" }, p.title || "untitled"),
+      retractedMark(p.doc_id),
       whereText(p),
       (() => {
         const o = (current && current.parts || []).map((x) => [x, (x.passages || []).find((y) => y.passage_id === p.passage_id && about(y))]).filter(([x, y]) => x.claim_id !== part.claim_id && y);

@@ -1179,6 +1179,10 @@ def view(ws: Workspace) -> dict:
     if not meta:
         return {"bibliography": None}
     works = {r["item_key"]: _work_view(r) for r in ws.query("SELECT * FROM bib_items ORDER BY seq")}
+    from . import retractions  # 0.18.1 (B5): the notices of the last lookup, with its date
+    rs = retractions.status(ws)
+    for k, w in works.items():
+        w["notices"] = rs["by_item"].get(k, [])
     docs = {r["doc_id"]: {"doc_id": r["doc_id"], "title": r["title"], "file": re.sub(r".*[/\\]", "", r["path"] or ""),
                           "kind": r["kind"], "pages": r["n_pages"], "added_at": r["added_at"],
                           "file_title": file_title(r)}
@@ -1210,7 +1214,8 @@ def view(ws: Workspace) -> dict:
             "counts": {"works": len(works), "linked": len({r["work"]["key"] for r in linked}), "confirm": len(confirm),
                        "to_find": len(to_find), "not_in": len(not_in),
                        "files": sum(1 for w in to_find if w["file"])},
-            "linked": linked, "confirm": confirm, "to_find": to_find, "not_in": not_in}
+            "linked": linked, "confirm": confirm, "to_find": to_find, "not_in": not_in,
+            "retractions": {"checked_at": rs["checked_at"], "affected": rs["affected"], "local_only": rs["local_only"]}}
 
 
 def file_title(r) -> str | None:

@@ -1748,4 +1748,17 @@ pass; …"], "table": [{"measure": "Usable answers on the first try", "Checking 
 documents not readable by Claude are counted, never quoted. `PUT …/judgements/<claim_id>/<passage_id>` now also
 answers `{"status_before", "status", "moved"}` (`moved`: the sentence naming this judgement when it changed the
 answer, also written into the research log as kind `verdict-moved`, else null).
+#### Retractions and corrections
+
+Looks the DOIs of the bibliography's works and of the documents up in Crossref, which carries Retraction Watch's
+retractions and the publishers' corrections and expressions of concern. Only when asked. Off under local-only (400,
+nothing sent). Only DOIs are sent, with a plain `User-Agent: ENLENS/<version>`. A work whose document is marked
+No AI is not looked up. The Crossref address can be set with `ENLENS_CROSSREF_URL` (tests use a stand-in).
+
+| Route | Answer |
+| --- | --- |
+| `GET /api/projects/<name>/retractions` | What the last lookups found: `{"local_only", "checked_at" (the latest lookup or null), "checked", "affected", "by_doi": {doi: {"checked_at", "notices"}}, "by_item": {item_key: [notice]}, "by_doc": {doc_id: [notice]}, "plan": {"ask", "no_ai"}}`. A notice is `{"type": "retraction", "correction", "expression_of_concern", …, "doi": the notice's DOI, "date", "source", "work_doi", "checked_at"}`. Only works with a notice are listed. |
+| `POST /api/projects/<name>/retractions/check` | Starts the lookup as a job (`{"job"}`; `progress` has `done` and `total` DOIs; one at a time per project). Its result: `{"looked_up", "no_ai", "notices", "capped", "checked_at"}`. 400 under local-only or when there is no DOI to ask about. |
+
+`GET …/bibliography` gives each work a `notices` list, and `retractions: {checked_at, affected, local_only}` beside `counts`.
 <!-- end of 0.18.1 part B -->
