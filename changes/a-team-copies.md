@@ -22,6 +22,11 @@
   history, after two different owners, left the copies disagreeing about the owner without a word (a copy keeps the
   first record it holds). ENLENS now refuses the second and says what to do: ask the owner to hand it over, or follow
   your earlier take-over. Cannot change results.
+- **Copies agree again after two take-overs at once.** When two colleagues took a project over at the same time and
+  the team then settled on the earlier one, what that owner did next (a removal, a role) never reached the other
+  copies: their older rows of the later take-over, which no longer counted, kept the new ones out. Now the newest row
+  of each person always comes through. Can change results: copies then hold the owner's removals and roles, as the
+  owner's copy does. (Found by the randomised roles test.)
 - **A removal is noted as the word of whoever keeps it.** A document a former owner removed, kept removed by the new
   owner's copy, was noted as removed "by" the former owner, who may be a Member in your copy by then; it is now the
   owner's word that is noted. Cannot change results.
@@ -37,7 +42,9 @@
 - `canon.hist_json` gains `seen`: the removals proposed for the document that its writer had seen when it last
   changed the document's state (`ownership.removal_spent`). A new owner writes, once, a mark in `decisions`
   (`proposal` `~restamped:<place>`, `knew_json` the former owners' answers it held); a former owner's answer not in
-  it no longer counts. Both are ignored by ENLENS 0.18.0, so the sync format stays 4.
+  it no longer counts. Both are ignored by ENLENS 0.18.0, so the sync format stays 4. `canon` and `roles` rows are
+  merged by their writer's number alone (`sync/owner_merge.py`), as `decisions` were; a copy still on 0.18.0 ranks
+  them by place first, so after two take-overs at once it may keep the older row until it is updated.
 
 ### Tests
 
