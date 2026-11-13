@@ -95,7 +95,7 @@ def test_score_labels_leave_out_codes_only_mentioned():
 def test_quote_failures_and_repeatability():
     p1 = _pass()
     q = v.quote_failures(p1["checks"], ("check",))
-    assert q == {"answers": 5, "first_rejected_for_quotes": 0.2, "never_accepted": 0.2}
+    assert q == {"answers": 5, "accepted_first": 0.8, "first_rejected_for_quotes": 0.2, "never_accepted": 0.2}
     p2 = _pass(checks=[_check("H1", "supported", "supported"), _check("H2", "contradicted", "contradicted"),
                        _check("H3", "unsupported", "unsupported"), _check("H4", "partially_supported", "supported"),
                        _check("H5", "contested", "contested")],
@@ -143,7 +143,8 @@ def test_report_rendering():
     assert "| check | sonnet (5) | check-v5 (5) |" in one
     assert "| Contradicted | 0 | 0 | 1 | 0 | 0 | 0 | 0% |" in one
     assert "**Exactly the right codes:** 40% of 5 passages (4 answered)" in one
-    assert "Checks: 20% of 5 answers were first rejected for a quote" in one
+    assert "Checks: 20% of 5 answers were first rejected for a quote; 80% were accepted on the first try" in one
+    assert "the tasks prepared by 0.18.4 (1)" in one
     assert "one pass only, so repeatability was not measured" in one
     assert "## Limits" in one and "invented" in one and "English only" in one
     assert "the gold set has changed" not in one

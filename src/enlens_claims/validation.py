@@ -40,6 +40,26 @@ STATUS_WORDS = {"supported": "Supported", "partially_supported": "Partly support
 DECOMPOSE = ("compound", "all", "none")
 
 
+def version() -> str:
+    """The ENLENS that prepares and scores a run: `git describe` of the git copy the gold set is in (the commit, which
+    an installed package's metadata may not match when it runs from the sources), else the package's version."""
+    from . import __version__
+
+    try:
+        import subprocess
+
+        from .procs import no_window
+
+        out = subprocess.run(["git", "describe", "--tags", "--match", "v[0-9]*", "--dirty"],
+                             cwd=Path(__file__).resolve().parent, capture_output=True, text=True, timeout=10,
+                             stdin=subprocess.DEVNULL, **no_window())
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:  # noqa: BLE001 - no git, no repository, a timeout
+        pass
+    return __version__
+
+
 def default_folder() -> Path:
     """`tools/validation/` of a git copy of ENLENS (the gold set is not part of the installed package)."""
     return Path(__file__).resolve().parents[2] / "tools" / "validation"
@@ -132,7 +152,6 @@ def prepare(ws: Workspace, folder: str | Path | None = None, decompose: str = "c
     hypotheses, all of them, or none, as a researcher ticks *Split into parts*). Nothing is answered here."""
     from . import access, claimcheck, frameworks, home, ingest, profile, routing
     from . import tasks as tk
-    from . import __version__
 
     if decompose not in DECOMPOSE:
         raise ValueError(f"decompose: one of {', '.join(DECOMPOSE)}")
@@ -157,7 +176,7 @@ def prepare(ws: Workspace, folder: str | Path | None = None, decompose: str = "c
         with ws.connect() as cx:
             tk.mark_queued(cx, [f"label:{FRAMEWORK}:{p}" for p in pids.values()])
     ws.set_meta(META, {"fingerprint": g["fingerprint"], "hypotheses": hyps, "passages": pids,
-                       "prepared_at": _now(), "prepared_by": __version__,
+                       "prepared_at": _now(), "prepared_by": version(),
                        "settings": {"k": k, "per_doc": per_doc, "decompose": decompose, "expand": True}})
     return {"documents": ws.scalar("SELECT COUNT(*) FROM documents"), "failed": read.get("failed") or [],
             "hypotheses": len(hyps), "label_tasks": made,
@@ -257,8 +276,6 @@ def _route_of(passes: list[dict]) -> str:
 
 
 def make_run(passes: list[dict], gold: dict, route: str | None = None, date: str | None = None) -> dict:
-    from . import __version__
-
     route = route or _route_of(passes)
     models: dict[str, Counter] = {}
     prompts: dict[str, Counter] = {}
@@ -271,7 +288,7 @@ def make_run(passes: list[dict], gold: dict, route: str | None = None, date: str
                     prompts.setdefault(a["kind"], Counter())[a.get("prompt_version") or "?"] += 1
                     versions[a.get("app_version") or "?"] += 1
     return {"format": FORMAT, "date": date or _dt.date.today().isoformat(), "route": route,
-            "scored_by": __version__, "gold": {"fingerprint": gold["fingerprint"], "hypotheses": len(gold["hypotheses"]),
+            "scored_by": version(), "gold": {"fingerprint": gold["fingerprint"], "hypotheses": len(gold["hypotheses"]),
                                                "passages": len(gold["labels"]), "codes": gold["codes"]},
             "models": {k: dict(v) for k, v in sorted(models.items())},
             "prompt_versions": {k: dict(v) for k, v in sorted(prompts.items())},
@@ -285,7 +302,7 @@ def write_run(run: dict, out_dir: str | Path) -> Path:
     path, n = out_dir / f"{base}.json", 2
     while path.exists():
         path, n = out_dir / f"{base}-{n}.json", n + 1
-    path.write_text(json.dumps(run, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(run, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     return path
 
 
@@ -370,7 +387,8 @@ def score_labels(items: list[dict], codes: list[str]) -> dict:
 
 def quote_failures(items: list[dict], kinds: tuple[str, ...]) -> dict:
     ans = [a for it in items for a in it["answers"] if a["kind"] in kinds and a["attempts"]]
-    return {"answers": len(ans), "first_rejected_for_quotes": _share([a["quote_problem_first"] for a in ans]),
+    return {"answers": len(ans), "accepted_first": _share([a["accepted_first"] for a in ans]),
+            "first_rejected_for_quotes": _share([a["quote_problem_first"] for a in ans]),
             "never_accepted": _share([not a["models"] for a in ans])}
 
 
@@ -419,7 +437,8 @@ def to_markdown(run: dict, gold_fingerprint: str | None = None) -> str:
     first = s["passes"][0]
     c, lb = first["checks"], first["labels"]
     L = ["# Validation report: the AI's answers against known right answers", "",
-         f"Recorded on {run['date']} through the route **{run['route']}**, scored by ENLENS {run['scored_by']}. This "
+         f"Recorded on {run['date']} through the route **{run['route']}**, scored by ENLENS {run['scored_by']} (the "
+         f"tasks prepared by {_listing(Counter(p.get('prepared_by') or '?' for p in run['passes']))}). This "
          "report was made from the recorded run file with no AI; the figures change only when a new run is recorded. "
          "It is the half of the validation report that needs AI; `validation-report.md` is the half that does not.", "",
          "## What was asked", "",
@@ -464,9 +483,13 @@ def to_markdown(run: dict, gold_fingerprint: str | None = None) -> str:
           "Every answer must quote the text it rests on, word for word; ENLENS rejects an answer whose quote is not in "
           "the passage and asks again.", "",
           f"- Checks: {_pct(q['check']['first_rejected_for_quotes'])} of {q['check']['answers']} answers were first "
-          f"rejected for a quote; {_pct(q['check']['never_accepted'])} were never accepted.",
+          f"rejected for a quote; {_pct(q['check']['accepted_first'])} were accepted on the first try (the others were "
+          f"rejected for a quote or another problem, such as a reference not found, and fixed); "
+          f"{_pct(q['check']['never_accepted'])} were never accepted.",
           f"- Labels: {_pct(q['label']['first_rejected_for_quotes'])} of {q['label']['answers']} answers were first "
-          f"rejected for a quote; {_pct(q['label']['never_accepted'])} were never accepted.", "",
+          f"rejected for a quote; {_pct(q['label']['accepted_first'])} were accepted on the first try (the others were "
+          f"rejected for a quote or another problem, such as a reference not found, and fixed); "
+          f"{_pct(q['label']['never_accepted'])} were never accepted.", "",
           "## Repeatability", ""]
     rp = s.get("repeatability")
     if rp:
