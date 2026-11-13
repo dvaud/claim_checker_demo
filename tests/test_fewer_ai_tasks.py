@@ -101,3 +101,45 @@ def test_a_small_codebook_goes_once_per_batch():
     p = _label([["6.4"]])[0]
     assert prompts.user_prompt("label", p) == prompts.user_prompt("label", p, codes_once=False)
     assert "CANDIDATE CODES:\n6.4: About 6.4." in prompts.user_prompt("label", p)
+
+
+class _Unsure(_Model):
+    def complete(self, kind, system, user, model, payload):
+        self.calls += 1
+        ev = [{"passage": i, "verdict": "supports", "confidence": 0.4, "quote": " ".join(p["text"].split()[:6])}
+              for i, p in enumerate(payload["passages"], 1)]
+        return json.dumps({"evidence": ev})
+
+
+def test_an_unsure_answer_is_never_kept(loaded):
+    """A fresh run would hand it to a stronger model: a kept copy must not stand in for that reading (review, 0.18.1)."""
+    m = _Unsure()
+    a, b = _check(loaded), _check(loaded)
+    tasks.run_one(loaded, a, m, "m")
+    assert not loaded.scalar("SELECT COUNT(*) FROM ai_cache")
+    tasks.run_one(loaded, b, m, "m")
+    assert m.calls == 2
+    # one kept from before this rule is not used either
+    with loaded.connect() as cx:
+        cx.execute("INSERT INTO ai_cache(key, kind, prompt_version, model, raw_json, at) SELECT ?, 'check', '', 'm', "
+                   "raw_json, '' FROM results WHERE task_id=? LIMIT 1",
+                   (tasks.cache_key("check", tasks.prompts.VERSIONS["check"], "m",
+                                    json.loads(loaded.scalar("SELECT payload_json FROM tasks WHERE task_id=?", (a,)))), a))
+    c = _check(loaded)
+    tasks.run_one(loaded, c, m, "m")
+    assert m.calls == 3
+
+
+def test_a_document_no_ai_may_read_is_never_answered_from_a_kept_answer(loaded):
+    import pytest
+
+    from enlens_claims import access
+
+    m = _Model()
+    a, b = _check(loaded), _check(loaded)
+    tasks.run_one(loaded, a, m, "m")
+    with loaded.connect() as cx:
+        cx.execute("UPDATE tasks SET access='none' WHERE task_id=?", (b,))
+    with pytest.raises(access.AccessError):
+        tasks.run_one(loaded, b, m, "m")
+    assert loaded.scalar("SELECT status FROM tasks WHERE task_id=?", (b,)) == "pending"

@@ -1573,7 +1573,7 @@ export async function renderResult(view, [hypId], query) {
     try {
       // the hint saved as the comment first (with the judgement the person has, or none), so it stays on the card
       if (hint && keep.checked && hint !== (p.user_note || "")) {
-        await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, { verdict: p.my_verdict || null, note: hint });   // 0.14.3: your own verdict, never a colleague's
+        await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, { verdict: p.my_verdict || null, note: hint, threshold });   // 0.14.3: your own verdict, never a colleague's
       }
       const res = await api("POST", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/reread/${P(p.passage_id)}`, body);
       followJob(res.job.id, "reread", "The AI is reading this excerpt again", async (job) => {
@@ -1636,7 +1636,7 @@ export async function renderResult(view, [hypId], query) {
         reason: verdict ? `your judgement is now ${verdict === "not_relevant" ? "“Not about this”" : `“${GRADE_TEXT[verdict]}”`}.` : "the AI's judgement counts again." };
       const fa = focusAfter;
       const noteNow = note ?? (noteField ? noteField.value.trim() : prev.note);   // a comment typed before picking is saved with the judgement
-      const body = { verdict, note: noteNow };
+      const body = { verdict, note: noteNow, threshold };   // 0.18.1: the strictness shown, for what the judgement moved
       if (opts.quote !== undefined) body.quote = opts.quote;   // the sentence the person points to; left out = keep the earlier one
       const pend = pendingQuote.get(pendingKey(p, part));
       if (verdict && opts.quote === undefined && pend) { body.quote = pend.text; opts = { ...opts, quote: pend.text }; }   // a sentence marked before choosing: saved with the judgement
@@ -1646,7 +1646,7 @@ export async function renderResult(view, [hypId], query) {
         draftNotes.delete(pendingKey(p, part));   // the comment went with it
         const undo = async () => {
           focusAfter = { passage_id: p.passage_id, claim_id: part.claim_id, ...placeOf(p.passage_id, part.claim_id), reason: "your last change was undone." };
-          const back = { verdict: prev.verdict, note: prev.note };
+          const back = { verdict: prev.verdict, note: prev.note, threshold };
           if (opts.quote !== undefined) back.quote = prev.quote === undefined ? "" : prev.quote;
           try { const undone = await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, back); toast("Undone.", "ok", { ttl: 2500, small: true, group: "judge" }); await applyJudgement(undone); }
           catch (e) { showError(e); }

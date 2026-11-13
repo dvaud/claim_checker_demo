@@ -12,6 +12,7 @@ import random
 import re
 import sqlite3
 import threading
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
@@ -1133,9 +1134,12 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
         t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))
         if t:
             access.require(backend, t[0], ws)  # a task the queue would never hand out must not be waited for
-            local = mix_local_for(t[0])  # 0.18.1 (I1): a kind the AI mix gives the local model first
-            if local is not None:
-                answer_locally_first(ws, task_id, local[0], local[1])
+            if lent_to_local(t[0]):  # 0.18.1 (I1): a kind the AI mix gives the local model first
+                local = mix_local()
+                if local is not None:
+                    answer_locally_first(ws, task_id, local[0], local[1])
+                else:
+                    to_claude(ws, [task_id])
         return wait_for(ws, task_id, backend)
     errors: list[str] = []
     # 0.14.3: each phase has its own attempts (the first model's, then the stronger model's: `attempts` starts again
@@ -1150,7 +1154,10 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
         if t["status"] == "failed":
             break
         call = model_for(t, backend, model)
-        if not t["attempts"] and t["status"] != "done" and answer_from_cache(ws, task_id, call, _route_name(backend)):
+        # a kept answer only where this backend may read the task (the guard first: a document marked No AI, or one
+        # whose setting changed, is never answered from an AI's answer to the same text)
+        if not t["attempts"] and t["status"] != "done" and access.require(backend, t, ws) is None \
+                and answer_from_cache(ws, task_id, call, _route_name(backend)):
             return True, []  # 0.18.1 (H4): the same question was answered before, and the answer fits this text
         system, user = render(ws, t)
         _send(ws, t, backend)
@@ -1208,11 +1215,23 @@ def cached_answer(ws: Workspace, t, model: str | None) -> str | None:
     key = cache_key(t["kind"], prompts.VERSIONS.get(t["kind"]) or t["prompt_version"], model,
                     json.loads(t["payload_json"]))
     r = ws.query("SELECT raw_json FROM ai_cache WHERE key=?", (key,))
-    return r[0][0] if r else None
+    return r[0][0] if r and not _unsure(t["kind"], r[0][0]) else None
+
+
+def _unsure(kind: str, raw: Any) -> bool:
+    """An answer a fresh run would hand to a stronger model (certainty under routing.STEP_UP_BELOW): never kept nor
+    used as a kept answer, so a kept answer never stands where a stronger model would have read again."""
+    from .routing import STEP_UP_BELOW, certainty
+
+    try:
+        c = certainty(kind, parse_json(raw))
+    except ValueError:
+        return True
+    return c is not None and c < STEP_UP_BELOW
 
 
 def _cache_store(cx, t, payload: dict, model: str | None, version: str | None, raw: Any, cached: bool) -> None:
-    if not _cacheable(t, model):
+    if not _cacheable(t, model) or (not cached and _unsure(t["kind"], raw)):
         return
     key = cache_key(t["kind"], version, model, payload)
     if cached:
@@ -1235,12 +1254,16 @@ def answer_from_cache(ws: Workspace, task_id: str, model: str | None, route: str
     ok, _e = ingest_result(ws, task_id, raw, model=model, provenance={"settings": {"from_cache": True}},
                            route=(route or "") + " (kept answer)" if route else "kept answer", cached=True)
     if not ok:  # a kept answer that does not fit this text: as if it had not been tried
-        with ws.connect() as cx:
-            cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=? AND status IN ('retry', 'failed')",
-                       (task_id,))
-            cx.execute("DELETE FROM results WHERE task_id=? AND valid=0 AND attempt=(SELECT MAX(attempt) FROM results "
-                       "WHERE task_id=?)", (task_id, task_id))
+        _forget_cache_try(ws, task_id)
     return ok
+
+
+def _forget_cache_try(ws: Workspace, task_id: str) -> None:
+    with ws.connect() as cx:
+        cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=? AND status IN ('retry', 'failed')",
+                   (task_id,))
+        cx.execute("DELETE FROM results WHERE task_id=? AND valid=0 AND attempt=(SELECT MAX(attempt) FROM results "
+                   "WHERE task_id=?)", (task_id, task_id))
 
 
 def avoided(ws: Workspace) -> dict[str, int]:
@@ -1279,10 +1302,34 @@ def mix_local(settings: dict | None = None):
         got = make_restricted_backend(s)
     except BackendError:
         got = None
-    with _MIX_LOCK:
-        _MIX_LOCAL.clear()
-        _MIX_LOCAL[key] = got
+    if got is not None:  # a model not there now is asked about again next time (it may be installed meanwhile)
+        with _MIX_LOCK:
+            _MIX_LOCAL.clear()
+            _MIX_LOCAL[key] = got
     return got
+
+
+def to_claude(ws: Workspace, task_ids: Iterable[str]) -> int:
+    """Tasks the AI mix lent to the local model, handed to Claude Code when no local model can answer them (it is not
+    on this computer, or not installed): as a step up, so its helpers take them."""
+    n = 0
+    with ws.connect() as cx:
+        for tid in task_ids:
+            n += cx.execute("UPDATE tasks SET step=1 WHERE task_id=? AND COALESCE(step, 0)=0 AND status IN ('pending', "
+                            "'retry')", (tid,)).rowcount
+            mark_queued(cx, [tid])
+    return n
+
+
+def lent_to_local(t, settings: dict | None = None) -> bool:
+    """Whether the AI mix gives task `t` to the local model first (a kind it lends, not stepped up, answered or forced
+    onto a model, of documents Claude may read)."""
+    from .home import load_settings
+    from .routing import mix_kinds, task_kind
+
+    if t["forced_model"] or int(t["step"] or 0) or t["status"] == "done" or (t["access"] or "cloud") != "cloud":
+        return False
+    return task_kind(t) in mix_kinds(settings if settings is not None else load_settings())
 
 
 def mix_local_for(t, settings: dict | None = None):
@@ -1309,26 +1356,48 @@ def answer_locally_first(ws: Workspace, task_id: str, backend, model: str) -> st
     from .routing import STEP_UP_BELOW, certainty, judging_changes, task_kind
 
     raw, ok = None, False
-    t0 = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
-    kept = cached_answer(ws, t0, model) if not t0["attempts"] else None
-    if kept is not None and answer_from_cache(ws, task_id, model, _route_name(backend)):
-        raw, ok = kept, True  # 0.18.1 (H4): answered before by this model; it steps up as it would have then
+    # held while it answers, as a batch of Claude Code is: Claude Code (and a second local run) leave it alone, and an
+    # answer is stored only while this claim holds the task (a mix changed meanwhile hands it to Claude Code)
+    claim = "local-" + uuid.uuid4().hex[:12]
+    from .taskqueue import _cutoff
+
+    with ws.connect() as cx:
+        got = cx.execute("UPDATE tasks SET claimed_by=?, claimed_at=? WHERE task_id=? AND status IN ('pending', 'retry') "
+                         "AND (claimed_by IS NULL OR claimed_by='' OR claimed_at < ?)",
+                         (claim, now(), task_id, _cutoff())).rowcount
+    if not got:
+        return None  # answered, or held by Claude Code or another local run
     try:
+        t0 = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
+        kept = cached_answer(ws, t0, model) if not t0["attempts"] else None
+        if kept is not None:
+            ok, _e = ingest_result(ws, task_id, kept, model=model, provenance={"settings": {"from_cache": True}},
+                                   route=f"{_route_name(backend)} (kept answer)", claim=claim, cached=True)
+            raw = kept if ok else None  # 0.18.1 (H4): answered before by this model; it steps up as it would then
+            if not ok:  # a kept answer that does not fit this text: as if it had not been tried
+                _forget_cache_try(ws, task_id)
         for _ in range(0 if ok else MAX_ATTEMPTS):
             t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
-            if t["status"] in ("done", "failed"):
+            if t["status"] in ("done", "failed") or t["claimed_by"] != claim:
                 break
             system, user = render(ws, t)
             _send(ws, t, backend)
             raw, problem = _complete(backend, t, system, user, model)
             ok, _e = ingest_result(ws, task_id, raw, model=model, provenance=_provenance(backend, model),
-                                   route=_route_name(backend), problem=problem)
+                                   route=_route_name(backend), problem=problem, claim=claim)
             if ok:
                 break
+    except NotHeld:
+        return None  # handed to Claude Code meanwhile: its answer counts
     except BackendError as e:
         if str(e).startswith("Stopped"):
+            with ws.connect() as cx:
+                cx.execute("UPDATE tasks SET claimed_by=NULL, claimed_at=NULL WHERE task_id=? AND claimed_by=?",
+                           (task_id, claim))
             raise
         ok = False
+    with ws.connect() as cx:
+        cx.execute("UPDATE tasks SET claimed_by=NULL, claimed_at=NULL WHERE task_id=? AND claimed_by=?", (task_id, claim))
     t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
     how = None
     if ok:
@@ -1363,11 +1432,7 @@ def answer_mix_waiting(ws: Workspace, backend=None, model: str | None = None, ta
     out = {"answered": 0, "to_claude": 0}
     if not kinds:
         return out
-    if backend is None:
-        got = mix_local(s)
-        if got is None:
-            return out
-        backend, model = got
+    got = (backend, model) if backend is not None else mix_local(s)
     q = (f"SELECT task_id FROM tasks WHERE kind IN ({','.join('?' * len(kinds))}) AND status IN ('pending', 'retry') "
          "AND COALESCE(step, 0)=0 AND forced_model IS NULL AND COALESCE(access, 'cloud')='cloud' "
          "AND (claimed_by IS NULL OR claimed_by='') ORDER BY kind, task_id")
@@ -1375,6 +1440,10 @@ def answer_mix_waiting(ws: Workspace, backend=None, model: str | None = None, ta
     if task_ids is not None:
         wanted = set(task_ids)
         ids = [i for i in ids if i in wanted]
+    if got is None:  # no local model answers: Claude Code does
+        out["to_claude"] = to_claude(ws, ids)
+        return out
+    backend, model = got
     for i, tid in enumerate(ids, 1):
         if should_stop and should_stop():
             break

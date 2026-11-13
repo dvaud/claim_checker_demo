@@ -387,10 +387,6 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 /* The Bibliography page (Zotero, or an exported file), and a document's reference in the Documents list and
    the document viewer. Only the colour tokens of app.css: light and dark both follow. */
 .bib-top > .card { margin-bottom: 16px; }
-/* 0.18.1 (B5): the retraction check under the lists' choice, and a work's notices under its title */
-.bib-retract { margin-top: 12px; align-items: center; gap: 12px; flex-wrap: wrap; }
-.bib-retract p { margin: 0; }
-.bib-notices { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 2px 0 4px; }
 /* where the bibliography comes from (a grey tile with its icon: a fact, not a place), and the four lists: a choice */
 .bib-source { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .bib-source-icon {

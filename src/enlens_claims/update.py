@@ -91,6 +91,16 @@ def _pending(root: Path) -> list[str] | None:
         return []
 
 
+def _pending_no_deps(root: Path) -> bool | None:
+    """0.18.1: whether the pending reinstall only writes the new version's number (no requirement changed): None when
+    none is pending, or it is from an older ENLENS (then everything is installed, as before)."""
+    try:
+        v = json.loads(_pending_path(root).read_text("utf-8")).get("no_deps")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return bool(v) if v is not None else None
+
+
 def _git(run: Runner, root: Path, *args: str) -> str:
     r = run(["git", *args], root)
     if r.returncode != 0:
@@ -244,6 +254,7 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
     before = version_in(root)
     waiting = int(_git(run, root, "rev-list", "--count", f"HEAD..{upstream}") or 0)
     pending = _pending(root)
+    no_deps, was_pending = _pending_no_deps(root), pending is not None
     if not waiting and pending is None:
         return {"updated": False, "version": before, "message": f"ENLENS {before} is up to date."}
     if check_only:
@@ -264,13 +275,17 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
         # 0.18.1: the installed package's version is made from the tag when it is installed, so a new release also
         # reinstalls (the same extras): without it `__version__` would keep the old number until the next reinstall.
         # (A copy that still writes its version in __init__.py needs no reinstall for a change of code only.)
-        if _digest(py) != deps_before or (not _written_in_source(root) and version_in(root) != before):
+        deps_changed = _digest(py) != deps_before
+        if deps_changed or (not _written_in_source(root) and version_in(root) != before):
             # 0.15.1: and the layout reader (pdfminer), which the one-line install has always brought: without it
             # PDFs are read from their text alone (a git copy installed with `pip install -e .` lacked it)
             layout = {"pdfminer"} if "pdfminer" in _extras_in(py.read_text("utf-8")) else set()
             pending = sorted(set(pending or []) | set(extras) | layout)
             try:
-                _pending_path(root).write_text(json.dumps({"extras": pending}), encoding="utf-8")
+                # only the version changed: its number is written again, nothing else is fetched (--no-deps)
+                # a reinstall still pending from before (it failed) installs everything unless it too was the number
+                no_deps = (no_deps is True if was_pending else True) and not deps_changed
+                _pending_path(root).write_text(json.dumps({"extras": pending, "no_deps": no_deps}), encoding="utf-8")
             except OSError:
                 pass
     after = version_in(root)
@@ -278,7 +293,8 @@ def update_git(check_only: bool = False, root: Path | None = None, run: Runner =
     if pending is not None:
         extras = pending
         target = f"{root}[{','.join(extras)}]" if extras else str(root)
-        r = run([python or sys.executable, "-m", "pip", "install", "--quiet", "-e", target], root)
+        r = run([python or sys.executable, "-m", "pip", "install", "--quiet", *(["--no-deps"] if no_deps else []),
+                 "-e", target], root)
         if r.returncode != 0:
             raise UpdateError(f"ENLENS {after} was fetched, but installing its new requirements failed:\n"
                               f"{(r.stderr or r.stdout or '').strip()[-2000:]}\nRun `enlens update` again when online.")

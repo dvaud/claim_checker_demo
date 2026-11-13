@@ -571,8 +571,11 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
         # answered from that answer here, if it fits this text, instead of going to Claude Code
         from .tasks import answer_from_cache
 
-        kept = [t for t in cand[:max(2 * int(n or BATCH.get(k, 5)), 20)] if not t["attempts"] and t["status"] != "done"
-                and answer_from_cache(ws, t["task_id"], effective_model(t, r), "Claude Code")]
+        with ws.connect() as cx:  # the setting of now: a document marked No AI since is never answered by an AI's answer
+            dflt0 = access._default_from_cx(cx)
+            try_ids = [t for t in cand[:max(2 * int(n or BATCH.get(k, 5)), 20)] if not t["attempts"]
+                       and t["status"] != "done" and access.recheck(cx, t["task_id"], dflt0, budget=False) == "cloud"]
+        kept = [t for t in try_ids if answer_from_cache(ws, t["task_id"], effective_model(t, r), "Claude Code")]
         if kept:
             gone = {t["task_id"] for t in kept}
             cand = [t for t in cand if t["task_id"] not in gone]

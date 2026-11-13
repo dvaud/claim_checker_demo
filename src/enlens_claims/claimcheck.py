@@ -2751,22 +2751,23 @@ _KEEP = object()
 
 
 def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | None, note: str | None = None,
-                  quote=_KEEP) -> dict:
+                  quote=_KEEP, threshold: float | None = None) -> dict:
     """`_set_judgement`, and what it did to the answer (0.18.1, N4): the hypothesis's status before and after, and
     when it changed, a sentence naming this judgement as the change that moved it, also written into the research log.
-    Returns {"hyp_id", "before", "after", "moved"} ("moved" is the sentence, or None)."""
+    Returns {"hyp_id", "before", "after", "moved"} ("moved" is the sentence, or None). `threshold`: the strictness
+    the person looks at the result with (the page's own), so the sentence names the answer they see."""
     from . import assessment, researchlog
 
     hyp = ws.query("SELECT COALESCE(hyp_id, claim_id) FROM user_claims WHERE claim_id=?", (claim_id,))
     hyp_id = hyp[0][0] if hyp else None
     try:  # a claim checked on its own (check_claim) has no hypothesis to say anything about
-        before = hypothesis_result(ws, hyp_id) if hyp_id else None
+        before = hypothesis_result(ws, hyp_id, threshold) if hyp_id else None
     except KeyError:
         before = None
     _set_judgement(ws, claim_id, passage_id, verdict, note, quote)
     if before is None:
         return {"hyp_id": None, "before": None, "after": None, "moved": None}
-    after = hypothesis_result(ws, hyp_id)
+    after = hypothesis_result(ws, hyp_id, threshold)
     moved = assessment.judgement_moved(ws, before, after, claim_id, passage_id)
     if moved:
         with ws.connect() as cx:

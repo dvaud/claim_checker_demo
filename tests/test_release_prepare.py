@@ -39,13 +39,17 @@ def repo(tmp_path):
 
 
 class Recorder:
-    def __init__(self, dirty: str = ""):
+    def __init__(self, dirty: str = "", loose: str = "", heads: tuple = ("abc", "abc")):
         self.calls: list[list[str]] = []
-        self.dirty = dirty
+        self.dirty, self.loose, self.heads = dirty, loose, dict(zip(("HEAD", "origin/main"), heads))
 
     def __call__(self, cmd, root):
         self.calls.append(list(cmd))
-        return self.dirty if cmd[:2] == ["git", "status"] else ""
+        if cmd[:2] == ["git", "status"]:
+            return self.loose if "--untracked-files=all" in cmd else self.dirty
+        if cmd[:2] == ["git", "rev-parse"]:
+            return self.heads[cmd[2]]
+        return ""
 
 
 def test_a_dry_run_changes_nothing_and_runs_nothing(repo):
@@ -73,11 +77,12 @@ def test_prepare_makes_the_branch_the_files_the_commit_and_the_pull_request(repo
     run = Recorder()
     release.prepare("0.18.1", "Theory books", repo, dry_run=False, run=run)
     cmds = [" ".join(c[:3]) for c in run.calls]
-    assert cmds == ["git status --porcelain", "git switch -c", "git add CHANGELOG.md", "git commit -m",
+    assert cmds == ["git status --porcelain", "git fetch --quiet", "git rev-parse HEAD", "git rev-parse origin/main",
+                    "git status --porcelain", "git switch -c", "git add CHANGELOG.md", "git commit -m",
                     "git push -u", "gh pr create"]
-    assert run.calls[1][-1] == "release/0.18.1"
-    assert run.calls[4][-2:] == ["origin", "release/0.18.1"]
-    pr = run.calls[5]
+    assert run.calls[5][-1] == "release/0.18.1"
+    assert run.calls[8][-2:] == ["origin", "release/0.18.1"]
+    pr = run.calls[9]
     assert pr[pr.index("--base") + 1] == "main" and pr[pr.index("--head") + 1] == "release/0.18.1"
     assert pr[pr.index("--title") + 1] == "ENLENS 0.18.1"
     # the three files were written from the one entry, and the fragments are gone
@@ -93,6 +98,10 @@ def test_prepare_makes_the_branch_the_files_the_commit_and_the_pull_request(repo
 def test_prepare_refuses_a_dirty_tree_and_a_version_that_is_not_new(repo):
     with pytest.raises(release.ReleaseError, match="working tree has changes"):
         release.prepare("0.18.1", "t", repo, dry_run=False, run=Recorder(dirty=" M src/x.py"))
+    with pytest.raises(release.ReleaseError, match="from main as it is on GitHub"):  # a feature branch, or main behind
+        release.prepare("0.18.1", "t", repo, dry_run=False, run=Recorder(heads=("abc", "def")))
+    with pytest.raises(release.ReleaseError, match="not committed"):  # another session's fragment, not committed yet
+        release.prepare("0.18.1", "t", repo, dry_run=False, run=Recorder(loose="?? changes/a-other.md"))
     assert (repo / "changes" / "a-theory.md").exists()           # nothing was joined
     with pytest.raises(release.ReleaseError, match="already has an entry"):
         release.prepare("0.18.0", "t", repo, dry_run=True)

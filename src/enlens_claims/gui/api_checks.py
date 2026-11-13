@@ -340,6 +340,11 @@ class ChecksApi:
         body = self._body()
         verdict = body.get("verdict") or None
         extra = {"quote": body.get("quote")} if "quote" in body else {}
+        if body.get("threshold") is not None:  # 0.18.1: the strictness the page shows, for the sentence of what moved
+            try:
+                extra["threshold"] = min(1.0, max(0.0, float(body["threshold"])))
+            except (TypeError, ValueError):
+                raise ApiError(400, "threshold must be a number from 0 to 1.") from None
         moved = claimcheck.set_judgement(self.app.ws(name), claim_id, passage_id, verdict, body.get("note"), **extra)
         # 0.18.1 (N4): the answer before and after, and the sentence naming this judgement when it moved the answer
         return {"saved": True, "verdict": verdict, "status_before": moved["before"], "status": moved["after"],

@@ -182,6 +182,11 @@ def test_in_a_check_follows_the_persons_judgement(loaded):
     # the same judgement again moves nothing more, and is not logged twice
     again = claimcheck.set_judgement(loaded, res["parts"][0]["claim_id"], x["passage_id"], "refutes")
     assert again["moved"] is None and len(loaded.query("SELECT 1 FROM research_log WHERE kind='verdict-moved'")) == 1
+    # the sentence names the answer at the strictness the page shows (review, 0.18.1)
+    strict = claimcheck.set_judgement(loaded, res["parts"][0]["claim_id"], x["passage_id"], None, threshold=0.95)
+    assert strict["after"] == claimcheck.hypothesis_result(loaded, hid, 0.95)["status"]
+    claimcheck.set_judgement(loaded, res["parts"][0]["claim_id"], x["passage_id"], "refutes")
+    res = claimcheck.hypothesis_result(loaded, hid)
     row = claimcheck.summary_table(loaded, hyp_ids=[hid])[0]
     assert row["Assessment"] == assessment.text(res["assessment"]) and row["Assessment"]
     assert claimcheck.hypothesis_rows(res)[0]["assessment"] == row["Assessment"]

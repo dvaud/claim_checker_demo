@@ -20,10 +20,13 @@ def _version() -> str:
         import subprocess
         from pathlib import Path
 
+        from .procs import no_window  # a module of its own with no imports of the package: safe to load here
+
         root = Path(__file__).resolve().parent.parent.parent
         if (root / ".git").exists():
             out = subprocess.run(["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"], cwd=root,
-                                 capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+                                 capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL,
+                                 **no_window())
             if out.returncode == 0 and out.stdout.strip().lstrip("v"):
                 return out.stdout.strip().lstrip("v")
     except Exception:  # noqa: BLE001 - no git, no repository, a timeout

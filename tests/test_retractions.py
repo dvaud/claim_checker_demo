@@ -36,6 +36,22 @@ class Crossref:
             def do_GET(self):
                 outer.requests.append((self.path, {k.lower(): v for k, v in self.headers.items()}))
                 flt = parse_qs(urlparse(self.path).query).get("filter", [""])[0]
+                works = {p.split(":", 1)[1].lower() for p in flt.split(",") if p.startswith("doi:")}
+                if works:  # the works themselves: `updated-by` (Retraction Watch's entries stand there too)
+                    items = [{"DOI": RETRACTED, "updated-by": [  # the same notice as below: counted once
+                        {"DOI": "10.9999/notice-r", "type": "retraction", "source": "retraction-watch",
+                         "updated": {"date-parts": [[2024, 3, 9]]}}]},
+                        {"DOI": CORRECTED, "updated-by": [  # only here
+                            {"DOI": "10.9999/notice-e", "type": "expression_of_concern", "source": "retraction-watch",
+                             "updated": {"date-parts": [[2024, 1, 5]]}}]}]
+                    items = [i for i in items if i["DOI"].lower() in works]
+                    body = json.dumps({"status": "ok", "message": {"total-results": len(items), "items": items}}).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 asked = {p.split(":", 1)[1] for p in flt.split(",") if p.startswith("updates:")}
                 items = [{"DOI": "10.9999/notice-r", "update-to": [
                     {"DOI": RETRACTED.upper(), "type": "retraction", "source": "retraction-watch",
@@ -96,7 +112,8 @@ def test_a_retraction_and_a_correction_are_found_and_shown(ws, crossref):
     notices = {w["key"]: w["notices"] for w in (v["to_find"] + [r["work"] for r in v["linked"]])}
     assert [n["type"] for n in notices["w1"]] == ["retraction"] and notices["w1"][0]["date"] == "2024-03-09"
     assert notices["w1"][0]["source"] == "retraction-watch" and notices["w1"][0]["doi"] == "10.9999/notice-r"
-    assert [n["type"] for n in notices["w2"]] == ["correction"] and notices["w2"][0]["date"] == "2023-11"
+    assert [n["type"] for n in notices["w2"]] == ["correction", "expression_of_concern"]  # the second from updated-by
+    assert notices["w2"][0]["date"] == "2023-11" and notices["w2"][1]["source"] == "retraction-watch"
     assert notices["w3"] == [] and notices["w5"] == []
     assert v["retractions"]["affected"] == 2 and v["retractions"]["checked_at"]
     # the claim card: the document linked to the retracted work

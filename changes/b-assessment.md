@@ -14,7 +14,8 @@
 
 - `assessment.assess(ws, hyp_id, res)` → `{"sentences": [{"text", "rule", "refs"}], "moved_by"}`, in
   `hypothesis_result(...)["assessment"]`; `claimcheck.set_judgement` now returns
-  `{"hyp_id", "before", "after", "moved"}` and logs `verdict-moved`. Tests: `tests/test_assessment.py`.
+  `{"hyp_id", "before", "after", "moved"}` and logs `verdict-moved`, at the strictness the page shows
+  (`threshold`, also in the body of `PUT …/judgements/…`). Tests: `tests/test_assessment.py`.
 
 ### Not yet done
 

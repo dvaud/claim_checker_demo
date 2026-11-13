@@ -4,8 +4,11 @@
   kind of task, its instructions, the model and the text it read (not the task's name). When a task asks the same
   question again, of the same model (a check run again on the same excerpts, a document read again by a new reader,
   the same passage in two documents), it is answered from the kept answer, after the quote check against its own
-  text; one that does not fit is not used and the model is asked. Readings asked again on purpose (*Read again*,
-  *Ask a stronger model*, second opinions) and model tests are always asked fresh. Each such answer says so in *How
+  text; one that does not fit is not used and the model is asked. An unsure answer (one a stronger model would
+  read again) is never kept, so a kept answer never stands where a stronger model would have read; a document's AI
+  setting is checked first, so a document no AI may read is never answered by an AI's answer to the same text.
+  Readings asked again on purpose (*Read again*, *Ask a stronger model*, second opinions) and model tests are always
+  asked fresh. Each such answer says so in *How
   these results were made* (its route ends in *(kept answer)*). Faster, cheaper and more private; can change results,
   as a kept answer stands where the model, asked again, might have answered otherwise.
 - **A small codebook once per batch.** When Claude Code takes a batch of passages to label whose candidate codes are

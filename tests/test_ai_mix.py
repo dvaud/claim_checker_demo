@@ -192,3 +192,34 @@ def test_answer_mix_waiting_takes_only_the_mix_kinds(mixed):
 def test_the_plan_limit_is_recognised(tail, said):
     assert taskqueue.limit_reached({"running": False, "report": tail}) == said
     assert taskqueue.limit_reached({"running": True, "report": tail}) is None
+
+
+def test_without_a_local_model_the_lent_task_goes_to_claude(mixed, monkeypatch):
+    """Review, 0.18.1: the chosen local model is missing (deleted from Ollama): Claude Code must not wait for it."""
+    ws, _s = mixed
+    tid = _check_task(ws)
+    monkeypatch.setattr(tasks, "mix_local", lambda settings=None: None)
+    from enlens_claims.llm import BackendError, ClaudeCodeBackend
+
+    be = ClaudeCodeBackend()
+    be.should_stop = lambda: True  # stop waiting at once: what matters is where the task now is
+    with pytest.raises(BackendError):
+        tasks.run_one(ws, tid, be)
+    assert _row(ws, tid)["step"] == 1 and taskqueue.next_tasks(ws, "check")["claim"]
+    tid2 = _check_task(ws)
+    assert tasks.answer_mix_waiting(ws) == {"answered": 0, "to_claude": 1} and _row(ws, tid2)["step"] == 1
+
+
+def test_the_local_model_leaves_a_task_claude_code_holds(mixed):
+    ws, _s = mixed
+    tid = _check_task(ws)
+    with ws.connect() as cx:
+        cx.execute("UPDATE tasks SET claimed_by='q123', claimed_at=? WHERE task_id=?",
+                   (__import__("enlens_claims.store", fromlist=["now"]).now(), tid))
+    local = _Local()
+    assert tasks.answer_locally_first(ws, tid, local, "small") is None and local.calls == 0
+    assert _row(ws, tid)["status"] == "pending"
+    # and a task it answers is held while it does, then let go
+    tid2 = _check_task(ws)
+    tasks.answer_locally_first(ws, tid2, _Local(), "small")
+    assert ws.scalar("SELECT claimed_by FROM tasks WHERE task_id=?", (tid2,)) is None

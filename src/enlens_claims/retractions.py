@@ -140,8 +140,29 @@ def _batch(base: str, dois: list[str], sleep: Callable[[float], None]) -> dict[s
                         got[target].append(notice)
         offset += len(items)
         if not items or offset >= int(msg.get("total-results") or 0) or offset >= 5 * ROWS:
-            return got
+            break
         sleep(PAUSE)
+    # the works themselves: Retraction Watch's entries, and a publisher's notice deposited without a link of its own,
+    # stand on the retracted work as `updated-by`
+    sleep(PAUSE)
+    flt = ",".join(f"doi:{d}" for d in dois)
+    try:
+        msg = _get(f"{base}/works?filter={quote(flt, safe=':,/')}&rows={len(dois)}&select=DOI,updated-by").get(
+            "message") or {}
+    except RetractionError as e:
+        if "(400)" not in str(e):  # a server that does not know this filter: the notices above stand
+            raise
+        msg = {}
+    for it in msg.get("items") or []:
+        target = norm_doi(it.get("DOI"))
+        if target not in asked:
+            continue
+        for u in it.get("updated-by") or []:
+            notice = {"type": _kind(u.get("type") or u.get("label")), "doi": norm_doi(u.get("DOI")),
+                      "date": _date((u.get("updated") or {}).get("date-parts")), "source": u.get("source")}
+            if not any(n["type"] == notice["type"] and n["doi"] == notice["doi"] for n in got.get(target, [])):
+                got.setdefault(target, []).append(notice)
+    return got
 
 
 def lookup(ws: Workspace, progress: Callable[..., None] | None = None, base_url: str | None = None,
