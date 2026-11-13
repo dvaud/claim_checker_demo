@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -102,7 +103,43 @@ CLAIMED = "(COALESCE(t.claimed_by, '') != '' AND COALESCE(t.claimed_at, '') >= ?
 
 
 def effective_model(t, r: routing.Router) -> str:
-    return t["forced_model"] or r.model(routing.task_kind(t), int(t["step"] or 0)) or t["model"] or ""
+    k = routing.task_kind(t)
+    # 0.18.1 (I2): a task the local model of the AI mix passed up to Claude has step 1 even where the kind has no
+    # stronger Claude model: then the kind's own model reads it
+    return t["forced_model"] or r.model(k, int(t["step"] or 0)) or (r.first(k) if t["step"] else None) or \
+        t["model"] or ""
+
+
+# 0.18.1 (I4): the words Claude Code ends with when the plan's usage limit is reached ("Claude AI usage limit
+# reached", "You've hit your limit · resets 3pm", "5-hour limit reached ∙ resets 2am"), and the time it names
+LIMIT_RE = re.compile(r"usage limit reached|hit your (?:usage )?limit|(?:5-hour|weekly|session) limit reached|"
+                      r"limit reached\W+resets", re.I)
+RESETS_RE = re.compile(r"resets\s+(?:at\s+)?([^\n.|]{1,40})", re.I)
+
+
+def limit_reached(runner: dict | None) -> str | None:
+    """Whether Claude Code, started from the app, stopped at the plan's usage limit: the sentence for the page
+    ("Claude Code reached your plan's usage limit (it resets 3pm).") or None."""
+    if not runner or runner.get("running") or not runner.get("report"):
+        return None
+    tail = str(runner["report"])
+    if not LIMIT_RE.search(tail):
+        return None
+    m = RESETS_RE.search(tail)
+    return "Claude Code reached your plan's usage limit" + (f" (it resets {m.group(1).strip()})" if m else "") + "."
+
+
+def mix_kinds() -> frozenset[str]:
+    """0.18.1 (I1): the kinds the AI mix gives the local model first; Claude Code's helpers take them only once the
+    local model has passed them up (step 1)."""
+    from .home import load_settings
+
+    return routing.mix_kinds(load_settings())
+
+
+def _lent(t, lent: frozenset[str]) -> bool:
+    """A waiting task the local model of the AI mix answers first (not Claude Code's yet)."""
+    return bool(lent) and routing.task_kind(t) in lent and not int(t["step"] or 0) and not t["forced_model"]
 
 
 def effective_helper(t, r: routing.Router) -> str:
@@ -253,6 +290,7 @@ def status(ws: Workspace, project: str | None = None, parallel: int = PARALLEL, 
     r = router(ws)
     o, held = order(ws)
     cutoff = _cutoff()
+    lent = mix_kinds()
     per: dict[str, dict] = {}
     # every kind with a task in the queue, in the order its tasks were first made (the order of a kind the queue's
     # order does not name), with its answered and failed tasks
@@ -261,7 +299,8 @@ def status(ws: Workspace, project: str | None = None, parallel: int = PARALLEL, 
                         "ORDER BY MIN(rowid)"):
         k = row[0]
         per[k] = {"kind": k, "title": KIND_TITLE.get(k, k), "waiting": 0, "being_answered": 0, "done": int(row[1] or 0),
-                  "failed": int(row[2] or 0), "stronger_model": 0, "first_queued": None, "run_total": 0, "run_done": 0}
+                  "failed": int(row[2] or 0), "stronger_model": 0, "first_queued": None, "run_total": 0, "run_done": 0,
+                  "for_local": 0}
     groups: dict[tuple, dict] = {}
     # the tasks that wait, counted in SQL per what decides their model and helper (the router is asked once per
     # group, not twice per task), and whether a claim holds them now
@@ -270,6 +309,9 @@ def status(ws: Workspace, project: str | None = None, parallel: int = PARALLEL, 
                        "GROUP BY t.kind, t.role, t.step, t.forced_model, t.model, claimed", (cutoff,)):
         k, n = g0["kind"], int(g0["n"])
         d = per[k]
+        if not g0["claimed"] and _lent(g0, lent):
+            d["for_local"] += n  # 0.18.1 (I1): the local model of the AI mix answers these first
+            continue
         if g0["claimed"]:
             d["being_answered"] += n
         else:
@@ -298,7 +340,8 @@ def status(ws: Workspace, project: str | None = None, parallel: int = PARALLEL, 
                  estimate_seconds=round(est) if est is not None else None,
                  estimate=_estimate_text(k, d["waiting"] + d["being_answered"], est))
         d.pop("first_queued")
-        if d["waiting"] or d["being_answered"] or d["failed"] or d["done"]:
+        d["effort"] = r.effort(k)  # 0.18.1 (N2): the effort to ask of the kind's helper, when one is asked
+        if d["waiting"] or d["being_answered"] or d["failed"] or d["done"] or d["for_local"]:
             kinds.append(d)
     rank = {k: i for i, k in enumerate(o)}
     gl = sorted((g for g in groups.values() if g["kind"] not in held and (kind is None or g["kind"] == kind)),
@@ -309,7 +352,9 @@ def status(ws: Workspace, project: str | None = None, parallel: int = PARALLEL, 
     out = {"project": name, "kinds": kinds, "groups": gl, "order": o, "held": held, "waiting": waiting_total,
            "being_answered": active, "paused": paused, "last_answer_at": last, "privacy": PRIVACY_LINE,
            "local_only": local_only(), "command": f"/enlens-run {_quote_name(name)}", "claim_minutes": CLAIM_MINUTES,
-           "parallel": parallel}
+           "parallel": parallel, "for_local": sum(d["for_local"] for d in per.values()),
+           # 0.18.1 (N2, I1): how much thought Claude gives the tasks, and the mix of routes
+           "thought": r.thought, "effort": routing.THOUGHT_EFFORT.get(r.thought), "mix_kinds": sorted(lent)}
     if helpers is not None:
         out["helpers"] = {short_helper(h): n for h, n in helpers.items()}
         out["not_this_run"] = left_out
@@ -505,6 +550,7 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
                          "tasks to Claude Code here.")
     r = router(ws)
     o, held = order(ws)
+    lent = mix_kinds()
     kinds = [kind] if kind else [k for k in o if k not in held]
     if kind and kind not in KINDS:
         raise ValueError(f"Unknown kind of task {kind!r}. Kinds: {', '.join(KINDS)}.")
@@ -514,11 +560,11 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
         rows = _waiting_rows(ws, k, PAGE)
         whole = len(rows) < PAGE
         cand = [t for t in rows if (model is None or effective_model(t, r) == model)
-                and (helper is None or effective_helper(t, r) == helper)]
+                and (helper is None or effective_helper(t, r) == helper) and not _lent(t, lent)]
         if not cand and not whole:
             rows, whole = _waiting_rows(ws, k), True
             cand = [t for t in rows if (model is None or effective_model(t, r) == model)
-                    and (helper is None or effective_helper(t, r) == helper)]
+                    and (helper is None or effective_helper(t, r) == helper) and not _lent(t, lent)]
         if not cand:
             continue
         m = effective_model(cand[0], r)
@@ -530,7 +576,8 @@ def next_tasks(ws: Workspace, kind: str | None = None, n: int | None = None, mod
             """The tasks after the first page, in the same order, for the same model and helper."""
             if not whole:
                 for t in _waiting_rows(ws, k):
-                    if t["task_id"] not in seen and effective_model(t, r) == m and effective_helper(t, r) == hp:
+                    if t["task_id"] not in seen and effective_model(t, r) == m and effective_helper(t, r) == hp \
+                            and not _lent(t, lent):
                         yield t
         size = max(1, min(int(n or BATCH.get(k, 5)), 50))
         cid = "q" + uuid.uuid4().hex[:12]

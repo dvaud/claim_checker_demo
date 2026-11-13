@@ -1131,6 +1131,9 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
         t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))
         if t:
             access.require(backend, t[0], ws)  # a task the queue would never hand out must not be waited for
+            local = mix_local_for(t[0])  # 0.18.1 (I1): a kind the AI mix gives the local model first
+            if local is not None:
+                answer_locally_first(ws, task_id, local[0], local[1])
         return wait_for(ws, task_id, backend)
     errors: list[str] = []
     # 0.14.3: each phase has its own attempts (the first model's, then the stronger model's: `attempts` starts again
@@ -1167,6 +1170,136 @@ def run_one(ws: Workspace, task_id: str, backend, model: str | None = None) -> t
     if ws.scalar("SELECT status FROM tasks WHERE task_id=?", (task_id,)) == "done":
         return True, errors
     return False, errors
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.18.1 (I1, I2): the AI mix. With Claude Code as the main route and a local model chosen, the kinds of task the
+# chosen mix gives the local model (routing.mix_kinds) are answered by it first, here, and Claude Code's helpers leave
+# them alone (taskqueue.next_tasks). An answer goes up to Claude (the queue, as a step up: the stronger model of the
+# kind) when the local model is unsure (certainty under routing.STEP_UP_BELOW), when its answers fail the quote check
+# three times, or when it would change a decision (an excerpt judged as contradicting); only tasks of documents Claude
+# may read are in the queue at all. An accepted local answer counts meanwhile. Without a local model that answers,
+# the task goes to Claude as before.
+# ---------------------------------------------------------------------------------------------
+_MIX_LOCAL: dict = {}
+_MIX_LOCK = threading.Lock()
+
+
+def mix_local(settings: dict | None = None):
+    """(backend, model) of the local model the AI mix lends work to (Settings' local model for restricted documents),
+    or None. Made once per choice and kept (each task would otherwise ask the model server again)."""
+    from .home import load_settings, make_restricted_backend
+    from .llm import BackendError
+
+    s = settings if settings is not None else load_settings()
+    key = (s.get("restricted_server"), s.get("restricted_model"), s.get("ollama_url"), s.get("openai_url"))
+    with _MIX_LOCK:
+        if key in _MIX_LOCAL:
+            return _MIX_LOCAL[key]
+    try:
+        got = make_restricted_backend(s)
+    except BackendError:
+        got = None
+    with _MIX_LOCK:
+        _MIX_LOCAL.clear()
+        _MIX_LOCAL[key] = got
+    return got
+
+
+def mix_local_for(t, settings: dict | None = None):
+    """The local (backend, model) that answers task `t` first under the AI mix, or None: Claude answers it (a kind the
+    mix leaves to Claude, a task already stepped up or answered, one a person forced onto a model, a document Claude
+    may not read, or no local model)."""
+    from .home import load_settings
+    from .routing import mix_kinds, task_kind
+
+    if t["forced_model"] or int(t["step"] or 0) or t["status"] == "done" or (t["access"] or "cloud") != "cloud":
+        return None
+    s = settings if settings is not None else load_settings()
+    if task_kind(t) not in mix_kinds(s):
+        return None
+    return mix_local(s)
+
+
+def answer_locally_first(ws: Workspace, task_id: str, backend, model: str) -> str | None:
+    """The local model's answer to a task of the AI mix (up to three attempts), and the step up to Claude it may need.
+    Returns None (the local answer stands), "again" (accepted but unsure, or it would change a decision: Claude reads
+    it again, the local answer counts meanwhile) or "retry" (no answer passed: Claude answers it). A backend error
+    (the model server is down, Stop) hands the task to Claude the same way, except Stop, which propagates."""
+    from .llm import BackendError
+    from .routing import STEP_UP_BELOW, certainty, judging_changes, task_kind
+
+    raw, ok = None, False
+    try:
+        for _ in range(MAX_ATTEMPTS):
+            t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
+            if t["status"] in ("done", "failed"):
+                break
+            system, user = render(ws, t)
+            _send(ws, t, backend)
+            raw, problem = _complete(backend, t, system, user, model)
+            ok, _e = ingest_result(ws, task_id, raw, model=model, provenance=_provenance(backend, model),
+                                   route=_route_name(backend), problem=problem)
+            if ok:
+                break
+    except BackendError as e:
+        if str(e).startswith("Stopped"):
+            raise
+        ok = False
+    t = ws.query("SELECT * FROM tasks WHERE task_id=?", (task_id,))[0]
+    how = None
+    if ok:
+        try:
+            obj = parse_json(raw)
+        except ValueError:
+            obj = None
+        c = certainty(t["kind"], obj)
+        if (c is not None and c < STEP_UP_BELOW) or judging_changes(task_kind(t), obj):
+            how = "again"
+    elif t["status"] != "done":
+        how = "retry"
+    if how:
+        with ws.connect() as cx:
+            if how == "again":
+                cx.execute("UPDATE tasks SET step=1, again=1, attempts=0 WHERE task_id=?", (task_id,))
+            else:
+                cx.execute("UPDATE tasks SET step=1, status='pending', attempts=0 WHERE task_id=?", (task_id,))
+            mark_queued(cx, [task_id])
+    return how
+
+
+def answer_mix_waiting(ws: Workspace, backend=None, model: str | None = None, task_ids: Iterable[str] | None = None,
+                       should_stop=None, progress=None) -> dict:
+    """Answer, with the local model, the tasks of the AI mix that wait for it (made by a check by queue, a profile or
+    themes while Claude Code works, or left when the app closed). `task_ids` limits it to these tasks."""
+    from .home import load_settings
+    from .routing import mix_kinds
+
+    s = load_settings()
+    kinds = sorted(mix_kinds(s))
+    out = {"answered": 0, "to_claude": 0}
+    if not kinds:
+        return out
+    if backend is None:
+        got = mix_local(s)
+        if got is None:
+            return out
+        backend, model = got
+    q = (f"SELECT task_id FROM tasks WHERE kind IN ({','.join('?' * len(kinds))}) AND status IN ('pending', 'retry') "
+         "AND COALESCE(step, 0)=0 AND forced_model IS NULL AND COALESCE(access, 'cloud')='cloud' "
+         "AND (claimed_by IS NULL OR claimed_by='') ORDER BY kind, task_id")
+    ids = [r[0] for r in ws.query(q, kinds)]
+    if task_ids is not None:
+        wanted = set(task_ids)
+        ids = [i for i in ids if i in wanted]
+    for i, tid in enumerate(ids, 1):
+        if should_stop and should_stop():
+            break
+        if progress:
+            progress(i, len(ids))
+        how = answer_locally_first(ws, tid, backend, model)
+        out["to_claude" if how else "answered"] += 1
+    return out
 
 
 def _complete(backend, t, system: str, user: str, model: str) -> tuple[Any, str | None]:

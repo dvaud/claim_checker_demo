@@ -645,8 +645,32 @@ def local_waiting(ws: Workspace, hyp_ids: list[str] | None = None, retry_failed:
     rows = ws.query("SELECT t.task_id, t.status, json_array_length(t.payload_json, '$.passages') AS n, u.hyp_id "
                     "FROM tasks t LEFT JOIN user_claims u ON u.claim_id=json_extract(t.payload_json, '$.subject_id') "
                     f"WHERE t.kind='check' AND t.status IN ({sts}) AND substr(t.task_id, -6) = ':local'")
-    return [{"task_id": r["task_id"], "status": r["status"], "passages": int(r["n"] or 0)} for r in rows
-            if hyp_ids is None or r["hyp_id"] in hyp_ids]
+    out = [{"task_id": r["task_id"], "status": r["status"], "passages": int(r["n"] or 0)} for r in rows
+           if hyp_ids is None or r["hyp_id"] in hyp_ids]
+    return out + _mix_waiting(ws, hyp_ids)
+
+
+def _mix_waiting(ws: Workspace, hyp_ids: list[str] | None = None) -> list[dict]:
+    """0.18.1 (I1): the tasks of these checks the AI mix gives the local model first (search words, splitting, or
+    judging excerpts under Mostly local) and that wait for it, as `local_waiting` rows ("mix": True)."""
+    from .home import load_settings
+
+    kinds = sorted(routing.mix_kinds(load_settings()) & {"decompose", "expand", "check"})
+    if not kinds:
+        return []
+    rows = ws.query(f"SELECT t.task_id, t.status, t.kind, json_array_length(t.payload_json, '$.passages') AS n, "
+                    "COALESCE(u.hyp_id, h.hyp_id) AS hyp_id FROM tasks t "
+                    "LEFT JOIN user_claims u ON u.claim_id=json_extract(t.payload_json, '$.subject_id') "
+                    "LEFT JOIN hypotheses h ON t.task_id='decompose:' || h.hyp_id "
+                    f"WHERE t.kind IN ({','.join('?' * len(kinds))}) AND t.status IN ('pending', 'retry') "
+                    "AND COALESCE(t.step, 0)=0 AND t.forced_model IS NULL AND COALESCE(t.access, 'cloud')='cloud' "
+                    "AND (t.claimed_by IS NULL OR t.claimed_by='') AND substr(t.task_id, -6) NOT IN (':local', 'person')",
+                    kinds)
+    if hyp_ids is not None:
+        wanted = set(hyp_ids)
+        rows = [r for r in rows if r["hyp_id"] in wanted]
+    return [{"task_id": r["task_id"], "status": r["status"], "passages": max(1, int(r["n"] or 0)), "mix": True}
+            for r in rows]
 
 
 def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=None, retry_failed: bool = False,
@@ -678,6 +702,20 @@ def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=Non
             on_start(got[1], sum(r["passages"] for r in rows))
     n = 0
     for r in rows:
+        if r.get("mix"):  # 0.18.1 (I1, I2): the local model first; Claude when it is unsure, or when there is none
+            if got is None:
+                with ws.connect() as cx:
+                    cx.execute("UPDATE tasks SET step=1 WHERE task_id=? AND COALESCE(step, 0)=0", (r["task_id"],))
+                    tasks.mark_queued(cx, [r["task_id"]])
+            else:
+                try:
+                    tasks.answer_locally_first(ws, r["task_id"], got[0], got[1])
+                    readers.read += 1
+                except MemoryShort as e:
+                    readers.memory_short = e
+                    return n
+            n += 1
+            continue
         with ws.connect() as cx:
             if r["status"] == "failed":
                 cx.execute("UPDATE tasks SET status='pending', attempts=0 WHERE task_id=?", (r["task_id"],))
