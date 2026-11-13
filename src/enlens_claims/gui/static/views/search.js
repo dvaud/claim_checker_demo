@@ -3,7 +3,7 @@
 // makes a phrase. A line opens its document at the words, or starts a check about what it says.
 import { featureEyebrow } from "../features.js";
 import { simpleProgress } from "./progress.js";
-import { App, api, h, icon, replace, clear, showError, toast, watchJob, TERMINAL, addDocumentsFirst, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks, button, link, notice, card, input, select, fold, choice, shortTitle, textPositions, cpLength, latest } from "../lib.js";
+import { App, api, h, icon, replace, clear, showError, toast, watchJob, TERMINAL, addDocumentsFirst, download, pageHead, emptyState, fmt, P, navigate, helpMark, downloadLinks, button, link, notice, card, input, select, fold, choice, shortTitle, textPositions, cpLength, latest, lazyList } from "../lib.js";
 
 const MODES = [
   ["any", "any of the words"],
@@ -12,7 +12,7 @@ const MODES = [
   ["near", "the words near each other"],
 ];
 const SORTS = [["doc", "by document"], ["left", "by the word before"], ["right", "by the word after"]];
-const PAGE = 200;
+const PAGE = 100;   // 0.18.1 (H5): the lines come a page at a time as the page scrolls (lazyList)
 
 function hashWith(params) {
   const qs = new URLSearchParams();
@@ -81,7 +81,7 @@ export async function renderSearch(view, params, query) {
   const st = {
     q: query.q || "", mode: query.mode || "any", near: Number(query.near || 5), exact: query.exact === "1",
     all: query.all === "1", docs: query.docs || "", code: query.code || "", sort: query.sort || "doc",
-    offset: Number(query.offset || 0), meaning: query.meaning === "1",
+    offset: 0, meaning: query.meaning === "1",   // 0.18.1: the lines load as the page scrolls, so a link needs no offset
   };
   let semantic = !!(info.search && info.search.embedded);
   if (!docs.length) {
@@ -215,12 +215,12 @@ export async function renderSearch(view, params, query) {
   const fresh = latest();   // a search answered after a newer one was asked (Next, Next) is not drawn
   async function go_() {
     const mine = fresh();
-    history.replaceState(null, "", hashWith({ q: st.q, mode: st.mode, near: st.mode === "near" ? st.near : "", exact: st.exact, all: st.all, docs: st.docs, code: st.code, sort: st.sort === "doc" ? "" : st.sort, offset: st.offset || "", meaning: st.meaning }));
+    history.replaceState(null, "", hashWith({ q: st.q, mode: st.mode, near: st.mode === "near" ? st.near : "", exact: st.exact, all: st.all, docs: st.docs, code: st.code, sort: st.sort === "doc" ? "" : st.sort, meaning: st.meaning }));
     if (!st.q) { replace(out, emptyState("text-search", "Type a word to search for", "Every place it occurs in your documents is listed, one line per place. Click a word in a line to add it to the search; Shift-click to make a phrase.")); return; }
     replace(out, h("p", { class: "muted" }, "Searching…"));
     if (st.meaning) return meaningResults(mine);
     let r;
-    try { r = await api("GET", `/api/projects/${P(project)}/search?${apiQs({ offset: st.offset, limit: PAGE })}`); }
+    try { r = await api("GET", `/api/projects/${P(project)}/search?${apiQs({ offset: 0, limit: PAGE })}`); }
     catch (e) { if (mine()) replace(out, notice({ kind: "error", live: false }, h("p", {}, e.message))); return; }
     if (mine()) drawLines(r);
   }
@@ -264,7 +264,7 @@ export async function renderSearch(view, params, query) {
         { text: "CSV", onClick: () => download(`/api/projects/${P(project)}/search.csv?${apiQs()}`).catch(showError) },
       ]));
     out.appendChild(tools);
-    const rows = r.lines.map((x) => {
+    const lineRow = (x) => {
       const node = h("mark", {}, ...wordSpans(x.node));
       const docHref = `#/doc/${encodeURIComponent(x.doc_id)}?q=${x.start}-${x.end}`;
       // it only takes the line to the Hypotheses page (nothing is checked yet): a place, so a link (DESIGN.md 6)
@@ -280,13 +280,19 @@ export async function renderSearch(view, params, query) {
         h("td", { class: "kw-node" }, node),
         h("td", { class: "kw-right" }, ...wordSpans(x.right, x.marks, cpLength(x.left) + cpLength(x.node))),
         h("td", { class: "kw-act" }, check));
-    });
-    out.appendChild(h("div", { class: "kwic-wrap" }, h("table", { class: "kwic", onClick: (e) => wordClick(e, addWord) }, h("caption", { class: "visually-hidden" }, "Concordance: the words found, with the words before and after"), h("tbody", {}, rows))));
-    const pages = h("div", { class: "pager" },
-      button({ sm: true, disabled: st.offset <= 0, onClick: () => { st.offset = Math.max(0, st.offset - PAGE); go_(); window.scrollTo(0, 0); } }, icon("chevron-left", { size: 13 }), "Previous"),
-      h("span", { class: "muted small" }, `Lines ${fmt.num(st.offset + 1)}–${fmt.num(st.offset + r.lines.length)} of ${fmt.num(r.total)}`),
-      button({ sm: true, disabled: st.offset + PAGE >= r.total, onClick: () => { st.offset += PAGE; go_(); window.scrollTo(0, 0); } }, "Next", icon("chevron-right", { size: 13 })));
-    out.appendChild(pages);
+    };
+    // 0.18.1 (H5): the first page came with the heading's figures; the others are asked for as the end of the table
+    // comes near. The query is fixed here, so a form edited but not searched yet does not change the later pages.
+    const base = apiQs();
+    const body_ = h("tbody");
+    const lines = lazyList({ first: { items: r.lines, total: r.total }, list: body_, render: lineRow, pageSize: PAGE, noun: "line",
+      fetchPage: async (offset, limit) => {
+        const qs = new URLSearchParams(base); qs.set("offset", String(offset)); qs.set("limit", String(limit));
+        const page = await api("GET", `/api/projects/${P(project)}/search?${qs}`);
+        return { items: page.lines, total: page.total };
+      } });
+    out.appendChild(h("div", { class: "kwic-wrap" }, h("table", { class: "kwic", onClick: (e) => wordClick(e, addWord) }, h("caption", { class: "visually-hidden" }, "Concordance: the words found, with the words before and after"), body_)));
+    out.appendChild(lines.footer);
     out.appendChild(h("p", { class: "muted small" }, "Click a word in a line to add it to the search; Shift-click to make a phrase with the words you searched for. Click the title to open the document at those words. “Check this” takes the line to the Hypotheses page, to check what it says."));
     // the words around the hits
     const colBox = card({ as: "div", class: "sr-colloc-card", hidden: true });

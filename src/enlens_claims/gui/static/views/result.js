@@ -3,7 +3,7 @@
 // the same `passages` the cards are drawn from, so sections and numbers always agree. A person's judgement
 // replaces the AI's; it is protected (no silent overwrite) and every save can be undone.
 import { App, api, h, icon, madeWithFact, readsLine, aiWhere, judgementIcon, pageHead, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, cpToIndex, indexToCp, cpLength, breaksToIndex, latest, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark,
-  button, iconButton, link, tag, notice, card as cardBox, fold as foldBox, choice, helpMark, downloadButton, textarea, input as fieldInput, select as selectField, reviewedMark, emptyState, personMark } from "../lib.js";
+  button, iconButton, link, tag, notice, card as cardBox, fold as foldBox, choice, helpMark, downloadButton, textarea, input as fieldInput, select as selectField, reviewedMark, emptyState, personMark, lazyList } from "../lib.js";
 import { withAI } from "../features.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
 import { originLink } from "../registry.js";
@@ -11,6 +11,7 @@ import { addNoteToPart } from "./notes.js";
 import { historyButton, askWhy } from "./versions.js";
 import { shareBar, zipButton, ZIP_WORDS } from "./share.js";   // 0.18 (L1)
 
+const LIST_PAGE = 40;   // 0.18.1 (H5): the excerpt cards of a long evidence list are drawn this many at a time, as the page scrolls
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
 
 // The moved note's way back after a judgement (docs/DESIGN.md 4.26): "Back to “…”", your earlier judgement, named by
@@ -206,6 +207,9 @@ export async function renderResult(view, [hypId], query) {
   const termsResult = new Map();   // claim_id -> inline result of the last search with other words
   const running = new Map();       // job id -> {kind, mini} of a follow-up job of this result (read again, new documents, second model)
   let followNote = null;           // text shown in the follow-ups card after one of its jobs ended
+  let movedNote = null;            // 0.18.1 (N4): the sentence the server gave for a judgement that moved the answer: said once, in the answer card
+  let makeExRow = null;            // 0.18.1: the table view's row maker (excerptTable), for patchInPlace
+  let lazies = [];                 // 0.18.1 (H5): the long card lists now on the page ({claim_id, lazy, items}), see evList() and findCard()
   let localJobShown = false;       // 0.13.11: see readLocalButton
   const secondShown = new Set();   // 0.11.2: "claim|passage" whose passage highlights the second opinion's quote
   const pendingQuote = new Map();  // "claim|passage" -> {text, start, end}: a sentence marked before a judgement was chosen (not saved yet)
@@ -274,6 +278,112 @@ export async function renderResult(view, [hypId], query) {
     draw(r);
   }
 
+  // 0.18.1 (H5): a judgement saved. The page is not drawn again whole: the result is fetched again (the same call as
+  // load()) and only what the judgement changed is made again, in place, so the scroll position, open folds, focus
+  // and the cards already drawn in a long list stay as they are: the excerpt's card (or its row in the table), the
+  // answer card (with the sentence for a judgement that moved the answer, once, as "Just now"), the evidence head's
+  // counts, a split part's own head, and the technical details' note. `saved` is the judgement route's answer
+  // ({moved: a sentence | null, …}). Anything the in-place update cannot do is drawn whole, as before: see inPlacePlan().
+  async function applyJudgement(saved) {
+    let r;
+    try { r = await fetchResult(); }
+    catch (e) {
+      if (e.status === 404) { notFound(e.data && e.data.in_project); return; }
+      throw e;
+    }
+    if (!r) return;   // a newer request was made: its answer is drawn instead
+    if (saved && typeof saved.moved === "string" && saved.moved) movedNote = saved.moved;
+    const plan = inPlacePlan(current, r);
+    current = r;
+    try {
+      if (plan) { try { patchInPlace(plan, r); return; } catch (e) { console.error(e); } }   // a surprise: draw it all
+      draw(r);
+    } finally { movedNote = null; }
+  }
+
+  // The cards that changed between the result shown and the one just fetched, or null when the page must be drawn
+  // whole: the answer is waiting, the parts or their excerpts are not the same ones in the same lists and order (an
+  // excerpt that moved between "about it" and "not about it", or among the counted ones, is shown by draw() with its
+  // "Moved" notes), anything the in-place update does not make again differs (models, documents added, a part's
+  // rounds), or many cards changed.
+  function inPlacePlan(was, now) {
+    if (!was || !now || was.status === "waiting" || now.status === "waiting" || !!was.decomposed !== !!now.decomposed) return null;
+    const rest = (x) => JSON.stringify([x.docs_added_since, x.second_read, x.disagreements, x.stronger_model, x.clash, x.clash_copies, x.waiting_local, x.waiting_for_you, x.models_used]);
+    if (rest(was) !== rest(now)) return null;
+    const a = was.parts || [], b = now.parts || [];
+    if (a.length !== b.length) return null;
+    const place = (p) => `${p.passage_id}:${about(p) ? 1 : 0}${p.counted || p.user_verdict ? 1 : 0}${p.waiting_for_you ? 1 : 0}${p.waiting_local ? 1 : 0}`;   // the list it is in, and its rank there
+    const partRest = (x) => JSON.stringify([x.rounds_info, x.more_available, x.errors, x.local_failed, x.waiting_local, x.stage, x.model, x.claim, x.target]);
+    const changed = [];
+    for (let i = 0; i < a.length; i++) {
+      if (a[i].claim_id !== b[i].claim_id || partRest(a[i]) !== partRest(b[i])) return null;
+      if (["failed", "no_passages"].includes(a[i].status) || ["failed", "no_passages"].includes(b[i].status)) return null;
+      const pa = a[i].passages || [], pb = b[i].passages || [];
+      if (pa.length !== pb.length || pa.some((p, k) => place(p) !== place(pb[k]))) return null;
+      pb.forEach((p, k) => { if (JSON.stringify(p) !== JSON.stringify(pa[k])) changed.push([b[i], p]); });
+    }
+    return changed.length > 8 ? null : { changed };
+  }
+
+  function patchInPlace(plan, r) {
+    const parts = r.parts || [];
+    const single = parts.length === 1 && !r.decomposed;
+    const allPassages = parts.flatMap((p) => p.passages || []);
+    // the same excerpt in another part shows what you judged there ("also in part 2"): those cards are made again too
+    const ids = new Set(plan.changed.map(([, p]) => p.passage_id));
+    const cards = [...plan.changed];
+    for (const part of parts) for (const p of part.passages || []) if (ids.has(p.passage_id) && !cards.some(([x, q]) => x === part && q === p)) cards.push([part, p]);
+    const active = document.activeElement;
+    // the card the person acted on stays where it is on the screen: its judgement row (the button they pressed) is the anchor
+    const cardOf = ([part, p]) => box.querySelector(`[data-claim="${CSS.escape(part.claim_id)}"] [data-passage="${CSS.escape(p.passage_id)}"]`);
+    const firstEntry = cards.find((c) => cardOf(c)) || null;
+    const first = firstEntry ? cardOf(firstEntry) : null;
+    const anchor = first ? (first.querySelector(".judge") || first) : null;
+    const anchorTop = anchor ? anchor.getBoundingClientRect().top : null;
+    const y = window.scrollY;
+    focusAfter = null;
+    document.title = `${(r.status === "waiting" && r.status_text) || STATUS_SHORT[r.status] || r.status} · ${(r.text || "").slice(0, 60)} · ENLENS`;
+
+    const swap = (sel, fresh) => { const old = box.querySelector(sel); if (!old) throw new Error(`nothing at ${sel}`); old.replaceWith(fresh); };
+    swap(":scope > .answer", answerCard(r, parts, single, allPassages));
+    swap(":scope > .ev-section-head", evidenceHead(r, allPassages, single));
+    const tech = box.querySelector('[data-fold="tech"]');
+    if (tech) tech.replaceWith(techCard(r, parts));
+    if (!single) {
+      box.querySelectorAll("section.part-card").forEach((sec, i) => {
+        if (!parts[i]) return;
+        sec.querySelectorAll(":scope > [data-live=head]").forEach((n) => n.remove());
+        sec.prepend(...partHead(parts[i], r));
+      });
+    }
+    let focused = null;
+    for (const [part, p] of cards) {
+      if (evidenceView === "table") {
+        const row = box.querySelector(`tr[data-ex-key="${CSS.escape(`${part.claim_id}|${p.passage_id}`)}"]`);
+        if (row && makeExRow) row.replaceWith(makeExRow(part, p, Math.max(0, Number(row.firstChild.textContent) - 1)));
+        continue;
+      }
+      const old = box.querySelector(`[data-claim="${CSS.escape(part.claim_id)}"] [data-passage="${CSS.escape(p.passage_id)}"]`);
+      if (!old) continue;   // not drawn yet (a long list): it is made from the new data when it is
+      const fresh = evidenceCard(p, part);
+      const had = old.contains(active);
+      old.replaceWith(fresh);
+      if (had && !focused) focused = fresh;
+      fresh.classList.add("ev-flash");
+      setTimeout(() => fresh.classList.remove("ev-flash"), 1800);
+    }
+    if (anchor && anchorTop !== null) {
+      const fresh = cardOf(firstEntry);
+      const now = fresh ? fresh.querySelector(".judge") : null;
+      if (now) window.scrollBy(0, now.getBoundingClientRect().top - anchorTop); else window.scrollTo(0, y);
+    } else window.scrollTo(0, y);
+    // the button that was pressed was made again: the keyboard goes on from the card's first button
+    if (focused && (!document.activeElement || document.activeElement === document.body)) {
+      const next = focused.querySelector(".judge-row button");
+      if (next) next.focus({ preventScroll: true });
+    }
+  }
+
   // 0.14.3: "no longer exists" also happens when another tab switched the project: the app then says which project
   // holds the result, and the page offers to go there
   function notFound(inProject) {
@@ -328,6 +438,7 @@ export async function renderResult(view, [hypId], query) {
   function draw(r) {
     const y = window.scrollY;
     localJobShown = false;   // 0.13.11: the running "Read them now" is shown once, at the first part that waits
+    lazies = [];
     // 0.14.3: a button (or the speed picker) with keyboard focus keeps it across the redraw
     const fa = document.activeElement;
     const refocus = fa && fa !== document.body && box.contains(fa) && fa.matches("button, a, select") ? { tag: fa.tagName, id: fa.id, text: fa.textContent.trim() } : null;
@@ -398,7 +509,7 @@ export async function renderResult(view, [hypId], query) {
     }
     if (focusAfter) {
       const f = focusAfter; focusAfter = null;
-      const el = box.querySelector(`${f.claim_id ? `[data-claim="${CSS.escape(f.claim_id)}"] ` : ""}[data-passage="${CSS.escape(f.passage_id)}"]`);
+      const el = findCard(f.claim_id, f.passage_id);
       if (el) {
         const fl = el.closest("details"); if (fl && !fl.open) { fl.open = true; openFolds.add(fl.dataset.fold); }
         const nowIn = el.closest(".also-read") ? "rest" : "evidence";
@@ -447,7 +558,7 @@ export async function renderResult(view, [hypId], query) {
     }
     if (returnTo) {
       const id = returnTo; returnTo = null;
-      const el = typeof id === "object" ? box.querySelector(`[data-claim="${CSS.escape(id.claim_id)}"] [data-passage="${CSS.escape(id.passage_id)}"]`) : box.querySelector(`[data-passage="${CSS.escape(id)}"]`);
+      const el = typeof id === "object" ? findCard(id.claim_id, id.passage_id) : findCard(null, id);
       if (el) {
         const fl = el.closest("details"); if (fl && !fl.open) { fl.open = true; openFolds.add(fl.dataset.fold); }
         requestAnimationFrame(() => { el.scrollIntoView({ block: "center" }); el.classList.add("ev-flash"); setTimeout(() => el.classList.remove("ev-flash"), 2200); });
@@ -540,7 +651,8 @@ export async function renderResult(view, [hypId], query) {
     if (differing) card.appendChild(h("p", { class: "answer-differ small" }, icon("users", { size: 13 }), ` ${differing} ${differing === 1 ? "excerpt where a colleague" : "excerpts where colleagues"} judged differently from you.`));
     const added = addedSince(r);
     if (added) card.appendChild(added);
-    for (const note of [whatsNew ? whatsNewText(whatsNew, single) : null, followNote].filter(Boolean)) {
+    const justMoved = movedNote; movedNote = null;   // said once: the next card made does not repeat it
+    for (const note of [whatsNew ? whatsNewText(whatsNew, single) : null, followNote, justMoved].filter(Boolean)) {
       card.appendChild(notice({ kind: "done", role: "status", class: "answer-note" }, h("p", {}, "Just now: ", note)));
     }
     if (lastRun) {
@@ -568,7 +680,7 @@ export async function renderResult(view, [hypId], query) {
     if (!said.length) return null;
     const goTo = (ref) => () => {
       const [claimId, passageId] = ref.split("/");
-      const el = box.querySelector(`[data-claim="${CSS.escape(claimId)}"] [data-passage="${CSS.escape(passageId)}"]`);
+      const el = findCard(claimId, passageId);
       if (!el) return;
       const fl = el.closest("details"); if (fl && !fl.open) { fl.open = true; openFolds.add(fl.dataset.fold); }
       el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("ev-flash"); setTimeout(() => el.classList.remove("ev-flash"), 1800);
@@ -623,16 +735,37 @@ export async function renderResult(view, [hypId], query) {
   // "Next to review": moves on from the card it went to last, in this order (0.12): the judgements that count in the
   // answer (those where the second opinion differs or the AI noted another group first), then the other flagged ones,
   // then the rest; cards with only a comment ("come back later") come last. It wraps around.
+  // 0.18.1 (H5): worked out from the data, not from the cards in the page, as a long list draws only its first cards:
+  // the same cards in the same order as the page shows them (partLists), each with the same marks the card carries.
   function reviewOrder() {
-    const all = [...box.querySelectorAll(".ev")].filter((e) => e.dataset.reviewed === "0");
-    const key = (e) => `${e.dataset.claim}|${e.dataset.passage}`;
-    const plain = all.filter((e) => e.dataset.comment === "0");
-    const flagged = (e) => e.dataset.disagree === "1" || e.dataset.scope === "1";
-    const groups = [plain.filter((e) => e.dataset.counted === "1" && flagged(e)), plain.filter((e) => e.dataset.counted === "1"),
-      plain.filter(flagged), plain, all.filter((e) => e.dataset.comment === "1")];
+    const all = [];
+    for (const part of (current && current.parts) || []) {
+      const L = partLists(part);
+      for (const p of [...L.shown, ...L.forYou, ...L.rest]) if (!p.reviewed) all.push({ part, p });
+    }
+    const key = (e) => `${e.part.claim_id}|${e.p.passage_id}`;
+    const noted = (e) => !e.p.reviewed && !!e.p.user_note;   // "come back later": after everything else
+    const plain = all.filter((e) => !noted(e));
+    const flagged = (e) => (e.p.second && !e.p.second.agrees) || !!e.p.scope_note;
+    const groups = [plain.filter((e) => e.p.counted && flagged(e)), plain.filter((e) => e.p.counted),
+      plain.filter(flagged), plain, all.filter(noted)];
     const seen = new Set(), out = [];
     for (const g of groups) for (const e of g) { if (!seen.has(key(e))) { seen.add(key(e)); out.push(e); } }
     return { list: out, key };
+  }
+  // The card of an excerpt: found in the page, or drawn first when it lies in a long list beyond the cards drawn so
+  // far. claimId may be null (the first card of that excerpt). null when no card holds it (the table view).
+  function findCard(claimId, passageId) {
+    const sel = `${claimId ? `[data-claim="${CSS.escape(claimId)}"] ` : ""}[data-passage="${CSS.escape(passageId)}"]`;
+    let el = box.querySelector(sel);
+    if (el) return el;
+    for (const l of lazies) {
+      if (claimId && l.claim_id !== claimId) continue;
+      if (!l.lazy.reveal((q) => q.passage_id === passageId)) continue;
+      el = box.querySelector(sel);
+      if (el) return el;
+    }
+    return null;
   }
   function goToCard(el) {
     const fl = el.closest("details");
@@ -648,6 +781,9 @@ export async function renderResult(view, [hypId], query) {
     let el = list.find((e) => !visitedNext.has(key(e)));
     if (!el) { visitedNext.clear(); el = list[0]; toast("Back to the first excerpt still to review: every one was shown once.", "info", { small: true, ttl: 3000 }); }
     visitedNext.add(key(el));
+    const entry = el;
+    el = findCard(entry.part.claim_id, entry.p.passage_id);   // draws it first when it lies beyond the cards drawn so far
+    if (!el) return;
     // 0.12: past the evidence, it says that it now goes to the excerpts the AI found not about the hypothesis
     if (!opts.quiet && el.closest(".also-read") && !el.closest(".also-read").open) toast("The evidence is reviewed: next, the excerpts the AI found not about the hypothesis.", "info", { small: true, ttl: 4000 });
     goToCard(el);
@@ -971,26 +1107,55 @@ export async function renderResult(view, [hypId], query) {
   }
 
   // ------------------------------------------------------------------------------------------
-  function partView(part, r, single) {
+  // The excerpts of a part as its cards list them (0.18.1: one place, for the cards and for "Next to review"): `shown`
+  // the ones about it (those that count first), `forYou` the ones no model may read, `rest` the ones found not about it.
+  function partLists(part) {
     const passages = part.passages || [];
     const judged = passages.filter(about);
     // 0.11: excerpts no model read (documents marked No AI, or Only a local AI without a local model) wait for you
     const waitingYou = passages.filter((p) => !about(p) && (p.waiting_for_you || p.waiting_local));
     const rest = passages.filter((p) => !about(p) && !waitingYou.includes(p));
+    const byCount = [...judged.filter((x) => x.counted || x.user_verdict), ...judged.filter((x) => !(x.counted || x.user_verdict))];
+    return { judged, shown: byCount, forYou: waitingYou.filter((p) => p.waiting_for_you), rest };
+  }
+
+  // 0.18.1 (H5): a list of cards: all at once when short, else the first LIST_PAGE and the rest as the page scrolls
+  // (lazyList; its footer says how many are drawn). A card drawn later is made from the data as it is then, so a
+  // judgement saved meanwhile shows. [the list, its footer] to append.
+  function evList(items, part) {
+    const make = (q) => {
+      const livePart = ((current && current.parts) || []).find((x) => x.claim_id === part.claim_id) || part;
+      return evidenceCard((livePart.passages || []).find((x) => x.passage_id === q.passage_id) || q, livePart);
+    };
+    const el = h("div", { class: "ev-list" });
+    if (items.length <= LIST_PAGE) { el.append(...items.map((p) => evidenceCard(p, part))); return [el]; }
+    const lazy = lazyList({ items, render: make, pageSize: LIST_PAGE, list: el, noun: ["excerpt", "excerpts"] });
+    lazies.push({ claim_id: part.claim_id, lazy });
+    return [el, lazy.footer];
+  }
+
+  // the head of a split part: its claim, who says what, and its sentence. Marked, so a judgement's in-place update
+  // can make them again (patchInPlace).
+  function partHead(part, r) {
+    const nodes = [h("div", { class: "part-head" },
+      h("div", { class: "grow" }, h("p", { class: "part-claim" }, h("span", { class: "pn" }, `Part ${part.part}: `), part.claim),
+        part.target ? h("div", { class: "res-part-target" }, codeChip(part.framework, part.target, part.target_description, r.code_label)) : null))];
+    const who = whoSaysWhat(part);
+    if (who) { who.classList.add("who-inline"); nodes.push(who); }
+    else nodes.push(h("p", { class: "part-sentence" }, part.status === "uncertain" ? "Judged, but nothing was certain enough to count." : docsCountSentence(part.balance)));
+    for (const n of nodes) n.dataset.live = "head";
+    return nodes;
+  }
+
+  function partView(part, r, single) {
+    const passages = part.passages || [];
+    const { judged, forYou, rest, shown: byCount } = partLists(part);
     const counted = passages.filter((p) => p.counted).length;
     // the evidence of one part lies on the page, not in a box: its excerpt cards are the cards (DESIGN.md 4.11, two levels)
     const card = h("section", { class: "part-card", "aria-label": single ? "Evidence" : `Part ${part.part}`, tabindex: "-1" });
     card.id = `part-${part.part}`;
     card.dataset.claim = part.claim_id;
-    if (!single) {
-      card.appendChild(h("div", { class: "part-head" },
-        h("div", { class: "grow" }, h("p", { class: "part-claim" }, h("span", { class: "pn" }, `Part ${part.part}: `), part.claim),
-          part.target ? h("div", { class: "res-part-target" }, codeChip(part.framework, part.target, part.target_description, r.code_label)) : null)));
-      const who = whoSaysWhat(part);
-      if (who) { who.classList.add("who-inline"); card.appendChild(who); }
-
-      else card.appendChild(h("p", { class: "part-sentence" }, part.status === "uncertain" ? "Judged, but nothing was certain enough to count." : docsCountSentence(part.balance)));
-    }
+    if (!single) card.append(...partHead(part, r));
     if (part.status === "failed" && part.errors && part.errors.length) {
       card.appendChild(notice({ kind: "error" }, h("p", {}, "The AI's answers could not be used, even after three tries."), foldBox({}, "Technical details", h("ul", { class: "errors-list" }, part.errors.slice(0, 5).map((e) => h("li", {}, e))))));
     }
@@ -1012,18 +1177,16 @@ export async function renderResult(view, [hypId], query) {
     if (evidenceView === "table") {
       card.appendChild(h("p", { class: "muted small table-note" }, icon("list-checks", { size: 13 }), ` The ${passages.length} ${passages.length === 1 ? "excerpt" : "excerpts"} read for ${what} ${passages.length === 1 ? "is" : "are"} in the table above; click a row to open it as a card.`));
     } else {
-      const byCount = [...judged.filter((x) => x.counted || x.user_verdict), ...judged.filter((x) => !(x.counted || x.user_verdict))];
-      if (judged.length) card.appendChild(h("div", { class: "ev-list" }, byCount.map((p) => evidenceCard(p, part))));
-      const forYou = waitingYou.filter((p) => p.waiting_for_you);
+      if (judged.length) card.append(...evList(byCount, part));
       if (forYou.length) {
         card.appendChild(h("div", { class: "evidence-head" }, h("h3", {}, `Waiting for your judgement: ${forYou.length} ${forYou.length === 1 ? "excerpt" : "excerpts"}`),
           h("span", { class: "muted small" }, "No AI may read these (their documents are marked No AI, or Only a local AI without a local model). Your judgement counts like any other.")));
-        card.appendChild(h("div", { class: "ev-list" }, forYou.map((p) => evidenceCard(p, part))));
+        card.append(...evList(forYou, part));
       }
       if (rest.length) {
         card.appendChild(keptFold(`rest:${part.claim_id}`, { sm: true, class: "also-read", summaryTitle: "Listed so you can check the search; you can judge them yourself" }, `${rest.length} ${rest.length === 1 ? "excerpt" : "excerpts"} read that ${rest.length === 1 ? "is" : "are"} not about ${what}`,
 
-          h("div", { class: "ev-list" }, rest.map((p) => evidenceCard(p, part)))));
+          ...evList(rest, part)));
       }
     }
     card.appendChild(moreRow(part, r));
@@ -1085,9 +1248,8 @@ export async function renderResult(view, [hypId], query) {
       const words = `${gradeWords(p.second.verdict, p.second.confidence)} · ${agreesYou === null ? (p.second.agrees ? "same as the AI" : "differs from the AI") : (agreesYou ? "same as you" : "differs from you")}`;
       return ok ? h("span", { class: "it" }, icon("check", { size: 12 }), words) : tag({ kind: "attention" }, words);
     };
-    const table = h("table", { class: "table table-responsive ex-table" },
-      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "#"), split ? h("th", { scope: "col" }, "Part") : null, h("th", { scope: "col" }, "Document"), h("th", { scope: "col" }, "Where"), h("th", { scope: "col" }, "AI's judgement"), h("th", { scope: "col" }, "Your judgement"), h("th", { scope: "col" }, "Counts"), h("th", { scope: "col" }, "Second opinion"))),
-      h("tbody", {}, rows.map(([part, p], i) => h("tr", { class: `row-link ex-row ex-${p.verdict || "none"}${p.reviewed ? " ex-reviewed" : ""}`, tabindex: "0", onClick: () => open(part, p), onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(part, p); } } },
+    // one row (0.18.1: a function, so a judgement's in-place update can make the row again); `key` finds it
+    const exRow = (part, p, i) => h("tr", { "data-ex-key": `${part.claim_id}|${p.passage_id}`, class: `row-link ex-row ex-${p.verdict || "none"}${p.reviewed ? " ex-reviewed" : ""}`, tabindex: "0", onClick: () => open(part, p), onKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(part, p); } } },
         h("td", { class: "num muted" }, String(i + 1)),
         split ? h("td", { "data-label": "Part" }, `Part ${part.part}`) : null,
         h("td", { "data-label": "Document", class: "ex-doc" }, h("span", { class: "serif" }, p.title || "untitled"), retractedMark(p.doc_id), p.scope_note ? h("div", { class: "small" }, tag({ kind: "attention" }, `about another group: ${p.scope_note}`)) : null),
@@ -1095,7 +1257,11 @@ export async function renderResult(view, [hypId], query) {
         h("td", { "data-label": "AI's judgement" }, h("span", { class: "it" }, judgementIcon(p.ai_verdict, 12), gradeWords(p.ai_verdict, p.confidence)), p.reread ? h("div", { class: "small muted" }, "read again") : null),
         h("td", { "data-label": "Your judgement" }, yours(p)),
         h("td", { "data-label": "Counts" }, p.verdict ? (p.counted ? h("span", { class: "it" }, icon("check", { size: 12 }), "counts") : h("span", { class: "muted small" }, "too uncertain")) : h("span", { class: "muted small" }, "not about it")),
-        h("td", { "data-label": "Second opinion", class: "small" }, second(p))))));
+        h("td", { "data-label": "Second opinion", class: "small" }, second(p)));
+    const table = h("table", { class: "table table-responsive ex-table" },
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "#"), split ? h("th", { scope: "col" }, "Part") : null, h("th", { scope: "col" }, "Document"), h("th", { scope: "col" }, "Where"), h("th", { scope: "col" }, "AI's judgement"), h("th", { scope: "col" }, "Your judgement"), h("th", { scope: "col" }, "Counts"), h("th", { scope: "col" }, "Second opinion"))),
+      h("tbody", {}, rows.map(([part, p], i) => exRow(part, p, i))));
+    makeExRow = exRow;
     return cardBox({ class: "ex-table-card", title: `All ${rows.length} excerpts read`, titleId: "ex-table-h" },
       h("p", { class: "muted small ex-table-note" }, "In the same order as the cards; your judgements count whatever the AI's certainty."),
       h("div", { class: "table-wrap" }, table));
@@ -1414,7 +1580,7 @@ export async function renderResult(view, [hypId], query) {
         const place = placeOf(p.passage_id, part.claim_id);
         const inView = place.bottom > 0 && place.top < window.innerHeight;
         focusAfter = { passage_id: p.passage_id, claim_id: part.claim_id, ...place, noScroll: !inView, reason: "the AI's new judgement sorts it here." };
-        const showIt = () => { const el = box.querySelector(`[data-claim="${CSS.escape(part.claim_id)}"] [data-passage="${CSS.escape(p.passage_id)}"]`); if (!el) return; const fl = el.closest("details"); if (fl && !fl.open) { fl.open = true; openFolds.add(fl.dataset.fold); } el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("ev-flash"); setTimeout(() => el.classList.remove("ev-flash"), 1800); };
+        const showIt = () => { const el = findCard(part.claim_id, p.passage_id); if (!el) return; const fl = el.closest("details"); if (fl && !fl.open) { fl.open = true; openFolds.add(fl.dataset.fold); } el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("ev-flash"); setTimeout(() => el.classList.remove("ev-flash"), 1800); };
         toast(`The AI has read the excerpt again: now ${a ? gradeWords(a.verdict, a.confidence) : "not about this hypothesis"}.`, "ok", { small: true, ttl: 8000, button: inView ? undefined : { text: "Show the excerpt", onClick: showIt } });
       }, { passage_id: p.passage_id });
     } catch (e) { showError(e); btn.disabled = false; }
@@ -1473,13 +1639,13 @@ export async function renderResult(view, [hypId], query) {
       if (verdict && opts.quote === undefined && pend) { body.quote = pend.text; opts = { ...opts, quote: pend.text }; }   // a sentence marked before choosing: saved with the judgement
       if (verdict) pendingQuote.delete(pendingKey(p, part));
       try {
-        await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, body);
+        const saved = await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, body);
         draftNotes.delete(pendingKey(p, part));   // the comment went with it
         const undo = async () => {
           focusAfter = { passage_id: p.passage_id, claim_id: part.claim_id, ...placeOf(p.passage_id, part.claim_id), reason: "your last change was undone." };
           const back = { verdict: prev.verdict, note: prev.note };
           if (opts.quote !== undefined) back.quote = prev.quote === undefined ? "" : prev.quote;
-          try { await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, back); toast("Undone.", "ok", { ttl: 2500, small: true, group: "judge" }); await load(); }
+          try { const undone = await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, back); toast("Undone.", "ok", { ttl: 2500, small: true, group: "judge" }); await applyJudgement(undone); }
           catch (e) { showError(e); }
         };
         // this save's own place note (a redraw meanwhile may have used and cleared focusAfter): its way back, when the
@@ -1487,7 +1653,7 @@ export async function renderResult(view, [hypId], query) {
         fa.undoText = noteWayBack(prev.verdict, verdict, p.read_by);
         fa.undo = fa.undoText ? undo : null;
         const was = statusNow();
-        await load();
+        await applyJudgement(saved);
         const now = statusNow();
         const change = was && now && was !== now ? ` The answer is now ${(STATUS_SHORT[now] || now).toLowerCase()}.` : "";
         if (!opts.silent) toast(msg + change, "ok", { ttl: 8000, small: true, group: "judge", button: { text: "Undo", onClick: undo } });
@@ -1576,7 +1742,8 @@ export async function renderResult(view, [hypId], query) {
         pendingQuote.set(pendingKey(p, part), { text: q, start: at >= 0 ? indexToCp(p.text, at) : null, end: at >= 0 ? indexToCp(p.text, at + q.length) : null });
         focusAfter = { passage_id: p.passage_id, claim_id: part.claim_id, ...placeOf(p.passage_id, part.claim_id), anchor: ".judge", anchorTop: wrap.getBoundingClientRect().top, noNote: true };
         redraw();
-        const el = box.querySelector(`[data-claim="${CSS.escape(part.claim_id)}"] [data-passage="${CSS.escape(p.passage_id)}"] .judge-panel [role="group"] button`);
+        const card = findCard(part.claim_id, p.passage_id);
+        const el = card ? card.querySelector('.judge-panel [role="group"] button') : null;
         if (el) el.focus({ preventScroll: true });
       };
       const useSel = button({ sm: true, class: "judge-tool", onMousedown: (e) => e.preventDefault(), onClick: () => {

@@ -56,7 +56,17 @@ class ChecksApi:
         return nearduplicates.similar(self.app.ws(name), [x[:2000] for x in lines])
 
     def get_hypotheses(self, name, q):
-        return self.app.hypotheses(name, q)
+        """The answers of the project. 0.18.1 (H5): with `offset` the rows come a page at a time (`limit` per page,
+        100 when not given) and the answer says `total` (the rows after the filters), `offset` and `limit`; `counts`
+        stay those of every hypothesis. Without `offset` the answer is what it always was (`limit` alone still cuts
+        the list)."""
+        if _str(q, "offset") is None:
+            return self.app.hypotheses(name, q)
+        offset = max(0, int(_float(q, "offset", 0)))
+        limit = max(1, min(int(_float(q, "limit", 100)), 1000))
+        whole = self.app.hypotheses(name, {k: v for k, v in q.items() if k not in ("offset", "limit")})
+        rows = whole["hypotheses"]
+        return {**whole, "hypotheses": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit}
 
     def _has_hypothesis(self, project, hyp_id):
         try:

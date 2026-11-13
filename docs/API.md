@@ -1761,4 +1761,9 @@ No AI is not looked up. The Crossref address can be set with `ENLENS_CROSSREF_UR
 | `POST /api/projects/<name>/retractions/check` | Starts the lookup as a job (`{"job"}`; `progress` has `done` and `total` DOIs; one at a time per project). Its result: `{"looked_up", "no_ai", "notices", "capped", "checked_at"}`. 400 under local-only or when there is no DOI to ask about. |
 
 `GET …/bibliography` gives each work a `notices` list, and `retractions: {checked_at, affected, local_only}` beside `counts`.
+**The answers a page at a time (H5).** `GET …/hypotheses?offset=<n>&limit=<n>` (with the same `q`, `status`, `batch`
+and `threshold`) answers one page of the list: `hypotheses` holds at most `limit` rows (100 when not given, at most
+1,000) from row `offset`, in the same order as the whole list, and `total` (the rows after the filters), `offset` and
+`limit` are added. `counts` still cover every hypothesis. Without `offset` the answer is what it always was.
+
 <!-- end of 0.18.1 part B -->
