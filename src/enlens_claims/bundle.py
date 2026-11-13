@@ -382,6 +382,14 @@ def import_project(zip_path: str | Path, dest: str | Path, merge_only: bool = Fa
                 meta = {}
             if not isinstance(meta, dict):
                 meta = {}
+            # 0.18.1: a zip from a newer ENLENS that shares work in a way this one does not know yet is refused in
+            # words, as the shared folder and *Bring in* refuse it, before anything is opened (ENLENS 0.17.0 to 0.18.0
+            # opened it as a new project without a word)
+            from .sync import formats as sync_formats
+
+            newer = sync_formats.problem(meta, "This project zip", "then open it again")
+            if newer:
+                raise ValueError(newer)
             before_011 = _open_staged(staging)
             if dest.exists():
                 dest.rmdir()

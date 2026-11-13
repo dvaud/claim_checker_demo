@@ -102,3 +102,92 @@ def test_a_members_removal_is_spent_only_with_a_word(team, tmp_path):
     assert has(carol, doc)             # it came back to her copy, as to every copy
     states = [(p["state"], p["note"]) for p in proposals(carol, kind="remove") if p["by"]["id"] == carol.id]
     assert states == [("moot", "The document was removed from the project and added to it again since.")]
+
+
+# ---- 2. *Become the owner* of a project exchanged before there were owners ----------------------------------------
+def test_becoming_the_owner_of_an_older_project_says_what_becomes_a_proposal(tmp_path, monkeypatch):
+    """What Ben removed and left out before the project had an owner becomes his proposals to Anna once she claims
+    it (0.18's rule): his Team tab says so once, instead of the proposals coming unexplained."""
+    from owner_more_helpers import as_before_018, join_zip, small_project
+    from owner_helpers import leave_out
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    anna = Person(tmp_path, "Anna", monkeypatch)
+    small_project(anna, tmp_path / "anna-project")
+    ben = Person(tmp_path, "Ben", monkeypatch)
+    join_zip(ben, anna, tmp_path / "ben-project")
+    for p in (anna, ben):
+        as_before_018(p)
+        with p:
+            folder.set_folder(p.ws, str(shared))
+    sync(anna, ben)
+    gone, jobs = sorted(docs_of(ben))[:2]
+    _remove(ben, gone)
+    leave_out(ben, jobs, 1)
+    sync(ben, anna)
+    assert not view(ben)["notices"]
+    with anna:
+        ownership.claim(anna.ws)
+    sync(anna, ben, anna, rounds=2)
+    texts = [n["text"] for n in view(ben)["notices"] if n["kind"] == "claimed"]
+    assert len(texts) == 1 and "1 document you removed and what you left out of 1 document" in texts[0], texts
+    assert "now your proposals to Anna" in texts[0]
+    assert not [n for n in view(anna)["notices"] if n["kind"] == "claimed"]
+    sync(anna, ben, rounds=2)
+    assert len([n for n in view(ben)["notices"] if n["kind"] == "claimed"]) == 1   # said once
+
+
+# ---- 5. a zip from a newer ENLENS -------------------------------------------------------------------------------
+def test_a_zip_from_a_newer_enlens_is_refused_in_words(tmp_path, monkeypatch):
+    import json
+    import zipfile
+
+    from enlens_claims import bundle
+    from enlens_claims.sync import formats
+    from owner_more_helpers import small_project
+
+    anna = Person(tmp_path, "Anna", monkeypatch)
+    small_project(anna, tmp_path / "anna-project")
+    z = tmp_path / "anna.zip"
+    with anna:
+        bundle.export_project(anna.ws, z)
+    newer = tmp_path / "from-the-future.zip"
+    with zipfile.ZipFile(z) as src, zipfile.ZipFile(newer, "w") as out:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename.endswith("bundle.json"):
+                meta = json.loads(data)
+                meta.update(sync_format=formats.FORMAT + 1, sync_needs=formats.FORMAT + 1, version="9.9.9")
+                data = json.dumps(meta).encode("utf-8")
+            out.writestr(info, data)
+    dest = tmp_path / "Ben's copy"
+    with pytest.raises(ValueError, match=r"newer ENLENS \(9\.9\.9\).*Update ENLENS.*Nothing was changed"):
+        bundle.import_project(newer, dest)
+    assert not dest.exists() and not dest.with_name(dest.name + ".importing").exists()
+    ws = bundle.import_project(z, tmp_path / "Ben's other copy")   # the same zip, as this ENLENS wrote it, opens
+    try:
+        assert ws.counts()
+    finally:
+        ws.close_all()
+
+
+# ---- 6. *Not now* on a take-over ------------------------------------------------------------------------------------
+def test_not_now_on_a_take_over_holds_for_the_person_in_the_project(team):
+    anna, ben, carol = team
+    with ben:
+        ownership.take_over(ben.ws)
+    sync(ben, carol)
+    v = view(carol)
+    qs = [q for q in v["questions"] if q["kind"] == "takeover"]
+    assert len(qs) == 1 and v["later"] == []
+    with carol:
+        ownership.put_off(carol.ws, qs[0]["id"])
+        ownership.put_off(carol.ws, qs[0]["id"])     # (twice: kept once)
+        with pytest.raises(KeyError):
+            ownership.put_off(carol.ws, "o-no-such-question")
+    v = view(carol)                                  # what any browser gets: the question, and that it was put off
+    assert [q["id"] for q in v["questions"]] == [qs[0]["id"]] and v["later"] == [qs[0]["id"]]
+    assert view(anna)["later"] == []                  # Carol's alone
+    follow(carol)
+    assert view(carol)["later"] == []                 # answered: nothing put off is left to show

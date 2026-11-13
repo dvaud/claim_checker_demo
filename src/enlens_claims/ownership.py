@@ -73,6 +73,8 @@ ROLES_SEEN = "roles_seen"          # meta (this copy's own): the roles as this c
 FORMATS = "sync_formats"           # meta (this copy's own): {person id: the sync format of their last file}
 LOOSEN_USED = "loosen_used"        # meta (this copy's own, never sent to a colleague): the accepts of this person's
 #                                    loosen proposals whose event this copy has followed (review H1, follow-up)
+LATER = "owner_later"              # meta (this copy's own): {person id: [ids of questions about the owner put off
+#                                    with *Not now*]}, so it holds in every browser (0.18.1)
 TAKE_OVER_DAYS = 14
 RANK = {"cloud": 0, "local": 1, "none": 2}
 PARTS = ("state", "read", "ai", "blocks")
@@ -558,6 +560,23 @@ def keep_owner(ws: Workspace, seq: int, by: str) -> dict:
         if _pins(cx)[0].get(seq) == (r["by"], r["owner"]):
             raise ValueError("You follow this record: follow another one instead.")
         _pin(cx, r, "refused")
+    return view(ws)
+
+
+def put_off(ws: Workspace, qid: str) -> dict:
+    """*Not now* on a question about the owner (a take-over): it stays in the Team tab until answered, but no longer
+    counts on the tab. Kept for this person in the project (0.18.1; before, only in the browser that said it).
+    Returns the view."""
+    me = people.me()
+    with ws.connect() as cx:
+        if not any(q["id"] == qid for q in owner_questions(cx)):
+            raise KeyError(qid)
+        have = _meta(cx, LATER, {})
+        have = have if isinstance(have, dict) else {}
+        mine = [x for x in have.get(me) or [] if isinstance(x, str)]
+        if qid not in mine:
+            have[me] = (mine + [qid])[-200:]
+            _set_meta(cx, LATER, have)
     return view(ws)
 
 
@@ -2453,6 +2472,26 @@ def what(p: dict) -> str:
     return out
 
 
+def _note_claimed(ctx: _Ctx, by_kind: dict[str, list[dict]]) -> None:
+    """0.18.1 (roadmap L, after 0.17.0): when a colleague became the owner of a project that had none (*Become the
+    owner*), what this person had removed or left out in their own copy before is their proposal now, all at once. Say
+    so once, in the Team tab, so the proposals do not come unexplained (the dialog said so to the one who claimed)."""
+    first = ctx.chain[0] if ctx.chain else None
+    if not first or first["kind"] != "claim" or first["owner"] == ctx.me:
+        return
+    removed, left_out = len(by_kind.get("remove", [])), len(by_kind.get("blocks", []))
+    if not removed and not left_out:
+        return
+    who = ctx.names.get(first["owner"], "A colleague")
+    parts = ([f"{removed} {'document' if removed == 1 else 'documents'} you removed"] if removed else []) + \
+        ([f"what you left out of {left_out} {'document' if left_out == 1 else 'documents'}"] if left_out else [])
+    _notice(ctx.cx, "claimed", f"{who} became the owner of this project. {' and '.join(parts).capitalize()} in your "
+                               f"copy before it had an owner {'is' if removed + left_out == 1 else 'are'} now your "
+                               f"{'proposal' if removed + left_out == 1 else 'proposals'} to {who}. Your copy keeps "
+                               "them as they are until they are answered; take back any you no longer want.",
+            f"claimed:{first['seq']}:{first['by']}")
+
+
 def _log(ctx: _Ctx) -> None:
     """The research log: what this copy proposed now, and what the owner's copy accepted at once."""
     from . import researchlog
@@ -2460,6 +2499,7 @@ def _log(ctx: _Ctx) -> None:
     by_kind: dict[str, list[dict]] = {}
     for p in ctx.new:
         by_kind.setdefault(p["kind"], []).append(p)
+    _note_claimed(ctx, by_kind)
     for kind, ps in by_kind.items():
         if len(ps) == 1:
             p = ps[0]
@@ -2842,6 +2882,9 @@ def view(ws: Workspace, light: bool = False) -> dict:
                          "by_name": names.get(q["by"], "a colleague"),
                          "now_name": names.get(q["now"], "a colleague") if q["now"] else None}
                         for q in owner_questions(cx)]
+    later = _meta(cx, LATER, {})
+    later = set((later.get(me) or []) if isinstance(later, dict) else [])
+    out["later"] = [q["id"] for q in out["questions"] if q["id"] in later]
     out["notices"] = [x for x in _meta(cx, NOTICES, []) if isinstance(x, dict)]
     out["refused"] = refused(cx)
     out["removed"] = _removed_listing(ws)

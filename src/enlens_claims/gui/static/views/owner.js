@@ -54,15 +54,16 @@ function markSeen(project, ids) {
   store(seenKey(project), JSON.stringify([...s].slice(-500)));
 }
 
-// questions about the owner put off with Not now (in this browser): they stay in the list, but no longer count
+// questions about the owner put off with Not now: they stay in the list, but no longer count. 0.18.1: kept for the
+// person in the project (the view's `later`), so in every browser; what an earlier version kept in this browser counts too
 const laterKey = (project) => `owner-later:${project}`;
-function laterSet(project) {
-  try { return new Set(JSON.parse(store(laterKey(project)) || "[]")); } catch (_) { return new Set(); }
+function laterSet(project, v) {
+  let old = [];
+  try { old = JSON.parse(store(laterKey(project)) || "[]"); } catch (_) { old = []; }
+  return new Set([...(Array.isArray(old) ? old : []), ...((v && v.later) || [])]);
 }
-function putOff(project, ids) {
-  const s = laterSet(project);
-  for (const id of ids) s.add(id);
-  store(laterKey(project), JSON.stringify([...s].slice(-200)));
+async function putOff(project, ids) {
+  for (const id of ids) await api("POST", OWNER_API.question(P(project), P(id)), { answer: "later" });
 }
 // the documents ticked on an offer card, kept across the tab's redraws: project -> Set of doc ids
 const ticked = new Map();
@@ -100,7 +101,7 @@ export const OWNER_SECTION = {
   key: "owner",
   render: ownerSection,
   load: (project) => api("GET", OWNER_API.view(P(project))),
-  count: (ctx) => tabCount(ctx.data && ctx.data.owner, new Set([...seenSet(ctx.project), ...laterSet(ctx.project)])),
+  count: (ctx) => tabCount(ctx.data && ctx.data.owner, new Set([...seenSet(ctx.project), ...laterSet(ctx.project, ctx.data && ctx.data.owner)])),
 };
 // a Member's own proposals that wait (a colleague's too, for whoever cannot answer them)
 export const MINE_SECTION = { key: "mine", render: mineSection };
@@ -119,7 +120,7 @@ function ownerSection(ctx) {
   follow(ctx, v.job);
   if (v.can_claim) return null;
   const parts = splitProposals(v, seenSet(ctx.project));
-  const box = inbox(v, laterSet(ctx.project));
+  const box = inbox(v, laterSet(ctx.project, v));
   const running = !!(v.job && !TERMINAL.has(v.job.state));
   if (!box.cards && !parts.declined.length && !running && !(v.to_apply || []).length && !v.can_take_over
     && !(v.notices || []).length && !box.settled.length) return null;   // nothing waits: no section
@@ -173,7 +174,8 @@ function claimBox(ctx) {
   b.addEventListener("click", async () => {
     const ok = await confirmDialog({ title: "Become the owner of this project?", danger: false, confirmText: "Become the owner",
       message: h("div", {}, h("p", {}, "You then decide which documents the project holds, how they are read and who may read them with AI."),
-        h("p", {}, "From then on, a colleague’s change to the documents is a proposal for you to accept or decline. Their copies learn it with your next round or file.")) });
+        h("p", {}, "From then on, a colleague’s change to the documents is a proposal for you to accept or decline. Their copies learn it with your next round or file."),
+        h("p", {}, "What a colleague removed or left out in their own copy before now becomes their proposal to you, all at once; what you changed in yours becomes the project’s.")) });
     if (!ok) return;
     await act(ctx, b, () => api("POST", OWNER_API.claim(P(ctx.project)), {}), "You are the owner of this project now.");
   });
@@ -308,7 +310,7 @@ function questionCard(ctx, v, c) {
 
 async function answerQuestion(ctx, a, w, btn, c) {
   if (!a.answer) {   // Not now
-    putOff(ctx.project, c.ids);
+    try { await putOff(ctx.project, c.ids); } catch (e) { toast(e.message || String(e), "error"); return; }
     toast("Put off: it stays in the list until you answer it.", "info", { small: true, ttl: 5000 });
     await ctx.refresh({ force: true });
     ctx.focusHeading("owner");

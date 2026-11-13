@@ -26,7 +26,7 @@ export const OWNER_API = {
   takeBack: (p, id) => `/api/projects/${p}/owner/proposals/${id}/take-back`, // POST {}
   // roles (DESIGN-roles §7 P4)
   role: (p, person) => `/api/projects/${p}/owner/roles/${person}`,           // PUT {role} | {same_as}
-  question: (p, id) => `/api/projects/${p}/owner/questions/${id}`,           // POST {answer: "follow" | "keep"}
+  question: (p, id) => `/api/projects/${p}/owner/questions/${id}`,           // POST {answer: "follow" | "keep" | "later"}
   loosening: (p) => `/api/projects/${p}/owner/loosening`,                    // POST {docs, allow}
   restore: (p, doc) => `/api/projects/${p}/owner/removed/${doc}/restore`,    // POST {}
   clash: (p, id) => `/api/projects/${p}/owner/clashes/${id}`,                // POST {} (Leave it so)
