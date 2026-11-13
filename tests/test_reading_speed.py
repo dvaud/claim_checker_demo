@@ -451,7 +451,8 @@ def test_a_contents_of_three_hundred_entries_is_looked_up_for_fifteen_thousand_b
     fracs = [i / len(blocks) for i in range(len(blocks))]
     t0 = time.perf_counter()
     assert reader3._find_entries(blocks, fracs, 0, titles) == []
-    assert time.perf_counter() - t0 < 4.0  # 12.6 s: every entry was worked out again for every block
+    # 12.6 s when every entry was worked out again for every block; about 1 s here, up to 5 s on a busy CI runner
+    assert time.perf_counter() - t0 < 8.0
 
 
 # ---- the marked copy of a document -------------------------------------------------------------------------------
