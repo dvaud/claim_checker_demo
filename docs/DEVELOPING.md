@@ -266,7 +266,27 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   for real later and left it then.
 - **The validation report (0.15).** The release workflow runs `enlens measure --report` and attaches
   `validation-report.md` to the release: how well each reader reads the documents of known text, and that reading is
-  the same twice. The half that needs AI comes with 0.16.
+  the same twice.
+- **Its AI half (0.18.4).** The release workflow also runs `enlens validate report --latest tools/validation/runs` and
+  attaches `validation-report-ai.md`, made with no AI from the newest run file committed in `tools/validation/runs/`
+  (with none, it says so and attaches nothing). Record a new run before a release that changes a prompt (a
+  `prompt_version`), a default model of a kind, or how a check or a label is made; otherwise the last run stands. In a
+  git copy, with Claude Code and the ENLENS plugin set up:
+
+  ```sh
+  enlens validate prepare --project "Validation 2026-11-13"        # a new project: the gold documents, tasks queued
+  # in Claude Code:  /enlens-run "Validation 2026-11-13"
+  enlens validate prepare --project "Validation 2026-11-13 again"  # once more, for repeatability
+  # in Claude Code:  /enlens-run "Validation 2026-11-13 again"
+  enlens validate score --project "Validation 2026-11-13" --again "Validation 2026-11-13 again"
+  enlens validate report                                           # look at it; then commit the run file
+  ```
+
+  `score` writes `tools/validation/runs/<date>-<route>.json` with every answer, its model, prompt version, ENLENS
+  version and date. A local model answers the same projects with `enlens --ws "<project folder>" queue run --backend
+  ollama` instead of `/enlens-run`. Delete the two projects afterwards. The gold set itself (`tools/validation/`, its
+  README says how it was made) changes only on purpose: its fingerprint is in every run file, and a report made from
+  a run on an older gold set says so.
 
 ## Rolling back a release
 

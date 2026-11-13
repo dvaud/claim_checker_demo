@@ -230,7 +230,18 @@ from 0.6 as fair (`benchmark.kappa`; [Agreement between routes](manual/models.md
 
 **The validation report.** `enlens measure` reports on reading documents, with no AI: documents of known text,
 determinism, quotes that still find their place, and timings (`measure.py`). Each release carries it as
-`validation-report.md`.
+`validation-report.md`. Its AI half (0.18.4, `validation.py`) scores the AI's answers against known right answers: a
+gold set of invented documents on remote work (`tools/validation/`), in which every name and figure is fictional, so
+each right answer is known by construction. It holds about 30 hypotheses with their verdicts (supported, partly
+supported, contradicted, mixed, nothing found; some compound) and about 100 passages with the codes of a codebook of
+10 codes made for it, written by one AI from the documents alone, checked against the text by a second, and settled by
+hand, with neither ever seeing a model's answers. A recorded, dated run checks every hypothesis and labels every
+passage as the app does, through the task queue, and keeps every answer with its model, prompt version and ENLENS
+version; `enlens validate report` then gives, per kind, the share of right answers and Cohen's kappa against the gold
+set, the share of answers first rejected for a quote not in the text, and, from a second pass, how often the same
+answer came again. Each release carries it as `validation-report-ai.md`, made from the newest recorded run with no
+AI. Its limits: the documents are invented and tidier than real ones, the set is small (one hypothesis is about three
+points), and it is in English only.
 
 **Across versions.** ENLENS never redoes work by itself: results made by an earlier version stay as they were made
 ([Results across versions](manual/models.md#results-across-versions)).
@@ -243,7 +254,8 @@ determinism, quotes that still find their place, and timings (`measure.py`). Eac
   words. *Read more excerpts* and *Search with other words* look further.
 - **The quote check proves that the words are there**, not that the grade is right. The person's review checks the
   grade.
-- **The default models are not yet validated** on a filled-in reference set ([MODEL_CHOICE.md](MODEL_CHOICE.md)).
+- **The default models are validated only on a small invented gold set** (`validation-report-ai.md`), not on a
+  filled-in reference set of real documents ([MODEL_CHOICE.md](MODEL_CHOICE.md)).
 - **Agreement is not correctness**: kappa compares two readers, neither of them a gold standard.
 - **Claude's answers are not repeatable** the way a seeded local model's are.
 - **The stemmer is English.** It strips English endings from words in every language, so forms in other languages may
