@@ -386,3 +386,12 @@ def test_choosing_the_folder_again_keeps_the_switch(api, tmp_path):  # noqa: F81
     assert api("GET", "/api/projects/Demo/shared-folder")[1]["keep_out"]["mine"] is True
     st, r = api("PUT", "/api/projects/Demo/shared-folder", {"path": str(shared), "keep_out": False})
     assert st == 200 and r["keep_out"]["mine"] is False
+
+
+def test_the_panel_brings_a_section_into_view():
+    """team-share piece B: the drawer's "enlens-drawer" event may name a section (See what you shared: "shared"); the
+    panel focuses its heading once the refresh show() started has drawn, and brings it into view."""
+    assert "async focusSection(key) {" in TEAM
+    fn = TEAM[TEAM.index("async focusSection(key) {"):TEAM.index("// the page's panel")]
+    assert "await reading;" in fn and "focusHeading(key);" in fn and "scrollIntoView(" in fn
+    assert "show() { shown = true; reading = refresh(); arm(); }," in TEAM

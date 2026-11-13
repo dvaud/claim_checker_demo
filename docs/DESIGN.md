@@ -67,6 +67,7 @@ looks like this. **A piece that cannot be named from this table is a misfit.**
 | More about this | A small (?) | [Help mark](#418-help-notes-and-defined-terms) |
 | This word has a definition | A dotted underline | [Defined term](#418-help-notes-and-defined-terms) |
 | My own working space beside the page | A panel on the right, opened by one button in the same spot on every page | [Drawer](#419-the-drawer) |
+| My team on this project, and its state | A row under the project's name: *Team* and a few words (*synced 15:44*, *3 new*) | [Team line](#51-the-sidebar) |
 | Work under way, waiting, not running | A pulsing teal dot and a time; a clock; a pause mark in amber, always with words | [Work state](#421-progress-and-work-states) |
 | More here, folded away | A grey line with a chevron before it | [Fold](#422-folds) |
 | The research's own words (documents, hypotheses, concepts, themes) | The serif face | [Type](#32-type) |
@@ -356,7 +357,7 @@ tab's count and none hides it; a drawer's tabs are `drawer().tabs`).
 
 **Means:** one of a few values, shown in place; the content below follows it. **Use:** *Cards* | *Table*, a filter of
 a list (*All 3* | *Supported 1*), *This page* | *All* in the drawer, the speed of Claude Code, which panel a document's
-side shows, which of the Bibliography's lists shows (*Please confirm 3* | *To find 6* …). **Not for:** views with an
+side shows, which of the Bibliography's lists shows (*Please confirm 3* | *To find 6* …), who sees an item you made (*Private* | *Shared with your team*, with the sharing states' icons; [5.5](#55-the-pieces-of-working-together)). A value that needs a word first (taking a shared item back) asks in a dialog, and the choice stays where it was until the answer. **Not for:** views with an
 address (tabs), options that need a sentence each (option cards), on and off (a switch).
 
 **Looks:** separate small boxes (8 px corners, 6 px apart, a strong edge, small type); the chosen one soft teal with a
@@ -439,7 +440,7 @@ in a list, a log entry in the drawer under its person's group). A mark that stan
 the initials: the first name (`name: "short"`) where the people in a project know each other (a shared item's *By
 Anna*, a *Changed by Ben* line, a proposal's proposer), the full name (`name: "full"`) where two could share a first
 name or someone new reads it (who owns a project). What they did (`prefix`) is then said on the mark too. **A sharing state** is a tag with its
-icon: *Private* (the house), *Shared* (the users icon), *Withdrawn* (undo), `shareState()`. **A document not on this
+icon: *Private* (the house), *Shared* (the users icon), *Withdrawn* (undo), `shareState()`. On the item's own page, for its maker, the two states are a [choice](#46-choices); the tag is for lists and for an item that is not yours. **A document not on this
 computer** (a colleague's work names it): its title as plain serif words (there is nothing to open), the tag *not on this
 computer* (`file-x`) and the small quiet button *Add its file*, `absentDocument(title, { onAdd })`. A tag that explains itself on hover or click is a tag
 on a button (*at first: partly supported*, `strongerMark()`). **Not for:** judgements (badges), actions (buttons), AI
@@ -601,7 +602,7 @@ page* | *All*, above its entries), so the head holds the tabs on one line. Body:
 one link to the whole view. **Its button** is a small standard button with the *opens* state, always at the top right of
 every page (in the top bar under 861 px, its words then its name only), on a band of the page's own ground across the
 top of the page column, so what scrolls goes under the band, never under the button alone; open, the body carries
-`data-drawer="open"`.
+`data-drawer="open"`. A project with a team has a second door to the same drawer, the [team line](#51-the-sidebar) under the project's name: it opens the Team tab, the button opens the Research log tab, and each is soft teal while its own tab shows. Under 861 px the button carries the Team tab's count in words (*3 new*) while news waits, and then opens that tab.
 
 **The research log in it is the Research log page's own write box and entries** (`.log-new`, `.log-entries`): one
 entry looks the same on the page and in the drawer.
@@ -613,7 +614,7 @@ view tabs' look, and `onTab(key)` draws that tab's sections with `.setSections([
 the widths and the open state are the drawer's.
 
 **Make it:** `drawer({ id, title, icon, tabs, current, onTab, control, sections, foot, onClose })`,
-`drawerButton({ id, controls, label, icon, onClick })`, `setDrawerOpen(open, button)`; `views/logdrawer.js` is its
+`drawerButton({ id, controls, label, icon, onClick })`, `teamLine({ id, controls, onClick })`, `setDrawerOpen(open, button)`; `views/logdrawer.js` is its
 first content. **Lives in:** `components.css` § 4.19.
 
 ### 4.20 Tables, lists and dense places
@@ -779,11 +780,12 @@ stand for both), where it **Lives in**, and **Make it** where it has a helper.
 | --- | --- | --- |
 | Brand | Home | The logo and *ENLENS* |
 | Project switch | Which project | A field-like box as wide as the sidebar (as Find is), with *Project* and its name (two lines at most, then "…") and a chevron; a [menu](#417-menus) of projects as wide as the box |
+| Team line | This project's team and its state; it opens the Team tab beside the page | The project switch's second row, only in a project with a team: the users icon, *Team*, and at its end the state in fixed words (*synced 15:44*, *syncing now…* with the running dot, *paused*, the count tag *3 new*); amber with the triangle when the team needs you (*offline*, *round did not work*); soft teal while the Team tab is open |
 | Find button | Find a page, view or setting | [5.3](#53-find) |
 | Entry | A place | An 18 px icon and the place's name, secondary text; hover a grey ground; **current**: soft teal ground, teal words in 600 |
 | Group label | A section of places, and its AI use | Small capitals (`--fs-label`) and the AI mark in the same size; not a link |
 
-**No counts beside entries, no AI marks on entries, no entries under an entry.** When the window is short only the list
+**No counts beside entries, no AI marks on entries, no entries under an entry.** The team line is not an entry: it is the project's, and its count is the Team tab's, in words. When the window is short only the list
 of places scrolls; the brand, the project, Find and the foot stay. **Lives in:** `components.css` § 5.1.
 
 ### 5.2 The status area and the last row
@@ -829,16 +831,16 @@ none needs a look of its own. **Looks**, **Make it** and **Lives in:** each piec
 | Piece | Is | Make it |
 | --- | --- | --- |
 | Who did it, a role | a [person mark](#410-tags-and-counts): initials in a row that names the person, the name where it stands alone (*By Anna* on a shared item, *Changed by Ben*, a proposal's proposer) | `personMark(people, { role })`; alone: `personMark(people, { name: "short", prefix })` |
-| An item's sharing state: *Private*, *Shared*, *Withdrawn* | a [tag](#410-tags-and-counts) (the house, the users icon, the undo icon) | `shareState(state)` |
+| An item's sharing, on its own page | for its maker a [choice](#46-choices) of two values with the states' icons, *Private* and *Shared with your team* (*Shared* without a team), then a help mark; while it is shared, one quiet line under it says where it goes and links to the Team tab (*Goes to Ben and Chloé at the next round, in about 2 min.* · *See what you shared*); for anyone else the [tag](#410-tags-and-counts) and the maker's person mark | `shareBar(kind, key)`, `shareChoice(item, onChanged)`, `shareState(state)` |
 | A document this copy does not hold | its title in plain serif, the tag *not on this computer*, the small quiet button *Add its file*, wherever a document title shows | `absentDocument(title, { onAdd })` |
-| *Share*, *Unshare* | small buttons (*Unshare* quiet); for many rows, check boxes and a row of small buttons above the list | `button()` |
-| The sync state: synced, syncing, offline, the folder not reachable, a copy that needs a newer ENLENS | a [work state](#421-progress-and-work-states) (done, running, not running, needs you), in the drawer's head and, small, in the status area | `workState()` |
+| *Share*, *Unshare* in a list (a card of notes, a row of the Team tab) | small buttons (*Unshare* quiet); for many rows, check boxes and a row of small buttons above the list | `button()` |
+| The sync state: synced, syncing, offline, the folder not reachable, a copy that needs a newer ENLENS | a [work state](#421-progress-and-work-states) (done, running, not running, needs you), in the drawer's head, small in the status area and, in a few words, on the team line | `workState()` |
 | Setting up the shared folder | a [card](#411-cards) on the Team page: a field with a mono path and *Choose folder…* (a small button), the cloud folders as list rows, how to bring a colleague's folder here in a small [fold](#422-folds), a switch with its explanation behind a [help mark](#418-help-notes-and-defined-terms), the main action, and one line of where text goes with the folder icon | `card()`, `field()`, `fold({ sm: true })`, `switchControl()`, `helpMark()`, `aiWhere(sentence, "folder")` |
 | The Team tab and the Team page | the tab holds the day-to-day (what waits for your word, the sync state, problems, what came in, what you shared) in labels, counts, states and buttons, with one quiet line naming the team and linking *Manage the team*; the Team page (`#/team`, from the project menu's *Manage the team*) holds the team itself, one [card](#411-cards) per section: where it is, the people, the owner, the switches, how often, the downloads, leaving. A sentence that explains goes behind a help mark or into a fold, never as prose in the tab | `teamPanel({ sections, page })`, `card()`, `helpMark()`, `fold()` |
 | A switch with a long explanation (*Keep documents marked Only a local AI or No AI out of the shared folder*) | a [switch](#48-form-fields) whose help line holds the two or three sentences of what it does and does not do; the same in the set-up card and in Settings | `switchControl(label, on, { help })` |
 | Rows in the drawer, a person row | [list rows](#420-tables-lists-and-dense-places): a person mark, the item as a title link, a time, one or two small quiet buttons; a quiet second line (a colleague's ENLENS version) that becomes an attention tag only when it matters; grouped by person or day | `listGroup()`, `listRow({ sub, warn })` |
 | Problems with the shared folder | [notices](#412-notices) one under the other, one per colleague or per kind, each in plain words: *The shared folder cannot be reached* (attention), *Still arriving: try again in a few minutes* (info), *The last round did not finish* (error, *Try again*), *Anna's copy needs a newer ENLENS* (attention). The single sync state stays a work state in the drawer's head | `noticeList()` |
-| News since last time | the drawer tab's label with a [count tag](#410-tags-and-counts) in words (*Team* · *3 new*); a list group *What came in* with *Mark as seen* (a small quiet button) at its head's end; what was seen before folded under a small fold *Seen before: 12 changes* | `tabs({ items: [{ …, count: "3 new" }] })`, `listGroup({ text, action }, …rows)`, `fold({ sm: true })` |
+| News since last time | the drawer tab's label with a [count tag](#410-tags-and-counts) in words (*Team* · *3 new*) and the same count on the team line; a list group *What came in* with *Mark as seen* (a small quiet button) at its head's end; what was seen before folded under a small fold *Seen before: 12 changes* | `tabs({ items: [{ …, count: "3 new" }] })`, `listGroup({ text, action }, …rows)`, `fold({ sm: true })` |
 | Background work you steer | *Sync now*: a small button with the refresh icon; while other work runs, the work state *Queued: starts when … has finished* and a small quiet *Cancel* after it. *Pause this project* and *Pause all projects*: small quiet buttons with the pause icon, then the grey work state *Paused*. How often: a [select](#48-form-fields) in a field. A setting that is on because of a colleague: its switch is disabled and its help line starts with the colleague's person mark and says so (*On because of Ben: …*) | `button({ sm, icon })`, `workState()`, `field()`, `select()`, `switchControl(label, on, { disabled, help })` |
 | A proposed change, in full | a small [card](#411-cards) per proposal: in its head what is proposed and its severity tag (*Low*, *Medium*: neutral; *High*: attention; never a judgement colour); under it the proposer's person mark with the name (*Anna*, *You*) and the time, then their reason in quotation marks (a long one wraps under them; the severity stays in the head). The owner's side: *Accept* (main) and *Decline…* (quiet: a dialog asks for an optional reason). The proposer's side: the work state *Waiting for the owner* and *Take back* (quiet); once decided, *Accepted*, or *Declined:* and the reason. Cards are grouped under list heads: *Waiting*, *Decided*, *Taken back*. The owner's standing choice, *Accept documents collaborators add, at once*, is a switch with a help mark on the Team page's *Owner* card | `proposalCard({ what, person, time, severity, reason, detail, side, state, declined, onAccept, onDecline, onTakeBack })` in `listGroup()` (`detail`: what the change does, a notice of another proposal for the same item; *Take back* only with `onTakeBack`, so a colleague who neither decides nor proposed sees the wait only); `switchControl()` |
 | Owner actions on a person row | the person mark with the role (*Owner*, *Co-owner*; a Member has none); under the list's head one sentence for this person's own role. In the Owner's copy each other person's row has a *More* [menu](#417-menus): *Make a Co-owner…* (or *Make a Member again…*), *Same person as…*, and last, after a line, *Make owner…*; each opens a dialog that confirms. Rows of one person stand together, the second line says *Also Anna de Vries (laptop): the same person*. A Co-owner on an older ENLENS has the attention tag *needs a newer ENLENS to act as Co-owner*. *Become the owner* (a small button) where a project has no owner; *Take over…* (a small button) when the owner has gone, the reason in the row's second line as an attention tag, and a dialog that confirms | `listRow({ person: personMark(people, { role }), sub, warn, actions: [menu(…)] })`, `menu()`, `confirmDialog()` |
@@ -982,7 +984,7 @@ else may reach it.
 | Card, notice, empty state, page head | `card()`, `inset()`, `notice()`, `noticeList()`, `addDocumentsFirst()`, `emptyState()`, `pageHead()` |
 | Toast, dialog, menu, help | `toast()`, `showError()`, `dialog()`, `confirmDialog()`, `menu()`, `helpMark()`, `popNote()` |
 | Fields | `field()`, `input()`, `select()`, `textarea()`, `searchField()`, `switchControl()`, `rangeControl()` |
-| Drawer | `drawer()`, `drawerButton()`, `setDrawerOpen()` |
+| Drawer | `drawer()`, `drawerButton()`, `teamLine()`, `setDrawerOpen()` |
 | Quotes and words found | `passageNode()`, `foundWords()` |
 | A decision that is not a proposal | `decisionCard({ what, flag, person, time, said, body, actions, ai })`: a decision that is not a proposal, in a proposal card's shape |
 | Lists, grids, work | `listRow()`, `listGroup()`, `proposalCard()`, `drawInSteps()`, `heatCell()`, `workState()`, `spinner()`, `fold()` |

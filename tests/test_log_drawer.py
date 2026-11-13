@@ -72,7 +72,8 @@ def test_button_drawer_and_layout_are_wired():
     # only the app's colour tokens, only logdrawer- class names
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b", CSS)
     for sel in re.findall(r"\.([a-z][\w-]*)", " ".join(SELECTORS)):
-        assert sel.startswith(("drawer", "log-")) or sel in {"main", "shell", "topbar-project", "icon-btn", "icon", "btn", "muted", "chip", "settings-tabs", "seg"} or sel[0].isdigit(), sel
+        assert sel.startswith(("drawer", "log-")) or sel in {"main", "shell", "topbar-project", "icon-btn", "icon", "btn", "muted", "chip", "settings-tabs", "seg",
+                                                            "tab-count"} or sel[0].isdigit(), sel   # the Team tab's count in the button (phone)
 
 
 def test_no_rule_styles_the_body_class_alone():
@@ -107,12 +108,14 @@ def test_page_context_in_node(tmp_path):
     (tmp_path / "views").mkdir()
     (tmp_path / "package.json").write_text('{"type": "module"}')
     (tmp_path / "views" / "logdrawer.js").write_text(JS)
+    # the team line's words read "synced 15:44" from team-state.js's whenText (a module with no imports of its own)
+    (tmp_path / "views" / "team-state.js").write_text((STATIC / "views" / "team-state.js").read_text(encoding="utf-8"))
     (tmp_path / "views" / "log.js").write_text("export const subjectHref = () => null, entryText = () => null, entrySubject = () => null,"
                                                " entryWho = () => null;")
     # 0.17.0 (design guide): the drawer is built with the components' helpers of lib.js
     (tmp_path / "lib.js").write_text("const n = () => {}; export const App = {}, api = n, h = n, icon = n, clear = n, session = n,"
                                      " fmt = {}, toast = n, showError = n, P = (x) => x, button = n, link = n, textarea = n,"
-                                     " choice = n, tag = n, drawer = n, drawerButton = n, setDrawerOpen = n;")   # 0.18: tag (the Team tab's count)
+                                     " choice = n, tag = n, drawer = n, drawerButton = n, setDrawerOpen = n, teamLine = n;")   # 0.18: tag (the Team tab's count); teamLine
     (tmp_path / "run.mjs").write_text(
         'import { pageContext } from "./views/logdrawer.js";\n'
         f"const cases = {json.dumps(list(NODE_CASES))};\n"
@@ -138,3 +141,89 @@ def test_an_entry_written_with_a_subject_comes_back_from_the_subject_filter(api)
     assert r["total"] == 3
     st, r = api("GET", f"{base}?subject_kind=check&subject_id=nothing-here")
     assert r["entries"] == []
+
+
+# ------------------------------------------------------------------ the team line and the two doors (team-share piece B)
+def test_two_doors_open_their_own_tabs():
+    """The team line under the project's name opens the Team tab; the Research log button always opens the log (under
+    861 px it carries the Team tab's count and then opens Team). Each door is expanded while its own tab shows."""
+    assert 'teamLine({ id: "team-line", controls: "logdrawer", onClick: () => press("team", teamBtn) })' in JS
+    assert 'onClick: () => press(phoneCount() ? "team" : "log", btn)' in JS
+    press = JS[JS.index("function press("):JS.index("function markDoors(")]
+    assert "if (!open) { tab = which; openIt(true); }" in press
+    assert "else if (tab === which) close(true, door);" in press
+    assert "else { tabRow.choose(which); tabOf(which).focus(); }" in press
+    doors = JS[JS.index("function markDoors("):JS.index("\n  }\n", JS.index("function markDoors("))]
+    assert 'btn.setAttribute("aria-expanded", open && (tab === "log" || phone()) ? "true" : "false")' in doors
+    assert 'teamBtn.setAttribute("aria-expanded", open && tab === "team" ? "true" : "false")' in doors
+    # the body's attribute comes from setDrawerOpen; the doors' own states from markDoors, after every open, close, tab
+    assert "setDrawerOpen(true, null);" in JS and "setDrawerOpen(false, null);" in JS
+    assert JS.count("markDoors();") >= 4
+    # the line sits in the project switch, hidden until the poller says the project has a team
+    assert 'document.getElementById("project-switch")' in JS and "box.appendChild(teamBtn)" in JS
+    assert "teamBtn.hidden = true;" in JS and "teamBtn.hidden = !s.folder;" in JS
+
+
+def test_the_count_goes_to_the_line_and_on_a_phone_into_the_button():
+    assert "const setTeamCount = (n) => { teamCount = n || 0; tabRow.setCount(\"team\", n ? `${n} new` : null); placeCount(); drawTeam(); };" in JS
+    assert 'const btnCount = tag({ kind: "count", class: "tab-count" }, "");' in JS
+    assert "const phoneCount = () => phone() && teamCount > 0;" in JS
+    place = JS[JS.index("const placeCount = () => {"):JS.index("const placeBtn = () => {")]
+    assert "if (phoneCount())" in place and "btn.appendChild(btnCount)" in place and "btnCount.remove()" in place
+    assert 'window.matchMedia("(max-width: 860px)").addEventListener("change", placeBtn);' in JS
+    assert "placeCount();" in JS[JS.index("const placeBtn = () => {"):JS.index("const teamBtn = teamLine(")]
+
+
+def test_the_line_follows_the_pollers_state():
+    assert 'window.addEventListener("enlens-sync-state", (e) => {' in JS
+    listen = JS[JS.index('window.addEventListener("enlens-sync-state"'):]
+    assert "if (!s || s.project !== App.project) return;" in listen[:400]
+    for words in ('"syncing now…"', '"offline"', '"round did not work"', '"paused"', '"no round yet"', "`synced ${"):
+        assert words in JS, words
+    assert 'import { whenText } from "./team-state.js";' in JS
+    # a new project: the line hides until its state arrives
+    assert "sync = null; teamBtn.hidden = true;" in JS
+    # See what you shared: the drawer opens on Team and the panel brings the section into view once drawn
+    assert "wantSection = (tab === \"team\" && e.detail && e.detail.section) || null;" in JS
+    assert "team.focusSection(key);" in JS
+
+
+TEAM_CASES = [
+    ({"project": "P", "folder": True, "round": {"state": "running"}, "state": "running"}, 0, {"kind": "running", "words": "syncing now…"}),
+    ({"project": "P", "folder": True, "round": {"state": "queued"}, "state": "running"}, 0, {"kind": "running", "words": "syncing now…"}),
+    ({"project": "P", "folder": True, "round": None, "state": "due"}, 3, {"kind": "running", "words": "syncing now…"}),
+    ({"project": "P", "folder": True, "round": None, "state": "offline", "offline": {"failures": 2}}, 3, {"kind": "attention", "words": "offline"}),
+    ({"project": "P", "folder": True, "round": None, "state": "waiting", "last_round": {"state": "error", "finished_at": "2026-11-13T15:44:00"}}, 0,
+     {"kind": "attention", "words": "round did not work"}),
+    ({"project": "P", "folder": True, "round": None, "state": "paused", "paused": True}, 3, {"kind": "ok", "words": "paused"}),
+    ({"project": "P", "folder": True, "round": None, "state": "paused", "paused_all": True}, 0, {"kind": "ok", "words": "paused"}),
+    ({"project": "P", "folder": True, "round": None, "state": "waiting", "last_round": {"state": "done", "finished_at": "2026-11-13T15:44:00"}}, 3,
+     {"kind": "ok", "count": "3 new"}),
+    ({"project": "P", "folder": True, "round": None, "state": "waiting", "last_round": {"state": "done", "finished_at": "2026-11-13T15:44:00"}}, 0,
+     {"kind": "ok", "words": "synced 15:44"}),
+    ({"project": "P", "folder": True, "round": None, "state": "waiting", "last_round": {"state": "done", "finished_at": "2026-11-12T09:00:00"}}, 0,
+     {"kind": "ok", "words": "synced yesterday"}),
+    ({"project": "P", "folder": True, "round": None, "state": "waiting", "last_round": {"state": "done", "finished_at": "2026-11-02T09:00:00"}}, 0,
+     {"kind": "ok", "words": "synced 2 Nov"}),
+    ({"project": "P", "folder": True, "round": None, "state": "waiting", "last_round": None}, 0, {"kind": "ok", "words": "no round yet"}),
+]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is not installed")
+def test_the_team_lines_words_in_node(tmp_path):
+    (tmp_path / "views").mkdir()
+    (tmp_path / "package.json").write_text('{"type": "module"}')
+    (tmp_path / "views" / "logdrawer.js").write_text(JS)
+    (tmp_path / "views" / "team-state.js").write_text((STATIC / "views" / "team-state.js").read_text(encoding="utf-8"))
+    (tmp_path / "views" / "log.js").write_text("export const subjectHref = () => null, entryText = () => null, entrySubject = () => null,"
+                                               " entryWho = () => null;")
+    (tmp_path / "lib.js").write_text("const n = () => {}; export const App = {}, api = n, h = n, icon = n, clear = n, session = n,"
+                                     " fmt = {}, toast = n, showError = n, P = (x) => x, button = n, link = n, textarea = n,"
+                                     " choice = n, tag = n, drawer = n, drawerButton = n, setDrawerOpen = n, teamLine = n;")
+    (tmp_path / "run.mjs").write_text(
+        'import { teamWords } from "./views/logdrawer.js";\n'
+        f"const cases = {json.dumps([[s, n] for s, n, _ in TEAM_CASES])};\n"
+        "const now = new Date(2026, 10, 13, 18, 0);\n"
+        "console.log(JSON.stringify(cases.map(([s, n]) => teamWords(s, n, now))));\n")
+    got = json.loads(subprocess.run(["node", str(tmp_path / "run.mjs")], capture_output=True, text=True, check=True).stdout)
+    assert got == [want for _s, _n, want in TEAM_CASES]

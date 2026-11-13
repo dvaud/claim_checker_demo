@@ -139,3 +139,11 @@ def test_overview_layout_fixes():
 def test_overview_card_state_shows_the_short_part_only():
     js = _read("views/overview.js")
     assert 'text.split(" · ")[0]' in js and '"aria-label": text' in js and "title: text" in js
+
+
+def test_the_drawer_button_carries_the_team_count_on_a_phone():
+    """team-share piece B: under 861 px the Research log button shows the Team tab's count in words ("3 new") while news
+    waits; it is the count tag, not the button's words, so it stays when the words are hidden on a phone."""
+    assert rule(".drawer-btn .tab-count") == {"margin-left": "2px", "white-space": "nowrap"}
+    assert not rule(".drawer-btn .tab-count", media="(max-width: 860px)")
+    assert set(rule(".drawer-btn")) <= {"position", "top", "right", "z-index"}

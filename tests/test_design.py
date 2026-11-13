@@ -220,7 +220,7 @@ def _button_classes() -> set[str]:
     helper (also added later with classList.add), and the classes of the buttons made by hand or in index.html."""
     out = {"btn", "btn-primary", "btn-ghost", "btn-danger", "btn-outline-danger", "btn-sm", "btn-toggle", "btn-opens",
            "btn-wrap", "seg-btn", "link-jump", "menu-item"}
-    makers = {"button", "downloadButton", "fileButton", "drawerButton"}
+    makers = {"button", "downloadButton", "fileButton", "drawerButton", "teamLine"}
     for js in ALL_JS.values():
         names = makers | {alias for own, alias in re.findall(r"\b(\w+)\s+as\s+(\w+)", js) if own in makers}
         for name in names:
@@ -596,7 +596,7 @@ def test_every_helper_is_on_the_reference_page():
                "drawerButton", "field", "switchControl", "rangeControl", "spinner", "emptyState", "statusBadge", "gradeBadge",
                "codeChip", "pageHead", "downloadLinks", "helpMark", "popNote", "toast", "dialog", "confirmDialog", "heatCell",
                "strongerMark", "aiTag", "viewTabs", "featureEyebrow", "personMark", "reviewedMark", "severityTag", "compare",
-               "shareState", "absentDocument", "listRow", "listGroup", "noticeList"]
+               "shareState", "absentDocument", "listRow", "listGroup", "noticeList", "teamLine"]
     for name in helpers:
         assert re.search(rf"export function {name}\(", LIB + (STATIC / "features.js").read_text(encoding="utf-8")), name
         assert re.search(rf"\b{name}\(", ref), f"{name} is not drawn on the reference page (views/design.js)"
@@ -851,7 +851,9 @@ def test_the_project_switch_spans_the_sidebar():
     assert rule(".project-switch summary").get("width") == "100%"
     ref = VIEW_JS["design.js"]
     sample = ref[ref.index('sample("The project switch"'):ref.index('sample("Entries')]
-    assert "menu(" in sample and 'listClass: "ps-menu"' in sample   # the reference draws it as the sidebar does
+    switch = ref[ref.index("const projectSwitch = "):ref.index("const teamLineIn = ")]
+    assert "projectSwitch()" in sample   # the reference draws it as the sidebar does
+    assert "menu(" in switch and 'listClass: "ps-menu"' in switch
 
 
 # a helper that draws an AI button for a card drawn elsewhere: the functions that draw that card's AI line
@@ -1513,3 +1515,32 @@ def test_a_field_under_its_label_is_the_standard_size():
     bad = [f"{n}: {b}" for n, js in VIEW_JS.items() for b in small_fields_in_a_form(js)]
     assert not bad, "a small field under its label: " + ", ".join(bad)
     assert small_fields_in_a_form('const x = input({ sm: true });\nfield("Leave out", x, { help })') == ["x"]
+
+
+def test_the_team_line_is_a_helper_the_guide_and_the_reference_name():
+    """team-share piece B: the team line (lib.js teamLine()) is the project switch's second row, a button of the opens
+    kind; the guide names it in 4.19 (the second door), 5.1 (its row) and 9.3 (the helpers), and #/design draws it."""
+    assert re.search(r"export function teamLine\(\{ id, controls, onClick \}\)", LIB)
+    line = LIB[LIB.index("export function teamLine("):LIB.index("export function setDrawerOpen(")]
+    assert '"btn-opens team-line"' in line and '"aria-expanded": "false"' in line and '"aria-controls": controls' in line
+    assert 'icon(kind === "attention" ? "alert-triangle" : "users", { size: 15 })' in line
+    assert '"team-line-name" }, "Team"' in line and '"team-line-state"' in line and '"running-dot"' in line
+    assert 'tag({ kind: "count", class: "tab-count" }, count)' in line
+    assert "Opens the Team tab beside the page" in line
+    s419 = GUIDE[GUIDE.index("### 4.19 The drawer"):GUIDE.index("### 4.20")]
+    s51 = GUIDE[GUIDE.index("### 5.1 The sidebar"):GUIDE.index("### 5.2")]
+    s93 = GUIDE[GUIDE.index("### 9.3 The helpers"):GUIDE.index("### 9.4")]
+    assert "teamLine({ id, controls, onClick })" in s419 and "[team line](#51-the-sidebar)" in s419
+    assert "| Team line |" in s51 and "The team line is not an entry" in s51
+    assert "`teamLine()`" in s93
+    assert "| My team on this project, and its state |" in GUIDE
+    ref = VIEW_JS["design.js"]
+    sample = ref[ref.index('sample("The team line'):ref.index('sample("Entries')]
+    for state in ('words: "synced 15:44"', 'count: "3 new"', 'kind: "running", words: "syncing now…"', 'kind: "attention", words: "offline"'):
+        assert state in sample, state
+    # the sharing samples of 5.5: the maker's choice (built with choice(), as share.js shareChoice() builds it), and the
+    # tag with the small buttons for rows and a colleague's item
+    s55 = ref[ref.index('section("5.5"'):]
+    assert 'sample("Sharing your own item: a choice' in s55 and 'sample("Sharing in a row, and a colleague\'s item' in s55
+    share = ref[ref.index("const shareSample = "):ref.index("const navEntry = ")]
+    assert "choice({" in share and '"Private"' in share and '"Shared with your team"' in share and '"share-where"' in share

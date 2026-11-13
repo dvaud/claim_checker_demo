@@ -59,8 +59,9 @@ itself at its next round; until they have sent anything they are listed as *noth
 
 ## On the Team page
 
-The Team page is where the team itself is managed; the *Team* tab keeps only the day-to-day (what waits for your word,
-*Sync now*, what came in), with one quiet line, such as *Backblaze · 3 people · Manage the team*, that opens the page.
+The Team page is where the team itself is managed; the *Team* tab (the *Team* row under the project's name) keeps only
+the day-to-day (what waits for your word, *Sync now*, what came in), with one quiet line, such as *Backblaze · 3 people
+· Manage the team*, that opens the page.
 The card *The storage space* says where the space is and the invites not used yet; *People* lists everyone in it. The
 owner's copy keeps the space's keys (*keeps the space's keys*); when the project's owner changes, the keys go to the new
 owner's copy by themselves. The storage account itself stays the person's who made it, who can always reach the space
