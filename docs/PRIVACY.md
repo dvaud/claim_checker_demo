@@ -10,7 +10,8 @@ ENLENS as of version 0.18.1.
 ## Who processes what
 
 ENLENS is a program the researcher installs and runs on their own computer. It is a small web server that listens on
-`127.0.0.1` only, with a key per run (`gui/server.py`); the page loads nothing from the internet. ENLENS's developers
+`127.0.0.1` only by default (`--host` can open it to the network, which nobody needs for ordinary use), with a key per
+run (`gui/server.py`); the page loads nothing from the internet. ENLENS's developers
 run no service of their own, and the app sends them nothing: there is no telemetry, no account and no analytics.
 Releases are downloaded from GitHub ([below](#other-online-services-not-ai)).
 
@@ -139,7 +140,9 @@ Points for an assessment:
 - The project's database (`enlens.sqlite`) as a file.
 - The answers ENLENS keeps so as not to ask the AI again (`ai_cache`), the search index, the glossary, embeddings,
   earlier versions (*History*) and settings: none of them goes into a zip for a colleague, the shared folder or the
-  storage space (`sharing._LOCAL_TABLES`, `sync.common.LOCAL_ONLY`).
+  storage space (`sharing._LOCAL_TABLES`, `sync.common.LOCAL_ONLY`). The kept answers are not tied to one document:
+  removing a document leaves them (they answer only the same text again), *Remove everything* clears them, and a
+  project that came from a colleague arrives without theirs.
 - The researcher's private work, until they press *Share* ([Working together](#working-together)).
 - Keys and secrets ([Keys and secrets](#keys-and-secrets)).
 - Paths on the computer, in anything shared.

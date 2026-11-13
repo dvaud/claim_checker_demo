@@ -827,30 +827,43 @@ class App(LibraryMixin, QueueMixin):
         if not waiting:
             return False
 
-        def started(model: str, n: int) -> None:
-            # 0.18.1: with the AI mix (I1, I2) these can be the mix's share of a check too, not only excerpts of
-            # documents marked Only a local AI
-            tracker.say(f"Your local model ({model}) is reading {n} {'excerpt' if n == 1 else 'excerpts'} on this "
-                        "computer")
+        # 0.18.1: besides the excerpts of documents marked Only a local AI, the AI mix's share of a check (I1, I2):
+        # search words, splitting, judging excerpts. Each is said apart, as each ends apart
+        n = sum(w["passages"] for w in waiting if not w.get("mix"))
+        n_mix = sum(1 for w in waiting if w.get("mix"))
+        what = " and ".join(x for x in (f"{n} {'excerpt' if n == 1 else 'excerpts'}" if n else "",
+                                         f"{n_mix} {'task' if n_mix == 1 else 'tasks'} of the AI mix" if n_mix else "")
+                            if x)
 
-        n = sum(w["passages"] for w in waiting)
-        before = readers.read
+        def started(model: str, _n: int) -> None:
+            tracker.say(f"Your local model ({model}) is reading {what} on this computer")
+
+        before, mix_before, claude_before = readers.read, readers.mix_read, readers.to_claude
         try:
             done = claimcheck.run_local_parts(ws, hyp_ids, readers, on_start=started)
         except BackendError:
             if readers.stopped():
                 return False  # Stop: the follower withdraws the checks
             raise
+        mixed, to_claude = readers.mix_read - mix_before, readers.to_claude - claude_before
         if readers.memory_short:
-            tracker.step("note", f"{readers.memory_short} {claimcheck._waiting_words(n)}", {"keep": True})
-        elif done and readers.read > before:
-            tracker.step("note", f"Your local model read {n} {'excerpt' if n == 1 else 'excerpts'} on this computer",
-                         {})
-        elif done:
+            tracker.step("note", f"{readers.memory_short} {claimcheck._waiting_words(max(n, n_mix))}", {"keep": True})
+            return True
+        if done and readers.read > before:
+            tracker.step("note", f"Your local model read {n} {'excerpt' if n == 1 else 'excerpts'} from documents "
+                                 "marked Only a local AI, on this computer", {})
+        elif done and n:
             tracker.step("note", (f"The local model could not be used ({readers.local_problem}); " if
                                   readers.local_problem else "No local model read them; ") +
-                         f"the {n} {'excerpt' if n == 1 else 'excerpts'} for the local model "
+                         f"the {n} {'excerpt' if n == 1 else 'excerpts'} from documents marked Only a local AI "
                          f"{'waits' if n == 1 else 'wait'} for your judgement", {})
+        if mixed:
+            tracker.step("note", f"Your local model answered {mixed} {'task' if mixed == 1 else 'tasks'} of the AI "
+                                 "mix on this computer", {})
+        if to_claude:
+            tracker.step("note", f"{to_claude} {'task' if to_claude == 1 else 'tasks'} of the AI mix went to Claude "
+                                 "Code" + (f" (the local model could not be used: {readers.local_problem})"
+                                           if readers.local_problem and not mixed else ""), {})
         return True
 
     def _follow_loop(self, job: Job, ws, hyp_ids: list[str], tracker: Tracker, readers, shown: dict, t0: float,
@@ -1912,8 +1925,18 @@ def _installed_version() -> str:
         from importlib import metadata
 
         return metadata.version("enlens-claims")
-    except Exception:  # noqa: BLE001 - not installed as a package: an older copy wrote it in __init__.py
+    except Exception:  # noqa: BLE001 - not installed as a package: a copy run from its git sources
         pass
+    root = Path(__file__).resolve().parent.parent.parent.parent
+    if (root / ".git").exists():
+        try:  # its newest release tag (or an older copy's __version__ in __init__.py), as `enlens update` reads it
+            from ..update import version_in
+
+            found = version_in(root)
+            if found and found != "?":
+                return found
+        except Exception:  # noqa: BLE001 - no git: fall back to what __init__.py says, below
+            pass
     try:
         text = (Path(__file__).resolve().parent.parent / "__init__.py").read_text(encoding="utf-8")
     except OSError:

@@ -159,7 +159,7 @@ def test_the_follower_answers_the_mix_share_of_a_check(mixed, monkeypatch):
     assert [w["task_id"] for w in claimcheck.local_waiting(ws, [hyp])] == [tid]
 
     class R:  # access.Readers with the local model chosen
-        read, memory_short, local_problem = 0, None, None
+        read, mix_read, to_claude, memory_short, local_problem = 0, 0, 0, None, None
 
         def local(self):
             return local, "small"
@@ -167,8 +167,29 @@ def test_the_follower_answers_the_mix_share_of_a_check(mixed, monkeypatch):
         def stopped(self):
             return False
     local = _Local()
-    assert claimcheck.run_local_parts(ws, [hyp], R()) == 1 and _row(ws, tid)["status"] == "done"
+    r = R()
+    assert claimcheck.run_local_parts(ws, [hyp], r) == 1 and _row(ws, tid)["status"] == "done"
     assert claimcheck.local_waiting(ws, [hyp]) == []
+    # 0.18.1: counted as the mix's, not as excerpts of documents marked Only a local AI
+    assert (r.read, r.mix_read, r.to_claude) == (0, 1, 0)
+
+
+def test_without_a_local_model_the_mix_share_is_counted_as_gone_to_claude(mixed):
+    ws, _s = mixed
+    tid = _check_task(ws)
+    hyp = ws.scalar("SELECT hyp_id FROM user_claims")
+
+    class R:  # access.Readers whose local model cannot be used
+        read, mix_read, to_claude, memory_short, local_problem = 0, 0, 0, None, "no server"
+
+        def local(self):
+            return None
+
+        def stopped(self):
+            return False
+    r = R()
+    assert claimcheck.run_local_parts(ws, [hyp], r) == 1
+    assert (r.read, r.mix_read, r.to_claude) == (0, 0, 1) and _row(ws, tid)["step"] == 1
 
 
 def test_answer_mix_waiting_takes_only_the_mix_kinds(mixed):

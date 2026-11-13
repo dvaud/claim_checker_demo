@@ -326,6 +326,8 @@ scroll. **Reader 5, the mix of local and Claude, *How much thought* and kept ans
   on GitHub yet: this release was tagged by hand. The build's own requirements (`setuptools-scm`) are not in the lock
   file.
 - Works without a DOI are not looked up (matching by title would send titles).
+- A link found in the text that comes from a colleague arrives without its sentences: they are made again with your
+  own glossary, the next time it is made.
 - A lookup is not repeated by itself: press the button again to see new notices.
 - **The AI half of the validation report** (roadmap J4.3) is not made: it needs a set of right answers to score
   against and a recorded run on Claude. The report still holds the half that needs no AI.

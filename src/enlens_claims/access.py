@@ -648,10 +648,14 @@ class Readers:
         self.check_memory = check_memory       # False: the person chose "Start it anyway"
         self.memory_short = None               # the MemoryShort that kept the local model from starting
         self.read = 0                          # the parts the local model for restricted documents has read
+        # 0.18.1 (I1, I2): the AI mix's tasks the local model answered itself, and those that went to Claude Code
+        # (no local model, or no answer of it passed)
+        self.mix_read = 0
+        self.to_claude = 0
 
     @property
     def used(self) -> bool:
-        return self.read > 0
+        return self.read > 0 or self.mix_read > 0
 
     @property
     def main_levels(self) -> set[str]:

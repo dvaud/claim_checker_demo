@@ -22,9 +22,9 @@ OWN = ("ai_cache", "concept_link_sentences")
 def _fill(ws) -> None:
     pid, doc = ws.query("SELECT passage_id, doc_id FROM passages LIMIT 1")[0]
     with ws.connect() as cx:
-        cx.execute("INSERT INTO ai_cache(key, kind, prompt_version, model, raw_json, at) VALUES "
+        cx.execute("INSERT OR REPLACE INTO ai_cache(key, kind, prompt_version, model, raw_json, at) VALUES "
                    "('k1', 'label', 'v1', 'qwen3:8b', '{\"quote\": \"words of a local-only document\"}', '2026-11-13')")
-        cx.execute("INSERT INTO concept_link_sentences(a, b, passage_id, doc_id, page, start, end, quote) VALUES "
+        cx.execute("INSERT OR REPLACE INTO concept_link_sentences(a, b, passage_id, doc_id, page, start, end, quote) VALUES "
                    "('water', 'electrolysis', ?, ?, 1, 0, 10, 'water such as electrolysis')", (pid, doc))
 
 
@@ -57,3 +57,29 @@ def test_the_shared_folder_never_writes_them(loaded):
         names = {t for t, _where, _cols in sharing.ProjectRows(cx, loaded.root).tables()}
     assert not names & set(OWN)
     assert "retractions" in names  # what Crossref says of a DOI is public, and saves a colleague the lookup
+
+
+def test_remove_everything_and_removing_a_document_take_them_too(loaded):
+    _fill(loaded)
+    doc = loaded.query("SELECT doc_id FROM concept_link_sentences")[0]["doc_id"]
+    loaded.remove_document(doc)
+    assert not loaded.scalar("SELECT COUNT(*) FROM concept_link_sentences WHERE doc_id=?", (doc,))
+    _fill(loaded)
+    loaded.reset_corpus()
+    for table in OWN:
+        assert not loaded.scalar(f"SELECT COUNT(*) FROM {table}"), table
+
+
+def test_a_colleagues_project_comes_in_without_them_and_your_own_keeps_them(loaded):
+    """What `bundle.import_project` and linking a colleague's folder do with a project another person made: their
+    kept answers would answer here as this copy's own."""
+    from enlens_claims import home
+
+    _fill(loaded)
+    bundle._forget_folder(loaded, home.load_settings().get("person_id") or "me")  # a project you moved yourself
+    me = home.load_settings().get("person_id")
+    if me:
+        assert all(loaded.scalar(f"SELECT COUNT(*) FROM {t}") == 1 for t in OWN)
+    bundle._forget_folder(loaded, "a-colleague")
+    for table in OWN:
+        assert not loaded.scalar(f"SELECT COUNT(*) FROM {table}"), table

@@ -456,10 +456,14 @@ def run_local_parts(ws: Workspace, hyp_ids: list[str] | None = None, readers=Non
                 with ws.connect() as cx:
                     cx.execute("UPDATE tasks SET step=1 WHERE task_id=? AND COALESCE(step, 0)=0", (r["task_id"],))
                     tasks.mark_queued(cx, [r["task_id"]])
+                readers.to_claude += 1
             else:
                 try:
-                    tasks.answer_locally_first(ws, r["task_id"], got[0], got[1])
-                    readers.read += 1
+                    how = tasks.answer_locally_first(ws, r["task_id"], got[0], got[1])
+                    if how == "retry":  # no answer of the local model passed: Claude Code answers it
+                        readers.to_claude += 1
+                    else:  # it stands, or counts until Claude has read it again
+                        readers.mix_read += 1
                 except MemoryShort as e:
                     readers.memory_short = e
                     return n

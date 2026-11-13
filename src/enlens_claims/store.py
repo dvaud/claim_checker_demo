@@ -975,7 +975,8 @@ class Workspace:
             for t in ("documents", "pages", "paragraphs", "headings", "passages", "embeddings", "doc_refs", "claims",
                       "claim_targets", "evidence", "interactions", "verifications", "labels", "terms", "term_mentions",
                       "concepts", "concept_terms", "theme_runs", "themes", "theme_members", "mentions", "bib_links",
-                      "blocks", "doc_tables", "block_choices", "concept_link_sentences"):
+                      "blocks", "doc_tables", "block_choices", "concept_link_sentences",
+                      "ai_cache"):  # 0.18.1: the AI's answers kept so as not to ask again, with their quotes
                 out[t] = cx.execute(f"DELETE FROM {t}").rowcount
             kinds = ("('extract','verify','verify_set','expand','check','decompose','reread','second','label','link',"
                      "'theme','resolve')")
@@ -1020,7 +1021,8 @@ class Workspace:
         # 0.7: what was derived from the document (the term index is rebuilt when the corpus version changes)
         out += [("labels", "doc_id=?", (doc_id,)), ("mentions", "doc_id=?", (doc_id,)),
                 ("term_mentions", "passage_id >= ? AND passage_id < ?", passage_range(doc_id))]
-        out += [(tbl, "doc_id=?", (doc_id,)) for tbl in ("blocks", "doc_tables", "block_choices")]  # 0.15
+        out += [(tbl, "doc_id=?", (doc_id,)) for tbl in ("blocks", "doc_tables", "block_choices",
+                                                          "concept_link_sentences")]  # 0.15; 0.18.1 (D2)
         # 0.15: answers kept as records when the document moved to the new reader name passages that no longer exist
         # ("<doc>:r1-0005", reread.tombstone); they go with the document
         for tbl in ("results", "tasks"):

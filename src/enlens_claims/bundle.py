@@ -173,7 +173,10 @@ def _forget_folder(ws: Workspace, sender: str | None) -> None:
 
     with ws.connect() as cx:
         for t in ("sync_written", "sync_folder_read", "sync_folder_docs",
-                  "sync_via", "sync_from", "sync_refused"):  # roles (DESIGN-roles §3.2): what the sender's copy noted
+                  "sync_via", "sync_from", "sync_refused",  # roles (DESIGN-roles §3.2): what the sender's copy noted
+                  # 0.18.1: the sender's kept AI answers (they would answer here as this copy's) and the sentences of
+                  # links found in the text (made again with this copy's glossary)
+                  "ai_cache", "concept_link_sentences"):
             cx.execute(f"DELETE FROM {t}")
         cx.execute("UPDATE canon_seen SET ai_offer=NULL")  # roles-p1: offers made to the sender are the sender's
         # the bibliography's attachments name files on the colleague's computer: a path here could name a file of
