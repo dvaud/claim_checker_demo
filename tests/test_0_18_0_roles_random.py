@@ -546,9 +546,10 @@ class Run:
         for p in self.people:
             self.follow_all(p)
             self.check(not self.view(p)["questions"], f"{p.name} is still asked: {self.view(p)['questions']}")
-        for _ in range(5):
+        for _ in range(int(os.environ.get("ENLENS_ROLES_ROUNDS") or 5)):
             last = {p.name: _rows(p) for p in self.people}
-            wrote = any((self.sync(p).get("wrote") or {}).get("seq") is not None for p in self.people)
+            # every copy has its round (a list: any() over a generator stopped at the first copy that wrote)
+            wrote = any([(self.sync(p).get("wrote") or {}).get("seq") is not None for p in self.people])
             # (a round may write a row of its own that only the next round sends: it is not the last one then)
             if not wrote and {p.name: _rows(p) for p in self.people} == last:
                 break
