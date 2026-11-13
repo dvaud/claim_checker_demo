@@ -49,6 +49,26 @@ meanwhile. Without a local model that answers, Claude answers as before. Claude 
 model's share alone; the queue lists it as *for your local model*, and *Answer here* lets the local model answer it
 when no check is open. Can change results.
 
+### Agreement between routes
+
+*Settings → AI → Agreement between routes* shows, on your own documents, whether your local model is good enough for a
+kind of task. It appears when Claude (Claude Code or the Claude API) and a local model are both set, and a project is
+open. Choose a kind of task and a sample size (10 to 100, 30 to start). Before anything starts, the box says how many
+tasks are asked of your local model, how many of Claude (that uses your plan, or your API credit) and how many are left
+out because Claude may not read their documents. An answer a task already has from a route is reused, so only what is
+missing is asked. Then press *Compare the routes*.
+
+Each route answers the same tasks and the two answers are compared decision by decision: the grade of each excerpt for
+checks, second readings and readings again; whether each candidate code applies for labels; the relation of each pair
+of terms for links. Themes, search words, hypothesis splits and term resolutions give no decision to compare, so they
+are left out. The result is the share of identical decisions and Cohen's kappa, which discounts the agreement chance
+alone would give: 1 is full agreement, 0 is chance. From 0.8 the local model is good enough for that kind, from 0.6 fair
+(review what it answers), below that poor (let Claude read these).
+
+It is a measurement: it is asked only when you press the button, nothing is stored in the project's results, and the
+passages sent to Claude are noted in the list of what left your computer. Agreement is not correctness: Claude is not
+always right either. Cannot change results.
+
 ### Models that suit your Claude plan
 
 On Claude Code, ENLENS finds your plan by itself in the background (from `claude auth status`: when the app starts,

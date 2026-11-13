@@ -361,7 +361,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
     } else if (backend === "openai") {
       detail.append(serverList(), h("div", { class: "fields-2" }, field("Server address", fields.openai_url, { help: "The /v1 base URL of LM Studio, llama.cpp, Jan, vLLM…" }), fields.openaiModel = modelPicker("m-openai", s.openai_model, openaiSrv ? openaiSrv.chat_models : [], "leave empty for the first model listed")));
     } else if (backend === "anthropic") {
-      detail.append(cloudBox, field("Stronger model", fields.anthropic_model, { help: "For example claude-opus-5-5: a task an AI model was unsure of goes to it once. Checks start on Sonnet; each kind of task has its own model (“AI model per task” under Technical)." }), keyBox(), fableSwitch());
+      detail.append(cloudBox, field("Stronger model", fields.anthropic_model, { help: "For example claude-opus-5-5: a task an AI model was unsure of goes to it once. Checks start on Sonnet; each kind of task has its own model (“AI model per task” under Technical)." }), keyBox(), fableSwitch(), agreeBox());
     } else if (backend === "claude_code") {
       detail.append(claudeCodeBox(), fableSwitch());
     } else {
@@ -405,7 +405,77 @@ function modelSection(s, servers, watchers, info = { servers }) {
       h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Helpers at once"), h("div", { class: "row" }, speed, st),
         h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code. More is done sooner and uses your plan's limits faster. ",
           helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model. Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))),
-      mixBox());
+      mixBox(), agreeBox());
+  }
+
+  // 0.18.1 (I5): the local model and Claude answer the same sample of this project's tasks of one kind, and Cohen's
+  // kappa says whether the local model is good enough for it. On request only (it uses the plan); nothing is stored.
+  function agreeBox() {
+    if (!(s.restricted_server && s.restricted_model && (s.backend === "claude_code" || s.backend === "anthropic"))) return null;
+    const box = h("div", { class: "field", id: "s-agreement" }, h("div", { class: "field-label" }, "Agreement between routes"));
+    const help = h("div", { class: "field-help" }, "Your local model and Claude answer the same sample of your own answered tasks of one kind, and kappa (1 is full agreement, 0 is chance) shows whether the local model is good enough for it. An answer a task already has is reused, so only what is missing is asked. Only documents Claude may read are used. Nothing is stored in the project. ",
+      helpMark("About agreement", "Kappa from 0.8 on is good, from 0.6 fair, below that poor. Agreement is not correctness: Claude is not always right either. Themes, search words, hypothesis splits and term resolutions have no decision to compare, so they are left out."));
+    if (!App.project) { box.append(h("p", { class: "muted small" }, "Open a project first: the sample is taken from its answered tasks."), help); return box; }
+    const out = h("div", { "aria-live": "polite", class: "set-test-out" });
+    const kindSel = selectField({ "aria-label": "Kind of task" });
+    const n = fieldInput({ type: "number", min: 10, max: 100, step: 5, value: 30, "aria-label": "Tasks to compare" });
+    const planLine = h("p", { class: "small" });
+    const start = button({ sm: true, icon: "play" }, "Compare the routes");
+    const body = h("div", { class: "stack" });
+    const base = `/api/projects/${P(App.project)}/agreement`;
+    let kinds = [];
+    const size = () => Math.min(100, Math.max(10, Math.round(n.valueAsNumber) || 30));
+    async function showPlan() {
+      start.disabled = true;
+      try {
+        const r = await api("GET", `${base}/plan?kind=${encodeURIComponent(kindSel.value)}&n=${size()}`);
+        const p = r.plan, k = kinds.find((x) => x.kind === p.kind) || {};
+        if (!p.n) { planLine.textContent = "No answered task of this kind is on documents Claude may read, so there is nothing to compare."; return; }
+        const uses = s.backend === "claude_code" ? "uses your plan" : "uses your API credit";
+        planLine.textContent = `${p.n} ${k.noun || "tasks"}: ${p.ask_local} asked of your local model, ${p.ask_claude} asked of Claude${p.ask_claude ? ` (${uses})` : ""}` + (p.left_out ? `; ${p.left_out} left out, Claude may not read their documents.` : ".");
+        start.disabled = false;
+      } catch (e) { planLine.textContent = e.message || "The plan could not be made."; }
+    }
+    start.addEventListener("click", async () => {
+      start.disabled = true;
+      try { follow((await api("POST", base, { kind: kindSel.value, n: size() })).job.id); }
+      catch (e) { showError(e); start.disabled = false; }
+    });
+    function follow(jobId) {
+      const stop = stopButton({ onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) });
+      const pb = h("div", { class: "pb" });
+      const holder = card({ as: "div", title: "Comparing", level: "h3", action: stop }, pb);
+      replace(out, holder);
+      const watcher = watchJob(jobId, (job) => {
+        const p = job.progress || {};
+        replace(pb, simpleProgress(job, () => p.total ? `Task ${Math.min((p.done || 0) + 1, p.total)} of ${p.total}` : "Starting…"));
+        if (TERMINAL.has(job.state)) stop.hidden = true;
+      });
+      watchers.push(watcher);
+      watcher.promise.then((job) => {
+        start.disabled = false;
+        if (job.state === "done") {
+          const r = job.result || {};
+          replace(pb, h("p", {}, h("strong", {}, r.verdict || "")),
+            h("div", { class: "kv" }, h("dt", {}, "Kappa"), h("dd", {}, r.kappa === null || r.kappa === undefined ? "–" : r.kappa.toFixed(2))),
+            h("div", { class: "kv" }, h("dt", {}, "Same decision"), h("dd", {}, r.agree === null || r.agree === undefined ? "–" : `${Math.round(r.agree * 100)}% of ${r.decisions}`)),
+            h("p", { class: "muted small" }, `${r.compared} of ${r.n} tasks compared. Asked now: ${r.asked.local} of your local model, ${r.asked.claude} of Claude.` + (r.failed ? ` ${r.failed} could not be compared.` : "")));
+        } else if (job.state === "error") replace(pb, notice({ kind: "error" }, h("p", {}, job.error || "The comparison failed.")));
+        else replace(pb, h("p", { class: "muted" }, "Stopped."));
+      }).catch((e) => { start.disabled = false; showError(e); });
+    }
+    kindSel.addEventListener("change", showPlan);
+    n.addEventListener("change", showPlan);
+    box.append(body, help);
+    api("GET", `${base}/plan`).then((r) => {
+      kinds = r.kinds || [];
+      if (r.problem) { body.append(h("p", { class: "muted small" }, r.problem)); return; }
+      if (!kinds.length) { body.append(h("p", { class: "muted small" }, "No task with a decision to compare is answered yet in this project (checks, second readings, labels and links have one).")); return; }
+      kindSel.append(...kinds.map((k) => h("option", { value: k.kind }, `${k.name[0].toUpperCase()}${k.name.slice(1)} (${k.answered} answered)`)));
+      body.append(h("div", { class: "fields-2" }, field("Kind of task", kindSel), field("Tasks to compare (10 to 100)", n)), planLine, h("div", { class: "row" }, start), out);
+      showPlan();
+    }).catch((e) => body.append(h("p", { class: "muted small" }, e.message || "Could not load the plan.")));
+    return box;
   }
 
   // 0.18.1 (I1, I2, I4): which route answers each kind of task when Claude and a local model are both set, and what
