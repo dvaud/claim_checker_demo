@@ -1573,7 +1573,7 @@ export async function renderResult(view, [hypId], query) {
     try {
       // the hint saved as the comment first (with the judgement the person has, or none), so it stays on the card
       if (hint && keep.checked && hint !== (p.user_note || "")) {
-        await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, { verdict: p.my_verdict || null, note: hint, threshold });   // 0.14.3: your own verdict, never a colleague's
+        await api("PUT", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/judgements/${P(p.passage_id)}`, { verdict: p.my_verdict || null, note: hint });   // 0.14.3: your own verdict, never a colleague's
       }
       const res = await api("POST", `/api/projects/${P(project)}/claims/${P(part.claim_id)}/reread/${P(p.passage_id)}`, body);
       followJob(res.job.id, "reread", "The AI is reading this excerpt again", async (job) => {

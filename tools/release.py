@@ -460,6 +460,17 @@ def prepare(version: str, title: str, root: Path = ROOT, dry_run: bool = True, r
         return steps + ["", entry.rstrip("\n")]
     if run(["git", "status", "--porcelain", "--untracked-files=no"], root):
         raise ReleaseError("the working tree has changes: commit or stash them before preparing a release")
+    # what is released is main as GitHub has it: not a feature branch's commits, nor another session's fragments
+    # that are not committed yet (the shared clone)
+    run(["git", "fetch", "--quiet", "origin", "main"], root)
+    here, there = (run(["git", "rev-parse", ref], root).strip() for ref in ("HEAD", "origin/main"))
+    if here != there:
+        raise ReleaseError("prepare a release from main as it is on GitHub: switch to main and pull first "
+                           f"(HEAD is {here[:10]}, origin/main is {there[:10]})")
+    loose = run(["git", "status", "--porcelain", "--untracked-files=all", "--", CHANGES], root)
+    if loose.strip():
+        raise ReleaseError(f"{CHANGES}/ has files that are not committed (another session's work?):\n{loose.strip()}\n"
+                           "commit them on main first, or move them away")
     run(["git", "switch", "-c", branch], root)
     join_fragments(version, title, root)
     sync_notes(version, root)
