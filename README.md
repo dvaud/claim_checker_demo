@@ -57,12 +57,13 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.0: working together as a team
+## New in 0.18.1: theory documents, the assessment in words, and a mix of local and Claude
 
-- **Join a team… in the project menu**, under *New project…*: paste the invite link a colleague sent, and a new project fills in by itself.
-- **A Team page for the team itself** (*Manage the team* in the project menu, or the link at the foot of the Team tab): where the team works (storage space or shared folder, with *Technical details*).
-- **The Team tab keeps the day-to-day, in few words**: what waits for your word (only when something does), the sync state in one line with *Sync now* and *Pause*, what needs your attention, what came in and what you shared.
-- **Near-duplicate hypotheses** (roadmap N1). Under the Hypotheses box, as a list is typed: *Lines 1 and 2 are very close: check them as one?*, with *Check as one*.
+- **Mark a document as theory: the lens, not the evidence.** A book or paper your research is read through (a theory of practice, a systems text) can be marked *Theory*, in the Documents list (each row's menu) or on the document's page. Cannot change results.
+- **A codebook from a theory document.** The codebook editor has a third way to start, beside *Start fresh* and *From the themes*: *From a theory document*. Cannot change results.
+- **The assessment in words.** Under a hypothesis's answer, a few sentences say what it rests on: how many documents stand on each side, the contradicting side quoted (and both sides when the evidence is mixed). Cannot change results.
+- **The mix of local and Claude.** With Claude Code and a local model both set, *Settings → AI → The mix of local and Claude* shares the work: *Mostly local* (the local model answers every kind of task but second opinions). Can change results.
+- **How much thought, not how fast.** Beside every *Start Claude Code*, *Energy efficient · Balanced · Intelligence* replaces *Slower · Normal · Faster*: it says which Claude models answer each kind of task, and how hard they think. Can change results.
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:

@@ -1,5 +1,339 @@
 # Changelog
 
+## 0.18.1 (November 2026): theory documents, the assessment in words, and a mix of local and Claude
+
+Keep your theory out of the evidence, read each answer in words, and share the AI's work with a local model. Theory
+documents (the books your research is read through) can be kept out of the evidence and turned into a codebook; each
+answer gets a short assessment in words, made by rules; a local model can take a share of the AI's work beside
+Claude, and *How much thought* replaces the speed choice; concepts gain links found in the text, paths and change over time;
+reader 5 finds ruled tables and figures; the bibliography can be checked for retractions; long lists load as you
+scroll. **Reader 5, the mix of local and Claude, *How much thought* and kept answers can change results**: see below.
+
+### New
+
+- **Mark a document as theory: the lens, not the evidence.** A book or paper your research is read through (a theory
+  of practice, a systems text) can be marked *Theory*, in the Documents list (each row's menu) or on the document's
+  page. It is still read, searched, opened and noted as before, but it is left out of themes, labelling with
+  codebooks, the excerpts a check reads, key terms and the glossary's counts (and so of the evidence map). You set
+  it; ENLENS never guesses: a study that *uses* a theory is still evidence. Marking or unmarking changes no result by
+  itself: the document's page lists the themes, codebook labels and checks made with it in, with links to make them
+  again without it. In a shared project the mark travels like *Leave out*: the Owner's or a Co-owner's holds at once,
+  a Member's is a proposal for the owner to accept. Cannot change results by itself; what you make afterwards
+  leaves the theory out. (Roadmap K2, part 1.)
+- **A codebook from a theory document.** The codebook editor has a third way to start, beside *Start fresh* and
+  *From the themes*: *From a theory document*. ENLENS offers the theory's own concepts as draft codes: the terms it
+  defines ("a stock is …", "by a reinforcing loop we mean …", "X is defined as …"), its headings and the words it
+  uses often, each with its **definition quoted from the theory, with its page**. Examples come **only from the
+  evidence documents**, offered by their words and kept only when you tick them, so the labeller learns what the
+  concept looks like in your field, not in the theory's own examples. Tick the concepts to keep; it is then an
+  ordinary codebook, to edit, try and use. No AI. Cannot change results. (Roadmap K2, part 2.)
+- **The assessment in words.** Under a hypothesis's answer, a few sentences say what it rests on: how many documents
+  stand on each side, the contradicting side quoted (and both sides when the evidence is mixed), a warning when one
+  document, one year or one kind of document carries most of the support, what holds for each part, and what is not
+  counted (below your strictness, or waiting for your judgement or the local model). They are made by fixed rules
+  from the judgements, never written by an AI, so they read the same each time. When your own judgements give another
+  answer than the AI's alone, it names the judgement that moved it ("Your judgement on Jones 2022, page 12 turned
+  this from Supported to Mixed evidence"), and the research log records each such change. The Excel summary, CSV and
+  JSON carry it too. Excerpts of documents no AI may read, or only a local one, are counted, never quoted. Cannot
+  change results.
+- **The mix of local and Claude.** With Claude Code and a local model both set, *Settings → AI → The mix of local and
+  Claude* shares the work: *Mostly local* (the local model answers every kind of task but second opinions),
+  *Balanced* (labels, concept links, search words, theme names and references on the local model; Claude judges
+  excerpts) or *Best quality* (Claude for everything, as before: the default). The local model answers first, on this
+  computer; an answer it is unsure of, that fails the quote check, or that judges an excerpt as contradicting goes
+  up to Claude, only for documents Claude may read, and the local answer counts meanwhile. Claude Code's helpers leave
+  the local model's share alone while it answers (the queue lists it *for your local model*); when the chosen local
+  model cannot be used (it is not installed, or its server is off), Claude Code answers instead. Can change results.
+- **How much thought, not how fast.** Beside every *Start Claude Code*, *Energy efficient · Balanced · Intelligence*
+  replaces *Slower · Normal · Faster*: it says which Claude models answer each kind of task, and how hard they think.
+  Balanced is the recommended table; Energy efficient starts each kind one model lower (judging excerpts never below
+  Sonnet), Intelligence one higher, with low or high effort asked of the helpers. The choice is kept, and is the same
+  one as in *Settings → AI*. How many helpers work at once is now chosen only in *Settings → AI* (*Helpers at once*).
+  *Let the auditor use Fable* stays its own switch. Can change results, as any change of model can: each answer
+  records its model.
+- **At your plan's usage limit.** When Claude Code stops at your plan's usage limit, the queue page says so (and when
+  it resets, if Claude Code said), and *Settings → AI → At your plan's usage limit* chooses what happens: wait and
+  continue later (the default), or let the local model answer what waits, where it may. Can change results, when the
+  local model answers.
+- **See whether your local model is good enough for a kind of task.** *Settings → AI → Agreement between routes*
+  has your local model and Claude answer the same sample of your own tasks of one kind (checks, second readings,
+  labels or links), and shows how often they decide the same, with Cohen's kappa and a plain sentence: from 0.8 good
+  enough, from 0.6 fair, below that poor. Before it starts, the box says how many tasks are asked of each route (an
+  answer a task already has is reused, so only what is missing is asked), and how many are left out because Claude may
+  not read their documents. It runs only when you press the button, as it uses your plan (or API credit). Nothing is
+  stored in the project's results; what is sent to Claude is noted in the list of what left your computer.
+  Cannot change results.
+- **Relations found from the text.** When the glossary is made, ENLENS now proposes links between concepts from the
+  sentences themselves, without AI: "X such as Y" and "Y and other X" (broader and narrower), "X, also called Y" and
+  "X (also known as Y)" (the same), "X leads to / causes / reduces Y" (*leads to*, a new kind of link) and "X instead
+  of Y" (*replaces*, also new). Only between terms the glossary knows, and only when the connecting words alone stand
+  between them; words inside quotation marks are passed by. Each proposal shows the sentences it was found in, each
+  with its document and page, and waits for you to accept or reject it, as links from search by meaning do. English
+  sentences only, for now. Cannot change results until you accept a link. (Roadmap D2.)
+- **Paths between two concepts.** A concept's page has a new card, *Paths to another concept*: type another concept
+  and ENLENS lists the shortest chains between them, through the links you accepted and the concepts the documents
+  mention together more often than by chance (by PMI). Each step shows the passages that join its two concepts, so
+  you can follow an argument the corpus already makes. A list, not a drawn map. Cannot change results. (Roadmap D3.)
+- **A concept over time and across groups.** A second card, *Over time and across groups*, shows how the concept is
+  worded and what it is mentioned with, by publication year (from the works in your bibliography; documents without
+  a year are counted apart), or in two sets of documents you pick on the page (policy against academic, one country
+  against another; not kept). Theory documents are left out of both cards. Cannot change results. (Roadmap D3, D4.)
+- **Check the bibliography for retractions and corrections.** *Check for retractions* on the Bibliography page
+  asks Crossref, which carries Retraction Watch's list, whether the works of your bibliography and your documents
+  have been retracted, corrected or flagged with an expression of concern. A warning stands under the title of each
+  affected work (a retraction is the serious one), and an excerpt from a document whose work has a notice shows a small
+  warning in a check's results. The page keeps the date of the last check. It runs only when you press the button
+  (or `enlens retractions <project> --check`), sends only DOIs (no name, no email address, no project name), leaves
+  out works whose document is marked No AI, and sends nothing under local-only. Cannot change results.
+- **A result made by an earlier ENLENS says so on its own page.** A check, a set of themes and the Codes page now
+  name the earlier version behind them in the line under their title ("Made with ENLENS 0.17.2", or "12 labels made
+  with ENLENS 0.16.1" for a codebook's labels), with what that means in its tooltip. Results made by this version
+  show nothing new. The Overview kept its summary of every result. Cannot change results.
+- **Long lists open at once and fill in as you scroll.** The Search page shows the first 100 lines of a search and
+  loads the next ones when you come near the end, instead of Previous and Next. A line under the list says how many
+  are shown (*100 of 1,400 lines*), and *Show more* does the same from the keyboard. If a page cannot be loaded, the
+  line says so and *Try again* asks for it again. The answers on the Hypotheses page and the excerpt cards of a long
+  check (more than 40 in a list) are drawn the same way, and so is the Documents list. *Next to review*, the *Show*
+  buttons of the answer's
+  sentences and the jumps back from a document draw the card they go to first, and printing draws every card. Cannot
+  change results.
+- **Judging an excerpt no longer draws the whole result again.** Only its card (or its row in the table), the answer,
+  the counts and the part's own summary change; the scroll position, the open folds and the cards already drawn stay
+  as they are. A judgement that changed the answer says so once under the answer (*Just now: Your judgement on …
+  turned this from Supported to Mixed evidence*). An excerpt that moves to another list, such as *Not about this*,
+  still draws the page again, with its note where the card went. Cannot change results.
+- ***Become the owner* says what becomes a proposal.** Its dialog now says that what colleagues removed or left out
+  in their own copies before becomes their proposals, all at once; and each colleague's Team tab says so once when
+  it happens ("2 documents you removed … are now your proposals to Anna"). Cannot change results.
+
+### Changes that can alter your results
+
+- **Reader 5 finds tables from their ruled lines, joins a table that runs over a page, and keeps figures as blocks of
+  their own.** A table whose cells hold sentences, or whose numbers are aligned on the right, was read as paragraphs,
+  because reader 2 found tables only where their columns have clear gaps. Reader 5 also uses the lines and boxes a PDF
+  draws: a table ruled in a grid, or set with a rule above, under the header and below, is found with its rows and
+  cells, left out of what searches, codes and checks read, and shown as a table in the reading view (and for Excel).
+  A table at the foot of a page and the table at the head of the next, with the same number of columns and width, are
+  one table (its header row once, if the next page repeats it). A chart drawn in lines and boxes, and an image, become
+  one block each: its page, where it stands on the page, the words inside it (left out of passages, as before) and its
+  caption (*Figure 3. …*), which stays a block of its own and still counts for checks. The picture itself is never
+  stored and never sent to an AI: the reading view draws it from the original PDF when it is shown (`GET
+  …/figures/<n>.png`), so a figure costs a page number, a box and its caption, and a large corpus does not grow. A
+  Word file or web page keeps an image's alternative text as a block that is left out of passages, without the
+  picture. **Can change results, for documents you move to it.** New documents are read by reader 5; documents already
+  in a project keep their reading, and every result in them stays where it is, until you press *Read with the new
+  reader*. A box round one paragraph is not a table, a logo repeated on every page, an icon and a scanned page are not
+  figures, and a table or figure in a page that has no text layer (a scan, read by OCR) is not found.
+- **Measured before it ships** (`enlens measure --reader 4 5`, four new documents of known text added to the reading
+  test, the six of 0.15 unchanged). Reader 5 reads every old document as reader 4 does and the new ones better:
+
+  | Document | Reader 4: words that belong · left-over table or figure text · tables (rows) · figures | Reader 5 |
+  |---|---|---|
+  | (g) table ruled in a grid, sentences in its cells | 84.2% · 0 of 5 · 1 (4) · 0 | 100% · 0 of 5 · 1 (4) · 0 |
+  | (h) rules above, under the header, below | 100% · 0 of 6 · 1 (5) · 0 | 100% · 0 of 6 · 1 (5) · 0 |
+  | (i) ruled table over two pages, header repeated | 97.3% · 1 of 42 · 1 (7 of 41) · 0 | 100% · 0 of 42 · 1 (41) · 0 |
+  | (j) a chart with labels, and a picture, each with a caption | 93.0% · 5 of 6 · 0 · 0 | 100% · 0 of 6 · 0 · 2 |
+
+  Average over the ten documents, reader 4 → reader 5: words kept 99.97% → 99.97%, words that belong 97.4% → 99.97%,
+  reading order 99.97% → 99.97%, words run together 0.1 → 0.1, words broken apart 0 → 0, left-over running heads,
+  notes and table or figure text 0.6 → 0. Reader 4 already finds table (h) and part of (g) by the gaps between its
+  columns, so there reader 5 changes the words that belong (g) and the box (h: the rules' width), not the table.
+- **The same question is not asked twice.** An AI answer that passed the checks is kept by the question asked: the
+  kind of task, its instructions, the model and the text it read (not the task's name). When a task asks the same
+  question again, of the same model (a check run again on the same excerpts, a document read again by a new reader,
+  the same passage in two documents), it is answered from the kept answer, after the quote check against its own
+  text; one that does not fit is not used and the model is asked. An unsure answer (one a stronger model would
+  read again) is never kept, so a kept answer never stands where a stronger model would have read; a document's AI
+  setting is checked first, so a document no AI may read is never answered by an AI's answer to the same text.
+  Readings asked again on purpose (*Read again*, *Ask a stronger model*, second opinions) and model tests are always
+  asked fresh. Each such answer says so in *How
+  these results were made* (its route ends in *(kept answer)*). Faster, cheaper and more private; can change results,
+  as a kept answer stands where the model, asked again, might have answered otherwise.
+- **A small codebook once per batch.** When Claude Code takes a batch of passages to label whose candidate codes are
+  40 or fewer in all, the codes' descriptions come once with the batch, and each passage names only its codes. Fewer
+  tokens of your plan; can change results, as the model reads the same codes laid out differently.
+
+### Releases
+
+- **One version number, from the release tag, and a release made by merging a pull request.** Nothing is typed in three
+  places any more: the version of ENLENS is made from the tag of its release, and `enlens update` in a git copy installs
+  it again when a new release comes. A release now starts with one command, which joins the changes, writes the README's
+  *New in* and the app's *What's new* from them and opens a pull request; merging it tags the release. Every release
+  file carries a signed note of which workflow and commit built it (`gh attestation verify`), the packages the tests
+  install are pinned in a lock file, Dependabot proposes updates, every GitHub Action is pinned by its commit, and the
+  install line of each published release is tried again on Linux, macOS and Windows, then every Monday. Cannot change
+  results.
+
+### Fixed
+
+- **An answer from the Claude API no longer says it was made at temperature 0.** ENLENS sends the Claude API no
+  temperature (nor a seed), but recorded *temperature 0* with each of its answers in *How these results were made*.
+  It now records none, as for Claude Code. Answers made before keep their record. Cannot change results.
+- **What is new is a short note in the corner again.** 0.18.0rc1 moved it to a *What's new* button above *Settings*.
+  Now, after an update, the note is back in the bottom right corner, in the same quiet style as before, but it holds
+  only the version, its title and subtitle, and *Read what's new*, which opens the list of points in a dialog. Reading
+  it or closing it (x or Escape) marks it read, so it comes once. Settings and Find still have it always.
+- **A colleague's removal is no longer undone without a word.** When a Member removed a document and the owner,
+  not yet knowing of it, took the same document out and in again, the Member's removal was quietly undone in their
+  copy. Now it is undone only when the project went on *knowing* of it (its card then says the document was removed
+  and added again since); otherwise it stays out of the Member's copy and their proposal waits for the owner.
+  Cannot change results.
+- **A former owner's late answer no longer shows as *Accepted*.** After a take-over, an answer the former owner gave
+  offline to a proposal the new owner had not answered showed as *Accepted* on its card, although it changed no
+  document. It now waits for the new owner, as their late changes to the documents already did. Cannot change
+  results.
+- ***Not now* on a take-over holds in every browser.** It was kept only in the browser where you clicked it; it is
+  now kept for you in the project. Cannot change results.
+- **A project zip from a newer ENLENS is refused in words.** Opening such a zip as a new project now says to update
+  ENLENS first and changes nothing, as bringing it into a project and the shared folder already did. (ENLENS 0.17.0
+  to 0.18.0 still open such a zip without a warning: that cannot be changed after the fact.) Cannot change results.
+- **Taking a project back never loosens an AI setting.** After *Take the project back*, a looser setting that your
+  copy had gone on from (by your own stricter setting) could be put into force again without your click. It is now
+  only offered, as every looser setting is. Cannot change results. (Found by the randomised roles test.)
+- **A second take-over at the same point is refused in words.** Taking a project over twice at the same point of its
+  history, after two different owners, left the copies disagreeing about the owner without a word (a copy keeps the
+  first record it holds). ENLENS now refuses the second and says what to do: ask the owner to hand it over, or follow
+  your earlier take-over. Cannot change results.
+- **Copies agree again after two take-overs at once.** When two colleagues took a project over at the same time and
+  the team then settled on the earlier one, what that owner did next (a removal, a role) never reached the other
+  copies: their older rows of the later take-over, which no longer counted, kept the new ones out. Now the newest row
+  of each person always comes through. Can change results: copies then hold the owner's removals and roles, as the
+  owner's copy does. (Found by the randomised roles test.)
+- **A removal is noted as the word of whoever keeps it.** A document a former owner removed, kept removed by the new
+  owner's copy, was noted as removed "by" the former owner, who may be a Member in your copy by then; it is now the
+  owner's word that is noted. Cannot change results.
+
+### For developers
+
+- `docs/METHODS.md` (how a check, labels, concepts and themes work, with references, for a methods section) and
+  `docs/PRIVACY.md` (what leaves the computer, when and to whom, for an ethics application or a data protection
+  assessment), linked from the README, the manual's hub and its privacy page (roadmap J4.4).
+- The test files are named by topic, not by version (roadmap J1.11): 170 files renamed once.
+- `runs.made_with_one(app_version)` and `runs.labels_made_with(ws, framework)`; `made_with` in the answers of
+  `GET …/hypotheses/<id>`, `GET …/themes/<run>` and `GET …/profile`; `lib.js` `madeWithFact(m)` for a page head's
+  facts. Tests: `tests/test_version_on_each_result.py`.
+- `conceptpaths.py` (`paths`, `over_time`, `compare_groups`); routes `GET /api/projects/{p}/concept-paths?from&to`,
+  `GET /api/projects/{p}/concept-time/{term}`, `POST /api/projects/{p}/concept-groups/{term}`.
+- `reader5.py` (new): `record` (pdfminer's lines, boxes and pictures per page, `reader._pdfminer_pages(path, shapes)`
+  for version 5 only), `ruled_tables`, `figures`, `place`, `join_tables`, `link_captions`, `mark_text_figures`.
+  `reader.Block` has an optional `box` that `bbox` uses when set (readers 2 to 4 never set it); a figure's
+  `Block.caption`
+  holds its caption. `READER` is 5 in `reader.py` and `ingest.py`; `RawDoc` has `before_5` (what readers 2 to 4 read of
+  a Word file or web page) and `figures` (their images' alternative texts); `ingest._read_docx` returns six values.
+  A figure without words is a block with `start == end` (no passage, a row in `blocks` with its box); the reading
+  report has `figures` and `tables_joined`. `pdfmake.Page.rule/box/image` draw ruled lines, boxes and grey pictures for
+  test PDFs. `measure.make_table_figure_texts` makes the four new documents; `measure.run` adds them when reader 5 is
+  among the readers; `measure_case` gives `tables_found`, `table_rows` and `figures_found`.
+  The fingerprints of readers 2 to 4 are unchanged (`tools/reader_fingerprints.py` on the demo corpus and the known
+  texts: 0 differ). Tests: `tests/test_reader5_tables_figures.py`.
+- `canon.hist_json` gains `seen`: the removals proposed for the document that its writer had seen when it last
+  changed the document's state (`ownership.removal_spent`). A new owner writes, once, a mark in `decisions`
+  (`proposal` `~restamped:<place>`, `knew_json` the former owners' answers it held); a former owner's answer not in
+  it no longer counts. Both are ignored by ENLENS 0.18.0, so the sync format stays 4. `canon` and `roles` rows are
+  merged by their writer's number alone (`sync/owner_merge.py`), as `decisions` were; a copy still on 0.18.0 ranks
+  them by place first, so after two take-overs at once it may keep the older row until it is updated.
+- `concept_links` rows with source `pattern` (`textrelations.py`), their sentences in the new table
+  `concept_link_sentences`; `terms.LINK_RELATIONS` gains `effect`, `effect_of`, `replaces`, `replaced_by`.
+- `documents.role` (`NULL` evidence, `"theory"`; room for N3's `"working"`) is read from the block choice
+  `role:theory` (`docrole.py`), so the mark syncs, merges and is proposed as block choices are, with no new sync
+  format. Every filter goes through `docrole.evidence_sql()` / `theory_docs()`. `search.rank_passages` gained
+  `evidence_only` (default true; the Search page's search by meaning passes false; documents named in `doc_ids` are
+  kept). Routes: `GET /api/projects/{p}/document-roles`, `GET`/`PUT /api/projects/{p}/documents/{d}/role`.
+- `benchmark.agreement`, `agreement_plan`, `agreement_kinds`, `kappa`; `GET …/agreement/plan` and
+  `POST …/agreement`. Tests: `tests/test_agreement_between_routes.py`.
+- `routing.THOUGHTS`, `Router.thought`, `Router.effort(kind)`; `routing.MIXES`, `mix_kinds(settings)`,
+  `judging_changes`; `tasks.mix_local`, `answer_locally_first`, `answer_mix_waiting`; `taskqueue.limit_reached`,
+  `status()["for_local"]`, `["thought"]`, `["effort"]`, each kind's `effort`; settings `claude_thought`, `ai_mix`,
+  `at_limit`; `tasks.lent_to_local`, `to_claude` (the local model holds a task it answers: `claimed_by` `local-…`);
+  `POST …/queue/run` with Claude Code answers the mix's share here (`{"local": "all"}`: everything it
+  may). Tests: `tests/test_ai_mix.py`.
+- `assessment.assess(ws, hyp_id, res)` → `{"sentences": [{"text", "rule", "refs"}], "moved_by"}`, in
+  `hypothesis_result(...)["assessment"]`; `claimcheck.set_judgement` now returns
+  `{"hyp_id", "before", "after", "moved"}` and logs `verdict-moved`, at the strictness the page shows
+  (`threshold`, also in the body of `PUT …/judgements/…`). Tests: `tests/test_assessment.py`.
+- Table `ai_cache` (key = SHA-256 of the kind, prompt version, model, system and user prompt); `tasks.cache_key`,
+  `cached_answer`, `answer_from_cache`, `avoided(ws)` (tasks answered from kept answers, per kind);
+  `ingest_result(..., cached=True)`; `prompts.shared_codebook`, `user_prompt(..., codes_once=True)`; a batch of
+  `next_tasks` says `codebook_once`. Tests: `tests/test_fewer_ai_tasks.py`.
+- `lazyList()` in `lib.js` (documented there): the first page, the next ones from an `IntersectionObserver` on a
+  footer or from *Show more*, `reveal()` for a card that is not drawn yet, `reset()`, one request per page. It takes
+  the whole list (`items`) or pages from the API (`fetchPage`, with `first` when the first page is known).
+- `GET …/hypotheses` takes `offset` and `limit` (100 when not given) and answers `total`, `offset` and `limit`; without
+  `offset` it answers as before.
+- The result page's `applyJudgement()` fetches the result again and `patchInPlace()` makes only the changed parts
+  again; `inPlacePlan()` says when it cannot and the page is drawn whole.
+- `pyproject.toml` has `dynamic = ["version"]` and `[tool.setuptools_scm]` (`post-release` versions, no local part,
+  `0.0.0` without git); `enlens_claims.__version__` reads the package's metadata, then `git describe`, then `0.0.0`;
+  `update.version_in` reads a git copy's newest release tag; `server._installed_version` reads the metadata afresh.
+- `tools/release.py`: `check` compares the tag and the changelog's top entry, `assets --expect vX.Y.Z` the wheel's
+  version, `prepare X.Y.Z "title" [--go]` (a dry run unless `--go`), `sync-notes [--check]`.
+  `.github/workflows/tag-release.yml`, `published-install.yml`, `dependabot.yml`, `uv.lock` (with a `ci` extra),
+  `actions/attest-build-provenance` in `release.yml`. `docs/DEVELOPING.md` has the steps.
+- The README's *New in* stands between `<!-- new-in:start -->` and `<!-- new-in:end -->` and is written by `release.py`.
+- `retractions.lookup`, `status`, `for_docs`, `for_items`; the table `retractions`; `GET …/retractions` and
+  `POST …/retractions/check`; `notices` on each work of `GET …/bibliography`; `ENLENS_CROSSREF_URL` sets another
+  address. Tests: `tests/test_retractions.py`.
+- `claimcheck.py` split into `verdicts.py`, `check_results.py`, `check_exports.py`, `judgements.py`; `claimcheck`
+  re-exports every name, so add-ons and imports keep working. Cannot change results.
+
+### Tests
+
+- The randomised roles test now also takes the project over, answers the question (follow, keep, *Not now*), sends
+  zips after a take-over, turns the documents switch on and off and opens the Team tab without a round, and checks
+  that no document leaves a copy without its person's own removal or the word of its current Owner or a Co-owner.
+- `tests/test_release_pipeline.py`, `tests/test_release_prepare.py`, `tests/test_doc_links.py`: the version flow, the
+  workflows' shape (with PyYAML), pinned actions, the lock, links between documents, a manual section for every feature,
+  and *New in* matching the changelog.
+
+### Not yet done
+
+- The optional AI draft of a theory's concepts and definitions (Level 2 or 3, roadmap K2 part 2) is not built: only
+  the Level 0 candidates are offered.
+- Words set in italics are not offered as concepts: the readers keep boldness but not slant.
+- The concept map (roadmap D1) that would draw these paths.
+- **Text inside figures is not read (no OCR of figures)** and **no picture is stored**: both would make a large corpus
+  heavy, so the picture is drawn from the original PDF each time it is shown.
+- **Tables in scanned pages stay unfound** without GROBID or Docling (roadmap A1).
+- A table set with rules above and under its header but no rule below its last row, and a table that has no rules
+  and no clear gaps between its columns, are not found from their rules. A table that runs over a page is joined only
+  when it is the last block of one page and the first of the next (a *Table 1 (continued)* line in between stays a
+  caption of its own).
+- Merged cells are read as one cell of the first column they start in; a cell whose words run across a rule is
+  read as its first column's.
+- A chart whose labels are in the body's type size and stand far from it, or whose axes are far from its drawn
+  area, may leave some of its words in the text. A drawing with more than 900 characters of text in it, or a page laid
+  out with boxes (a slide), is not taken for a figure.
+- Images in Word files and web pages: the alternative text of an image inside a table cell, and of an image in a
+  header or footnote, is not kept. A picture's own caption is the text Word or the page already holds.
+- Relations in other languages than English.
+- Themes, search words, hypothesis splits and term resolutions have no decision to compare, so they are left out.
+- Only the sample's agreement is shown; it is not kept between visits.
+- The mix lends work from Claude Code only. With the Claude API as the main route, one route still answers every
+  task (and the local model reads only documents marked *Only a local AI*).
+- An unsure answer of the local model for a document marked *Only a local AI* is not passed to a larger local model
+  or to you; it counts, as before.
+- The Claude Code plugin's `/enlens-run` does not yet pass the effort the queue names to its helpers (the models it
+  does).
+- The words of an AI are not offered beside the rules' sentences (the roadmap keeps that for later, marked as the
+  AI's).
+- `enlens measure` and the validation report do not show the tasks avoided yet (`tasks.avoided` is ready).
+- Passages are not screened further on this computer before the AI reads them (H4's first half): the keyword and
+  meaning passes already choose what a label or a check reads.
+- The Hypotheses page pages its answers in the browser, not by the server's `offset`: the buttons above the list act on
+  every answer shown, so the page needs all rows. The server paging is there for other callers.
+- The table view of a check's evidence is not drawn in pages.
+- The release pull request and its tagging (`tag-release.yml`) and the weekly try of the published install have not run
+  on GitHub yet: this release was tagged by hand. The build's own requirements (`setuptools-scm`) are not in the lock
+  file.
+- Works without a DOI are not looked up (matching by title would send titles).
+- A lookup is not repeated by itself: press the button again to see new notices.
+- **The AI half of the validation report** (roadmap J4.3) is not made: it needs a set of right answers to score
+  against and a recorded run on Claude. The report still holds the half that needs no AI.
+- Under local-only, the check for a new version on GitHub still runs, and a Claude chat's connector is not refused
+  (it shows project names and the titles of documents not marked *No AI*, never their text). `docs/PRIVACY.md` says so.
+- `enlens update` in a git copy on Windows, which now installs again when a release comes, has been tried only
+  against stand-in repositories.
+
 ## 0.18.0 (November 2026): working together as a team
 
 The stable 0.18: everything the three release candidates brought (Owner, Co-owner and Member roles; a storage space of
