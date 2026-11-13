@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from _fakedom import NODE
-from test_0_15_0_reader import _project
+from test_reader import _project
 from test_app import api, home  # noqa: F401  (fixtures)
 
 from enlens_claims import measure, reader

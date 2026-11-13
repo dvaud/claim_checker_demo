@@ -12,7 +12,7 @@ from enlens_claims.store import Workspace
 from enlens_claims.sync import folder
 from owner_helpers import add_doc, set_role, sync
 from owner_more_helpers import join_zip, small_project
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 
 def make_crew(tmp_path: Path, monkeypatch, shared: Path, co=("Ben", "Carol")) -> tuple[Person, ...]:

@@ -270,7 +270,7 @@ def addon_helpers() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------------------------
-# ENLENS's own kinds, as before 0.13.6 (tests/test_0_13_6_task_kinds.py checks every table against its 0.13.5 value).
+# ENLENS's own kinds, as before 0.13.6 (tests/test_task_kinds.py checks every table against its 0.13.5 value).
 # Registration order follows Settings' model table.
 # ---------------------------------------------------------------------------------------------
 _core(name="label", prompt_version="label-v1", certainty="labels", claude=("haiku", "sonnet"), local="small", bulk=True,

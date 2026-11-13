@@ -220,5 +220,5 @@ def test_an_owners_mark_holds_at_once_and_a_members_is_a_proposal(anna_and_ben, 
         assert docrole.role_of(ben.ws, book) is None
 
 
-from test_0_14_0_shared_projects import anna_and_ben  # noqa: E402,F401  (fixture)
+from test_shared_projects import anna_and_ben  # noqa: E402,F401  (fixture)
 from test_app import api, home  # noqa: E402,F401  (fixtures)

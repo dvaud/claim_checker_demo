@@ -21,7 +21,7 @@ from enlens_claims import ownership
 from enlens_claims.store import now
 from enlens_claims.sync import folder
 from owner_helpers import add_doc, allow, level, set_level, sync, view
-from test_0_14_0_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
+from test_shared_projects import Person, anna_and_ben  # noqa: F401  (fixture)
 
 
 def _with_hand_over(src: Path, out: Path, seq: int, frm: str, to: str) -> Path:

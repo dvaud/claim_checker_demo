@@ -452,7 +452,7 @@ class ChecksApi:
 class _Uploads:
     """roles (DESIGN-roles §4.11): move zips waiting for the answer to their question, each under a random token, in a
     folder of their own; one not answered within an hour goes. (Its methods start with "_": an `api_*.py` class's
-    public names are the endpoints' handlers, test_0_16_0_history.)"""
+    public names are the endpoints' handlers, test_history.)"""
 
     TTL = 3600
 

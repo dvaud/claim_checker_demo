@@ -17,7 +17,7 @@ from enlens_claims.sync import folder
 from owner_helpers import add_doc, level, move, proposals, reader_of, set_level, set_role, sync
 from owner_more_helpers import join_zip, small_project
 from roles_helpers import OLD
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 ROUNDS = 8  # at most; four rounds of every copy are enough for what these tests do
 

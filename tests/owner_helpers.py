@@ -10,7 +10,7 @@ from enlens_claims import reader as reader2
 from enlens_claims.llm import BaselineBackend
 from enlens_claims.store import now
 from enlens_claims.sync import folder
-from test_0_14_0_shared_projects import Person
+from test_shared_projects import Person
 
 TEXTS = {
     "desalination": ("Desalination for hydrogen export in arid regions\n\n"
