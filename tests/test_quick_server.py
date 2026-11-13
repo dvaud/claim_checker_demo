@@ -25,7 +25,7 @@ def test_the_server_starts_without_looking_up_this_computer_s_name(home, monkeyp
 
 
 def test_every_test_server_starts_without_the_lookup_too():
-    """2026-11-13: two stand-in servers written later (test_0_15_6, test_0_17_2) used Python's own again, and each
+    """2026-11-13: two stand-in servers written later (test_ollama_install, test_local_servers) used Python's own again, and each
     test with one waited 35 s on GitHub's Mac. A stand-in server is a QuickServer (or made from one)."""
     import re
     from pathlib import Path

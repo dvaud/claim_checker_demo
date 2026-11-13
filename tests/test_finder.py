@@ -1,7 +1,7 @@
 """0.17.0: the feature finder (static/finder-index.js, static/finder.js).
 
 The index and its scoring are plain JavaScript with no imports, so Node runs them here on the real FEATURES and
-PLACES (features.js imports the DOM helpers of lib.js, so the page's globals are stood in for, as test_0_13_6 does).
+PLACES (features.js imports the DOM helpers of lib.js, so the page's globals are stood in for, as test_update_check does).
 """
 from __future__ import annotations
 

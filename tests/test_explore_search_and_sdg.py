@@ -240,7 +240,7 @@ def test_edits_follow_their_themes_when_documents_are_added(tmp_path, monkeypatc
     c.mkdir()
     for t in TOPICS:
         for i in range(2):
-            # 0.15.7: "\n" on every system, as in test_0_13_9's corpus: Windows' "\r\n" would give other document
+            # 0.15.7: "\n" on every system, as in test_remove_themes's corpus: Windows' "\r\n" would give other document
             # ids (a file's sha1), so another passage order, and k-means would group this corpus another way
             (c / f"{t}{i}.txt").write_text(_topic_doc(rng, t), newline="\n")
     ws = Workspace.create(tmp_path / "ws")
