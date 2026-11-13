@@ -17,6 +17,9 @@ ROUTES: list[tuple[str, str, str]] = [
     ("GET", rf"/api/projects/{P}/document-roles", "get_document_roles"),
     ("GET", rf"/api/projects/{P}/documents/{P}/role", "get_document_role"),
     ("PUT", rf"/api/projects/{P}/documents/{P}/role", "put_document_role"),
+    # K2 part 2: a codebook from a theory document (theorycodes.py)
+    ("GET", rf"/api/projects/{P}/codebook-theory", "get_codebook_theory_docs"),
+    ("GET", rf"/api/projects/{P}/codebook-theory/{P}", "get_codebook_theory"),
     # A7 (reader 5): a figure's picture, drawn from the original PDF when it is shown, never stored
     ("GET", rf"/api/projects/{P}/documents/{P}/figures/{P}\.png", "get_figure_image"),
 ]
@@ -52,6 +55,23 @@ class CorpusApi:
         why = body.get("why")
         try:
             return docrole.set_role(self.app.ws(name), doc_id, role, str(why).strip() or None if why else None)
+        except KeyError:
+            raise ApiError(404, "No such document in this project.") from None
+
+    # ---- K2 part 2: a codebook from a theory document -------------------------------------------------------------
+    def get_codebook_theory_docs(self, name, q):
+        """{"documents": [{"doc_id", "title", "theory"}]}: the documents a codebook can start from, theory first."""
+        ws = self.app.ws(name)
+        rows = ws.query("SELECT doc_id, title, role FROM documents ORDER BY role IS NULL, title")
+        return {"documents": [{"doc_id": r["doc_id"], "title": r["title"], "theory": r["role"] == "theory"} for r in rows]}
+
+    def get_codebook_theory(self, name, doc_id, q):
+        """The candidate concepts of a document, as draft codes with their quoted definitions and the evidence's
+        suggested examples (theorycodes.candidates)."""
+        from .. import theorycodes
+
+        try:
+            return theorycodes.candidates(self.app.ws(name), doc_id)
         except KeyError:
             raise ApiError(404, "No such document in this project.") from None
 
