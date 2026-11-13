@@ -330,8 +330,10 @@ class ChecksApi:
         body = self._body()
         verdict = body.get("verdict") or None
         extra = {"quote": body.get("quote")} if "quote" in body else {}
-        claimcheck.set_judgement(self.app.ws(name), claim_id, passage_id, verdict, body.get("note"), **extra)
-        return {"saved": True, "verdict": verdict}
+        moved = claimcheck.set_judgement(self.app.ws(name), claim_id, passage_id, verdict, body.get("note"), **extra)
+        # 0.18.1 (N4): the answer before and after, and the sentence naming this judgement when it moved the answer
+        return {"saved": True, "verdict": verdict, "status_before": moved["before"], "status": moved["after"],
+                "moved": moved["moved"]}
 
     def get_jobs(self, q):
         return {"jobs": self.app.job_views()}

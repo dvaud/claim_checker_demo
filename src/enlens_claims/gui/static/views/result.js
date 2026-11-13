@@ -507,6 +507,8 @@ export async function renderResult(view, [hypId], query) {
       reviewed.length ? reviewedMark(people, relevantLeft !== 0)
         : basis ? h("span", { class: "basis-text", title: `Who judged the excerpts this answer rests on${r.model ? `. The AI model: ${r.model} (more under Technical details)` : ""}` }, basis) : null));
     if (sentence) card.appendChild(h("p", { class: "answer-sentence" }, sentence));
+    const said = assessmentBlock(r.assessment);
+    if (said) card.appendChild(said);
     if (r.decomposed) {
       card.appendChild(h("ol", { class: "answer-part-list part-grid" }, parts.map((p) => h("li", {},
         h("a", { href: `#part-${p.part}`, class: "part-claim-link", onClick: jumpTo(`part-${p.part}`) }, `${p.part}. ${p.claim}`),
@@ -540,6 +542,28 @@ export async function renderResult(view, [hypId], query) {
         nextBtn || restBtn ? h("div", { class: "answer-next-actions" }, nextBtn, restBtn) : null));
     }
     return card;
+  }
+
+  // 0.18.1 (N4): the assessment in words, made by rules from the judgements (never by an AI). The verdict's own sentence
+  // is left out here (the badge and who says what say it; the exports keep it). A sentence that rests on excerpts takes
+  // you to the first of them.
+  function assessmentBlock(a) {
+    const said = ((a && a.sentences) || []).filter((x) => x.rule !== "verdict");
+    if (!said.length) return null;
+    const goTo = (ref) => () => {
+      const [claimId, passageId] = ref.split("/");
+      const el = box.querySelector(`[data-claim="${CSS.escape(claimId)}"] [data-passage="${CSS.escape(passageId)}"]`);
+      if (!el) return;
+      const fl = el.closest("details"); if (fl && !fl.open) { fl.open = true; openFolds.add(fl.dataset.fold); }
+      el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("ev-flash"); setTimeout(() => el.classList.remove("ev-flash"), 1800);
+    };
+    return h("div", { class: "answer-assessment small", role: "group", "aria-label": "The assessment in words",
+      title: "Written by rules from the judgements, never by an AI. It changes no verdict." },
+      said.map((x) => h("p", { class: x.rule === "moved-by" ? "assessment-moved" : null, "data-rule": x.rule },
+        x.rule === "moved-by" ? icon("user", { size: 12 }) : null, x.rule === "moved-by" ? " " : null, x.text,
+        x.refs && x.refs.length ? " " : null,
+        x.refs && x.refs.length ? button({ kind: "quiet", sm: true, onClick: goTo(x.refs[0]),
+          "aria-label": `Show the excerpt this rests on${x.refs.length > 1 ? ` (the first of ${x.refs.length})` : ""}` }, "Show") : null)));
   }
 
   // "2 documents for, 1 partly, 1 against"

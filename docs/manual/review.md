@@ -41,6 +41,27 @@ Besides the answer and who says what, the card shows:
 When the AI was too unsure to count any excerpt, the card says so in one sentence, and *Next to review* takes you to
 those excerpts: your own judgement always counts.
 
+### The assessment in words
+
+Under the answer, a few sentences say what it rests on. They are made by fixed rules from the judgements, never
+written by an AI, so they read the same each time and change no answer:
+
+- **The other side, quoted.** When excerpts contradict the hypothesis, the strongest of them is quoted with its
+  document and place; when the evidence is mixed, the supporting side is quoted too.
+- **Where the support comes from.** A warning when one document carries most of it (*Most of the support comes from
+  one document (Smith 2021, 4 of 6 excerpts)*), or all of it comes from one year or one kind of document (from the
+  [bibliography](bibliography.md)).
+- **Each part**, for a hypothesis checked in parts: what holds and what has no evidence.
+- **What is not counted**: excerpts below your strictness, and those waiting for your own judgement or for the local
+  model.
+- **What your judgements did.** When your judgements give another answer than the AI's alone, it names the one that
+  moved it: *Your judgement on Jones 2022, page 12 turned this from Supported to Mixed evidence*. Each such change is
+  also written into the [research log](notes-and-log.md).
+
+*Show* beside a sentence takes you to the excerpt it rests on. Excerpts of documents no AI may read, or only a local
+one, are counted but never quoted here, as the text also goes into the downloads. Whether two excerpts that disagree
+concern another place, group or period, and how strong each source is, are left to you.
+
 ## The evidence
 
 *Cards* or *Table* beside the title: the table has one row per excerpt, with your decisions; click a row to open its
@@ -123,7 +144,7 @@ count either way. When the AI chosen in Settings has no stronger model, the card
 
 | Download | What is in it |
 | --- | --- |
-| *Excel (.xlsx)* | A **Summary** sheet, one row per hypothesis: the answer and the answer per part, documents per side, excerpts counted and too uncertain, your reviews and changes, notes, strictness, and, for a methods section, every AI model the check used with what each did (search words, judging, judging again as the stronger model, reading the excerpts of documents marked *Only a local AI*). An **Excerpts** sheet, one row per excerpt read: the judgement and who made it (you, a colleague, the AI or nobody yet), the AI's own judgement and certainty or why no AI judged it, counted or not, the quote and who chose it, document, where, your comment, the note about another group, earlier judgements, the second model's judgement, and the full excerpt. It ends with *How these results were made*. |
+| *Excel (.xlsx)* | A **Summary** sheet, one row per hypothesis: the answer, the assessment in words, and the answer per part, documents per side, excerpts counted and too uncertain, your reviews and changes, notes, strictness, and, for a methods section, every AI model the check used with what each did (search words, judging, judging again as the stronger model, reading the excerpts of documents marked *Only a local AI*). An **Excerpts** sheet, one row per excerpt read: the judgement and who made it (you, a colleague, the AI or nobody yet), the AI's own judgement and certainty or why no AI judged it, counted or not, the quote and who chose it, document, where, your comment, the note about another group, earlier judgements, the second model's judgement, and the full excerpt. It ends with *How these results were made*. |
 | *Highlighted documents (.zip)* | The documents, with this hypothesis's quotes marked. |
 | *Whole project (.zip)* | The project in one file ([Work together](together.md)). |
 | *CSV · JSON (for programmers)* | The same data, for scripts. |

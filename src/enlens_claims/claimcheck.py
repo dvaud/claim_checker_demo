@@ -1921,6 +1921,10 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     out["docs_added_since"] = new_documents(ws, hyp_id, _seen={x[1] for cid in part_ids for g in extras[cid]["groups"]
                                                                for t in g for x in _excerpts(t)})
     out["docs_added_since_matching"] = sum(1 for d in out["docs_added_since"] if d["matching"])
+    # 0.18.1 (N4): the assessment in words under the verdict, made by rules from the judgements above (it changes none)
+    from . import assessment
+
+    out["assessment"] = assessment.assess(ws, hyp_id, out)
     return out
 
 
@@ -2473,8 +2477,16 @@ def hypothesis_rows(res: dict) -> list[dict]:
                         "confidence": p["confidence"] if p["confidence"] is not None else "", "counted": int(p["counted"]),
                         "user_verdict": p["user_verdict"] or "", "user_note": p["user_note"] or "",
                         "quote": p["quote"] or "", "source": p["title"], "page": p["page"] or "",
-                        "location": p["location"] or "", "found_by": p["found_by"], "note": res["note"] or ""})
+                        "location": p["location"] or "", "found_by": p["found_by"], "note": res["note"] or "",
+                        "assessment": _assessment_text(res)})
     return out
+
+
+def _assessment_text(res: dict) -> str:
+    """0.18.1 (N4): the assessment in words, as one paragraph, for the exports that carry a verdict."""
+    from . import assessment
+
+    return assessment.text(res["assessment"]) if res.get("assessment") else ""
 
 
 JUDGEMENT_TEXT = {"supports": "Supports", "partially_supports": "Partly supports", "refutes": "Contradicts",
@@ -2633,6 +2645,7 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
             # 0.11.2: a stronger model read the excerpts again and its reading changed the answer
             "Answer before a stronger model read it again": STATUS_TEXT.get(res["status_before_stronger"], "")
             if res.get("status_before_stronger") else "",
+            "Assessment": _assessment_text(res),  # 0.18.1 (N4): made by rules, never by an AI
             "Answer for each part": "; ".join(f"{i}. {p['claim']}: {_part_text(p)}"
                                               for i, p in enumerate(parts, 1)) if len(parts) > 1 else "",
             "Documents that support it": res["balance"]["docs_supporting"],
@@ -2700,7 +2713,30 @@ _KEEP = object()
 
 
 def set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | None, note: str | None = None,
-                  quote=_KEEP) -> None:
+                  quote=_KEEP) -> dict:
+    """`_set_judgement`, and what it did to the answer (0.18.1, N4): the hypothesis's status before and after, and
+    when it changed, a sentence naming this judgement as the change that moved it, also written into the research log.
+    Returns {"hyp_id", "before", "after", "moved"} ("moved" is the sentence, or None)."""
+    from . import assessment, researchlog
+
+    hyp = ws.query("SELECT COALESCE(hyp_id, claim_id) FROM user_claims WHERE claim_id=?", (claim_id,))
+    hyp_id = hyp[0][0] if hyp else None
+    before = hypothesis_result(ws, hyp_id) if hyp_id else None
+    _set_judgement(ws, claim_id, passage_id, verdict, note, quote)
+    if before is None:
+        return {"hyp_id": None, "before": None, "after": None, "moved": None}
+    after = hypothesis_result(ws, hyp_id)
+    moved = assessment.judgement_moved(ws, before, after, claim_id, passage_id)
+    if moved:
+        with ws.connect() as cx:
+            researchlog.record(cx, "verdict-moved", moved, "check", hyp_id, title=after["text"],
+                               data={"from": before["status"], "to": after["status"], "claim_id": claim_id,
+                                     "passage_id": passage_id, "verdict": verdict})
+    return {"hyp_id": hyp_id, "before": before["status"], "after": after["status"], "moved": moved}
+
+
+def _set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str | None, note: str | None = None,
+                   quote=_KEEP) -> None:
     """A person's own judgement of an excerpt the AI read. It replaces the AI's in the answer (and always counts);
     `verdict` None removes it. The AI's judgement is kept and shown beside it. With `verdict` None and a `note`,
     only the comment is kept: a comment alone is not a judgement (it does not count as agreeing with the AI).

@@ -1740,4 +1740,12 @@ pass; …"], "table": [{"measure": "Usable answers on the first try", "Checking 
 ### New in 0.18.1: the AI mix, checks and retractions
 
 <!-- 0.18.1 part B: its routes below this line (gui/api_checks_extra.py); integration moves them to their places -->
+
+**The assessment in words (N4).** `GET …/hypotheses/<id>` carries `assessment`: `{"sentences": [{"text", "rule",
+"refs"}], "moved_by": {"text", "rule", "refs", "from", "to"} | null}`. Each sentence comes from one rule (`verdict`,
+`against`, `for`, `concentration`, `part`, `below-strictness`, `waiting-for-you`, `waiting-local`, `moved-by`);
+`refs` are `"<claim_id>/<passage_id>"` of the excerpts it rests on. Made by rules, never by an AI; excerpts of
+documents not readable by Claude are counted, never quoted. `PUT …/judgements/<claim_id>/<passage_id>` now also
+answers `{"status_before", "status", "moved"}` (`moved`: the sentence naming this judgement when it changed the
+answer, also written into the research log as kind `verdict-moved`, else null).
 <!-- end of 0.18.1 part B -->
