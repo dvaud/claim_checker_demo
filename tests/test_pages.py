@@ -97,8 +97,8 @@ def test_loosening_an_ai_setting_is_asked_about_and_a_table_that_fits():
     fn = fn[:fn.index("\n    }\n")]
     assert "if (!(await confirmLoosen(ids, level))) {" in fn and "patchDocs({ documents: docs.filter(" in fn
     assert "reloadDocs" not in fn[:fn.index("const body")]
-    # Open and Remove sit in the title cell, not in a last column that was out of sight
-    assert 'class: "doc-actions"' in js and 'h("td", { class: "actions" }' not in js
+    # Open and Remove sit in the row's panel (0.18.2), not in a last column that was out of sight
+    assert 'class: "doc-detail-foot" }, link({ kind: "next", href: docHref(d) }, "Open the document")' in js and 'h("td", { class: "actions" }' not in js
     assert "docs[at] = d" in js
 
 

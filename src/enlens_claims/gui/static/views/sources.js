@@ -5,7 +5,7 @@ import { tesseractHelp, App, api, h, icon, readsLine, replace, clear, toast, sho
   dialog, certainty, breakSegments, breaksToIndex, textPositions, wordSpan, cpLength, safeHref, searchHref, session, download, plural, shortTitle, cap, runningJob, TOKEN, lazyList, button, iconButton, downloadButton, fileButton, link, notice, card, tag, input, select, textarea, fold, choice, stopButton, inset, menu } from "../lib.js";
 import { simpleProgress, jobCard } from "./progress.js";
 import { blockNode, blockUnit, originalLink, forgetOriginals } from "./result.js";
-import { LEVEL, accessChoice, accessSelect, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
+import { LEVEL, accessChoice, accessBadge, accessAskCard, accessBanner, docAccessDialog, levels as accessLevels } from "./ai-access.js";
 import { aiLabelCard, startKeywordPass, keywordLabel, SOURCE_WORDS, RELEVANCE_WORDS, DIRECTION_WORDS } from "./profile.js";
 import { colourPicker, editNote, removeNote, useAsEvidence, noteCard } from "./notes.js";
 import { askWhy } from "./versions.js";
@@ -260,8 +260,9 @@ export async function renderSources(view) {
   const nrBox = h("div", { class: "nr-box", role: "region", "aria-label": "Documents read by an earlier reader" });
   const nr = { running: false, done: null, plan: null, older: [] };
   let pa = {};                // the project's AI-access info, as last drawn
-  let countsEl = null, shieldNote = null, tbody = null;
+  let countsEl = null, shieldNote = null, list = null;
   const rows = new Map();     // doc_id -> its row
+  const opened = new Set();   // 0.18.2: the documents whose panel is open (kept across re-draws)
   let roles = {};             // 0.18.1 (K2): doc_id -> "theory"
   async function reloadDocs() {
     let r;
@@ -294,53 +295,79 @@ export async function renderSources(view) {
     nr.older = docs.filter((d) => newReaderFor(d, newReader));
     docsBox.appendChild(nrBox);
     drawNr();
-    // 0.11: the AI setting of each document (a dropdown), several at once, and how much Claude has read
-    const bulkSel = select({ sm: true, "aria-label": "Who may read the selected documents with AI" }, accessLevels().map((lv) => h("option", { value: lv }, LEVEL[lv].title)));
+    // 0.11: who may read each document with AI, several at once. 0.18.2: one button per setting, in a bar that stays
+    // in view while rows are ticked (a select and Apply were two steps, and scrolled away over a long list)
     const bulkCount = h("span", { class: "small" });
-    const bulk = h("div", { class: "bulk-bar", hidden: true, role: "region", "aria-label": "Change the selected documents" }, bulkCount, bulkSel,
-      button({ kind: "main", sm: true, onClick: () => setAccess([...picked], bulkSel.value) }, icon("check", { size: 13 }), "Apply"),
-      button({ kind: "quiet", sm: true, onClick: () => { picked.clear(); for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = false; drawBulk(); } }, "Clear"));
-    const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected: who may read them with AI?`; drawNr(); };
-    const pickAll = h("input", { type: "checkbox", class: "doc-pick-all", "aria-label": "Select every document" });
+    const pickAll = h("input", { type: "checkbox", class: "doc-pick-all" });
+    const bulk = h("div", { class: "bulk-bar bulk-stick", hidden: true, role: "region", "aria-label": "Change the selected documents" }, bulkCount,
+      h("span", { class: "bulk-move" }, accessLevels().map((lv) => button({ sm: true, onClick: () => setAccess([...picked], lv) }, icon(LEVEL[lv].icon, { size: 13 }), LEVEL[lv].many))),
+      button({ kind: "quiet", sm: true, onClick: () => { picked.clear(); pickAll.checked = false; for (const c of docsBox.querySelectorAll(".doc-tick")) c.checked = false; drawBulk(); } }, "Clear"));
+    const drawBulk = () => { bulk.hidden = !picked.size; bulkCount.textContent = `${picked.size} selected. Who may read ${picked.size === 1 ? "it" : "them"} with AI?`; drawNr(); };
     // 0.16: every document of the list, drawn yet or not (the rows are drawn as the list scrolls into view)
-    pickAll.addEventListener("change", () => { for (const d of docs) { if (pickAll.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); } for (const c of docsBox.querySelectorAll(".doc-pick")) c.checked = pickAll.checked; drawBulk(); });
-    const sentCell = (d) => {
+    pickAll.addEventListener("change", () => { for (const d of docs) { if (pickAll.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); } for (const c of docsBox.querySelectorAll(".doc-tick")) c.checked = pickAll.checked; drawBulk(); });
+    // how much of it Claude has read, in words that say what the share counts (DESIGN 4.1: a number is never a button)
+    const sentWords = (d) => {
       const pct = Math.round((d.sent || 0) * 1000) / 10;
-      const label = d.ai_access !== "cloud" && !pct ? "never" : pct ? `${pct < 1 ? "<1" : Math.round(pct)}%` : "0%";
-      // the share is a fact; the button that opens what Claude read is a verb (DESIGN 4.1: a number is never a button)
-      return h("div", { class: "sent-cell" }, h("span", {}, label, d.budget_reached ? h("span", { class: "muted" }, " (cap reached)") : null),
-        button({ kind: "quiet", sm: true, title: "What Claude has read of this document, and who may read it", onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, "See what it read"));
+      if (!pct) return d.ai_access === "cloud" ? "nothing yet" : "nothing: it is not for Claude";
+      return `${pct < 1 ? "less than 1" : Math.round(pct)}% of its text${d.budget_reached ? " (its cap is reached)" : ""}`;
     };
+    // what needs a look in how it was read: a tag says what, with its way on after it (DESIGN 4.10)
+    const readingMarks = (d) => [
+      d.clash ? tag({ kind: "attention", title: `The same file as another document here, read into other text on ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} computer (another ENLENS version, or text recognition on one computer and not the other). Quotes are places in the text, so this reading came in as a document of its own, with the results made from it.` }, `sync clash · ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} reading`) : null,
+      d.check ? tag({ kind: "attention" }, d.check) : null,
+      d.scanned ? (/no text/i.test(d.scanned) ? tag({ kind: "attention", class: "it scanned-note" }, d.scanned) : h("span", { class: "it scanned-note muted small" }, icon("eye", { size: 12 }), d.scanned)) : null,
+      readingNote(d)].filter(Boolean);
+    const docHref = (d) => `#/doc/${encodeURIComponent(d.doc_id)}`;
+    // 0.18.2: everything about one document, each fact under its name, in a panel under its row (DESIGN 4.20)
+    const detailFor = (d) => {
+      const name = d.title || d.file;
+      const about = () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id]));
+      const access = choice({ sm: true, class: "doc-access", label: `Who may read ${name} with AI`, value: d.ai_access,
+        options: accessLevels().map((lv) => [lv, [icon(LEVEL[lv].icon, { size: 13 }), LEVEL[lv].title]]), onPick: (lv) => setAccess([d.doc_id], lv) });
+      const marks = readingMarks(d);
+      const role = roleMenuItem(project, d, roles[d.doc_id], () => reloadDocs());
+      const facts = [KIND_TEXT[d.kind] || d.kind || "", d.pages ? plural(d.pages, "page") : null, (fmt.dateShort(d.added_at || "") || d.added) ? `added ${fmt.dateShort(d.added_at || "") || d.added}` : null].filter(Boolean).join(" · ");
+      return h("div", { class: "doc-detail", id: `doc-detail-${d.doc_id}` },
+        h("dl", { class: "doc-detail-grid" },
+          h("dt", {}, "File"), h("dd", {}, h("span", { class: "doc-file" }, ...String(d.file || "").split(/(?<=[_-])/).flatMap((seg) => [seg, h("wbr")])), h("span", { class: "muted small" }, facts)),   // a file name may break after _ or -, never before its extension
+          h("dt", {}, "Who may read it with AI"), h("dd", {}, access, button({ kind: "quiet", sm: true, class: "doc-why", title: d.note ? `Why: ${d.note}` : null, onClick: about }, d.note ? `Why: ${d.note}` : "Add a note on why")),
+          h("dt", {}, "Sent to Claude"), h("dd", {}, h("span", {}, sentWords(d)), button({ kind: "quiet", sm: true, title: "What Claude has read of this document, and who may read it", onClick: about }, "See what it read")),
+          h("dt", {}, "Reading"), h("dd", {}, marks.length ? marks : h("span", { class: "it" }, icon("check", { size: 13 }), "readable"),
+            readingNote(d) ? null : link({ href: `${docHref(d)}?tab=reading`, class: "small" }, "How it was read")),
+          h("dt", {}, "Role"), h("dd", {}, roles[d.doc_id] === "theory" ? "Theory: the lens the research is read through, not evidence" : "Evidence",
+            button({ kind: "quiet", sm: true, onClick: role.onClick }, role.text)),
+          d.bib && d.bib.cite ? [h("dt", {}, "In the bibliography"), h("dd", {}, h("span", { class: "it", title: d.bib.title || null }, icon("library", { size: 13 }), d.bib.cite),
+            link({ href: "#/bibliography", class: "small" }, "Open the Bibliography"))] : null),
+        h("div", { class: "doc-detail-foot" }, link({ kind: "next", href: docHref(d) }, "Open the document"),
+          button({ kind: "quiet", sm: true, onClick: () => removeDoc(d) }, icon("trash", { size: 13 }), "Remove…")));
+    };
+    // 0.18.2: a document is one line: its tick, its title, what is true of it now (who may read it, its role, a wait for
+    // the owner) and what needs a look; the arrow (or a click on the row) opens the panel under it. No column hides
+    // anything, at any width, and nothing at rest is a control but the tick, the title and the arrow.
     const rowFor = (d) => {
-      const c = h("input", { type: "checkbox", class: "doc-pick", value: d.doc_id, "aria-label": `Select ${d.title || d.file}`, checked: picked.has(d.doc_id) });
+      const name = d.title || d.file;
+      const c = h("input", { type: "checkbox", class: "doc-tick", value: d.doc_id, "aria-label": `Select ${name}`, checked: picked.has(d.doc_id) });
       c.addEventListener("change", () => { if (c.checked) picked.add(d.doc_id); else picked.delete(d.doc_id); drawBulk(); });
-      const row = h("tr", {},
-        h("td", { class: "pick-col" }, c),
-        h("td", { class: "doc-cell" }, h("div", { class: "doc-title", title: d.title || d.file }, link({ kind: "title", serif: true, href: `#/doc/${encodeURIComponent(d.doc_id)}` }, d.title || d.file)),
-          proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
-          roleTag(roles[d.doc_id]),   // 0.18.1 K2: the lens, not the evidence
-          h("div", { class: "doc-file" }, ...String(d.file || "").split(/(?<=[_-])/).flatMap((seg) => [seg, h("wbr")])),   // may break after _ or -, never before its extension
-          d.bib && d.bib.cite ? h("div", { class: "doc-cite it", title: `In the bibliography: ${d.bib.title}` }, icon("library", { size: 11 }), d.bib.cite) : null,
-          // 0.14.3: a row's actions sit under its title, where they are always in view (the table was wider than the
-          // page and its last column was out of sight). 0.17.0: the rare and lasting one, Remove, is in the row's menu,
-          // not a red button under every title (DESIGN 4.20)
-          h("div", { class: "doc-actions" },
-            menu({ label: `More for ${d.title || d.file}`, items: [roleMenuItem(project, d, roles[d.doc_id], () => reloadDocs()), { text: "Remove…", icon: "trash", danger: true, onClick: () => removeDoc(d) }] }))),
-        h("td", { "data-label": "Type", class: "fact" }, KIND_TEXT[d.kind] || d.kind || ""),
-        h("td", { "data-label": "Pages", class: "num" }, d.pages ? String(d.pages) : "—"),
-        h("td", { "data-label": "Added", class: "fact small muted nowrap" }, fmt.dateShort(d.added_at || "") || d.added || ""),
-        h("td", { "data-label": "AI", class: "access-cell" }, accessSelect(d, pa.default, (lv) => setAccess([d.doc_id], lv || pa.default)),
-          d.note ? button({ kind: "quiet", sm: true, class: "access-why", title: `Why: ${d.note}`, onClick: () => docAccessDialog(project, d, pa.default, (res) => patchDocs(res, [d.doc_id])) }, d.note) : null),
-        h("td", { "data-label": "Sent to Claude", class: "num" }, sentCell(d)),
-        h("td", { "data-label": "Note", class: "fact check-cell" },
-          d.clash ? tag({ kind: "attention", title: `The same file as another document here, read into other text on ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} computer (another ENLENS version, or text recognition on one computer and not the other). Quotes are places in the text, so this reading came in as a document of its own, with the results made from it.` }, `sync clash · ${d.clash.name === "you" ? "your" : `${d.clash.name}’s`} reading`) : null,
-          d.check ? tag({ kind: "attention" }, d.check) : null,
-          d.scanned ? (/no text/i.test(d.scanned) ? tag({ kind: "attention", class: "it scanned-note" }, d.scanned) : h("span", { class: "it scanned-note muted small" }, icon("eye", { size: 12 }), d.scanned)) : null,
-          readingNote(d),
-          !d.check && !d.scanned && !readingNote(d) ? h("span", { class: "it muted small" }, icon("check", { size: 12 }), "readable") : null),
-        );
-      rows.set(d.doc_id, row);
-      return row;
+      const item = h("li", { class: "doc-item" });
+      let detail = null;
+      const toggle = iconButton({ icon: "chevron-down", sm: true, class: "doc-toggle", label: `Details of ${name}`, title: "Details", "aria-controls": `doc-detail-${d.doc_id}` });
+      const show = (open) => {
+        if (open) opened.add(d.doc_id); else opened.delete(d.doc_id);
+        if (open && !detail) { detail = detailFor(d); item.append(detail); }
+        if (detail) detail.hidden = !open;
+        if (open) item.dataset.open = "true"; else delete item.dataset.open;
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      };
+      toggle.addEventListener("click", () => show(!opened.has(d.doc_id)));
+      item.append(h("div", { class: "doc-row", onClick: (e) => { if (!e.target.closest("a, button, input, label, select, summary")) show(!opened.has(d.doc_id)); } },
+        c,
+        h("div", { class: "doc-main" },
+          h("div", { class: "doc-title", title: d.title && d.file ? `${d.title} · ${d.file}` : name }, link({ kind: "title", serif: true, href: docHref(d) }, name)),
+          h("div", { class: "doc-marks" }, accessBadge(d.ai_access), roleTag(roles[d.doc_id]), proposalChip(d.proposal), ...readingMarks(d))),
+        h("div", { class: "doc-end" }, toggle)));
+      show(opened.has(d.doc_id));
+      rows.set(d.doc_id, item);
+      return item;
     };
     // a change of the AI setting, note or cap: the answer carries the list again; only the rows changed are
     // redrawn (the ticks and the scroll position stay), with the counts above the table
@@ -372,7 +399,7 @@ export async function renderSources(view) {
       // cancelled: those rows show their own setting again; the list stays where it is (it went back to the top)
       if (!(await confirmLoosen(ids, level))) {
         patchDocs({ documents: docs.filter((d) => ids.includes(d.doc_id)) }, ids);
-        if (ids.length === 1) { const sel = rows.get(ids[0])?.querySelector(".access-select"); if (sel) sel.focus(); }
+        if (ids.length === 1) { const sel = rows.get(ids[0])?.querySelector('.doc-access [aria-checked="true"]'); if (sel) sel.focus(); }
         return;
       }
       const body = { doc_ids: ids, ai_access: level === pa.default ? null : level };
@@ -385,15 +412,13 @@ export async function renderSources(view) {
     }
     docsBox.appendChild(bulk);
     drawBulk();
-    tbody = h("tbody");
+    list = h("ul", { class: "doc-list", "aria-label": "Documents" });
     // 0.16 (H5): the rows are drawn as the list scrolls into view (hundreds of documents drew thousands of controls
     // before the page showed); ticking, the counts and the AI settings work on every document all the same
-    // 0.18.1 (H5): the lazy list every long list uses: more rows as the end comes into view, and a line under the table
+    // 0.18.1 (H5): the lazy list every long list uses: more rows as the end comes into view, and a line under the list
     // that says how many are shown
-    const lazy = lazyList({ items: docs, render: rowFor, list: tbody, pageSize: 120, firstSize: 60, noun: ["document", "documents"] });
-    docsBox.append(h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive docs-table" },
-      h("thead", {}, h("tr", {}, h("th", { scope: "col", class: "pick-col" }, pickAll), h("th", { scope: "col" }, "Title"), h("th", { scope: "col" }, "Type"), h("th", { scope: "col", class: "num" }, "Pages"), h("th", { scope: "col" }, "Added"), h("th", { scope: "col", id: "ai-column" }, "AI"), h("th", { scope: "col", class: "num", title: "The share of each document's text Claude has read" }, "Sent to Claude"), h("th", { scope: "col" }, "Note"))),
-      tbody)), lazy.footer);
+    const lazy = lazyList({ items: docs, render: rowFor, list, pageSize: 120, firstSize: 60, noun: ["document", "documents"] });
+    docsBox.append(h("label", { class: "it small muted docs-pick-all" }, pickAll, "Select all"), h("div", { class: "table-wrap" }, list), lazy.footer);
   }
 
   // 0.15.7: the documents an earlier reader read, offered to the new one; the job's progress; what it did

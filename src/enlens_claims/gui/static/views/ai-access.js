@@ -37,15 +37,6 @@ export function accessChoice({ value = null, name = "ai-access", many = true, on
   return wrap;
 }
 
-// The small dropdown of the Documents table. `own` null: the project's default applies.
-export function accessSelect(doc, projectDefault, onPick) {
-  const sel = select({ sm: true, class: "access-select", "aria-label": `Who may read ${doc.title || doc.file} with AI` },
-    levels().map((lv) => h("option", { value: lv, selected: doc.ai_access === lv }, LEVEL[lv].title)));
-  sel.dataset.level = doc.ai_access;
-  sel.addEventListener("change", () => { sel.dataset.level = sel.value; onPick(sel.value === projectDefault && !doc.own ? null : sel.value); });
-  return sel;
-}
-
 // A project without a default (made before 0.11 and imported, or made through the connector): asked once.
 export function accessAskCard(project, info, onDone) {
   let picked = null;
@@ -70,7 +61,7 @@ export function accessBanner(project, onDismiss) {
   return notice({ kind: "info", icon: "info", class: "access-banner", role: "status" },
     h("div", { class: "grow" }, h("p", {}, h("strong", {}, "New in 0.11: choose which documents Claude may read. "),
       "Mark a licensed PDF or an interview transcript as ", h("em", {}, "Only a local AI"), " or ", h("em", {}, "No AI"),
-      " in the column ", link({ kind: "jump", onClick: () => { const t = document.querySelector(".access-select") || document.getElementById("ai-column"); if (t) { t.scrollIntoView({ block: "center" }); t.focus(); } } }, "AI"),
+      " in a document's details: ", link({ kind: "jump", onClick: () => { const t = document.querySelector(".doc-toggle"); if (t) { t.scrollIntoView({ block: "center" }); t.focus(); } } }, "the arrow at the end of its row"),
       ". Everything else stays as it was.")), close);
 }
 

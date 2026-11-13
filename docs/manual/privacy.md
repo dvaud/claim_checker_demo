@@ -62,15 +62,16 @@ interview transcript.
 > Documents you mark as local stay on this computer. ENLENS never sends their text to Claude, in any feature, and
 > shows you how much of every other document it has sent.
 
-<img src="../images/manual/documents.png" alt="The Documents page, with the AI column showing who may read each document" width="800">
+<img src="../images/manual/documents.png" alt="The Documents page: each document shows who may read it with AI" width="800">
 
 **Where you set it.**
 
 - **When you add documents**, the page asks *Who may read these documents with AI?*; one answer covers everything
   added at once. The first answer in a new project becomes its default (nothing is preselected the first time); later
   the default is preselected.
-- **On the Documents page**, the *AI* column has a small dropdown per document; tick several documents to change them
-  together. A note (*Why*, for example "publisher licence") is kept with the document and exported with the project;
+- **On the Documents page**, each document's line shows who may read it (*Claude*, *Local AI* or *No AI*); the arrow at
+  the end of the line opens its details, where three buttons change it. Tick several documents to change them together
+  with the bar that appears above the list. A note (*Why*, for example "publisher licence") is kept with the document and exported with the project;
   it changes nothing.
 - **For large corpora**, a `manifest.csv` may have `ai_access` (`cloud`, `local` or `none`) and `ai_note` columns.
 
@@ -133,8 +134,8 @@ it load.
 ENLENS writes down every passage at the moment it leaves for Claude (Claude Code, the Claude API, a Claude chat through
 the connector).
 
-- The column *Sent to Claude* on the Documents page shows the share of each document's text; click it for the
-  passages, when, and for which feature.
+- A document's details on the Documents page (the arrow at the end of its line) show the share of its text under
+  *Sent to Claude*; *See what it read* lists the passages, when, and for which feature.
 - *Settings → Technical → What was sent to Claude* downloads the whole list (CSV), for example for a data management
   plan. For a project made before 0.11 the list starts with the results ENLENS recorded then.
 - Changing a document to *Only a local AI* applies to everything not yet answered; what Claude already read stays in

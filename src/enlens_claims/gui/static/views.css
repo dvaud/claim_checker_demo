@@ -60,26 +60,52 @@
 .file-list li { display: flex; gap: 8px; align-items: center; font-size: var(--fs-small); padding: 4px 0; border-top: 1px solid var(--border); }
 .file-list .fs { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .doc-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-/* Sent to Claude: the share, then the button that opens what Claude read; right in the table, left when stacked */
-.sent-cell { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 2px 8px; }
-/* the title column keeps room for two lines of a title; a long file name breaks after _ or - (its <wbr>), and only a
-   part longer than the column breaks inside (DESIGN 4.20) */
-.docs-table .doc-cell { min-width: 16em; }
-.doc-file { font-size: var(--fs-xs); color: var(--muted); font-family: var(--font-mono); margin-top: 2px; overflow-wrap: break-word; }
+/* 0.18.2: the Documents list (DESIGN 4.20). A document is one line: its tick, its title, the marks of what is true of
+   it now and of what needs a look, and the arrow that opens its panel; the panel names every fact, under its row */
+.doc-list { margin: 0; padding: 0; list-style: none; }
+.doc-item { border-bottom: 1px solid var(--border); }
+.doc-item:last-child { border-bottom: 0; }
+.doc-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 8px 10px 8px 14px; cursor: pointer; }
+.doc-row:hover { background: var(--surface-2); }
+.doc-item[data-open="true"] > .doc-row { background: var(--accent-soft); }
+.doc-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.doc-main .doc-title { flex: 1 1 16em; min-width: 0; font-size: var(--fs-doc); line-height: 1.35; -webkit-line-clamp: 1; overflow-wrap: anywhere; }
+.doc-item[data-open="true"] .doc-main .doc-title { -webkit-line-clamp: unset; }
+.doc-marks { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.doc-marks .owner-doc { display: contents; }
+.doc-toggle .icon { transition: transform .15s; }
+.doc-toggle[aria-expanded="true"] .icon { transform: rotate(180deg); }
+.doc-detail { padding: 4px 14px 14px 44px; box-shadow: inset 3px 0 0 var(--accent); }
+.doc-detail[hidden] { display: none; }
+.doc-detail-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 12px 24px; margin: 12px 0 0; }
+.doc-detail-grid dt { color: var(--muted); font-size: var(--fs-small); }
+.doc-detail-grid dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; margin: 0; }
+.doc-detail-grid .seg { min-width: 0; flex-wrap: wrap; }
+.doc-detail-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.doc-why { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docs-pick-all { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 var(--space-2) 16px; }
+/* a long file name breaks after _ or - (its <wbr>), and only a part longer than the line breaks inside */
+.doc-file { font-size: var(--fs-xs); color: var(--muted); font-family: var(--font-mono); overflow-wrap: break-word; min-width: 0; }
 .owner-doc { margin: var(--space-1) 0 0; }   /* 0.18 (L2): Waiting for the owner, or In your copy only (views/owner.js proposalChip) */
-.check-cell { min-width: 140px; }
+@container (max-width: 520px) {
+  .doc-main .doc-title { flex-basis: 100%; -webkit-line-clamp: 2; }
+  .doc-detail { padding-left: 14px; }
+  .doc-detail-grid { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .doc-detail-grid dd { margin-bottom: 8px; }
+}
 .index-card { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .index-card > .grow { flex: 1 1 240px; }
 .index-card .icon-big { color: var(--text-2); }
 .drop-title { font-size: var(--fs-section); margin: 8px 0; }
 .drop-choose { margin: 0 0 8px; }
-.doc-actions { display: flex; gap: 12px; margin-top: 4px; font-size: var(--fs-xs); }
 .docs-warned { margin: 0 0 var(--space-3); }
 .tess-help { margin-top: 6px; }
 .tess-help p { margin: 4px 0; }
 .tess-help .copy-line { margin: 4px 0; }
 .add-access { margin-top: 12px; }
-.pick-col { width: 28px; }
+/* the bar stays in view under the page's top while rows are ticked; one button per setting */
+.bulk-bar.bulk-stick { position: sticky; top: 8px; z-index: 5; }
+.bulk-move { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .bulk-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px;
   border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text);
@@ -95,19 +121,11 @@
 .terms-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
 .terms-panel p { margin: 4px 0; }
 .terms-pick { gap: 6px; margin: 6px 0; }
-/* who may read each document with AI: the column's select and the reason under it, placed */
-.access-cell { min-width: 150px; }
-.access-select { max-width: 170px; }
-.access-why { display: block; max-width: 170px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .access-counts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 12px; }
 .access-options { margin-top: 6px; }
 .access-banner, .access-ask { margin-bottom: 12px; }
 .access-ask h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
 .route-cards { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 8px 0 12px; }
-@media (max-width: 860px) {
-  .access-cell { min-width: 0; }
-  .access-select, .access-why { max-width: 100%; }
-}
 /* This page's own pieces, placed here and not in the JavaScript; placement only */
 .docs-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .docs-access-note { margin: var(--space-2) 0 0; }
@@ -320,7 +338,6 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 /* A reading marked as checked by the person */
 .dv-checked { margin: 0 0 12px; }
 /* a document's reference: in the Documents list and in the document viewer */
-.doc-cite { display: flex; font-size: var(--fs-xs); color: var(--text-2); margin-top: 2px; }
 .dv-bib { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 6px 0 0; font-size: var(--fs-small); color: var(--text-2); }
 .dv-bib .sep { color: var(--faint); }
 .dv-head-row .orig-link a { font-size: var(--fs-small); }

@@ -14,4 +14,11 @@
     space is short, like the other tables. In search results, a long phrase found is cut with "…". Long names no
     longer widen the tables that compare versions or pick groups. The drawer's tabs no longer run under its close
     button.
-  - Nothing here changes results.
+- **The Documents page is a list of one-line documents that open.** Each document is one line: its title, who may
+  read it with AI, its role, a wait for the owner and anything that needs a look. The arrow at the end of a line, or a
+  click on the line, opens a panel under it that names every fact and holds its controls: the file, who may read it
+  with AI (three buttons, plus the note on why), how much Claude has read and *See what it read*, how it was read, its
+  role, its place in the bibliography, *Open the document* and *Remove…*. The bare "text", "—" and "0%" of the old
+  table are gone, and nothing hides in a column off to the side. Ticking documents shows a bar that stays in view, with
+  one button per setting instead of a select and *Apply*.
+- Nothing here changes results.

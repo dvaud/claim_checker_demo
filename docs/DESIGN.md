@@ -630,7 +630,11 @@ in the page's block); a file name under a name breaks after `_` or `-`, never be
 squeezes the name. A long word a person typed (a name, a group) breaks in its cell (`overflow-wrap: anywhere`) rather
 than widen the table. A grid whose first column stays while it scrolls (the [heat grid](#425-the-heat-grid)) is
 the one thing that scrolls sideways, and it says so (4.25). A table inside a document's own text (the reading view)
-wraps its words to the reading column; only a cell that is a figure stays on one line. Lists of entries (the research log, notes, answers) keep the same rhythm.
+wraps its words to the reading column; only a cell that is a figure stays on one line. A list of many things that each carry
+several facts and settings (the Documents page) is no table at all: an item is one line (its tick, its title, the
+marks of what is true of it now and of what needs a look, an arrow), and the arrow or a click on the line opens a panel
+under it that names each fact and holds its controls (`.doc-item`, `.doc-detail`), so a fact never needs a column
+header to be understood. Lists of entries (the research log, notes, answers) keep the same rhythm.
 
 **Dense places** (the answers, excerpt cards, the codebook editor, the reading view, tables) keep their actions
 recognisable this way:
@@ -1051,6 +1055,7 @@ A few rules have exceptions, each argued for once. They are listed here and in t
 | `.dv-chain-btn[aria-pressed="true"]` | Chosen: the chain shown |
 | `.picker-item[aria-selected="true"]` | Chosen: the row picked |
 | `.cb-code-row:has(> .cb-code-sum[aria-expanded="true"])` | Here: the code open in the codebook editor |
+| `.doc-item[data-open="true"] > .doc-row` | Here: the document open in the Documents list |
 
 **Dashed edges** ([3.3](#33-space-corners-shadows-icons)): each is not in force, or not there yet.
 

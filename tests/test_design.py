@@ -257,7 +257,7 @@ def test_no_button_is_fixed_to_a_width():
     same place on every card, each has a min-width for its longest label, never a width: a fixed one clips a longer
     label (Judge differently…, in a slot of 9rem, lost its padding). Icon buttons and colour swatches hold no words."""
     classes = _button_classes()
-    assert {"agree-btn", "dismiss-btn", "judge-toggle", "next-review", "code-btn", "access-why", "bib-chosen-chip"} <= classes
+    assert {"agree-btn", "dismiss-btn", "judge-toggle", "next-review", "code-btn", "doc-why", "bib-chosen-chip"} <= classes
     bad = _buttons_fixed_to_a_width(COMPONENTS, classes) + _buttons_fixed_to_a_width(VIEWS, classes)
     assert not bad, "\n".join(bad)
     # the rule that clipped it is seen, and a slot as a min-width is not
@@ -1124,6 +1124,7 @@ SOFT_TEAL_MEANS = {
     '.dv-chain-btn[aria-pressed="true"]': "chosen: the chain shown",
     '.picker-item[aria-selected="true"]': "chosen: the row picked",
     '.cb-code-row:has(> .cb-code-sum[aria-expanded="true"])': "here: the code open in the codebook editor",
+    '.doc-item[data-open="true"] > .doc-row': "here: the document open in the Documents list",
 }
 
 def test_soft_teal_means_here_chosen_or_found():
@@ -1409,17 +1410,19 @@ def test_the_guide_and_tabs_agree_on_counts():
     assert not bad, "a page passes a count to its view tabs or Settings' tabs: " + ", ".join(bad)
 
 
-# The Documents table keeps its titles readable (docs/DESIGN.md 4.20): the title column holds a min-width in em, and a
-# long file name under the title breaks only after _ or -, so neither squeezes the title nor cuts off its extension.
+# The Documents list keeps its titles readable (docs/DESIGN.md 4.20): a title takes the row's room before its marks, and
+# a long file name breaks only after _ or -, never before its extension.
 # Changed on purpose in 0.17.0: overflow-wrap: anywhere on .doc-file let the table narrow the title column to ~20
-# characters at 1,280 px.
+# characters at 1,280 px. Changed on purpose in 0.18.2: the table became a list of one-line rows that open (no columns),
+# and the file name moved into a row's panel.
 def test_the_documents_title_column_keeps_its_room():
-    assert rule(".doc-file").get("overflow-wrap") != "anywhere", ".doc-file breaks anywhere: the table squeezes the title column"
-    assert re.fullmatch(r"\d+(\.\d+)?em", rule(".docs-table .doc-cell").get("min-width", "")), \
-        "the Documents title cell has no min-width in em"
+    assert rule(".doc-file").get("overflow-wrap") != "anywhere", ".doc-file breaks anywhere"
+    assert re.fullmatch(r"1 1 \d+(\.\d+)?em", rule(".doc-main .doc-title").get("flex", "")), "a title has no room of its own in em"
     js = VIEW_JS["sources.js"]
-    assert 'h("td", { class: "doc-cell" }, h("div", { class: "doc-title"' in js, "the Documents title cell has no doc-cell class"
+    assert 'h("div", { class: "doc-title", title: d.title && d.file ?' in js, "the Documents title has no doc-title class"
     assert ".split(/(?<=[_.-])/)" not in js, "a file name breaks after its dot, before its extension"
+    # no column hides anything: the list is no table, and every fact is named in the row's panel
+    assert "docs-table" not in js and 'h("dt", {}, "Who may read it with AI")' in js
 
 
 # The quote's yellow is the quote's only (docs/DESIGN.md 2 step 4, 3.1, 4.23): its look lives in components.css § 4.23,
