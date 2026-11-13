@@ -1712,6 +1712,7 @@ class _Ctx:
         from . import docrole, researchlog
 
         was = docrole.role_from_choices(self.choices.get(doc) or {})
+        was_ns = docrole.nonscientific_from_choices(self.choices.get(doc) or {})
         self.choices[doc] = dict(want)
         reader2.apply_choices(self.cx, doc)
         self.ws.bump_corpus(self.cx)
@@ -1725,6 +1726,14 @@ class _Ctx:
                                f"Marked as evidence again by {who}: it counts in themes, codebook labels, check excerpts "
                                "and key terms from now on.", "document", doc, self.docs[doc]["title"],
                                data={"role": role, "was": was, "by": by or self.owner})
+        ns = docrole.nonscientific_from_choices(want)
+        if ns != was_ns:  # 0.18.6: the Non-scientific mark the project took, as one's own mark is
+            who = self.names.get(by or self.owner, "the owner")
+            researchlog.record(self.cx, "document-mark",
+                               f"Marked as non-scientific by {who}: no judgement of its excerpts counts in an answer "
+                               "from now on." if ns else
+                               f"Counted as scientific again by {who}: its judgements count in answers from now on.",
+                               "document", doc, self.docs[doc]["title"], data={"nonscientific": ns, "by": by or self.owner})
 
 
 def _changed(k: dict, part: str, det: dict) -> bool:
@@ -1802,6 +1811,8 @@ def _delta_words(delta: dict) -> dict:
             out["bounds"] += 1
         elif fp.startswith("role:"):  # 0.18.1 (K2, docrole.py): marked as theory (a role), or as evidence again
             out["role"] = fp.split(":", 1)[1] if v is not None and v[0] else "evidence"
+        elif fp.startswith("mark:"):  # 0.18.6 (docrole.py): marked Non-scientific, or counted as scientific again
+            out[fp.split(":", 1)[1]] = bool(v is not None and v[0])
         elif v is None:
             out["undone"] += 1
         else:
@@ -2535,6 +2546,10 @@ def what(p: dict) -> str:
             not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):
         out = (f"marking {_q(p.get('title'))} as evidence again" if det["role"] == "evidence" else
                f"marking {_q(p.get('title'))} as {det['role']} (the lens, not the evidence)")
+    elif p["kind"] == "blocks" and isinstance(det, dict) and "nonscientific" in det and \
+            not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):  # 0.18.6
+        out = (f"marking {_q(p.get('title'))} as non-scientific (its judgements no longer count in answers)"
+               if det["nonscientific"] else f"counting {_q(p.get('title'))} as scientific again")
     if p["kind"] == "loosen":
         from .researchlog import access_words
 

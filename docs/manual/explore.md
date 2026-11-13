@@ -199,6 +199,26 @@ evidence* takes the mark back. In a shared project the mark travels like *Leave 
 holds at once, a Member's is a proposal ([Roles](roles.md)). A theory is also where a codebook can start
 ([Make your own codebook](codebooks.md#make-one)).
 
+### Non-scientific documents
+
+A news article, a press release, a company brochure or a blog reports no method or data of its own. Mark it as
+**non-scientific**: in *Documents*, open a row → *Scientific* → *Mark as non-scientific…*, or on the document's page,
+*Mark as non-scientific*. A newspaper icon then stands beside its title in the list.
+
+It stays in everything a theory document leaves: themes, codebook labels, the excerpts a check reads and key terms.
+Its excerpts are still read and judged, and shown with *Not counted: non-scientific*, but **no judgement of them
+counts in an answer**, yours neither. On their own they make a hypothesis neither supported, nor mixed, nor
+contradicted: a hypothesis only non-scientific documents support reads *No scientific evidence found*. Beside a
+scientific study they change nothing: a study that partly supports it and a press release that fully supports it give
+*Partly supported*. The assessment under the answer says what the non-scientific documents say, and what the answer
+would be counting them.
+
+Unlike the theory mark, this one **changes answers at once**: the dialog says how many checks read the document, and
+afterwards the document's page lists each check with its answer now and the answer counting the non-scientific
+documents. *Count as scientific* takes the mark back. A document can be theory and non-scientific at once. You mark
+it; ENLENS never guesses. Do not mark documents that are your material: when you study what newspapers or companies
+say, they are your evidence. In a shared project the mark travels like *Leave out*.
+
 ## Quick look
 
 *Quick look at one document* (on the Overview and *Manage projects*) reads one file into a

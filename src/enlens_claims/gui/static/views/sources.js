@@ -10,7 +10,7 @@ import { LEVEL, accessChoice, accessAskCard, accessBanner, docAccessDialog, leve
 import { askWhy } from "./versions.js";
 import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
 import { docChip } from "./owner-state.js";   // 0.18.5: the owner's word as an icon on a closed line
-import { documentRoles, roleMenuItem } from "./doc-role.js";   // 0.18.1 K2: theory documents
+import { documentMarks, roleMenuItem, nonsciMenuItem, NONSCI_MEANS } from "./doc-role.js";   // 0.18.1 K2: theory documents; 0.18.6: non-scientific ones
 import { reader, newReaderFor, readingNote, READER_4_NEWS, READER_5_NEWS } from "./doc-shared.js";
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
@@ -280,6 +280,8 @@ export async function renderSources(view) {
   let use = null;
   const answersOf = (d) => (use && use.answers[d.doc_id]) || 0;
   const afterLastCheck = (d) => Boolean(use && use.last_check && String(d.added_at || "") > use.last_check);
+  let nonsci = new Set();     // 0.18.6: the documents marked Non-scientific
+  const loadMarks = async () => { const m = await documentMarks(project); roles = m.roles; nonsci = m.nonscientific; };
   // 0.18.5: what needs a look, for the grouping and the notice above the list: a fact that needs you (a check, a sync
   // clash, a scan with no text, a reading done badly), a reading to look over, or nothing
   const lookOf = (d) => {
@@ -313,7 +315,7 @@ export async function renderSources(view) {
     // roadmap N5: the answers behind each document come along; the list draws without them if they fail
     const threshold = App.settings().threshold ?? 0.6;
     const useReq = api("GET", `/api/projects/${P(project)}/map/documents?threshold=${threshold}`).catch(() => null);
-    try { [r, roles, use] = await Promise.all([api("GET", `/api/projects/${P(project)}/documents`), documentRoles(project), useReq]); } catch (e) { failedLoad(docsBox, e); return; }
+    try { [r, , use] = await Promise.all([api("GET", `/api/projects/${P(project)}/documents`), loadMarks(), useReq]); } catch (e) { failedLoad(docsBox, e); return; }
     drawDocs(r);
   }
   // the whole list: after adding or removing documents (a change of one document's AI setting patches its row)
@@ -429,7 +431,8 @@ export async function renderSources(view) {
       const access = choice({ sm: true, class: "doc-access", label: `Who may read ${name} with AI`, value: d.ai_access,
         options: accessLevels().map((lv) => [lv, [icon(LEVEL[lv].icon, { size: 13 }), LEVEL[lv].title]]), onPick: (lv) => setAccess([d.doc_id], lv) });
       const marks = readingMarks(d);
-      const role = roleMenuItem(project, d, roles[d.doc_id], async () => { try { roles = await documentRoles(project); } catch (_) { /* as it was */ } drawGroups([d.doc_id], ".doc-role-btn"); });
+      const role = roleMenuItem(project, d, roles[d.doc_id], async () => { try { await loadMarks(); } catch (_) { /* as it was */ } drawGroups([d.doc_id], ".doc-role-btn"); });
+      const ns = nonsciMenuItem(project, d, nonsci.has(d.doc_id), async () => { try { await loadMarks(); } catch (_) { /* as it was */ } drawGroups([d.doc_id], ".doc-nonsci-btn"); });
       const facts = [KIND_TEXT[d.kind] || d.kind || "", d.pages ? plural(d.pages, "page") : null, (fmt.dateShort(d.added_at || "") || d.added) ? `added ${fmt.dateShort(d.added_at || "") || d.added}` : null].filter(Boolean).join(" · ");
       return h("div", { class: "doc-detail", id: `doc-detail-${d.doc_id}` },
         h("dl", { class: "doc-detail-grid" },
@@ -442,12 +445,15 @@ export async function renderSources(view) {
             proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
           )] : null,
           // roadmap N5: the answers it is behind, said plainly (a theory document is behind none, by design)
-          use && use.hypotheses && roles[d.doc_id] !== "theory" ? [h("dt", {}, "Behind answers"), h("dd", {},
+          use && use.hypotheses && roles[d.doc_id] !== "theory" && !nonsci.has(d.doc_id) ? [h("dt", {}, "Behind answers"), h("dd", {},
             h("span", {}, answersOf(d) ? `${answersOf(d)} of your ${plural(use.hypotheses, "answer")}: an excerpt of it counts in each`
               : afterLastCheck(d) ? "None yet: it was added after the last check" : `None of your ${plural(use.hypotheses, "answer")}`),
             answersOf(d) ? link({ href: "#/map", class: "small" }, "Open the evidence map") : null)] : null,
           h("dt", {}, "Role"), h("dd", {}, roles[d.doc_id] === "theory" ? "Theory: the lens the research is read through, not evidence" : "Evidence",
             button({ kind: "quiet", sm: true, class: "doc-role-btn", onClick: role.onClick }, role.text)),
+          // 0.18.6: whether its judgements count in answers
+          h("dt", {}, "Scientific"), h("dd", {}, nonsci.has(d.doc_id) ? `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its judgements never count in an answer` : "Yes: its judgements count in answers",
+            button({ kind: "quiet", sm: true, class: "doc-nonsci-btn", onClick: ns.onClick }, ns.text)),
           d.bib && d.bib.cite ? [h("dt", {}, "In the bibliography"), h("dd", {}, h("span", { class: "it", title: d.bib.title || null }, icon("library", { size: 13 }), d.bib.cite),
             link({ href: "#/bibliography", class: "small" }, "Open the Bibliography"))] : null),
         h("div", { class: "doc-detail-foot" }, link({ kind: "next", href: docHref(d) }, "Open the document"),
@@ -501,6 +507,7 @@ export async function renderSources(view) {
             sameTitle.has((d.title || "").trim().toLowerCase()) ? h("span", { class: "doc-fact", title: d.file || null }, d.file) : null,
             grouping === "role" || roles[d.doc_id] !== "theory" ? null : iconMark("book-marked", "Theory: the lens the research is read through, not evidence"),   // 0.18.1 K2
             ...useFacts(d),   // roadmap N5: only when the list is grouped or sorted by the answers
+            nonsci.has(d.doc_id) ? iconMark("newspaper", "Non-scientific: read and judged, never counted in an answer") : null,   // 0.18.6
             ...rowMarks(d))),
         h("div", { class: "doc-end" }, toggle)));
       show(opened.has(d.doc_id));

@@ -35,6 +35,7 @@ from .textutil import find_quote, find_selection  # noqa: F401  (still importabl
 # the statuses live in verdicts.py (pure, imports nothing from here); every name stays importable from here
 from .verdicts import (  # noqa: F401
     PERSON, STATUS_TEXT, WAITING_LOCAL, WAITING_YOU, STATUS_HELP, STATUS_NEXT, GRADES, USER_VERDICTS,
+    SET_ASIDE, UNSUPPORTED_NONSCI, set_aside, nonsci_text,
     effective, changed_by_person, first_reading, stronger_eligible, _before_stronger, _graded,
     _waits_for_person, claim_status, balance, who_says_what, aggregate, _queued_open, _status_of_rounds,
 )
@@ -1280,9 +1281,12 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
     ver: dict[str, list] = {}
     ai_of: dict[tuple[str, str], str | None] = {}
     first_of: dict[str, list] = {}  # 0.11.2: the excerpts as the first model judged them, where a stronger one read again
+    from .docrole import nonscientific_docs
     from .people import me as _me
 
     me = _me()
+    nonsci = nonscientific_docs(ws)  # 0.18.6: their judgements are shown, never counted (verdicts.set_aside)
+    ver_all: dict[str, list] = {}    # with them counted, for the status text (only when there are any)
 
     def load(cids: list[str] | None) -> None:
         """The check tasks and judgements of these claims (of all, with None)."""
@@ -1297,8 +1301,14 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         for v in vs:
             f = first_reading(v)
             if f is not None:
-                first_of.setdefault(v["subject_id"], []).append(effective(f))
+                ef = effective(f)
+                first_of.setdefault(v["subject_id"], []).append(
+                    {**set_aside([ef], nonsci)[0], "_counts_as": ef} if nonsci else ef)
             e = effective(v)
+            if nonsci:
+                ver_all.setdefault(v["subject_id"], []).append(e)
+                e = set_aside([e], nonsci)[0]
+                e["_counts_as"] = v  # the row as it was: whether it counts is asked of it (_counting needs user_verdict)
             # 0.14.3: "changed by you" counts your own changes only (a colleague's judgement counts where you made none)
             e["_mine"] = bool(v["user_verdict"]) and (v["user_by"] or me) == me
             e["_changed"] = changed_by_person(v) and e["_mine"]
@@ -1336,6 +1346,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         if limit:
             load([c["claim_id"] for c in parts])
         st, st_any, st_first, counts, read = [], [], [], {"supports": 0, "partially_supports": 0, "refutes": 0}, 0
+        st_all: list[str] = []  # 0.18.6: counting the Non-scientific documents too
         all_vs = []
         uncounted = corrected = reviewed = to_review = disagree = 0
         shown_docs: set[str] = set()
@@ -1346,15 +1357,18 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             groups = _group_rounds(rs)  # by round, as the result page does (0.11.1: the two disagreed on "waiting")
             sts = [_round_status(g) for g in groups]
             counts_, _failed = _counting(groups, sts)  # 0.14.3: not the AI's judgements of a round that failed
-            vs = [v for v in ver.get(c["claim_id"], []) if counts_(v)]
+            vs = [v for v in ver.get(c["claim_id"], []) if counts_(v.get("_counts_as", v))]
             all_vs += vs
             wt = bool(groups) and _round_waiting(groups[-1])
             st.append(_status_of_rounds(sts, vs, thr, c["stage"], wt))
+            st_all.append(_status_of_rounds(sts, [v for v in ver_all.get(c["claim_id"], []) if counts_(v)], thr,
+                                            c["stage"], wt) if c["claim_id"] in ver_all else st[-1])
             for_you.append(st[-1] == "not_checked" and "done" in sts and any(_waits_for_person(v) for v in vs))
             st_any.append(_status_of_rounds(sts, vs, 0.0, c["stage"], wt))
             if c["claim_id"] in first_of:  # the stepped-up excerpts as first judged, the others as they are
                 firsts = {(x["passage_id"]) for x in first_of[c["claim_id"]]}
-                vf = [x for x in first_of[c["claim_id"]] if counts_(x)] + [x for x in vs if x["passage_id"] not in firsts]
+                vf = [x for x in first_of[c["claim_id"]] if counts_(x.get("_counts_as", x))] + \
+                     [x for x in vs if x["passage_id"] not in firsts]
                 st_first.append(_status_of_rounds(sts, vf, thr, c["stage"], wt))
             else:
                 st_first.append(st[-1])
@@ -1370,7 +1384,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             for v in ver.get(c["claim_id"], []):
                 corrected += v["_changed"]
                 reviewed += v["_mine"]  # 0.14.3: your own judgements, as on the result and in Excel
-                if v["verdict"] in counts and counts_(v):
+                if v["verdict"] in counts and counts_(v.get("_counts_as", v)):
                     if (v["confidence"] or 0) >= thr:
                         counts[v["verdict"]] += 1
                     else:
@@ -1396,10 +1410,14 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
             st_text = WAITING_LOCAL
         elif s == "not_checked" and any(for_you) and all(y for y, x in zip(for_you, st) if x == "not_checked"):
             st_text = WAITING_YOU
+        elif st_all and nonsci_text(s, st_all[0] if len(st_all) == 1 else aggregate(st_all)):
+            st_text = UNSUPPORTED_NONSCI  # 0.18.6: only Non-scientific documents speak to it
         out.append({"hyp_id": h["hyp_id"], "claim_id": first["claim_id"], "created_at": h["created_at"],
                     "claim": h["text"], "text": h["text"], "framework": h["framework"] or "", "target": h["code"] or "",
                     "code": h["code"] or "", "code_label": label(h["framework"]) if h["code"] else "", "status": s,
                     "status_text": st_text,
+                    # 0.18.6: the answer counting the Non-scientific documents too
+                    "status_all_sources": (st_all[0] if len(st_all) == 1 else aggregate(st_all)) if st_all else s,
                     "status_any": st_any[0] if len(st_any) == 1 else aggregate(st_any),
                     "supports": counts["supports"], "partly": counts["partially_supports"], "refutes": counts["refutes"],
                     "uncounted": uncounted, "corrected": corrected, "reviewed": reviewed, "to_review": to_review,

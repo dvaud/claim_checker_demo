@@ -180,9 +180,12 @@ def _summary(ws, check_id: str) -> dict:
     evidence, restricted = [], {"supports": 0, "partially_supports": 0, "refutes": 0, "waiting_for_the_user": 0,
                                 "waiting_for_the_local_model": 0}
     held_notes = 0
+    nonsci = 0  # 0.18.6: judgements of documents marked Non-scientific: shown, never counted
     for p in r["passages"]:
         if lv.get(p["doc_id"], "none") != "cloud":  # 0.11: no text of a restricted document, only what it says
-            if p["verdict"]:
+            if p.get("nonscientific"):
+                nonsci += bool(p["verdict"])
+            elif p["verdict"]:
                 restricted[p["verdict"]] += 1
             restricted["waiting_for_the_user"] += bool(p.get("waiting_for_you"))
             restricted["waiting_for_the_local_model"] += bool(p.get("waiting_local"))
@@ -190,8 +193,10 @@ def _summary(ws, check_id: str) -> dict:
         if p["verdict"]:
             note = p.get("scope_note") if p["passage_id"] in ok else None
             held_notes += bool(p.get("scope_note")) and note is None
+            nonsci += bool(p.get("nonscientific"))
             evidence.append({"grade": p["verdict"], "confidence": p["confidence"], "quote": p["quote"],
-                             "document": p["title"], "page": p["page"],
+                             "document": p["title"], "page": p["page"], "counted": bool(p.get("counted")),
+                             **({"non_scientific": True} if p.get("nonscientific") else {}),
                              **({"about_another_group": note} if note else {})})
     out = {"check_id": check_id, "claim": r["claim"], "status": r["status"],
            "status_text": r.get("status_text") or claimcheck.STATUS_TEXT.get(r["status"], r["status"]),
@@ -212,6 +217,11 @@ def _summary(ws, check_id: str) -> dict:
                      ") are not shown either.")
     if notes:
         out["restricted_note"] = " ".join(notes)
+    if nonsci:  # 0.18.6
+        out["status_counting_non_scientific"] = r.get("status_all_sources") or r["status"]
+        out["non_scientific_note"] = (f"{nonsci} judged excerpt(s) come from documents the user marked non-scientific "
+                                      "(no method or data of their own): they are shown, but never count in the "
+                                      "status. Say so when you report them.")
     if r["status_any"] != r["status"]:
         low = sum(1 for e in evidence if (e["confidence"] or 0) < r["threshold"])
         out["note"] = (f"Counting every grade: {claimcheck.STATUS_TEXT.get(r['status_any'], r['status_any']).lower()}. "

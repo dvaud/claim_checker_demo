@@ -20,6 +20,7 @@ import re
 from collections import Counter
 
 from .store import Workspace
+from .verdicts import SPOKE, UNSUPPORTED_NONSCI, set_aside
 
 SHORT = {"supported": "Supported", "partially_supported": "Partly supported", "contested": "Mixed evidence",
          "contradicted": "Contradicted", "uncertain": "Only uncertain evidence", "unsupported": "No evidence found",
@@ -155,6 +156,8 @@ def _verdict_sentence(res: dict) -> dict:
             text += f" {_cap(_n(b['docs_both'], 'document'))} {'is' if b['docs_both'] == 1 else 'are'} on both sides."
     elif st == "uncertain":
         text = f"{head}. Excerpts were found, but none was judged with enough certainty to count."
+    elif st == "unsupported" and res.get("status_all_sources") in SPOKE:  # 0.18.6: only non-scientific ones are
+        text = f"{UNSUPPORTED_NONSCI}. No excerpt of a scientific document is about the hypothesis."
     elif st == "unsupported":
         text = f"{head}. None of the excerpts read is about the hypothesis."
     elif st == "no_passages":
@@ -206,6 +209,8 @@ def _part_sentences(res: dict) -> list[dict]:
                 "no_passages": "has no evidence: nothing in the documents matched it",
                 "not_checked": "is not judged yet", "waiting": "is not judged yet",
                 "failed": "could not be checked"}.get(st, SHORT.get(st, st or ""))
+        if st == "unsupported" and p.get("status_all_sources") in SPOKE:  # 0.18.6
+            what = "has no scientific evidence: only non-scientific documents speak to it"
         n = b.get("docs_counted") or 0
         docs = f" ({_n(n, 'document')})" if n and st in ("supported", "partially_supported", "contested",
                                                          "contradicted") else ""
@@ -217,7 +222,8 @@ def _part_sentences(res: dict) -> list[dict]:
 
 def _not_counted(items: list[dict], thr: float) -> list[dict]:
     out = []
-    below = [x for x in items if x.get("verdict") and not x.get("counted") and not x.get("round_failed")]
+    below = [x for x in items if x.get("verdict") and not x.get("counted") and not x.get("round_failed")
+             and not x.get("nonscientific")]
     if below:
         out.append({"text": f"{_cap(_n(len(below), 'excerpt'))} about the hypothesis {'is' if len(below) == 1 else 'are'} "
                             f"not counted: the AI was less sure of {'it' if len(below) == 1 else 'them'} than your "
@@ -236,6 +242,28 @@ def _not_counted(items: list[dict], thr: float) -> list[dict]:
                             f"{'is' if one else 'are'} not counted yet.",
                     "rule": "waiting-local", "refs": [_ref(x) for x in local]})
     return out
+
+
+def _nonscientific(res: dict, items: list[dict], names: "_Names", thr: float) -> list[dict]:
+    """0.18.6: what the documents marked Non-scientific say, which counts in no answer, and, when counting them would
+    give another answer, which one."""
+    said = [x for x in items if x.get("nonscientific") and x.get("verdict") in GRADES and _usable(x)
+            and (x.get("user_verdict") or ((x.get("confidence") or 0) >= thr and not x.get("round_failed")))]
+    if not said:
+        return []
+    pos = {x["doc_id"] for x in said if x["verdict"] in ("supports", "partially_supports")}
+    neg = {x["doc_id"] for x in said if x["verdict"] == "refutes"}
+    sides = []
+    if pos:
+        sides.append(f"{_n(len(pos), 'non-scientific document')} {'supports' if len(pos) == 1 else 'support'} it")
+    if neg:
+        sides.append(f"{_n(len(neg), 'non-scientific document')} {'contradicts' if len(neg) == 1 else 'contradict'} it")
+    text = f"{_cap(_and(sides))}: not counted, as {'it reports' if len(pos | neg) == 1 else 'they report'} no method " \
+           f"or data of {'its' if len(pos | neg) == 1 else 'their'} own."
+    st, st_all = res.get("status"), res.get("status_all_sources")
+    if st_all and st_all != st and st_all in SHORT:
+        text += f" Counting {'it' if len(pos | neg) == 1 else 'them'}, the answer would be {SHORT[st_all]}."
+    return [{"text": text, "rule": "non-scientific", "refs": [_ref(x) for x in said]}]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -279,6 +307,7 @@ def _status(res: dict, thr: float, judged: set[str] | None) -> str | None:
             return None
         rows = [(_with_person(x) if judged is None or _ref({**x, "claim_id": p["claim_id"]}) in judged else _as_ai(x))
                 for x in p.get("passages") or [] if _usable(x)]
+        rows = set_aside(rows, {x["doc_id"] for x in p.get("passages") or [] if x.get("nonscientific")})  # 0.18.6
         statuses.append(claim_status(rows, thr))
     if not statuses:
         return None
@@ -364,6 +393,7 @@ def assess(ws: Workspace, hypothesis: str | dict, res: dict | None = None) -> di
             sentences.append(c)
     sentences += _part_sentences(res)
     sentences += _not_counted(items, thr)
+    sentences += _nonscientific(res, items, names, thr)
     moved = moved_by(res, names)
     if moved:
         sentences.append({k: moved[k] for k in ("text", "rule", "refs")})

@@ -1691,13 +1691,21 @@ codes, where each example was found, the groups and their order. The old routes 
 through: still read, searched and noted, but left out of themes, codebook labels, the excerpts a check reads and key
 terms.
 
-- `GET /api/projects/{p}/document-roles` → `{"roles": {doc id: "theory"}}` (only the documents with a role).
+- `GET /api/projects/{p}/document-roles` → `{"roles": {doc id: "theory"}, "nonscientific": [doc ids]}` (only the
+  documents with a role; 0.18.6: and those marked Non-scientific).
 - `GET /api/projects/{p}/documents/{d}/role` → `{"doc_id", "role": "theory" | null, "impact": {"themes": [{"run_id",
   "created_at", "passages"}], "labels": [{"framework", "name", "passages"}], "checks": [{"hyp_id", "text",
   "excerpts"}]}}`: what was made with the document in.
 - `PUT /api/projects/{p}/documents/{d}/role` `{"role": "theory" | null, "why"?}` → `{"doc_id", "role", "changed",
   "impact"}`. 400 for any other role, 404 for no such document. Under an owner, a Member's mark becomes a proposal at
   the Team tab's next look (as *Leave out* does).
+- 0.18.6: `GET …/documents/{d}/role` also gives `"nonscientific": bool` and, when it is, `"answers": [{"hyp_id",
+  "text", "status", "status_text", "all", "all_text"}]` (each check that read it, its answer now and counting the
+  non-scientific documents). `PUT /api/projects/{p}/documents/{d}/nonscientific` `{"nonscientific": true | false,
+  "why"?}` → `{"doc_id", "nonscientific", "changed", "checks", "answers": [{"hyp_id", "text", "was", "was_text",
+  "now", "now_text"}]}` (the answers the mark changed). 400 for a value that is not a boolean, 404 for no such
+  document. A check's result gains `status_all_sources`, and each excerpt `nonscientific`; a part or a check that only
+  non-scientific documents speak to has the status text *No scientific evidence found*.
 
 **A codebook from a theory document** (roadmap K2 part 2, `theorycodes.py`, no AI).
 
