@@ -306,6 +306,11 @@ class ChecksApi:
         thr = _float(q, "threshold", self.app.settings()["threshold"])
         return claimcheck.evidence_map(ws, thr, batch_id=_str(q, "batch"))
 
+    def get_map_documents(self, name, q):
+        """Roadmap N5: how many answers each document is behind (the map's counts, without its leave-one-out)."""
+        ws = self.app.ws(name)
+        return claimcheck.document_answers(ws, _float(q, "threshold", self.app.settings()["threshold"]))
+
     def get_calibration(self, name, q):
         out = claimcheck.calibration(self.app.ws(name))
         out["threshold"] = self.app.settings()["threshold"]

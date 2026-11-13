@@ -1406,6 +1406,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/bring-in", "post_bring_in"),
     ("GET", rf"/api/projects/{P}/together", "get_together"),
     ("GET", rf"/api/projects/{P}/map", "get_map"),
+    ("GET", rf"/api/projects/{P}/map/documents", "get_map_documents"),   # roadmap N5: answers behind each document
     ("GET", rf"/api/projects/{P}/calibration", "get_calibration"),
     ("POST", rf"/api/projects/{P}/hypotheses/{P}/read-new", "post_read_new_one"),
     ("POST", rf"/api/projects/{P}/read-new", "post_read_new"),
