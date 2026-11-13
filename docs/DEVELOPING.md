@@ -106,7 +106,11 @@ themes and at 390 px wide.
 
 | Module | Role |
 | --- | --- |
-| `claimcheck.py` | Hypotheses: decomposition, checks, statuses, a person's judgements, who says what, rounds, re-reads, second opinions, new documents, the evidence map, calibration, batches, history, Excel |
+| `claimcheck.py` | Hypotheses: decomposition, creating checks, rounds, the local parts, check runs, the queue's checks, chat checks, new documents read, second opinions, history, batches. It re-exports every name of the four modules below, so `claimcheck.<name>` keeps working for add-ons and imports (0.18.1, H6) |
+| `verdicts.py` | The statuses and what a person's judgement does to a verification row: `effective`, `claim_status`, `balance`, `who_says_what`, `aggregate`. Pure: imports nothing from `claimcheck` |
+| `check_results.py` | Reading a check's results: `locate`, `result`, `hypothesis_result`, the models used, new documents |
+| `check_exports.py` | The evidence map, calibration, spreadsheet rows, `summary_table`, `write_xlsx` |
+| `judgements.py` | A person's judgement, re-reading an excerpt, removing a hypothesis or claim, the note. `check_results.py`, `check_exports.py` and `judgements.py` reach what stays in `claimcheck.py` as `_cc.name` at call time (patching `claimcheck.<name>` still works) |
 | `search.py`, `embed.py`, `retrieve.py` | Hybrid ranking over the keyword index, local embeddings; BM25 (inverted index, in memory) |
 | `searchindex.py` | The keyword index made from each document's words kept on disk (0.16, H2): `cache/search.sqlite`, one row per document, used again while its passages and `textutil.py` are unchanged; the index in memory is one snapshot (`PackedBM25`, `retrieve.BM25`'s ranking number for number), without passage text (read when needed). `connect_cache` opens a cache file and makes a damaged one again |
 | `frameworks.py`, `taxonomy.py` | Optional codebooks (SDG targets bundled, custom CSVs) |
