@@ -21,6 +21,8 @@ const KEYWORDS = {
   // 0.18.1 part A: its words below this line
   // end of 0.18.1 part A
   // 0.18.1 part B: its words below this line
+  "retractions and corrections": "retracted retraction retractions corrected correction expression concern crossref retraction watch doi withdrawn erratum",
+  "agreement between routes": "agreement kappa local model claude compare routes mix good enough sample cohen",
   // end of 0.18.1 part B
 };
 
@@ -68,6 +70,8 @@ export const ACTIONS = [
   ["See a concept over time or across groups", "on a concept’s page, in Concepts", "#/concepts", "clock", "year years time trend change groups compare sets policy academic country"],
   // end of 0.18.1 part A
   // 0.18.1 part B: its actions below this line
+  ["Check for retractions", "on the Bibliography", "#/bibliography", "alert-triangle", "retracted retraction corrected correction crossref doi withdrawn check works"],
+  ["Compare the local model with Claude", "in Settings → AI", "#/settings", "scale", "agreement kappa local model claude compare routes mix good enough sample"],
   // end of 0.18.1 part B
 ];
 

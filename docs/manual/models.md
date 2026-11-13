@@ -21,6 +21,54 @@ These are the models for a **Pro** plan on Claude Code; other plans follow the n
 under 0.6, after two rejected answers, or when you press *Ask a stronger model*. The defaults are starting points
 until runs on the pilot set them ([MODEL_CHOICE.md](../MODEL_CHOICE.md); `enlens acceptance queue|score`).
 
+### How much thought
+
+*Energy efficient · Balanced · Intelligence*, beside every *Start Claude Code* and in *Settings → AI*, moves each
+kind of task along Haiku, Sonnet and Opus. **Balanced** is the table above. **Energy efficient** starts each kind one
+model lower (judging excerpts never below Sonnet) and asks the helpers for low effort: easiest on your plan's limits
+and on energy. **Intelligence** starts each kind one model higher and asks for high effort: it uses your plan's limits
+sooner. An unsure answer still steps up to a stronger model, where there is one. A model chosen per task comes first;
+*Let the auditor use Fable* stays its own switch; a local model keeps its own choice. Can change results, as any
+change of model can: each answer records its model.
+
+### The mix of local and Claude
+
+With Claude Code and a local model for restricted documents both set, *Settings → AI → The mix of
+local and Claude* shares the work:
+
+| Mix | The local model answers first | Claude answers |
+| --- | --- | --- |
+| Mostly local | every kind of task but second opinions | second opinions, and what the local model passes up |
+| Balanced | labels, concept links, search words, splitting a hypothesis, theme names, references | judging excerpts, second opinions, the SDG pack, and what the local model passes up |
+| Best quality (the default) | only the documents marked *Only a local AI*, as before | everything else |
+
+The local model's answer goes up to Claude, who reads the task again, when the local model is unsure (certainty under
+0.6), when its answers fail the quote check three times, or when it judges an excerpt as contradicting the hypothesis
+(a contradiction decides an answer). Only tasks of documents Claude may read go up; the local answer counts
+meanwhile. Without a local model that answers, Claude answers as before. Claude Code's helpers leave the local
+model's share alone; the queue lists it as *for your local model*, and *Answer here* lets the local model answer it
+when no check is open. Can change results.
+
+### Agreement between routes
+
+*Settings → AI → Agreement between routes* shows, on your own documents, whether your local model is good enough for a
+kind of task. It appears when Claude (Claude Code or the Claude API) and a local model are both set, and a project is
+open. Choose a kind of task and a sample size (10 to 100, 30 to start). Before anything starts, the box says how many
+tasks are asked of your local model, how many of Claude (that uses your plan, or your API credit) and how many are left
+out because Claude may not read their documents. An answer a task already has from a route is reused, so only what is
+missing is asked. Then press *Compare the routes*.
+
+Each route answers the same tasks and the two answers are compared decision by decision: the grade of each excerpt for
+checks, second readings and readings again; whether each candidate code applies for labels; the relation of each pair
+of terms for links. Themes, search words, hypothesis splits and term resolutions give no decision to compare, so they
+are left out. The result is the share of identical decisions and Cohen's kappa, which discounts the agreement chance
+alone would give: 1 is full agreement, 0 is chance. From 0.8 the local model is good enough for that kind, from 0.6 fair
+(review what it answers), below that poor (let Claude read these).
+
+It is a measurement: it is asked only when you press the button, nothing is stored in the project's results, and the
+passages sent to Claude are noted in the list of what left your computer. Agreement is not correctness: Claude is not
+always right either. Cannot change results.
+
 ### Models that suit your Claude plan
 
 On Claude Code, ENLENS finds your plan by itself in the background (from `claude auth status`: when the app starts,

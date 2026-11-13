@@ -17,7 +17,8 @@ enlens update            # later: fetch the new version (add --check to only loo
 ```
 
 Because the install is editable (`-e`), the app runs the code in that folder: `enlens update` pulls the new version
-and reinstalls only when its requirements changed. Then open ENLENS from its icon: an older version still running is
+and reinstalls only when its requirements changed or a new release tag came (the version is made from the git tag, so
+the clone must keep its tags: a shallow `--depth 1` clone has none and shows version 0.0.0). Then open ENLENS from its icon: an older version still running is
 quit and the new one started (0.10.2), and if something still runs in it, the page says to quit and reopen. Run it as
 `~/enlens-app/.venv/bin/enlens update` if the venv is not active. The optional extras (`fast`, `anthropic`, `ocr`,
 `pdfminer`, `dev`) are in [the manual](manual/install.md#from-a-git-copy-developers).
@@ -105,7 +106,11 @@ themes and at 390 px wide.
 
 | Module | Role |
 | --- | --- |
-| `claimcheck.py` | Hypotheses: decomposition, checks, statuses, a person's judgements, who says what, rounds, re-reads, second opinions, new documents, the evidence map, calibration, batches, history, Excel |
+| `claimcheck.py` | Hypotheses: decomposition, creating checks, rounds, the local parts, check runs, the queue's checks, chat checks, new documents read, second opinions, history, batches. It re-exports every name of the four modules below, so `claimcheck.<name>` keeps working for add-ons and imports (0.18.1, H6) |
+| `verdicts.py` | The statuses and what a person's judgement does to a verification row: `effective`, `claim_status`, `balance`, `who_says_what`, `aggregate`. Pure: imports nothing from `claimcheck` |
+| `check_results.py` | Reading a check's results: `locate`, `result`, `hypothesis_result`, the models used, new documents |
+| `check_exports.py` | The evidence map, calibration, spreadsheet rows, `summary_table`, `write_xlsx` |
+| `judgements.py` | A person's judgement, re-reading an excerpt, removing a hypothesis or claim, the note. `check_results.py`, `check_exports.py` and `judgements.py` reach what stays in `claimcheck.py` as `_cc.name` at call time (patching `claimcheck.<name>` still works) |
 | `search.py`, `embed.py`, `retrieve.py` | Hybrid ranking over the keyword index, local embeddings; BM25 (inverted index, in memory) |
 | `searchindex.py` | The keyword index made from each document's words kept on disk (0.16, H2): `cache/search.sqlite`, one row per document, used again while its passages and `textutil.py` are unchanged; the index in memory is one snapshot (`PackedBM25`, `retrieve.BM25`'s ranking number for number), without passage text (read when needed). `connect_cache` opens a cache file and makes a damaged one again |
 | `frameworks.py`, `taxonomy.py` | Optional codebooks (SDG targets bundled, custom CSVs) |
@@ -178,14 +183,34 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
 
 ## Releases
 
-- The version stands in `pyproject.toml`, `src/enlens_claims/__init__.py` and the top `## X.Y.Z` entry of
-  `CHANGELOG.md`. `python tools/release.py check vX.Y.Z` stops the release unless they and the tag agree.
+- **One version, from the tag (0.18.1).** The version is typed nowhere in the code: `setuptools-scm` makes it from
+  the git tag `vX.Y.Z` (or `vX.Y.ZrcN`) when the package is built, and `enlens_claims.__version__` reads it from the
+  installed package (`importlib.metadata`). A commit after a tag is `X.Y.Z.post3` (later than the tag, earlier than the
+  next release); a source archive without git is `0.0.0`, which the app treats as older than every release. So every
+  build that matters needs the tags: the workflows check out with `fetch-depth: 0`, and a clone made for a build needs
+  `git fetch --tags`. The only thing written by hand is the top `## X.Y.Z` entry of `CHANGELOG.md`, which the release
+  pull request writes; `python tools/release.py check vX.Y.Z` stops the release unless it and the tag agree, and
+  `python tools/release.py assets dist --expect vX.Y.Z` that the wheel carries the tag's version. A git copy reads its
+  version from `git describe` (`update.version_in`), and `enlens update` installs it again (`pip install -e`) when a new
+  tag comes, so the installed package's version follows.
 - `.github/workflows/release.yml` runs on the tag: the package, the two install scripts with the version
   filled in, the same as files to double-click (`Install-ENLENS-Windows.cmd`, `Install-ENLENS-macOS.zip`; 0.14.5),
   `SHA256SUMS`, a try of the install line on Linux, macOS and Windows and of the files on Windows and macOS, and a
   draft GitHub Release. Publish
   the draft by hand; never make a release by hand, which would lack the files the install line needs.
-- **The order of a release** (2026-11-12): run the whole suite on your own computer, alone (*Tests*: about 2 minutes;
+- **The release pull request (0.18.1).** `python tools/release.py prepare X.Y.Z "<title>"` shows what it would do
+  (a dry run); with `--go` it makes the branch `release/X.Y.Z` from where you are (the working tree must be clean),
+  joins the fragments into the changelog (below), writes the README's *New in* and the app's *What's new* from that
+  entry, commits, pushes and opens the pull request "ENLENS X.Y.Z" with `gh pr create`. Read the entry in the pull
+  request, write its opening paragraph, and if you change the entry run `python tools/release.py sync-notes` (it
+  rewrites *New in* and *What's new* from the newest entry; `--check` only compares). **Merging it tags the merge
+  commit:** `.github/workflows/tag-release.yml` runs for a merged pull request from a branch `release/X.Y.Z` of this
+  repository, checks the changelog and the fragments with `release.py`, makes the tag `vX.Y.Z` and starts `release.yml`
+  for it. (A tag made with the workflow's own token starts no workflow, so `tag-release.yml` dispatches `release.yml`
+  with the tag as its ref; no personal token is needed.) `release.yml` then waits for the Tests run of the merge
+  commit, as below, and drafts the release. A tag pushed by hand still works as before.
+- **The order of a release** (2026-11-12; with the pull request, the tests run on it and on the merge, and the tag
+  follows the merge, so the steps below are what the pull request does for you): run the whole suite on your own computer, alone (*Tests*: about 2 minutes;
   optional now that CI runs every extra, but it catches a defect before it costs a push), push
   the release commit to `main` (`git push origin <commit>:refs/heads/main`), wait for its Tests run to be green (about
   8 minutes: `gh run list --workflow tests.yml`, then `gh run watch <id> --exit-status`), and only then push the tag.
@@ -195,6 +220,24 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   also works: the release workflow's *tests* job waits for the Tests run of that commit while the package is built and
   tried beside it, and a failed run stops the draft. It runs the suite itself, on Linux only, when the commit has no
   Tests run (none, or one cancelled by a later push to `main`).
+- **Repeatable builds (0.18.1).** `uv.lock` pins every package CI installs: the workflows run `uv lock --check` and
+  `uv sync --frozen --extra …`, the Linux every-extra job takes every extra (a test checks it still does). After
+  changing a dependency in `pyproject.toml` run `uv lock` and commit the file. The `ci` extra holds what only CI's
+  every-extra job needs (PyYAML for the workflow tests, ruff). Dependabot (`.github/dependabot.yml`) opens a weekly pull
+  request for new package versions and new versions of Actions; read its diff, let the Tests run, merge. **Every action
+  is pinned by its full commit hash**, the tag as a comment (`uses: actions/checkout@3d3c… # v7.0.1`; a test checks it).
+  To look up a hash: `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (an annotated tag answers with a tag object: ask
+  `git/tags/<sha>` for the commit). The build's own requirements (`setuptools-scm`, `setuptools`) are not in the
+  lock: `uv build` takes their newest versions.
+- **Provenance (0.18.1).** `release.yml` attests every file of the release (`actions/attest-build-provenance`: which
+  workflow and commit built it, signed by GitHub). Anyone can check a download:
+  `gh attestation verify enlens_claims-X.Y.Z-py3-none-any.whl --repo dvaud/claim_checker_demo`. It sits beside
+  `SHA256SUMS`: the checksums say a file arrived whole, the attestation that it came from this repository.
+- **After publishing (0.18.1).** `.github/workflows/published-install.yml` runs the real install line of the published
+  release on Linux, macOS and Windows when a release is published, and every Monday on the latest release; it
+  checks that the installed version is the release's, that the install is recorded as a one-line install and that
+  the connector starts, and (on a publish) that the wheel's attestation verifies. A red run does not undo the
+  release: see *Rolling back a release*. Run it by hand from the Actions tab with a tag to try an older release.
 - The `CHANGELOG.md` entry (what changed and why, the defects fixed, the tests added, and *Not yet done*) becomes the
   release notes. Update the manual where behaviour changed (*The manual*, below) and `docs/API.md` for new routes.
 - **Changelog fragments (0.18.1).** A change does not edit `CHANGELOG.md`: it adds `changes/<topic>.md`, made of
@@ -204,12 +247,15 @@ editing its files is in [EXTENDING.md](EXTENDING.md).
   opening paragraph by hand. The release workflow refuses a tag while fragments are left
   (`python tools/release.py fragments --check`).
 - Each release updates `gui/static/whats-new.md` (`# X.Y.Z: Title`, `*subtitle*`, then a few extremely short points,
-  one `-` line each). When its version matches the running one, the app offers it, never shows it by itself: after an
+  one `-` line each; since 0.18.1 `release.py prepare` and `sync-notes` write it from the changelog entry: the points
+  are the headlines of its *New* and *Changes that can alter your results* bullets, the subtitle the first sentence of
+  the entry's opening paragraph; edit the entry, not the note). When its version matches the running one, the app offers it, never shows it by itself: after an
   update the sidebar has *What's new* until it is opened, and Settings has it always.
-- Update the README and the manual as the last two sections say.
+- The README's *New in* is written by `prepare` (between its two `<!-- new-in -->` markers); update the manual and
+  the other sections of the README as the last two sections say.
 - **Release candidates (0.15).** The roadmap ([`docs/ROADMAP.md`](ROADMAP.md): what each release builds, and what
   waits; Margin keeps its own plans in its own repository) gives every minor release a release candidate, in use for at least a
-  week: `0.15.0rc1` in `pyproject.toml`, `__init__.py` and a `## 0.15.0rc1` changelog entry, tagged `v0.15.0rc1`.
+  week: a `## 0.15.0rc1` changelog entry, tagged `v0.15.0rc1` (the package's version is made from the tag).
   The workflow drafts it as a GitHub pre-release, which the install line and the app's *Update* never take (GitHub's
   *latest* is the latest full release); its notes give install lines with its own files. A copy of a candidate is
   offered the release when it comes (`update.version_tuple` puts `0.15.0rc1` after every earlier release and before
@@ -300,13 +346,16 @@ sync (`tools/sync_enlens.py` in Margin) keeps Margin's README and leaves ENLENS'
 
 **At each release:**
 
-- Update only **New in 0.X**. When a new minor series starts, replace its bullets: the old ones are in the changelog.
-  (Once J1 is built, `release.py prepare` writes this section from the changelog.)
+- Write nothing in **New in**: `python tools/release.py prepare` (or `sync-notes`) writes it, between its two
+  `<!-- new-in:start -->` and `<!-- new-in:end -->` markers, from the newest changelog entry: the *New* and *Changes
+  that can alter your results* bullets, each cut to its headline and first sentence, with whether it can change results.
+  Change the changelog entry to change it; `tests/test_doc_links.py` fails when the two differ.
 - Touch the other sections only when the release changed what they describe. Take a new screenshot when the Overview
   looks different (`tools/dev_server.py --corpus social --claude-code`, Playwright at 1280 × 800).
-- Before committing, check that every link resolves (files and headings: `tests/test_manual.py` checks the README's
-  relative links), that each *New in* bullet matches its changelog entry, and that the README is still about 100
-  lines. (J2 item 6 makes CI check the rest later.)
+- CI checks the rest (0.18.1: `tests/test_doc_links.py` and `tests/test_manual.py`): every relative link in the README,
+  the changelog and `docs/` resolves, every feature of the app has a section in the manual (a heading in a
+  `docs/manual/` page that names it, or an entry in the test's `SECTION_OF`), and *New in* matches the changelog. Keep
+  the README about 100 lines, and a copy of the changelog or the manual out of it.
 
 ## The manual
 

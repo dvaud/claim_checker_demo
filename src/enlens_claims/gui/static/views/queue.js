@@ -2,7 +2,7 @@
 // this project, kind by kind: do first, hold or go on, remove; Start Claude Code with its speed and helpers; or answer
 // it with the AI model of Settings. (Until 0.16.1 this was the queue panel at the foot of the sidebar; the sidebar now
 // shows only the work's essentials, in its status area, and links here.)
-import { App, api, h, icon, replace, toast, showError, confirmDialog, P, watchJob, startClaude, button, card, tag, withAI, readsLine, aiWhere } from "../lib.js";
+import { App, api, h, icon, replace, toast, showError, confirmDialog, P, watchJob, startClaude, button, card, tag, withAI, readsLine, aiWhere, notice } from "../lib.js";
 
 export function queueSection() {
   const body = h("div", { class: "queue-section", "aria-live": "polite" });
@@ -32,17 +32,22 @@ export function queueSection() {
       if (!ok) return;
       try { const r = await api("POST", `/api/projects/${P(App.project)}/queue/withdraw`, { kind: k.kind }); toast(`${r.withdrawn} tasks taken out of the queue.`, "ok"); App.refresh().catch(() => {}); draw(); } catch (e) { showError(e); }
     };
-    const kinds = (q.kinds || []).filter((k) => k.waiting || k.being_answered);
+    const kinds = (q.kinds || []).filter((k) => k.waiting || k.being_answered || k.for_local);
     const head = q.runner && q.runner.running ? `Claude Code is working: ${(q.waiting + q.being_answered).toLocaleString()} to go`
       : q.waiting ? (q.paused ? `Paused: ${q.waiting.toLocaleString()} waiting` : `${(q.waiting + q.being_answered).toLocaleString()} waiting for Claude Code`)
       : q.being_answered ? `Claude Code is answering ${q.being_answered}` : "Nothing waits.";
     const parts = [h("p", { class: "qp-head" }, icon(q.paused ? "pause" : "inbox", { size: 14 }), " ", h("strong", {}, head))];
     if (q.paused && q.paused_text) parts.push(h("p", { class: "small qp-paused" }, q.paused_text));
+    // 0.18.1 (I4): Claude Code stopped at the plan's usage limit, and what happens now (Settings › AI)
+    if (q.at_limit) parts.push(notice({ kind: "attention", class: "qp-limit" }, h("p", {}, q.at_limit.said, " ",
+      q.at_limit.started ? "Your local model answers what waits, where it may." : q.at_limit.choice === "local" && !q.at_limit.local_possible
+        ? "No local model is chosen, so the work waits for the next start." : "The work waits; start Claude Code again when the limit resets.",
+      " ", h("a", { href: "#/settings/model" }, "Change what happens"))));
     if (!kinds.length) parts.push(h("p", { class: "muted small" }, "Press an AI button (a check, Label with the AI, Name the themes…): its work waits here for Claude Code."));
     for (const k of kinds) {
       parts.push(h("div", { class: "qp-row" + (k.held ? " qp-held" : "") },
         h("div", { class: "qp-title" }, h("strong", {}, k.title), k.held ? tag({}, "held") : null),
-        h("div", { class: "muted small" }, `${k.waiting.toLocaleString()} waiting${k.being_answered ? ` · ${k.being_answered} being answered` : ""}${k.done ? ` · ${k.done.toLocaleString()} done` : ""}${k.stronger_model ? ` · ${k.stronger_model} for a stronger model` : ""}`),
+        h("div", { class: "muted small" }, `${k.waiting.toLocaleString()} waiting${k.being_answered ? ` · ${k.being_answered} being answered` : ""}${k.done ? ` · ${k.done.toLocaleString()} done` : ""}${k.stronger_model ? ` · ${k.stronger_model} for a stronger model` : ""}${k.for_local ? ` · ${k.for_local.toLocaleString()} for your local model` : ""}`),
         h("div", { class: "muted small" }, [k.helper ? `${k.helper} on ${k.model}` : k.model ? `on ${k.model}` : "", k.estimate ? ` · ${k.estimate}` : ""].join("")),
         h("div", { class: "qp-actions" },
           (q.order || [])[0] !== k.kind ? button({ kind: "quiet", sm: true, onClick: () => act(k.kind, "first") }, icon("arrow-up", { size: 12 }), "Do first") : null,
@@ -53,6 +58,13 @@ export function queueSection() {
     // where the tasks' text goes (docs/DESIGN.md 4.4): under the card's AI actions. With Claude Code, under Start Claude
     // Code; with another AI, under "Answer them here instead"
     if (s.backend === "claude_code") parts.push(aiWhere(q.privacy || "Claude Code sends the passages inside the tasks it takes to Anthropic.", "cloud"));
+    // 0.18.1 (I1): the AI mix's share, answered here by the local model (an open check does it by itself)
+    if (q.for_local && s.backend === "claude_code") {
+      parts.push(h("div", { class: "qp-here" }, ...withAI(button({ sm: true, onClick: async () => {
+        try { const r = await api("POST", `/api/projects/${P(App.project)}/queue/run`, { local: "mix" }); toast("Your local model answers its share now.", "ok"); watchJob(r.job.id, () => {}).promise.then(() => draw()); } catch (e) { showError(e); }
+      } }, icon("play", { size: 13 }), `Answer the ${q.for_local.toLocaleString()} for your local model now`))),
+        readsLine("the tasks for your local model"));
+    }
     if (kinds.length && s.backend !== "claude_code") {
       parts.push(h("div", { class: "qp-here" }, ...withAI(button({ sm: true, onClick: async () => {
         try { const r = await api("POST", `/api/projects/${P(App.project)}/queue/run`, {}); toast("The AI model of Settings answers the queue now.", "ok"); watchJob(r.job.id, () => {}).promise.then(() => draw()); } catch (e) { showError(e); }

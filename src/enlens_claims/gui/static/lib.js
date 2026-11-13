@@ -1658,6 +1658,122 @@ export function drawInSteps(parent, items, render, { first = 60, step = 120, mor
   return { drawn: () => done, button };
 }
 
+// 0.18.1 (H5): a long list drawn page by page, so a page of thousands of lines opens at once. Two sources:
+//   lazyList({ items, render })              the whole list is here already (a result's excerpts, the answers): drawing
+//                                            more is synchronous, so reveal() can draw up to a card a jump needs;
+//   lazyList({ fetchPage, render, first })   the pages come from the API: fetchPage(offset, limit) answers
+//                                            { items, total }. `first` is the first page, when it was fetched already
+//                                            (the page needed its total for its heading): it is not asked for again.
+// render(item, index) gives a Node (null leaves the item out). Options: pageSize (100), firstSize (the first page's
+// size for `items`, pageSize), list (the element the items go into, e.g. a <tbody>; else a <div>), noun ("line" or
+// ["line", "lines"]), empty (a Node said instead of the list when there is nothing).
+// The result: el (the items' parent), footer (put it right after `el`, outside a table: "120 of 1,400 lines", a "Show
+// more" button, and the sentinel the IntersectionObserver watches), more(), reveal(i or test) and revealAll() (`items`
+// only; reveal answers false when nothing matches), shown(), total(), reset(items | first), ready (the first page).
+// The next page is asked for when the footer comes within about a screen of the window, or when "Show more" is used
+// (from the keyboard or where IntersectionObserver is missing). A page is never asked for twice; a failure says so
+// (showError), stops the automatic loading and turns the button into "Try again". An answer that arrives after reset()
+// is dropped. For print, an `items` list draws everything first.
+export function lazyList({ items = null, fetchPage = null, first = null, render, pageSize = 100, firstSize = 0, list = null, noun = "item", empty = null } = {}) {
+  let local = Array.isArray(items);
+  const [one, many] = Array.isArray(noun) ? noun : [noun, noun + "s"];
+  const el = list || h("div", { class: "lazy-list" });
+  const status = h("span", { class: "muted small lazy-status", "aria-live": "polite" });
+  const moreLabel = h("span", {}, "Show more");
+  const moreBtn = button({ kind: "quiet", sm: true, class: "lazy-more", onClick: () => { more(true); } }, icon("chevron-down", { size: 13 }), moreLabel);
+  const footer = h("div", { class: "draw-more lazy-foot", hidden: true }, status, " ", moreBtn);
+  let shown = 0, total = null, gen = 0, busy = null, failed = false, firstN = 0, observer = null;
+  const requested = new Set();   // offsets asked for: a page is never asked for twice
+  let ready = Promise.resolve();
+
+  const put = (batch, byHand) => {
+    const nodes = batch.map((it, i) => render(it, shown + i)).filter((x) => x != null);
+    shown += batch.length;
+    el.append(...nodes);
+    // "Show more" from the keyboard: the focus goes on to the first new item, not back to the top of the page
+    if (byHand && nodes.length) {
+      const f = nodes[0].querySelector("a[href], button, input, select, [tabindex]") || nodes[0];
+      if (f === nodes[0] && !f.hasAttribute("tabindex")) f.setAttribute("tabindex", "-1");
+      f.focus();
+    }
+  };
+  function paint() {
+    const all = total !== null && shown >= total;
+    footer.classList.toggle("lazy-failed", failed);
+    if (total === 0 && empty) { clear(footer); footer.append(empty); footer.hidden = false; return; }
+    if (!failed && (total === null ? !busy : all && total <= firstN)) { footer.hidden = true; return; }   // all on the first page: nothing to say
+    footer.hidden = false;
+    status.textContent = failed ? `Could not load more ${many}.` : total === null && !shown ? "Loading…" : all ? `All ${fmt.plural(total, one, many)} shown` : total === null ? `${fmt.num(shown)} ${many} shown` : `${fmt.num(shown)} of ${fmt.plural(total, one, many)}`;
+    moreBtn.hidden = all && !failed;
+    moreBtn.disabled = !!busy;
+    moreLabel.textContent = failed ? "Try again" : "Show more";
+    if (busy) footer.setAttribute("aria-busy", "true"); else footer.removeAttribute("aria-busy");
+    if (observer) { observer.unobserve(footer); if (!all && !failed && !busy) observer.observe(footer); }   // observe() again asks at once: a short page may leave the end in view
+  }
+  function more(byHand = false) {
+    if (local) {
+      if (shown >= items.length) return Promise.resolve();
+      put(items.slice(shown, shown + pageSize), byHand);
+      paint();
+      return Promise.resolve();
+    }
+    if (busy) return busy;
+    if ((total !== null && shown >= total) || requested.has(shown)) return Promise.resolve();
+    const mine = gen, offset = shown;
+    requested.add(offset);
+    failed = false;
+    busy = Promise.resolve().then(() => fetchPage(offset, pageSize)).then((r) => {
+      if (mine !== gen) return;
+      const got = (r && r.items) || [];
+      if (r && r.total !== undefined && r.total !== null) total = r.total;
+      put(got, byHand);
+      if (!got.length) total = shown;   // an empty page ends the list, whatever the total said
+    }).catch((e) => {
+      if (mine !== gen) return;
+      failed = true;
+      requested.delete(offset);
+      try { showError(e); } catch (_) { /* the footer says it too */ }
+    }).finally(() => { if (mine === gen) { busy = null; paint(); } });
+    paint();
+    return busy;
+  }
+  function seed(src) {
+    clear(el);
+    shown = 0; gen++; busy = null; failed = false; requested.clear();
+    if (Array.isArray(src)) { local = true; items = src; total = src.length; firstN = firstSize || pageSize; put(src.slice(0, firstN)); ready = Promise.resolve(); }
+    else if (src) { local = false; total = src.total ?? null; firstN = src.items.length; requested.add(0); put(src.items); ready = Promise.resolve(); }
+    else { local = false; total = null; firstN = pageSize; ready = more(); }
+    paint();
+  }
+  if ("IntersectionObserver" in window) {
+    observer = new IntersectionObserver((entries) => {
+      if (!footer.isConnected) { observer.disconnect(); observer = null; return; }   // the list was drawn again
+      if (entries.some((e) => e.isIntersecting) && !failed) more();
+    }, { rootMargin: "900px 0px" });
+  }
+  const api_ = {
+    el, footer, more, ready: null,
+    shown: () => shown, total: () => total,
+    reset: (src) => seed(src),
+    // draws up to the item `which` (an index, or a test on the item): a jump to a card that is not drawn yet
+    reveal(which) {
+      if (!local) return false;
+      const i = typeof which === "number" ? which : items.findIndex(which);
+      if (i < 0 || i >= items.length) return false;
+      while (shown <= i) more();
+      return true;
+    },
+    revealAll() { if (local && shown < items.length) { put(items.slice(shown)); paint(); } },
+  };
+  if (local) {
+    const onPrint = () => { if (!el.isConnected) window.removeEventListener("beforeprint", onPrint); else api_.revealAll(); };
+    window.addEventListener("beforeprint", onPrint);
+  }
+  seed(local ? items : first || null);
+  api_.ready = ready;
+  return api_;
+}
+
 // 0.13.3: the result page's help mark, for every page: a small (?) whose explanation opens on hover, focus or click,
 // so a page says one short line and keeps the longer explanation one step away.
 export function helpMark(label, text, opts = {}) {
@@ -1890,14 +2006,15 @@ export function startClaude(project, opts = {}) {
       const hint = h("span", { class: "muted small" }, opts.foldType ? "Nothing runs until you press it." : "Runs on your Claude plan, in the background. It stops by itself when nothing waits.");
       parts.push(h("div", { class: "sc-start" }, withAI(b), hint));
       if (idle) watchIdle(b, hint);
-      // 0.13.10: the speed (kept), and the helpers for this run (folded away). 0.17.0: the speed is chosen in one
-      // place, Settings › AI; here it is said, with the way there (one control for one setting)
+      // 0.18.1 (N2): how much thought Claude gives the tasks, chosen here and kept (Settings' claude_thought); how many
+      // helpers run at once is said, and chosen under Settings › AI only. The helpers for this run stay folded away.
+      if (q.thought) parts.push(thoughtPicker(q.thought.chosen, saveThought, { onSaved: () => { QUEUE_CACHE.delete(project); choiceChanged(project, box); } }));
       if (q.speed) {
         const custom = customRun(RUN_CHOICE.get(project));
         const chosen = q.speed.chosen || "normal";
         const speed = h("p", { class: "sc-speed small" }, h("span", { class: "sc-speed-line muted" },
-          `${(SPEED_CHOICES.find(([v]) => v === chosen) || [, "Normal"])[1]} speed: ${helpersText((q.speed.options || {})[chosen] || 2)} at a time. `),
-          link({ href: "#/settings/speed" }, "Change the speed"));
+          `${helpersText((q.speed.options || {})[chosen] || 2)} at a time. `),
+          link({ href: "#/settings/speed" }, "Change in Settings"));
         if (custom) speed.classList.add("sc-speed-off");
         parts.push(speed, helpersFold(project, q, () => {
           speed.classList.toggle("sc-speed-off", customRun(RUN_CHOICE.get(project)));
@@ -1965,6 +2082,40 @@ export function speedPicker(chosen, options = { slower: 1, normal: 2, faster: 4 
   show(current);
   const label = opts.label === undefined ? "Speed" : opts.label;
   return h("div", { class: "sc-speed" }, label ? h("span", { class: "sc-speed-label small" }, label) : null, group, line);
+}
+
+// 0.18.1 (N2): how much thought Claude gives each kind of task: which models (and, where a helper takes one, how much
+// effort) answer it. Balanced is the recommended table; Energy efficient a lighter model per kind, Intelligence a
+// stronger one. Kept (Settings' claude_thought); for Claude only (a local model keeps its own choice). Fable for the
+// auditor stays its own switch in Settings.
+export const THOUGHT_CHOICES = [["efficient", "Energy efficient"], ["balanced", "Balanced"], ["intelligence", "Intelligence"]];
+const THOUGHT_NOTE = { efficient: "A lighter model for each kind of task: easiest on your plan's limits and on energy. Unsure answers still go to a stronger model.",
+  balanced: "The recommended model for each kind of task.",
+  intelligence: "A stronger model for each kind of task, thinking harder: uses your plan's limits sooner." };
+
+export async function saveThought(thought) {
+  const r = await api("PUT", "/api/settings", { claude_thought: thought });
+  App.state.settings = r.settings;
+  QUEUE_CACHE.clear();  // the models and estimates follow it
+  return r;
+}
+
+// The three choices as one row of buttons with a line saying what the chosen one does; `onPick(v)` saves it (a failure
+// puts the choice back); `opts.onSaved()` after a save; `opts.label`: null for none.
+export function thoughtPicker(chosen, onPick = saveThought, opts = {}) {
+  let current = chosen || "balanced";
+  const line = h("span", { class: "muted small sc-speed-line" });
+  const show = (v) => { line.textContent = THOUGHT_NOTE[v] || ""; };
+  const group = choice({ sm: true, label: "How much thought Claude gives the tasks", class: "sc-speed-btns", value: current, options: THOUGHT_CHOICES,
+    onPick: async (v) => {
+      if (v === current) return;
+      const before = current;
+      current = v; show(v);
+      try { await onPick(v); if (opts.onSaved) opts.onSaved(v); } catch (e) { current = before; group.set(before); show(before); showError(e); }
+    } });
+  show(current);
+  const label = opts.label === undefined ? "Thought" : opts.label;
+  return h("div", { class: "sc-speed sc-thought" }, label ? h("span", { class: "sc-speed-label small" }, label) : null, group, line);
 }
 
 // "For this run": the choices made in the fold, per project, until the run starts (kept in memory only, so a panel

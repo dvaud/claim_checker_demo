@@ -74,6 +74,69 @@ ROUTE_NAMES = {"claude_code": "Claude Code", "anthropic": "Claude API", "local":
 OFF_COMPUTER = frozenset({"anthropic", "claude_code"})   # the backends whose passages leave this computer
 
 
+# 0.18.1 (N2): how much thought Claude gives each kind of task, beside every Start Claude Code (Settings'
+# claude_thought). Balanced is the table of the kinds (and the plan's tier). Efficient starts each kind one step lower
+# on the ladder (Opus -> Sonnet -> Haiku), Intelligence one step higher (Haiku -> Sonnet -> Opus); a kind that starts
+# on the auditor keeps it (Fable stays its own switch). Models chosen per task in Settings come first. Where a helper
+# takes an effort (the Claude Code plugin's agents), Efficient asks for low and Intelligence for high effort.
+THOUGHTS = ("efficient", "balanced", "intelligence")
+THOUGHT_TITLES = {"efficient": "Energy efficient", "balanced": "Balanced", "intelligence": "Intelligence"}
+THOUGHT_EFFORT = {"efficient": "low", "balanced": None, "intelligence": "high"}
+
+
+def _shift(alias: str | None, by: int, floor: str | None = None) -> str | None:
+    """An alias moved along LADDER (never past its ends; "auditor" and other names are kept)."""
+    if alias not in LADDER or not by:
+        return alias
+    i = max(0, min(len(LADDER) - 1, LADDER.index(alias) + by))
+    if floor in LADDER:
+        i = max(i, LADDER.index(floor))
+    return LADDER[i]
+
+
+# 0.18.1 (I1): which route answers each kind when Claude and a local model are both set (Settings' ai_mix), by row of
+# Settings' table. "best" is everything on Claude (the local model reads only documents marked Only a local AI, as
+# before 0.18.1). The SDG pack's rows stay on Claude in "balanced": they set and judge reference claims.
+MIXES = ("best", "balanced", "mostly_local")
+MIX_TITLES = {"best": "Best quality", "balanced": "Balanced", "mostly_local": "Mostly local"}
+MIX_LOCAL_ROWS = {"best": frozenset(),
+                  "balanced": frozenset({"label", "link", "expand", "theme", "resolve"}),
+                  "mostly_local": frozenset({"label", "link", "expand", "theme", "resolve", "check", "extract", "split",
+                                             "verify"})}
+MIX_ROUTES = ("claude_code",)  # the main routes a mix lends work from (the Claude API: not yet, see the changelog)
+
+
+def mix_rows(settings: dict) -> frozenset[str]:
+    """The rows of Settings' table the local model answers first under the chosen mix: none unless the main route is
+    Claude Code and a local model is chosen (Settings' local model for restricted
+    documents, on this computer)."""
+    mix = settings.get("ai_mix") or "best"
+    if mix not in MIX_LOCAL_ROWS or mix == "best":
+        return frozenset()
+    if route_of(settings.get("backend", "auto")) not in MIX_ROUTES:
+        return frozenset()
+    if not (settings.get("restricted_server") and settings.get("restricted_model")):
+        return frozenset()
+    return MIX_LOCAL_ROWS[mix]
+
+
+def mix_kinds(settings: dict) -> frozenset[str]:
+    """The kinds of task (and roles) the local model answers first under the chosen mix (see mix_rows)."""
+    rows = mix_rows(settings)
+    return frozenset(k for k in KINDS if ROW_OF.get(k) in rows) if rows else frozenset()
+
+
+def judging_changes(kind: str, obj) -> bool:
+    """I2: whether a local answer would change a decision, so it goes to Claude even when sure: an answer that judges
+    an excerpt as contradicting (a contradiction decides a hypothesis's answer: one part contradicted, and it does not
+    hold). Kinds that do not judge excerpts never do."""
+    k = taskkinds.get(kind)
+    if not (k and k.judging) or not isinstance(obj, dict):
+        return False
+    items = obj.get(k.certainty) if k.certainty and k.certainty != "." else [obj]
+    return any(isinstance(x, dict) and x.get("verdict") == "refutes" for x in items or [])
+
+
 # 0.13.10: the Claude plans, as three tiers of recommended models ("" = not known: as Pro)
 TIERS = ("free", "pro", "max")
 TIER_TITLES = {"free": "Free", "pro": "Pro", "max": "Max, Team or Enterprise"}
@@ -161,6 +224,7 @@ class Router:
     second: str = ""                 # local: the second model of Settings
     opus_id: str = API_IDS["opus"]   # the Claude API's id for "opus" (Settings' anthropic_model)
     tier: str = ""                   # 0.13.10, Claude Code: the plan's tier (free | pro | max; "" = not known: as pro)
+    thought: str = "balanced"        # 0.18.1 (N2), Claude routes: efficient | balanced | intelligence
 
     # -- the table ------------------------------------------------------------------------------
     def _auditor(self) -> str:
@@ -169,7 +233,28 @@ class Router:
         return "fable" if self.fable else "opus"
 
     def _defaults(self, kind: str) -> tuple[str, str | None]:
-        return tier_defaults(kind, self.tier if self.route == "claude_code" else "")
+        first, up = tier_defaults(kind, self.tier if self.route == "claude_code" else "")
+        by = {"efficient": -1, "intelligence": 1}.get(self.thought, 0)
+        if not by or self.route not in ("claude_code", "anthropic"):
+            return first, up
+        top = self._ladder()[-1]  # Free has no Opus: never moved past Sonnet
+        k = taskkinds.get(kind)
+        # judging excerpts and setting reference claims never go below Sonnet (as on the Free plan)
+        new = _shift(first, by, floor="sonnet" if k and (k.judging or k.to_auditor) else None)
+        if new in LADDER and LADDER.index(new) > LADDER.index(top):
+            new = top
+        if up in LADDER and new in LADDER and LADDER.index(up) <= LADDER.index(new):
+            # a step up is always to a stronger model; none left: the auditor where the kind has one
+            i = LADDER.index(new) + 1
+            up = self._ladder()[i] if i < len(self._ladder()) else ("auditor" if kind in TO_AUDITOR else None)
+        return new, up
+
+    def effort(self, kind: str) -> str | None:
+        """0.18.1 (N2): the effort a helper of Claude Code is asked for, when the thought chosen asks one (None: the
+        helper's own)."""
+        if self.route != "claude_code" or kind not in KINDS:
+            return None
+        return THOUGHT_EFFORT.get(self.thought)
 
     def _ladder(self) -> tuple[str, ...]:
         return LADDER[:2] if self.route == "claude_code" and self.tier == "free" else LADDER
@@ -207,8 +292,10 @@ class Router:
             # 0.13.10: where the plan moved a kind's model (Free; Max for the kinds it raised to Opus), only ever up
             # to a stronger model: a check that starts on Opus has no stronger one unless Fable is on. The SDG pack's
             # Opus tasks still have their hard cases read again by the auditor, as since 0.8.1.
-            moved = self.tier == "free" or (self.tier == "max" and self._defaults(kind)[0] != CLAUDE_DEFAULTS[kind][0])
-            if self.route == "claude_code" and moved and nxt in RANK and start in RANK and RANK[nxt] <= RANK[start]:
+            # 0.18.1 (N2): so does a thought other than Balanced, on either Claude route
+            moved = self.tier == "free" or (self.tier == "max" and self._defaults(kind)[0] != CLAUDE_DEFAULTS[kind][0]) \
+                or self.thought != "balanced"
+            if (self.route == "claude_code" or self.thought != "balanced") and moved and nxt in RANK and start in RANK and RANK[nxt] <= RANK[start]:
                 return None
             return nxt
         if self.route == "local":
@@ -269,7 +356,8 @@ def from_settings(settings: dict, route: str | None = None, large: str = "") -> 
                   small=(settings.get("local_small_model") or "").strip() if route == "local" else "",
                   second=(settings.get("second_model") or "").strip(),
                   opus_id=settings.get("anthropic_model") or API_IDS["opus"],
-                  tier=settings_tier(settings) if route == "claude_code" else "")
+                  tier=settings_tier(settings) if route == "claude_code" else "",
+                  thought=settings.get("claude_thought") if settings.get("claude_thought") in THOUGHTS else "balanced")
 
 
 def settings_tier(settings: dict) -> str:

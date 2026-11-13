@@ -283,3 +283,196 @@ def verdict(summary: dict) -> list[str]:
         lines.append(f"{name}: {word} (usable answers {usable:.0%}, agreement with the reference κ {a}, "
                      f"median {s['seconds_median']} s per task).")
     return lines
+
+
+# ---------------------------------------------------------------------------------------------
+# 0.18.1 (I5): agreement between routes
+# ---------------------------------------------------------------------------------------------
+# A sample of answered tasks of one kind is answered by both the local model and Claude, and their decisions are
+# compared with Cohen's kappa. Nothing is stored (a measurement, like the model test above). The kinds without a
+# categorical decision (theme names, search words, hypothesis splits, resolved terms) are left out: there is no
+# decision to compare, only wording.
+AGREEMENT_KINDS = ("check", "reread", "second", "label", "link")
+KAPPA_GOOD, KAPPA_FAIR = 0.8, 0.6    # kappa from this: good; from this: fair; below: poor
+_CLAUDE_ROUTES = frozenset({"Claude Code", "Claude API", "Claude app (connector)"})
+_LOCAL_ROUTE = "local model server"
+_WHAT = {"check": "checking claims", "reread": "reading excerpts again", "second": "second opinions",
+         "label": "labels", "link": "links between terms"}
+
+
+def kappa(pairs: list[tuple]) -> float | None:
+    """Cohen's kappa for two raters over any categories ((a, b) pairs of decisions). None when it is undefined: no
+    pairs, or both raters used one and the same single category throughout (nothing to agree about)."""
+    n = len(pairs)
+    if not n:
+        return None
+    po = sum(a == b for a, b in pairs) / n
+    cats = {x for p in pairs for x in p}
+    pe = sum((sum(a == c for a, _ in pairs) / n) * (sum(b == c for _, b in pairs) / n) for c in cats)
+    if pe >= 1:
+        return None
+    return round((po - pe) / (1 - pe), 3)
+
+
+def _decisions(kind: str, payload: dict, out: dict, other: dict | None = None) -> dict:
+    """The decisions in an answer, by key: the grade of each excerpt (check, reread, second), whether each candidate
+    code applies (label; the codes of `other` count as candidates too, as in the model test) or the relation of each
+    pair of terms (link). What an answer leaves out counts as "none" ("no"), as it does in the stored results."""
+    if kind in ("check", "reread", "second"):
+        g = _grades(out, len(payload.get("passages") or []))
+        return {f"P{i}": ("partially_supports" if v == "partial" else v) for i, v in enumerate(g, 1)}
+    if kind == "label":
+        mine = _codes(out, payload)
+        universe = {c["code"] for c in payload.get("candidates") or []} | mine | (_codes(other, payload) if other else set())
+        return {c: ("yes" if c in mine else "no") for c in sorted(universe)}
+    if kind == "link":
+        n = len(payload.get("terms") or [])
+        got = {}
+        for r in out.get("relations") or []:
+            if isinstance(r, dict):
+                try:
+                    got[(int(r["a"]), int(r["b"]))] = str(r.get("relation"))
+                except (KeyError, TypeError, ValueError):
+                    continue
+        return {f"{a}-{b}": got.get((a, b), "none") for a in range(1, n + 1) for b in range(a + 1, n + 1)}
+    raise ValueError(f"There is no decision to compare for {kind} tasks.")
+
+
+def _stored(ws: Workspace, task_id: str) -> dict:
+    """The answers a task already has, by route: {"local": raw, "claude": raw}. The newest accepted answer of each
+    (a task the local model was unsure of has both)."""
+    out: dict = {"local": None, "claude": None}
+    for r in ws.query("SELECT raw_json, route FROM results WHERE task_id=? AND valid=1 ORDER BY attempt", (task_id,)):
+        side = "claude" if r["route"] in _CLAUDE_ROUTES else "local" if r["route"] == _LOCAL_ROUTE else None
+        if side:
+            out[side] = r["raw_json"]
+    return out
+
+
+def agreement_kinds(ws: Workspace) -> list[dict]:
+    """The kinds with a decision to compare that have answered tasks here: [{"kind", "answered", "name"}]."""
+    from .taskqueue import NOUN
+
+    out = []
+    for k in AGREEMENT_KINDS:
+        n = ws.scalar("SELECT COUNT(*) FROM tasks WHERE kind=? AND status='done' AND task_id NOT LIKE '%:audit:%'", (k,))
+        if n:
+            out.append({"kind": k, "answered": n, "name": _WHAT[k], "noun": (NOUN.get(k) or ("task", "tasks"))[1]})
+    return out
+
+
+def _agreement_sample(ws: Workspace, kind: str, n: int, seed: int) -> tuple[list, int]:
+    """(the tasks to compare, how many answered tasks are left out because Claude may not read their documents)."""
+    from . import access
+
+    if kind not in AGREEMENT_KINDS:
+        raise ValueError(f"There is no decision to compare for {kind} tasks.")
+    rows = _sample(ws, kind, 10 ** 9, seed)
+    with ws.connect() as cx:
+        ok = [t for t in rows if access.label_payload(cx, json.loads(t["payload_json"])) == "cloud"]
+    rng = random.Random(seed)
+    return rng.sample(ok, min(n, len(ok))), len(rows) - len(ok)
+
+
+def agreement_plan(ws: Workspace, kind: str, n: int = 30, seed: int = 0) -> dict:
+    """What an agreement run would do, before it starts: {"kind", "n" (tasks compared), "ask_local", "ask_claude"
+    (tasks each route is asked: answers it already has are reused), "left_out" (answered tasks Claude may not read)}."""
+    sample, left_out = _agreement_sample(ws, kind, n, seed)
+    have = [_stored(ws, t["task_id"]) for t in sample]
+    return {"kind": kind, "n": len(sample), "ask_local": sum(h["local"] is None for h in have),
+            "ask_claude": sum(h["claude"] is None for h in have), "left_out": left_out}
+
+
+def verdict_sentence(kind: str, kap: float | None, agree: float | None, compared: int) -> str:
+    """A plain sentence on what the agreement means: kappa from 0.8 is good, from 0.6 fair, below that poor."""
+    what = _WHAT.get(kind, kind)
+    if not compared or agree is None:
+        return f"Nothing could be compared for {what}: no task was answered by both."
+    pct = f"{agree:.0%}"
+    if kap is None:
+        return (f"Too little variety in the decisions to measure kappa for {what}: the local model and Claude agree "
+                f"on {pct} of them.")
+    s = f"the local model agrees with Claude on {pct} of decisions (kappa {kap:.2f})"
+    if kap >= KAPPA_GOOD:
+        return f"Good enough for {what}: {s}."
+    if kap >= KAPPA_FAIR:
+        return f"Fair for {what}: {s}. Review what it answers."
+    return f"Not good enough for {what}: {s}. Let Claude read these."
+
+
+def agreement(ws: Workspace, kind: str, n: int, local, claude_backend, seed: int = 0, progress=None,
+              should_stop=None, claude_model: str | None = None) -> dict:
+    """Have the local model and Claude answer the same tasks and compare their decisions. `local`: (backend, model)
+    of the local model; `claude_backend`: Claude Code (answered on a scratch copy, see taskqueue.answer_on_copy) or the
+    Claude API backend (asked directly, each excerpt set noted in the ledger of what left this computer). Only
+    tasks whose documents Claude may read are used. An answer a task already has from a route is reused, so only what
+    is missing is asked. Nothing is stored in the project. Returns the shape described in docs/API.md."""
+    from . import access, tasks
+
+    be_l, model_l = local
+    sample, left_out = _agreement_sample(ws, kind, n, seed)
+    if not sample:
+        raise ValueError("No answered task of this kind may be read by Claude, so there is nothing to compare.")
+    have = {t["task_id"]: _stored(ws, t["task_id"]) for t in sample}
+    code = getattr(claude_backend, "name", "") == "claude_code"
+
+    def claude_alias(t) -> str:
+        if code:
+            return claude_model if claude_model in ("haiku", "sonnet", "opus", "fable") else _queue_models(
+                claude_backend, None, [kind])[kind]
+        return tasks.model_for({"forced_model": None, "step": 0, "kind": kind, "role": None, "model": claude_model},
+                               claude_backend, claude_model)
+
+    asked = {"local": 0, "claude": 0}
+    queued: dict = {}
+    todo = [t for t in sample if have[t["task_id"]]["claude"] is None]
+    if code and todo:
+        from .taskqueue import answer_on_copy
+
+        queued, _secs = answer_on_copy(ws, [(t["task_id"], kind, json.loads(t["payload_json"]), claude_alias(t))
+                                            for t in todo], claude_backend, "agreement between routes",
+                                       should_stop=should_stop)
+    items, pairs, failed = [], [], 0
+    for i, t in enumerate(sample, 1):
+        if should_stop and should_stop():
+            break
+        if progress:
+            progress(i, len(sample))
+        tid, payload = t["task_id"], json.loads(t["payload_json"])
+        raws, how = dict(have[tid]), {"local": "stored", "claude": "stored"}
+        try:
+            system, user = prompts.system_prompt(kind), prompts.user_prompt(kind, payload)
+            if raws["local"] is None:
+                how["local"] = "asked"
+                access.sending(ws, payload, be_l, f"{kind} (agreement)", tid)
+                raws["local"] = be_l.complete(kind, system, user, model_l, payload)
+                asked["local"] += 1
+            if raws["claude"] is None:
+                how["claude"] = "asked"
+                if code:
+                    raws["claude"] = queued.get(tid)
+                    if raws["claude"] is None:
+                        raise ValueError("Claude Code gave no answer to this task")
+                else:
+                    access.sending(ws, payload, claude_backend, f"{kind} (agreement)", tid)
+                    raws["claude"] = claude_backend.complete(kind, system, user, claude_alias(t), payload)
+                asked["claude"] += 1
+            out_l, out_c = parse_json(raws["local"]), parse_json(raws["claude"])
+            dl, dc = _decisions(kind, payload, out_l, out_c), _decisions(kind, payload, out_c, out_l)
+        except Exception as e:  # noqa: BLE001 - one task failing must not stop the measurement; Stop does
+            if str(e).startswith("Stopped"):
+                raise
+            failed += 1
+            items.append({"task_id": tid, "error": str(e)[:200]})
+            continue
+        keys = sorted(set(dl) | set(dc))
+        ps = [(dl.get(k, "none"), dc.get(k, "none")) for k in keys]
+        pairs += ps
+        items.append({"task_id": tid, "decisions": len(ps), "same": sum(a == b for a, b in ps), "local": how["local"],
+                      "claude": how["claude"]})
+    kap = kappa(pairs)
+    agree = round(sum(a == b for a, b in pairs) / len(pairs), 3) if pairs else None
+    return {"kind": kind, "n": len(sample), "compared": len(items) - failed, "failed": failed, "kappa": kap,
+            "agree": agree, "decisions": len(pairs), "items": items, "left_out": left_out, "asked": asked,
+            "verdict": verdict_sentence(kind, kap, agree, len(pairs)),
+            "thresholds": {"good": KAPPA_GOOD, "fair": KAPPA_FAIR}}

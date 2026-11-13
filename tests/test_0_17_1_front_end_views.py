@@ -326,7 +326,7 @@ def test_the_log_drawer_asks_for_the_one_document_it_names():
 def test_the_answers_table_draws_its_first_rows_and_the_rest_as_it_scrolls():
     js = _js("views/history.js")
     draw = _fn(js, "  function drawTable() {")
-    assert "drawInSteps(tbody, rows, answerRow, {" in draw and "Math.max(60, keep)" in draw
+    assert "lazyList({ items: rows, render: answerRow, list: tbody," in draw and "Math.max(60, keep)" in draw   # 0.18.1: lazyList
     assert "rows.map((x) => {" not in draw
 
 

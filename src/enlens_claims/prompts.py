@@ -261,7 +261,28 @@ Answer with one JSON object and nothing else: no prose, no code fences."""
     raise ValueError(f"unknown task kind {kind!r}")
 
 
-def user_prompt(kind: str, payload: dict) -> str:
+SHARED_CODEBOOK_MAX = 40  # 0.18.1 (H4): a batch whose label tasks name at most this many codes gets them once
+
+
+def shared_codebook(kind: str, payloads: list[dict]) -> dict | None:
+    """0.18.1 (H4): for a batch of label tasks of one codebook naming few codes in all, the codes' descriptions once
+    ("CODEBOOK OF THIS BATCH", added to the batch's instruction) and each task's prompt naming only its candidates'
+    codes. None when it does not apply (another kind, several codebooks, many codes, a single task)."""
+    if kind != "label" or len(payloads) < 2 or len({p.get("framework") for p in payloads}) != 1:
+        return None
+    codes: dict[str, dict] = {}
+    for p in payloads:
+        for c in p.get("candidates") or []:
+            codes.setdefault(c["code"], c)
+    if not codes or len(codes) > SHARED_CODEBOOK_MAX:
+        return None
+    lines = ["CODEBOOK OF THIS BATCH (the candidate codes of its passages; each passage names its own):"]
+    lines += [f"{c['code']}: {c['description']}" + (f" Use it when: {c['include']}" if c.get("include") else "")
+              + (f" Not when: {c['exclude']}" if c.get("exclude") else "") for c in codes.values()]
+    return {"codebook": "\n".join(lines), "prompts": [user_prompt(kind, p, codes_once=True) for p in payloads]}
+
+
+def user_prompt(kind: str, payload: dict, codes_once: bool = False) -> str:
     k = taskkinds.get(kind)
     if k is not None and k.user is not None:  # 0.13.6: an add-on's kind builds its own
         return k.user(payload)
@@ -318,7 +339,10 @@ def user_prompt(kind: str, payload: dict) -> str:
         cands = payload.get("candidates") or []
         # 0.16: a code's own "when to use it" and "when not" (codebooks.py), only when it has them: a codebook without
         # them gives the prompt of before, word for word
-        parts.append("CANDIDATE CODES:\n" + ("\n".join(f"{c['code']}: {c['description']}"
+        if codes_once and cands:  # 0.18.1 (H4): their descriptions are in the batch's codebook
+            parts.append("CANDIDATE CODES (described in the batch's codebook): " + ", ".join(c["code"] for c in cands))
+        else:
+            parts.append("CANDIDATE CODES:\n" + ("\n".join(f"{c['code']}: {c['description']}"
                                                        + (f" Use it when: {c['include']}" if c.get("include") else "")
                                                        + (f" Not when: {c['exclude']}" if c.get("exclude") else "")
                                                        for c in cands)

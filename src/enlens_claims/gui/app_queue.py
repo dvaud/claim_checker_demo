@@ -30,7 +30,11 @@ class QueueMixin:
                         "max_per_helper": taskqueue.MAX_PER_HELPER,
                         "helpers": taskqueue.helper_rows(out["groups"], out["kinds"]),
                         "all_helpers": list(taskqueue.routing.HELPER_MODEL)}
+        # 0.18.1 (N2): how much thought Claude gives the tasks, chosen beside Start Claude Code and kept
+        out["thought"] = {"chosen": self.settings().get("claude_thought") or "balanced",
+                          "options": dict(taskqueue.routing.THOUGHT_TITLES)}
         out["runner"] = claude_setup.run_state(name)
+        out["at_limit"] = self._at_limit(name, ws, out["runner"])  # 0.18.1 (I4)
         if out["route"] == "claude_code" and not home.local_only():
             st = claude_setup.status()
             out["can_start"] = bool(st["found"])
@@ -137,13 +141,68 @@ class QueueMixin:
         job.scope = hyp_id
         return job
 
+    # -- 0.18.1 (I1, I4): the local model's share of the queue ---------------------------------------------------
+    def _local_queue_job(self, name: str, what: str, kinds: list[str] | None = None, background: bool = False) -> Job:
+        """A job in which the local model (Settings' local model for restricted documents) answers the queue's tasks
+        here: `what` "mix" (the kinds the AI mix gives it first, unsure ones going up to Claude) or "limit" (every
+        waiting task, after Claude Code reached the plan's usage limit)."""
+        from .. import access
+
+        ws = self.ws(name)
+
+        def run(job: Job):
+            job.progress = {"done": 0, "total": 0}
+            prog = lambda d, n: job.progress.update(done=d, total=n)  # noqa: E731
+            readers = access.Readers(None, "", should_stop=job.cancel.is_set)
+            got = readers.local()
+            if got is None:
+                raise ApiError(400, readers.local_problem or "No local model is chosen in Settings → AI.")
+            try:
+                if what == "mix":
+                    return tasks_mod.answer_mix_waiting(ws, got[0], got[1], should_stop=job.cancel.is_set,
+                                                        progress=prog)
+                return taskqueue.run_here(ws, got[0], kinds, should_stop=job.cancel.is_set, progress=prog,
+                                          model=got[1])
+            finally:
+                taskqueue.advance(ws)
+                claimcheck._let_go(readers)
+
+        title = ("Your local model answers its share of the queue" if what == "mix" else
+                 "Your local model answers the queue while Claude Code waits for the plan's limit")
+        return self.jobs.start(f"queue-local-{what}", title, name, run, uses_model=True, unique=True,
+                               background=background)
+
+    def _at_limit(self, name: str, ws, runner: dict) -> dict | None:
+        """0.18.1 (I4): whether Claude Code, started from the app, stopped at the plan's usage limit, and what happens
+        now, as the person chose (Settings' at_limit): the queue waits for the next start, or the local model answers
+        what waits (started once per stop)."""
+        said = taskqueue.limit_reached(runner)
+        if not said:
+            return None
+        s = self.settings()
+        choice = s.get("at_limit") or "wait"
+        local = bool(s.get("restricted_server") and s.get("restricted_model")) and not home.local_only()
+        out = {"said": said, "choice": choice, "local_possible": local, "started": False}
+        key = f"{runner.get('started_at')}"
+        if choice == "local" and local and ws.meta("limit_handled") != key and taskqueue.status(ws, name)["waiting"]:
+            ws.set_meta("limit_handled", key)  # once per stop of Claude Code, even if the job is stopped
+            self._local_queue_job(name, "limit", background=True)
+            out["started"] = True
+        return out
+
     def start_queue_run(self, name: str, body: dict) -> Job:
         """Answer what waits in the queue here, with the AI model of Settings (a local server or the Claude API),
-        kind by kind."""
+        kind by kind. 0.18.1: with Claude Code in Settings, the local model answers here what the AI mix gives it
+        first (`{"local": "mix"}`, the default), or every waiting task it may (`{"local": "all"}`, as at the plan's
+        limit)."""
         ws = self.ws(name)
         if self.queue_mode():
-            raise ApiError(400, "Settings name Claude Code: it answers the queue itself. Choose another AI model to "
-                                "answer it here.")
+            what = "limit" if body.get("local") == "all" else "mix"
+            if what == "mix" and not taskqueue.mix_kinds():
+                raise ApiError(400, "Settings name Claude Code: it answers the queue itself. Choose a mix of local "
+                                    "and Claude in Settings → AI, or another AI model, to answer it here.")
+            kinds = [k for k in (body.get("kinds") or []) if k in taskqueue.KINDS] or None
+            return self._local_queue_job(name, what, kinds)
         kinds = [k for k in (body.get("kinds") or []) if k in taskqueue.KINDS] or None
         return self._model_job("queue-run", "Answering the queue here", name, lambda job, be, model, prog:
                                taskqueue.run_here(ws, be, kinds, should_stop=job.cancel.is_set, progress=prog,

@@ -7,10 +7,14 @@
 # tests/conftest.py). 8 side by side on its 4 cores was a little faster per machine, but it slowed the heaviest tests
 # tenfold, which widens every timing gap a test can fall into. The 25 slowest tests of each job are listed at the end
 # of its log.
-# 2026-11-12: Linux on Python 3.13 installs every optional extra (the Claude API, OCR with Tesseract, PyYAML), so the
+# 2026-11-12: Linux on Python 3.13 installs every optional extra (the Claude API, OCR with Tesseract, and `ci`: PyYAML and ruff), so the
 # tests that skip elsewhere run here, and CI, not a full run on the developer's laptop, is where the whole suite runs.
 # The other jobs keep the usual extras, so a test that needs one must still skip without it. CI runs the tests marked
 # heavy (a local run of the whole suite leaves them out) and 10 seeds of the random runs; nightly.yml runs 30.
+# 0.18.1 (roadmap J1.7): the install is from uv.lock (`uv sync --frozen`: the exact versions of every package, so a
+# run is the same next month; Dependabot proposes updates in pull requests), every action is pinned by its commit
+# hash (the tag is the comment), and the checkout has the whole history with its tags, since the package's version is
+# made from the git tag (setuptools-scm, pyproject.toml): without tags it would be 0.0.0.
 name: Tests
 
 on:
@@ -43,7 +47,7 @@ jobs:
         include:
           # workers: "auto" is one per core (4 on Linux and Windows, 3 on macOS)
           - {os: ubuntu-latest, python: "3.10", label: "Linux, Python 3.10", lint: false, advisory: false, workers: auto, shard: "", extras: "dev,connector,fast,pdfminer", all: false}
-          - {os: ubuntu-latest, python: "3.13", label: "Linux, Python 3.13, every extra", lint: true, advisory: false, workers: auto, shard: "", extras: "dev,connector,fast,pdfminer,anthropic,ocr", all: true}
+          - {os: ubuntu-latest, python: "3.13", label: "Linux, Python 3.13, every extra", lint: true, advisory: false, workers: auto, shard: "", extras: "dev,connector,fast,pdfminer,anthropic,ocr,ci", all: true}
           # 0.15: advisory until the suite passed there; 0.15.7: it does, so a failure on macOS or Windows fails the run
           - {os: macos-latest, python: "3.12", label: "macOS, Python 3.12", lint: false, advisory: false, workers: auto, shard: "", extras: "dev,connector,fast,pdfminer", all: false}
           - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 1 of 4", lint: false, advisory: false, workers: auto, shard: "1/4", extras: "dev,connector,fast,pdfminer", all: false}
@@ -51,24 +55,27 @@ jobs:
           - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 3 of 4", lint: false, advisory: false, workers: auto, shard: "3/4", extras: "dev,connector,fast,pdfminer", all: false}
           - {os: windows-latest, python: "3.12", label: "Windows, Python 3.12, part 4 of 4", lint: false, advisory: false, workers: auto, shard: "4/4", extras: "dev,connector,fast,pdfminer", all: false}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # the package's version is made from the git tag
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python }}
+          enable-cache: true
       - name: Tesseract (OCR)
         if: ${{ matrix.all }}
         run: sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
-      - name: Install
+      - name: Install (from uv.lock)
+        shell: bash   # the same on Windows (Git Bash): each extra becomes an --extra option
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[${{ matrix.extras }}]"
-      - name: PyYAML (the shape of the workflows and issue forms)
-        if: ${{ matrix.all }}
-        run: pip install pyyaml
+          uv lock --check
+          flags=""
+          for e in ${EXTRAS//,/ }; do flags="$flags --extra $e"; done
+          uv sync --frozen $flags
+        env:
+          EXTRAS: ${{ matrix.extras }}
       - name: Lint (syntax errors and undefined names only)
         if: ${{ matrix.lint }}
-        run: |
-          pip install ruff
-          ruff check --select E9,F63,F7,F82 src tests tools
+        run: uv run --frozen --no-sync ruff check --select E9,F63,F7,F82 src tests tools
       - name: Test
-        run: python -m pytest -q -rs -n ${{ matrix.workers }} --dist worksteal --timeout=600 --durations=25
+        run: uv run --frozen --no-sync python -m pytest -q -rs -n ${{ matrix.workers }} --dist worksteal --timeout=600 --durations=25

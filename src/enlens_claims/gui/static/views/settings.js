@@ -1,5 +1,5 @@
 // Settings: model service, embeddings, check defaults, frameworks, model test, data folder.
-import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere, myLink, WhatsNew, loadWhatsNew, showWhatsNew, whatsNewLink } from "../lib.js";
+import { saveBlob, App, api, h, icon, tabs, replace, clear, toast, showError, fmt, pageHead, watchJob, P, field, switchControl, rangeControl, confirmDialog, dialog, download, VERSION, TERMINAL, strictness, statusBadge, copyLine, tesseractHelp, helpMark, rememberClaude, claudeAccount, appName, Updates, checkUpdate, speedPicker, saveSpeed, thoughtPicker, saveThought, choice, planTier, button, card, fold, link, notice, downloadButton, input as fieldInput, select as selectField, tag, optionCards, readsLine, stopButton, inset, workState, aiWhere, myLink, WhatsNew, loadWhatsNew, showWhatsNew, whatsNewLink } from "../lib.js";
 import { withAI } from "../features.js";
 import { simpleProgress } from "./progress.js";
 import { restrictedModelCard, termsPanel } from "./ai-access.js";
@@ -361,7 +361,7 @@ function modelSection(s, servers, watchers, info = { servers }) {
     } else if (backend === "openai") {
       detail.append(serverList(), h("div", { class: "fields-2" }, field("Server address", fields.openai_url, { help: "The /v1 base URL of LM Studio, llama.cpp, Jan, vLLM…" }), fields.openaiModel = modelPicker("m-openai", s.openai_model, openaiSrv ? openaiSrv.chat_models : [], "leave empty for the first model listed")));
     } else if (backend === "anthropic") {
-      detail.append(cloudBox, field("Stronger model", fields.anthropic_model, { help: "For example claude-opus-5-5: a task an AI model was unsure of goes to it once. Checks start on Sonnet; each kind of task has its own model (“AI model per task” under Technical)." }), keyBox(), fableSwitch());
+      detail.append(cloudBox, field("Stronger model", fields.anthropic_model, { help: "For example claude-opus-5-5: a task an AI model was unsure of goes to it once. Checks start on Sonnet; each kind of task has its own model (“AI model per task” under Technical)." }), keyBox(), fableSwitch(), agreeBox());
     } else if (backend === "claude_code") {
       detail.append(claudeCodeBox(), fableSwitch());
     } else {
@@ -392,10 +392,109 @@ function modelSection(s, servers, watchers, info = { servers }) {
       st.textContent = "Saving…";
       try { await saveSpeed(v); s.claude_speed = v; st.textContent = "Saved."; } catch (e) { st.textContent = ""; throw e; }
     }, { label: null });
+    // 0.18.1 (N2): how much thought, also beside every Start Claude Code (the same kept setting)
+    const st2 = h("span", { class: "save-state", "aria-live": "polite" });
+    const thought = thoughtPicker(s.claude_thought, async (v) => {
+      st2.textContent = "Saving…";
+      try { await saveThought(v); s.claude_thought = v; st2.textContent = "Saved."; } catch (e) { st2.textContent = ""; throw e; }
+    }, { label: null });
     return h("div", { class: "stack set-claude-code-box" }, claudeSetupCard({ watchers, kind: "standard" }),
-      h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Speed of Claude Code"), h("div", { class: "row" }, speed, st),
-        h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code (each Start Claude Code says its speed and links here). Faster is done sooner and uses your plan's limits faster. ",
-          helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model (labels on Haiku, checks on Sonnet, second opinions on Opus). Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))));
+      h("div", { class: "field", id: "s-thought" }, h("div", { class: "field-label" }, "How much thought"), h("div", { class: "row" }, thought, st2),
+        h("div", { class: "field-help" }, "Which Claude models answer each kind of task, and how hard they think. It is also beside every Start Claude Code. Models you choose per task below come first; a local model keeps its own choice. ",
+          helpMark("About how much thought", "Balanced uses the recommended model for each kind of task (labels on Haiku, checks on Sonnet, second opinions on Opus). Energy efficient starts each kind one model lower (never below Sonnet for judging excerpts), Intelligence one higher, and asks the helpers for low or high effort. An unsure answer always goes to a stronger model."))),
+      h("div", { class: "field", id: "s-speed" }, h("div", { class: "field-label" }, "Helpers at once"), h("div", { class: "row" }, speed, st),
+        h("div", { class: "field-help" }, "How many helpers Claude Code starts at once when you press Start Claude Code. More is done sooner and uses your plan's limits faster. ",
+          helpMark("About the helpers", "Claude Code hands the work to helpers, each for one kind of task on its own model. Slower runs one at a time, Normal two, Faster four. Beside Start Claude Code, “Choose the helpers for this run” sets how many of each helper work at once, for one run."))),
+      mixBox(), agreeBox());
+  }
+
+  // 0.18.1 (I5): the local model and Claude answer the same sample of this project's tasks of one kind, and Cohen's
+  // kappa says whether the local model is good enough for it. On request only (it uses the plan); nothing is stored.
+  function agreeBox() {
+    if (!(s.restricted_server && s.restricted_model && (s.backend === "claude_code" || s.backend === "anthropic"))) return null;
+    const box = h("div", { class: "field", id: "s-agreement" }, h("div", { class: "field-label" }, "Agreement between routes"));
+    const help = h("div", { class: "field-help" }, "Your local model and Claude answer the same sample of your own answered tasks of one kind, and kappa (1 is full agreement, 0 is chance) shows whether the local model is good enough for it. An answer a task already has is reused, so only what is missing is asked. Only documents Claude may read are used. Nothing is stored in the project. ",
+      helpMark("About agreement", "Kappa from 0.8 on is good, from 0.6 fair, below that poor. Agreement is not correctness: Claude is not always right either. Themes, search words, hypothesis splits and term resolutions have no decision to compare, so they are left out."));
+    if (!App.project) { box.append(h("p", { class: "muted small" }, "Open a project first: the sample is taken from its answered tasks."), help); return box; }
+    const out = h("div", { "aria-live": "polite", class: "set-test-out" });
+    const kindSel = selectField({ "aria-label": "Kind of task" });
+    const n = fieldInput({ type: "number", min: 10, max: 100, step: 5, value: 30, "aria-label": "Tasks to compare" });
+    const planLine = h("p", { class: "small" });
+    const start = button({ sm: true, icon: "play" }, "Compare the routes");
+    const body = h("div", { class: "stack" });
+    const base = `/api/projects/${P(App.project)}/agreement`;
+    let kinds = [];
+    const size = () => Math.min(100, Math.max(10, Math.round(n.valueAsNumber) || 30));
+    async function showPlan() {
+      start.disabled = true;
+      try {
+        const r = await api("GET", `${base}/plan?kind=${encodeURIComponent(kindSel.value)}&n=${size()}`);
+        const p = r.plan, k = kinds.find((x) => x.kind === p.kind) || {};
+        if (!p.n) { planLine.textContent = "No answered task of this kind is on documents Claude may read, so there is nothing to compare."; return; }
+        const uses = s.backend === "claude_code" ? "uses your plan" : "uses your API credit";
+        planLine.textContent = `${p.n} ${k.noun || "tasks"}: ${p.ask_local} asked of your local model, ${p.ask_claude} asked of Claude${p.ask_claude ? ` (${uses})` : ""}` + (p.left_out ? `; ${p.left_out} left out, Claude may not read their documents.` : ".");
+        start.disabled = false;
+      } catch (e) { planLine.textContent = e.message || "The plan could not be made."; }
+    }
+    start.addEventListener("click", async () => {
+      start.disabled = true;
+      try { follow((await api("POST", base, { kind: kindSel.value, n: size() })).job.id); }
+      catch (e) { showError(e); start.disabled = false; }
+    });
+    function follow(jobId) {
+      const stop = stopButton({ onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) });
+      const pb = h("div", { class: "pb" });
+      const holder = card({ as: "div", title: "Comparing", level: "h3", action: stop }, pb);
+      replace(out, holder);
+      const watcher = watchJob(jobId, (job) => {
+        const p = job.progress || {};
+        replace(pb, simpleProgress(job, () => p.total ? `Task ${Math.min((p.done || 0) + 1, p.total)} of ${p.total}` : "Starting…"));
+        if (TERMINAL.has(job.state)) stop.hidden = true;
+      });
+      watchers.push(watcher);
+      watcher.promise.then((job) => {
+        start.disabled = false;
+        if (job.state === "done") {
+          const r = job.result || {};
+          replace(pb, h("p", {}, h("strong", {}, r.verdict || "")),
+            h("div", { class: "kv" }, h("dt", {}, "Kappa"), h("dd", {}, r.kappa === null || r.kappa === undefined ? "–" : r.kappa.toFixed(2))),
+            h("div", { class: "kv" }, h("dt", {}, "Same decision"), h("dd", {}, r.agree === null || r.agree === undefined ? "–" : `${Math.round(r.agree * 100)}% of ${r.decisions}`)),
+            h("p", { class: "muted small" }, `${r.compared} of ${r.n} tasks compared. Asked now: ${r.asked.local} of your local model, ${r.asked.claude} of Claude.` + (r.failed ? ` ${r.failed} could not be compared.` : "")));
+        } else if (job.state === "error") replace(pb, notice({ kind: "error" }, h("p", {}, job.error || "The comparison failed.")));
+        else replace(pb, h("p", { class: "muted" }, "Stopped."));
+      }).catch((e) => { start.disabled = false; showError(e); });
+    }
+    kindSel.addEventListener("change", showPlan);
+    n.addEventListener("change", showPlan);
+    box.append(body, help);
+    api("GET", `${base}/plan`).then((r) => {
+      kinds = r.kinds || [];
+      if (r.problem) { body.append(h("p", { class: "muted small" }, r.problem)); return; }
+      if (!kinds.length) { body.append(h("p", { class: "muted small" }, "No task with a decision to compare is answered yet in this project (checks, second readings, labels and links have one).")); return; }
+      kindSel.append(...kinds.map((k) => h("option", { value: k.kind }, `${k.name[0].toUpperCase()}${k.name.slice(1)} (${k.answered} answered)`)));
+      body.append(h("div", { class: "fields-2" }, field("Kind of task", kindSel), field("Tasks to compare (10 to 100)", n)), planLine, h("div", { class: "row" }, start), out);
+      showPlan();
+    }).catch((e) => body.append(h("p", { class: "muted small" }, e.message || "Could not load the plan.")));
+    return box;
+  }
+
+  // 0.18.1 (I1, I2, I4): which route answers each kind of task when Claude and a local model are both set, and what
+  // happens at the plan's usage limit. Saved when picked.
+  function mixBox() {
+    const local = !!(s.restricted_server && s.restricted_model);
+    const st = h("span", { class: "save-state", "aria-live": "polite" });
+    const pick = (key) => async (v) => { st.textContent = "Saving…"; try { await save({ [key]: v }, st); s[key] = v; } catch (e) { st.textContent = ""; throw e; } };
+    const mix = choice({ sm: true, label: "The mix of local and Claude", value: s.ai_mix || "best",
+      options: [["mostly_local", "Mostly local"], ["balanced", "Balanced"], ["best", "Best quality"]], onPick: pick("ai_mix") });
+    const limit = choice({ sm: true, label: "At your plan's usage limit", value: s.at_limit || "wait",
+      options: [["wait", "Wait and continue later"], ["local", "Carry on with the local model"]], onPick: pick("at_limit") });
+    return h("div", { class: "stack", id: "s-mix" },
+      h("div", { class: "field" }, h("div", { class: "field-label" }, "The mix of local and Claude"), h("div", { class: "row" }, mix, st),
+        h("div", { class: "field-help" }, local ? "Mostly local: your local model answers every kind of task but second opinions. Balanced: it answers labels, links, search words, theme names and references; Claude judges excerpts. Best quality: Claude answers everything (your local model reads only documents marked Only a local AI). An answer your local model is unsure of, that fails the quote check, or that judges an excerpt as contradicting goes to Claude, only for documents Claude may read. Can change results. "
+          : "Choose a local model for documents marked Only a local AI (under AI model) to share the work between it and Claude. ",
+          helpMark("About the mix", "The local model answers first, on this computer; its answer counts unless it goes up to Claude, who then reads the task again. Each answer records which model gave it (Technical details, and the Excel file's How these results were made). Settings › AI › Agreement between routes shows, on your own documents, how often the two agree."))),
+      h("div", { class: "field" }, h("div", { class: "field-label" }, "At your plan's usage limit"), h("div", { class: "row" }, limit),
+        h("div", { class: "field-help" }, "When Claude Code stops because your plan's usage limit is reached: wait (the queue keeps the work; start Claude Code again when the limit resets), or let your local model answer what waits, where it may.")));
   }
 
   function keyBox() {

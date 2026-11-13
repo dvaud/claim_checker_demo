@@ -56,7 +56,17 @@ class ChecksApi:
         return nearduplicates.similar(self.app.ws(name), [x[:2000] for x in lines])
 
     def get_hypotheses(self, name, q):
-        return self.app.hypotheses(name, q)
+        """The answers of the project. 0.18.1 (H5): with `offset` the rows come a page at a time (`limit` per page,
+        100 when not given) and the answer says `total` (the rows after the filters), `offset` and `limit`; `counts`
+        stay those of every hypothesis. Without `offset` the answer is what it always was (`limit` alone still cuts
+        the list)."""
+        if _str(q, "offset") is None:
+            return self.app.hypotheses(name, q)
+        offset = max(0, int(_float(q, "offset", 0)))
+        limit = max(1, min(int(_float(q, "limit", 100)), 1000))
+        whole = self.app.hypotheses(name, {k: v for k, v in q.items() if k not in ("offset", "limit")})
+        rows = whole["hypotheses"]
+        return {**whole, "hypotheses": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit}
 
     def _has_hypothesis(self, project, hyp_id):
         try:
@@ -330,8 +340,15 @@ class ChecksApi:
         body = self._body()
         verdict = body.get("verdict") or None
         extra = {"quote": body.get("quote")} if "quote" in body else {}
-        claimcheck.set_judgement(self.app.ws(name), claim_id, passage_id, verdict, body.get("note"), **extra)
-        return {"saved": True, "verdict": verdict}
+        if body.get("threshold") is not None:  # 0.18.1: the strictness the page shows, for the sentence of what moved
+            try:
+                extra["threshold"] = min(1.0, max(0.0, float(body["threshold"])))
+            except (TypeError, ValueError):
+                raise ApiError(400, "threshold must be a number from 0 to 1.") from None
+        moved = claimcheck.set_judgement(self.app.ws(name), claim_id, passage_id, verdict, body.get("note"), **extra)
+        # 0.18.1 (N4): the answer before and after, and the sentence naming this judgement when it moved the answer
+        return {"saved": True, "verdict": verdict, "status_before": moved["before"], "status": moved["after"],
+                "moved": moved["moved"]}
 
     def get_jobs(self, q):
         return {"jobs": self.app.job_views()}

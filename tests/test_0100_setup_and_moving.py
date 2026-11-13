@@ -36,6 +36,9 @@ from helpers import api_docs
 NEXT = "{}.{}.{}".format(*(int(x) + (i == 2) for i, x in enumerate(re.match(r"(\d+)\.(\d+)\.(\d+)", VERSION).groups())))
 
 ROOT = Path(__file__).resolve().parent.parent
+# 0.18.1 (J1.3): the release being made is the top entry of the changelog; the running version is made from the git tag
+# (it is 0.18.0.post3 after a commit past v0.18.0), so the tests of the release's files use this
+RELEASE = re.search(r"^## (\d+\.\d+\.\d+(?:rc\d+)?)\b", (ROOT / "CHANGELOG.md").read_text("utf-8"), re.M).group(1)
 FAKE = str(Path(__file__).with_name("fake_claude_cli.py"))
 INSTALLER = str(Path(__file__).with_name("fake_claude_installer.py"))
 sys.path.insert(0, str(ROOT / "tools"))
@@ -303,7 +306,7 @@ def test_release_check_notes_and_assets(tmp_path):
     import release
 
     v = release.check()
-    assert v == VERSION and release.check(f"v{VERSION}") == v
+    assert v == RELEASE and release.check(f"v{RELEASE}") == v
     with pytest.raises(release.ReleaseError, match="the tag is v0.9.9"):
         release.check("v0.9.9")
     notes = release.notes(v)

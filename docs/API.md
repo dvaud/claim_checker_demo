@@ -1794,4 +1794,42 @@ page's `related.links` with `"source": "pattern"` and their `"sentences"` (`[{"d
 ### New in 0.18.1: the AI mix, checks and retractions
 
 <!-- 0.18.1 part B: its routes below this line (gui/api_checks_extra.py); integration moves them to their places -->
+
+**The assessment in words (N4).** `GET …/hypotheses/<id>` carries `assessment`: `{"sentences": [{"text", "rule",
+"refs"}], "moved_by": {"text", "rule", "refs", "from", "to"} | null}`. Each sentence comes from one rule (`verdict`,
+`against`, `for`, `concentration`, `part`, `below-strictness`, `waiting-for-you`, `waiting-local`, `moved-by`);
+`refs` are `"<claim_id>/<passage_id>"` of the excerpts it rests on. Made by rules, never by an AI; excerpts of
+documents not readable by Claude are counted, never quoted. `PUT …/judgements/<claim_id>/<passage_id>` now also
+answers `{"status_before", "status", "moved"}` (`moved`: the sentence naming this judgement when it changed the
+answer, also written into the research log as kind `verdict-moved`, else null).
+#### Retractions and corrections
+
+Looks the DOIs of the bibliography's works and of the documents up in Crossref, which carries Retraction Watch's
+retractions and the publishers' corrections and expressions of concern. Only when asked. Off under local-only (400,
+nothing sent). Only DOIs are sent, with a plain `User-Agent: ENLENS/<version>`. A work whose document is marked
+No AI is not looked up. The Crossref address can be set with `ENLENS_CROSSREF_URL` (tests use a stand-in).
+
+| Route | Answer |
+| --- | --- |
+| `GET /api/projects/<name>/retractions` | What the last lookups found: `{"local_only", "checked_at" (the latest lookup or null), "checked", "affected", "by_doi": {doi: {"checked_at", "notices"}}, "by_item": {item_key: [notice]}, "by_doc": {doc_id: [notice]}, "plan": {"ask", "no_ai"}}`. A notice is `{"type": "retraction", "correction", "expression_of_concern", …, "doi": the notice's DOI, "date", "source", "work_doi", "checked_at"}`. Only works with a notice are listed. |
+| `POST /api/projects/<name>/retractions/check` | Starts the lookup as a job (`{"job"}`; `progress` has `done` and `total` DOIs; one at a time per project). Its result: `{"looked_up", "no_ai", "notices", "capped", "checked_at"}`. 400 under local-only or when there is no DOI to ask about. |
+
+`GET …/bibliography` gives each work a `notices` list, and `retractions: {checked_at, affected, local_only}` beside `counts`.
+**Agreement between routes (I5).** The local model and Claude answer the same sample of an answered kind of task, and
+Cohen's kappa compares their decisions (the grade of each excerpt for `check`, `reread` and `second`; whether each
+candidate code applies for `label`; the relation of each pair of terms for `link`). Only tasks whose documents Claude
+may read are used. An answer a task already has from a route is reused; only what is missing is asked. Nothing is stored
+in the project (the passages sent to Claude are noted in the ledger). Kappa from 0.8 is good, from 0.6 fair, below
+that poor.
+
+| Route | Answer |
+| --- | --- |
+| `GET /api/projects/<name>/agreement/plan` | `{"kinds": [{"kind", "answered", "name", "noun"}], "problem": a sentence when it cannot start (Claude not the main AI, no local model, local-only) or null, "claude": the main backend, "plan": null}`. With `?kind=label&n=30` (n 10 to 100), `plan` is `{"kind", "n" (tasks compared), "ask_local", "ask_claude" (tasks each route would be asked), "left_out" (answered tasks Claude may not read)}`. 400 for a kind without a decision. |
+| `POST /api/projects/<name>/agreement` | Body `{"kind", "n"}`. Starts a job (`{"job"}`, kind `agreement`; `progress` has `done` and `total` tasks). Its result: `{"kind", "n", "compared", "failed", "kappa" (null when undefined), "agree" (share of identical decisions), "decisions", "verdict" (a plain sentence), "left_out", "asked": {"local", "claude"}, "items": [{"task_id", "decisions", "same", "local", "claude" ("stored" or "asked")} or {"task_id", "error"}], "thresholds": {"good": 0.8, "fair": 0.6}}`. 400 when it cannot start. |
+
+**The answers a page at a time (H5).** `GET …/hypotheses?offset=<n>&limit=<n>` (with the same `q`, `status`, `batch`
+and `threshold`) answers one page of the list: `hypotheses` holds at most `limit` rows (100 when not given, at most
+1,000) from row `offset`, in the same order as the whole list, and `total` (the rows after the filters), `offset` and
+`limit` are added. `counts` still cover every hypothesis. Without `offset` the answer is what it always was.
+
 <!-- end of 0.18.1 part B -->

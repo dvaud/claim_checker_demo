@@ -262,6 +262,14 @@ CREATE TABLE IF NOT EXISTS concept_link_sentences(a TEXT, b TEXT, passage_id TEX
   end INT, quote TEXT, PRIMARY KEY(a, b, doc_id, start));
 -- end of 0.18.1 part A
 -- 0.18.1 part B (AI mix, checks, retractions): new tables below this line
+-- H4 (tasks.py): an accepted answer kept by the question asked (the kind, its prompt version, the model and the prompt's
+-- text, hashed in `key`), so the same text is not asked again under another task id; `hits` counts the tasks it
+-- answered instead of a model
+CREATE TABLE IF NOT EXISTS ai_cache(key TEXT PRIMARY KEY, kind TEXT, prompt_version TEXT, model TEXT, raw_json TEXT,
+  at TEXT, hits INT DEFAULT 0);
+-- B5 (retractions.py): what Crossref said about each DOI asked, and when; notices_json is a list of {type, doi, date,
+-- source}, empty when nothing updates the work
+CREATE TABLE IF NOT EXISTS retractions(doi TEXT PRIMARY KEY, checked_at TEXT, notices_json TEXT);
 -- end of 0.18.1 part B
 """
 SCHEMA = SCHEMA.replace("{PLACES_TABLE}", PLACES_TABLE)

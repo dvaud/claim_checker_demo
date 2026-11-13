@@ -41,6 +41,27 @@ Besides the answer and who says what, the card shows:
 When the AI was too unsure to count any excerpt, the card says so in one sentence, and *Next to review* takes you to
 those excerpts: your own judgement always counts.
 
+### The assessment in words
+
+Under the answer, a few sentences say what it rests on. They are made by fixed rules from the judgements, never
+written by an AI, so they read the same each time and change no answer:
+
+- **The other side, quoted.** When excerpts contradict the hypothesis, the strongest of them is quoted with its
+  document and place; when the evidence is mixed, the supporting side is quoted too.
+- **Where the support comes from.** A warning when one document carries most of it (*Most of the support comes from
+  one document (Smith 2021, 4 of 6 excerpts)*), or all of it comes from one year or one kind of document (from the
+  [bibliography](bibliography.md)).
+- **Each part**, for a hypothesis checked in parts: what holds and what has no evidence.
+- **What is not counted**: excerpts below your strictness, and those waiting for your own judgement or for the local
+  model.
+- **What your judgements did.** When your judgements give another answer than the AI's alone, it names the one that
+  moved it: *Your judgement on Jones 2022, page 12 turned this from Supported to Mixed evidence*. Each such change is
+  also written into the [research log](notes-and-log.md).
+
+*Show* beside a sentence takes you to the excerpt it rests on. Excerpts of documents no AI may read, or only a local
+one, are counted but never quoted here, as the text also goes into the downloads. Whether two excerpts that disagree
+concern another place, group or period, and how strong each source is, are left to you.
+
 ## The evidence
 
 *Cards* or *Table* beside the title: the table has one row per excerpt, with your decisions; click a row to open its
@@ -63,8 +84,10 @@ Each card shows, from top to bottom:
    before it). A short heading that opens the paragraph (*Recommendations.*) shows as a small heading above it. An
    excerpt also read for another part says *also in part 1* (hover it for your judgement there).
 
-Cards that count come first; cards you have judged sit back (no fill, a dashed edge). Every card has the same row of
-actions:
+Cards that count come first; cards you have judged sit back (no fill, a dashed edge). A long list shows its first 40
+cards and draws more as you scroll (a line under the list says *40 of 120 excerpts*, with *Show more*); *Next to
+review*, *Show* and the other jumps draw the card they go to, and printing draws them all. Every card has the same row
+of actions:
 
 | Action | What it does |
 | --- | --- |
@@ -73,6 +96,10 @@ actions:
 | **Judge differently…** | The other judgements (each saves at once, with *Undo*), a comment (saved on <kbd>Enter</kbd> or when you leave the field), and the sentence you mean when the AI highlighted the wrong one: select it in the excerpt and press *Use it*, or pick it from a list. Called *Edit judgement…* once you have judged, and *Judge this excerpt…* when no AI may read it. |
 | **In context** | The whole excerpt the AI read, with *Open the whole document at this place* (the quote highlighted; *Back to the result* returns), *the original file* (a PDF at the page, a text file with the quote highlighted, a web page scrolled to the quote where the browser can) and *a highlighted copy* of the document with this hypothesis's judgements marked. |
 | **Details** | *Ask the AI to read this again* (this excerpt alone, with your comment as a hint; the card then shows what it was and what it is now, and your own judgement still counts), the certainty as a percentage, how the excerpt was found, and technical facts (span, id, earlier judgements). |
+
+When you judge an excerpt, only what the judgement changes is drawn again: its card, the answer, and the counts. The
+page stays where it is, and a judgement that changed the answer says so once, under the answer, as *Just now: …*. An
+excerpt that moves to another list (*Not about this*) draws the page again, with a note where the card went.
 
 > [!NOTE]
 > A comment without a judgement stays a comment: it is not a review. Your judgement replaces the AI's in the answer
@@ -123,7 +150,7 @@ count either way. When the AI chosen in Settings has no stronger model, the card
 
 | Download | What is in it |
 | --- | --- |
-| *Excel (.xlsx)* | A **Summary** sheet, one row per hypothesis: the answer and the answer per part, documents per side, excerpts counted and too uncertain, your reviews and changes, notes, strictness, and, for a methods section, every AI model the check used with what each did (search words, judging, judging again as the stronger model, reading the excerpts of documents marked *Only a local AI*). An **Excerpts** sheet, one row per excerpt read: the judgement and who made it (you, a colleague, the AI or nobody yet), the AI's own judgement and certainty or why no AI judged it, counted or not, the quote and who chose it, document, where, your comment, the note about another group, earlier judgements, the second model's judgement, and the full excerpt. It ends with *How these results were made*. |
+| *Excel (.xlsx)* | A **Summary** sheet, one row per hypothesis: the answer, the assessment in words, and the answer per part, documents per side, excerpts counted and too uncertain, your reviews and changes, notes, strictness, and, for a methods section, every AI model the check used with what each did (search words, judging, judging again as the stronger model, reading the excerpts of documents marked *Only a local AI*). An **Excerpts** sheet, one row per excerpt read: the judgement and who made it (you, a colleague, the AI or nobody yet), the AI's own judgement and certainty or why no AI judged it, counted or not, the quote and who chose it, document, where, your comment, the note about another group, earlier judgements, the second model's judgement, and the full excerpt. It ends with *How these results were made*. |
 | *Highlighted documents (.zip)* | The documents, with this hypothesis's quotes marked. |
 | *Whole project (.zip)* | The project in one file ([Work together](together.md)). |
 | *CSV · JSON (for programmers)* | The same data, for scripts. |

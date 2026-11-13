@@ -65,6 +65,18 @@ DEFAULTS = {
     # 0.13.10: how fast Claude Code started from the app works: slower (one helper at once), normal (two) or faster
     # (four; it uses the plan's limit sooner). Chosen beside every Start Claude Code, and under Settings → AI.
     "claude_speed": "normal",
+    # 0.18.1 (N2): how much thought Claude gives each kind of task, chosen beside every Start Claude Code and kept here:
+    # efficient (a lighter model per kind), balanced (the recommended models) or intelligence (a stronger model per
+    # kind, more effort where a helper takes one). Claude only: a local model keeps its own choice.
+    "claude_thought": "balanced",
+    # 0.18.1 (I1): which route answers each kind of task when Claude and a local model are both set: best (Claude for
+    # everything, the local model only for documents marked Only a local AI, as before), balanced (labels, links, search
+    # words, theme names and references on the local model) or mostly_local (all but second opinions on the local
+    # model). An unsure local answer steps up to Claude (I2), only for documents Claude may read.
+    "ai_mix": "best",
+    # 0.18.1 (I4): when Claude Code says the plan's usage limit is reached: wait (the queue waits for the next start)
+    # or local (the local model answers what waits, where it may)
+    "at_limit": "wait",
     # 0.13.10: the recommended model of each task follows the Claude plan (routing.tier_defaults): the plan Claude Code
     # names, found in the background whenever ENLENS asks Claude Code how it is (free | pro | max; "" not known), unless
     # set by hand under Settings → Technical (auto | free | pro | max)
@@ -377,6 +389,12 @@ def clean_settings(changes: dict) -> dict:
         raise ValueError("think_budget must be 0 (no limit) or between 256 and 16,384 tokens.")
     if "claude_speed" in out and out["claude_speed"] not in ("slower", "normal", "faster"):
         raise ValueError("claude_speed must be slower, normal or faster.")
+    if "claude_thought" in out and out["claude_thought"] not in ("efficient", "balanced", "intelligence"):
+        raise ValueError("claude_thought must be efficient, balanced or intelligence.")
+    if "ai_mix" in out and out["ai_mix"] not in ("best", "balanced", "mostly_local"):
+        raise ValueError("ai_mix must be best, balanced or mostly_local.")
+    if "at_limit" in out and out["at_limit"] not in ("wait", "local"):
+        raise ValueError("at_limit must be wait or local.")
     if "claude_plan" in out and out["claude_plan"] not in ("auto", "free", "pro", "max"):
         raise ValueError("claude_plan must be auto, free, pro or max.")
     if "claude_plan_detected" in out and out["claude_plan_detected"] not in ("", "free", "pro", "max"):

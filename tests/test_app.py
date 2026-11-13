@@ -350,7 +350,8 @@ def test_api_check_with_a_local_server_semantic_index_and_cancel(api, corpus):
 
         srv.delay = 0.2  # slow enough to stop it midway
         seen = len(srv.requests)
-        st, r = api("POST", "/api/projects/P/checks", {"text": CLAIM, "k": 3})
+        # 0.18.1 (H4): another wording, so the model is asked (the same question again is answered from the kept answer)
+        st, r = api("POST", "/api/projects/P/checks", {"text": CLAIM.replace("arid", "dry"), "k": 3})
         # 2026-11-12: wait until the model has begun to answer (it streams for seconds at this delay), not a fixed 0.5 s
         _wait_until(lambda: any(p == "/api/chat" for p, _ in srv.requests[seen:]), 30)
         api("POST", f"/api/jobs/{r['job']['id']}/cancel")

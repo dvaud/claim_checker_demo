@@ -243,7 +243,8 @@ def test_the_forms_parse_as_yaml():
 def test_the_tests_run_on_three_systems_and_a_linux_job_lints():
     text = (ROOT / ".github/workflows/tests.yml").read_text("utf-8")
     for needle in ("fail-fast: false", "ubuntu-latest", "macos-latest", "windows-latest", '"3.10"', '"3.13"',
-                   'pip install -e ".[${{ matrix.extras }}]"', "tesseract-ocr", "pip install pyyaml", "pip install ruff",
+                   # 0.18.1 (J1.7): packages come from uv.lock, and the checkout has the tags the version is made from
+                   "uv sync --frozen", "uv lock --check", "fetch-depth: 0", "tesseract-ocr",
                    "ruff check --select E9,F63,F7,F82 src tests tools", "workflow_dispatch", "pull_request",
                    "cancel-in-progress", "contents: read"):
         assert needle in text, needle

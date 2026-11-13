@@ -140,7 +140,7 @@ def test_running_checks_are_rows_at_the_top_of_the_answers():
     assert "`#/hypotheses?job=${encodeURIComponent(j.id)}`" in row
     assert '"Waiting its turn"' in row and '"Checking…"' in row and 'j.state === "queued"' in row
     draw = _fn(hist, "function drawTable()")
-    assert "h(\"tbody\", {}, jobs.map(jobRow))" in draw and "drawInSteps(tbody, rows, answerRow," in draw   # the running checks whole, the answers in steps
+    assert "h(\"tbody\", {}, jobs.map(jobRow))" in draw and "lazyList({ items: rows, render: answerRow" in draw   # the running checks whole, the answers in steps (0.18.1: lazyList)
     # a check being made has its answer row from the start: it is shown once, as the running check
     assert "UNFINISHED.has(x.status)" in draw and "norm(x.text || x.claim).startsWith(t)" in draw
     assert "running.filter((j) => j.id !== skip)" in draw   # the one the page follows is shown above, not here

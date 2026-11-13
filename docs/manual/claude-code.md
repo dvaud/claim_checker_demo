@@ -70,24 +70,39 @@ of a follow-up on a result (reading an excerpt again, reading new documents, a s
 - If a run ends with a problem (a usage limit, say), the page shows the end of its report.
 - The first start also adds the plugin, if that was not done yet.
 
+### How much thought
+
+**How much thought: Energy efficient · Balanced · Intelligence**, beside every *Start Claude Code*, says which Claude
+models answer each kind of task, and how hard they think ([Which model does what](models.md#how-much-thought)). The
+choice is kept: it is the same one as in *Settings → AI*, and picking it beside *Start Claude Code* changes it from
+that run on. It is for Claude only: a local model keeps its own choice.
+
 ### How fast it works
 
-**Speed: Slower · Normal · Faster** is how many helpers work at once. You choose it in *Settings → AI*, under *Speed of
-Claude Code*; each *Start Claude Code* says the speed it runs at (*Normal speed: 2 helpers at a time*) with a link there.
+**Helpers at once** (Slower · Normal · Faster) is how many helpers work at once. You choose it in *Settings → AI*
+only; each *Start Claude Code* says it (*2 helpers at a time*) with a link there.
 
-| Speed | Helpers at once | Trade-off |
+| Helpers at once | How many | Trade-off |
 | --- | --- | --- |
 | Slower | 1 | Takes longest; easiest on your plan's limits. |
 | Normal | 2 | The default. |
 | Faster | 4 | Done sooner; uses your plan's limits faster. |
 
-The choice is kept and is the same for every run. A run already working keeps the speed it started with; the line *Claude Code is working on it* says how many
-helpers it has (*· 4 helpers at once*).
+A run already working keeps what it started with; the line *Claude Code is working on it* says how many helpers it
+has (*· 4 helpers at once*).
+
+### At your plan's usage limit
+
+When Claude Code stops because your plan's usage limit is reached, the queue keeps the work, and *Settings → AI → At
+your plan's usage limit* decides what happens next: **Wait and continue later** (start Claude Code again when the
+limit resets; the page says when, if Claude Code said it), or **Carry on with the local model**, which answers what
+waits on this computer, where it may (a local model must be chosen). Answers the local model gives count like any
+other and record which model gave them.
 
 **Choose the helpers for this run**, folded under that line beside *Start Claude Code*, lists each helper that has work waiting, with its model,
 what it would answer and how much waits (*Labeller haiku · Codebook labels · 7,868 waiting*). Set how many of each
 work at once (0 leaves that work for a later run) and **Helpers at once, in all** (1 to 8). The fold then says
-*changed* and the speed line greys out; *Use the speed again* undoes it. Work that comes in during the
+*changed* and the line *2 helpers at a time* greys out; picking the number again undoes it. Work that comes in during the
 run for a helper not listed (an unsure answer for the auditor, a check's excerpts after its search words) gets one
 helper. The choice is for that run only.
 
