@@ -206,7 +206,7 @@ A news article, a press release, a company brochure or a blog reports no method 
 *Mark as non-scientific*. A newspaper icon then stands beside its title in the list.
 
 It stays in everything a theory document leaves: themes, codebook labels, the excerpts a check reads and key terms.
-Its excerpts are still read and judged, and shown with *Non-scientific · not counted*, but **no judgement of them
+Its excerpts are still read and judged, and shown with *Not counted: non-scientific*, but **no judgement of them
 counts in an answer**, yours neither. On their own they make a hypothesis neither supported, nor mixed, nor
 contradicted: a hypothesis only non-scientific documents support reads *No scientific evidence found*. Beside a
 scientific study they change nothing: a study that partly supports it and a press release that fully supports it give
