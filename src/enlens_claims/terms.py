@@ -47,8 +47,11 @@ MAX_TERMS = 6000
 MEANING_TERMS = 3000      # terms embedded for "possibly the same"
 MEANING_MIN = 0.85        # cosine from which two mutual nearest neighbours are proposed
 _JOIN = re.compile(r"[\s\-‐‑]*")   # what may stand between two words of a term
-LINK_RELATIONS = ("same", "broader", "narrower", "related", "different")
-_INVERSE = {"broader": "narrower", "narrower": "broader"}
+LINK_RELATIONS = ("same", "broader", "narrower", "related", "different",
+                  # 0.18.1 (D2, textrelations.py): "X leads to Y" (from a to b; seen from b: effect_of), "X instead of Y"
+                  "effect", "effect_of", "replaces", "replaced_by")
+_INVERSE = {"broader": "narrower", "narrower": "broader", "effect": "effect_of", "effect_of": "effect",
+            "replaces": "replaced_by", "replaced_by": "replaces"}
 
 
 def term_id(stems: str) -> str:
@@ -883,6 +886,11 @@ def _build(ws: Workspace, store: _Readings, progress, should_stop, embedder, max
             cx.execute("INSERT OR REPLACE INTO concept_links VALUES (?,?,?,?,?,?,?,?,?)",
                        (a, b, "same", "abbreviation", 1.0, f"{long} ({short})", short, None, now()))
             n_abbr += 1
+        # 0.18.1 (D2): links the sentences state ("X such as Y", "X leads to Y"), proposed, never confirmed by
+        # themselves
+        from . import textrelations
+
+        textrelations.find(cx)
         ws.set_meta("glossary_corpus_version", version, cx)   # 0.17.2: see store.GLOSSARY_META
         # an ENLENS before 0.17.2 notes its builds here: from now on this build is the one in force
         cx.execute("DELETE FROM meta WHERE key='terms_corpus_version'")
@@ -1365,10 +1373,15 @@ def _related(ws: Workspace, ids: list[str], all_links: list[dict]) -> dict:
         if lk["a"] != mine:  # relations are stored from a to b: seen from this concept, broader means narrower
             rel = _INVERSE.get(rel, rel)
         state = "confirmed" if lk["confirmed"] else "proposed"
-        linked.append({"term_id": other, "label": info[other]["label"], "relation": rel, "source": lk["source"],
-                       "state": state, "confidence": lk["confidence"], "quote_a": lk["quote_a"], "quote_b": lk["quote_b"],
-                       "a": lk["a"], "b": lk["b"], "decision": lk["decision"],
-                       "this_term": mine})
+        item = {"term_id": other, "label": info[other]["label"], "relation": rel, "source": lk["source"],
+                "state": state, "confidence": lk["confidence"], "quote_a": lk["quote_a"], "quote_b": lk["quote_b"],
+                "a": lk["a"], "b": lk["b"], "decision": lk["decision"],
+                "this_term": mine}
+        if lk["source"] == "pattern":  # 0.18.1 (D2): the sentences it was found in, each with its document and page
+            from . import textrelations
+
+            item["sentences"] = textrelations.sentences(ws._conn(), lk["a"], lk["b"])
+        linked.append(item)
     # co-occurrence
     n_pass = int(ws.scalar(f"SELECT COUNT(*) FROM passages WHERE section='body' AND {_evidence()}") or 1)
     q = ",".join("?" * len(ids))

@@ -237,7 +237,7 @@ export async function renderConcepts(view, params, query) {
 // ---------------------------------------------------------------------------------------------
 // the card of one concept
 // ---------------------------------------------------------------------------------------------
-const SOURCE_TEXT = { meaning: "proposed by search by meaning", model: "judged by the AI", person: "added by you", abbreviation: "an abbreviation defined in the documents" };
+const SOURCE_TEXT = { meaning: "proposed by search by meaning", model: "judged by the AI", person: "added by you", abbreviation: "an abbreviation defined in the documents", pattern: "found in the text" };
 // a link from search by meaning joins wordings only once a person accepted it
 const JOINED_TEXT = { meaning: "you", model: "the AI", person: "you", abbreviation: "an abbreviation in the documents" };
 // relations as seen from this concept ("this concept is broader than the other": the other is narrower)
@@ -246,9 +246,15 @@ const GROUPS = [
   ["narrower", "Broader concepts", "This concept is part of these."],
   ["broader", "Narrower concepts", "These are part of this concept."],
   ["related", "Related to it", null],
+  // 0.18.1 (D2): links the sentences state, "X leads to Y", "X instead of Y" (seen from this concept)
+  ["effect", "What it leads to", "The documents say this concept leads to, causes or changes these."],
+  ["effect_of", "What leads to it", "The documents say these lead to, cause or change this concept."],
+  ["replaces", "What it replaces", "The documents use this concept instead of these."],
+  ["replaced_by", "What replaces it", "The documents use these instead of this concept."],
   ["different", "Judged not the same", null],
 ];
-const RELATION_CHOICES = [["same", "is the same as"], ["broader", "is broader than (includes)"], ["narrower", "is narrower than (is part of)"], ["related", "is related to"], ["different", "is different from"]];
+const RELATION_CHOICES = [["same", "is the same as"], ["broader", "is broader than (includes)"], ["narrower", "is narrower than (is part of)"], ["related", "is related to"],
+  ["effect", "leads to"], ["effect_of", "is an effect of"], ["replaces", "replaces"], ["replaced_by", "is replaced by"], ["different", "is different from"]];
 
 export async function renderConcept(view, [termId], query) {
   const project = App.project;
@@ -461,7 +467,11 @@ export async function renderConcept(view, [termId], query) {
         proposed ? tag({ kind: "attention" }, "not confirmed") : null,
         h("span", { class: "muted small" }, who.join(" · ")),
         shared ? shareInline(shared, () => reload()) : null),
-      quotes.length ? fold({ sm: true, class: "ct-why" }, "The passages the AI pointed to", h("ul", { class: "ct-quotes" }, quotes.map((t) => h("li", { class: "serif" }, "“", t, "”")))) : null,
+      // 0.18.1 (D2): a link found in the text shows the sentences it was found in, each with its document and page
+      lk.sentences && lk.sentences.length ? fold({ sm: true, class: "ct-why" }, lk.sentences.length === 1 ? "The sentence it was found in" : `The ${lk.sentences.length} sentences it was found in`,
+        h("ul", { class: "ct-quotes" }, lk.sentences.map((x) => h("li", {}, h("span", { class: "serif" }, "“", x.quote, "” "),
+          link({ href: `#/doc/${encodeURIComponent(x.doc_id)}?q=${x.start}-${x.end}`, class: "small" }, `${x.title || "a document"}${x.page ? `, p. ${x.page}` : ""}`)))))
+      : quotes.length ? fold({ sm: true, class: "ct-why" }, "The passages the AI pointed to", h("ul", { class: "ct-quotes" }, quotes.map((t) => h("li", { class: "serif" }, "“", t, "”")))) : null,
       actions);
   }
 
