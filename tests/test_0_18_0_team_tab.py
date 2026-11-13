@@ -84,12 +84,56 @@ def test_the_drawer_has_two_tabs_in_a_marked_block():
     assert 'tabRow.setCount("team", n ? `${n} new` : null)' in block and "row.setCount = (key, words)" in tabs_fn
 
 
+def _keys(name):
+    start = TEAM.index(f"export const {name} = [")
+    return re.findall(r'\{ key: "([a-z-]+)", render: \w+ \}|^  ([A-Z_]+_SECTION),', TEAM[start:TEAM.index("];", start)], flags=re.M)
+
+
 def test_the_sections_come_in_order_with_room_for_the_owner():
-    keys = re.findall(r'\{ key: "([a-z-]+)", render: \w+ \}', TEAM)
-    # roles (DESIGN-roles §5, mock-up B): a folder problem that stops this copy ("stop") comes before everything else
-    assert keys == ["setup", "stop", "state", "problems", "came-in", "people", "shared", "not-here", "keep-out", "downloads", "leave"]
-    assert "export function addTeamSection" in TEAM and 'before: "people"' in TEAM and "Waiting for the owner" in TEAM
+    # the Team tab keeps the day-to-day; roles (DESIGN-roles §5, mock-up B): a folder problem that stops this copy
+    # ("stop") comes before everything else
+    assert [a or b for a, b in _keys("TEAM_SECTIONS")] == ["setup", "stop", "state", "problems", "came-in", "shared", "not-here"]
+    assert "export function addTeamSection" in TEAM and 'before: "state"' in TEAM and "Waiting for your word" in TEAM
     assert "export function teamPanel" in TEAM and "show()" in TEAM and "hide()" in TEAM
+    # the Team page (#/team) is the team itself: set-up, where it is, the people, the owner, the settings, leaving
+    assert [a or b for a, b in _keys("TEAM_PAGE_SECTIONS")] == ["SPACE_SETUP_SECTION", "setup", "folder", "SPACE_SECTION", "people",
+                                                                 "ROLES_SECTION", "keep-out", "often", "downloads", "leave"]
+    assert "export function renderTeam(view)" in TEAM and "teamPanel({ sections: TEAM_PAGE_SECTIONS, page: true })" in TEAM
+    assert "panel.destroy()" in TEAM and 'window.removeEventListener("enlens-sync-news", news)' in TEAM
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'import("./views/team.js").then((m) => m.renderTeam(view, params, query))' in app   # loaded when first opened
+    assert '"/team": "Team"' in app
+    # the tab links to the page in one quiet line: "Backblaze · 3 people · Manage the team"
+    assert 'link({ href: "#/team", id: "team-manage" }, "Manage the team")' in TEAM and "teamSummary(st)" in TEAM
+
+
+def test_the_tab_keeps_the_day_to_day_and_the_page_the_team():
+    """The owner's request (after 0.18.0rc3): joining a team is in the project menu, the team is managed on its own
+    page, and the Team tab says little: states, counts and buttons, the longer words behind help marks and folds."""
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    design = (STATIC / "views" / "design.js").read_text(encoding="utf-8")
+    setup = (STATIC / "views" / "setup.js").read_text(encoding="utf-8")
+    owner = (STATIC / "views" / "owner.js").read_text(encoding="utf-8")
+    space = (STATIC / "views" / "team-space.js").read_text(encoding="utf-8")
+    # the project menu: Join a team… right under New project…, above Manage projects; then Manage the team
+    menu = app[app.index("function renderProjectSwitch()"):app.index("export async function switchProject")]
+    assert (menu.index('"New project…"') < menu.index('{ text: "Join a team…", icon: "link", onClick: () => joinDialog(null) }')
+            < menu.index('"Manage projects"') < menu.index('{ text: "Manage the team", icon: "users", href: "#/team" }'))
+    assert '{ text: "Join a team…", icon: "link" }' in design and '"Manage the team"' in design   # the live reference
+    assert "joinDialog(null)" in setup                                     # a first run can start from an invite
+    # the tab: nothing waits, no section; empty states in two words; the switches and the set-up on the page
+    assert "return null;   // nothing waits: no section" in owner and "if (v.is_owner) body.push(acceptAddsSwitch(ctx, v));" in owner
+    assert owner.index("function rolesSection(") < owner.index("if (v.is_owner) body.push(acceptAddsSwitch(ctx, v));")
+    assert 'helpMark("About accepting documents at once", ACCEPT_ADDS_HELP)' in owner
+    assert TEAM.count('}, "Nothing yet.")') == 2 and "Nothing yet. What your colleagues share" not in TEAM
+    assert '{ label: "About documents that stay here", text: KEEP_OUT_HELP }' in TEAM
+    assert 'helpMark("About documents not on this computer", NOT_HERE_HELP)' in TEAM
+    assert '"Your colleague’s folder is not here yet?"' in TEAM           # the OneDrive how-to in a fold by the field
+    assert 'helpMark("About storage spaces", SPACE_HELP)' in space and '"A storage space (recommended)"' in space
+    # the sync state in one line: its second line only when it needs you, else the tooltip
+    assert 'const SAY_SUB = new Set(["running", "busy", "offline", "failed", "never"]);' in TEAM and "ws.title = s.sub;" in TEAM
+    tab = TEAM[TEAM.index("function stateSection(ctx) {"):TEAM.index("// The Team page: how often rounds run")]
+    assert "team-every" not in tab and "team-pause-all" not in tab and '"team-pause"' in tab and '"team-sync-now"' in tab
 
 
 def test_no_inline_look_and_no_link_drawn_as_a_button():
@@ -132,7 +176,7 @@ def test_the_panel_redraws_only_what_changed_and_keeps_the_place():
     assert 'role: "status", "aria-live": "polite"' in TEAM and '["offline", "paused", "failed"]' in TEAM
     for i in ("team-keep-out", "team-pause-all", "team-setup-keep-out", "team-sync-now", "team-mark-seen", "team-leave"):
         assert f'"{i}"' in TEAM, i
-    assert 'ctx.focusHeading("state")' in TEAM and 'ctx.focusHeading("setup")' in TEAM
+    assert 'ctx.focusHeading("state")' in TEAM and 'ctx.focusHeading("space-setup")' in TEAM and 'ctx.focusHeading("folder")' in TEAM
     assert "setTeamCount(0); if (team) team.refresh();" in DRAWER         # another project: its own count
     assert 'h("h2", { class: "visually-hidden" }, "Team")' in DRAWER and 'closeLabel: "Close the panel"' in DRAWER
 

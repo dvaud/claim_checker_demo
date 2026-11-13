@@ -56,20 +56,17 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 - **[The SDG and value chain pack](docs/manual/sdg-pack.md)**:
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
-## New in 0.17: working together, and one look on every page
+## New in 0.18: working together as a team
 
-- **Work through a folder your team already shares** (OneDrive, Dropbox, a network drive): your colleagues' shared
-  work comes in every couple of minutes, with no server and no account, in the new *Team* tab. Cannot change results.
-- **Private until you share it, and one owner**: your checks, themes, codebooks, notes and log entries stay yours until
-  you press *Share*; the owner decides which documents a project holds. Cannot change how a check is answered; a
-  document change the owner accepts changes your documents as one of your own would.
-- **One look on every page**, light and dark, with a design guide (`#/design`); seven places in the sidebar, *Find*
-  (Ctrl+K or ⌘K) and the research log beside every page. Cannot change results.
-- **0.17.1 and 0.17.2: faster, smaller and safer**: adding documents, themes and long lists are many times faster,
-  project files a quarter smaller, and only you can open your ENLENS. Reader 4 reads text and Word files better: can
-  change results for the documents you move to it.
-- **Key terms without each language's common words**: the glossary and the key terms of themes found from now on
-  leave out "ik", "ja", "because". Can change results for them; search is not changed.
+- **A storage space of your team's own** (Backblaze or Cloudflare, free at a team's size): set up once by the owner,
+  joined from a link with *Join a team…* in the project menu, filled and read by ENLENS by itself, and locked on your
+  computer before it leaves it. An easier shared folder beside it. Cannot change results.
+- **Owner, Co-owner and Member**, and a *Team* page for the team itself: people and roles, invites, where the team
+  works. The *Team* tab keeps the day-to-day: sync, what came in, what you shared. Cannot change results.
+- **Near-duplicate hypotheses**: lines that say nearly the same, and a hypothesis checked before (a colleague's too),
+  are pointed out before a check; lines that differ in strength stay apart. An offer only: cannot change results.
+- **0.17: one look on every page**, *Find* (Ctrl+K or ⌘K), the research log beside every page, and Reader 4 for text
+  and Word files (can change results for the documents you move to it): see the changelog.
 
 How it works: [Work together](docs/manual/together.md) and
 [what a shared folder holds](docs/manual/privacy.md#working-together) in the manual. Every release, with what was not

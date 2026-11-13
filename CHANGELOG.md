@@ -1,6 +1,83 @@
 # Changelog
 
-## 0.18.0rc3 (November 2026): signing up at Backblaze in any browser
+## 0.18.0 (November 2026): working together as a team
+
+The stable 0.18: everything the three release candidates brought (Owner, Co-owner and Member roles; a storage space of
+your team's own at Backblaze or Cloudflare; an easier shared folder), and, since the last candidate, joining a team
+from the project menu, a Team page for the team itself, a much shorter Team tab, a fix that kept colleagues from
+getting the team's documents, and near-duplicate hypotheses (roadmap N1). Nothing in it changes results: the
+near-duplicate offers never merge or skip a check by themselves.
+
+### New since 0.18.0rc3
+
+- **Join a team… in the project menu**, under *New project…*: paste the invite link a colleague sent, and a new
+  project fills in by itself. A new user also finds *Invited to a team?* on the first screen. (*Join a team* under
+  *Projects* stays.)
+- **A Team page for the team itself** (*Manage the team* in the project menu, or the link at the foot of the Team tab):
+  where the team works (storage space or shared folder, with *Technical details*), the people with their roles and
+  *Remove from the team…*, invites waiting, *Invite a colleague…*, the owner's switches, *Move to another storage
+  space*, how often ENLENS looks, documents that stay on this computer, the downloads as a file, and *Stop using it
+  here*. With no team yet, the set-up: a storage space (recommended), an invite link, or a folder your team shares.
+- **The Team tab keeps the day-to-day, in few words**: what waits for your word (only when something does), the sync
+  state in one line with *Sync now* and *Pause*, what needs your attention, what came in and what you shared. Empty
+  lists say *Nothing yet.*; explanations moved behind help marks, folds and tooltips, or to the Team page.
+- **Near-duplicate hypotheses** (roadmap N1). Under the Hypotheses box, as a list is typed: *Lines 1 and 2 are very
+  close: check them as one?*, with *Check as one*, a menu that keeps the line you pick and takes the others out (a
+  toast can put them back), or keeps them all. Lines whose words are close but that claim something different (one
+  says *observable*, another *indicates* or *predicts*; one *increases*, the other *reduces*; one is negated) are said
+  to be close, and both are checked: no merge is offered. Before a check, a hypothesis checked before in the project
+  that says nearly the same is pointed out: *You checked a very similar one on 3 Nov: “…”*, or *Anna checked…* for a
+  colleague's check that came in through the shared folder or the storage space, with *Open its answer*; *Check*
+  then reads *Check anyway*. A colleague's check they took back is not offered. Offers only: nothing is merged and no
+  check waits, except once when Check was pressed before the offer was on screen. Key words only, no AI.
+
+### Defects fixed since 0.18.0rc3
+
+- **A colleague who joined a Backblaze storage space never got the team's documents.** Backblaze answers a
+  colleague's key (which may read only the team's files) with *access denied* instead of *not found* for a file that
+  is not there, and every round first looks for one that is usually not there (whether the team moved). So each of the
+  colleague's rounds stopped at once with *This key is not allowed to read space/moved.json*: nothing came in and
+  nothing of theirs went out, even with *Sync now*. The owner's key, which may do more, got *not found*, so the owner
+  saw nothing wrong. ENLENS now asks the storage's list, which the colleague's key may read, whether the file is there.
+  Found on a real team's bucket; a colleague who joined before keeps their invite: after updating, their next round
+  brings the documents in.
+
+### For developers
+
+- `sync/storage.py` `S3Storage.get`: a 403 *AccessDenied* on a read is checked against `list(name)`; not listed →
+  `NOT_FOUND`. `tests/fake_s3.py` answers a prefix-limited key's GET of a missing file with 403, as Backblaze does.
+- `views/team.js`: the tab's sections (`TEAM_SECTIONS`) and the page's (`renderTeam`, route `#/team`) are drawn from
+  the same data; the project menu (`app.js`) has *Join a team…* (`team-space.js` `joinDialog(null)`) and *Manage the
+  team*.
+- `nearduplicates.py`: key words (`textutil` stop words and stemmer, cut once more to a root by `root`), Jaccard index
+  at least 0.6 when one line's key words are all in the other's, 0.75 when each has words the other lacks, and at least
+  two in common; strength, direction and negation words are compared on their own (`differ`). Whose a check is: the
+  item's owner in `shares` (sharing.py), else the research log's *check-added* entry; the name from `people.names`.
+- `POST /api/projects/<p>/hypotheses/similar` `{"lines": [...]}` → `{"pairs", "before"}` (docs/API.md).
+- `views/near.js`: the offers under the box (`nearNotices`, `clusters`, `dropLines`).
+
+### Tests
+
+- `tests/test_0_18_0_s3_storage.py`: a prefix-limited key's GET of a missing file is *not found*; outside its prefix
+  it is still refused. `tests/test_0_18_0_storage_space_services.py` (Backblaze set-up, invite and join) failed with
+  the stand-in's new answer before the fix.
+- `tests/test_0_18_0_team_tab.py` and the owner, roles, folder and sharing UI tests follow the tab and the new page:
+  the project menu, the section hidden when nothing waits, the help marks, the one-line sync state and the page route.
+- `tests/test_0_18_0_near_duplicates.py`: near-duplicate pairs are close and same-topic hypotheses are not; the
+  owner's dementia list is pointed out as close but kept apart by strength; a direction or a negation keeps lines
+  apart; the endpoint; a colleague's shared check is offered with their name in a storage-space team, and no longer
+  once they take it back; the offers' words, the groups and taking lines out of the box, run in Node.
+
+### Not yet done
+
+- Not tried with two people on real accounts since the fix: the fix was checked on the owner's real Backblaze bucket
+  with a temporary key of the colleague's kind (removed afterwards), and through the stand-ins.
+- Near-duplicate hypotheses know no synonyms (*teenagers*, *adolescents*), and their strength, direction and negation
+  words are English only. A check still running counts as checked before.
+
+### From the release candidates
+
+### The third candidate (0.18.0rc3): signing up at Backblaze in any browser
 
 A release candidate with one fix from use: making the Backblaze account for a team's storage space could get stuck on
 Backblaze's robot check. Nothing in it changes results.
@@ -13,7 +90,7 @@ Backblaze's robot check. Nothing in it changes results.
   the page in Backblaze's menu instead of linking to it, so it is opened where you are signed in. The manual's *A
   storage space of your team's own* page says the same.
 
-### For developers
+#### For developers
 
 - `lib.copyLine(text, label, where, lead)` takes the icon before the text (`"terminal"` by default; `"link"` for a web
   address). `team-space.js`'s `typeAddress` shows a service's address that way; `GET /api/space/links` still gives
@@ -21,17 +98,17 @@ Backblaze's robot check. Nothing in it changes results.
 - A test on `main` after 0.18.0rc2 (a8f26b2) names the computer it means: GitHub's Mac runner has 7 GB, so it was
   offered a smaller model.
 
-### Tests
+#### Tests
 
 - `tests/test_0_18_0_signup_addresses.py`: the set-up dialog gives both sign-up addresses to copy, with no link to a
   sign-up page, and says what to do about Backblaze's robot check.
 
-### Not yet done
+#### Not yet done
 
 - Not tried with a real Backblaze account in another browser: whether Backblaze's check passes in Safari or Chrome
   where it loops in Zen was not seen here.
 
-## 0.18.0rc2 (November 2026): a storage space of your team's own
+### The second candidate (0.18.0rc2): a storage space of your team's own
 
 A release candidate. Working together through a shared folder means everyone needs the folder's app, finds the folder
 on their computer and pastes its path. This candidate adds the way the roadmap recommends: a private storage space
@@ -39,7 +116,7 @@ online that ENLENS fills and reads by itself, set up once by the owner, which co
 in it is locked and signed before it leaves the computer. It also makes the shared folder easier to choose, and brings
 the rest of the small fixes from use (roadmap M3, M5, M7, M8). Nothing in it changes results.
 
-### A storage space of your team's own (roadmap L6)
+#### A storage space of your team's own (roadmap L6)
 
 - **Set up once, by the owner, in about five minutes**, in the *Team* tab: *Backblaze…* (for most research groups: no
   card, storage in the EU) or *Cloudflare…* (for large teams that grow quickly: fetching is always free, it asks for a
@@ -63,7 +140,7 @@ the rest of the small fixes from use (roadmap M3, M5, M7, M8). Nothing in it cha
   project's owner: when the owner hands the project over, the new owner's copy takes them.
 - The keys are kept in this computer's keychain, never in a project, a zip or the space.
 
-### An easier shared folder (roadmap L7)
+#### An easier shared folder (roadmap L7)
 
 - **Choose the folder without typing its path.** The Team tab lists the cloud folders this computer has (OneDrive,
   Google Drive, Box, Dropbox) by name: one click fills the path. *Choose folder…* opens the system's own folder window.
@@ -77,7 +154,7 @@ the rest of the small fixes from use (roadmap M3, M5, M7, M8). Nothing in it cha
   Linux keyring when there is one; otherwise in a file only you can read. A secret the keychain refuses is kept in the
   file, never lost. *Settings › Technical* says where.
 
-### The rest of the small fixes from use (roadmap M3, M5, M7, M8)
+#### The rest of the small fixes from use (roadmap M3, M5, M7, M8)
 
 - **Search by meaning set up from the Search page (M3).** With a model for search by meaning chosen in Settings but
   the project not (or only partly) set up, the Search page offers *Set up search by meaning for this project*, says how
@@ -98,7 +175,7 @@ the rest of the small fixes from use (roadmap M3, M5, M7, M8). Nothing in it cha
 - **Marks to try (M5)** were all built in 0.17.0 (the active tab as an underline, a document icon in *Mostly from*,
   *reviewed by you* as a badge): checked on screen, nothing to change.
 
-### Also
+#### Also
 
 - **A shared-folder round, and a new project, start faster, most of all on Windows.** Each round brings colleagues'
   work in through one to three scratch projects, and each scratch project's database was set up table by table, with
@@ -108,7 +185,7 @@ the rest of the small fixes from use (roadmap M3, M5, M7, M8). Nothing in it cha
 - **For developers:** two test stand-in servers waited 35 s each on GitHub's Mac for its own name; every stand-in
   server is now a `QuickServer`, and a test sees to it.
 
-### Defects found and fixed before this candidate
+#### Defects found and fixed before this candidate
 
 An independent review of the storage space, which proved each finding with a failing test first, found:
 - a colleague with an invite could join under another member's person id, the owner's too, and write in their name;
@@ -125,7 +202,7 @@ An independent review of the storage space, which proved each finding with a fai
   long for the Windows Credential Manager was not kept.
 All are fixed, with the proofs kept as tests (`tests/test_0_18_0_storage_space_review.py`).
 
-### For developers
+#### For developers
 
 - New modules: `sync/space.py` (the space: set-up, invites, joining, the members' list and its keeper, removal, new
   keys, moving; a round brings the space into a copy of it on this computer, `<ENLENS folder>/spaces/<id>/`, runs the
@@ -138,7 +215,7 @@ All are fixed, with the proofs kept as tests (`tests/test_0_18_0_storage_space_r
 - Tests keep secrets in files (`ENLENS_KEYCHAIN=file` in `tests/conftest.py`), and so does `tools/dev_server.py`;
   `tools/dev_server.py --space` shows the Demo project with a space kept in a folder and an invite waiting.
 
-### Tests
+#### Tests
 
 New: `tests/test_0_18_0_storage_space.py` (a colleague joins from a link and gets every document and the shared work;
 the storage holds only sealed files, with no names or words readable; a file put in someone else's part, a join
@@ -153,7 +230,7 @@ team's folder found, the folder window's programs, the endpoints), `_search_mean
 (the dry run's counts, *Move anyway* keeping the results as records, the report's shape) and `_model_advice.py`
 (8, 16 and 32 GB, little disk, Windows with and without a graphics card, starting Ollama once).
 
-### Not yet done
+#### Not yet done
 
 - **Not tried with real accounts.** Everything was built against stand-ins that follow Backblaze's and Cloudflare's
   documents. Still to see with a real account: Backblaze's newer interface (v4) and a key limited to one part, whether
@@ -176,7 +253,7 @@ team's folder found, the folder window's programs, the endpoints), `_search_mean
   itself after you move a document from its own page.
 - A OneDrive folder is named as macOS names it ("OneDrive – UniversityofAmsterdam"), without the spaces.
 
-## 0.18.0rc1 (November 2026): Co-owners, and a project no file can take from you
+### The first candidate (0.18.0rc1): Co-owners, and a project no file can take from you
 
 A release candidate. 0.17 let colleagues work through a shared folder, but its files are not signed: someone who could
 write in the folder could make themselves the owner, open a document kept from AI to Claude in everyone's copy, or
@@ -184,7 +261,7 @@ remove documents and notes in another person's name. 0.18 gives the owner Co-own
 do the things that cannot be undone. **Everyone in a shared project must update**: a copy on 0.17 says "update
 ENLENS first" in the shared folder and when a newer zip is brought into a project.
 
-### Roles
+#### Roles
 
 - **The owner can make a colleague a Co-owner** (Team tab, beside each person). A Co-owner's changes to the documents
   hold for everyone at once, and a Co-owner accepts or declines proposals. Everyone else is a Member, as before. Only
@@ -193,7 +270,7 @@ ENLENS first" in the shared folder and when a newer zip is brought into a projec
 - **Waiting for your word** is the first thing in the Team tab, most serious first: a change of owner you did not
   expect, a looser AI setting offered to you, something a file tried to do in your name, and the proposals to answer.
 
-### What a file can no longer do
+#### What a file can no longer do
 
 - **Let more AI read a document on your computer without your click.** When the owner or a Co-owner loosens a
   setting, your Team tab offers it: tick the documents, then *Allow here* or *Keep stricter here*. A stricter setting
@@ -206,7 +283,7 @@ ENLENS first" in the shared folder and when a newer zip is brought into a projec
 - **Destroy a document for good.** A document removed by the owner or a Co-owner leaves your copy at once and can be
   restored for 30 days with one click (*Removed in the last 30 days*).
 
-### When two people do things at the same time
+#### When two people do things at the same time
 
 - **Nothing is lost by chance.** Changes made without each other's version are merged part by part: the document
   stays, the stricter AI setting holds, the newer reading counts, and both people are told.
@@ -214,7 +291,7 @@ ENLENS first" in the shared folder and when a newer zip is brought into a projec
   the other's answer, every owner's and Co-owner's copy says so, what the accept had changed goes back, and one of you
   decides again. Making the decliner or the accepter a Member does not decide it.
 
-### Your own work, and two computers
+#### Your own work, and two computers
 
 - **A colleague's file no longer replaces your own check** or set of themes: their version comes in beside it.
 - **Codebooks:** renames and merges by the person who made the codebook still move everyone's labels; anyone else's
@@ -228,7 +305,7 @@ ENLENS first" in the shared folder and when a newer zip is brought into a projec
 - **A folder opened as a project** that another person made is cleaned like a project brought in from a file, after
   you say so.
 
-### Also
+#### Also
 
 - **What is new waits until you ask for it.** After an update, a note of what the version brings no longer appears in
   the corner by itself. *What's new in 0.X.Y* waits above *Settings* at the foot of the sidebar instead: it opens the
@@ -240,7 +317,7 @@ ENLENS first" in the shared folder and when a newer zip is brought into a projec
   reload still offers it, never on a new installation; the sidebar, Settings and Find), `test_0_17_0_finder.py`
   (*changelog* and *what's new* find it).
 
-### Defects found and fixed before this candidate
+#### Defects found and fixed before this candidate
 
 An independent review of the built roles, which proved each finding with a failing test, found two critical, three high,
 two medium and two low problems, all fixed with those tests kept:
@@ -254,7 +331,7 @@ two medium and two low problems, all fixed with those tests kept:
 - a document restored from the archive was briefly looser than the project;
 - a file could take back your own judgement.
 
-### For developers
+#### For developers
 
 Sync format 4 (`formats.FORMAT`, `folder.NEEDS`, `formats.zip_needs`). `canon` is merged per part by what each writer
 knew (`hist_json`, `*_by`); who owns the project follows each copy's pins (`owner_pins`, keyed `(seq, by, owner)`),
@@ -264,14 +341,14 @@ never a clock. New tables `roles`, `owner_pins`, `removed_docs`, `sync_via`, `sy
 number held is not taken. The Team tab's new card is `decisionCard()` in `lib.js`. New manual page:
 [Roles](docs/manual/roles.md).
 
-### Tests
+#### Tests
 
 New: `tests/test_0_18_0_roles_schema.py`, `_roles_invariants.py` (I1–I7), `_roles_answers.py`, `_roles_random.py`
 (5 copies, 60 steps, 10 seeds; 30 with `ENLENS_L2_LONG=1`, clocks shifted per copy), `_roles_proofs.py` (the proofs of
 the weaknesses of 0.17, turned round), `_roles_review.py` (the review's 12 proofs), `_formats.py`, `_authorship.py`,
 `_h5_h8.py`, `_removed.py`, `_second_computer.py`, `_move_and_link.py`, `_roles_api.py`, `_roles_ui.py`.
 
-### Not yet done
+#### Not yet done
 
 - **Files are still not signed.** Someone who can write in the shared folder can still write in a colleague's name.
   It is now visible and cannot loosen, destroy or change the owner, but a forged hand-over in the owner's name is

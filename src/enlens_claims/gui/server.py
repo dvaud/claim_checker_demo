@@ -1372,6 +1372,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/prepare", "post_prepare"),
     ("POST", rf"/api/projects/{P}/batches/preview", "post_batch_preview"),
     ("POST", rf"/api/projects/{P}/batches", "post_batch"),
+    ("POST", rf"/api/projects/{P}/hypotheses/similar", "post_similar"),  # 0.18: near-duplicate hypotheses (N1)
     ("GET", rf"/api/projects/{P}/hypotheses", "get_hypotheses"),
     ("GET", rf"/api/projects/{P}/hypotheses/{P}", "get_hypothesis"),
     ("DELETE", rf"/api/projects/{P}/hypotheses/{P}", "delete_hypothesis"),

@@ -10,6 +10,7 @@ import { App, api, h, icon, readsLine, replace, clear, append, toast, showError,
 import { checkOptions, pickCode } from "./options.js";
 import { ProgressPanel } from "./progress.js";
 import { answersList } from "./history.js";
+import { nearNotices, dropLines, saysSomething } from "./near.js";
 
 const MIN_CHARS = 10;     // the shortest hypothesis a check accepts (claimcheck._clean)
 const MAX_CHARS = 2000;   // and the longest
@@ -75,6 +76,8 @@ export async function renderHypotheses(view, params, query) {
   // the list as it will be checked, folded away: the count above says enough most of the time
   const listBody = h("div", { class: "hyp-list-body" });
   const listFold = fold({ class: "hyp-list-fold", hidden: true }, "Show the list", listBody);
+  // 0.18 (roadmap N1): lines that say nearly the same, and hypotheses checked before that do (views/near.js)
+  const nearBox = h("div", { class: "hyp-near", "aria-live": "polite" });
 
   // codebook tag (one hypothesis only: a list carries its codes in a CSV column)
   const fwSelect = select({ sm: true, "aria-label": "Codebook" }, h("option", { value: "" }, "No codebook"), frameworks.map((f) => h("option", { value: f.name, selected: f.name === (draft.framework ?? "sdg") }, f.title || f.name)));
@@ -152,7 +155,7 @@ export async function renderHypotheses(view, params, query) {
   }
 
   const form = card({ as: "form", class: "hyp-form hyp-compose" },
-    h("div", { class: "field" }, label, ta, hint, listFold, splitHint),
+    h("div", { class: "field" }, label, ta, hint, listFold, nearBox, splitHint),
     h("div", { class: "btn-row hyp-actions" }, withAI(runBtn, lookWrap)),
     readsLine("the excerpts it needs", { class: "hyp-reads" }),
     prepBox,
@@ -169,6 +172,7 @@ export async function renderHypotheses(view, params, query) {
   let prepared = null;        // {text, parts: [{text, role}], terms: [[...]], split, editedParts, editedTerms} from "Look before checking"
   let prepareWatcher = null;
   let looking = false;
+  let near = { text: null, res: null };   // what the server found close, for the text it was asked about
 
   const singleLength = () => ta.value.trim().split(/\s+/).join(" ").length;
   function drawButtons() {
@@ -181,7 +185,8 @@ export async function renderHypotheses(view, params, query) {
       runBtn.disabled = !ok || busy || same;
       lookBtn.disabled = !ok || looking;
       const many = prepared && prepared.parts.length > 1;
-      replace(runBtn, icon("flask", { size: 16 }), !prepared ? "Check" : many ? `Check these ${prepared.parts.length} parts` : "Check it like this");
+      const before = near.text === ta.value && saysSomething(near.res);   // checked before: the offer is under the box
+      replace(runBtn, icon("flask", { size: 16 }), !prepared ? (before ? "Check anyway" : "Check") : many ? `Check these ${prepared.parts.length} parts` : "Check it like this");
     } else {
       const fresh = list.text === ta.value;
       counter.textContent = same ? "This list is being checked now (below)." : "";
@@ -233,8 +238,45 @@ export async function renderHypotheses(view, params, query) {
     }
     drawList();
     drawButtons();
+    await lookNear();
   }
   const previewSoon = debounce(preview, 400);
+
+  // ---- near-duplicates (0.18, roadmap N1): asked a moment after the typing stops (a list: once it is read), and
+  // drawn under the box. Offers only: Check never waits for them, except once when it was pressed before they came.
+  const freshNear = latest();
+  async function lookNear() {
+    const text = ta.value;
+    const many = composerMode(text) === "list";
+    const lines = many ? (list.text === text && !list.error ? list.items.map((it) => it.text) : null) : [text.trim()];
+    const mine = freshNear();
+    if (!lines || !lines.length || (!many && singleLength() < MIN_CHARS)) { near = { text, res: null }; replace(nearBox); drawButtons(); return near; }
+    let res = null;
+    try { res = await api("POST", `/api/projects/${P(project)}/hypotheses/similar`, { lines }); } catch (_) { res = null; }
+    if (!mine() || text !== ta.value) return null;
+    near = { text, res, lines };
+    replace(nearBox, nearNotices(res, { lines, list: many, onKeep: keepLine }));
+    drawButtons();
+    return near;
+  }
+  const lookNearSoon = debounce(lookNear, 500);
+  // "Check as one": keep line `keep` of the group, drop the others from the box (a toast can put them back)
+  function keepLine(keep, group) {
+    const was = ta.value;
+    const now = list.text === was ? dropLines(was, list.items, group.filter((i) => i !== keep)) : null;
+    if (now === null) { toast("Those lines could not be told apart in the box: remove the ones you don't want there.", "warn"); return; }
+    const put = (t) => { ta.value = t; onText(); previewSoon.cancel(); preview(); };
+    put(now);
+    toast(`Kept line ${keep + 1}; ${group.length === 2 ? "the other was" : "the others were"} taken out.`, "ok", { button: { text: "Undo", onClick: () => put(was) } });
+  }
+  // before a check starts: an offer that was not on screen when Check was pressed is shown first, and Check goes on
+  // when pressed again ("Check anyway")
+  async function nearFirst(seen) {
+    if (seen) return true;
+    lookNearSoon.cancel();
+    const n = near.text === ta.value ? near : await lookNear();
+    return !(n && saysSomething(n.res));
+  }
 
   function drawList() {
     const { items, ready, short, error } = list;
@@ -258,9 +300,11 @@ export async function renderHypotheses(view, params, query) {
     grow();
     const now = composerMode(ta.value);
     if (now !== mode) { mode = now; applyMode(); }
+    if (near.text !== ta.value) { replace(nearBox); freshNear(); }   // about other text: gone until asked again
     if (mode === "single") {
       updateSplitHint();
       fetchSuggestions();
+      lookNearSoon();
       if (prepared && prepared.text !== ta.value.trim()) discardPrepared("The hypothesis changed, so the parts and words below no longer apply: look again, or check it as it is now.");
     } else previewSoon();
     saveDraft();
@@ -470,10 +514,14 @@ export async function renderHypotheses(view, params, query) {
   }
 
   // ---- checking: one hypothesis, or the list
-  async function checkOne() {
+  async function checkOne(seen) {
     const text = ta.value.trim();
     const n = singleLength();
     if (n < MIN_CHARS || n > MAX_CHARS) { ta.focus(); return; }
+    busy = true; drawButtons();
+    const go = await nearFirst(seen);
+    busy = false; drawButtons();
+    if (!go || text !== ta.value.trim()) return;
     const o = options.values();
     const body = { text, decompose: o.decompose, expand: o.expand, k: o.k, per_doc: o.per_doc, semantic: o.semantic };
     if (o.doc_ids) body.doc_ids = o.doc_ids;
@@ -499,7 +547,7 @@ export async function renderHypotheses(view, params, query) {
     drawButtons();
   }
 
-  async function checkList() {
+  async function checkList(seen) {
     if (list.text !== ta.value) {   // checked before the count came: count first (a preview on its way may be for older text)
       previewSoon.cancel();
       if (previewing) { try { await previewing; } catch (_) { /* counted again below */ } }
@@ -508,6 +556,7 @@ export async function renderHypotheses(view, params, query) {
     if (list.text !== ta.value || list.error) return;
     const todo = list.items.filter((it) => it.text.length >= MIN_CHARS);
     if (!todo.length) { toast("No hypothesis in the list is long enough to check: write each as a sentence.", "warn"); return; }
+    if (!(await nearFirst(seen))) return;
     const o = options.values();
     const body = { items: todo, decompose: o.decompose, expand: o.expand, k: o.k, per_doc: o.per_doc, semantic: o.semantic };
     if (o.doc_ids) body.doc_ids = o.doc_ids;
@@ -524,7 +573,9 @@ export async function renderHypotheses(view, params, query) {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (runBtn.disabled) return;
-    if (composerMode(ta.value) === "list") checkList(); else checkOne();
+    // what was found close is on screen already when Check is pressed: it checks anyway (near.js)
+    const seen = near.text === ta.value;
+    if (composerMode(ta.value) === "list") checkList(seen); else checkOne(seen);
   });
   form.addEventListener("keydown", (e) => {
     // Ctrl/⌘+Enter checks, in either mode; Enter alone makes a new line
@@ -535,7 +586,7 @@ export async function renderHypotheses(view, params, query) {
 
   applyMode();
   drawButtons();
-  if (mode === "list") preview(); else if (ta.value) fetchSuggestions();
+  if (mode === "list") preview(); else if (ta.value) { fetchSuggestions(); lookNearSoon(); }
 
   // ---- the answers, with the checks still running at the top
   answers = await answersList(answersBox, query, { following: () => (following ? following.id : null), onBatch: setMapTab, write: () => { ta.focus(); ta.scrollIntoView({ block: "center", behavior: "smooth" }); } });
@@ -577,5 +628,5 @@ export async function renderHypotheses(view, params, query) {
         h("li", {}, h("strong", {}, "Answer. "), "You get an answer such as “supported”, “contradicted” or “mixed evidence”, with the quotes, so you can judge for yourself. “No evidence found” means just that: the documents may still say it in other words."),
         h("li", {}, h("strong", {}, "A list. "), "Several hypotheses, one per line or from a spreadsheet, are checked one after the other, each with its own answer. You can leave the page meanwhile.")))));
 
-  return () => { stopFollowing(); if (prepareWatcher) prepareWatcher.stop(); previewSoon.cancel(); if (answers) answers.stop(); };
+  return () => { stopFollowing(); if (prepareWatcher) prepareWatcher.stop(); previewSoon.cancel(); lookNearSoon.cancel(); if (answers) answers.stop(); };
 }

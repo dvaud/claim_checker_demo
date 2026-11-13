@@ -274,3 +274,25 @@ def test_messages_hold_no_keys(svc):
     with pytest.raises(StorageProblem) as e:
         mk(url, secret="TOPSECRETVALUE").list()
     assert "TOPSECRETVALUE" not in str(e.value) and "KEYRW" not in str(e.value)
+
+
+def test_a_prefix_limited_key_finds_a_missing_file_missing_not_refused():
+    """0.18.0: Backblaze answers a key limited to a name prefix (a colleague's read key) with 403 AccessDenied for a
+    file that is not there. Taken as refused, every round of a colleague who had joined stopped at the first file it
+    looks for (`space/moved.json`), so they never got the team's documents. The list says it is simply not there."""
+    srv, url = fake_s3.start(keys={"R": {"secret": "r", "bucket": "b", "prefix": "enlens/s/", "caps": ["listFiles", "readFiles"]}},
+                             buckets=["b"])
+    try:
+        fake_s3.put_object(srv, "b", "enlens/s/space/roster.json", b"roster")
+        fake_s3.put_object(srv, "b", "other/secret.json", b"x")
+        st = S3Storage(url, "eu-central-003", "b", "R", "r", prefix="enlens/s/")
+        assert st.get("space/roster.json") == b"roster"
+        with pytest.raises(StorageProblem) as e:
+            st.get("space/moved.json")
+        assert e.value.kind == NOT_FOUND
+        outside = S3Storage(url, "eu-central-003", "b", "R", "r", prefix="other/")
+        with pytest.raises(StorageProblem) as e:
+            outside.get("secret.json")   # there, but outside the key's prefix: still refused
+        assert e.value.kind == DENIED
+    finally:
+        fake_s3.stop(srv)

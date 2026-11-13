@@ -3,8 +3,8 @@
 # Roles, proposals and what waits for your word
 
 > **In short**
-> - Open the *Team* tab: **Waiting for your word** is its first section. What needs a decision of yours is there as
->   a card, the most serious first.
+> - Open the *Team* tab: **Waiting for your word** is its first section, shown only when something waits. What needs a
+>   decision of yours is there as a card, the most serious first. Roles and the hand-over are on the *Team page*.
 > - A Member's change to the documents is a proposal. The owner and the Co-owners answer it. When two of them answer
 >   differently at once, neither answer counts and one of them decides again.
 > - Nothing loosens who may read a document with AI on your computer without your click.
@@ -14,12 +14,11 @@ This page continues [Work together](together.md#the-owner-and-proposals-0170), w
 
 ## In the Team tab
 
-The first section is **Waiting for your word**, with a number. It holds everything that needs a decision of yours,
-as cards, the most serious first: a proposal answered both ways, a change of owner you did not expect, a change made
-in your name that you did not make, more AI offered to you, then the ordinary proposals. Under the cards is a quiet
-list, *Settled at the same time*, and at the foot the owner's switch **Accept documents collaborators add, at once**.
-When nothing waits it says *Nothing waits for your word. Proposals, looser AI settings and questions about the owner
-come here first.*
+The first section is **Waiting for your word**, with a number; it is shown only when something waits. It holds
+everything that needs a decision of yours, as cards, the most serious first: a proposal answered both ways, a change of
+owner you did not expect, a change made in your name that you did not make, more AI offered to you, then the ordinary
+proposals. Under the cards is a quiet list, *Settled at the same time*. The owner's switch **Accept documents
+collaborators add, at once** is on the Team page, on its *Owner* card. When nothing waits, the section is not there.
 
 A problem with the shared folder that stops this copy (another computer writing under your name, the folder not
 reachable) comes before even this section.
@@ -37,8 +36,9 @@ leaves a passage of it out), each card says so.
 - **Everyone else** sees the proposals, but cannot answer them.
 - **Answered** (a fold) keeps the latest ten: *Accepted by …*, *Declined: …*, *Taken back*, *No longer needed: …*
   (the document was removed since, say). The research log keeps every one.
-- The owner's switch **Accept documents collaborators add, at once** stays the owner's. Off, each added document
-  waits for a click. Removing a document and letting more AI read one always wait for an answer.
+- The owner's switch **Accept documents collaborators add, at once** (the Team page, *Owner* card) stays the owner's.
+  Off, each added document waits for a click. Removing a document and letting more AI read one always wait for an
+  answer.
 
 The *Team* tab's number counts what waits for your word, and a colleague's declined proposals you have not seen yet.
 
@@ -137,12 +137,13 @@ every copy). The document's title opens it, to change it.
 
 ## The people list: roles and the hand-over
 
-*People in the folder* names each person's role in the person mark: **Owner** or **Co-owner**; a Member has none. Under
-the list's head one sentence tells you yours: *You are a Co-owner: your changes to the documents hold for everyone,
-and you answer proposals.* or *You are a Member: your changes to the documents are proposals to Anna and the
-Co-owners.*
+This is on the *Team page* (*Manage the team* in the project menu). *People* names each person's role in the person
+mark: **Owner** or **Co-owner**; a Member has none. Under the list's head one sentence tells you yours: *You are a
+Co-owner: your changes to the documents hold for everyone, and you answer proposals.* or *You are a Member: your changes
+to the documents are proposals to Anna and the Co-owners.*
 
-In the owner's copy each other person's row has a **More** menu, with three items, each of which asks first:
+In the owner's copy each other person's row has a **More** menu, with three items (four when your copy keeps a storage
+space's keys: *Remove from the team…*, last), each of which asks first:
 
 - **Make a Co-owner…** (or **Make a Member again…**): *Ben's changes to the documents will hold for everyone at once,
   and Ben can accept or decline proposals. Only you set roles and hand the project over.*
@@ -152,14 +153,15 @@ In the owner's copy each other person's row has a **More** menu, with three item
 - **Make owner…**, last, after a line: *Hand this project over to …? They will decide about its documents from now on;
   proposals that wait become theirs to answer. You stay in the team.*
 
-A Co-owner whose ENLENS is older than this release has the tag *needs a newer ENLENS to act as Co-owner*. In a team
-that works with files only (no shared folder), the section names the owner (*Owner: …*), and the owner's *Hand
-over…* is there.
+A Co-owner whose ENLENS is older than this release has the tag *needs a newer ENLENS to act as Co-owner*. In a team that
+works with files only (no shared folder), the *Owner* card names the owner (*Owner: …*), and the owner's *Hand over…* is
+there.
 
 **Taking over.** When the owner has left (their subfolder is gone from the shared folder, or nothing was heard of them
-for 14 days), a Co-owner's *Team* tab says why and offers **Take over**. A Member is offered it only when no Co-owner
-has been heard of for 14 days either. While the owner is there, only they can hand the project over. A take-over
-is never final for the others: each other copy is asked, as above, and follows only by its person's word.
+for 14 days), a Co-owner's *Team* tab says why and offers **Take over** (and the *Owner* card offers **Become the
+owner** when the project has none). A Member is offered it only when no Co-owner has been heard of for 14 days either.
+While the owner is there, only they can hand the project over. A take-over is never final for the others: each other
+copy is asked, as above, and follows only by its person's word.
 
 ## On the Documents page
 
@@ -196,8 +198,9 @@ your name (since 12 November). Nothing was written from here, so nothing is lost
 give a name, and this computer becomes a second person. What you did on it so far stays here, shown as your other
 computer's.
 
-In the owner's copy the new person then appears in the people list. Use *More → Same person as…* there to mark your
-two computers as one person: they stand together, and a judgement of yours counts once.
+In the owner's copy the new person then appears under *People* on the Team page (which also offers *Use both
+computers…*). Use *More → Same person as…* there to mark your two computers as one person: they stand together, and a
+judgement of yours counts once.
 
 ## When a Co-owner becomes a Member again
 

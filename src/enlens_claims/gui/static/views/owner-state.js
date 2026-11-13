@@ -72,11 +72,6 @@ export function heading(v, n = 0) {
   return n ? `Waiting for your word (${n})` : "Waiting for your word";
 }
 
-export function nothingWaits(v) {
-  return canWrite(v) ? "Nothing waits for your word. Proposals, looser AI settings and questions about the owner come here first."
-    : "Nothing waits for your word. Looser AI settings and questions about the owner come here first.";
-}
-
 // A Member's own proposals that wait (and, for anyone who cannot answer them, a colleague's): their own section
 export function mineHeading(list) {
   const n = list.length;

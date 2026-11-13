@@ -3,6 +3,7 @@
 import { App, api, h, icon, setButtonKind, replace, clear, toast, showError, field, navigate, store, brand, appName, pageHead, aiWhere, button, card, fold, link, notice, select, input as fieldInput, inset } from "../lib.js";
 import { plainTestResult, claudeSetupCard } from "./settings.js";
 import { linkProjectDialog, importProjectDialog } from "./projects.js";
+import { joinDialog } from "./team-space.js";   // a colleague's invite link makes the first project
 import { WELCOME_CARDS } from "../registry.js";
 import { localModelHelp, lookForServers, hasChatModel } from "./local-model.js";
 
@@ -81,7 +82,10 @@ function projectStep(body) {
   const moving = card({ as: "div", class: "move-in", title: `Used ${appName()} on another computer?` },
     h("p", { class: "muted small" }, `Bring all your projects and settings here in one go, from the file made with “Move ${appName()} to another computer” on the old one.`),
     button({ sm: true, onClick: () => importProjectDialog({ move: true }) }, icon("upload", { size: 13 }), "Import from another computer"));
-  replace(body, card({ as: "div", title: "Give your project a name" }, form), moving);
+  // a colleague sent an invite link: the team's project is made from it (as the project menu's Join a team…)
+  const joining = card({ as: "div", class: "move-in", title: "Invited to a team?" },
+    button({ sm: true, icon: "link", id: "setup-join-team", onClick: () => joinDialog(null) }, "Join with the invite link…"));
+  replace(body, card({ as: "div", title: "Give your project a name" }, form), joining, moving);
   setTimeout(() => input.focus(), 50);
 }
 

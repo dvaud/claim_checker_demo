@@ -5,9 +5,10 @@
 //
 // - The Team tab's section "Waiting for the owner" ("Waiting for you" in the owner's copy), before "People in the
 //   folder": the proposals as cards with their severity, Accept / Decline with an optional reason, the proposer's
-//   Take back, what was answered, a new reading still to make here, Become the owner / Take over, and the owner's
-//   setting "Accept documents collaborators add, at once". team.js adds it (`OWNER_SECTION`) and reads its data with
-//   the tab's refresh (`load`), its number for the tab (`count`).
+//   Take back, what was answered, a new reading still to make here, Take over. team.js adds it (`OWNER_SECTION`) and
+//   reads its data with the tab's refresh (`load`), its number for the tab (`count`); it shows only when something
+//   waits. The Team page (team.js) has the owner's own section (`ROLES_SECTION`): Become the owner, who the owner is,
+//   and the owner's setting "Accept documents collaborators add, at once".
 // - The people list: the Owner mark and the owner's Make owner… on a colleague's row (`ownerMarks`, from team.js).
 // - The Documents page (sources.js): the chip of a document that waits for the owner or stays in your copy only, the
 //   words after a looser AI setting was proposed, and the line in the removal question of a collaborator.
@@ -22,10 +23,10 @@
 // and when, Accept (main) and Decline… (quiet), or the wait and Take back); the owner is a role on the person mark;
 // placed in views.css (the block "Working together").
 import { App, api, h, toast, showError, P, confirmDialog, dialog, watchJob, TERMINAL, store, shortTitle, switchControl,
-  button, link, input, select, field, notice, noticeList, fold, listRow, listGroup, personMark, workState, tag, menu, aiWhere,
+  button, link, input, select, field, notice, noticeList, fold, listRow, listGroup, personMark, workState, tag, menu, aiWhere, helpMark,
   proposalCard as proposalCardBox, decisionCard } from "../lib.js";
 import { whenText } from "./team-state.js";
-import { OWNER_API, ownerName, sectionShown, splitProposals, heading, nothingWaits, tabCount, proposer,
+import { OWNER_API, ownerName, sectionShown, splitProposals, heading, tabCount, proposer,
   whatParts, kindLine, conflictsText, answeredLine, declinedLine, applyText, docChip, proposedText,
   REMOVE_PROPOSAL, loosenConfirm, waitingFor,
   // roles (DESIGN-roles §5)
@@ -36,7 +37,8 @@ import { OWNER_API, ownerName, sectionShown, splitProposals, heading, nothingWai
 
 const ACCEPT_ADDS = "Accept documents collaborators add, at once";
 const ACCEPT_ADDS_HELP = "Off: each added document waits for your click. Removing a document and letting more AI read one always wait for you.";
-const NO_OWNER = "This project has no owner yet. An owner decides which documents the project holds, how they are read and who may read them with AI. Until someone is, everything works as before.";
+const OWNER_HELP = "The owner decides which documents the project holds, how they are read and who may read them with AI. A colleague’s change to the documents is a proposal for the owner (or a Co-owner) to accept or decline.";
+const NO_OWNER = "No owner yet: everything works as before. An owner decides which documents the project holds, how they are read and who may read them with AI.";
 
 let following = null;        // the new-reader job this section follows: {id, w}
 const gone = new Set();      // jobs that could not be followed (no such job any more): not followed again
@@ -104,23 +106,24 @@ export const OWNER_SECTION = {
 export const MINE_SECTION = { key: "mine", render: mineSection };
 // "Removed in the last 30 days"
 export const REMOVED_SECTION = { key: "removed", render: removedSection };
+// The Team page: the owner. Become the owner (no owner yet), who it is and Hand over… (a team working with files, which
+// has no people list), and the owner's setting. Its key is the tab section's: it reads the same answer (ctx.data.owner).
+export const ROLES_SECTION = { key: "owner", render: rolesSection, load: OWNER_SECTION.load };
 
+// The tab's section: only when something waits for this person's word (or a new reading runs). Becoming the owner,
+// who the owner is and the owner's setting are the Team page's (rolesSection).
 function ownerSection(ctx) {
   const v = ctx.data && ctx.data.owner;
   const hasFolder = !!(ctx.status && ctx.status.folder);
   if (!sectionShown(v, hasFolder)) return null;
   follow(ctx, v.job);
-  if (v.can_claim) return sec("owner", heading(v), claimBox(ctx));
+  if (v.can_claim) return null;
   const parts = splitProposals(v, seenSet(ctx.project));
   const box = inbox(v, laterSet(ctx.project));
+  const running = !!(v.job && !TERMINAL.has(v.job.state));
+  if (!box.cards && !parts.declined.length && !running && !(v.to_apply || []).length && !v.can_take_over
+    && !(v.notices || []).length && !box.settled.length) return null;   // nothing waits: no section
   const body = [];
-  // a team working with zips has no people list: the owner is named here
-  if (!hasFolder && v.owner) {
-    body.push(h("p", { class: "team-text owner-who" }, v.owner.me ? "You are the owner." : ["Owner: ", personMark([v.owner.name]), " ", v.owner.name, "."],
-      v.owner.me ? handOverPicker(ctx, v) : null));
-    const said = roleSentence(v);
-    if (said) body.push(h("p", { class: "team-text" }, said));
-  }
   if (v.can_take_over) body.push(takeOverBox(ctx, v));
   if (parts.declined.length) body.push(declinedBox(ctx, v, parts.declined));
   if (v.job && !TERMINAL.has(v.job.state)) {
@@ -132,13 +135,27 @@ function ownerSection(ctx) {
     ...box.refused.map((r) => refusedCard(ctx, v, r)), ...box.offers.map((g) => offerCard(ctx, v, g)),
     ...box.deciding.map((p) => proposalCard(ctx, v, p))];
   if (cards.length) body.push(h("ul", { class: "owner-cards" }, cards));
-  else body.push(h("p", { class: "muted team-text owner-none" }, nothingWaits(v)));
   // role changes and hand-overs made elsewhere, said once (ownership.view)
   if ((v.notices || []).length) body.push(noticeList(v.notices.map((n) => ({ kind: "info", text: n.text }))));
   if (box.settled.length) body.push(settledGroup(ctx, v, box.settled));
   if (parts.answered.length) body.push(answeredFold(ctx, v, parts));
-  if (v.is_owner) body.push(acceptAddsSwitch(ctx, v));
   return sec("owner", heading(v, box.cards), ...body);
+}
+
+// The Team page's section: the owner
+function rolesSection(ctx) {
+  const v = ctx.data && ctx.data.owner;
+  const hasFolder = !!(ctx.status && ctx.status.folder);
+  if (!v || !sectionShown(v, hasFolder)) return null;
+  if (v.can_claim) return sec("owner", heading(v), claimBox(ctx));
+  if (!v.owner) return null;
+  const body = [h("p", { class: "team-text owner-who" }, v.owner.me ? "You are the owner." : ["Owner: ", personMark([v.owner.name]), " ", v.owner.name, "."],
+    // a team working with files has no people list: Hand over… is here
+    v.owner.me && !hasFolder ? handOverPicker(ctx, v) : null, helpMark("About the owner", OWNER_HELP))];
+  const said = !hasFolder ? roleSentence(v) : null;   // (with a folder, it is said under the people list)
+  if (said) body.push(h("p", { class: "team-text" }, said));
+  if (v.is_owner) body.push(acceptAddsSwitch(ctx, v));
+  return sec("owner", "Owner", ...body);
 }
 
 // proposals that wait for someone else's word: a Member's own (with Take back), and a colleague's they cannot answer
@@ -507,7 +524,7 @@ function applyRow(ctx, row) {
 
 // the owner's setting
 function acceptAddsSwitch(ctx, v) {
-  const sw = teamSwitch("owner-accept-adds", ACCEPT_ADDS, !!v.accept_adds, ACCEPT_ADDS_HELP);
+  const sw = teamSwitch("owner-accept-adds", ACCEPT_ADDS, !!v.accept_adds, null);
   sw.input.addEventListener("change", async () => {
     const want = sw.input.checked;
     sw.input.disabled = true;
@@ -524,7 +541,7 @@ function acceptAddsSwitch(ctx, v) {
       sw.input.disabled = false;
     }
   });
-  return h("div", { class: "owner-setting" }, sw);
+  return h("div", { class: "owner-setting team-switch" }, sw, helpMark("About accepting documents at once", ACCEPT_ADDS_HELP));
 }
 
 // a new-reader job of the project (the owner accepted a new reading): read the tab again when it ends
@@ -593,8 +610,9 @@ export function peopleNote(ctx) {
   return said ? h("p", { class: "team-text owner-role-note" }, said) : null;
 }
 
-// the Owner's More menu on another person's row (null otherwise)
-export function ownerMarks(ctx, person) {
+// the Owner's More menu on another person's row (null otherwise). `more`: items after Make owner… (the Team page's
+// Remove from the team…, for the copy that keeps the storage space's keys)
+export function ownerMarks(ctx, person, more = []) {
   const v = ctx.data && ctx.data.owner;
   if (!v || !v.owner || !person || !person.id) return null;
   if (v.owner.id === person.id || person.me || !canSetRoles(v)) return null;
@@ -608,6 +626,7 @@ export function ownerMarks(ctx, person) {
     { text: "Same person as…", icon: "users", onClick: () => samePerson(ctx, v, person.id, name, known.same_as || "") },
     "sep",
     { text: "Make owner…", icon: "shield", onClick: () => makeOwner(ctx, person.id, name) },
+    ...more,
   ];
   const m = menu({ label: `More for ${name}`, items, id: `owner-more-${person.id}` });
   m.querySelector("summary").id = `owner-more-${person.id}-btn`;   // the focus finds it again after a redraw

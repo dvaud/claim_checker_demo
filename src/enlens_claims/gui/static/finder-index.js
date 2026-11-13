@@ -51,6 +51,8 @@ export const ACTIONS = [
   ["Write in the research log", "in Overview", "#/log", "notebook", "diary journal decision audit trail entry record"],
   ["Choose the AI or set up Claude", "in Settings", "#/settings/model", "cloud", "ai model claude anthropic api key local ollama plan subscription backend"],
   ["Work together or share a project", "in Projects", "#/projects", "users", "share colleague team collaborate export import send file together"],
+  ["Manage the team", "on the Team page", "#/team", "users", "team people members invite colleague storage space backblaze cloudflare shared folder owner roles remove"],
+  ["Join a team with an invite link", "on the Team page", "#/team", "link", "join invite link enlens team colleague"],
   ["Start a new project", "in Projects", "#/projects", "folder-open", "create project new open switch"],
   ["Open the settings", "in Settings", "#/settings", "sliders", "settings preferences options appearance dark light"],
   ["Copy my link", "in Settings › Technical", "#/settings/link", "link", "bookmark link address url open browser"],

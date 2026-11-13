@@ -44,6 +44,17 @@ class ChecksApi:
     def post_batch(self, name, q):
         return {"job": self.app.start_batch(name, self._body()).view()}
 
+    def post_similar(self, name, q):
+        """0.18 (roadmap N1): lines of the box that say nearly the same, and hypotheses checked before that do."""
+        from .. import nearduplicates
+
+        lines = self._body().get("lines")
+        if not isinstance(lines, list) or not all(isinstance(x, str) for x in lines):
+            raise ApiError(400, "lines must be a list of hypotheses.")
+        if len(lines) > 500:
+            raise ApiError(400, "At most 500 hypotheses per batch.")
+        return nearduplicates.similar(self.app.ws(name), [x[:2000] for x in lines])
+
     def get_hypotheses(self, name, q):
         return self.app.hypotheses(name, q)
 

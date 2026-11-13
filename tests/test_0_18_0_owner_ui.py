@@ -72,11 +72,11 @@ def test_the_section_comes_before_the_people_with_its_own_data_and_number():
     # TEAM_SECTIONS is filled before the section is added (the call comes after the list and the function)
     assert TEAM.index("export const TEAM_SECTIONS") < TEAM.index("addTeamSection(OWNER_SECTION")
     # a section reads its own answer with the tab's refresh, and a failed read keeps what was there
-    assert "const loads = TEAM_SECTIONS.filter((s) => s.load);" in TEAM
+    assert "const loads = sections.filter((s) => s.load);" in TEAM    # the tab's sections, or the Team page's
     assert "Promise.all(loads.map((s) => s.load(project).catch(keep(ctx.data[s.key]))))" in TEAM
     assert "loads.forEach((s, i) => { ctx.data[s.key] = extra[i]; });" in TEAM
     assert "poller, seenAt(), ctx.data]);" in TEAM                     # its answer counts as a change to draw
-    assert "+ sectionCount(ctx)" in TEAM                                  # the tab's number adds what waits
+    assert "+ sectionCount(ctx, sections)" in TEAM                                  # the tab's number adds what waits
     assert TEAM.count("data: {}") == 2                                    # another project: nothing of the last one
     # the section: its key, its data, its number; drawn as team.js draws a section, with a heading it can focus
     assert 'key: "owner",' in OWNER and "load: (project) => api(\"GET\", OWNER_API.view(P(project)))," in OWNER
@@ -93,7 +93,11 @@ def test_the_people_list_shows_the_owner_and_the_hand_over():
     marked = _marked(TEAM)
     assert any('listRow({ person: ownerPerson(ctx, me, "you")' in ln for ln in marked)
     assert any('listRow({ person: ownerPerson(ctx, x, x.name)' in ln for ln in marked)
-    assert "actions: [ownerMarks(ctx, me)].filter(Boolean)" in TEAM and "actions: [ownerMarks(ctx, x)].filter(Boolean)" in TEAM
+    # the Team page: a colleague's row has one control, the owner's More menu (with Remove from the team… for the copy
+    # that keeps the storage space's keys), or Remove… alone
+    assert "actions: [ownerMarks(ctx, me)].filter(Boolean)" in TEAM and "actions: control(x, m) });" in TEAM
+    assert "const more = ownerMarks(ctx, person, r ? [r] : []);" in TEAM and '"Remove from the team…"' in TEAM
+    assert "export function ownerMarks(ctx, person, more = [])" in OWNER and "    ...more,\n" in OWNER
     fn = OWNER[OWNER.index("// the people list (team.js peopleSection)"):OWNER.index("// the Documents page (sources.js)")]
     # roles: the role (Owner, Co-owner) on the person mark; Make owner… is the last item of the Owner's More menu
     assert "const m = personMark([name || \"a colleague\"], { role });" in fn and "v.owner.id === person.id" in fn
@@ -144,9 +148,9 @@ def test_no_inline_look_and_no_link_drawn_as_a_button():
 def test_the_words_of_the_plan():
     words = OWNER + STATE
     for w in (
-        "Waiting for your word", "Waiting for you.", "Nothing waits for your word.",
-        "This project has no owner yet. An owner decides which documents the project holds, how they are read and who "
-        "may read them with AI. Until someone is, everything works as before.", "Become the owner",
+        "Waiting for your word", "Waiting for you.",
+        "No owner yet: everything works as before. An owner decides which documents the project holds, how they are "
+        "read and who may read them with AI.", "Become the owner",
         "It is in every copy for now. Declined, it stays in ",
         "Accepted, every copy reads it again and moves its results with it.", "Where the text starts or ends was changed.",
         "Accepted, it leaves every copy; checks keep what they read of it.", "you accept", "nothing changes anywhere.",
@@ -236,7 +240,7 @@ out.splitSeen = O.splitProposals(v, new Set(["qdec"])).declined.length;
 // roles: the owner answers the proposals that wait (can_decide); a collaborator counts their declined ones not seen
 const decide = list.map((p) => (p.state === "waiting" ? { ...p, can_decide: true } : p));
 out.count = [O.tabCount({ ...owner, proposals: decide }), O.tabCount(v), O.tabCount(v, new Set(["qdec"])), O.tabCount(null)];
-out.heading = [O.heading(owner, 2), O.heading(collab, 0), O.heading({ can_claim: true }), O.nothingWaits(owner), O.nothingWaits(collab)];
+out.heading = [O.heading(owner, 2), O.heading(collab, 0), O.heading({ can_claim: true })];
 out.who = [O.proposer(P({})), O.proposer(P({ by: me }))];
 out.parts = [O.whatParts("removing “Annual report 2024” from the project"), O.whatParts("something without a title")];
 out.lines = {
@@ -297,9 +301,8 @@ def test_when_the_section_shows_and_what_goes_where(node_out):
     # heading, "Waiting for your word", whatever the role)
     assert node_out["count"] == [3, 1, 0, 0]
     assert node_out["heading"] == [
-        "Waiting for your word (2)", "Waiting for your word", "No owner yet",
-        "Nothing waits for your word. Proposals, looser AI settings and questions about the owner come here first.",
-        "Nothing waits for your word. Looser AI settings and questions about the owner come here first."]
+        "Waiting for your word (2)", "Waiting for your word", "No owner yet"]
+    # (the Team tab's section is not drawn when nothing waits: no "Nothing waits for your word" sentence any more)
 
 
 def test_a_cards_words(node_out):

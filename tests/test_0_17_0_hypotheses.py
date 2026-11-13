@@ -112,7 +112,8 @@ def test_keys_and_the_draft():
     # Enter alone makes a new line in the box; in a small field it does not start a check
     assert 'e.key === "Enter" && e.target.tagName === "INPUT"' in keys
     submit = hyp[hyp.index('form.addEventListener("submit"'):hyp.index('form.addEventListener("keydown"')]
-    assert 'composerMode(ta.value) === "list") checkList(); else checkOne();' in submit
+    # 0.18 (N1): each is told whether the near-duplicate offers were on screen when Check was pressed
+    assert 'composerMode(ta.value) === "list") checkList(seen); else checkOne(seen);' in submit
     # one draft for both modes; a list left on the old Check several page comes along once
     assert 'session("draft")' in hyp and 'session("batchDraft", null)' in hyp and 'session("batchDraft",' not in hyp.replace('session("batchDraft", null)', "")
 

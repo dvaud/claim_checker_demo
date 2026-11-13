@@ -228,5 +228,5 @@ def test_the_set_up_offers_the_folders_the_window_and_what_to_do():
     assert "if (o.picker)" in TEAM          # no button on a computer without a folder window
     assert "e.status === 409" in TEAM
     assert "team-use-folder" in TEAM and 'placeholder: example' in TEAM   # the pasted path stays
-    assert "this tab offers the shared folder" in TEAM and "folderAsSeen(st.folder" in TEAM
+    assert "the Team page offers the shared folder" in TEAM and "folderAsSeen(st.folder" in TEAM
     assert ".team-cloud" in VIEWS

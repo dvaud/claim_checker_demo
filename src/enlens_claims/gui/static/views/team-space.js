@@ -1,16 +1,20 @@
-// 0.18.0rc2 (roadmap L6): a storage space of the team's own, in the Team tab. Without a way of working together yet,
-// the first section offers it (recommended: Backblaze for most research groups, Cloudflare for large teams that grow
-// quickly) and takes an invite link; with a space, a section says where it is, who is in it, the invites waiting, and
-// what was set aside. The owner (the copy that keeps the space's keys) invites, removes and moves. Built on
-// gui/api_space.py; the round itself is the shared folder's (*Sync now*, team.js). Placed in views.css ("Working
-// together"); the set-up runs in a dialog, the panel being narrow.
+// 0.18.0rc2 (roadmap L6): a storage space of the team's own, on the Team page (team.js). Without a way of working
+// together yet, the first section offers it (recommended: Backblaze for most research groups, Cloudflare for large
+// teams that grow quickly) and takes an invite link; with a space, a section says where it is, the invites waiting and
+// what was set aside (its members are the page's people list, with Remove…). The owner (the copy that keeps the
+// space's keys) invites, removes and moves. Joining a team as a new project is also in the sidebar's project menu
+// (Join a team…, app.js). Built on gui/api_space.py; the round itself is the shared folder's (*Sync now*, team.js).
+// Placed in views.css ("Working together"); the set-up runs in a dialog.
 import { App, api, h, toast, showError, P, plural, field, button, link, input, select, fold, noticeList, notice, dialog,
-  confirmDialog, listRow, listGroup, watchJob, navigate, personMark, textarea, copyLine } from "../lib.js";
+  confirmDialog, listRow, listGroup, watchJob, navigate, textarea, copyLine, helpMark } from "../lib.js";
 
 const S = (project) => `/api/projects/${P(project)}/space`;
 let LINKS = null;
 const links = async () => (LINKS = LINKS || await api("GET", "/api/space/links").catch(() => ({})));
 const when = (iso) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "");
+export const SERVICE_NAME = { b2: "Backblaze", r2: "Cloudflare" };
+// a member's part of their row on the Team page: "keeps the space’s keys · since 12 November"
+export const memberSub = (m) => (m ? [m.keeper ? "keeps the space’s keys" : null, m.since ? `since ${when(m.since)}` : null].filter(Boolean).join(" · ") : "");
 
 function section(key, title, ...children) {
   const id = `team-h-${key}`;
@@ -32,20 +36,21 @@ const typeAddress = (href, id) => {
 // ---------------------------------------------------------------------------------------------
 export const SPACE_SETUP_SECTION = { key: "space-setup", render: setupSection };
 
+const SPACE_HELP = "Your team rents a private storage space online, free at a team’s size. ENLENS puts what you share there and brings in what your colleagues share, by itself: nobody installs anything or looks for a folder. You set it up once, in about five minutes; colleagues join from a link you send them. Everything is locked on this computer before it leaves it, with a key only your team holds: the storage service cannot read your work.";
+
 function setupSection(ctx) {
   const st = ctx.status;
   if (st.folder || st.space) return null;
   const b2 = button({ kind: "main", sm: true, id: "team-space-b2", onClick: () => setupDialog(ctx, "b2") }, "Backblaze…");
   const r2 = button({ sm: true, id: "team-space-r2", onClick: () => setupDialog(ctx, "r2") }, "Cloudflare…");
   const join = button({ sm: true, icon: "link", id: "team-space-join", onClick: () => joinDialog(ctx) }, "Join with an invite link…");
-  return section("space-setup", "Work together through a storage space (recommended)",
-    h("p", { class: "team-text" }, "Your team rents a private storage space online, free at a team’s size. ENLENS puts what you share there and brings in what your colleagues share, by itself: nobody installs anything or looks for a folder. You set it up once, in about five minutes; colleagues join from a link you send them."),
-    h("p", { class: "team-text" }, "Everything is locked on this computer before it leaves it, with a key only your team holds: the storage service cannot read your work."),
+  return section("space-setup", "A storage space (recommended)",
+    h("p", { class: "muted team-lead" }, "Private and encrypted, free at a team’s size; colleagues join from a link.",
+      helpMark("About storage spaces", SPACE_HELP)),
     h("ul", { class: "team-choices" },
-      h("li", {}, b2, h("span", { class: "muted small" }, " For most research groups: no card needed, storage in the EU.")),
-      h("li", {}, r2, h("span", { class: "muted small" }, " For large teams that grow quickly: asks for a card, nothing is charged within the free amount."))),
-    h("div", { class: "btn-row" }, join),
-    h("p", { class: "muted small team-text" }, "Or use a folder your team already shares, below."));
+      h("li", {}, b2, h("span", { class: "muted small" }, "Most research groups: no card, storage in the EU.")),
+      h("li", {}, r2, h("span", { class: "muted small" }, "Large teams that grow quickly: asks for a card; nothing is charged within the free amount."))),
+    h("div", { class: "btn-row" }, join));
 }
 
 // The owner's set-up (or a move to another space), in a dialog. `move`: the team moves there.
@@ -116,7 +121,7 @@ export async function setupDialog(ctx, service, { move = false } = {}) {
           for (const w of (job.result && job.result.warnings) || []) toast(w, "warn", { ttl: 15000 });
           if (service === "b2" && !((job.result && job.result.warnings) || []).some((w) => /master key/.test(w))) {
             toast("Ready. In Backblaze, generate a new master application key now: it makes the one you pasted useless, and ENLENS no longer needs it.", "ok", { ttl: 15000 });
-          } else toast(move ? "The team moves to the new storage space." : "Ready. Invite your colleagues from the Team tab.", "ok");
+          } else toast(move ? "The team moves to the new storage space." : "Ready. Invite your colleagues from this page.", "ok");
           if (move && job.result && job.result.moved && job.result.moved.not_told && job.result.moved.not_told.length) {
             toast(`The old storage space could not be reached: send ${job.result.moved.not_told.join(", ")} a new invite.`, "warn", { ttl: 15000 });
           }
@@ -131,7 +136,8 @@ export async function setupDialog(ctx, service, { move = false } = {}) {
   });
 }
 
-// Join from an invite link, in this project (Team tab) or as a new project (Projects).
+// Join from an invite link, in this project (the Team tab or page) or as a new project (the project menu's Join a team…,
+// Projects).
 export async function joinDialog(ctx) {
   const text = textarea({ mono: true, id: "space-join-link", rows: 4, spellcheck: "false", placeholder: "enlens://join#…" });
   const err = h("p", { class: "field-error", role: "alert" });
@@ -179,16 +185,10 @@ function spaceSection(ctx) {
   if (!sp) return null;
   const keeper = sp.members.find((m) => m.keeper);
   const waiting = !sp.joined ? notice({ kind: "info" }, h("p", {}, `Waiting for ${keeper && !keeper.me ? keeper.name : "the owner"} to let you in: their ENLENS does it by itself at its next round. Until then, your colleagues do not see what you share; you already see theirs.`)) : null;
-  const rows = sp.members.filter((m) => !m.removed).map((m) => listRow({
-    person: personMark([m.name]), title: m.me ? `${m.name} (you)` : m.name,
-    sub: [m.keeper ? "keeps the space’s keys" : null, m.since ? `since ${when(m.since)}` : null].filter(Boolean).join(" · "),
-    actions: sp.keeper && !m.me ? [button({ kind: "quiet", sm: true, id: `space-remove-${m.part}`, onClick: () => removeMember(ctx, m) }, "Remove…")] : [],
-  }));
   const invites = sp.invites.map((i) => listRow({
     title: i.label ? `Invite for ${i.label}` : "An invite", sub: `made ${when(i.made_at)}, not used yet`,
     actions: [button({ kind: "quiet", sm: true, id: `space-withdraw-${i.part}`, onClick: () => withdraw(ctx, i) }, "Withdraw")],
   }));
-  const removed = sp.members.filter((m) => m.removed);
   const aside = sp.set_aside || [];
   const invite = sp.keeper ? button({ kind: "main", sm: true, icon: "plus", id: "space-invite", onClick: () => inviteDialog(ctx) }, "Invite a colleague…") : null;
   const moveFold = sp.keeper ? fold({ sm: true, id: "space-move" }, "Move to another storage space",
@@ -201,9 +201,8 @@ function spaceSection(ctx) {
     h("p", { class: "team-text team-space-where" }, sp.where, sp.in_eu === false ? " · not in the EU" : null),
     waiting,
     aside.length ? noticeList([{ kind: "attention", text: `${plural(aside.length, "file")} in the storage space ${aside.length === 1 ? "was" : "were"} set aside: ${aside[0].message}${aside.length > 1 ? " (and others)" : ""} Nothing of ${aside.length === 1 ? "it" : "them"} came into this project.` }]) : null,
-    listGroup(null, ...rows, ...invites),
-    removed.length ? h("p", { class: "muted small team-text" }, `Removed from the storage space: ${removed.map((m) => m.name).join(", ")}. What they shared before stays in the project.`) : null,
-    invite ? h("div", { class: "btn-row" }, invite) : (sp.joined ? h("p", { class: "muted small team-text" }, `To add a colleague, ask ${keeper && !keeper.me ? keeper.name : "the owner"} for an invite: their copy keeps the keys that make them.`) : null),
+    invites.length ? listGroup(`Invites not used yet (${invites.length})`, ...invites) : null,
+    invite ? h("div", { class: "btn-row" }, invite) : (sp.joined ? h("p", { class: "muted small team-text" }, `To add a colleague, ask ${keeper && !keeper.me ? keeper.name : "the owner"} for an invite.`) : null),
     moveFold, tech);
 }
 
@@ -251,7 +250,7 @@ async function withdraw(ctx, inv) {
   } catch (e) { showError(e); }
 }
 
-async function removeMember(ctx, m) {
+export async function removeMember(ctx, m) {
   const ok = await confirmDialog({ title: `Remove ${m.name} from the storage space?`, confirmText: "Remove",
     message: h("div", {}, h("p", {}, `${m.name}’s keys to the storage space stop working, and the project’s key is replaced for everyone else. What ${m.name} shared before stays in the project, and what they already have stays with them.`)) });
   if (!ok) return;
@@ -262,7 +261,7 @@ async function removeMember(ctx, m) {
   } catch (e) { showError(e); }
 }
 
-// Projects page: "Join a team" (a new project from an invite link)
+// Projects page: "Join a team" (a new project from an invite link; also in the sidebar's project menu)
 export function joinTeamButton() {
   return button({ id: "pj-join-team", icon: "users", onClick: () => joinDialog(null) }, "Join a team");
 }

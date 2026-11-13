@@ -191,8 +191,8 @@ network drive keeps them within its storage.
   through them. A shared check or set of themes you remove is treated the same way.
 - **Turn the switch on later**: at the next round, what your copy had written of the documents it keeps out leaves the
   folder. What a colleague already brought into their project stays with them.
-- **Stop using this folder** (in the *Team* tab): your copy stops writing and reading there. It removes nothing from
-  the folder, so unshare first what should leave it.
+- **Stop using this folder** (on the Team page): your copy stops writing and reading there. It removes nothing from the
+  folder, so unshare first what should leave it.
 - **A document removed from the project** leaves every copy, but not yet the folder: its reading and its file stay
   there, where anyone with access to the folder can still open them (to be fixed in a later release). The exception
   is a document marked *Only a local AI* or *No AI* while the switch above is on: what your copy wrote of it leaves

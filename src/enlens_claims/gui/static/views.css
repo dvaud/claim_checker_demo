@@ -953,6 +953,10 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .hyp-errors-fold { margin-top: var(--space-3); }
 .hyp-how-fold { margin-top: var(--space-5); }
 .hyp-how-card { margin-top: var(--space-2); }
+/* 0.18 (N1): lines that say nearly the same, and hypotheses checked before, under the box (views/near.js) */
+.hyp-near { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
+.hyp-near:empty { display: none; }
+.hyp-near-apart, .hyp-near-more { margin: 0; }
 .opt-docs-field { grid-column: 1 / -1; }
 .opt-docs-head { justify-content: space-between; }
 
@@ -1523,11 +1527,21 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .team-downloads { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .team-downloads li { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
 .team-foot { padding: 12px 0 0; }
+/* a switch whose explanation is behind a help mark beside it; the team in one line under Sync now */
+.team-switch { display: flex; align-items: flex-start; gap: 4px; }
+.team-switch > .switch-field { flex: 0 1 auto; min-width: 0; }
+.team-summary { margin: 8px 0 0; overflow-wrap: anywhere; }
+/* a section's one line with its help mark after it */
+.team-lead { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 0 8px; }
+.team-where { margin-top: var(--space-2); }
+/* the Team page (#/team): each section a card (card()), its heading the card's section title */
+.team-page { max-width: 52rem; }
+.team-page .team-section { padding: 0; border-bottom: 0; }
+.team-page .team-h { margin: 0 0 12px; font-size: var(--fs-section); }
 /* the owner's section: proposals as small cards, what was declined and answered, the owner's setting */
 .owner-who { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .owner-notice { margin: 0 0 var(--space-3); }
 .owner-job { margin: 0 0 8px; }
-.owner-none { margin-bottom: 4px; }
 .owner-cards { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
 .owner-what { overflow-wrap: anywhere; }
 /* in a proposal's card (proposalCard() detail): what the change does, another proposal for the same document */

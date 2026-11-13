@@ -6,7 +6,8 @@ in memory, on 127.0.0.1; it VERIFIES each request's Signature Version 4 with the
 
 Keys: id -> {"secret", "bucket" (None: any), "prefix" (None: any name), "can_write" (default True)}; a key with a
 "caps" list (B2 capability names: listFiles, readFiles, writeFiles, deleteFiles) is governed by that instead. A key
-limited to a bucket and a name prefix is refused (403 AccessDenied) outside them, as B2 does.
+limited to a bucket and a name prefix is refused (403 AccessDenied) outside them, as B2 does, and so is its GET of a
+file that is not there (B2 answers a prefix-limited key so, not with 404).
 
 Knobs on `srv.state`: `fail_next(n, status)`, `maintenance`, `cap` (a cap message), `delay`, `page_size`,
 `chunked_get` (answer GET without Content-Length), `check_clock`. `state.log` lists (method, key id, path, query).
@@ -178,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
         with st.lock:
             data = objs.get(name)
         if data is None:
+            if key.get("prefix"):   # as Backblaze does for a key limited to a name prefix (13 November 2026)
+                return self._error(403, "AccessDenied", "Access Denied")
             return self._error(404, "NoSuchKey", "The specified key does not exist.")
         if st.chunked_get:
             self.send_response(200)

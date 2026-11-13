@@ -21,7 +21,7 @@ export const FEATURES = {
     overview: { section: "explore", order: 99, title: "Read one document", what: "Open a document from the list to see its codes, key terms, what “it” and “they” refer to, how it was read beside its pages, and a highlighted copy." },
   },
   together: {
-    section: "project", title: "Work together", icon: "users", href: "#/projects", ai: "none",
+    section: "project", title: "Work together", icon: "users", href: "#/team", ai: "none",
     what: "Each of you keeps a copy of the project on your own computer and Claude plan. Send your work as one file and bring in a colleague’s: what is new comes in, each person’s judgements are kept under their name, and nothing you decided is replaced.",
     overview: false,
   },

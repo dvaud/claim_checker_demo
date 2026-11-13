@@ -52,7 +52,7 @@ for (const [k, v] of Object.entries(V)) {
     order: [...b.bothWays.map((p) => "both:" + p.id), ...b.questions.map((q) => "q:" + q.kind), ...b.refused.map((r) => "refused:" + r.kind),
       ...b.offers.map((g) => "offers:" + g.list.length), ...b.deciding.map((p) => "p:" + p.id)],
     mine: b.mine.map((p) => p.id), mineHeading: b.mine.length ? O.mineHeading(b.mine) : null, settled: b.settled.map((c) => c.id),
-    role: O.roleSentence(v), nothing: O.nothingWaits(v) };
+    role: O.roleSentence(v) };
 }
 const own = V.busy, mem = V.member;
 const b = O.inbox(own);
@@ -115,7 +115,7 @@ def test_what_waits_comes_first_most_serious_first(node):
     assert o["settled"] == ["c-ai", "c-state", "c-read", "c-blocks"]   # parts only: an answered-both-ways is its card
     e = node["empty"]
     assert e["order"] == [] and e["count"] == 0 and e["heading"] == "Waiting for your word"
-    assert e["nothing"] == "Nothing waits for your word. Proposals, looser AI settings and questions about the owner come here first."
+    # nothing waits: the Team tab draws no section at all (owner.js ownerSection), so there is no sentence for it
 
 
 def test_a_members_view(node):
@@ -215,7 +215,7 @@ def test_the_reviews_changes_where_they_are_drawn():
     # (2) a folder problem that stops this copy is the first section; "Waiting for your word" comes before the folder
     sections = TEAM[TEAM.index("export const TEAM_SECTIONS"):TEAM.index("];", TEAM.index("export const TEAM_SECTIONS"))]
     assert sections.index('"setup"') < sections.index('"stop"') < sections.index('"state"')
-    assert 'addTeamSection(OWNER_SECTION, { before: "state" });' in TEAM and 'addTeamSection(REMOVED_SECTION, { before: "people" });' in TEAM
+    assert 'addTeamSection(OWNER_SECTION, { before: "state" });' in TEAM and 'addTeamSection(REMOVED_SECTION, { before: "shared" });' in TEAM
     assert 'const STOPS = new Set(["other_computer", "unreachable"]);' in TEAM and "Use both computers…" in TEAM
     # (3) a clash card: both buttons small and standard, neither main; Accept still asks first (the same accept())
     card = _fn(LIB, "export function proposalCard(")

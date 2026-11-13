@@ -68,11 +68,11 @@ flowchart LR
     F -- "every couple of minutes" --> A
 ```
 
-**Setting it up.** One of you starts: in the *Team* tab, ENLENS offers the cloud folders of your computer by name, or
-opens the system's folder window, and a colleague is offered the team's folder by their own ENLENS. Step by step:
-[Choosing the shared folder](shared-folder.md). Then decide on the switch *Keep documents marked Only a local AI or
-No AI out of the shared folder* ([below](#documents-kept-out-of-the-folder)); the first round starts when you press
-**Use this folder**.
+**Setting it up.** One of you starts: on the *Team page* (*Manage the team* in the project menu), ENLENS offers the
+cloud folders of your computer by name, or opens the system's folder window, and a colleague is offered the team's
+folder by their own ENLENS. Step by step: [Choosing the shared
+folder](shared-folder.md). Then decide on the switch *Keep documents marked Only a local AI or No AI out of the shared
+folder* ([below](#documents-kept-out-of-the-folder)); the first round starts when you press **Use this folder**.
 
 ENLENS makes a folder of its own in it for the project (`ENLENS-` and a few letters); leave what is inside as it is.
 It refuses a folder that holds the project itself or ENLENS's own folder, and says why under the field. What the
@@ -83,9 +83,9 @@ computer writes there under the same name (a copy of your ENLENS folder, say), t
 anything, and says so under *Needs your attention*, so nothing is lost. Press *Use both computers…* to make that
 computer a second person in your projects ([below](#moving-to-another-computer)).
 
-**A colleague joins** in three steps: send them what you shared, as a file (*As a file* in the Team tab); they open it
-with *Import a project* under *Projects*; in their copy, the Team tab offers them the team's folder
-([Choosing the shared folder](shared-folder.md#a-colleague-joins)).
+**A colleague joins** in three steps: send them what you shared, as a file (*As a file* on the Team page); they open it
+with *Import a project* under *Projects*; in their copy, the Team page offers them the team's folder ([Choosing the
+shared folder](shared-folder.md#a-colleague-joins)).
 
 **A round** first brings in what your colleagues shared, then writes what you shared that changed, so your copy writes
 with their decisions in force (a stricter AI setting, something taken back). What comes in follows the rules
@@ -101,10 +101,11 @@ waiting while you keep working. Nothing runs between two looks, and a project wi
 A look that finds nothing new costs almost nothing, also in a large project: ENLENS keeps count of what changes in the
 project and looks only at that. The first look after ENLENS starts looks at everything once.
 
-- **How often.** *How often ENLENS looks*, in the Team tab: from every minute to every 60 minutes, for all your
+- **How often.** *How often ENLENS looks*, on the Team page: from every minute to every 60 minutes, for all your
   projects.
-- **Pause.** *Pause* stops the rounds of this project; *Pause rounds for every project* (under *How often ENLENS
-  looks*) stops them all, until you resume, also across a restart. *Sync now* still works while paused.
+- **Pause.** *Pause* (in the *Team* tab) stops the rounds of this project; *Pause rounds for every project* (on the Team
+  page) stops them all, until you resume, also across a restart. *Sync now* still works
+  while paused.
 - **Offline.** When the folder cannot be reached (a network drive not connected, a laptop away from the office), the
   tab says *Offline* and ENLENS tries less and less often (with the usual 2 minutes: after 2, 4, 8 and 16 minutes,
   then every 30). Your work waits on your computer. The first round that reaches the folder, or a *Sync now* that
@@ -132,21 +133,20 @@ before*; until then they stay, also across a restart. The tab also shows, as nee
   update), work the cloud has not brought yet, a damaged file (only that colleague's work waits). Copies the cloud
   makes when two computers write at once (`000041 (1).zip`) are never read. When a colleague cannot read one of your
   files, your copy writes everything you share once more by itself: nobody waits for ever.
-- **People in the folder**, each with their ENLENS version and whether their newest work is in, and their role
-  ([below](roles.md#the-people-list-roles-and-the-hand-over)).
+- **People**, with their roles, are on the Team page ([below](roles.md#the-people-list-roles-and-the-hand-over)).
 - **Documents not on this computer**: documents your colleagues' work names but they keep out of the folder, each with
   *Add its file* ([below](#documents-kept-out-of-the-folder)).
 
 #### Documents kept out of the folder
 
-The switch **Keep documents marked Only a local AI or No AI out of the shared folder** is per project, and off unless
-you turn it on. With it on, the text and files of those documents, the AI's work on them, and the passages of them a
-check handed to the AI stay on your computer; colleagues add those files themselves. Your shared checks that read them
-still reach your colleagues, with the words their excerpts quote, your notes and the documents' titles
-([Privacy](privacy.md#working-together)); a colleague without the file keeps those excerpts as records.
+The switch **Keep documents marked Only a local AI or No AI out of the shared folder** (on the Team page) is per
+project, and off unless you turn it on. With it on, the text and files of those documents, the AI's work on them, and
+the passages of them a check handed to the AI stay on your computer; colleagues add those files themselves. Your shared
+checks that read them still reach your colleagues, with the words their excerpts quote, your notes and the documents'
+titles ([Privacy](privacy.md#working-together)); a colleague without the file keeps those excerpts as records.
 
 - **Once anyone in the team turns it on, it holds for everyone**, as the stricter AI setting does: *It is on for the
-  whole team because Ben has it on*. Offline, the tab names who had it on when the folder could last be reached.
+  whole team because Ben has it on*. Offline, the Team page names who had it on when the folder could last be reached.
 - **Turned on later** (or a document marked so while it is on), it takes what your copy had written of those documents
   out of the folder at the next round; your colleagues' copies do the same. What a colleague already brought into
   their project stays with them.
@@ -155,13 +155,13 @@ still reach your colleagues, with the words their excerpts quote, your notes and
 
 #### Stop using this folder
 
-At the bottom of the Team tab: your copy stops sending your shared work there and bringing in your colleagues'.
+On the Team page, after a question: your copy stops sending your shared work there and bringing in your colleagues'.
 Nothing in the folder is removed, and what came in stays; you can choose the folder again later. What should leave the
 folder, unshare first.
 
 ### As a file, without the folder
 
-For a one-off exchange, or a colleague without the shared folder. The Team tab's *As a file* (or the *Projects* page)
+For a one-off exchange, or a colleague without the shared folder. The Team page's *As a file* (or the *Projects* page)
 has the two downloads ([Project zips](#project-zips)).
 
 ```mermaid
@@ -201,9 +201,9 @@ There are three roles:
 | **Co-owner** | Any number of people the owner chose | The project's at once, in every copy. A Co-owner also answers proposals. |
 | **Member** | Everyone else, with no setting to make | A **proposal** to the owner and the Co-owners. |
 
-- **Who the owner is.** Whoever made the project, when it was made in ENLENS 0.17.0 or never left their computer
-  before. A project exchanged with an earlier ENLENS has no owner yet and works as before: the *Team* tab says *This
-  project has no owner yet* and offers **Become the owner**.
+- **Who the owner is.** Whoever made the project, when it was made in ENLENS 0.17.0 or never left their computer before.
+  A project exchanged with an earlier ENLENS has no owner yet and works as before: the Team page says *No owner yet*
+  and offers **Become the owner** on that card.
 - **Roles change by no click of yours.** A notice says it once (*Anna made Ben a Co-owner.*). A Co-owner whose ENLENS
   is older than this release cannot act as one: their changes still arrive as proposals.
 - **A Co-owner made a Member again** keeps what the project has taken. What they change from then on is a proposal.
@@ -334,9 +334,9 @@ On the *Projects* page (the project menu → *Manage projects*):
 - **Send what you shared** (0.17.0) puts the documents with their original files and the work you shared in one file,
   for a colleague: nothing you keep private is in it.
 - **Download the whole project** puts the whole project in one file: the database, the documents and their original
-  files, the codebooks, your private work too. It is for moving the project to another computer of yours: a colleague
-  on ENLENS 0.17.0rc5 or earlier would see all of it. The file of a document you removed is not in it. Both are also on a
-  check's page (under *Download*) and in the *Team* tab.
+  files, the codebooks, your private work too. It is for moving the project to another computer of yours: a colleague on
+  ENLENS 0.17.0rc5 or earlier would see all of it. The file of a document you removed is not in it. Both are also on a
+  check's page (under *Download*) and on the Team page.
 - **Import a project (.zip)** opens such a file as a new project. A damaged zip, or one whose database cannot be
   read, is refused with a plain message and leaves nothing behind.
 

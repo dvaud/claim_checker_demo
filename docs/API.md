@@ -987,6 +987,20 @@ Batch job `progress` is the check progress of the current hypothesis plus
 `{"batch_id": "b…", "checked": ["h…", …], "errors": [{"index", "text", "error"}], "stopped": null | "message", "total": 12}`.
 `GET …/hypotheses?batch=<batch_id>` lists that batch, in the order the hypotheses were given.
 
+Near-duplicates (0.18, roadmap N1; `nearduplicates.py`, by key words, no AI):
+`POST /api/projects/<p>/hypotheses/similar` `{"lines": ["…", "…"]}` (at most 500) →
+```json
+{"pairs": [{"a": 0, "b": 1, "score": 0.75, "differ": []},
+           {"a": 1, "b": 2, "score": 1.0, "differ": ["indicate", "predicted"]}],
+ "before": [[{"hyp_id": "h…", "text": "…", "created_at": "2026-11-03T10:12:00+00:00", "score": 0.8, "differ": [],
+              "who": {"id": "p…", "name": "Anna", "mine": false}}], []]}
+```
+`pairs`: lines of the list (0-based) that say nearly the same; `differ` names the words that make them claim different
+things (strength, direction, a negation), and then the page offers no merge. `before`: per line, the hypotheses checked
+before in the project that say nearly the same and claim the same (the closest first, at most 3): yours (`mine`) or a
+colleague's that came in through sync (`name`; `who` is null when the project does not know who checked it). A
+colleague's check they took back (withdrawn) is left out.
+
 ### Results
 
 `GET /api/projects/<p>/hypotheses?threshold=0.6&q=<words>&status=<status>&batch=<id>&limit=<n>` →

@@ -97,7 +97,8 @@ def test_the_download_places_say_which_zip_they_give():
     assert "Download as a zip" not in projects
     assert 'zipButton(p.name, "shared", { text: "Send what you shared" })' in projects
     assert 'zipButton(p.name, "all", { text: "Download the whole project"' in projects
-    assert "Open the Team tab" in projects and "enlens-drawer" in projects
+    # the storage space or shared folder is set up on the Team page (#/team); Join a team… is in the project menu
+    assert 'link({ href: "#/team" }, "Team page")' in projects and "Join a team… in the project menu" in projects
     assert 'zipButton(project, "shared", { text: "What you shared (.zip)"' in result
     assert 'zipButton(project, "all", { text: "Whole project (.zip)"' in result
     assert "Everything, to share or move." not in result

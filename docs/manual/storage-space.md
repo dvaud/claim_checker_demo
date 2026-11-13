@@ -5,8 +5,8 @@
 > **In short**
 > - A private storage space online, free at a team's size, at Backblaze (most research groups) or Cloudflare (large
 >   teams that grow quickly). ENLENS fills and reads it by itself; nobody installs anything or looks for a folder.
-> - The owner sets it up once, in the *Team* tab, in about five minutes; colleagues join from a link, with **Join a
->   team** under *Projects*.
+> - The owner sets it up once, on the *Team page* (*Manage the team* in the project menu), in about five minutes;
+>   colleagues join from a link, with *Join a team…* in the project menu.
 > - Everything is locked on your computer before it leaves it: the storage company cannot read your work.
 > - The owner can remove a colleague (their keys stop working) or move the team to another storage space.
 
@@ -25,8 +25,9 @@ Two are built in, each free up to 10 GB (a corpus of a few hundred PDFs is 1 to 
 
 ## Setting it up (the owner, once, about five minutes)
 
-Open the **Team** tab and choose *Backblaze…* or
-*Cloudflare…* under *Work together through a storage space*. The dialog walks you through it:
+Open the project menu at the top of the sidebar and choose *Manage the team* (or press *Set up a team* in the *Team*
+tab): that is the Team page. Under *A storage space (recommended)* choose *Backblaze…* or *Cloudflare…*. The dialog
+walks you through it:
 - *Backblaze:* make a free account (paste the address in your browser; choose **EU Central** as the region on the
   sign-up form: it cannot be changed later; if Backblaze's *Not so fast!* page keeps asking whether you are a robot, see
   below), open *Application Keys*, choose *Generate New Master Application Key*, and paste its *keyID* and
@@ -47,30 +48,35 @@ or Edge, and open *Application Keys* there too, where you are signed in.
 
 ## Inviting a colleague
 
-In the Team tab, *Invite a colleague…* makes a message with a link (it starts with
-`enlens://join#`). Send it privately: it holds the keys to your storage space. The colleague opens ENLENS, chooses
-**Join a team** under *Projects* (or *Join with an invite link…* in the Team tab of a copy they already have), and
-pastes the link. Their first rounds bring the documents and everything shared; you see them in the Team tab once your
-ENLENS has let them in, which it does by itself at its next round. A link works once; *Withdraw* takes back one not
-used yet.
+On the Team page, *Invite a colleague…* (under *The storage space*, in the owner's copy) makes a message with a link (it
+starts with `enlens://join#`). Send it privately: it holds the keys to your storage space. The colleague opens ENLENS
+and chooses *Join a team…* in the project menu (also a button on the *Projects* page, and *Join with the invite link…*
+under *Invited to a team?* when ENLENS is first set up), pastes the link, and ENLENS makes a new project for it. A copy
+they already have can use *Join with an invite link…* in its *Team* tab instead. Their first rounds bring the documents
+and everything shared; you see them under *People* on the Team page once your ENLENS has let them in, which it does by
+itself at its next round; until they have sent anything they are listed as *nothing sent yet*. A link works once;
+*Withdraw* takes back one not used yet.
 
-## In the Team tab
+## On the Team page
 
-The *storage space* section says where the space is, who is in it and the invites waiting. The
-owner's copy keeps the space's keys (*keeps the space's keys*); when the project's owner changes, the keys go to the
-new owner's copy by themselves. The storage account itself stays the person's who made it, who can always reach the
-space through the service's website: for a hand-over in full, the new owner moves the team to a storage space of
-their own (below). The owner can also:
-- **Remove** a colleague: their keys stop working, and the project's key is replaced for everyone else, so what is
-  written afterwards does not open for them. What they shared before stays in the project.
-- **Move to another storage space**, when the space is lost, unpaid or should change: set up a new one; every copy
-  writes what it shares there once more, and your colleagues' copies follow by themselves. When the old space cannot
-  be reached any more, send them new invites.
+The Team page is where the team itself is managed; the *Team* tab keeps only the day-to-day (what waits for your word,
+*Sync now*, what came in), with one quiet line, such as *Backblaze · 3 people · Manage the team*, that opens the page.
+The card *The storage space* says where the space is and the invites not used yet; *People* lists everyone in it. The
+owner's copy keeps the space's keys (*keeps the space's keys*); when the project's owner changes, the keys go to the new
+owner's copy by themselves. The storage account itself stays the person's who made it, who can always reach the space
+through the service's website: for a hand-over in full, the new owner moves the team to a storage space of their own
+(below). The owner can also:
+- **Remove** a colleague (*More* on their row under *People*; the copy that keeps the space's keys offers *Remove from
+  the team…*): their keys stop working, and the project's key is replaced for everyone else, so what is written
+  afterwards does not open for them. What they shared before stays in the project.
+- **Move to another storage space** (a fold on the card *The storage space*), when the space is lost, unpaid or should
+  change: set up a new one; every copy writes what it shares there once more, and your colleagues' copies follow by
+  themselves. When the old space cannot be reached any more, send them new invites.
 
 A file in the space that its part's member did not sign (someone wrote in another person's name) is *set aside*: it
-never comes into your project, and the section says so.
+never comes into your project, and the card says so (more under *Technical details*).
 
-**Stop using the storage space here** (at the foot of the Team tab) stops this copy and forgets its keys; nothing in
-the space is removed. To come back, ask the owner for a new invite.
+**Stop using the storage space here** (the last card of the Team page, *Leave the storage space*) stops this copy and
+forgets its keys; nothing in the space is removed. To come back, ask the owner for a new invite.
 
 The same rules as with a shared folder decide how your copies come together: [Work together](together.md#how-two-copies-come-together).

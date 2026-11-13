@@ -54,7 +54,7 @@ Three things hold everywhere:
 | | [How documents are read](manual/reading.md) | What is read and what is left out, the reading view, moving to a new reader |
 | | [Your bibliography](manual/bibliography.md) | Zotero next to your documents: what you have, what to find |
 | | [Notes, the research log and earlier versions](manual/notes-and-log.md) | Highlights and notes, the dated record of decisions, compare and restore |
-| | [Work together](manual/together.md) | Sharing, the Team tab, the owner, sync clashes, moving |
+| | [Work together](manual/together.md) | Sharing, the Team tab and page, the owner, clashes, moving |
 | | [A storage space of your team's own](manual/storage-space.md) | Set-up, invites, joining |
 | | [Choosing the shared folder](manual/shared-folder.md) | Cloud folders, the folder window |
 | | [Roles, proposals and what waits for your word](manual/roles.md) | Owner, Co-owner, Member; proposals; what the Team tab asks of you |

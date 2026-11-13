@@ -1,7 +1,7 @@
 // Projects: create, link an existing workspace folder, switch, remove.
 import { quickLookButton } from "./quicklook.js";
 import { App, api, h, icon, replace, append, toast, showError, field, navigate, dialog, confirmDialog, pageHead, P, fmt, download, button, downloadButton, card, input, tag, emptyState,
-  optionCards, switchControl, fold } from "../lib.js";
+  optionCards, switchControl, fold, link } from "../lib.js";
 import { MOVE_TITLE, MOVING, BOTH, NOT_FRESH, moveSummary, secondName, foreignServers, serverLine, movedText, linkCleanTitle, LINK_CLEAN } from "./move-state.js";   // roles
 import { zipButton } from "./share.js";   // 0.18: the two downloads, what you shared or the whole project
 import { FEATURES } from "../features.js";
@@ -157,11 +157,9 @@ function togetherCard() {
     h("p", { class: "muted small" }, FEATURES.together.what),
     h("div", { class: "tg-name" }, h("label", { class: "small", for: "tg-your-name" }, "Your name"), Object.assign(name, { id: "tg-your-name" }), save,
       h("span", { class: "muted small" }, "Colleagues see your judgements under this name.")),
-    // 0.18: the shared folder first (the Team tab), the file by hand as before
-    // the action after its sentence, never inside it (docs/DESIGN.md 6): it opens the Team tab beside the page
+    // 0.18: the storage space or shared folder first (the Team page), the file by hand as before
     h("p", { class: "small tg-folder" }, h("strong", {}, "Through a storage space or a shared folder: "), "your copies keep in step by themselves. ",
-      "In the Team tab beside any page, set up a storage space of your team’s own (recommended), or choose a folder your team shares (OneDrive, Dropbox, a network drive). A colleague who got an invite link chooses Join a team, above. ",
-      button({ kind: "quiet", sm: true, icon: "users", onClick: (e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("enlens-drawer", { detail: { tab: "team" } })); } }, "Open the Team tab")),
+      "Set it up on the ", link({ href: "#/team" }, "Team page"), " of the project. A colleague who got an invite link chooses Join a team… in the project menu."),
     h("p", { class: "small" }, h("strong", {}, "Or as a file:")),
     h("ol", { class: "small move-steps" },
       h("li", {}, "Choose “Send what you shared” on the project and send the file to your colleague (e-mail, a shared folder). Only what you shared goes in it."),

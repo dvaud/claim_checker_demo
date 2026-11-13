@@ -381,7 +381,19 @@ class S3Storage(Storage):
         if r.too_big:
             raise StorageProblem(f"{name} is larger than ENLENS reads.", TOO_LARGE)
         if r.status != 200:
-            raise self._problem(r, name, False)
+            problem = self._problem(r, name, False)
+            if problem.kind == DENIED and r.status == 403 and _xml_fields(r.body).get("Code", "") == "AccessDenied":
+                # Backblaze answers a key limited to a name prefix (a colleague's read key) with 403 AccessDenied, not
+                # 404, for a file that is not there (seen 13 November 2026 on the user's own bucket: every round of a
+                # colleague who had joined stopped at `space/moved.json`). The list, which that key may read, says
+                # which it is.
+                try:
+                    there = name in self.list(name)
+                except StorageProblem:
+                    there = True
+                if not there:
+                    raise StorageProblem(f"There is no file {name}.", NOT_FOUND)
+            raise problem
         return r.body
 
     def put(self, name: str, data: bytes) -> str:

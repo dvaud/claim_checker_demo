@@ -832,7 +832,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 
 ## N. Ideas for later
 
-**N1. Near-duplicate hypotheses** · Level 0
+**N1. Near-duplicate hypotheses** · Level 0 · built in 0.18.0
 - Lines of a list that say nearly the same are pointed out before checking ("Lines 1 and 2 are very close: check them
   as one?"), and so is a very similar hypothesis checked before in the project (a colleague's too, once L is built).
   Key words only, no AI. An offer, never an automatic merge: lines that differ in strength (*can be observed*,

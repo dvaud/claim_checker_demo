@@ -9,6 +9,7 @@ import { renderSources, renderDocument } from "./views/sources.js";
 import { renderSettings } from "./views/settings.js";
 import { renderSetup } from "./views/setup.js";
 import { renderProjects, newProjectDialog } from "./views/projects.js";
+import { joinDialog } from "./views/team-space.js";   // the project menu's Join a team… (a new project from an invite link)
 import { renderMap } from "./views/map.js";
 import { renderSearch } from "./views/search.js";
 import { renderProfile } from "./views/profile.js";
@@ -53,6 +54,8 @@ const ROUTES = [
   [/^\/settings(?:\/([^/]+))?$/, "settings", renderSettings],
   [/^\/setup$/, "", renderSetup],
   [/^\/projects$/, "", renderProjects],
+  // the team itself (views/team.js, loaded when first opened); reached from the project menu and the Team tab
+  [/^\/team$/, "", (view, params, query) => import("./views/team.js").then((m) => m.renderTeam(view, params, query))],
   [/^\/design$/, "", renderDesign],                       // not in the sidebar or Find: docs/DESIGN.md points to it
 ];
 
@@ -64,7 +67,7 @@ function pageTitle(nav, pathPart) {
     const v = place.views.find(([, , href]) => href === `#${pathPart}`);
     return v && v[1] !== place.title ? `${v[1]} · ${place.title}` : place.title;
   }
-  return { "/setup": "Set up", "/projects": "Projects", "/design": "Design reference" }[pathPart] || (FEATURES[nav] && FEATURES[nav].title) || "";
+  return { "/setup": "Set up", "/projects": "Projects", "/team": "Team", "/design": "Design reference" }[pathPart] || (FEATURES[nav] && FEATURES[nav].title) || "";
 }
 
 let cleanup = null;
@@ -154,8 +157,12 @@ function renderProjectSwitch() {
     trigger: [icon("folder", { size: 16 }),
       h("span", { class: "ps-name" }, h("span", { class: "ps-label" }, "Project"), h("span", { class: "ps-name-text" }, current ? current.name : "No project")),
       icon("chevron-down", { size: 14 })],
+    // Join a team… makes a new project from a colleague's invite link; Manage the team opens the current project's
+    // Team page (like Manage projects, a page reached from here rather than an eighth place in the sidebar)
     items: [...items, items.length ? "sep" : null, { text: "New project…", icon: "plus", onClick: () => newProjectDialog() },
-      { text: "Manage projects", icon: "sliders", href: "#/projects" }].filter(Boolean) });
+      { text: "Join a team…", icon: "link", onClick: () => joinDialog(null) },
+      { text: "Manage projects", icon: "sliders", href: "#/projects" },
+      current ? { text: "Manage the team", icon: "users", href: "#/team" } : null].filter(Boolean) });
   replace(box, details);
 }
 
