@@ -2,6 +2,9 @@
 
 ## 0.18.3 (November 2026): Nothing off to the side
 
+Wide grids tell you what is out of sight and open full screen, and the Documents page becomes a list of one-line
+documents that open, so no important information sits off to the right. Nothing in this release changes results.
+
 ### New
 
 - **Less scrolling sideways.** Wide grids, tables and lines now keep important information in view:
