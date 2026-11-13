@@ -214,3 +214,30 @@ def test_a_second_take_over_at_the_same_place_is_refused_in_words(team):
         with pytest.raises(ownership.NotAllowed, match="once before at this point.*would not reach them"):
             ownership.take_over(carol.ws)
         assert ownership.owner(carol.ws._conn()) == dana          # nothing written
+
+
+# ---- whose word removed a document (found by the randomised roles test, seeds 6 and 8) ------------------------------
+def test_a_removal_kept_by_the_new_owners_row_is_the_new_owners_word(team):
+    """Ben takes the project over; Anna, offline, removes a document; Carol, who heard only of Anna, takes it over in
+    turn, and her rows keep Anna's removal. When Ben follows Carol, the document leaves his copy by Carol's word (the
+    owner whose row keeps it removed), never by Anna's, who is a Member in his copy now."""
+    anna, ben, carol = team
+    doc = sorted(docs_of(anna))[0]
+    with ben:
+        ownership.take_over(ben.ws)            # (his record reaches no one yet)
+    _remove(anna, doc)
+    view(anna)
+    sync(anna, carol, rounds=2)
+    assert not has(carol, doc)
+    with carol:
+        ownership.take_over(carol.ws)
+    view(carol)
+    sync(carol, ben, anna, rounds=2)
+    assert has(ben, doc)                       # Anna's late word counts for nothing in Ben's copy
+    follow(ben, owner=carol.id)
+    sync(carol, ben, rounds=2)
+    assert not has(ben, doc)
+    with ben:
+        by = ben.ws.scalar("SELECT by FROM removed_docs WHERE doc_id=?", (doc,))
+        assert ownership.role_of(ben.ws._conn(), by) in ("owner", "co"), by
+        assert by == carol.id

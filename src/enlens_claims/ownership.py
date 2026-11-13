@@ -1889,10 +1889,21 @@ def _reconcile(ctx: _Ctx, doc: str, apply: bool) -> None:
         elif again and not ctx.followed(doc, "state") and not ctx.mine_lost(doc, "state"):
             # the project removed it: not followed here yet
             if apply:
-                who = ctx.names.get(k["state_by"], "a colleague")
-                why = (f"The owner ({who}) removed it from the project." if k["state_by"] == ctx.owner else
-                       f"{who[0].upper() + who[1:]} (a Co-owner) removed it from the project.")
-                ctx.remove_here(doc, why, k["state_by"])
+                # 0.18.1: whose word it is, in this copy: the removal's maker while they are the owner or a Co-owner
+                # here; else (a former owner, a Co-owner made a Member since) the owner, whose rows keep it removed
+                # (they wrote the project's documents again under their own place: `_Ctx.restamp`). Found by the
+                # randomised roles test: a removal was noted in the name of someone who is a Member in this copy.
+                maker = k["state_by"]
+                by = maker if maker == ctx.owner or (ctx.R.get(maker) or {}).get("role") == "co" else ctx.owner
+                who = ctx.names.get(by, "a colleague")
+                if by == ctx.owner and maker == ctx.owner:
+                    why = f"The owner ({who}) removed it from the project."
+                elif by == ctx.owner:
+                    why = (f"{ctx.names.get(maker, 'A former owner')} removed it from the project, and the owner "
+                           f"({who}) keeps it removed.")
+                else:
+                    why = f"{who[0].upper() + who[1:]} (a Co-owner) removed it from the project."
+                ctx.remove_here(doc, why, by)
                 ctx.follow(doc, "state")
             return
         others = [p for p in ctx.about("add", doc) if p["by"] != me and _era(p, k)]
