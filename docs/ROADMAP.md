@@ -569,6 +569,45 @@ its own)
   sync. The themes page shows which codes each theme holds. Nothing edits a codebook in the app, and themes cannot
   become codes.
 
+**K2. Theory documents: the lens, not the evidence** · Level 0, Level 2 or 3 optional · ENLENS candidate
+(`store.py` for the mark; `themes.py`, `profile.py`, `retrieve.py` and `terms.py` for leaving theory out;
+`codebooks.py` and the K1 editor for codes from theory)
+- **Why** (the Tovertafel project, 13 November 2026). Nicolini's *Practice theory, work, and organization* and
+  Meadows' *Thinking in Systems* are not about the Tovertafel: they are the theoretical framework the research is done
+  through. ENLENS treats them as evidence. They are 21% of the project's passages (1,033 of 4,896), and:
+  - 6 of the latest 30 themes are 66–96% these two books, two of them under names that sound like fieldwork (*Rooms
+    as physical settings* is 80% Meadows, *Organisational hierarchies* 66%);
+  - codebooks made from those themes carry it on: *Resources needed for implementation* is matched by *fish, yield,
+    price, profits* (Meadows' fishery), and *Feedback loops* has a Meadows sentence and a staff interview as its
+    examples side by side, so the labeller learns to find text like Meadows', not feedback loops in a care home;
+  - 146 of 1,435 labelling tasks coded the two books against the Tovertafel codebooks;
+  - 7 of 18 check tasks gave 2–4 of their 10 excerpts to the books; none of those 21 was used as evidence, so they
+    only took the place of excerpts that might have been.
+- **1. Mark a document as theory, and leave it out of the evidence** (Level 0). A document's role is *Theory* (the
+  framework the research is read through) or not, set by the researcher in the Documents list and on the document's
+  page, never guessed: a study that *uses* practice theory (*A social practice theory approach to … quizzes in
+  dementia care*) is still evidence. A theory document is still read, searched, opened and noted as now, but it is
+  left out of the themes, the labelling with codebooks, the excerpts a check reads, the key terms, the glossary's
+  counts and the evidence map. Marking or unmarking changes no result by itself: the page says which themes, labels
+  and checks were made with it in, and offers to make them again without it. Synced like any decision about a
+  document. In code the mark needs its own name (for example `role = "theory"`): *framework* already means a codebook.
+- **2. A codebook from your theory** (Level 0, Level 2 or 3 optional). A third way to start in the K1 editor, beside
+  *Start fresh* and *From the themes*: *From a theory document*. Codes are the theory's concepts (from Nicolini:
+  practice, sayings and doings, materials and tools, routines, zooming in and out; from Meadows: stock, flow,
+  reinforcing and balancing loop, delay, leverage point, system traps, bounded rationality, resilience, hierarchy),
+  each with its **definition quoted from the theory with its page**. Its **examples come from the evidence**, never
+  from the theory, and only once the researcher confirms them, so the labeller then finds a reinforcing loop in a care
+  home that never says "loop" (staff fear a resident will fail at the game, switch it on less, and grow less sure of
+  it). Level 0 offers the candidate concepts from the document's own structure and key terms (headings, glossary
+  terms, words set in italics or defined in the text: *a stock is …*); the optional AI part drafts the list and the
+  definitions, each quote checked against the text as everywhere, marked as a draft to edit. The codebook is then an
+  ordinary K1 codebook: edited, tried before labelling, used in checks and exports.
+- Related: N3 (your own working documents) is the other document that is kept in a project but is never a source;
+  both are a document's role, and should be built as one mark with three values (evidence, theory, working document).
+- *Already in ENLENS:* a check can be limited to some documents by hand; the reader recognises *Theory* and
+  *Theoretical framework* as section headings (`reader.py`). Nothing marks a whole document as theory, and every
+  document counts as evidence everywhere.
+
 ## L. Working together, live
 
 The owner's model (9 November 2026). Until 0.17.0 (0.14, `sync.py`) colleagues exchanged a project as one zip file by
@@ -846,7 +885,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - A tab under Documents for the researcher's own drafts and notes: kept in the project, read, coded and checked
   against the corpus like any document, but never a source (not in search results used as evidence, the glossary, the
   themes or the evidence map). Still to settle: whether their claims are found by themselves, and how their codes are
-  counted.
+  counted. Build it with K2's theory mark: one role per document with three values.
 
 **N4. The assessment in words** · Level 0
 - A short written assessment on each hypothesis's page, under its verdict, made by rules from the judgements and
