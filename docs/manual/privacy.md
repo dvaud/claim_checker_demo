@@ -70,10 +70,12 @@ interview transcript.
   added at once. The first answer in a new project becomes its default (nothing is preselected the first time); later
   the default is preselected.
 - **On the Documents page**, the list is grouped by who may read the documents (*Group by: AI setting*), each group
-  with a sentence on what the setting means; grouped otherwise (*Role*, *Needs a look*, *None*), an icon beside each
-  document's tick shows it. The arrow at the end of a line opens the document's details, where three buttons change it.
-  *Select these N* ticks a whole group; ticked documents are changed together with the bar that appears above the list. A note (*Why*, for example "publisher licence") is kept with the document and exported with the project;
-  it changes nothing.
+  with a sentence on what the setting means; grouped otherwise (*Role*, *Needs a look*, *None*), an icon beside the
+  tick marks the documents kept from Claude (*Only a local AI*, *No AI*). The arrow at the end of a line opens the
+  document's details, where three buttons change it. *Select these N* ticks a whole group; ticked documents are
+  changed together with the bar at the bottom of the window, and the message after a change has *Undo*. A note
+  (*Why*, for example "publisher licence") is kept with the document and exported with the project; it changes
+  nothing.
 - **For large corpora**, a `manifest.csv` may have `ai_access` (`cloud`, `local` or `none`) and `ai_note` columns.
 
 Projects made before 0.11 keep *Claude may read it* for every document until you change it; a project zip made before

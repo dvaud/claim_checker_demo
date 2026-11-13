@@ -636,12 +636,17 @@ marks of what is true of it now and of what needs a look, an arrow), and the arr
 under it that names each fact and holds its controls (`.doc-item`, `.doc-detail`), so a fact never needs a column
 header to be understood. A title is one line ending in "…" (whole when open), and the marks keep to at most half the
 line; on a closed line they are icons (what needs you keeps its amber tag look, without words), each named in its
-tooltip and to a screen reader, and the open panel says each in words. Such a list may be grouped by a choice above it (the Documents page: *AI setting*, *Role*, *Needs a look*,
-*None*), beside a box that filters it by words: each group under a head that stays at the top while it scrolls (its
-name, a count tag, a way to tick it all, and what it means in one sentence), an empty one saying *None.* when the
-grouping always has it; what the grouping says is not repeated on the line (who may read it shows as an icon beside the
-tick only when the list is grouped by something else). A change that moves an item to another group keeps the page
-where it was, and the item glows where it lands. Lists of entries (the research log, notes, answers) keep the same rhythm.
+tooltip and to a screen reader, and the open panel says each in words. Such a list may be grouped by a choice above it (the
+Documents page: *AI setting*, *Role*, *Needs a look*, *None*) and sorted (*Title*, *Newest*), beside a box that
+filters it by words; a line under them names each group with its count ("Claude: 266 documents"), each a jump to the
+group. A group's head stays under the page's top band while its items scroll and holds one short line: a chevron and
+its name (which fold the group, remembered per project), a count tag, and *Select these N* (*Clear these N* once
+all are ticked); what the group means is one sentence under the head, which scrolls. An empty group the grouping
+always has says *None.*. What the grouping says is not repeated on the line: who may read it shows as an icon beside
+the tick, only for what is kept from Claude, only when the list is grouped by something else. On a phone a title may
+take two lines. A change that moves an item to another group keeps the page where it was, opens that group, and the
+item glows where it lands. The bar that changes the ticked items sticks to the window's foot, says how many ticked
+items the filter or a fold hides, and its change can be undone. Lists of entries (the research log, notes, answers) keep the same rhythm.
 
 **Dense places** (the answers, excerpt cards, the codebook editor, the reading view, tables) keep their actions
 recognisable this way:
