@@ -34,7 +34,7 @@ what waits, for example *Waiting for Claude Code: 120 passages to label*. Then, 
 Without `--parallel`, it goes at the speed chosen in the ENLENS app (Slower 1, Normal 2, Faster 4 helpers at once).
 
 Each kind of task goes to a helper on the model ENLENS names for it: labels and links on Haiku, theme names,
-references, search words and checks on Sonnet, second opinions on Opus. Unsure answers go once to a stronger model. You follow the
+codes from a theory document, references, search words and checks on Sonnet, second opinions on Opus. Unsure answers go once to a stronger model. You follow the
 progress in the ENLENS app.
 
 A run can stop at any moment (a usage limit, a closed laptop, Ctrl+C): a batch handed out and not answered returns to

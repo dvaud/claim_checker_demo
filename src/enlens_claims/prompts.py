@@ -212,6 +212,26 @@ Output format
 {{"name": "at most six words", "name_quote": {{"passage": 1, "quote": "exact words"}},
  "description": "one sentence", "description_quote": {{"passage": 2, "quote": "exact words"}}}}
 {_JSON_RULE}"""
+    if kind == "theory_codes":  # 0.18.4 (K2 part 2): drafts for the codebook editor, each definition quoted
+        return f"""You draft the concepts of a theory document: the ideas a researcher reads other documents through (for
+example stock, flow and reinforcing loop in a book on systems thinking, or practice and routine in one on practice
+theory). Each concept becomes a draft code a person checks and edits.
+
+You are given the document's title, candidate concepts found without AI (its headings, the terms it defines, the words
+it uses often), and the passages where they are defined or used most. Give the theory's own concepts, at most 25, the
+most central first:
+- name: the concept's short name as the document writes it, at most six words (no quotation marks);
+- definition: one quote, copied exactly from one passage, at least three whole words, that says what the concept means
+  in this theory (a defining sentence where there is one, such as "a stock is ..."), with that passage's number;
+- reason: one line on why it is a concept of this theory and not a passing word.
+The candidates are hints: leave out those that are not concepts of the theory, and add a concept they miss when a
+passage defines it. Use only what the passages say, no outside knowledge. Give no examples: examples come from the
+researcher's own documents, never from the theory.
+
+Output format
+{{"concepts": [{{"name": "reinforcing loop", "definition": {{"passage": 2, "quote": "exact words"}},
+  "reason": "one line"}}], "note": null}}
+{_JSON_RULE}"""
     if kind == "resolve":
         return f"""You find chains of references in consecutive passages of one document: the places that refer to the same
 thing (a plant, a policy, a country, a group of people, a technology).
@@ -369,6 +389,12 @@ def user_prompt(kind: str, payload: dict, codes_once: bool = False) -> str:
         for p in payload["passages"]:
             src = (p.get("title") or "untitled") + (f", page {p['page']}" if p.get("page") else "")
             parts.append(f"P{p['n']} | {src}\n{p['text']}")
+        return "\n\n".join(parts)
+    if kind == "theory_codes":
+        parts = [f"THEORY DOCUMENT: {payload.get('title') or 'untitled'}",
+                 "CANDIDATE CONCEPTS (found without AI): " + (", ".join(payload.get("candidates") or []) or "none")]
+        for p in payload["passages"]:
+            parts.append(f"P{p['n']}" + (f" (page {p['page']})" if p.get("page") else "") + f"\n{p['text']}")
         return "\n\n".join(parts)
     if kind == "resolve":
         parts = [f"DOCUMENT: {payload.get('title') or 'untitled'}"]
