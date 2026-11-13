@@ -2,6 +2,9 @@
 
 ## 0.18.2 (November 2026): Sharing you can find, and a team you can see
 
+Share an item with one press and see where it goes, find your team without opening the research log, and read more of
+an excerpt where the excerpt ends. Nothing in this release changes results.
+
 ### New
 
 - **More of an excerpt is *more…* at its end.** On a check's result page, the *In context* button in each excerpt
