@@ -1417,7 +1417,9 @@ def test_the_guide_and_tabs_agree_on_counts():
 # and the file name moved into a row's panel.
 def test_the_documents_title_column_keeps_its_room():
     assert rule(".doc-file").get("overflow-wrap") != "anywhere", ".doc-file breaks anywhere"
-    assert re.fullmatch(r"1 1 \d+(\.\d+)?em", rule(".doc-main .doc-title").get("flex", "")), "a title has no room of its own in em"
+    # 0.18.5: the title is the line's first column and takes what is left; the marks keep to at most half the row
+    assert rule(".doc-main").get("grid-template-columns", "").startswith("minmax(0, 1fr)"), "a title has no room of its own"
+    assert rule(".doc-marks").get("max-width") == "50cqw", "the marks can squeeze the title"
     js = VIEW_JS["sources.js"]
     assert 'h("div", { class: "doc-title", title: d.title && d.file ?' in js, "the Documents title has no doc-title class"
     assert ".split(/(?<=[_.-])/)" not in js, "a file name breaks after its dot, before its extension"

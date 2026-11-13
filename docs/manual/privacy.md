@@ -69,9 +69,10 @@ interview transcript.
 - **When you add documents**, the page asks *Who may read these documents with AI?*; one answer covers everything
   added at once. The first answer in a new project becomes its default (nothing is preselected the first time); later
   the default is preselected.
-- **On the Documents page**, each document's line shows who may read it (*Claude*, *Local AI* or *No AI*); the arrow at
-  the end of the line opens its details, where three buttons change it. Tick several documents to change them together
-  with the bar that appears above the list. A note (*Why*, for example "publisher licence") is kept with the document and exported with the project;
+- **On the Documents page**, the list is grouped by who may read the documents (*Group by: AI setting*), each group
+  with a sentence on what the setting means; grouped otherwise (*Role*, *Needs a look*, *None*), an icon beside each
+  document's tick shows it. The arrow at the end of a line opens the document's details, where three buttons change it.
+  *Select these N* ticks a whole group; ticked documents are changed together with the bar that appears above the list. A note (*Why*, for example "publisher licence") is kept with the document and exported with the project;
   it changes nothing.
 - **For large corpora**, a `manifest.csv` may have `ai_access` (`cloud`, `local` or `none`) and `ai_note` columns.
 

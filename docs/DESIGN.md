@@ -634,7 +634,13 @@ wraps its words to the reading column; only a cell that is a figure stays on one
 several facts and settings (the Documents page) is no table at all: an item is one line (its tick, its title, the
 marks of what is true of it now and of what needs a look, an arrow), and the arrow or a click on the line opens a panel
 under it that names each fact and holds its controls (`.doc-item`, `.doc-detail`), so a fact never needs a column
-header to be understood. Lists of entries (the research log, notes, answers) keep the same rhythm.
+header to be understood. A title is one line ending in "…" (whole when open), and the marks keep to at most half the
+line. Such a list may be grouped by a choice above it (the Documents page: *AI setting*, *Role*, *Needs a look*,
+*None*), beside a box that filters it by words: each group under a head that stays at the top while it scrolls (its
+name, a count tag, a way to tick it all, and what it means in one sentence), an empty one saying *None.* when the
+grouping always has it; what the grouping says is not repeated on the line (who may read it shows as an icon beside the
+tick only when the list is grouped by something else). A change that moves an item to another group keeps the page
+where it was, and the item glows where it lands. Lists of entries (the research log, notes, answers) keep the same rhythm.
 
 **Dense places** (the answers, excerpt cards, the codebook editor, the reading view, tables) keep their actions
 recognisable this way:

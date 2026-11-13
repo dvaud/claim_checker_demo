@@ -68,28 +68,56 @@
 .doc-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 8px 10px 8px 14px; cursor: pointer; }
 .doc-row:hover { background: var(--surface-2); }
 .doc-item[data-open="true"] > .doc-row { background: var(--accent-soft); }
-.doc-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
-.doc-main .doc-title { flex: 1 1 16em; min-width: 0; font-size: var(--fs-doc); line-height: 1.35; -webkit-line-clamp: 1; overflow-wrap: anywhere; }
+/* the open document's edge runs down its line and its panel together */
+.doc-item[data-open="true"] { box-shadow: inset 3px 0 0 var(--accent); }
+/* a document that just moved to another group glows where it lands (the reading view's glow) */
+.doc-item.doc-glow > .doc-row { animation: dv-glow 1.6s ease-out; }
+/* the tick, and who may read it with AI as an icon in a gutter of its own when the list is grouped by something else */
+.doc-lead { display: inline-flex; align-items: center; gap: 8px; }
+.doc-tick { accent-color: var(--accent); }
+.doc-ai { display: inline-flex; color: var(--muted); }
+.doc-ai[data-level="local"], .doc-ai[data-level="none"] { color: var(--text); }
+/* 0.18.5: the title takes the line and ends in "…" (whole when the row is open); the marks keep to the right, at most
+   half the row, so every title starts and ends in the same place whatever the marks say */
+.doc-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-width: 0; }
+.doc-main .doc-title { min-width: 0; font-size: var(--fs-doc); line-height: 1.35; -webkit-line-clamp: 1; overflow-wrap: anywhere; }
 .doc-item[data-open="true"] .doc-main .doc-title { -webkit-line-clamp: unset; }
-.doc-marks { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.doc-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 8px; min-width: 0; max-width: 50cqw; }
+.doc-marks:empty { display: none; }
+.doc-flag { white-space: nowrap; }
+/* one group per AI setting: its name, how many, what it means, and a way to tick them all */
+/* above the list: the filter by words, and the choice of how to group it */
+.docs-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 var(--space-4); }
+.docs-tools > .search-field { flex: 1 1 16em; max-width: 28em; }
+.docs-group-by { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.doc-group + .doc-group { margin-top: var(--space-5); }
+/* a group's head: its name, how many and the way to tick them all on one line, what it means on the next; it stays
+   at the top while its documents scroll under it */
+.doc-group-head { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; margin: 0 0 var(--space-2); padding: 6px 0; background: var(--bg); }
+.doc-group-head > h3 { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-body); }
+.doc-group-head > h3 > .icon { color: var(--text-2); }
+.doc-group-sub { grid-column: 1 / -1; margin: 0; color: var(--text-2); font-size: var(--fs-small); }
+.doc-group-none { margin: 0 0 0 var(--space-4); }
 .doc-marks .owner-doc { display: contents; }
 .doc-toggle .icon { transition: transform .15s; }
 .doc-toggle[aria-expanded="true"] .icon { transform: rotate(180deg); }
-.doc-detail { padding: 4px 14px 14px 44px; box-shadow: inset 3px 0 0 var(--accent); }
+.doc-detail { display: flex; flex-direction: column; padding: 4px 14px 14px 44px; }
 .doc-detail[hidden] { display: none; }
 .doc-detail-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 12px 24px; margin: 12px 0 0; }
 .doc-detail-grid dt { color: var(--muted); font-size: var(--fs-small); }
 .doc-detail-grid dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; margin: 0; }
 .doc-detail-grid .seg { min-width: 0; flex-wrap: wrap; }
 .doc-detail-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
-.doc-why { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.docs-pick-all { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 var(--space-2) 16px; }
+.doc-why { max-width: 100%; margin-left: var(--space-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* a long file name breaks after _ or - (its <wbr>), and only a part longer than the line breaks inside */
 .doc-file { font-size: var(--fs-xs); color: var(--muted); font-family: var(--font-mono); overflow-wrap: break-word; min-width: 0; }
 .owner-doc { margin: var(--space-1) 0 0; }   /* 0.18 (L2): Waiting for the owner, or In your copy only (views/owner.js proposalChip) */
 @container (max-width: 520px) {
-  .doc-main .doc-title { flex-basis: 100%; -webkit-line-clamp: 2; }
+  .doc-main { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .doc-main .doc-title { -webkit-line-clamp: 2; }
+  .doc-marks { justify-content: flex-start; max-width: none; }
   .doc-detail { padding-left: 14px; }
+  .doc-detail-foot { order: -1; margin: 8px 0 4px; padding: 0 0 8px; border-top: 0; border-bottom: 1px solid var(--border); }   /* on a phone, Open first */
   .doc-detail-grid { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
   .doc-detail-grid dd { margin-bottom: 8px; }
 }
@@ -121,7 +149,6 @@
 .terms-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
 .terms-panel p { margin: 4px 0; }
 .terms-pick { gap: 6px; margin: 6px 0; }
-.access-counts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 12px; }
 .access-options { margin-top: 6px; }
 .access-banner, .access-ask { margin-bottom: 12px; }
 .access-ask h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
