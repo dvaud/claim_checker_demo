@@ -258,6 +258,9 @@ CREATE TABLE IF NOT EXISTS sync_refused(kind TEXT, key TEXT, what_json TEXT, via
 -- 0.18.1 part A (documents, theory, concepts, team copies): new tables below this line
 -- end of 0.18.1 part A
 -- 0.18.1 part B (AI mix, checks, retractions): new tables below this line
+-- B5 (retractions.py): what Crossref said about each DOI asked, and when; notices_json is a list of {type, doi, date,
+-- source}, empty when nothing updates the work
+CREATE TABLE IF NOT EXISTS retractions(doi TEXT PRIMARY KEY, checked_at TEXT, notices_json TEXT);
 -- end of 0.18.1 part B
 """
 SCHEMA = SCHEMA.replace("{PLACES_TABLE}", PLACES_TABLE)

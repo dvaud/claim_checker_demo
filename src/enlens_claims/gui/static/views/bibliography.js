@@ -4,7 +4,7 @@
 // bibliography.
 import { featureEyebrow, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, watchJob, P, confirmDialog, emptyState, TERMINAL,
-  dialog, session, download, plural, spinner, button, downloadButton, fileButton, link, notice, card, input, select, fold, stopButton, choice, foundWords, readTextFile, safeHref, cpToIndex } from "../lib.js";
+  dialog, session, download, plural, spinner, button, tag, downloadButton, fileButton, link, notice, card, input, select, fold, stopButton, choice, foundWords, readTextFile, safeHref, cpToIndex } from "../lib.js";
 import { simpleProgress, jobError } from "./progress.js";
 import { accessChoice } from "./ai-access.js";
 
@@ -73,8 +73,51 @@ export async function renderBibliography(view) {
         choice({ filter: true, label: "Show the list", value: currentTab(), "aria-controls": "bib-list",
           // only the list under the card is drawn again, so the focus stays on the choice
           onPick: (k) => { tab = k; session(`bib-tab:${project}`, k); clear(body); drawLists(); },
-          options: TABS.map(([k, label, ic]) => [k, [icon(ic, { size: 13 }), label], fmt.num(c[k] || 0)]) })));
+          options: TABS.map(([k, label, ic]) => [k, [icon(ic, { size: 13 }), label], fmt.num(c[k] || 0)]) })),
+      retractionBar());
   }
+
+  // 0.18.1 (B5): retractions and corrections, looked up in Crossref when the person asks (sends DOIs only)
+  const RETRACT_TEXT = { retraction: "Retracted", correction: "Corrected", expression_of_concern: "Expression of concern", erratum: "Corrected", corrigendum: "Corrected", withdrawal: "Withdrawn", removal: "Removed" };
+  const SERIOUS = new Set(["retraction", "withdrawal", "removal"]);
+  function retractionBar() {
+    const r = (data && data.retractions) || {};
+    const btn = button({ sm: true, disabled: !!r.local_only, title: r.local_only ? "Online lookups are off on this computer (local-only)" : "Sends the works’ DOIs, and nothing else, to Crossref. Works whose document is marked No AI are left out.",
+      onClick: async () => {
+        btn.disabled = true;
+        try {
+          const j = await api("POST", `${base}/retractions/check`, {});
+          followRetractions(j.job.id);
+        } catch (e) { showError(e); btn.disabled = false; }
+      } }, icon("search", { size: 13 }), "Check for retractions");
+    const said = r.local_only ? "Online lookups are off on this computer, so nothing is sent."
+      : r.checked_at ? `Last checked ${fmt.dateShort(r.checked_at)}: ${r.affected ? plural(r.affected, "work has a notice", "works have notices") : "no retractions or corrections found"}.`
+        : "Not checked yet. ENLENS asks Crossref only when you press the button.";
+    return h("div", { class: "bib-retract row" }, h("p", { class: "grow muted small" }, said), btn);
+  }
+  function followRetractions(jobId) {
+    jobBox.hidden = false;
+    const pb = h("div", {});
+    const stop = stopButton({ onClick: () => api("POST", `/api/jobs/${P(jobId)}/cancel`).catch(showError) });
+    replace(jobBox, card({ as: "div", title: "Checking for retractions", action: stop }, pb));
+    const w = watchJob(jobId, (job) => {
+      replace(pb, simpleProgress(job, (p) => p.total ? `${fmt.num(p.done || 0)} of ${fmt.num(p.total)} DOIs asked` : "Starting…"));
+      if (TERMINAL.has(job.state)) stop.hidden = true;
+    });
+    watchers.push(w);
+    w.promise.then(async (job) => {
+      if (job.state === "done") {
+        jobBox.hidden = true;
+        const c = job.result || {};
+        toast(`${plural(c.looked_up || 0, "DOI", "DOIs")} checked: ${c.notices ? plural(c.notices, "work has a notice", "works have notices") : "no retractions or corrections"}${c.no_ai ? `. ${plural(c.no_ai, "work was", "works were")} left out (No AI)` : ""}.`, "ok", { ttl: 7000 });
+        await load();
+      } else { if (job.state === "error") replace(pb, jobError(job)); else jobBox.hidden = true; draw(); }
+    }).catch(showError);
+  }
+  // the warning on a work: a retraction is serious, a correction or an expression of concern milder
+  const noticeTags = (w) => (w.notices || []).length ? h("div", { class: "bib-notices" }, w.notices.map((n) => tag({ kind: "attention",
+    title: `Crossref lists a ${(n.type || "notice").replace(/_/g, " ")} for this work${n.date ? ` dated ${n.date}` : ""}${n.doi ? ` (notice DOI ${n.doi})` : ""}${n.source ? `, source: ${n.source}` : ""}. Checked ${fmt.dateShort(n.checked_at)}.` },
+    SERIOUS.has(n.type) ? h("strong", {}, RETRACT_TEXT[n.type] || n.type) : (RETRACT_TEXT[n.type] || (n.type || "Notice").replace(/_/g, " ")), n.date ? ` ${n.date}` : ""))) : null;
 
   const changeText = (bib) => bib.kind !== "zotero" ? "Use a newer file or Zotero" : bib.items ? "Choose other works or a file" : "Use another collection or file";
 
@@ -292,6 +335,7 @@ export async function renderBibliography(view) {
 
   const workCell = (w, opts = {}) => h("div", { class: "bib-work" },
     h("div", { class: "bib-title" }, w.title),
+    noticeTags(w),
     h("div", { class: "bib-meta" }, [w.cite || null, w.type || null, w.container || null].filter(Boolean).map((x, i) => [i ? h("span", { class: "sep" }, "·") : null, h("span", {}, x)]),
       opts.links === false ? null : findLinks(w)));
   const findLinks = (w) => [

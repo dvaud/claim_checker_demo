@@ -21,6 +21,7 @@ const KEYWORDS = {
   // 0.18.1 part A: its words below this line
   // end of 0.18.1 part A
   // 0.18.1 part B: its words below this line
+  "retractions and corrections": "retracted retraction retractions corrected correction expression concern crossref retraction watch doi withdrawn erratum",
   // end of 0.18.1 part B
 };
 
@@ -64,6 +65,7 @@ export const ACTIONS = [
   // 0.18.1 part A: its actions below this line
   // end of 0.18.1 part A
   // 0.18.1 part B: its actions below this line
+  ["Check for retractions", "on the Bibliography", "#/bibliography", "alert-triangle", "retracted retraction corrected correction crossref doi withdrawn check works"],
   // end of 0.18.1 part B
 ];
 

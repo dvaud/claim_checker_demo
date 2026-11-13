@@ -85,6 +85,11 @@ export const FEATURES = {
   // 0.18.1 part A (documents, theory, concepts, team copies): its features below this line
   // end of 0.18.1 part A
   // 0.18.1 part B (AI mix, checks, retractions): its features below this line
+  retractions: {
+    section: "project", title: "Retractions and corrections", icon: "alert-triangle", href: "#/bibliography", ai: "none",
+    what: "Asks Crossref, when you press a button, whether the works of your bibliography and your documents have been retracted, corrected or flagged. Only DOIs are sent; works whose document is marked No AI are left out.",
+    overview: false,   // a button and a warning on the Bibliography, and a mark on excerpts
+  },
   // end of 0.18.1 part B
 };
 
