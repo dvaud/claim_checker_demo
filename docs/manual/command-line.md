@@ -76,6 +76,7 @@ enlens --ws myproject search "electrolyser imports" --mode phrase --out hits.csv
 enlens --ws myproject search water --collocates                                    # the words around the hits
 enlens --ws myproject terms --rebuild                                              # the glossary; --q water filters
 enlens --ws myproject concept "proton exchange membrane" --references              # a concept card as JSON
+enlens --ws myproject concept-map --n 40 [--doc ID] [--year-from 2015] [--json]    # the concept map, in words
 enlens --ws myproject profile --keywords-only --out profile.xlsx                   # codes by keywords, no model
 enlens --ws myproject profile --framework sdg_goals --level group --limit 50       # the AI labels 50 passages
 enlens --ws myproject themes --k 20 --mode auto --name-with-model --out themes.xlsx

@@ -1746,6 +1746,23 @@ terms.
 - `POST /api/projects/{p}/concept-groups/{term id}` `{"groups": {name: [doc ids]}}` (two to six sets, not stored) →
   `{"node", "label", "groups": [{"name", "documents_in_group", "theory_left_out", …the same profile}]}`.
 
+**The concept map** (roadmap D1, `conceptmap.py`). Every route takes the same filters, each optional:
+`doc={id}[,{id}…]`, `theme={run id}:{theme id}`, `framework={codebook}&code={code}`, `year_from={yyyy}`,
+`year_to={yyyy}`.
+
+- `GET /api/projects/{p}/concept-map[?n=60&…filters]` → `{"built", "filters", "n", "passages" (in scope),
+  "concepts_in_scope", "nodes": [{"id" (a term id), "label", "passages", "group" (1… or null), "x", "y" (0 to 1, for a
+  map 1.6 times as wide as high)}], "edges": [{"a", "b", "together", "pmi"}], "links": [{"a", "b", "relation",
+  "source"}], "groups": [{"group", "size", "names"}], "links_off_map"}`. `n` is 10 to 150. 400 for a malformed filter
+  or an unknown codebook, 404 for a set of themes that is gone.
+- `GET /api/projects/{p}/concept-map/options` → `{"documents": [{"doc_id", "title"}], "themes": {"run_id", "themes":
+  [{"theme_id", "name"}]}, "codebooks": [{"name", "title", "codes": [{"code", "description"}]}], "years": [yyyy]}`:
+  what the filters can choose from (evidence documents only).
+- `GET /api/projects/{p}/concept-map/edge?a={term id}&b={term id}[&…filters]` → `{"a", "b" ({"node", "label"}),
+  "together", "pmi", "link": {"relation" (seen from a), "source", "sentences"} | null, "passages": [{"passage_id",
+  "doc_id", "title", "page", "location", "text", "start"}]}` (the first 5, by document). 400 without both, 404 for a
+  term the glossary does not know.
+
 Links found from the text (roadmap D2, `textrelations.py`) need no route of their own: they are rows of the concept
 page's `related.links` with `"source": "pattern"` and their `"sentences"` (`[{"doc_id", "title", "page", "start",
 "end", "quote"}]`); relations gain `effect`, `effect_of`, `replaces` and `replaced_by`.

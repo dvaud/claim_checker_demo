@@ -1,7 +1,7 @@
 // Concepts (F3): a searchable glossary of the terms the documents use, grouped into concepts, and the card of one
 // concept: its wordings, the documents that discuss it, the passages as concordance lines, and related concepts
 // (a person accepts or rejects the links proposed by search by meaning or by the AI).
-import { featureEyebrow, withAI } from "../features.js";
+import { featureEyebrow, withAI, viewTabs } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, watchJob, P, emptyState, debounce, switchControl, plural, shortTitle, runningJob, button, link, notice, card, tag, input, select, textarea, fold, readsLine, inset, searchHref } from "../lib.js";
 import { MiniJob, jobCard as jobCardOf } from "./progress.js";
 import { pathsCard, timeCard } from "./concept-paths.js";   // 0.18.1: D3 and D4
@@ -37,6 +37,7 @@ export async function renderConcepts(view, params, query) {
   const watchers = [];
 
   view.appendChild(pageHead("Concepts", { eyebrow: featureEyebrow("concepts"), sub: "The terms the documents use, grouped into concepts you can follow from one document to the next." }));
+  view.appendChild(viewTabs("concepts", "concepts"));   // D1: Glossary | Map
   if (noDocuments()) { view.appendChild(addDocumentsFirst("The glossary")); return; }
 
   const jobBox = h("section", { class: "section", hidden: true, "aria-label": "Progress" });

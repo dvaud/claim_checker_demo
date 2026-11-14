@@ -455,6 +455,16 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--open", action="store_true", help="start ENLENS afterwards (or show the copy already running)")
     p.add_argument("--home", help="data folder built into the icon (default: ~/enlens, or ENLENS_HOME)")
     # 0.18.1 part A (documents, theory, concepts, team copies): its subcommands below this line; name each in _PART_A
+    p = sub.add_parser("concept-map", help="the concept map (D1): concepts mentioned together more often than by "
+                       "chance, in groups, with your links; words or --json")
+    p.add_argument("--n", type=int, default=60, help="concepts on the map (10 to 150, default 60)")
+    p.add_argument("--doc", action="append", help="only this document (an id; repeat for more)")
+    p.add_argument("--theme", help="only the passages of a theme: <run id>:<theme id>")
+    p.add_argument("--framework", help="the codebook of --code")
+    p.add_argument("--code", help="only the passages labelled with this code")
+    p.add_argument("--year-from", type=int)
+    p.add_argument("--year-to", type=int)
+    p.add_argument("--json", action="store_true", help="the whole map as JSON (with its layout)")
     # end of 0.18.1 part A
     # 0.18.1 part B (AI mix, checks, retractions): its subcommands below this line; name each in _PART_B
     p = sub.add_parser("retractions", help="check the DOIs of the bibliography and the documents for retractions and "
@@ -1131,10 +1141,43 @@ def _write_csv(path: str, rows: list[dict]) -> None:
 
 
 # 0.18.1 part A (documents, theory, concepts, team copies): its commands, run with the project open
-_PART_A: tuple[str, ...] = ()
+_PART_A: tuple[str, ...] = ("concept-map",)
 
 
 def _cmd_part_a(a, ws) -> int:
+    if a.cmd == "concept-map":
+        from . import conceptmap
+
+        f = conceptmap.Filters(docs=a.doc, year_from=a.year_from, year_to=a.year_to)
+        if a.theme:
+            run, _, tid = a.theme.rpartition(":")
+            if not run or not tid.isdigit():
+                print("A theme is <run id>:<theme id>.", file=sys.stderr)
+                return 1
+            f.theme = (run, int(tid))
+        if a.code:
+            if not a.framework:
+                print("Say the codebook of the code with --framework.", file=sys.stderr)
+                return 1
+            f.code = (a.framework, a.code)
+        for y in (a.year_from, a.year_to):
+            if y is not None and not 1 <= y <= 9999:
+                print("A year is a number from 1 to 9999.", file=sys.stderr)
+                return 1
+        f.applied = f.describe()
+        try:
+            m = conceptmap.concept_map(ws, f, a.n)
+        except KeyError:
+            print("No such set of themes: see enlens themes.", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        if a.json:
+            _print(m)
+        else:
+            print(conceptmap.as_text(m))
+        return 0
     return 1
 # end of 0.18.1 part A
 
