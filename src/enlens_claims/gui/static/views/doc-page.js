@@ -423,7 +423,7 @@ export async function renderDocument(view, [docId], query) {
         x0(s) ? act("link", "Every mention of this", (x) => { openTab("refs"); panels.refs.lookup(x); }) : null,
         act("tag", "Label it with a code", (x) => { openTab("codes"); panels.codes.labelSelection(x); }),
         // 0.18.8 (N3): a sentence of your own draft, checked against the corpus (the draft itself is never a source)
-        docRole === "working" && s.text.length <= 1000 ? act("list-checks", "Check against the corpus", (x) => navigate(`#/hypotheses?text=${encodeURIComponent(x.text)}`)) : null);
+        docRole === "working" && s.text.length <= 1000 ? act("list-checks", "Check against the corpus", (x) => navigate(`#/hypotheses?text=${encodeURIComponent(x.text)}&from=${encodeURIComponent(docId)}`)) : null);
     }
     const lr = list.getBoundingClientRect();
     const rect = (s.rect) || lr;

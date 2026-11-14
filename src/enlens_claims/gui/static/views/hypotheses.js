@@ -38,6 +38,10 @@ export async function renderHypotheses(view, params, query) {
   if (oldList && !draft.text) draft.text = String(oldList);
   if (oldList !== null) session("batchDraft", null);
   if (query.text) draft.text = String(query.text).slice(0, MAX_CHARS);   // "Check a hypothesis about this…"
+  // 0.18.8 (N3): words from a document's text (a working document's Check against the corpus): the check remembers
+  // the document, so the document's page lists it. Kept while the box holds text, forgotten once it is checked.
+  if (query.text) { if (query.from) draft.fromDoc = String(query.from); else delete draft.fromDoc; }
+  let fromDoc = draft.fromDoc || null;
   session("draft", Object.keys(draft).length ? { ...draft } : null);
 
   // ---- the head: the place, its views, the downloads of every answer
@@ -53,7 +57,9 @@ export async function renderHypotheses(view, params, query) {
   const mapTab = tabs ? tabs.querySelector('a[href="#/map"]') : null;
   const setMapTab = (batch) => { if (mapTab) mapTab.setAttribute("href", batch ? `#/map?batch=${encodeURIComponent(batch)}` : "#/map"); };
 
-  if (query.text) view.appendChild(h("p", { class: "muted small hyp-chosen-note" }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check."));
+  const fromTitle = fromDoc ? ((docs.find((d) => d.doc_id === fromDoc) || {}).title || "your document") : null;
+  if (query.text) view.appendChild(h("p", { class: "muted small hyp-chosen-note" }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check.",
+    fromTitle ? ` The check will be listed on the page of ${fromTitle}.` : ""));
   if (!App.modelConfigured()) {
     view.appendChild(notice({ kind: "attention", class: "hyp-setup-notice" },
       h("p", {}, "No AI model is set up yet, so checks cannot run."), link({ kind: "next", href: "#/settings/model" }, "Set up the AI model")));
@@ -89,7 +95,10 @@ export async function renderHypotheses(view, params, query) {
   const suggestBox = h("div", { class: "suggest", "aria-live": "polite" });
   let suggestions = [];
   const fwLabel = () => (frameworks.find((f) => f.name === fwSelect.value) || {}).label || "code";
-  const saveDraft = () => session("draft", ta.value || code ? { text: ta.value, framework: fwSelect.value, code, codeDesc } : null);
+  const saveDraft = () => {
+    if (!ta.value.trim()) fromDoc = null;   // an emptied box is a new hypothesis, not the document's words
+    session("draft", ta.value || code ? { text: ta.value, framework: fwSelect.value, code, codeDesc, ...(fromDoc ? { fromDoc } : {}) } : null);
+  };
   const setCode = (c, d) => {
     code = c || ""; codeDesc = d || "";
     const fwName = fwSelect.value;
@@ -528,6 +537,7 @@ export async function renderHypotheses(view, params, query) {
     const body = { text, decompose: o.decompose, expand: o.expand, k: o.k, per_doc: o.per_doc, semantic: o.semantic };
     if (o.doc_ids) body.doc_ids = o.doc_ids;
     if (fwSelect.value && code) { body.framework = fwSelect.value; body.code = code; }
+    if (fromDoc && docs.some((d) => d.doc_id === fromDoc)) body.from_doc = fromDoc;   // 0.18.8 (N3): unless it is gone
     if (prepared && prepared.text === text) {
       const parts = prepared.parts.map((p) => ({ text: p.text.trim(), role: p.role }));
       const short = parts.findIndex((p) => p.text.length < MIN_CHARS);
@@ -543,6 +553,7 @@ export async function renderHypotheses(view, params, query) {
       const how = prepared && prepared.text === text ? (prepared.parts.length > 1 ? `${prepared.parts.length} parts, as you set them` : "as you set it") : "";
       busy = false;
       startedText = text;
+      if (fromDoc) { fromDoc = null; saveDraft(); }   // the next hypothesis written here is not the document's
       discardPrepared();
       followCheck(r.job.id, text, how);
     } catch (err) { busy = false; showError(err); }

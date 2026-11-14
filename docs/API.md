@@ -924,11 +924,15 @@ commas, semicolons or tabs.
  "second_pass": false,                        // default from settings (see below)
  "parts": ["…", {"text": "…", "role": "outcome"}],   // optional, from "Look before checking": the parts to check
  "terms": [["aquifer", "desalination"], []],  // optional: the extra search words, one list per part
- "edited": {"parts": false, "terms": true}}   // optional: whether the person changed what the AI proposed
+ "edited": {"parts": false, "terms": true},  // optional: whether the person changed what the AI proposed
+ "from_doc": "d…"}                            // optional (0.18.8): started from this document's text
 ```
 → `{"job": Job}` (kind `check`). 400 for a text under 10 characters or an unknown code (or a part under 10
 characters: "Part 2 is too short…"); 502 when no model service is usable. The job's `result` is
-`{"hyp_id": "h…", "status": "contested"}`.
+`{"hyp_id": "h…", "status": "contested"}`. 0.18.8 (N3): with `from_doc` (a working document's *Check against the
+corpus*) the hypothesis records `origin` `"document"` and `origin_id` the document's id, and its result gains
+`origin_title` (the document's title, or its file's name; left out once the document is gone). 400 when `from_doc`
+is not a document of the project.
 
 With `parts`, the hypothesis is not split by the model: one part = checked as written (1–6 parts). With `terms`, the
 model writes no extra search words: each part is searched with its own words plus that list (`[]`: its own words
@@ -1728,7 +1732,9 @@ terms.
   non-scientific documents). `PUT /api/projects/{p}/documents/{d}/nonscientific` `{"nonscientific": true | false,
   "why"?}` → `{"doc_id", "nonscientific", "changed", "checks", "answers": [{"hyp_id", "text", "was", "was_text",
   "now", "now_text"}]}` (the answers the mark changed). 400 for a value that is not a boolean, 404 for no such
-  document. A check's result gains `status_all_sources`, and each excerpt `nonscientific`; a part or a check that only
+  document. 0.18.8 (N3): it also gives `"started": [{"hyp_id", "text", "status", "status_text"}]`, the checks
+  started from the document's text (`from_doc`), newest first; one just started and not split yet is `"running"`.
+  A check's result gains `status_all_sources`, and each excerpt `nonscientific`; a part or a check that only
   non-scientific documents speak to has the status text *No scientific evidence found*.
 - 0.18.8 (K3, `nonscientific.py`): `PUT /api/projects/{p}/hypotheses/{h}/nonscientific` `{"count": true | false,
   "why"?: text}` → `{"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now",

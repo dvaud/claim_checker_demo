@@ -1002,8 +1002,11 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   rule finds a draft's claims well enough without AI (Level 0), and Margin already has the AI claim finder. Instead,
   any words selected in a working document's text offer *Check against the corpus*, which opens *Hypotheses* with
   them filled in.
-- *Not done:* a document page that lists the checks started from it (a check does not record the sentence it came
-  from), and the role in the bulk bar (one document at a time, as theory).
+- *Built (14 November 2026):* the document's page lists the checks started from it, each with its answer now, and
+  each such check's page links back to the document (`hypotheses.origin` "document", `origin_id`; `from_doc` on
+  `POST …/checks`). The check remembers the document, not the sentence: the words may be changed into the claim
+  before it is checked.
+- *Not done:* the role in the bulk bar (one document at a time, as theory).
 
 **N4. The assessment in words** · Level 0 · built in 0.18.1
 - A short written assessment on each hypothesis's page, under its verdict, made by rules from the judgements and

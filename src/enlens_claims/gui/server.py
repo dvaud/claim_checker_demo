@@ -778,6 +778,13 @@ class App(LibraryMixin, QueueMixin):
             prepared["terms"] = body["terms"]
         if prepared:
             prepared["edited"] = body.get("edited") if isinstance(body.get("edited"), dict) else {}
+        # 0.18.8 (N3): a check started from a document's text (a working document's *Check against the corpus*)
+        # remembers the document, so its page lists the checks started from it and the result links back
+        if body.get("from_doc") is not None:
+            from_doc = str(body["from_doc"])
+            if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (from_doc,)):
+                raise ApiError(400, "from_doc is not a document of this project.")
+            prepared["origin"], prepared["origin_id"] = "document", from_doc
         be, model = self.backend(k=opts["k"])
         emb = home.make_embedder(s) if opts.pop("semantic", True) else None
         if self.queue_mode():
