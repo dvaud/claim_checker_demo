@@ -275,9 +275,18 @@ def shared_words(text: str, stems: set[str]) -> list[str]:
     return list(seen.values())
 
 
-def docs_matching(ws: Workspace, query_text: str, terms: list[str] | None, doc_ids: set[str]) -> set[str]:
+def docs_matching(ws: Workspace, query_text: str, terms: list[str] | None, doc_ids: set[str],
+                  min_words: int = 1) -> set[str]:
     """Which of these documents have a readable passage that shares a word with the claim or its search words
-    (one keyword query, nothing is read by a model)."""
+    (one keyword query, nothing is read by a model).
+
+    `min_words` (roadmap N5, 0.18.7) sets a stricter bar: the passage must hold at least that many *different* words
+    (stems, as the ranking counts them) of the claim and its search words, or every one of them when there are fewer.
+    One shared word is a weak sign: "water" or "production" turns up in most documents of a corpus about hydrogen,
+    whatever they say. Two different words of the hypothesis in one excerpt, such as "water" and "stress", or a
+    two-word search term found whole, is what the check's own ranking needs to put an excerpt near the top. The bar
+    counts words, not their weight, so it can be said in a sentence ("holds at least two of its words"). The default,
+    1, keeps the old rule (any shared word), which the documents added since a check use."""
     from .docrole import theory_docs
 
     doc_ids = set(doc_ids) - theory_docs(ws._conn())   # 0.18.1 (K2): a theory document added since is not evidence
@@ -285,7 +294,18 @@ def docs_matching(ws: Workspace, query_text: str, terms: list[str] | None, doc_i
         return set()
     idx = passage_index(ws)
     q = tokens(query_text) + tokens(" ".join(terms or []))
-    return {idx.doc_of[i] for i, sc in idx.bm25.sparse(q).items() if sc > 0 and idx.doc_of[i] in doc_ids}
+    if min_words <= 1:
+        return {idx.doc_of[i] for i, sc in idx.bm25.sparse(q).items() if sc > 0 and idx.doc_of[i] in doc_ids}
+    stems = set(q)
+    need = min(min_words, len(stems))
+    if not need:
+        return set()
+    doc_of, held = idx.doc_of, {}
+    for st in stems:   # each passage's count of different words, from the postings (the passages are not read)
+        for i, _f in idx.bm25.postings.get(st, ()):
+            if doc_of[i] in doc_ids:
+                held[i] = held.get(i, 0) + 1
+    return {doc_of[i] for i, n in held.items() if n >= need}
 
 
 def neighbours(ws: Workspace, passage_id: str, before: int = 1, after: int = 1) -> dict:

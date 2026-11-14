@@ -187,6 +187,17 @@ class RecordApi:
         self._send(200, body, "text/csv; charset=utf-8", {"Content-Disposition": _disposition(fname)})
 
 
+    def get_codebook_qdc(self, name, cb, q):
+        """0.18.7 (G5): a codebook as a REFI-QDA codebook (.qdc) for NVivo, ATLAS.ti and MAXQDA (qdpx.py)."""
+        from .. import qdpx
+
+        try:
+            body = qdpx.codebook_xml(self.app.ws(name), cb)
+        except ValueError as e:
+            raise ApiError(404, str(e)) from e
+        self._send(200, body, "application/xml; charset=utf-8", {"Content-Disposition": _disposition(f"{cb}.qdc")})
+
+
 def _safe(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", s).strip("-")[:60] or "project"
 

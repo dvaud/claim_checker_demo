@@ -1192,6 +1192,63 @@ def read_new_documents(ws: Workspace, hyp_id: str, backend, model: str, k: int =
     return {"hyp_id": hyp_id, "documents": len(new), "matching": len(docs), "passages": total, "rounds": rounds}
 
 
+UNREAD_ROUND_MAX = 40   # N5: the most excerpts one press of *Read these* reads per part
+
+
+def further_round_waits(ws: Workspace, hyp_id: str) -> str | None:
+    """Why a further round of this check cannot start yet, or None: a part still choosing its excerpts, or a round
+    not graded yet (by a helper, a Claude chat or the queue). A further round then would take the place of that
+    part's first round, or fail half-way (review of N5, 0.18.7)."""
+    for c in ws.query("SELECT claim_id, stage FROM user_claims WHERE hyp_id=?", (hyp_id,)):
+        if c["stage"] in ("terms", "rank"):
+            return "This check is still choosing its excerpts: read further once it has finished."
+        groups = _rounds(ws, c["claim_id"])
+        last = _main_part(groups[-1]) if groups else None
+        if last is not None and last["status"] not in ("done", "failed"):
+            return "This check still has excerpts waiting to be judged: read further once they are judged."
+    return None
+
+
+def read_unread_documents(ws: Workspace, hyp_id: str, backend, model: str, k: int = 8, embedder=None,
+                          progress: Progress | None = None, should_stop: Callable[[], bool] | None = None) -> dict:
+    """Roadmap N5 (0.18.7), *Read these*: the documents with the check's search words that it never read
+    (`unread_documents`, its `matching` group), read for every part as a further round limited to them, as for the
+    documents added since (the check is not run again, so a person's reviews are kept). A part limited to some
+    documents reads only those of them. Returns {"hyp_id", "documents", "passages", "rounds"}."""
+    say = _adapt(progress)
+    from .check_results import UNREAD_MIN_WORDS, _unread_split
+    from .search import docs_matching
+
+    wait = further_round_waits(ws, hyp_id)
+    if wait:
+        raise ValueError(wait)
+    split = _unread_split(ws, hyp_id)
+    docs = split[1] if split else set()
+    hyp_limit = set(json.loads(ws.scalar("SELECT options_json FROM hypotheses WHERE hyp_id=?", (hyp_id,)) or "{}")
+                    .get("doc_ids") or [])
+    total, rounds = 0, []
+    for c in ws.query("SELECT claim_id, text, terms_json, options_json FROM user_claims WHERE hyp_id=? "
+                      "ORDER BY part, rowid", (hyp_id,)) if docs else []:
+        limit = set(json.loads(c["options_json"] or "{}").get("doc_ids") or []) or hyp_limit
+        # each part reads the documents that hold its own words, within its limit
+        mine = sorted(docs_matching(ws, c["text"], json.loads(c["terms_json"] or "[]"), docs & limit if limit else docs,
+                                    min_words=UNREAD_MIN_WORDS))
+        if not mine:   # never an empty list: that would mean every document
+            continue
+        # one excerpt per document if need be (up to UNREAD_ROUND_MAX), not only the check's usual k: the button
+        # says "Read these"; what is left over stays on the card for the next press
+        r = continue_check(ws, c["claim_id"], backend, model, k=max(k, min(len(mine), UNREAD_ROUND_MAX)),
+                           embedder=embedder, should_stop=should_stop, doc_ids=mine,
+                           progress=lambda s, m, i=None: say(s, m, i or {}))
+        total += len(r["passages"])
+        rounds.append({"claim_id": c["claim_id"], "round": r["round"], "passages": len(r["passages"]),
+                       "ok": r.get("ok")})
+    after = _unread_split(ws, hyp_id) if rounds else None
+    left = after[1] if after else docs
+    return {"hyp_id": hyp_id, "documents": len(docs), "documents_read": len(docs - left), "left": len(left & docs),
+            "passages": total, "rounds": rounds}
+
+
 def second_opinion(ws: Workspace, hyp_ids: list[str], backend, main_model: str, second_model: str,
                    progress: Progress | None = None, should_stop: Callable[[], bool] | None = None) -> dict:
     """Let a second model grade every excerpt the checks of these hypotheses already read, with the same prompt,
@@ -1524,7 +1581,7 @@ def _check_each(ws, items, backend, model, say, should_stop, readers, options) -
 from .check_results import (  # noqa: E402,F401
     _threshold, certainty_word, _locations, locate, _breaks, _round_notes, _readers_of, _opens_with_pronoun,
     _reference_locations, _in_excerpt, _place_kept, result, _result, hypothesis_result, MODEL_ROLES,
-    models_used, models_text, _second_opinions, _shown_docs, new_documents,
+    models_used, models_text, _second_opinions, _shown_docs, new_documents, unread_documents,
 )
 from .check_exports import (  # noqa: E402,F401
     evidence_map, document_answers, MAP_SYMBOL, map_table, CALIBRATION_BINS, calibration, export_rows, hypothesis_rows,

@@ -396,6 +396,8 @@ export async function renderCodebook(view, [name]) {
           onClick: () => { if (dirty) { toast("Save or discard your changes first: a restore would replace them.", "info"); return; } showHistory({ kind: "codebook", key: cb.name, onRestored: reload }); } },
           icon("history", { size: 14 }), "History"),
         downloadButton({ onClick: () => download(`${base}.csv`).catch(showError) }, "CSV"),
+        // 0.18.7 (G5): the codebook for NVivo, ATLAS.ti and MAXQDA
+        downloadButton({ title: "A REFI-QDA codebook, for NVivo, ATLAS.ti and MAXQDA: each code with its definition", onClick: () => download(`${base}.qdc`).catch(showError) }, "Download as .qdc"),
         more),
     }), sharing);
   }

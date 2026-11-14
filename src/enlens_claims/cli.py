@@ -340,6 +340,14 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--concept", help="term id of a concept to highlight (layer concepts)")
     p.add_argument("--no-pdfminer", action="store_true", help="line boxes from pypdf only")
     p.add_argument("--out", required=True)
+    # 0.18.7 (G5): for NVivo, ATLAS.ti and MAXQDA (REFI-QDA, qdpx.py)
+    p = sub.add_parser("export-qdpx", help="write the documents, codes, labels, judgements and notes as a REFI-QDA "
+                                           "project (.qdpx) for NVivo, ATLAS.ti and MAXQDA")
+    p.add_argument("out")
+    p.add_argument("--framework", help="only this codebook (default: every codebook with labels and the project's own)")
+    p = sub.add_parser("export-qdc", help="write one codebook as a REFI-QDA codebook (.qdc)")
+    p.add_argument("framework")
+    p.add_argument("out")
     p = sub.add_parser("export-flexiconc", help="write the project in the Cross-Doc SDG Explorer's FlexiConc SQLite layout")
     p.add_argument("out")
     p.add_argument("--framework", default="sdg")
@@ -686,7 +694,7 @@ def _main(argv: list[str] | None = None) -> int:
         path = report.build(ws, a.out, a.strict)
         print(f"Report written to {path}")
     elif a.cmd in ("search", "profile", "terms", "concept", "themes", "resolve", "annotate", "export-flexiconc",
-                   "acceptance"):
+                   "acceptance", "export-qdpx", "export-qdc"):
         return _cmd_07(a, ws)
     elif a.cmd in ("prepare", "queue"):
         return _cmd_08(a, ws)
@@ -816,6 +824,18 @@ def _cmd_07(a, ws) -> int:
         Path(a.out).write_bytes(r["body"])
         _print({"written": a.out, "kind": r["content_type"], "quotes": r["marks"], "highlighted": r["placed"],
                 "method": r["method"], "not_placed": r["missing"]})
+        return 0
+    if a.cmd in ("export-qdpx", "export-qdc"):
+        from . import frameworks, qdpx
+
+        if a.framework:
+            try:
+                frameworks.get(a.framework, ws)
+            except ValueError as e:   # an unknown codebook: a message, not a traceback
+                print(f"Problem: {e}", file=sys.stderr)
+                return 2
+        _print(qdpx.export_project(ws, a.out, a.framework) if a.cmd == "export-qdpx" else
+               qdpx.export_codebook(ws, a.framework, a.out))
         return 0
     if a.cmd == "export-flexiconc":
         from . import flexiconc_export

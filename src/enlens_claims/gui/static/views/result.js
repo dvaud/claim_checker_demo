@@ -207,6 +207,9 @@ export async function renderResult(view, [hypId], query) {
   const termsResult = new Map();   // claim_id -> inline result of the last search with other words
   const running = new Map();       // job id -> {kind, mini} of a follow-up job of this result (read again, new documents, second model)
   let followNote = null;           // text shown in the follow-ups card after one of its jobs ended
+  let unread = null;               // roadmap N5: GET …/unread, fetched after the page is drawn (see unreadSlot)
+  let unreadKey = null;            // what the last fetch of it was for: the rounds read and the documents
+  let unreadSlot = null;           // where its card goes, kept across in-place updates
   let movedNote = null;            // 0.18.1 (N4): the sentence the server gave for a judgement that moved the answer: said once, in the answer card
   let makeExRow = null;            // 0.18.1: the table view's row maker (excerptTable), for patchInPlace
   let lazies = [];                 // 0.18.1 (H5): the long card lists now on the page ({claim_id, lazy, items}), see evList() and findCard()
@@ -490,6 +493,9 @@ export async function renderResult(view, [hypId], query) {
       box.appendChild(evidenceHead(r, allPassages, single));
       if (evidenceView === "table" && allPassages.length) box.appendChild(excerptTable(parts, single));
       for (const part of parts) box.appendChild(partView(part, r, single));
+      unreadSlot = h("div", { class: "unread-slot" });   // roadmap N5: filled when its numbers come (refreshUnread)
+      box.appendChild(unreadSlot);
+      refreshUnread(r);
       box.appendChild(modelsCard(r, allPassages));
       box.appendChild(noteCard(r));
       box.appendChild(downloadsCard(r, parts));
@@ -817,6 +823,91 @@ export async function renderResult(view, [hypId], query) {
   }
 
   // ------------------------------------------------------------------------------------------
+  // Roadmap N5: the documents this check never read. Asked again of the keyword search with the check's own words
+  // (GET …/unread: nothing is read, no answer changes), after the page is drawn, and again only when the check read
+  // more or the documents changed. A neutral count, never a verdict on a document. Nothing when both groups are empty.
+  function refreshUnread(r) {
+    const key = JSON.stringify([(r.parts || []).map((p) => [p.claim_id, (p.rounds_info || []).length, (p.passages || []).length]),
+      (r.docs_added_since || []).length, r.documents_in_project]);
+    if (key === unreadKey) { fillUnread(); return; }
+    unreadKey = key;
+    api("GET", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/unread`)
+      .then((u) => { if (unreadKey === key) { unread = u; fillUnread(); } })
+      .catch(() => { if (unreadKey === key) unreadKey = null; });   // quiet: the page works without it
+  }
+
+  function fillUnread() {
+    if (!unreadSlot || !unreadSlot.isConnected) return;
+    replace(unreadSlot, unread ? unreadCard(unread) : null);
+  }
+
+  function unreadCard(u) {
+    const m = u.matching_n || 0, z = u.no_word_n || 0, one = u.one_word_n || 0;
+    if (!u.checked || (!m && !z)) return null;
+    const docs = (n) => `${n} ${n === 1 ? "document" : "documents"}`;
+    const list = (key, items, n) => keptFold(`unread:${key}`, { sm: true, class: "unread-list-fold" }, n === 1 ? "Which one" : "Which ones",
+      h("ul", { class: "added-list unread-list" }, items.map((d) => h("li", {}, h("a", { href: `#/doc/${encodeURIComponent(d.doc_id)}?from=${encodeURIComponent(hypId)}` }, d.title || "untitled"))),
+        n > items.length ? h("li", { class: "muted" }, `and ${n - items.length} more`) : null));
+    const parts = [];
+    if (m) {
+      const busy = [...running.values()].filter((x) => x.kind === "read-unread");
+      const btn = button({ sm: true, disabled: busy.length > 0 || !!u.waits,
+        title: u.waits || `The AI reads the best excerpts of ${m === 1 ? "that document" : "those documents"} (up to one excerpt a document, at most 40 at a time), as a further search for ${current && current.decomposed ? "every part" : "this hypothesis"}. The check is not run again, so your reviews are kept.` },
+        icon("book-open", { size: 13 }), m === 1 ? "Read it" : "Read these");
+      btn.addEventListener("click", () => runReadUnread(btn));
+      parts.push(h("div", { class: "unread-group" },
+        h("p", {}, `${docs(m)} with the search words ${m === 1 ? "was" : "were"} never read in this check.`),
+        list("matching", u.matching || [], m), busy.map((x) => x.mini.el),
+        h("div", { class: "btn-row" }, withAI(btn)),
+        u.waits ? h("p", { class: "muted small" }, u.waits) : null,
+        readsLine(m === 1 ? "only that document's excerpts" : "only those documents' excerpts")));
+    }
+    if (z) {
+      const other = button({ kind: "quiet", sm: true, title: "Opens “Search with other words” below: type words your documents might use.", onClick: openOtherWords },
+        icon("search", { size: 13 }), "Search with other words");
+      parts.push(h("div", { class: "unread-group" },
+        h("p", {}, `${docs(z)} ${z === 1 ? "shares" : "share"} no word with this hypothesis or its search words: ${z === 1 ? "it may be" : "they may be"} off its topic, or say it in other words.`,
+          one ? h("span", { class: "muted" }, ` ${docs(one)} more ${one === 1 ? "shares" : "share"} a single word with it.`) : null),
+        list("none", u.no_word || [], z), h("div", { class: "btn-row" }, other)));
+    }
+    const help = helpMark("How is this counted?", "No excerpt of these documents was shown in this check. The keyword search is asked again with the check's own words (nothing is read): “with the search words” means an excerpt holds at least two different words of the hypothesis or its search words. Theory documents, documents added since the check, documents with no readable text and documents the check was limited away from are not counted. A document never read is not a weak one, and this changes no answer.", { size: 15 });
+    return cardBox({ sm: true, class: "unread-card", title: "Documents not read in this check", titleId: "unread-h", level: "h3", help }, parts);
+  }
+
+  // "Search with other words": opens the box of every part (the first one gets the focus)
+  function openOtherWords() {
+    for (const p of (current && current.parts) || []) termsOpen.add(p.claim_id);
+    draw(current);
+    const input = box.querySelector(".more-terms:not([hidden]) input");
+    if (input) { input.scrollIntoView({ behavior: "smooth", block: "center" }); input.focus({ preventScroll: true }); }
+  }
+
+  async function runReadUnread(btn) {
+    btn.disabled = true;
+    try {
+      const res = await api("POST", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/read-unread`);
+      followJob(res.job.id, "read-unread", "Reading the documents not read yet", async (job, fresh) => {
+        const me = job.result || {};
+        let aboutN = 0;
+        for (const rd of me.rounds || []) {
+          const fp = (fresh.parts || []).find((x) => x.claim_id === rd.claim_id);
+          if (!fp || !rd.passages) continue;
+          newRound.set(rd.claim_id, rd.round);
+          const newOnes = (fp.passages || []).filter((x) => x.round === rd.round);
+          aboutN += newOnes.filter(about).length;
+          if (newOnes.length && !newOnes.some(about)) openFolds.add(`rest:${rd.claim_id}`);
+        }
+        const n = me.passages || 0, dr = me.documents_read || 0, left = me.left || 0;
+        const docsWord = (k) => `${k} ${k === 1 ? "document" : "documents"}`;
+        const leftLine = left ? ` ${docsWord(left)} with the search words ${left === 1 ? "is" : "are"} still unread: press again to read further.` : "";
+        followNote = n ? `${n} more ${n === 1 ? "excerpt" : "excerpts"} read from ${docsWord(dr || 1)} with the search words, ${aboutN} of them about ${fresh.decomposed ? "a part of this hypothesis" : "this hypothesis"} (marked new below). Your reviews are kept.${leftLine}`
+          : "No further excerpt of those documents could be read for this hypothesis.";
+        toast(n ? `${n} more ${n === 1 ? "excerpt" : "excerpts"} read.` : "Nothing more was read.", n ? "ok" : "info", { small: true, ttl: 4000 });
+      });
+    } catch (e) { showError(e); btn.disabled = false; }
+  }
+
+  // ------------------------------------------------------------------------------------------
   // Another AI model (0.11.2): two distinct choices, side by side. A stronger model *replaces* the first reading
   // (the answer can change); a second opinion is *only compared* with it (the answer never changes). 0.12: one line
   // each; the longer story is behind the (?) mark.
@@ -900,7 +991,7 @@ export async function renderResult(view, [hypId], query) {
     if (buttons.length) card.appendChild(h("div", { class: "btn-row ask-buttons" }, withAI(buttons)));
     const picker = !auditor && !(secondUsable && !changingSecond);
     if (picker) card.appendChild(secondModelPicker(mainModel, secondUsable ? secondSet : "", busy.some((x) => x.kind === "second-opinion")));
-    const jobs = busy.filter((x) => !x.passage_id && x.kind !== "read-new" && x.kind !== "read-local").map((x) => x.mini.el);
+    const jobs = busy.filter((x) => !x.passage_id && x.kind !== "read-new" && x.kind !== "read-unread" && x.kind !== "read-local").map((x) => x.mini.el);
     if (jobs.length) card.appendChild(h("div", { class: "stack ask-jobs" }, jobs));
     if (buttons.length || picker) card.appendChild(readsLine("the excerpts again", { class: "ask-reads", model: auditor ? null : secondSet || null }));
     return card;
@@ -1023,11 +1114,11 @@ export async function renderResult(view, [hypId], query) {
   async function adoptRunningJobs() {
     let jobs = [];
     try { jobs = (await api("GET", "/api/jobs")).jobs || []; } catch (_) { return; }
-    const titles = { reread: "Reading one excerpt again", "read-new": "Reading the new documents", "second-opinion": "A second opinion: another model reads the excerpts", stronger: "A stronger model reads the excerpts again", "read-local": READ_LOCAL_TITLE };
+    const titles = { reread: "Reading one excerpt again", "read-new": "Reading the new documents", "read-unread": "Reading the documents not read yet", "second-opinion": "A second opinion: another model reads the excerpts", stronger: "A stronger model reads the excerpts again", "read-local": READ_LOCAL_TITLE };
     for (const j of jobs) {
       if (j.project !== project || !titles[j.kind] || TERMINAL.has(j.state) || running.has(j.id)) continue;
-      if ((j.kind === "stronger" || j.kind === "read-local") && j.scope !== hypId) continue;   // work for another result
-      followJob(j.id, j.kind, titles[j.kind], async () => { followNote = { reread: "The AI has read an excerpt again.", "read-new": "The new documents were read.", "second-opinion": "The second opinion is in.", stronger: "A stronger model has read the excerpts again; its reading counts.", "read-local": "Your local model has read the excerpts from documents marked Only a local AI." }[j.kind]; }, j.kind === "read-local" ? { onError: memoryShort } : {});
+      if ((j.kind === "stronger" || j.kind === "read-local" || j.kind === "read-unread") && j.scope !== hypId) continue;   // work for another result
+      followJob(j.id, j.kind, titles[j.kind], async () => { followNote = { reread: "The AI has read an excerpt again.", "read-new": "The new documents were read.", "read-unread": "The documents with the search words were read.", "second-opinion": "The second opinion is in.", stronger: "A stronger model has read the excerpts again; its reading counts.", "read-local": "Your local model has read the excerpts from documents marked Only a local AI." }[j.kind]; }, j.kind === "read-local" ? { onError: memoryShort } : {});
     }
   }
 
@@ -1940,6 +2031,9 @@ export async function renderResult(view, [hypId], query) {
         // 0.18: which zip is which: what you shared (for a colleague), or the whole project (to move it)
         row(zipButton(project, "shared", { text: "What you shared (.zip)" }), ZIP_WORDS.shared.what),
         row(zipButton(project, "all", { text: "Whole project (.zip)" }), ZIP_WORDS.all.what),
+        // 0.18.7 (G5): the whole project for NVivo, ATLAS.ti and MAXQDA (REFI-QDA)
+        row(downloadButton({ onClick: () => download(`/api/projects/${P(project)}/export.qdpx${qs}`).catch(showError) }, "NVivo, ATLAS.ti, MAXQDA (.qdpx)"),
+          "Every hypothesis, code, label and note of the project, for another program of qualitative analysis."),
         h("div", { class: "dl-row" }, h("span", { class: "dl-what dl-wide" }, downloadButton({ onClick: () => download(`/api/projects/${P(project)}/hypotheses/${P(hypId)}/export.csv${qs}`).catch(showError) }, "CSV"), " ",
           downloadButton({ onClick: () => download(`/api/projects/${P(project)}/hypotheses/${P(hypId)}/export.json${qs}`).catch(showError) }, "JSON"), " (for programmers)"))));
   }

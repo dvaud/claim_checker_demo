@@ -384,6 +384,14 @@ def strictness_text(thr: float) -> str:
     return f"{word}: judgements count if the AI was at least {round(thr * 100)}% sure; yours always count"
 
 
+def _unread_n(ws: Workspace, hyp_id: str) -> int | str:
+    """Roadmap N5: how many documents hold the check's search words but were never read in it ("" before it read)."""
+    from .check_results import _unread_split   # the counts alone: no titles, once per hypothesis of the export
+
+    split = _unread_split(ws, hyp_id)
+    return len(split[1]) if split else ""
+
+
 def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[str] | None = None,
                   cache: ResultCache | None = None) -> list[dict]:
     """One row per hypothesis, in the app's words: the answer, who says what, and how much a person reviewed."""
@@ -417,6 +425,8 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
             "Excerpts not reviewed by you yet": res["to_review"],
             "Excerpts where the second opinion differs": res["disagreements"] if res["second_read"] else "",
             "Documents added since the check": len(res["docs_added_since"]),
+            # roadmap N5: asked again of the search with the check's own words (nothing is read); a count, no verdict
+            "Documents with the search words never read": _unread_n(ws, h["hyp_id"]),
             "Your notes on this result": res["note"] or "",
             "Code": f"{res.get('code_label') or ''} {res['code']}".strip() if res["code"] else "",
             "Strictness": strictness_text(thr),

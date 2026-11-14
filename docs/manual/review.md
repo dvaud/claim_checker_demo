@@ -128,6 +128,23 @@ Under the cards:
 New excerpts are marked *new*, a *Just now* line in the answer says what was found, and when everything that matches
 has been read, the line above the buttons says so.
 
+**Documents not read in this check.** A check reads only the excerpts it picks, so many documents may never come up.
+Under the evidence, a small card says how many documents no excerpt was read from, in two groups (it shows nothing
+when both are empty):
+
+- *3 documents with the search words were never read in this check*: an excerpt of each holds at least two different
+  words of the hypothesis or its search words. *Read these* reads their best excerpts as a further search for this
+  result, as for documents added since; the check is not run again, so your reviews are kept.
+- *2 documents share no word with this hypothesis or its search words*: they may be off its topic, or say it in other
+  words. *Search with other words* opens the box above. Documents that share a single word only are counted after
+  it.
+
+*Which ones* lists the titles; each opens the document. The keyword search is asked again with the check's own words
+(no AI reads anything). Theory documents, documents added since the check (they have their own line in the answer),
+documents with no readable text and documents the check was limited away from are left out. A document never read is
+not a weak one: the count changes no answer. The Excel summary has the first number as *Documents with the search
+words never read*.
+
 ## Ask another AI model
 
 The section says what has happened so far (what a second opinion found, or that no stronger model is set, with *Set

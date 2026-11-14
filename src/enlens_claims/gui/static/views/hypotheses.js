@@ -44,6 +44,8 @@ export async function renderHypotheses(view, params, query) {
   const downloads = downloadLinks([
     { text: "Excel (.xlsx)", title: "Three sheets: a summary, every excerpt read, and the evidence map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) },
     { text: "CSV", note: "(for programmers)", title: "Technical CSV: ids, raw judgement words, UTC times", onClick: () => download(`/api/projects/${P(project)}/export.csv?threshold=${threshold}`).catch(showError) },
+    // 0.18.7 (G5): the whole project for another program of qualitative analysis
+    { text: "NVivo, ATLAS.ti, MAXQDA (.qdpx)", title: "A REFI-QDA project: the documents, the codes, the labels and judgements that count, and your notes as memos", onClick: () => download(`/api/projects/${P(project)}/export.qdpx?threshold=${threshold}`).catch(showError) },
   ], { label: "Download all:" });
   view.appendChild(pageHead("Hypotheses", { eyebrow: featureEyebrow("check"), sub: `Check one hypothesis or a list against the ${nDocs ? `${nDocs} ${nDocs === 1 ? "document" : "documents"}` : "documents"}, and judge each answer by its quotes.`, actions: downloads }));
   const tabs = viewTabs("hypotheses", "answers");
