@@ -4,7 +4,8 @@
 
 > **In short**
 > - A private storage space online, free at a team's size, at Backblaze (most research groups) or Cloudflare (large
->   teams that grow quickly). ENLENS fills and reads it by itself; nobody installs anything or looks for a folder.
+>   teams that grow quickly), or a folder in your institution's drive (SURFdrive, SURF Research Drive, a university's
+>   Nextcloud). ENLENS fills and reads it by itself; nobody installs anything or looks for a folder.
 > - The owner sets it up once, on the *Team page* (*Manage the team* in the project menu), in about five minutes;
 >   colleagues join from a link, with *Join a team…* in the project menu.
 > - Everything is locked on your computer before it leaves it: the storage company cannot read your work.
@@ -17,11 +18,14 @@ your computer before it leaves it ([what the storage holds](privacy.md#through-a
 
 ## Which company
 
-Two are built in, each free up to 10 GB (a corpus of a few hundred PDFs is 1 to 3 GB):
+Two companies are built in, each free up to 10 GB (a corpus of a few hundred PDFs is 1 to 3 GB):
 - **Backblaze**, for most research groups: no card, storage in the EU, and each colleague's key can write only in
   their own part of the space.
 - **Cloudflare**, for large teams that grow quickly: fetching is always free, so many colleagues joining costs
   nothing; it asks for a card when you switch its storage on (nothing is charged within the free amount).
+
+Or, without a new account anywhere: **your institution's drive** (below), when everyone in the team has an account at
+the same drive.
 
 ## Setting it up (the owner, once, about five minutes)
 
@@ -39,6 +43,47 @@ walks you through it:
   storage space in Cloudflare's EU area and tries it.
 
 If the company says it is down for maintenance, try again later: nothing is set up until the end.
+
+## Your institution's drive (SURFdrive, SURF Research Drive, a Nextcloud)
+
+If your institution gives you a drive that speaks *WebDAV* (most do: SURFdrive and SURF Research Drive for Dutch
+institutions, a university's own Nextcloud or ownCloud), the team can work in a folder there instead. Nobody signs up
+anywhere, and the files stay at your institution's drive. Everyone in the team needs an account at **the same** drive.
+
+*Setting it up (the owner):* on the Team page, under *A storage space (recommended)*, choose *Your institution's
+drive…*. The dialog asks for three things:
+- the drive's **WebDAV address**. For SURFdrive, press *Use SURFdrive's address*
+  (`https://surfdrive.surf.nl/files/remote.php/nonshib-webdav/`). A Nextcloud shows its address in its website,
+  under *Files* → *Files settings* (bottom left); it looks like `https://<host>/remote.php/dav/files/<user>/`. SURF
+  Research Drive shows its own;
+- your **user name** at the drive, as its settings show it (on SURFdrive it is not always your e-mail address);
+- an **app password**: in the drive's settings, under *Security*, make a new app password for ENLENS (on SURFdrive it
+  is called a *WebDAV password*). Never give ENLENS your main password. The app password stays in this computer's
+  keychain; nobody else gets it.
+
+ENLENS checks them, makes a folder named *ENLENS - <your project>* in your drive and tries it.
+
+*Inviting a colleague:* *Invite a colleague…* also asks for their **user name at the drive**. ENLENS then shares the
+project's folder with them (they may read and change it, not share it on). Some drives do not let a program share
+folders; then, or when you leave the user name empty, the dialog says so: share the folder with them yourself in the
+drive's website, allowing them to edit. The invite link carries no password.
+
+*Joining:* the colleague chooses *Join a team…* and pastes the link as usual. ENLENS sees that the team works in a
+drive and asks for their own user name there and an app password they made for ENLENS. It finds the shared folder in
+their drive by itself (a shared folder may have another name in their drive, or sit in a *Shared* folder); when it
+cannot, it lists the folders at the top of their drive to choose from. If it is not there at all, the owner has not
+shared it with them yet.
+
+*Removing a colleague* stops sharing the folder with them, where ENLENS shared it; otherwise ENLENS says to stop sharing
+it in the drive's website. As at Cloudflare, the drive cannot keep a colleague to their own part of the folder: the
+signatures do (a file written in someone else's name is set aside).
+
+*When the drive refuses your app password* (it was removed, or expired), make a new one in the drive's settings and
+enter it under *A new app password for the drive* on the card *The storage space*.
+
+*Not tried with a real drive yet:* ENLENS's drive support was built and tested against a stand-in that follows the
+WebDAV standard and Nextcloud's documents. If something does not work with your institution's drive, the Team tab
+says what the drive answered.
 
 The dialog gives each company's sign-up address with a *Copy* button rather than a link, so you choose the browser.
 If Backblaze's sign-up page keeps showing *Not so fast!* and the *I'm not a robot* box comes back each time you tick
@@ -72,7 +117,11 @@ through the service's website: for a hand-over in full, the new owner moves the 
   afterwards does not open for them. What they shared before stays in the project.
 - **Move to another storage space** (a fold on the card *The storage space*), when the space is lost, unpaid or should
   change: set up a new one; every copy writes what it shares there once more, and your colleagues' copies follow by
-  themselves. When the old space cannot be reached any more, send them new invites.
+  themselves. When the old space cannot be reached any more, send them new invites. A move to your institution's
+  drive: colleagues who already work in a drive at the same address follow with their own account once the new
+  folder is shared with them (ENLENS shares it with the user names you gave at their invites); colleagues coming from
+  Backblaze, Cloudflare or another drive cannot follow by themselves (ENLENS knows no account of theirs there): their
+  Team tab asks them for a new invite, and yours lists their names.
 
 A file in the space that its part's member did not sign (someone wrote in another person's name) is *set aside*: it
 never comes into your project, and the card says so (more under *Technical details*).

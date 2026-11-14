@@ -1556,6 +1556,9 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/space/b2", "post_space_b2"),
     ("POST", rf"/api/projects/{P}/space/r2", "post_space_r2"),
     ("POST", rf"/api/projects/{P}/space/dir", "post_space_dir"),
+    ("POST", rf"/api/projects/{P}/space/webdav", "post_space_webdav"),          # 14 November 2026: a drive (WebDAV)
+    ("PUT", rf"/api/projects/{P}/space/drive-password", "put_space_drive_password"),
+    ("POST", r"/api/space/peek", "post_space_peek"),
     ("POST", rf"/api/projects/{P}/space/invites", "post_space_invites"),
     ("DELETE", rf"/api/projects/{P}/space/invites/(m[0-9a-f]{{12}})", "delete_space_invite"),
     ("DELETE", rf"/api/projects/{P}/space/members/(m[0-9a-f]{{12}})", "delete_space_member"),
