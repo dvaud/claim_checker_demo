@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.18.7 (November 2026): Your project in NVivo, ATLAS.ti and MAXQDA, and the documents a check never read
+
+### New
+
+- **Your project for NVivo, ATLAS.ti and MAXQDA (roadmap G5).** *NVivo, ATLAS.ti, MAXQDA (.qdpx)* on the Hypotheses
+  page, the Codes page and a result's downloads saves the project in the REFI-QDA exchange format these programs open:
+  every document as text (without the blocks you left out), your codebooks as codes with their definitions, each
+  hypothesis as a code with *Supports*, *Partly supports* and *Contradicts*, the labels and judgements that count as
+  codings on their quotes, and your notes, highlights and research log as memos. Each coding says whose decision it
+  was: yours (your name from Settings), a colleague's, or "ENLENS AI" with the model's name. Two downloads of the same
+  project give its items the same ids, so the other program can tell them apart. No AI; changes no result.
+- **A codebook for NVivo, ATLAS.ti and MAXQDA.** *Download as .qdc* on a codebook's page saves it as a REFI-QDA
+  codebook: its groups, and each code with its definition, when to use it and when not, keywords and examples. Its
+  codes keep the same ids as in the project file. On the command line: `enlens export-qdpx` and `enlens export-qdc`.
+- **See which documents a check never read.** A check reads only the excerpts it picks, so many documents never come
+  up. Under the evidence of a hypothesis, a small card *Documents not read in this check* now says how many documents
+  no excerpt was read from, in two groups: those with the search words (an excerpt holds at least two different words
+  of the hypothesis or its search words), with *Read these*, a further search limited to them that keeps your
+  reviews, as for documents added since (up to one excerpt a document, at most 40 at a press; the card then says how
+  many are left, and it waits while excerpts of the check still wait to be judged); and those that share no word with the hypothesis, with *Search with other
+  words*. *Which ones* lists them, each opening the document. Theory documents, documents added since the check and
+  documents the check was limited away from are left out. A document never read may be off your topic, or say it in
+  other words: the count says nothing about how good it is. No AI reads anything until you press *Read these*. The
+  Excel summary has a new column, *Documents with the search words never read*. Changes no result.
+
+### Tests
+
+- `test_g5_qdpx.py`: the project file is read as a strict program would (namespace, the schema's order of elements,
+  every code and memo a coding or a reference points at exists, every selection inside its text and on the exact words
+  of its quote, whose decision each coding is); left-out text stays out, a note on left-out words sits on its
+  document, a document no AI may read still goes, the ids are the same in two downloads, the codebook alone shares
+  them; the two downloads through the app and the command line. After review: control characters from PDF text in a
+  title or a note no longer make the file unreadable; a hypothesis's memo comes before its *Supports* … codes, as the
+  schema asks; a judgement on an excerpt read before its document was read again is left out (counted as not placed)
+  instead of landing on other words; two passages cut inside a long word join without a blank line.
+
+### Not yet done
+
+- The `.qdpx` has not yet been opened in NVivo, ATLAS.ti or MAXQDA themselves. An export of the test project, and its
+  codebook, were checked once against the official REFI-QDA 1.0 schema files (`Project.xsd`, `Codebook.xsd`) with
+  `xmllint`, and pass; the tests check the schema's order of elements without the schema file.
+- Nothing comes back the other way yet: a project or codebook from those programs cannot be brought into ENLENS.
+
 ## 0.18.6 (November 2026): Non-scientific documents, and the documents your answers rest on
 
 News articles and company brochures can be marked as non-scientific, so they never decide an answer on their own.

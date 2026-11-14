@@ -57,10 +57,11 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.6: Non-scientific documents, and the documents your answers rest on
+## New in 0.18.7: Your project in NVivo, ATLAS.ti and MAXQDA, and the documents a check never read
 
-- **See which documents your answers rest on.** The Documents list can now be grouped by the answers behind each document (*Behind no answer*, *Behind answers*, *Theory*) or sorted by them (*Most answers*).
-- **Mark a document as non-scientific.** A news article, a press release, a company brochure or a blog reports no method or data of its own. Can change results.
+- **Your project for NVivo, ATLAS.ti and MAXQDA (roadmap G5).** *NVivo, ATLAS.ti, MAXQDA (.qdpx)* on the Hypotheses page, the Codes page and a result's downloads saves the project in the REFI-QDA exchange format these programs open.
+- **A codebook for NVivo, ATLAS.ti and MAXQDA.** *Download as .qdc* on a codebook's page saves it as a REFI-QDA codebook: its groups, and each code with its definition, when to use it and when not, keywords and examples.
+- **See which documents a check never read.** A check reads only the excerpts it picks, so many documents never come up.
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
