@@ -1799,8 +1799,8 @@ def _apply_delta(base: dict, delta: dict) -> dict:
         if v is None:
             out.pop(fp, None)
         elif isinstance(v, list) and v:
-            side = fp.split(":", 1)[0] if fp.startswith(("start:", "end:")) else None
-            if side:  # the text starts (or ends) in one place only
+            side = fp.split(":", 1)[0] if fp.startswith(("start:", "end:", "role:")) else None
+            if side:  # the text starts (or ends) in one place only; 0.18.8 (N3): a document has one role only
                 for other in [f for f in out if f.startswith(side + ":")]:
                     out.pop(other)
             out[fp] = [1 if v[0] else 0, v[1] if len(v) > 1 else None]
@@ -1813,7 +1813,11 @@ def _delta_words(delta: dict) -> dict:
         if fp.startswith(("start:", "end:")):
             out["bounds"] += 1
         elif fp.startswith("role:"):  # 0.18.1 (K2, docrole.py): marked as theory (a role), or as evidence again
-            out["role"] = fp.split(":", 1)[1] if v is not None and v[0] else "evidence"
+            # 0.18.8 (N3): theory to working is a role set and one taken away: the role set wins, in any order
+            if v is not None and v[0]:
+                out["role"] = fp.split(":", 1)[1]
+            else:
+                out.setdefault("role", "evidence")
         elif fp.startswith("mark:"):  # 0.18.6 (docrole.py): marked Non-scientific, or counted as scientific again
             out[fp.split(":", 1)[1]] = bool(v is not None and v[0])
         elif v is None:

@@ -98,6 +98,9 @@ def test_a_working_document_is_labelled_but_its_codes_are_never_the_corpus(proje
         assert c["documents"] == sum(1 for d in corpus if g["cells"].get(d, {}).get(c["code"]))
     st = profile.stats(ws, "sdg")
     assert st["documents"] == stats_whole["documents"] - 1 and st["labels"] < stats_whole["labels"]
+    sheet = profile.grid_table(g)                       # the spreadsheet says which row is the draft (review)
+    assert sheet[-1]["Document"].endswith("(your working document, not in the totals)")
+    assert not any("working document" in r["Document"] for r in sheet[:-1])
     # its own page shows its codes
     assert profile.doc_profile(ws, "sdg", draft)["codes"]
 
@@ -111,11 +114,23 @@ def test_a_codes_examples_never_come_from_a_working_document(project):
     assert all(e["doc_id"] != draft for e in theorycodes.suggest_examples(ws, "jobs"))
 
 
+def test_a_codes_examples_never_quote_the_document_it_is_made_from(project):
+    ws, draft, ev = project                              # (review: `exclude_doc` was dropped once)
+    assert all(e["doc_id"] != ev[1] for e in theorycodes.suggest_examples(ws, "jobs", exclude_doc=ev[1]))
+
+
 def test_the_proposal_and_the_log_say_working_document():
     from enlens_claims import ownership
 
     assert ownership.what({"kind": "blocks", "title": "Draft", "detail": {"role": "working"}}) == \
         "marking “Draft” as a working document (never a source)"
+    # theory to working (and back) is a role set and one taken away: the role set wins, in either order (review)
+    for delta in ({"role:working": [1, "role"], "role:theory": None}, {"role:theory": None, "role:working": [1, "role"]}):
+        assert ownership._delta_words(delta)["role"] == "working"
+    assert ownership._delta_words({"role:theory": None})["role"] == "evidence"
+    # a document has one role: a proposal accepted over another role replaces it (review)
+    got = ownership._apply_delta({"role:theory": [1, "role"], "x": [0, None]}, {"role:working": [1, "role"]})
+    assert got == {"role:working": [1, "role"], "x": [0, None]}
 
 
 # ---- the routes ---------------------------------------------------------------------------------------------------

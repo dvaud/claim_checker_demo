@@ -185,7 +185,8 @@ ROLE_LOG = {
     WORKING: "Marked as a working document: your own draft or notes. It is still read, searched, noted and labelled "
              "with codebooks, and checked against the corpus, but never a source: left out of themes, check excerpts, "
              "key terms and the corpus's code counts from now on.",
-    None: "Marked as evidence again: it counts in themes, codebook labels, check excerpts and key terms from now on.",
+    None: "Marked as evidence again: it counts as a source in themes, codebook labels and their counts, check excerpts "
+          "and key terms from now on.",
 }
 
 

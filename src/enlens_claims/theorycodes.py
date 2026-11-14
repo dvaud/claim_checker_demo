@@ -211,7 +211,8 @@ def suggest_examples(ws: Workspace, term: str, k: int = MAX_EXAMPLES, exclude_do
     from .docrole import not_evidence_docs
     from .search import rank_passages
 
-    theory = not_evidence_docs(ws._conn())   # N3: nor from a working document | ({exclude_doc} if exclude_doc else set())   # (never the theory itself, review 16)
+    # never from a theory or (N3) a working document, nor from the theory itself (review 16)
+    theory = not_evidence_docs(ws._conn()) | ({exclude_doc} if exclude_doc else set())
     words = [w.lower() for w in re.findall(_W, term)]
     if not words:
         return []

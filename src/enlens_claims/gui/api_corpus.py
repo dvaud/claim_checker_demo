@@ -94,7 +94,7 @@ class CorpusApi:
     def get_codebook_theory_docs(self, name, q):
         """{"documents": [{"doc_id", "title", "theory"}]}: the documents a codebook can start from, theory first."""
         ws = self.app.ws(name)
-        rows = ws.query("SELECT doc_id, title, role FROM documents ORDER BY role IS NULL, title")
+        rows = ws.query("SELECT doc_id, title, role FROM documents ORDER BY role IS NOT 'theory', title")   # (N3)
         return {"documents": [{"doc_id": r["doc_id"], "title": r["title"], "theory": r["role"] == "theory"} for r in rows]}
 
     # ---- D3 and D4 -----------------------------------------------------------------------------------------------

@@ -393,7 +393,8 @@ export async function renderProfile(view, params, query) {
         h("div", {}, h("dt", {}, "Read by the AI"), h("dd", {}, fmt.num(prof.read_by_model || 0)))))));
     if (!ai) { ai = aiLabelCard({ project, framework, watchers, onEnd: () => reload() }); replace(aiBox, ai.el); }
     // the codes addressed most
-    const codes = [...(g.codes || [])].sort((a, b) => b.passages - a.passages || b.documents - a.documents).slice(0, 8);
+    // (0.18.8, N3: a code found only in a working document has no passage of the corpus: not among them)
+    const codes = [...(g.codes || [])].filter((c) => c.passages > 0).sort((a, b) => b.passages - a.passages || b.documents - a.documents).slice(0, 8);
     if (codes.length) {
       const max = Math.max(1, ...codes.map((c) => c.passages));
       topBox.appendChild(h("section", { class: "section", "aria-labelledby": "pf-top-h" },

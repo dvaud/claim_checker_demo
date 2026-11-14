@@ -673,7 +673,9 @@ def grid(ws: Workspace, framework: str, doc_ids: list[str] | None = None, level:
 def grid_table(g: dict) -> list[dict]:
     rows = []
     for d in g["documents"]:
-        row = {"Document": d["title"] or d["doc_id"]}
+        # 0.18.8 (N3): a working document's row says so, so a column's sum in a spreadsheet is not taken for the corpus's
+        row = {"Document": (d["title"] or d["doc_id"]) + (" (your working document, not in the totals)"
+                                                          if d.get("working") else "")}
         for c in g["codes"]:
             desc = " ".join((c.get("description") or "").split())
             head = f'{c["code"]} {desc[:40].rstrip()}{"…" if len(desc) > 40 else ""}'.strip()
