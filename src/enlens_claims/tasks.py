@@ -1038,6 +1038,16 @@ def _store_theory_codes(cx, t, payload, obj, model):
 
 
 taskkinds.attach("theory_codes", store=_store_theory_codes, demo=_theorycodes.demo_answer, size=_theorycodes.prompt_size)
+# K1 (the optional AI part): a code's definition drafted from its examples (codedefine.py)
+from . import codedefine as _codedefine  # noqa: E402 - after the store functions it may import
+
+
+def _store_code_definition(cx, t, payload, obj, model):
+    return _codedefine.store_answer(cx, t, payload, obj, model)
+
+
+taskkinds.attach("code_definition", store=_store_code_definition, demo=_codedefine.demo_answer,
+                 size=_codedefine.prompt_size)
 # 0.13.6: the store function of each kind, ENLENS's and the add-ons', from the registry
 HANDLERS = taskkinds.Table("store")
 

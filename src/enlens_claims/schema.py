@@ -362,6 +362,22 @@ class TheoryCodesOut(BaseModel):
     note: Optional[str] = None
 
 
+class CodeDefinitionOut(BaseModel):
+    """K1 (the optional AI part): a code's definition, when to use it and when not, drafted from its examples
+    (code-definition-v1). The definition and when to use it each name a quote that shows them."""
+    definition: str = Field(min_length=10, max_length=600)
+    definition_quote: QuoteRef
+    when_to_use: str = Field(min_length=5, max_length=400)
+    when_to_use_quote: QuoteRef
+    when_not_to_use: str = Field(default="", max_length=400)
+    note: Optional[str] = None
+
+    @field_validator("definition", "when_to_use", "when_not_to_use", mode="before")
+    @classmethod
+    def _flat(cls, v):
+        return " ".join(str(v or "").split())
+
+
 class Mention(BaseModel):
     passage: int = Field(ge=1)
     span: str = Field(min_length=3, max_length=300)
@@ -451,6 +467,8 @@ def output_schema(kind: str) -> dict:
         s = _inline(ResolveOut.model_json_schema())
     elif kind == "theory_codes":
         s = _inline(TheoryCodesOut.model_json_schema())
+    elif kind == "code_definition":
+        s = _inline(CodeDefinitionOut.model_json_schema())
     else:
         raise ValueError(f"no output schema for task kind {kind!r}")
     return _require_all(s)

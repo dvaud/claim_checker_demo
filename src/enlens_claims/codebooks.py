@@ -13,7 +13,10 @@ from the documents, one per line), and a side file `<name>.json` with what a spr
 - `removed`: codes taken out, with their definitions. Their labels are not deleted: they wait under *Removed codes*
   (`removed_codes`) until the code comes back;
 - `places`: where each example quote was found (the quote check: every example is words of a document);
-- `groups`: the groups in their order, `ordered`: the codes keep the editor's order.
+- `groups`: the groups in their order, `ordered`: the codes keep the editor's order;
+- `drafted` (K1, the optional AI part, codedefine.py): the AI's words of a code's definition, *when to use it* and
+  *when not* that the person took from a draft and has not changed yet, with the model and when, so the editor marks
+  them *AI draft* until they are rewritten. A field whose words changed loses its mark at the next save.
 
 An edit changes no result by itself: labels are moved, never made or deleted. A code whose wording changed says which
 of its labels the AI made with the earlier wording (`stale`) and can have only those passages labelled again
@@ -94,12 +97,28 @@ def default_uid(name: str, code: str) -> str:
     return "k" + hashlib.sha1(f"{name}\0{code}".encode()).hexdigest()[:10]
 
 
+DRAFT_FIELDS = ("description", "include", "exclude")
+
+
+def _still_drafted(d: Any, code: dict) -> dict | None:
+    """K1 (the optional AI part): of the AI's words a code took from a draft (`drafted`), those its fields still
+    hold word for word, with the model and when: {"model", "at", "description"?, "include"?, "exclude"?}, or None."""
+    if not isinstance(d, dict):
+        return None
+    out = {k: _clean_text(d.get(k), 2000 if k != "description" else 4000) for k in DRAFT_FIELDS
+           if _clean_text(d.get(k), 4000) and _clean_text(d.get(k), 4000) == _clean_text(code.get(k), 4000)}
+    if not out:
+        return None
+    return {"model": _clean_text(d.get("model"), 80), "at": _clean_text(d.get("at"), 40), **out}
+
+
 # ---------------------------------------------------------------------------------------------
 # a codebook as the editor sees it
 # ---------------------------------------------------------------------------------------------
 def _state(name: str, codes: dict[str, Code], meta: dict, title: str, label: str, directional: bool) -> dict:
     ids = meta.get("ids") or {}
     places = meta.get("places") or {}
+    drafted = meta.get("drafted") if isinstance(meta.get("drafted"), dict) else {}
     groups: list[dict] = []
     seen = set()
     for g in meta.get("groups") or []:
@@ -120,6 +139,9 @@ def _state(name: str, codes: dict[str, Code], meta: dict, title: str, label: str
                     "include": c.include, "exclude": c.exclude, "keywords": list(c.keywords),
                     "examples": [{"quote": q, **{k: v for k, v in (at.get(q) or {}).items() if k != "quote"}}
                                  for q in c.examples]})
+        d = _still_drafted(drafted.get(uid), out[-1])
+        if d:
+            out[-1]["ai_draft"] = d
     for g in groups:  # a group's name is the one its codes carry
         names = [c.group_name for c in codes.values() if c.group == g["group"] and c.group_name]
         if names:
@@ -351,6 +373,9 @@ def _clean_state(st: dict) -> dict:
         codes.append({"uid": uid if _UID.fullmatch(uid) else "", "code": code, "description": desc, "group": group,
                       "include": _clean_text(c.get("include"), 2000), "exclude": _clean_text(c.get("exclude"), 2000),
                       "keywords": kws[:40], "examples": exs, "split_from": str(c.get("split_from") or "") or None})
+        d = _still_drafted(c.get("ai_draft"), codes[-1])
+        if d:
+            codes[-1]["ai_draft"] = d
     if len(codes) > MAX_CODES:
         raise ValueError(f"A codebook can hold at most {MAX_CODES:,} codes.")
     used = {c["group"] for c in codes}
@@ -481,6 +506,14 @@ def versions_present(ws: Workspace, ids: list[str]) -> set[str]:
     return found
 
 
+def _took_draft(new: dict, old: dict) -> str | None:
+    """K1: None when this change takes no new AI draft words; else the model they come from ("" when unknown)."""
+    d = new.get("ai_draft") or {}
+    if not any(k in d and d[k] != (old.get("ai_draft") or {}).get(k) for k in DRAFT_FIELDS):
+        return None
+    return d.get("model") or ""
+
+
 def _new_uid() -> str:
     return "k" + uuid.uuid4().hex[:10]
 
@@ -539,7 +572,10 @@ def save(ws: Workspace, name: str, state: dict, merges: list[dict] | None = None
                 changes.append(f"renamed {researchlog.quoted(old['code'], 60)} to {researchlog.quoted(nc['code'], 60)}")
             if (nc["description"], nc["include"], nc["exclude"]) != (old["description"], old["include"], old["exclude"]):
                 new_events.append({"op": "reword", "uid": u, "code": nc["code"]})
-                changes.append(f"changed the wording of {researchlog.quoted(nc['code'], 60)}")
+                took = _took_draft(nc, old)
+                changes.append(f"changed the wording of {researchlog.quoted(nc['code'], 60)}"
+                               + (f" (taking the AI's draft{' from ' + took if took else ''}, to rewrite)"
+                                  if took is not None else ""))
             if nc["keywords"] != old["keywords"]:
                 changes.append(f"changed the words {researchlog.quoted(nc['code'], 60)} is matched by")
             if nc["group"] != old["group"]:
@@ -576,10 +612,12 @@ def save(ws: Workspace, name: str, state: dict, merges: list[dict] | None = None
             continue
         c["uid"] = _new_uid()
         split = c.get("split_from")
+        took = " (with the AI's draft wording, to rewrite)" if c.get("ai_draft") else ""
         if split and split in cur_by_uid:
-            changes.append(f"split {researchlog.quoted(cur_name[split], 60)}: added {researchlog.quoted(c['code'], 60)}")
+            changes.append(f"split {researchlog.quoted(cur_name[split], 60)}: added {researchlog.quoted(c['code'], 60)}"
+                           + took)
         else:
-            changes.append(f"added {researchlog.quoted(c['code'], 60)}")
+            changes.append(f"added {researchlog.quoted(c['code'], 60)}{took}")
     if new["title"] and new["title"] != cur["title"]:
         changes.append(f"renamed the codebook to {researchlog.quoted(new['title'], 80)}")
     if new["label"] != cur["label"]:
@@ -620,6 +658,11 @@ def save(ws: Workspace, name: str, state: dict, merges: list[dict] | None = None
     meta.update({"title": new["title"] or cur["title"], "label": new["label"], "editor": True, "ordered": True,
                  "ids": {c["code"]: c["uid"] for c in new["codes"]}, "groups": new["groups"], "places": places,
                  "removed": removed_meta, "events": events + new_events})
+    drafted = {c["uid"]: c["ai_draft"] for c in new["codes"] if c.get("ai_draft")}
+    if drafted:
+        meta["drafted"] = drafted
+    else:
+        meta.pop("drafted", None)
     if new["directional"]:
         meta["directional"] = True
     else:

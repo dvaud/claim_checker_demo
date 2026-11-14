@@ -303,6 +303,13 @@ _core(name="theory_codes", prompt_version="theory-codes-v1", claude=("sonnet", "
       noun=("theory document to draft codes from", "theory documents to draft codes from"),
       short="theory documents to draft codes from", title="Codes from a theory document",
       run_name="Codes from a theory document", output_cap=3000)
+# K1 (the optional AI part): a code's definition, when to use it and when not, drafted from the passages that hold its
+# examples, for the codebook editor (codedefine.py). One task per draft.
+_core(name="code_definition", prompt_version="code-definition-v1", claude=("sonnet", "opus"), local="large",
+      helper="enlens-namer", row="code_definition", row_title="Code definitions from examples", batch=1, order=6.6,
+      noun=("code to define from its examples", "codes to define from their examples"),
+      short="codes to define from their examples", title="Code definitions from examples",
+      run_name="A code's definition from its examples", output_cap=1500)
 # checks start on Sonnet (its helper runs at high effort, see agents/enlens-checker.md); an unsure or twice rejected
 # judgement goes to the auditor, so the second opinion and the step-up stay on Opus (or Fable)
 _core(name="check", prompt_version="check-v5", certainty="evidence", claude=("sonnet", "auditor"), local="large",

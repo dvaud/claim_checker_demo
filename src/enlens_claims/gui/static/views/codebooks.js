@@ -3,7 +3,9 @@
 // and example quotes from the documents, in groups; drag (or Move up / down) to reorder, rename, merge, split and
 // remove codes. *Try it* counts what the keyword pass would pick, without AI. Saving keeps the codebook as it was
 // (History) and writes the changes in the research log; labels follow renames and merges, and wait under *Removed
-// codes* when a code is removed. An edit changes no result by itself.
+// codes* when a code is removed. An edit changes no result by itself. K1's optional AI part: *Draft from the examples*
+// offers a definition, when to use it and when not, from the passages that hold a code's examples only; taken, the
+// words are marked *AI draft* until you rewrite them.
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { App, api, h, icon, replace, clear, toast, showError, failedLoad, fmt, pageHead, P, plural, confirmDialog, download,
   dialog, field, switchControl, watchJob, emptyState, shortTitle, session, button, iconButton, downloadButton, link, menu, notice, card, tag, input, select, textarea, choice, optionCards, readsLine, aiWhere, inset, workState, personMark, compare, readTextFile, setBusy } from "../lib.js";
@@ -15,6 +17,16 @@ import { OWNER_API, codebookOfferText } from "./owner-state.js";   // roles (H8)
 
 const WHERE = { project: ["This project", "folder"], home: ["All projects", "layers"], bundled: ["Ships with ENLENS", "library"] };
 const drafts = new Map();   // unsaved edits, kept while you look at another page: `${project}:${name}` -> {st, merges}
+// K1 (the optional AI part): the fields a draft from the examples fills, and those still the AI's words
+const FIELDS_OF_DRAFT = ["description", "include", "exclude"];
+const DRAFT_LABEL = { description: "the definition", include: "when to use it", exclude: "when not to use it" };
+const flat = (v) => String(v || "").split(/\s+/).filter(Boolean).join(" ");
+function draftFields(c) {
+  const d = c && c.ai_draft;
+  return d ? FIELDS_OF_DRAFT.filter((f) => flat(d[f]) && flat(d[f]) === flat(c[f])) : [];
+}
+const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+function listWords(xs) { return xs.length < 2 ? (xs[0] || "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`; }
 
 function whereBadge(where) {
   const [t, ic] = WHERE[where] || [where, "circle"];
@@ -360,6 +372,9 @@ export async function renderCodebook(view, [name]) {
     throw e;
   }
   let trying = false, tryWatch = null;   // the job of Try it, while it runs
+  const defineOffers = new Map();   // K1: whether the AI may draft from these examples, by the examples' quotes
+  const pendingDraft = new Map();   // K1: a draft not taken or put aside yet, by code (its uid; the code itself while unsaved)
+  const definingNow = new Set();    // K1: the codes whose draft is being made (same keys)
   let st, merges, dirty = false, tried = null, openCode = session(`cb-open:${key}`) || null;
   // what the codebook was when unsaved edits began: a draft made on another state (restored meanwhile, or changed in
   // another window) is set aside rather than saved over it
@@ -591,6 +606,7 @@ export async function renderCodebook(view, [name]) {
       h("span", { class: "cb-code-name" }, c.code || h("em", { class: "muted" }, "new code")),
       h("span", { class: "cb-code-desc" }, c.description ? shortTitle(c.description, 140) : h("em", { class: "muted" }, "no definition yet")),
       h("span", { class: "cb-code-badges" }, stale ? tag({ kind: "attention", title: "Labelled by the AI with an earlier wording" }, "earlier wording") : null,
+        draftFields(c).length ? tag({ icon: "sparkles", title: "Words the AI drafted and you have not rewritten yet" }, "AI draft") : null,
         (c.examples || []).length ? tag({ icon: "quote", title: "Examples" }, plural((c.examples || []).length, "example")) : null, count),
       icon(open ? "chevron-up" : "chevron-down", { size: 15 }));
     const grip = ro ? null : h("span", { class: "cb-grip", title: "Drag to move", "aria-hidden": "true" }, icon("grip", { size: 15 }));
@@ -650,6 +666,14 @@ export async function renderCodebook(view, [name]) {
       groups.map((g) => h("option", { value: g.group, selected: g.group === c.group }, g.group_name || g.group || "No group")));
     groupSel.addEventListener("change", () => moveCode(c.uid || c.code, null, groupSel.value));
     const kw = textField((c.keywords || []).join(", "), (v) => { c.keywords = v.split(/[,;]/).map((x) => x.trim()).filter(Boolean); }, { placeholder: "e.g. commute, commuting, travel to work" });
+    // K1: the words still the AI's draft, said under the three fields until you rewrite them
+    const mark = h("div", { class: "cb-draft-mark", "aria-live": "polite" });
+    const drawMark = () => {
+      const f = draftFields(c);
+      replace(mark, f.length ? h("p", { class: "small" }, tag({ icon: "sparkles" }, "AI draft"), " ",
+        `${capital(listWords(f.map((k) => DRAFT_LABEL[k])))} ${f.length === 1 ? "is" : "are"} still the AI’s words${c.ai_draft.model ? ` (${c.ai_draft.model})` : ""}, drafted from the examples. Rewrite ${f.length === 1 ? "it" : "them"} in your own words; the mark goes when you do.`) : null);
+    };
+    drawMark();
     const exList = h("ul", { class: "cb-examples" });
     const drawExamples = () => {
       clear(exList);
@@ -677,13 +701,15 @@ export async function renderCodebook(view, [name]) {
       h("div", { class: "fields-2" },
         field("Name", textField(c.code, (v) => { c.code = v; }, { maxlength: 40 }), { help: "Short: it is how labels and checks name the code." }),
         field("Group", groupSel)),
-      field("Definition", area(c.description, (v) => { c.description = v; }, { rows: 3, maxlength: 4000 }), { help: "What the code is about, in a sentence or two. The AI reads it when it labels." }),
+      field("Definition", area(c.description, (v) => { c.description = v; drawMark(); }, { rows: 3, maxlength: 4000 }), { help: "What the code is about, in a sentence or two. The AI reads it when it labels." }),
       h("div", { class: "fields-2" },
-        field("When to use it", area(c.include, (v) => { c.include = v; }, { maxlength: 2000 })),
-        field("When not to use it", area(c.exclude, (v) => { c.exclude = v; }, { maxlength: 2000 }))),
+        field("When to use it", area(c.include, (v) => { c.include = v; drawMark(); }, { maxlength: 2000 })),
+        field("When not to use it", area(c.exclude, (v) => { c.exclude = v; drawMark(); }, { maxlength: 2000 }))),
+      mark,
       field("Words it is matched by", kw, { help: "Besides its definition, for the keyword pass. Separate them with commas." }),
       h("div", { class: "field" }, h("span", { class: "field-label" }, "Examples from the documents"), exList, exInput, h("div", { class: "btn-row" }, exBtn,
         h("span", { class: "muted small" }, "Each example is checked: it must be words of a document of this project."))),
+      defineBox(c),
       triedExamples(t),
       h("div", { class: "btn-row cb-code-actions" },
         button({ kind: "quiet", sm: true, onClick: () => step(c, -1), "aria-label": `Move ${c.code} up` }, icon("arrow-up", { size: 13 }), "Up"),
@@ -691,6 +717,100 @@ export async function renderCodebook(view, [name]) {
         button({ kind: "quiet", sm: true, onClick: () => splitCode(c), title: "A second code made from this one; its labels stay with this one" }, icon("split", { size: 13 }), "Split"),
         others.length ? mergeSel : null,
         button({ kind: "danger", sm: true, onClick: () => removeCode(c) }, icon("trash", { size: 13 }), "Remove")));
+  }
+
+  // ---- K1 (the optional AI part): a code's definition drafted from its examples (codedefine.py) -----------------
+  // Asked only for an open code with two examples or more; the answer waits beside the fields (`pending`) until you
+  // take it or put it aside, and survives a redraw. Taken words are marked as the AI's (`c.ai_draft`), which the save
+  // keeps while the fields still hold them word for word.
+  // an unsaved code is its own key (it keeps it through renames and redraws); at a save its draft moves to its uid
+  function defineKey(c) { return c.uid || c; }
+  function keepPendingThroughSave(before) {
+    for (const [k, d] of before) {
+      if (typeof k === "string") continue;   // a saved code: its uid stays
+      pendingDraft.delete(k);
+      const now = st.codes.find((x) => x.code === k.code);
+      if (now && now.uid) pendingDraft.set(now.uid, d);
+    }
+  }
+  function exampleQuotes(c) { return (c.examples || []).map((e) => (typeof e === "string" ? e : e && e.quote) || "").filter(Boolean); }
+  function defineBox(c) {
+    const box = h("div", { class: "cb-define" });
+    const quotes = exampleQuotes(c);
+    const k = defineKey(c);
+    const pend = pendingDraft.get(k);
+    if (pend) { box.appendChild(draftPanel(c, pend)); return box; }
+    if (quotes.length < 2) {
+      box.appendChild(h("p", { class: "muted small" }, "With two examples or more, the AI can draft a definition, when to use the code and when not, from the passages that hold them."));
+      return box;
+    }
+    const sig = JSON.stringify(quotes);
+    const known = defineOffers.get(sig);
+    const fill = (offer) => {
+      if (!offer) { clear(box); return; }
+      if (!offer.offered) { replace(box, h("p", { class: "muted small" }, offer.why)); return; }
+      const btn = button({ onClick: () => askDraft(c, btn) }, icon("sparkles", { size: 14 }), "Draft from the examples");
+      if (definingNow.has(k)) setBusy(btn, true);
+      const what = `the ${offer.passages} passages that hold this code’s examples, and its name`;
+      replace(box, h("div", { class: "btn-row" }, withAI(btn)),
+        offer.reader === "local" ? aiWhere(`The AI on this computer reads ${what}: the text never leaves it.`, "local") : readsLine(what),
+        offer.left_line ? h("p", { class: "muted small" }, offer.left_line) : null,
+        h("p", { class: "muted small" }, "A draft to rewrite: it is shown here first, and nothing changes until you take it."));
+    };
+    if (known) fill(known);
+    else api("POST", `${base}/define/offer`, { examples: quotes }).then((o) => { defineOffers.set(sig, o); fill(o); }).catch(() => fill(null));
+    return box;
+  }
+  async function askDraft(c, btn) {
+    const k = defineKey(c);
+    if (definingNow.has(k)) return;
+    definingNow.add(k);
+    setBusy(btn, true);
+    try {
+      const group = (groupsInOrder().find((g) => g.group === c.group) || {}).group_name || "";
+      const res = await api("POST", `${base}/define`, { code: c.code, group, examples: exampleQuotes(c) });
+      const job = await watchJob(res.job.id).promise;
+      if (job.state !== "done") { if (job.error) toast(job.error, "error"); return; }
+      const got = job.result || {};
+      if (got.stopped) return;
+      if (got.withdrawn) { toast(got.why || "The request was taken back before the AI answered. Try again.", "warn"); return; }
+      if (!got.ok || !got.draft) { toast("The AI’s quotes could not be found in the example passages, so nothing was drafted. Try again, or write the definition yourself.", "warn"); return; }
+      // saved meanwhile: the unsaved code it was asked for is now the code of that name with a uid
+      const now = typeof k === "string" || st.codes.includes(k) ? k : defineKey(st.codes.find((x) => x.code === k.code) || k);
+      pendingDraft.set(now, { ...got.draft, at: new Date().toISOString(), reused: got.reused });
+    } catch (e) { showError(e); }
+    finally {
+      definingNow.delete(k);
+      if (btn.isConnected) setBusy(btn, false);
+      if (body.isConnected) draw();   // a redraw meanwhile made another button: it must not stay busy
+    }
+  }
+  function takeDraft(c, d, fields) {
+    const took = {};
+    for (const f of fields) if (d[f]) { c[f] = d[f]; took[f] = d[f]; }
+    if (!Object.keys(took).length) return;
+    const keep = {};   // the AI's words of earlier drafts the fields still hold
+    for (const f of draftFields(c)) if (!(f in took)) keep[f] = c.ai_draft[f];
+    c.ai_draft = { model: d.model || "", at: d.at, ...keep, ...took };
+    touch();
+  }
+  function draftPanel(c, d) {
+    const k = defineKey(c);
+    const done = () => { pendingDraft.delete(k); draw(); };
+    const row = (f, label) => d[f] ? h("div", { class: "cb-draft-row" },
+      h("div", { class: "cb-draft-text" }, h("span", { class: "field-label" }, label), h("p", {}, d[f]),
+        d.quotes && d.quotes[f] ? h("p", { class: "muted small" }, "Shown by ", h("span", { class: "serif" }, `“${d.quotes[f].quote}”`),
+          d.quotes[f].title ? ` · ${shortTitle(d.quotes[f].title, 50)}${d.quotes[f].page ? `, p. ${d.quotes[f].page}` : ""}` : "") : null),
+      button({ sm: true, onClick: () => { takeDraft(c, d, [f]); delete d[f]; if (!FIELDS_OF_DRAFT.some((x) => d[x])) done(); else draw(); } },
+        (c[f] || "").trim() ? "Use instead" : "Use")) : null;
+    return inset({ class: "cb-draft", tentative: true },
+      h("p", { class: "small" }, tag({ icon: "sparkles" }, "AI draft"), " ",
+        `Drafted${d.model ? ` by ${d.model}` : ""} from the passages that hold this code’s examples${d.reused ? " (the answer kept from the same request before)" : ""}. Read it, take what fits, and rewrite it in your own words.`),
+      d.note ? h("p", { class: "small" }, h("strong", {}, "The AI notes: "), d.note) : null,
+      row("description", "Definition"), row("include", "When to use it"), row("exclude", "When not to use it"),
+      h("div", { class: "btn-row" },
+        button({ kind: "main", sm: true, onClick: () => { takeDraft(c, d, FIELDS_OF_DRAFT); done(); } }, "Use all of it"),
+        button({ kind: "quiet", sm: true, onClick: done }, "Put it aside")));
   }
 
   function freeName(n) {
@@ -715,7 +835,8 @@ export async function renderCodebook(view, [name]) {
   }
   function splitCode(c) {
     const copy = { uid: "", split_from: c.uid || null, code: freeName(`${c.code.slice(0, 34)} (2)`), description: c.description, group: c.group,
-      include: c.include, exclude: c.exclude, keywords: (c.keywords || []).slice(), examples: [] };
+      include: c.include, exclude: c.exclude, keywords: (c.keywords || []).slice(), examples: [],
+      ...(c.ai_draft ? { ai_draft: { ...c.ai_draft } } : {}) };   // K1: the AI's words keep their mark
     st.codes.splice(st.codes.indexOf(c) + 1, 0, copy);
     openCode = copy.code;
     touch(); draw();
@@ -757,7 +878,9 @@ export async function renderCodebook(view, [name]) {
       const r = await api("PUT", base, { codebook: st, merges, why: why || null });
       drafts.delete(key);
       cb = r.codebook;
+      const pend = [...pendingDraft];
       fresh();
+      keepPendingThroughSave(pend);
       whyInput.value = "";
       setAside = false;
       forgetFrameworks();
