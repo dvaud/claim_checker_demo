@@ -57,11 +57,13 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
   impact claims tagged with UN SDG targets and compared with an expert Value Chain Assessment.
 
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
-## New in 0.18.7: Your project in NVivo, ATLAS.ti and MAXQDA, and the documents a check never read
+## New in 0.19.0rc1: Your own drafts, a concept map, codebooks from other programs, and a university drive for the team
 
-- **Your project for NVivo, ATLAS.ti and MAXQDA (roadmap G5).** *NVivo, ATLAS.ti, MAXQDA (.qdpx)* on the Hypotheses page, the Codes page and a result's downloads saves the project in the REFI-QDA exchange format these programs open.
-- **A codebook for NVivo, ATLAS.ti and MAXQDA.** *Download as .qdc* on a codebook's page saves it as a REFI-QDA codebook: its groups, and each code with its definition, when to use it and when not, keywords and examples.
-- **See which documents a check never read.** A check reads only the excerpts it picks, so many documents never come up.
+- **A concept map.** *Concepts* has a second tab, *Map*: the concepts mentioned in the most passages, joined by a line when the documents mention two together more often than by chance (pointwise mutual information, not…
+- **A code's definition drafted from its examples.** In the codebook editor, open a code with two examples or more and press *Draft from the examples*: the AI reads only the passages that hold those examples (with the code's name and group) and drafts…
+- **Count non-scientific documents in one check.** When newspapers, blogs or company brochures are the material a hypothesis is about, they are its evidence.
+- **A suggestion from your bibliography.** A document your bibliography lists as a newspaper or magazine article, a press release, a blog or forum post, a web page.
+- **Non-scientific documents on the evidence map.** They have a column again, their cells drawn with the symbol unfilled and a dashed edge (*Non-scientific: read, not counted*).
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:
