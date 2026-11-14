@@ -8,10 +8,11 @@ import math
 
 import pytest
 
-from enlens_claims import bibliography, conceptmap, docrole, ingest, profile, terms
+from enlens_claims import bibliography, conceptmap, docrole, ingest, profile, store, terms
 from enlens_claims.conceptmap import Filters
 from enlens_claims.store import Workspace
 from concept_corpus import write
+from _fakedom import NODE, STATIC, run
 
 
 @pytest.fixture
@@ -336,6 +337,215 @@ def test_the_routes(api, tmp_path):  # noqa: F811
     assert api("GET", "/api/projects/Map/concept-map?year_from=0000")[0] == 400
     assert api("GET", "/api/projects/Map/concept-map/edge?a=x")[0] == 400
     assert api("GET", f"/api/projects/Map/concept-map/edge?a={sp}&b=nope")[0] == 404
+
+
+
+# ---- the audit of 2026-11-14 ---------------------------------------------------------------------------------------
+def _hand(root, mentions: dict[str, list[int]], passages: int) -> Workspace:
+    """A small project written straight into its tables: one document of `passages` passages (p01, p02, …) and a term
+    per label of `mentions`, mentioned in the passages its numbers name. No glossary is built: the counts are known."""
+    w = Workspace.create(root)
+    with w.connect() as cx:
+        cx.execute("INSERT INTO documents(doc_id, path, sha1, title, n_pages, n_chars, text) VALUES "
+                   "('d1', 'd1.txt', 'd1', 'Hand made', 1, 10, '')")
+        cx.executemany("INSERT INTO passages(passage_id, doc_id, seq, page, start, end, text, section) "
+                       "VALUES (?, 'd1', ?, 1, ?, ?, 'text', 'body')",
+                       [(f"p{i:02}", i, i * 10, i * 10 + 9) for i in range(1, passages + 1)])
+        cx.executemany("INSERT INTO terms(term_id, label, stems, n_words, df, tf, passages, cvalue) "
+                       "VALUES (?, ?, ?, 1, 1, 1, 1, 1.0)", [(f"t-{x}", x, x) for x in mentions])
+        cx.executemany("INSERT INTO term_mentions VALUES (?, ?, 'd1', 0, 4)",
+                       [(f"t-{x}", f"p{i:02}") for x, ps in mentions.items() for i in ps])
+    return w
+
+
+def test_counts_and_pmi_of_a_hand_made_corpus_are_exact(tmp_path):
+    """Nine passages, eight of them mention a term. alpha 1-4, beta 1-3 and 5, gamma 5-8, delta 6-7, epsilon 8 only.
+    alpha and beta share 3: PMI log2(3 × 8 / (4 × 4)) = 0.58; gamma and delta share 2: log2(2 × 8 / (4 × 2)) = 1;
+    beta and gamma share 1 passage only, under MIN_TOGETHER. Every number below is written out, not recomputed."""
+    w = _hand(tmp_path / "p", {"alpha": [1, 2, 3, 4], "beta": [1, 2, 3, 5], "gamma": [5, 6, 7, 8], "delta": [6, 7],
+                               "epsilon": [8], "zeta": [], "eta": []}, passages=9)
+    try:
+        terms.set_link(w, "t-alpha", "t-epsilon", "add", "related")   # one end on the map: counted
+        terms.set_link(w, "t-zeta", "t-eta", "add", "related")        # neither end on the map: not the map's
+        m = conceptmap.concept_map(w)
+        assert m["passages"] == 8 and m["concepts_in_scope"] == 4
+        assert [(n["label"], n["passages"], n["group"]) for n in m["nodes"]] == [
+            ("alpha", 4, 1), ("beta", 4, 1), ("gamma", 4, 2), ("delta", 2, 2)]
+        assert [(e["a"], e["b"], e["together"], e["pmi"]) for e in m["edges"]] == [
+            ("t-gamma", "t-delta", 2, 1.0), ("t-alpha", "t-beta", 3, 0.58)]
+        assert m["groups"] == [{"group": 1, "size": 2, "names": ["alpha", "beta"]},
+                               {"group": 2, "size": 2, "names": ["gamma", "delta"]}]
+        assert m["links"] == [] and m["links_off_map"] == 1
+        e = conceptmap.edge(w, "t-beta", "t-gamma")
+        assert (e["together"], e["pmi"]) == (1, round(math.log2(1 * 8 / (4 * 4)), 2)) == (1, -1.0)
+        # the same corpus, the same places, on every system (CI runs Linux, macOS and Windows)
+        assert [(n["x"], n["y"]) for n in m["nodes"]] == [
+            (n["x"], n["y"]) for n in conceptmap.concept_map(w)["nodes"]]
+        # D1-5: so few passages, said in words
+        assert "Only 8 passages are counted" in conceptmap.as_text(m)
+    finally:
+        w.close_all()
+
+
+def test_a_small_layout_is_pinned():
+    """The layout uses cos and sin over 150 rounds: these places, written out, show any drift between systems."""
+    edges = {(0, 1): 1.0, (1, 2): 1.0, (0, 2): 1.0, (3, 4): 1.0, (4, 5): 1.0, (3, 5): 1.0, (2, 3): 0.1}
+    assert conceptmap._layout(7, [1, 1, 1, 2, 2, 2, None], edges) == [
+        (1.0, 0.4672), (0.7653, 0.5136), (0.8575, 0.1651), (0.2347, 0.4685), (0.0, 0.5149), (0.0923, 0.1664),
+        (0.0, 0.8349)]
+
+
+def test_twelve_groups_are_numbered_and_named(tmp_path):
+    """Twelve pairs of concepts, each pair in two passages of its own: twelve groups, numbered by size and passages,
+    every concept in one (the page draws 1 to 10 each its own way and 11 on alike)."""
+    pairs = {}
+    for k in range(12):
+        pairs[f"a{k:02}"] = pairs[f"b{k:02}"] = [2 * k + 1, 2 * k + 2]
+    w = _hand(tmp_path / "p", pairs, passages=24)
+    try:
+        m = conceptmap.concept_map(w, n=30)
+        assert [g["group"] for g in m["groups"]] == list(range(1, 13))
+        assert all(g["size"] == 2 for g in m["groups"]) and all(n["group"] for n in m["nodes"])
+        text = conceptmap.as_text(m)
+        assert "Group 6 (2)" in text and "Group 12 (2)" in text
+    finally:
+        w.close_all()
+
+
+@pytest.mark.durable
+def test_the_temporary_tables_are_in_memory_outside_the_tests_too(tmp_path, monkeypatch):
+    """D1-1: the app's connections keep SQLite's default for temporary tables, a file (the tests set memory for every
+    connection). The map sets memory on its connection, so a large project writes no temporary file per request."""
+    assert not store.fast_tests()
+    w = _hand(tmp_path / "p", {"alpha": [1, 2], "beta": [1, 2], "gamma": [3, 4]}, passages=4)
+    try:
+        assert w._conn().execute("PRAGMA temp_store").fetchone()[0] != 2
+        seen = []
+        total = conceptmap._Scope.total
+
+        def watch(sc):
+            seen.append(sc.cx.execute("PRAGMA temp_store").fetchone()[0])
+            return total(sc)
+
+        monkeypatch.setattr(conceptmap._Scope, "total", watch)
+        assert conceptmap.concept_map(w)["edges"]
+        assert conceptmap.edge(w, "t-alpha", "t-beta")["together"] == 2
+        assert seen == [2, 2]                       # 2: memory
+        assert not w.query("SELECT name FROM sqlite_temp_master WHERE name LIKE 'd1_%'")
+    finally:
+        w.close_all()
+
+
+def test_two_links_of_different_types_between_two_concepts_are_both_kept(ws):
+    """D1-7: two wordings joined into one concept can give a pair two links of different types; both are drawn and
+    named, each seen from the pair's a, and the edge route gives both."""
+    sp, gs, bp = _t(ws, "solar panels"), _t(ws, "grid storage"), _t(ws, "battery prices")
+    terms.set_link(ws, gs, bp, "add", "same")
+    terms.set_link(ws, sp, gs, "add", "narrower")       # solar panels is part of grid storage
+    terms.set_link(ws, bp, sp, "add", "effect")         # battery prices (one concept with grid storage) leads to them
+    m = conceptmap.concept_map(ws, n=150)
+    mine = [lk for lk in m["links"] if sp in (lk["a"], lk["b"])]
+    assert len(mine) == 1
+    lk = mine[0]
+    seen_from_sp = {t["relation"] if lk["a"] == sp else {"broader": "narrower", "effect": "effect_of"}[t["relation"]]
+                    for t in lk["types"]}
+    assert seen_from_sp == {"narrower", "effect_of"}
+    e = conceptmap.edge(ws, sp, gs)
+    assert sorted(x["relation"] for x in e["links"]) == ["effect_of", "narrower"]
+    assert e["link"] == e["links"][0]
+    assert sorted(x["relation"] for x in conceptmap.edge(ws, gs, sp)["links"]) == ["broader", "effect"]
+
+
+
+def test_the_group_colours_stand_out_from_the_card_in_both_themes():
+    """D1-10: a mark is a graphic, so its colour needs 3:1 against the card (WCAG 1.4.11), in light and dark."""
+    import re
+
+    css = (STATIC / "tokens.css").read_text(encoding="utf-8")
+
+    def lum(hx: str) -> float:
+        c = [int(hx[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    surfaces = re.findall(r"--surface:\s*(#[0-9a-f]{6})", css)
+    lines = [ln for ln in css.splitlines() if "--group-1:" in ln]
+    assert len(surfaces) == len(lines) == 3              # light, dark by the system, dark by choice
+    for surface, line in zip(surfaces, lines):
+        colours = re.findall(r"--group-\d:\s*(#[0-9a-f]{6})", line)
+        assert len(colours) == 5
+        for c in colours:
+            a, b = sorted((lum(c), lum(surface)))
+            assert (b + 0.05) / (a + 0.05) >= 3, (c, surface)
+
+# ---- the page (views/concept-map.js), run in Node ----------------------------------------------------------------
+needs_node = pytest.mark.skipif(not NODE, reason="node is not installed")
+PAGE = (STATIC / "views" / "concept-map.js").as_uri()
+
+
+@needs_node
+def test_every_group_mark_differs_by_shape_or_fill(tmp_path):
+    """D1-2: groups 1 to 5 filled shapes, 6 to 10 the same shapes outlined, 11 and on one grey star; no group a grey
+    dashed circle. Two different marks never differ by colour alone."""
+    out = run(f"""
+const cm = await import({json.dumps(PAGE)});
+const out = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 30].map((g) => {{
+  const gm = cm.groupMark(g), el = cm.mark(g, 8, 8, 5);
+  return [g, gm.key, gm.shape, gm.fill, gm.words, el.tagName.toLowerCase(), el.attributes.class];
+}});
+console.log(JSON.stringify(out));
+""", tmp_path)
+    by = {g: rest for g, *rest in out}
+    assert by[0][:3] == ["none", "circle", "dashed"] and by[0][5] == "cm-mark cm-none"
+    assert [by[g][1] for g in range(1, 6)] == ["circle", "square", "diamond", "triangle", "hexagon"]
+    assert [by[g][1] for g in range(6, 11)] == ["circle", "square", "diamond", "triangle", "hexagon"]
+    assert all(by[g][2] == "filled" and by[g][5] == f"cm-mark cm-g{g}" for g in range(1, 6))
+    assert all(by[g][2] == "outlined" and by[g][5] == f"cm-mark cm-o{g - 5}" for g in range(6, 11))
+    assert by[11] == by[12] == by[30] and by[11][:3] == ["other", "star", "filled"] and by[11][5] == "cm-mark cm-other"
+    keys = [by[g][0] for g in range(0, 12)]
+    assert len(set(keys)) == 12                         # 0 to 11: twelve marks, each its own shape and fill
+    assert len({(by[g][1], by[g][2]) for g in range(0, 12)}) == 12
+    assert by[6][3] == "outlined circle" and by[0][3] == "grey dashed circle"
+    css = (STATIC / "views.css").read_text(encoding="utf-8")
+    for cls in [f"cm-g{k}" for k in range(1, 6)] + [f"cm-o{k}" for k in range(1, 6)] + ["cm-none", "cm-other"]:
+        assert f".{cls} " in css or f".{cls}," in css, cls
+
+
+@needs_node
+def test_marks_are_pushed_apart_and_a_lone_concept_is_centred(tmp_path):
+    """D1-4: marks that overlap are pushed apart, the same way every time, inside the picture; on a narrow screen they
+    are smaller. D1-9: one concept, or one row, sits in the middle of a picture as tall as what it holds."""
+    out = run(f"""
+const cm = await import({json.dumps(PAGE)});
+const nodes = [{{x: 0.1, y: 0.1, passages: 20}}, {{x: 0.1, y: 0.1, passages: 2}}, {{x: 0.1004, y: 0.1, passages: 3}},
+  {{x: 0.9, y: 0.9, passages: 5}}, {{x: 0.5, y: 0.6, passages: 8}}];
+const out = {{ wide: cm.placeMarks(nodes, 900), again: cm.placeMarks(nodes, 900), narrow: cm.placeMarks(nodes, 360),
+  one: cm.placeMarks([{{x: 0.5, y: 0.5, passages: 3}}], 900), row: cm.placeMarks([{{x: 0.1, y: 0.8, passages: 3}}, {{x: 0.6, y: 0.8, passages: 9}}], 900) }};
+console.log(JSON.stringify(out));
+""", tmp_path)
+    assert out["wide"] == out["again"]
+    for k in ("wide", "narrow"):
+        W, H, ms = out[k]["W"], out[k]["H"], out[k]["marks"]
+        for i, a in enumerate(ms):
+            assert a["r"] < a["x"] < W - a["r"] and a["r"] < a["y"] < H - a["r"]
+            for b in ms[i + 1:]:
+                assert math.hypot(a["x"] - b["x"], a["y"] - b["y"]) >= a["r"] + b["r"] - 1e-6
+    assert max(x["r"] for x in out["narrow"]["marks"]) < max(x["r"] for x in out["wide"]["marks"])
+    one = out["one"]
+    assert one["marks"][0]["x"] == one["W"] / 2 and one["marks"][0]["y"] == one["H"] / 2 and one["H"] < 120
+    row = out["row"]
+    assert row["H"] < 120 and all(x["y"] == row["H"] / 2 for x in row["marks"])
+
+
+def test_a_filter_choice_redraws_the_map_not_the_controls():
+    """D1-3: the filters are made once; a choice loads the map again, and only the Code select is made again (when the
+    codebook changes), so a keyboard keeps its place in the controls."""
+    js = (STATIC / "views" / "concept-map.js").read_text(encoding="utf-8")
+    assert js.count("drawFilters()") == 2                   # its definition and the one call that makes them
+    pick = js[js.index("function onPick"):]
+    pick = pick[:pick.index("\n  }\n")]
+    assert "drawFilters" not in pick and "load()" in pick
+    assert "codeField.remove()" in js and "cbField.after(codeField)" in js
 
 
 from test_app import api, home  # noqa: E402,F401  (fixtures)

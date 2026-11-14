@@ -1,16 +1,20 @@
 // D1: the concept map, a view of Concepts (Glossary | Map). The concepts mentioned in the most passages, joined when
 // the documents mention two together more often than by chance (PMI, not raw counts), in groups found from those
-// joins, with the links you and the AI accepted drawn in their type. Filters (documents, a theme, a code, years) narrow
-// the passages counted. A concept opens its page; a line shows the passages that join its two concepts. The same map
-// is given as lists under it (docs/DESIGN.md 8). Rules and layout: conceptmap.py; routes: gui/api_corpus.py.
+// joins, with the glossary's links (yours, the AI's confident ones, abbreviations) drawn in their type. Filters
+// (documents, a theme, a code, years) narrow the passages counted. A concept opens its page; a line shows the passages
+// that join its two concepts. The same map is given as lists under it (docs/DESIGN.md 8). Rules and layout:
+// conceptmap.py; routes: gui/api_corpus.py.
 import { featureEyebrow, viewTabs } from "../features.js";
-import { App, api, h, P, replace, clear, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, emptyState, plural, shortTitle, button, link, notice, card, select, field, fold } from "../lib.js";
+import { App, api, h, P, replace, clear, showError, failedLoad, noDocuments, addDocumentsFirst, fmt, pageHead, emptyState, plural, shortTitle, button, link, notice, card, select, field, fold, spinner } from "../lib.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const ASPECT = 1.6;                        // conceptmap.ASPECT: the layout's width over its height
-const GROUPS_COLOURED = 5;                 // groups 1 to 5 have a colour and a shape; the others are grey circles
-const SHAPES = ["circle", "circle", "square", "diamond", "triangle", "hexagon"];   // by group (0: none or past 5)
-const SHAPE_WORDS = { circle: "circle", square: "square", diamond: "diamond", triangle: "triangle", hexagon: "hexagon" };
+const FEW_PASSAGES = 30;                   // conceptmap.FEW_PASSAGES: under this, the lines rest on very little
+// Groups 1 to 5: a filled shape each, in its colour; groups 6 to 10: the same five shapes outlined, in the same five
+// colours; groups 11 and on (the smallest) share one mark, a grey star; a concept in no group is a grey dashed circle.
+// So every mark differs from every other by its shape or its fill, never by colour alone.
+const SHAPES = ["circle", "square", "diamond", "triangle", "hexagon"];
+const OWN_MARKS = 10;                      // groups with a mark of their own
 // a link as drawn: its kind, and whether it runs from a to b (false: from b to a)
 const REL = { narrower: ["part", true], broader: ["part", false], effect: ["leads", true], effect_of: ["leads", false],
   replaces: ["replaces", true], replaced_by: ["replaces", false], related: ["related", true] };
@@ -36,13 +40,22 @@ function s(tag, attrs = {}, ...kids) {
   return el;
 }
 
-const groupOf = (g) => (g && g <= GROUPS_COLOURED ? g : 0);
+// how a group's concepts are drawn: {key (the same for groups drawn alike), shape, fill, cls (a class of views.css, from
+// the --group-* tokens), words (said to a screen reader and in the lists)}
+export function groupMark(g) {
+  if (!g) return { key: "none", shape: "circle", fill: "dashed", cls: "cm-none", words: "grey dashed circle" };
+  if (g > OWN_MARKS) return { key: "other", shape: "star", fill: "filled", cls: "cm-other", words: "grey star" };
+  const k = (g - 1) % SHAPES.length;
+  const fill = g <= SHAPES.length ? "filled" : "outlined";
+  return { key: `${fill} ${SHAPES[k]}`, shape: SHAPES[k], fill, cls: `${fill === "filled" ? "cm-g" : "cm-o"}${k + 1}`, words: `${fill} ${SHAPES[k]}` };
+}
 
-// a group's mark: its colour (a class of views.css, from the --group-* tokens) and its shape
-function mark(g, x, y, r) {
-  const k = groupOf(g);
-  const cls = `cm-mark cm-g${k}`;
-  const shape = SHAPES[k];
+// a group's mark: its colour and fill (a class of views.css) and its shape
+export function mark(g, x, y, r) {
+  const gm = groupMark(g);
+  const cls = `cm-mark ${gm.cls}`;
+  const shape = gm.shape;
+  if (shape === "star") return s("polygon", { class: cls, points: [...Array(10).keys()].map((i) => { const rr = r * (i % 2 ? 0.6 : 1.35), t = Math.PI / 5 * i - Math.PI / 2; return `${(x + rr * Math.cos(t)).toFixed(1)},${(y + rr * Math.sin(t)).toFixed(1)}`; }).join(" ") });
   if (shape === "square") { const a = r * 0.9; return s("rect", { class: cls, x: x - a, y: y - a, width: 2 * a, height: 2 * a, rx: 1.5 }); }
   const poly = (pts) => s("polygon", { class: cls, points: pts.map(([px, py]) => `${(x + px).toFixed(1)},${(y + py).toFixed(1)}`).join(" ") });
   if (shape === "diamond") return poly([[0, -r * 1.25], [r * 1.25, 0], [0, r * 1.25], [-r * 1.25, 0]]);
@@ -50,7 +63,66 @@ function mark(g, x, y, r) {
   if (shape === "hexagon") return poly([0, 1, 2, 3, 4, 5].map((i) => [r * 1.1 * Math.cos(Math.PI / 3 * i), r * 1.1 * Math.sin(Math.PI / 3 * i)]));
   return s("circle", { class: cls, cx: x, cy: y, r });
 }
-const swatch = (g) => s("svg", { class: "cm-swatch", viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": "true" }, mark(g, 8, 8, 5.5));
+const swatch = (g) => s("svg", { class: "cm-swatch", viewBox: "0 0 16 16", width: 16, height: 16, "aria-hidden": "true" }, mark(g, 8, 8, 5));
+
+// Marks that overlap on the page are pushed apart, a little at a time, in the marks' order and a fixed number of rounds
+// (the same picture every time), and kept inside the picture: a small mark is never hidden under a larger one.
+// marks: [{x, y, r}], moved in place.
+const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+export function spreadMarks(marks, W, H, gap = 2, rounds = 40) {
+  const keep = (A) => { A.x = Math.min(W - A.r - 2, Math.max(A.r + 2, A.x)); A.y = Math.min(H - A.r - 2, Math.max(A.r + 2, A.y)); };
+  for (let k = 0; k < rounds; k++) {
+    let moved = false;
+    for (let i = 0; i < marks.length; i++) {
+      for (let j = i + 1; j < marks.length; j++) {
+        const A = marks[i], B = marks[j];
+        let dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
+        const want = A.r + B.r + gap;
+        if (d >= want) continue;
+        if (d < 1e-6) { dx = Math.cos(j * GOLDEN); dy = Math.sin(j * GOLDEN); d = 1; }   // one on the other: a fixed way
+        const push = (want - Math.min(d, want)) / 2;
+        A.x -= dx / d * push; A.y -= dy / d * push;
+        B.x += dx / d * push; B.y += dy / d * push;
+        keep(A); keep(B);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return marks;
+}
+
+// Where each concept's mark goes on a page `wrapW` wide: {W, H, marks: [{x, y, r}] in the nodes' order}. The map is
+// laid out ASPECT times as wide as high; a narrow page turns it a quarter round when that makes it taller, and its
+// height follows what it holds, so the groups stay round and no band is left empty. One concept, or concepts in one
+// row, sit in the middle of a picture as tall as what is drawn. A narrow screen keeps the distances shorter, so its
+// marks are smaller; marks that still overlap are pushed apart (spreadMarks).
+export function placeMarks(nodes, wrapW) {
+  const narrow = wrapW < 600;
+  const W = wrapW;
+  const padX = narrow ? 24 : 56, padY = 28;
+  const span = (k) => Math.max(...nodes.map((n) => n[k])) - Math.min(...nodes.map((n) => n[k]));
+  const turn = narrow && span("x") * ASPECT > span("y");   // only when turning makes it taller
+  const pts = nodes.map((n) => (turn ? [n.y, n.x * ASPECT] : [n.x * ASPECT, n.y]));
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  const xr = Math.max(...xs) - x0, yr = Math.max(...ys) - y0;
+  let scale = xr ? (W - 2 * padX) / xr : Infinity;
+  const H = yr ? Math.round(Math.min(yr * scale + 2 * padY, W * (narrow ? 2.2 : 0.9))) : 2 * padY + 32;
+  if (yr) scale = Math.min(scale, (H - 2 * padY) / yr);
+  if (!Number.isFinite(scale)) scale = 0;
+  const offX = (W - xr * scale) / 2, offY = (H - yr * scale) / 2;
+  const maxP = Math.max(...nodes.map((n) => n.passages));
+  const [r0, r1] = narrow ? [3, 6] : [4, 8];
+  const marks = nodes.map((n, i) => ({ x: offX + (pts[i][0] - x0) * scale, y: offY + (pts[i][1] - y0) * scale, r: r0 + r1 * Math.sqrt(n.passages / maxP) }));
+  return { W, H, marks: spreadMarks(marks, W, H) };
+}
+
+// The types of a pair's link, each seen from its a: [{relation, source, kind, forward}] (two wordings joined into one
+// concept, or two sources, can give one pair two types)
+const linkTypes = (lk) => (lk.types && lk.types.length ? lk.types : lk.relation ? [lk] : [])
+  .map((t) => { const [kind, forward] = REL[t.relation] || ["related", true]; return { ...t, kind, forward }; });
+const LINKS_WORDS = "a link of the glossary (one you accepted or added, one the AI is confident of, or an abbreviation)";
 
 function passageItem(b) {
   return h("li", {}, h("span", { class: "serif" }, "“", shortTitle(b.text || b.quote || "", 260), "” "),
@@ -87,7 +159,7 @@ function placeLabels(marks, W, H) {
 export async function renderConceptMap(view, params, query) {
   const project = App.project;
   const base = `/api/projects/${P(project)}`;
-  view.appendChild(pageHead("Concepts", { eyebrow: featureEyebrow("concepts"), sub: "The concepts the documents mention together more often than by chance, in groups, with the links you accepted." }));
+  view.appendChild(pageHead("Concepts", { eyebrow: featureEyebrow("concepts"), sub: "The concepts the documents mention together more often than by chance, in groups, with the links between them." }));
   view.appendChild(viewTabs("concepts", "conceptmap"));
   if (noDocuments()) { view.appendChild(addDocumentsFirst("The concept map")); return; }
 
@@ -95,10 +167,11 @@ export async function renderConceptMap(view, params, query) {
   for (const k of FILTER_KEYS) if (query[k]) f[k] = String(query[k]);
   const filtersBox = h("div", { class: "cm-filters", role: "group", "aria-label": "What the map counts" });
   const factsBox = h("div");
-  const mapBox = h("div", { "aria-busy": "false" });
+  const loadBox = h("div", { "aria-live": "polite" });
+  const mapBox = h("div", { class: "cm-map", "aria-busy": "false" });
   const detailBox = h("div", { "aria-live": "polite" });
   const listBox = h("div");
-  view.append(filtersBox, factsBox, mapBox, detailBox, listBox);
+  view.append(filtersBox, factsBox, loadBox, mapBox, detailBox, listBox);
 
   let opts;
   try { opts = await api("GET", `${base}/concept-map/options`); } catch (e) { failedLoad(mapBox, e); return; }
@@ -119,11 +192,22 @@ export async function renderConceptMap(view, params, query) {
   }
   const qs = () => { const q = new URLSearchParams(); for (const k of FILTER_KEYS) if (f[k]) q.set(k, f[k]); return q.toString(); };
 
-  // ---- the filters ----
+  // ---- the filters: made once; a choice redraws the map, not the controls (a keyboard keeps its place in them), and
+  // only the Code select is made again, when the codebook changes ----
   function opt(value, words, chosen) { return h("option", { value, selected: chosen }, words); }
+  let codeField = null;
+  function makeCodeField() {
+    const cb = fws.get(f.framework);
+    if (!cb) return null;
+    const codeSel = select({}, opt("", "Choose a code", !f.code), cb.codes.map((c) => opt(c.code, shortTitle(c.description ? `${c.code} ${c.description}` : c.code, 60), f.code === c.code)));
+    codeSel.addEventListener("change", onPick("code"));
+    return field("Code", codeSel);
+  }
+  function onPick(key, extra) {
+    return (e) => { const v = e.currentTarget.value; if (v) f[key] = v; else delete f[key]; if (extra) extra(v); keepUrl(); load(); };
+  }
   function drawFilters() {
     clear(filtersBox);
-    const onPick = (key, extra) => (e) => { const v = e.currentTarget.value; if (v) f[key] = v; else delete f[key]; if (extra) extra(v); keepUrl(); drawFilters(); load(); };
     // a link may name several documents (?doc=a,b): the select says so rather than "All documents"
     const several = f.doc && f.doc.includes(",") ? opt(f.doc, `These ${f.doc.split(",").length} documents`, true) : null;
     const docSel = select({}, opt("", "All documents", !f.doc), several, opts.documents.map((d) => opt(d.doc_id, shortTitle(d.title || d.doc_id, 60), f.doc === d.doc_id)));
@@ -136,14 +220,16 @@ export async function renderConceptMap(view, params, query) {
     }
     if (opts.codebooks.length) {
       const cbSel = select({}, opt("", "No code", !f.framework), opts.codebooks.map((c) => opt(c.name, shortTitle(c.title, 40), f.framework === c.name)));
-      cbSel.addEventListener("change", onPick("framework", () => { delete f.code; }));
-      filtersBox.appendChild(field("Codebook", cbSel));
-      const cb = fws.get(f.framework);
-      if (cb) {
-        const codeSel = select({}, opt("", "Choose a code", !f.code), cb.codes.map((c) => opt(c.code, shortTitle(c.description ? `${c.code} ${c.description}` : c.code, 60), f.code === c.code)));
-        codeSel.addEventListener("change", onPick("code"));
-        filtersBox.appendChild(field("Code", codeSel));
-      }
+      const cbField = field("Codebook", cbSel);
+      cbSel.addEventListener("change", onPick("framework", () => {
+        delete f.code;
+        if (codeField) codeField.remove();
+        codeField = makeCodeField();
+        if (codeField) cbField.after(codeField);
+      }));
+      filtersBox.appendChild(cbField);
+      codeField = makeCodeField();
+      if (codeField) filtersBox.appendChild(codeField);
     }
     if (opts.years.length) {
       const yFrom = select({}, opt("", "Any year", !f.year_from), opts.years.map((y) => opt(String(y), String(y), f.year_from === String(y))));
@@ -162,15 +248,23 @@ export async function renderConceptMap(view, params, query) {
   let seq = 0;
   let edgeSeq = 0;   // the latest line asked for: an older answer arriving late is dropped
   let lastWidth = 0;
+  // while a map is counted (seconds on a large project), a line says so and the map before it stays, dimmed
+  let loadTimer = null;
+  const loading = (on) => {
+    clearTimeout(loadTimer);
+    mapBox.setAttribute("aria-busy", on ? "true" : "false");
+    if (!on) { clear(loadBox); return; }
+    loadTimer = setTimeout(() => replace(loadBox, h("p", { class: "it muted cm-loading" }, spinner("Drawing the map"), m ? " Drawing the map again…" : " Drawing the map…")), 250);
+  };
   async function load() {
     const my = ++seq;
     edgeSeq++;       // (a line of the previous map no longer applies)
-    mapBox.setAttribute("aria-busy", "true");
+    loading(true);
     let r;
     try { r = await api("GET", `${base}/concept-map?${qs()}`); }
-    catch (e) { if (my === seq) { failedLoad(mapBox, e); mapBox.setAttribute("aria-busy", "false"); } return; }
+    catch (e) { if (my === seq) { loading(false); failedLoad(mapBox, e); } return; }
     if (my !== seq) return;
-    mapBox.setAttribute("aria-busy", "false");
+    loading(false);
     m = r;
     clear(detailBox);
     draw();
@@ -194,7 +288,10 @@ export async function renderConceptMap(view, params, query) {
     }
     factsBox.appendChild(h("p", { class: "muted small cm-facts" },
       `${m.nodes.length < m.concepts_in_scope ? `The ${m.nodes.length} of ${fmt.num(m.concepts_in_scope)} concepts mentioned in the most passages` : plural(m.nodes.length, "concept")}, counted in ${plural(m.passages, "passage")}${filtered() ? " within these filters" : ""}. Theory and working documents are left out.`,
-      m.links_off_map ? ` ${plural(m.links_off_map, "link")} you accepted ${m.links_off_map === 1 ? "joins" : "join"} a concept not on the map.` : ""));
+      m.links_off_map ? ` ${plural(m.links_off_map, "link")} of the glossary ${m.links_off_map === 1 ? "joins" : "join"} a concept on the map to one that is not on it.` : ""));
+    if (m.edges.length && m.passages < FEW_PASSAGES) {
+      factsBox.appendChild(notice({ kind: "info", class: "cm-note" }, h("p", {}, `Only ${plural(m.passages, "passage")}${filtered() ? " within these filters" : ""} ${m.passages === 1 ? "is" : "are"} counted, so the lines rest on very little: two concepts that share two or three of them can look strongly joined by chance.`)));
+    }
     if (!m.edges.length && !m.links.length) {
       factsBox.appendChild(notice({ kind: "info", class: "cm-note" }, h("p", {}, "No two of these concepts are mentioned together often enough to be joined (in two passages or more, more often than by chance).")));
     }
@@ -203,42 +300,28 @@ export async function renderConceptMap(view, params, query) {
   }
 
   function legend() {
-    const kinds = [...new Set(m.links.map((lk) => (REL[lk.relation] || ["related"])[0]))];
+    const kinds = [...new Set(m.links.flatMap((lk) => linkTypes(lk).map((t) => t.kind)))];
+    const own = m.groups.filter((g) => g.group <= OWN_MARKS), rest = m.groups.filter((g) => g.group > OWN_MARKS);
     return h("div", { class: "cm-legend" },
       h("ul", { class: "cm-keys", "aria-label": "Groups" },
-        m.groups.map((g) => h("li", { class: "cm-key" }, swatch(g.group),
-          h("span", {}, h("strong", {}, `Group ${g.group}`), ` ${g.names.join(", ")}${g.size > g.names.length ? "…" : ""}`))),
-        m.nodes.some((n) => !n.group) ? h("li", { class: "cm-key" }, swatch(0), h("span", { class: "muted" }, "In no group")) : null,
-        m.groups.length > GROUPS_COLOURED ? h("li", { class: "cm-key muted" }, `Groups ${GROUPS_COLOURED + 1} and on are grey circles too: the lists below say which.`) : null),
+        own.map((g) => h("li", { class: "cm-key" }, swatch(g.group),
+          h("span", {}, h("strong", {}, `Group ${g.group}`), h("span", { class: "visually-hidden" }, ` (${groupMark(g.group).words})`), ` ${g.names.join(", ")}${g.size > g.names.length ? "…" : ""}`))),
+        rest.length ? h("li", { class: "cm-key" }, swatch(rest[0].group),
+          h("span", {}, h("strong", {}, `Groups ${rest[0].group} to ${rest[rest.length - 1].group}`), h("span", { class: "visually-hidden" }, ` (${groupMark(rest[0].group).words})`),
+            ` the ${rest.length} smallest groups, drawn alike: the lists below say which concepts each holds`)) : null,
+        m.nodes.some((n) => !n.group) ? h("li", { class: "cm-key" }, swatch(0), h("span", { class: "muted" }, "In no group"), h("span", { class: "visually-hidden" }, ` (${groupMark(0).words})`)) : null),
       h("p", { class: "muted small cm-how" }, "A line: the two are mentioned together more often than by chance (the thicker, the more). ",
-        kinds.length ? `An arrow or a darker line with words: a link you accepted (${kinds.map((k) => REL_WORDS[k]).join(", ")}). ` : "",
+        kinds.length ? `An arrow or a darker line with words (${kinds.map((k) => REL_WORDS[k]).join(", ")}): ${LINKS_WORDS}. ` : "",
         "Choose a concept to open it; choose a line to see the passages that join the two."));
   }
 
   function svgMap() {
     const wrapW = Math.max(320, Math.min(1200, mapBox.clientWidth || view.clientWidth || 900));
     lastWidth = wrapW;
-    // the map is laid out ASPECT times as wide as high; a narrow page turns it a quarter round when that makes it taller,
-    // and its height follows what it holds, so the groups stay round and no band is left empty
-    const narrow = wrapW < 600;
-    const W = wrapW;
-    const padX = narrow ? 24 : 56, padY = 28;
-    const span = (k) => Math.max(...m.nodes.map((n) => n[k])) - Math.min(...m.nodes.map((n) => n[k]));
-    const turn = narrow && span("x") * ASPECT > span("y");   // only when turning makes it taller
-    const pts = m.nodes.map((n) => (turn ? [n.y, n.x * ASPECT] : [n.x * ASPECT, n.y]));
-    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-    const x0 = Math.min(...xs), y0 = Math.min(...ys);
-    const xr = Math.max(...xs) - x0 || 1, yr = Math.max(...ys) - y0 || 1;
-    let scale = (W - 2 * padX) / xr;
-    const H = Math.round(Math.min(yr * scale + 2 * padY, W * (narrow ? 2.2 : 0.9)));
-    scale = Math.min(scale, (H - 2 * padY) / yr);
-    const offX = (W - xr * scale) / 2;
-    const maxP = Math.max(...m.nodes.map((n) => n.passages));
+    const { W, H, marks } = placeMarks(m.nodes, wrapW);
     const maxPmi = Math.max(1, ...m.edges.map((e) => e.pmi));
     const at = {};
-    m.nodes.forEach((n, i) => {
-      at[n.id] = { x: offX + (pts[i][0] - x0) * scale, y: padY + (pts[i][1] - y0) * scale, r: 4 + 8 * Math.sqrt(n.passages / maxP), i, n };
-    });
+    m.nodes.forEach((n, i) => { at[n.id] = { ...marks[i], i, n }; });
     const { labels, room } = placeLabels(m.nodes.map((n) => at[n.id]), W, H);
     const near = {};   // node id -> set of ids joined to it
     const join = (a, b) => { (near[a] = near[a] || new Set()).add(b); (near[b] = near[b] || new Set()).add(a); };
@@ -270,14 +353,15 @@ export async function renderConceptMap(view, params, query) {
         s("line", { class: "cm-hit", ...p, onClick: () => showEdge(e.a, e.b) }, s("title", {}, title))));
     }
     for (const lk of m.links) {
-      const [kind, forward] = REL[lk.relation] || ["related", true];
-      const [from, to] = forward ? [lk.a, lk.b] : [lk.b, lk.a];
-      const p = ends(from, to, 2, kind === "related" ? 2 : 4);
-      const words = REL_WORDS[kind];
-      const title = `${at[from].n.label} ${words} ${at[to].n.label} (${SOURCE_WORDS[lk.source] || lk.source})`;
+      // one line per pair, with every type of its link: an arrow at each end a type points to, all their words
+      const types = linkTypes(lk);
+      const toB = types.some((t) => t.kind !== "related" && t.forward), toA = types.some((t) => t.kind !== "related" && !t.forward);
+      const p = ends(lk.a, lk.b, toA ? 4 : 2, toB ? 4 : 2);
+      const words = [...new Set(types.map((t) => REL_WORDS[t.kind]))].join(" · ");
+      const title = types.map((t) => { const [x, y] = t.forward ? [lk.a, lk.b] : [lk.b, lk.a]; return `${at[x].n.label} ${REL_WORDS[t.kind]} ${at[y].n.label} (${SOURCE_WORDS[t.source] || t.source})`; }).join("; ");
       const mx = (p.x1 + p.x2) / 2, my = (p.y1 + p.y2) / 2;
       linksG.appendChild(s("g", { class: "cm-pair", "data-a": lk.a, "data-b": lk.b },
-        s("line", { class: "cm-link", ...p, "marker-end": kind === "related" ? null : "url(#cm-arrow)" }),
+        s("line", { class: "cm-link", ...p, "marker-end": toB ? "url(#cm-arrow)" : null, "marker-start": toA ? "url(#cm-arrow)" : null }),
         s("text", { class: "cm-rel", x: mx.toFixed(1), y: (my - 4).toFixed(1), "text-anchor": "middle",
           "data-hidden": room([mx - words.length * 3.1, my - 15, mx + words.length * 3.1, my - 1]) ? null : "true" }, words),
         s("line", { class: "cm-hit", ...p, onClick: () => showEdge(lk.a, lk.b) }, s("title", {}, title))));
@@ -289,8 +373,8 @@ export async function renderConceptMap(view, params, query) {
       nodesG.querySelectorAll(".cm-node").forEach((el) => { if (el.dataset.id === id || ns.has(el.dataset.id)) el.dataset.near = "true"; else el.removeAttribute("data-near"); });
       svg.querySelectorAll(".cm-pair").forEach((el) => { if (el.dataset.a === id || el.dataset.b === id) el.dataset.near = "true"; else el.removeAttribute("data-near"); });
     };
-    // the larger marks last, so they lie on top; their labels too
-    for (const n of [...m.nodes].reverse()) {
+    // the larger marks first, so a smaller one lies on top of any it still touches
+    for (const n of m.nodes) {
       const A = at[n.id];
       const g = n.group ? `group ${n.group}` : "in no group";
       const a = s("a", { class: "cm-node", href: conceptHref(n.id), "data-id": n.id,
@@ -318,18 +402,16 @@ export async function renderConceptMap(view, params, query) {
     if (my !== edgeSeq) return;
     const A = link({ kind: "title", serif: true, href: conceptHref(r.a.node) }, r.a.label);
     const B = link({ kind: "title", serif: true, href: conceptHref(r.b.node) }, r.b.label);
-    let linkLine = null;
-    if (r.link) {
-      const [kind, forward] = REL[r.link.relation] || ["related", true];
-      const [x, y] = forward ? [r.a.label, r.b.label] : [r.b.label, r.a.label];
-      linkLine = h("div", { class: "cm-detail-part" }, h("p", {}, h("strong", {}, `${x} ${REL_WORDS[kind]} ${y}`), h("span", { class: "muted" }, ` · ${SOURCE_WORDS[r.link.source] || r.link.source}`)),
-        (r.link.sentences || []).length ? h("ul", { class: "ct-quotes" }, r.link.sentences.map(passageItem)) : null);
-    }
+    const linkLines = linkTypes({ types: r.links || (r.link ? [r.link] : []) }).map((t) => {
+      const [x, y] = t.forward ? [r.a.label, r.b.label] : [r.b.label, r.a.label];
+      return h("div", { class: "cm-detail-part" }, h("p", {}, h("strong", {}, `${x} ${REL_WORDS[t.kind]} ${y}`), h("span", { class: "muted" }, ` · ${SOURCE_WORDS[t.source] || t.source}`)),
+        (t.sentences || []).length ? h("ul", { class: "ct-quotes" }, t.sentences.map(passageItem)) : null);
+    });
     const together = r.together
       ? h("p", {}, `Mentioned together in ${plural(r.together, "passage")}${filtered() ? " within these filters" : ""}`, r.pmi !== null && r.pmi > 0 ? `, ${times(r.pmi)} times as often as by chance` : r.pmi !== null ? ", no more often than by chance" : "", ".")
       : h("p", { class: "muted" }, `No passage${filtered() ? " within these filters" : ""} mentions both.`);
     replace(detailBox, card({ class: "section cm-detail", title: h("span", {}, A, " and ", B), titleId: "cm-detail-h", level: "h2" },
-      linkLine, together,
+      linkLines, together,
       r.passages.length ? h("ul", { class: "ct-quotes" }, r.passages.map(passageItem)) : null,
       r.together > r.passages.length ? h("p", { class: "muted small" }, `The first ${r.passages.length} of ${r.together}, by document.`) : null));
     detailBox.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -341,12 +423,13 @@ export async function renderConceptMap(view, params, query) {
     const nameLink = (id) => link({ kind: "title", serif: true, href: conceptHref(id) }, lab[id]);
     const groupRows = [...m.groups.map((g) => [`Group ${g.group}`, g.group, m.nodes.filter((n) => n.group === g.group)]),
       ["In no group", 0, m.nodes.filter((n) => !n.group)]].filter((x) => x[2].length);
+    const markWords = (g) => (g > OWN_MARKS ? `${groupMark(g).words}, as every group from ${OWN_MARKS + 1} on` : groupMark(g).words);
     const groupsTable = h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive cm-groups" },
       h("caption", { class: "visually-hidden" }, "The groups of concepts"),
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Group"), h("th", { scope: "col" }, "Concepts, with their passages"))),
       h("tbody", {}, groupRows.map(([name, g, ns]) => h("tr", {},
         h("td", { "data-label": "Group" }, h("span", { class: "cm-group-name" }, swatch(g), name),
-          g && g > GROUPS_COLOURED ? null : h("span", { class: "visually-hidden" }, ` (${SHAPE_WORDS[SHAPES[groupOf(g)]]})`)),
+          h("span", { class: "visually-hidden" }, ` (${markWords(g)})`)),
         h("td", { "data-label": "Concepts" }, ns.map((n, i) => [i ? ", " : null, nameLink(n.id), h("span", { class: "muted small" }, ` ${fmt.num(n.passages)}`)])))))));
     const pairButton = (a, b) => button({ sm: true, kind: "quiet", onClick: () => showEdge(a, b) }, "Show the passages");
     const pairsTable = m.edges.length ? h("div", { class: "table-wrap" }, h("table", { class: "table table-responsive cm-pairs" },
@@ -357,15 +440,17 @@ export async function renderConceptMap(view, params, query) {
         h("td", { class: "num", "data-label": "Passages together" }, fmt.num(e.together)),
         h("td", { class: "num", "data-label": "Times as often as by chance" }, times(e.pmi)),
         h("td", {}, pairButton(e.a, e.b))))))) : h("p", { class: "muted" }, "No two concepts are mentioned together often enough to be joined.");
-    const linksList = m.links.length ? h("ul", { class: "cm-link-list" }, m.links.map((lk) => {
-      const [kind, forward] = REL[lk.relation] || ["related", true];
-      const [x, y] = forward ? [lk.a, lk.b] : [lk.b, lk.a];
-      return h("li", {}, nameLink(x), ` ${REL_WORDS[kind]} `, nameLink(y), h("span", { class: "muted small" }, ` · ${SOURCE_WORDS[lk.source] || lk.source} `), pairButton(lk.a, lk.b));
-    })) : h("p", { class: "muted" }, "No link you accepted joins two concepts on the map. Accept or add links on a concept’s page.");
+    const linksList = m.links.length ? h("ul", { class: "cm-link-list" }, m.links.map((lk) => h("li", {},
+      linkTypes(lk).map((t, i) => {
+        const [x, y] = t.forward ? [lk.a, lk.b] : [lk.b, lk.a];
+        return [i ? "; " : null, nameLink(x), ` ${REL_WORDS[t.kind]} `, nameLink(y), h("span", { class: "muted small" }, ` · ${SOURCE_WORDS[t.source] || t.source}`)];
+      }), " ", pairButton(lk.a, lk.b))))
+      : h("p", { class: "muted" }, "No link of the glossary joins two concepts on the map. Accept or add links on a concept’s page.");
     listBox.appendChild(fold({ class: "section", open: false }, "The map as lists",
       h("h3", { class: "cm-list-h" }, "Groups"), groupsTable,
       h("h3", { class: "cm-list-h" }, "Mentioned together"), pairsTable,
-      h("h3", { class: "cm-list-h" }, "Your links"), linksList));
+      h("h3", { class: "cm-list-h" }, "Links"),
+      h("p", { class: "muted small" }, `Each is ${LINKS_WORDS}.`), linksList));
   }
 
   drawFilters();
@@ -383,5 +468,5 @@ export async function renderConceptMap(view, params, query) {
     }, 200);
   });
   ro.observe(mapBox);
-  return () => { ro.disconnect(); clearTimeout(timer); };
+  return () => { ro.disconnect(); clearTimeout(timer); clearTimeout(loadTimer); };
 }

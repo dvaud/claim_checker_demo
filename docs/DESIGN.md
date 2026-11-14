@@ -137,7 +137,7 @@ all). **Who may use which colour:**
 | Greys (`--text`, `--text-2`, `--muted`, `--faint`, `--surface*`, `--border*`, `--bg*`) | Everything else | Text, facts, tags, AI marks, the AI line, work states, done notices | — |
 | Yellow (`--mark`, `--mark-line`) | The quote the AI found | `mark.quote` | A search hit, a highlight, anything else |
 | Highlight colours (`--hl-*`) | Your own highlights | `mark.hl-*`, their swatches, a quoted highlight's edge | Anything the app says |
-| Group colours (`--group-1` … `--group-5`) | Which group a concept falls in on the concept map (D1) | The concept map's marks and its legend, each always with its group's own shape (circle, square, diamond, triangle, hexagon), never colour alone | A judgement, a state, anything outside the map |
+| Group colours (`--group-1` … `--group-5`) | Which group a concept falls in on the concept map (D1) | The concept map's marks and its legend, each always with its group's own shape (circle, square, diamond, triangle, hexagon), filled for groups 1 to 5 and outlined for 6 to 10, never colour alone; 3:1 or more against `--surface` in both themes | A judgement, a state, anything outside the map |
 
 Amber and red each serve a judgement and a state. They are told apart by form, always: **a judgement is a pill with a
 circle-family icon; a state is never a pill and carries the triangle (needs you) or the alert circle (went wrong).**

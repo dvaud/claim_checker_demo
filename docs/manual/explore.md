@@ -119,15 +119,23 @@ same for two sets you tick (policy against academic, one country against another
   (pointwise mutual information): two common words that turn up together only as often as chance would give are not
   joined, however many passages they share. The thicker the line, the more often than by chance. Each concept keeps
   its strongest lines only, so the map stays readable.
-- **Groups** are concepts that are mentioned with each other more than with the rest. Each group has a colour and a
-  shape of its own; the legend names its concepts in the most passages. A concept with no line is in no group (grey).
-- **Your links** (those you accepted or added, the AI's confident ones and the abbreviations) are darker lines with
-  their words: *is part of* and *leads to* point the way they run, *is used instead of*, *is related to*. Two wordings
-  you joined as *the same* are one concept, so they are one mark.
+- **Groups** are concepts that are mentioned with each other more than with the rest; the legend names each group's
+  concepts in the most passages. Groups 1 to 5 are each a filled shape in a colour of their own (circle, square,
+  diamond, triangle, hexagon); groups 6 to 10 are the same five shapes outlined, in the same five colours; groups 11
+  and on, the smallest, are all grey stars, and *The map as lists* says which concepts each holds. A concept with no
+  line is in no group: a grey dashed circle. So no two kinds of mark differ by colour alone.
+- **Links** (those you accepted or added, the AI's confident ones and the abbreviations) are darker lines with their
+  words: *is part of* and *leads to* point the way they run, *is used instead of*, *is related to*. Two concepts with
+  links of two types (two wordings you joined, or two sources) have one line with both. Two wordings you joined as
+  *the same* are one concept, so they are one mark.
 
 Choose a concept to open its page. Choose a line to see, under the map, the passages that mention both (and, for a
-link, its sentences); *The map as lists* gives the groups, every line and your links as lists, with *Show the
-passages* on each. Pointing at a concept dims everything it is not joined to.
+link, its sentences); *The map as lists* gives the groups, every line and the links as lists, with *Show the
+passages* on each. Pointing at a concept dims everything it is not joined to. Marks that would cover each other are
+pushed apart a little, and on a narrow screen they are smaller.
+
+When fewer than 30 passages are counted (one short document, a narrow filter), the page says so: a line that rests on
+two or three passages can look strong by chance.
 
 The filters above the map narrow the passages it counts, and the map is drawn again from those passages alone:
 *Documents*, a *Theme* (of the latest set, with your merges and moves), a *Code* of a codebook (the passages labelled
