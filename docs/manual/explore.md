@@ -226,6 +226,18 @@ temporary project and opens it at its key terms: search it, see its codes and re
 *Keep as a project* or *Discard now*; otherwise it goes to the trash after 7 days. A quick look opened while a project
 is open can use that project's codebooks, without changing them; its own labels stay in the quick look.
 
+## For NVivo, ATLAS.ti and MAXQDA
+
+*NVivo, ATLAS.ti, MAXQDA (.qdpx)* (beside *Download all* on the Hypotheses page, beside *Excel* on the Codes page, and
+among a result's downloads; `enlens export-qdpx` on the command line) downloads the project in the REFI-QDA exchange
+format that these programs open. It holds every document as plain text (without the blocks left out), each codebook
+with labels and your own codebooks as codes with their definitions, and each hypothesis as a code with *Supports*,
+*Partly supports* and *Contradicts* under it. The labels and judgements that count are codings on their quotes: the
+person whose decision it was codes it (your name from Settings), or "ENLENS AI" with the model's name, so you can tell
+them apart in the other program. Your notes and highlights become memos on their words, and the research log one memo.
+The file holds your private work too: it is for your own analysis, not for a colleague. A codebook alone downloads as
+a REFI-QDA codebook from the codebook's page (*Download as .qdc*). No AI is used, and nothing leaves the computer.
+
 ## For FlexiConc and the Cross-Doc SDG Explorer
 
 *For FlexiConc / Cross-Doc* (on the Projects page; `enlens export-flexiconc` on the command line) downloads the project

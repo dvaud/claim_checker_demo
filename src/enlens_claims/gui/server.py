@@ -1403,6 +1403,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/claims/{P}/reread/{P}", "post_reread"),
     ("GET", rf"/api/projects/{P}/export\.(csv|xlsx)", "get_export"),
     ("GET", rf"/api/projects/{P}/export\.zip", "get_project_zip"),
+    ("GET", rf"/api/projects/{P}/export\.qdpx", "get_project_qdpx"),  # 0.18.7 (G5): for NVivo, ATLAS.ti, MAXQDA
     ("POST", rf"/api/projects/{P}/bring-in", "post_bring_in"),
     ("GET", rf"/api/projects/{P}/together", "get_together"),
     ("GET", rf"/api/projects/{P}/map", "get_map"),
@@ -1506,6 +1507,7 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", rf"/api/projects/{P}/codebooks/sources", "get_codebook_sources"),
     ("POST", rf"/api/projects/{P}/codebooks/example", "post_codebook_example"),
     ("GET", rf"/api/projects/{P}/codebooks/{P}\.csv", "get_codebook_csv"),
+    ("GET", rf"/api/projects/{P}/codebooks/{P}\.qdc", "get_codebook_qdc"),  # 0.18.7 (G5)
     ("GET", rf"/api/projects/{P}/codebooks/{P}", "get_codebook"),
     ("PUT", rf"/api/projects/{P}/codebooks/{P}", "put_codebook"),
     ("DELETE", rf"/api/projects/{P}/codebooks/{P}", "delete_codebook"),
@@ -1575,7 +1577,8 @@ DOWNLOADS = {"get_hypothesis_export", "get_export", "get_document_file", "get_pr
              "get_page_image",  # 0.15: a picture of a page, in an <img>
              "get_annotated_zip", "get_search_export", "get_profile_export", "get_themes_export", "get_move_zip",
              "get_ai_sent_csv", "get_bibliography_export",
-             "get_log_export", "get_notes_export", "get_codebook_csv"}  # 0.16
+             "get_log_export", "get_notes_export", "get_codebook_csv",  # 0.16
+             "get_project_qdpx", "get_codebook_qdc"}  # 0.18.7 (G5)
 DOWNLOADS |= api_corpus.DOWNLOADS | api_checks_extra.DOWNLOADS
 # (these may take the token as ?token=, for plain links)
 

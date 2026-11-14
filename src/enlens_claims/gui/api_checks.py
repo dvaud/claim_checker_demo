@@ -196,6 +196,30 @@ class ChecksApi:
 
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def get_project_qdpx(self, name, q):
+        """0.18.7 (G5): the project for NVivo, ATLAS.ti and MAXQDA, as a REFI-QDA project (qdpx.py), built in a
+        temporary file and sent in chunks. `?framework=` keeps one codebook; `?threshold=` the strictness (else
+        Settings')."""
+        import shutil
+        import tempfile
+
+        from .. import qdpx
+
+        ws = self.app.ws(name)
+        fw = _str(q, "framework") or None
+        thr = _float(q, "threshold", self.app.settings()["threshold"])   # the strictness, as the other exports
+        tmp = Path(tempfile.mkdtemp(prefix="enlens-qdpx-"))
+        try:
+            out = tmp / "project.qdpx"
+            try:
+                qdpx.export_project(ws, out, framework=fw, threshold=thr)
+            except ValueError as e:   # an unknown codebook
+                raise ApiError(400, str(e)) from e
+            fname = _filename(f"ENLENS for NVivo - {name} - {time.strftime('%Y-%m-%d')}", "qdpx")
+            self._stream(out, "application/zip", {"Content-Disposition": _disposition(fname)})
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def post_bring_in(self, name, q):
         """0.14: a colleague's project zip (raw body) merged into this copy of the project (sync.py). 409 with
         `not_this_project` when the file is not known to be this project; `?anyway=1` brings it in all the same."""

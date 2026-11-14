@@ -1940,6 +1940,9 @@ export async function renderResult(view, [hypId], query) {
         // 0.18: which zip is which: what you shared (for a colleague), or the whole project (to move it)
         row(zipButton(project, "shared", { text: "What you shared (.zip)" }), ZIP_WORDS.shared.what),
         row(zipButton(project, "all", { text: "Whole project (.zip)" }), ZIP_WORDS.all.what),
+        // 0.18.7 (G5): the whole project for NVivo, ATLAS.ti and MAXQDA (REFI-QDA)
+        row(downloadButton({ onClick: () => download(`/api/projects/${P(project)}/export.qdpx${qs}`).catch(showError) }, "NVivo, ATLAS.ti, MAXQDA (.qdpx)"),
+          "Every hypothesis, code, label and note of the project, for another program of qualitative analysis."),
         h("div", { class: "dl-row" }, h("span", { class: "dl-what dl-wide" }, downloadButton({ onClick: () => download(`/api/projects/${P(project)}/hypotheses/${P(hypId)}/export.csv${qs}`).catch(showError) }, "CSV"), " ",
           downloadButton({ onClick: () => download(`/api/projects/${P(project)}/hypotheses/${P(hypId)}/export.json${qs}`).catch(showError) }, "JSON"), " (for programmers)"))));
   }
