@@ -7,7 +7,9 @@
   until you take a part of it, all of it, or put it aside; what you take is marked *AI draft* until you rewrite it in
   your own words, and the research log says the wording came from the AI. The mark goes with the words when you copy
   the codebook, split the code, remove it and bring it back, or keep a colleague's version of it in a sync clash; a
-  `.qdc` or CSV sent out and brought back holds the words alone. Each document's AI setting decides whether its
+  `.qdc` or CSV sent out and brought back holds the words alone, so while codes still hold the AI's draft, one quiet
+  line beside the editor's downloads says how many and that a downloaded file does not carry the mark;
+  `export-qdc` and `export-qdpx` print the same sentence. Each document's AI setting decides whether its
   passage is read and by whom (Claude, only the local model, or not at all); each example is read in the document it
   was added from, and asking again with the same examples reuses the answer. Several drafts may be asked at once, and
   stopping one leaves the others waiting. With Claude Code, its helpers answer these as *Code definitions from

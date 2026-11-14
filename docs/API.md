@@ -356,7 +356,13 @@ reading known as an earlier or later one of a document here: the colleague's res
 [{"name", "of"}], "merged": [{"name", "theirs", "added", "removed", "clash", "kept_removed"}] (0.17.0: code names)},
 "judgements", "reviews", "labels", "labels_kept_yours", "links", "other_rows", "bibliography":
 null | "new" | "merged" | "kept_yours", "ai_access": [{"title", "doc_id", "yours", "theirs", "now", "why": "theirs" |
-"yours" | "default", "claude_read_here" | "claude_read_there"}]}`; it is kept in `sync_log`. `running_here`
+"yours" | "default", "claude_read_here" | "claude_read_there"}]}`; it is kept in `sync_log`. K3 (the audit's DEC-1),
+only when there is something to say: `checks.counting`: [{"hyp_id", "text", "on", "why", "by", "beside", "now",
+"now_text", "other", "other_text"}], each check whose version from the colleague counts the non-scientific documents
+where the one it replaced here did not, or the other way round (`beside`: the id of your check it came in beside, as a
+sync-clash copy), with its answer here now and the one it would have the other way; `documents.marks`: [{"doc_id",
+"title", "on", "by", "changed": [{"hyp_id", "text", "now_text"}]}], each document whose Non-scientific mark the
+project's word set or took away here, with the answers it changed. Both are said first in `lines`. `running_here`
 (0.14.3): results and theme runs the colleague changed whose work in this copy is not done yet (waiting for Claude
 Code, taken by a helper, a part for the local model): this copy's version stays as it is (before, it was replaced and
 that work deleted). 0.17.0: a file of a newer sync format than this copy knows (`bundle.json`'s `sync_needs` above

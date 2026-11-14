@@ -543,6 +543,11 @@ def test_a_mark_the_project_took_says_a_check_may_count_it(anna_and_ben, tmp_pat
         assert docrole.is_nonscientific(ben.ws, paper)
         took = [t for t, *_ in _log(ben.ws, "document-mark") if t.startswith("Marked as non-scientific by Anna")]
         assert took and took[-1].endswith("counts in an answer from now on, except in checks set to count them.")
+        # DEC-1: the round's "what came in" says it too (the mark is applied when the round writes)
+        from enlens_claims import sync as sync_
+
+        said = [x for h in sync_.history(ben.ws, 10) for x in h["lines"] if x.startswith("Anna marked “")]
+        assert len(said) == 1 and said[0].endswith("It changes no answer here.")
 
 
 def test_a_members_no_stays_in_their_copy_and_the_owners_counts_everywhere(anna_and_ben):  # noqa: F811
@@ -615,3 +620,124 @@ def test_the_views_say_it():
     assert "a column per document that counts or is non-scientific" in m and "nonscientific_shown_in_project" in m
     src = (views / "sources.js").read_text(encoding="utf-8")
     assert "Suggested as non-scientific" in src and "except in checks set to count non-scientific documents" in src
+
+
+# ---- the audit's DEC-1: a colleague's change of what counts is said in what came in ---------------------------------
+@pytest.fixture
+def owner_and_member(project, tmp_path, monkeypatch):
+    """The small project (a study, a news article, one check) as Anna's, its Owner from her first file; Ben's copy, a
+    Member's, imported from that file. (ws, news id, anna, ben)"""
+    from enlens_claims import bundle
+    from test_shared_projects import Person
+
+    ws, news, _study, _hid = project
+    anna, ben = Person(tmp_path, "Anna", monkeypatch), Person(tmp_path, "Ben", monkeypatch)
+    anna.ws = ws
+    first = anna.send()
+    with ben:
+        ben.ws = bundle.import_project(first, tmp_path / "ben-project")
+    yield ws, news, anna, ben
+    ben.ws.close_all()
+
+
+def _said(rep: dict, words: str) -> list[str]:
+    return [x for x in rep["lines"] if words in x]
+
+
+def test_a_members_exception_is_said_to_the_owner_with_both_answers(owner_and_member):
+    from enlens_claims import ownership, sync
+
+    _ws, news, anna, ben = owner_and_member
+    with anna:
+        docrole.set_nonscientific(anna.ws, news, True)        # the Owner's mark: it holds in every copy
+    ben.bring_in(anna.send())
+    with ben:
+        assert ownership.role_of(ben.ws._conn()) == "member" and docrole.is_nonscientific(ben.ws, news)
+        jobs = claimcheck.check_hypothesis(ben.ws, "The hydrogen plant brings jobs to the coast", BaselineBackend(),
+                                           "baseline", k=8, per_doc=4)
+        _first(ben.ws, jobs, news, "supports")               # only the news article speaks to it
+        quiet = claimcheck.check_hypothesis(ben.ws, "Electrolysers lower the price of fertiliser", BaselineBackend(),
+                                            "baseline", k=4)
+        _judge(ben.ws, quiet, {})                            # nothing speaks to it, counted or not
+    rep = anna.bring_in(ben.send())
+    assert rep["checks"]["new"] == 2 and not _said(rep, "non-scientific")   # new checks: nothing changed here
+    with ben:
+        nonscientific.set_counting(ben.ws, jobs, True, why="The press coverage is what the study is about.")
+        nonscientific.set_counting(ben.ws, quiet, True)
+    rep = anna.bring_in(ben.send())
+    on = ("Ben set the check “The hydrogen plant brings jobs to the coast” to count the non-scientific documents (the "
+          "reason given: “The press coverage is what the study is about”). Its answer here is now Supported by your "
+          f"documents; without them it would be {UNSUPPORTED_NONSCI}.")
+    same = ("Ben set the check “Electrolysers lower the price of fertiliser” to count the non-scientific documents. "
+            "This does not change the answer here: No evidence found either way.")
+    assert sorted(rep["lines"][:2]) == sorted([on, same])     # first, before the routine lines
+    assert rep["lines"][2].startswith("From Ben: ")
+    with anna:
+        assert hypothesis_result(anna.ws, jobs)["status"] == "supported"
+        assert sync.history(anna.ws, 1)[0]["lines"][:2] == rep["lines"][:2]   # kept as the Team tab reads it
+    # the same file again, and Anna's file back in Ben's copy (his own change): no line
+    rep = anna.bring_in(ben.files / f"Ben-{ben.n}.zip")
+    assert not _said(rep, "non-scientific")
+    rep = ben.bring_in(anna.send())
+    assert not _said(rep, "non-scientific")
+    # turned off again: the opposite line
+    with ben:
+        nonscientific.set_counting(ben.ws, jobs, False)
+    rep = anna.bring_in(ben.send())
+    assert rep["lines"][0] == ("Ben set the check “The hydrogen plant brings jobs to the coast” to no longer count the "
+                               f"non-scientific documents. Its answer here is now {UNSUPPORTED_NONSCI}; counting them "
+                               "it would be Supported by your documents.")
+    assert len(_said(rep, "non-scientific")) == 1
+
+
+def test_a_check_beside_yours_says_its_own_answer(owner_and_member):
+    _ws, news, anna, ben = owner_and_member
+    with anna:
+        docrole.set_nonscientific(anna.ws, news, True)
+        hid = claimcheck.check_hypothesis(anna.ws, "The hydrogen plant brings jobs to the coast", BaselineBackend(),
+                                          "baseline", k=8, per_doc=4)
+        _first(anna.ws, hid, news, "supports")
+    ben.bring_in(anna.send())
+    with ben:                                                # Anna's check: Ben's change comes in beside it (H5)
+        _first(ben.ws, hid, news, "supports")                # his judgements go with his version
+        nonscientific.set_counting(ben.ws, hid, True)
+    rep = anna.bring_in(ben.send())
+    assert len(rep["checks"]["clash"]) == 1
+    assert rep["lines"][0] == (
+        "Ben set the check “The hydrogen plant brings jobs to the coast” to count the non-scientific documents. You "
+        "both changed the check, so Ben's version came in beside yours, marked “sync clash”, and yours stays as "
+        "it was. That version's answer here is now Supported by your documents; without them it would be "
+        f"{UNSUPPORTED_NONSCI}.")
+    with anna:
+        assert not nonscientific.counts_here(anna.ws, hid)
+
+
+def test_a_document_mark_that_came_in_applied_says_the_answers_it_changed(owner_and_member):
+    _ws, news, anna, ben = owner_and_member
+    with ben:
+        hid = ben.ws.scalar("SELECT hyp_id FROM hypotheses")
+        text = ben.ws.scalar("SELECT text FROM hypotheses")
+        _first(ben.ws, hid, news, "supports")
+        assert hypothesis_result(ben.ws, hid)["status"] == "supported"
+    with anna:
+        docrole.set_nonscientific(anna.ws, news, True)        # the Owner's mark applies in Ben's copy at once
+    f = anna.send()
+    rep = ben.bring_in(f)
+    title = "Hydrogen boom brings jobs to the coast"
+    assert rep["lines"][0] == (f"Anna marked “{title}” as non-scientific: no judgement of it counts in an answer here "
+                               "now, except in checks set to count them. It changed the answer of 1 check here: "
+                               f"“{text}” (now {UNSUPPORTED_NONSCI}).")
+    with ben:
+        assert docrole.is_nonscientific(ben.ws, news)
+        from enlens_claims import sync
+
+        kept = sync.history(ben.ws, 1)[0]
+        assert kept["lines"][0] == rep["lines"][0]
+        row = json.loads(ben.ws.scalar("SELECT report_json FROM sync_log ORDER BY log_id DESC LIMIT 1"))
+        assert "marks_due" not in row["documents"] and row["documents"]["marks"][0]["changed"][0]["hyp_id"] == hid
+    assert not _said(ben.bring_in(f), "non-scientific")      # the same file again: no line
+    with anna:
+        docrole.set_nonscientific(anna.ws, news, False)
+    rep = ben.bring_in(anna.send())
+    assert rep["lines"][0] == (f"Anna counted “{title}” as scientific again: its judgements count in answers here now. "
+                               f"It changed the answer of 1 check here: “{text}” (now Supported by your documents).")

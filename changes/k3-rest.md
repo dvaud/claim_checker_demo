@@ -9,6 +9,11 @@
   research log keeps each change with the answers before and after, and the setting travels with the check in a shared
   project, as its note does; on a colleague's check, a line under the switch says your change reaches them as a
   sync-clash copy. Everyone in the team needs this version: an older ENLENS reads the check without the exception.
+  When a colleague's change reaches your copy, *What came in* on the *Team* tab (and the report of a zip brought in)
+  says it first: who set which check to count them or to no longer count them, with their reason, and its answer here
+  now beside the one it would have the other way, or that the answer is the same either way. A document marked
+  non-scientific, or counted as scientific again, by the Owner or a Co-owner is said there too, by whom and with the
+  answers it changed in your copy. A change you already have says nothing, and no pop-up is added.
   The document's page marks the checks that count it. Off by default: no answer changes until you turn it on.
 - **A suggestion from your bibliography.** A document your bibliography lists as a newspaper or magazine article, a
   press release, a blog or forum post, a web page, a podcast or a broadcast shows one quiet line on its page and in its

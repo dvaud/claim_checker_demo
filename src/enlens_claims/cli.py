@@ -854,6 +854,13 @@ def _cmd_07(a, ws) -> int:
                 return 2
         _print(qdpx.export_project(ws, a.out, a.framework) if a.cmd == "export-qdpx" else
                qdpx.export_codebook(ws, a.framework, a.out))
+        from .codebooks import draft_note, drafted_codes  # the audit's DEC-2: the file does not carry the AI draft mark
+
+        names = [a.framework] if a.cmd == "export-qdc" else \
+            [fw.name for fw in qdpx._frameworks_to_export(ws, a.framework)]
+        note = draft_note(sum(drafted_codes(ws, n) for n in names))
+        if note:  # (on stderr, as the commands' other words: what they print on stdout stays JSON)
+            print(note, file=sys.stderr)
         return 0
     if a.cmd == "import-qdc":
         import re
