@@ -168,9 +168,9 @@ this), labels and checks read junk, and quotes fail to place.
     and reference chains. Tasks named by the old passages are dropped, so they are asked again.
   - A theme run keeps its members where the passages map one to one, and is marked out of date where they do not.
   - The researcher gets a list of everything that could not be placed.
-  - Open: a colleague who still has the old reading brings it in as a second copy at the next sync (`sync.py` treats
-    other text as another document). The document should remember its old text's fingerprint, so both are known as
-    one.
+  - Built in 0.17.0 (`sync/readings.py`): a document remembers the fingerprints of its earlier texts, so a colleague
+    who still has the old reading (or a newer one) is known as the same document, not brought in as a second copy;
+    each keeps their reading, and their results are placed on yours.
   - Built with A1: it can only be tried once there is a second reader.
 
 **A1. Layout-aware reading of PDFs** · Level 0, Level 1 optional · ENLENS candidate (`ingest.py`) · ⚠ results
@@ -307,7 +307,7 @@ F1 (a reading queue) and F3 (Zotero annotations) are Margin's. F2, F4 and F5 are
 
 G1 to G4 (the rest of Margin's writing companion) are Margin's.
 
-**G5. Export to NVivo and ATLAS.ti** · Level 0 · built (unreleased)
+**G5. Export to NVivo and ATLAS.ti** · Level 0 · built in 0.18.7
 - Codes, labels, quotes, memos and your decisions as a REFI-QDA (`.qdpx`) project.
 - Built: `qdpx.py` writes the project (documents as text, codebooks and hypotheses as codes, the labels and judgements
   that count as codings by the person or "ENLENS AI (model)", notes and the research log as memos) and a codebook alone
