@@ -1130,10 +1130,6 @@ def _write_csv(path: str, rows: list[dict]) -> None:
         review.write_csv(f, rows)
 
 
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())
-
-
 # 0.18.1 part A (documents, theory, concepts, team copies): its commands, run with the project open
 _PART_A: tuple[str, ...] = ()
 
@@ -1162,3 +1158,8 @@ def _cmd_part_b(a, ws) -> int:
         return 0
     return 1
 # end of 0.18.1 part B
+
+
+# last, so every name above exists when it runs (`python -m enlens_claims.cli` found no _PART_A)
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())
