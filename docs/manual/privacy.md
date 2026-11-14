@@ -211,8 +211,8 @@ network drive keeps them within its storage.
 
 ### Through a storage space of your team's own (0.18.0rc2)
 
-A storage space (at Backblaze or Cloudflare; [Work together](storage-space.md))
-holds the same things as a shared folder, with three differences:
+A storage space (at Backblaze, Cloudflare, or a folder in your institution's drive over WebDAV;
+[Work together](storage-space.md)) holds the same things as a shared folder, with three differences:
 
 - **Everything is locked before it leaves your computer.** Each file is encrypted with the project's key (AES-256-GCM)
   and signed with your own key (Ed25519). The project's key travels only inside an invite link, after its `#`, and to
@@ -222,10 +222,11 @@ holds the same things as a shared folder, with three differences:
 - **A file in someone else's name is set aside.** Your copy takes a file only when it is signed by the member whose
   part of the space it is in, as the list of members signed by the space's keeper (the owner) says. A file anyone else
   put there never comes into your project; the *Team* tab lists it. At Backblaze, each colleague's key can write only
-  in their own part in the first place.
-- **Removing a colleague** deletes their keys to the space, so they can no longer read or write it, and replaces the
-  project's key for those who stay: what is written afterwards does not open for them. What they already had stays
-  with them, as with *Unshare*.
+  in their own part in the first place. In a drive, each person signs in with their own account and an app password
+  kept in their own keychain; the drive's administrators see the folder's files as the storage company would: locked.
+- **Removing a colleague** deletes their keys to the space (in a drive: stops sharing the folder with them), so they
+  can no longer read or write it, and replaces the project's key for those who stay: what is written afterwards does
+  not open for them. What they already had stays with them, as with *Unshare*.
 
 The keys (the project's, your own, the space's) are kept in this computer's keychain (on a computer without one, in a
 file in ENLENS's folder that only you can read), never in the project, a zip or the space. The space is never the

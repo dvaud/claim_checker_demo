@@ -505,7 +505,7 @@ function stateLine(ctx) {
 function teamSummary(st) {
   const sp = st.space;
   const n = sp ? (sp.members || []).filter((m) => !m.removed).length : (st.people || []).length + 1;
-  const where = sp ? SERVICE_NAME[sp.service] || "A storage space" : folderAsSeen(st.folder, cloudAnswerNow()).text;
+  const where = sp ? (sp.drive && sp.drive.host) || SERVICE_NAME[sp.service] || "A storage space" : folderAsSeen(st.folder, cloudAnswerNow()).text;
   return `${where} · ${plural(Math.max(n, 1), "person", "people")}`;
 }
 

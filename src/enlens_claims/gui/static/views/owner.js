@@ -204,13 +204,21 @@ function handOverPicker(ctx, v) {
     const sel = select({ id: "owner-dlg-to" }, others.map((x) => h("option", { value: x.id }, x.name)));
     const ok = await reasonDialog({ title: "Hand this project over?", confirmText: "Hand it over",
       message: [field("To", sel),
-        "They will decide about its documents from now on; proposals that wait become theirs to answer. You stay in the team."],
+        "They will decide about its documents from now on; proposals that wait become theirs to answer. You stay in the team.",
+        driveHandOverNote(ctx)].filter(Boolean),
       help: "Kept in the research log, for the team." });
     if (!ok) return;
     const to = others.find((x) => x.id === sel.value) || others[0];
     await handOver(ctx, to, ok.why, b);
   });
   return [" ", b];
+}
+
+// a team whose storage space is a folder in this person's drive (WebDAV): the folder stays there after a hand-over
+function driveHandOverNote(ctx) {
+  const dav = ctx.status && ctx.status.space && ctx.status.space.drive;
+  if (!dav || !dav.mine) return null;
+  return `The project’s folder “${dav.folder}” stays in your drive at ${dav.host}: after the hand-over, only you can share it with colleagues or stop sharing it. The new owner can take full control by moving the team to a folder in their own drive (Move to another storage space, on the Team page).`;
 }
 
 async function handOver(ctx, to, why, btn) {
@@ -659,7 +667,8 @@ async function samePerson(ctx, v, id, name, current) {
 
 async function makeOwner(ctx, id, name) {
   const ok = await reasonDialog({ title: `Hand this project over to ${name}?`, confirmText: "Hand it over",
-    message: "They will decide about its documents from now on; proposals that wait become theirs to answer. You stay in the team.",
+    message: ["They will decide about its documents from now on; proposals that wait become theirs to answer. You stay in the team.",
+      driveHandOverNote(ctx)].filter(Boolean),
     help: "Kept in the research log, for the team." });
   if (!ok) return;
   await handOver(ctx, { id, name }, ok.why, null);

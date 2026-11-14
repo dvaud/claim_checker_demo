@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import sqlite3
 
 from . import access, frameworks, tasks
 from .reread import is_tombstone
@@ -306,15 +307,20 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
     vs_all = [effective(v) for v in raw_vs if counts(v)]
     # 0.18.6 (docrole.py): the judgements of excerpts of Non-scientific documents are read and shown, never counted
     from .docrole import nonscientific_docs
+    from .nonscientific import counts_here
 
-    nonsci = nonscientific_docs(ws)
+    marked = nonscientific_docs(ws)
+    # 0.18.8 (K3): a hypothesis can count them in its own check (they are the material it is about): then none is
+    # set aside here, and its excerpts say they count by that exception (`nonscientific_counted`)
+    counted_here = out["count_nonscientific"] = counts_here(ws, out["hyp_id"])
+    nonsci = set() if counted_here else marked
     vs = set_aside(vs_all, nonsci)
     out["balance"] = balance(vs, thr)
     stage = uc.get("stage")
     extra = {"vs": vs, "groups": groups, "stage": stage}
     if not rounds:
         out["status"] = out["status_any"] = "waiting" if stage in ("terms", "rank", "judge") else "no_passages"
-        out["status_all_sources"] = out["status"]
+        out["status_all_sources"] = out["status_without_nonscientific"] = out["status"]
         return out, extra
     readers_of = _readers_of(ws, rounds)
     shown = []
@@ -438,6 +444,7 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
             item["counted"] = (bool(item["verdict"]) and (eff["confidence"] or 0) >= thr and counts(v)
                                and p["doc_id"] not in nonsci)
         item["nonscientific"] = p["doc_id"] in nonsci  # 0.18.6: its judgement is shown, never counted
+        item["nonscientific_counted"] = counted_here and p["doc_id"] in marked  # 0.18.8 (K3): counted by exception
         if earlier and is_tombstone(p["passage_id"]):
             item["not_placed"] = True  # its quote has no place in the document as it reads now
         so = seconds.get(p["passage_id"])
@@ -453,6 +460,10 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
     # 0.18.6: the answer counting the Non-scientific documents too (what the mark changed)
     out["status_all_sources"] = (_status_of_rounds(statuses, vs_all, thr, stage, waiting)
                                  if any(v["doc_id"] in nonsci for v in vs_all) else out["status"])
+    # 0.18.8 (K3): where they count by the exception, the answer the check would have without them
+    out["status_without_nonscientific"] = (_status_of_rounds(statuses, set_aside(vs_all, marked), thr, stage, waiting)
+                                           if counted_here and any(v["doc_id"] in marked for v in vs_all)
+                                           else out["status"])
     # 0.11.2: the answer before a stronger model read the excerpts again (its reading counts; the first is kept)
     vs_first, out["stronger"] = _before_stronger([v for v in raw_vs if counts(v)])
     vs_first = set_aside(vs_first, nonsci) if vs_first else vs_first
@@ -516,13 +527,35 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
             pass
     if not parts and h.get("queue") == "waiting":
         out["status"] = out["status_any"] = out["status_all_sources"] = "waiting"
+        out["status_without_nonscientific"] = "waiting"
     elif len(parts) == 1:
         out["status"], out["status_any"] = parts[0]["status"], parts[0]["status_any"]
         out["status_all_sources"] = parts[0]["status_all_sources"]
+        out["status_without_nonscientific"] = parts[0]["status_without_nonscientific"]
     else:
         out["status"] = aggregate([p["status"] for p in parts])
         out["status_any"] = aggregate([p["status_any"] for p in parts])
         out["status_all_sources"] = aggregate([p["status_all_sources"] for p in parts])
+        out["status_without_nonscientific"] = aggregate([p["status_without_nonscientific"] for p in parts])
+    # 0.18.8 (K3): this hypothesis counts the non-scientific documents (its own setting, off by default), why, and how
+    # many excerpts of documents marked so its check read (the page offers the setting only where there are some)
+    from .nonscientific import setting
+
+    out["count_nonscientific"], out["count_nonscientific_why"] = setting(out["options"])
+    out["nonscientific_read"] = sum(1 for p in parts for x in p["passages"]
+                                    if x.get("nonscientific") or x.get("nonscientific_counted"))
+    # whose check it is, where the page offers the switch: a change by someone else arrives in the author's copy as a
+    # sync-clash copy (H5), so the page says so under the switch. None: this person's own
+    out["count_nonscientific_author"] = None
+    if out["nonscientific_read"] or out["count_nonscientific"]:
+        from . import people, sharing
+
+        try:
+            st = sharing.state(ws._conn(), "check", hyp_id)
+        except sqlite3.OperationalError:   # a database before sharing (0.18): this person's own
+            st = {"mine": True}
+        if not st["mine"]:
+            out["count_nonscientific_author"] = people.names(ws).get(st["owner"]) or "a colleague"
     # 0.14.3: as each part counts them (not the AI's judgements of a round that failed): the parts worked them out
     out["balance"] = balance([v for cid in part_ids for v in extras[cid]["vs"]], thr)
     out["documents_in_project"] = int(ws.scalar("SELECT COUNT(*) FROM documents") or 0)

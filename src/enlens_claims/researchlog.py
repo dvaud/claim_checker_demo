@@ -30,6 +30,8 @@ GROUPS = {
     "entry": "entries",
     "documents-added": "documents", "document-removed": "documents", "ai-access": "documents", "reread": "documents",
     "check-added": "checks", "check-removed": "checks", "evidence-added": "checks", "verdict-moved": "checks",
+    "check-setting": "checks",  # 0.18.8 (K3): non-scientific documents counted in one check, or not
+    "document-suggestion": "documents",  # 0.18.8 (K3): a suggestion from the bibliography declined
     "themes-found": "themes", "themes-removed": "themes", "theme-removed": "themes", "theme-restored": "themes",
     "theme-renamed": "themes", "theme-merged": "themes", "theme-separated": "themes",
     "codebook-added": "codebooks", "codebook-changed": "codebooks", "codebook-removed": "codebooks",
