@@ -598,14 +598,16 @@ its own)
   (0.18.7); bringing in is `qdc_import.py` (*New codebook* › *From NVivo, ATLAS.ti or MAXQDA*, `enlens import-qdc`):
   top codes become groups, deeper levels fold into their top group with their place in the tree kept in the
   definition, and ENLENS's own export comes back with everything a `.qdc` carries (not an example's document and
-  page, nor the codebook's label and direction setting).
+  page, nor the codebook's label and direction setting, nor the *AI draft* mark of words taken from the AI's draft).
 - Optional (Level 2, then 3): a draft definition and *when to use it* for a code, from its example passages only,
   marked as a draft to rewrite. The editor is complete without it. *Built (14 November 2026, unreleased):*
   `codedefine.py`, task kind `code_definition` (code-definition-v1, Sonnet stepping up to Opus, the large local model,
   the enlens-namer helper). *Draft from the examples* on an open code with two example passages or more drafts its
   definition, *when to use it* and *when not*, the first two each shown by a checked quote; each document's AI setting
   decides whether its passage is read and by whom. The draft waits beside the fields; what is taken stays marked *AI
-  draft* (the codebook's side file, `drafted`) until the words are rewritten.
+  draft* (the codebook's side file, `drafted`) until the words are rewritten, also through a copy, a split, a removed
+  code brought back and a colleague's version kept in a sync clash. A `.qdc`, `.qdpx` or CSV sent out and brought
+  back does not carry the mark.
 - *Already in ENLENS:* codebooks as CSV files (code, description, group), kept in a project or for all projects;
   added, viewed and removed in *Settings → Exploring*; marked as aims a text can help or hinder; brought in by the
   sync. The themes page shows which codes each theme holds. Nothing edits a codebook in the app, and themes cannot

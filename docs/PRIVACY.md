@@ -91,7 +91,10 @@ codes, pairs of glossary terms with short passages where each occurs, the passag
 consecutive passages of one document (references), the passages that hold a code's examples with the code's name and
 group (a draft definition, `codedefine.py`), and, when a person asks for an excerpt to be read again, their
 comment. A document linked to a bibliography entry is titled by that work's title
-(`bibliography.py`). Tasks of documents marked *Only a local AI* or *No AI* are never among them.
+(`bibliography.py`). Tasks of documents marked *Only a local AI* or *No AI* are never among them. A code's
+definition, *when to use it* and *when not* go with every label task of its codebook, whatever document it labels: a
+definition the local model drafted from documents marked *Only a local AI* does too once it is kept, so the editor
+says to rewrite it if it gives away what those documents say.
 
 **What a Claude chat sees through the connector.** The project names and the path of the projects folder; document
 titles, pages and counts, except that a document marked *No AI* is shown as *Restricted document 3*, because a title
