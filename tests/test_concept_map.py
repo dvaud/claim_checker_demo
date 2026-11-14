@@ -213,6 +213,95 @@ def test_a_code_filter_takes_the_passages_labelled_with_it(ws):
     assert conceptmap.concept_map(ws, Filters(code=("sdg", "7.2"), docs=[_doc(ws, "Solar report")]))["nodes"] == []
 
 
+def test_a_concept_of_several_wordings_hands_out_term_ids(ws):
+    """A "same" link joins two wordings into one node: the map's ids (nodes, edges, links) and the edge route's are term
+    ids, so the concept's page (terms.card) and a click on its line both work (review: a concept id broke both)."""
+    sp, gs, bp = _t(ws, "solar panels"), _t(ws, "grid storage"), _t(ws, "battery prices")
+    terms.set_link(ws, gs, bp, "add", "same")
+    cid = ws.scalar("SELECT concept_id FROM concept_terms WHERE term_id=?", (gs,))
+    assert cid and cid == ws.scalar("SELECT concept_id FROM concept_terms WHERE term_id=?", (bp,))
+    terms.set_link(ws, sp, gs, "add", "related")
+    m = conceptmap.concept_map(ws, n=150)
+    ids = [n["id"] for n in m["nodes"]]
+    known = {r[0] for r in ws.query("SELECT term_id FROM terms")}
+    assert set(ids) <= known and cid not in ids
+    label = ws.scalar("SELECT label FROM concepts WHERE concept_id=?", (cid,))
+    joined = next(n for n in m["nodes"] if n["id"] in (gs, bp))
+    assert joined["label"] == label and sum(n["id"] in (gs, bp) for n in m["nodes"]) == 1
+    assert terms.card(ws, joined["id"])["label"] == label
+    for e in m["edges"] + m["links"]:
+        assert e["a"] in ids and e["b"] in ids
+    assert any(joined["id"] in (lk["a"], lk["b"]) for lk in m["links"])
+    mine = [e for e in m["edges"] + m["links"] if joined["id"] in (e["a"], e["b"])]
+    assert mine
+    for e in mine:
+        r = conceptmap.edge(ws, e["a"], e["b"])
+        assert {r["a"]["node"], r["b"]["node"]} == {e["a"], e["b"]} and {r["a"]["node"], r["b"]["node"]} <= known
+    # the joined node counts the passages of either wording once, and an older link with the concept's id still works
+    both = {r[0] for r in ws.query("SELECT DISTINCT passage_id FROM term_mentions WHERE term_id IN (?,?)", (gs, bp))}
+    assert joined["passages"] == len(both)
+    assert conceptmap.edge(ws, cid, sp)["a"]["node"] == joined["id"]
+    with pytest.raises(KeyError):
+        conceptmap.edge(ws, "c-nope", sp)
+
+
+def test_a_links_own_sentences_keep_to_evidence_documents_in_scope(ws):
+    sp, gs = _t(ws, "solar panels"), _t(ws, "grid storage")
+    a, b = sorted((sp, gs))
+    solar, survey, storage = _doc(ws, "Solar report"), _doc(ws, "Solar survey"), _doc(ws, "Storage review")
+    with ws.connect() as cx:
+        cx.execute("INSERT INTO concept_links VALUES (?,?,?,?,?,?,?,?,?)",
+                   (a, b, "related", "pattern", 0.5, None, None, None, "2026-11-14"))
+        cx.executemany("INSERT INTO concept_link_sentences(a, b, passage_id, doc_id, page, start, end, quote) "
+                       "VALUES (?,?,NULL,?,1,?,?,?)", [(a, b, d, k, k + 5, f"sentence {k}")
+                                                       for k, d in enumerate((solar, survey, storage))])
+    terms.set_link(ws, a, b, "accept")
+    docs = lambda r: [x["doc_id"] for x in r["link"]["sentences"]]  # noqa: E731
+    assert sorted(docs(conceptmap.edge(ws, sp, gs))) == sorted([solar, survey, storage])
+    assert docs(conceptmap.edge(ws, sp, gs, Filters(docs=[solar]))) == [solar]
+    docrole.set_role(ws, storage, "theory")
+    assert storage not in docs(conceptmap.edge(ws, sp, gs))
+
+
+def test_the_filters_are_said_back_and_counted_exactly(ws):
+    from enlens_claims import cli
+
+    f = Filters(docs=[_doc(ws, "Solar report")], year_from=2000)
+    assert f.describe() == {"doc": [_doc(ws, "Solar report")], "year_from": 2000}
+    assert Filters(theme=("r1", 2), code=("sdg", "7.2")).describe() == {"theme": "r1:2", "framework": "sdg", "code": "7.2"}
+    assert Filters(year_to=0).any()
+    m = conceptmap.concept_map(ws, n=150)
+    # every concept mentioned in two passages or more, counted exactly
+    n = ws.scalar("SELECT COUNT(*) FROM (SELECT term_id FROM term_mentions GROUP BY term_id "
+                  "HAVING COUNT(DISTINCT passage_id) >= 2)")
+    assert m["concepts_in_scope"] == n == len(m["nodes"])
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert cli.main(["--ws", str(ws.root), "concept-map", "--json", "--doc", _doc(ws, "Solar report")]) == 0
+    assert json.loads(buf.getvalue())["filters"] == {"doc": [_doc(ws, "Solar report")]}
+    assert cli.main(["--ws", str(ws.root), "concept-map", "--year-from", "0"]) == 1
+
+
+def test_no_query_binds_more_variables_than_sqlite_allows(ws, monkeypatch):
+    """A filter of many documents or passages goes through temporary tables, never an IN (…) of its ids."""
+    many = [_doc(ws, "Storage review"), _doc(ws, "Storage outlook")] + [f"nope{i:05}" for i in range(40_000)]
+    m = conceptmap.concept_map(ws, Filters(docs=many), n=150)
+    assert m["passages"] and "battery prices" in _labels(m)
+    from enlens_claims import profile as prof
+
+    every = {r[0] for r in ws.query("SELECT passage_id FROM passages")} | {f"p{i:05}" for i in range(40_000)}
+    monkeypatch.setattr(prof, "passages_with_code", lambda w, fw, code: every)
+    assert conceptmap.concept_map(ws, Filters(code=("sdg", "7.2")), n=150)["passages"] == \
+        conceptmap.concept_map(ws, n=150)["passages"]
+    bp, gs = _t(ws, "battery prices"), _t(ws, "grid storage")
+    assert conceptmap.edge(ws, bp, gs, Filters(docs=many))["together"] >= 2
+    # the temporary tables are gone afterwards
+    assert not ws.query("SELECT name FROM sqlite_temp_master WHERE name LIKE 'd1_%'")
+
+
 def test_the_command_line_says_it_in_words(ws):
     text = conceptmap.as_text(conceptmap.concept_map(ws, n=30))
     assert "concepts, from" in text and "Group 1" in text
@@ -244,6 +333,7 @@ def test_the_routes(api, tmp_path):  # noqa: F811
     assert api("GET", "/api/projects/Map/concept-map?theme=gone:1")[0] == 404
     assert api("GET", "/api/projects/Map/concept-map?code=7.2")[0] == 400
     assert api("GET", "/api/projects/Map/concept-map?year_from=19")[0] == 400
+    assert api("GET", "/api/projects/Map/concept-map?year_from=0000")[0] == 400
     assert api("GET", "/api/projects/Map/concept-map/edge?a=x")[0] == 400
     assert api("GET", f"/api/projects/Map/concept-map/edge?a={sp}&b=nope")[0] == 404
 

@@ -124,7 +124,9 @@ export async function renderConceptMap(view, params, query) {
   function drawFilters() {
     clear(filtersBox);
     const onPick = (key, extra) => (e) => { const v = e.currentTarget.value; if (v) f[key] = v; else delete f[key]; if (extra) extra(v); keepUrl(); drawFilters(); load(); };
-    const docSel = select({}, opt("", "All documents", !f.doc), opts.documents.map((d) => opt(d.doc_id, shortTitle(d.title || d.doc_id, 60), f.doc === d.doc_id)));
+    // a link may name several documents (?doc=a,b): the select says so rather than "All documents"
+    const several = f.doc && f.doc.includes(",") ? opt(f.doc, `These ${f.doc.split(",").length} documents`, true) : null;
+    const docSel = select({}, opt("", "All documents", !f.doc), several, opts.documents.map((d) => opt(d.doc_id, shortTitle(d.title || d.doc_id, 60), f.doc === d.doc_id)));
     docSel.addEventListener("change", onPick("doc"));
     filtersBox.appendChild(field("Documents", docSel));
     if (opts.themes.themes.length) {
@@ -158,9 +160,11 @@ export async function renderConceptMap(view, params, query) {
   // ---- the map ----
   let m = null;
   let seq = 0;
+  let edgeSeq = 0;   // the latest line asked for: an older answer arriving late is dropped
   let lastWidth = 0;
   async function load() {
     const my = ++seq;
+    edgeSeq++;       // (a line of the previous map no longer applies)
     mapBox.setAttribute("aria-busy", "true");
     let r;
     try { r = await api("GET", `${base}/concept-map?${qs()}`); }
@@ -308,8 +312,10 @@ export async function renderConceptMap(view, params, query) {
   async function showEdge(a, b) {
     const q = new URLSearchParams(qs());
     q.set("a", a); q.set("b", b);
+    const my = ++edgeSeq;
     let r;
-    try { r = await api("GET", `${base}/concept-map/edge?${q}`); } catch (e) { showError(e); return; }
+    try { r = await api("GET", `${base}/concept-map/edge?${q}`); } catch (e) { if (my === edgeSeq) showError(e); return; }
+    if (my !== edgeSeq) return;
     const A = link({ kind: "title", serif: true, href: conceptHref(r.a.node) }, r.a.label);
     const B = link({ kind: "title", serif: true, href: conceptHref(r.b.node) }, r.b.label);
     let linkLine = null;

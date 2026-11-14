@@ -303,9 +303,8 @@ def _map_filters(q):
     for k in ("year_from", "year_to"):
         v = _str(q, k)
         if v:
-            if not v.isdigit() or len(v) != 4:
+            if not v.isdigit() or len(v) != 4 or int(v) < 1:
                 raise ApiError(400, f"{k} is a year of four digits.")
             setattr(f, k, int(v))
-    f.applied = {k: v for k, v in {"doc": f.docs, "theme": th, "framework": fw if code else None, "code": code,
-                                    "year_from": f.year_from, "year_to": f.year_to}.items() if v}
+    f.applied = f.describe()
     return f

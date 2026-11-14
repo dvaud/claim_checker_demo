@@ -1142,6 +1142,11 @@ def _cmd_part_a(a, ws) -> int:
                 print("Say the codebook of the code with --framework.", file=sys.stderr)
                 return 1
             f.code = (a.framework, a.code)
+        for y in (a.year_from, a.year_to):
+            if y is not None and not 1 <= y <= 9999:
+                print("A year is a number from 1 to 9999.", file=sys.stderr)
+                return 1
+        f.applied = f.describe()
         try:
             m = conceptmap.concept_map(ws, f, a.n)
         except KeyError:

@@ -21,11 +21,18 @@ A graph of the glossary's concepts (a concept's wordings count as one node, as i
 **Filters** narrow the passages counted, and PMI is computed within them: documents, a theme (its passages, with a
 person's merges and moves), a code of a codebook (its passages, as `profile.passages_with_code`), and years of
 publication (from the bibliography, as D4). Theory and (N3) working documents are always left out (`docrole`).
+
+**Ids.** Every id the map and `edge` hand out is a term id (a concept of several wordings: the wording named like the
+concept, `_Graph.term`), since a concept's page and the edge route take term ids.
+
+**Counting** is done in SQLite, in temporary tables of this thread's connection (`_Scope`): the passages in scope, then
+each concept's passages and each pair's passages together, so a request's work grows with the mentions in scope, not
+with lists in Python, and no query binds a list of ids (SQLite's limit on variables).
 """
 from __future__ import annotations
 
 import math
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 from .conceptpaths import MIN_TOGETHER, _Graph, _years
@@ -37,10 +44,8 @@ MIN_N = 10
 PER_NODE = 4            # each concept keeps its strongest co-occurrence edges on the map
 EDGES_PER_NODE = 2      # at most 2 × n co-occurrence edges drawn in all
 GROUP_EDGES = 8         # the groups are found from each concept's 8 strongest edges (more than are drawn)
-CANDIDATES = 3          # nodes ranked from 3 × n candidates (a concept of several wordings is counted exactly after)
 ROUNDS = 150            # layout rounds within a group
 PASSAGES_SHOWN = 5      # passages an edge shows
-_CHUNK = 500            # ids per IN (…) of a query
 
 
 @dataclass
@@ -53,18 +58,32 @@ class Filters:
     applied: dict = field(default_factory=dict)
 
     def any(self) -> bool:
-        return bool(self.docs or self.theme or self.code or self.year_from or self.year_to)
+        return bool(self.docs or self.theme or self.code) or self.year_from is not None or self.year_to is not None
+
+    def describe(self) -> dict:
+        """The filters as a query names them (the map's "filters"): only those set."""
+        d = {"doc": list(self.docs) if self.docs else None, "theme": f"{self.theme[0]}:{self.theme[1]}" if self.theme
+             else None, "framework": self.code[0] if self.code else None, "code": self.code[1] if self.code else None,
+             "year_from": self.year_from, "year_to": self.year_to}
+        return {k: v for k, v in d.items() if v is not None}
+
+
+# temporary tables on this thread's connection to the project (in memory: `temp_store=MEMORY`), so that no query binds
+# a list of ids (SQLite allows 999 variables on old versions, 32766 on new ones) and the counting is done in SQLite
+_T_DOCS, _T_WANT, _T_PS, _T_TERMS, _T_PI = "temp.d1_docs", "temp.d1_want", "temp.d1_ps", "temp.d1_terms", "temp.d1_pi"
 
 
 class _Scope:
-    """The passages in scope: evidence documents, the documents and years asked for, the passages of a theme or a code.
-    `pairs(terms)` yields the (term, passage) pairs within it."""
+    """The passages in scope: evidence documents, the documents and years asked for, the passages of a theme or a code,
+    and only those that mention a term. A context manager: on entering, the passages are written to a temporary table
+    (`_T_PS`), dropped again on leaving."""
 
     def __init__(self, ws: Workspace, g: _Graph, f: Filters):
         self.ws, self.g = ws, g
         docs: set[str] | None = set(f.docs) if f.docs else None
-        if f.year_from or f.year_to:
-            lo, hi = f.year_from or 0, f.year_to or 9999
+        if f.year_from is not None or f.year_to is not None:
+            lo = f.year_from if f.year_from is not None else 0
+            hi = f.year_to if f.year_to is not None else 9999
             by_year = {d for d, y in _years(ws).items() if y and lo <= int(y) <= hi}
             docs = by_year if docs is None else docs & by_year
         self.docs = docs
@@ -77,61 +96,84 @@ class _Scope:
             cp = passages_with_code(ws, f.code[0], f.code[1])
             ps = cp if ps is None else ps & cp
         self.passages = ps
+        self.cx = None
 
     def empty(self) -> bool:
         return (self.docs is not None and not self.docs) or (self.passages is not None and not self.passages)
 
-    def _where(self) -> tuple[list[str], list]:
-        """The SQL conditions on `p` (passages) for the documents in scope, and their arguments (one chunk of passages
-        is added by the caller)."""
-        cond, args = [self.g.ev], []
-        if self.docs is not None:
-            cond.append(f"p.doc_id IN ({','.join('?' * len(self.docs))})")
-            args += sorted(self.docs)
-        return cond, args
+    def _drop(self) -> None:
+        for t in (_T_DOCS, _T_WANT, _T_PS, _T_TERMS, _T_PI):
+            self.cx.execute(f"DROP TABLE IF EXISTS {t}")
 
-    def _chunks(self):
-        if self.passages is None:
-            yield None
-            return
-        ids = sorted(self.passages)
-        for i in range(0, len(ids), _CHUNK):
-            yield ids[i:i + _CHUNK]
-
-    def query(self, select: str, extra: str = "", extra_args: tuple = (), group: str = ""):
-        """Rows of `select` FROM term_mentions m JOIN passages p, within the scope (chunked over a set of passages)."""
+    def __enter__(self) -> "_Scope":
+        self.cx = self.ws._conn()
+        self._drop()
+        self.cx.execute(f"CREATE TABLE {_T_PS}(passage_id TEXT PRIMARY KEY) WITHOUT ROWID")
         if self.empty():
-            return
-        cond, args = self._where()
-        for chunk in self._chunks():
-            c, a = list(cond), list(args)
-            if chunk is not None:
-                c.append(f"p.passage_id IN ({','.join('?' * len(chunk))})")
-                a += chunk
-            if extra:
-                c.append(extra)
-                a += list(extra_args)
-            yield from self.ws.query(f"SELECT {select} FROM term_mentions m JOIN passages p ON p.passage_id=m.passage_id "
-                                     f"WHERE {' AND '.join(c)} {group}", a)
+            return self
+        cond = [self.g.ev, "EXISTS (SELECT 1 FROM term_mentions m WHERE m.passage_id=p.passage_id)"]
+        if self.docs is not None:
+            self.cx.execute(f"CREATE TABLE {_T_DOCS}(doc_id TEXT PRIMARY KEY) WITHOUT ROWID")
+            self.cx.executemany(f"INSERT INTO {_T_DOCS} VALUES (?)", [(d,) for d in sorted(self.docs)])
+            cond.append(f"p.doc_id IN (SELECT doc_id FROM {_T_DOCS})")
+        if self.passages is not None:
+            self.cx.execute(f"CREATE TABLE {_T_WANT}(passage_id TEXT PRIMARY KEY) WITHOUT ROWID")
+            self.cx.executemany(f"INSERT INTO {_T_WANT} VALUES (?)", [(x,) for x in sorted(self.passages)])
+            cond.append(f"p.passage_id IN (SELECT passage_id FROM {_T_WANT})")
+        self.cx.execute(f"INSERT INTO {_T_PS} SELECT p.passage_id FROM passages p WHERE {' AND '.join(cond)}")
+        return self
+
+    def __exit__(self, *exc) -> None:
+        try:
+            self._drop()
+        finally:
+            self.cx = None
 
     def total(self) -> int:
-        """Passages in scope that mention any term (the base of PMI); chunks are disjoint, so their counts add up."""
-        return sum(int(r[0] or 0) for r in self.query("COUNT(DISTINCT m.passage_id)"))
+        """Passages in scope that mention any term (the base of PMI)."""
+        return int(self.cx.execute(f"SELECT COUNT(*) FROM {_T_PS}").fetchone()[0])
 
-    def term_counts(self) -> Counter:
-        out: Counter = Counter()
-        for t, n in self.query("m.term_id, COUNT(DISTINCT m.passage_id)", group="GROUP BY m.term_id"):
-            out[t] += int(n)
+    def node_counts(self) -> dict[str, int]:
+        """{node: its passages in scope} for every node mentioned in scope (a concept of several wordings counted
+        exactly: a passage that uses two of its wordings counts once)."""
+        out: dict[str, int] = {}
+        for t, n in self.cx.execute(f"SELECT m.term_id, COUNT(DISTINCT m.passage_id) FROM {_T_PS} s JOIN term_mentions m "
+                                    f"ON m.passage_id=s.passage_id GROUP BY m.term_id"):
+            if t not in self.g.group:
+                out[t] = int(n)
+        for c, n in self.cx.execute(f"SELECT ct.concept_id, COUNT(DISTINCT m.passage_id) FROM concept_terms ct JOIN "
+                                    f"term_mentions m ON m.term_id=ct.term_id JOIN {_T_PS} s ON s.passage_id=m.passage_id "
+                                    f"GROUP BY ct.concept_id"):
+            out[c] = int(n)
         return out
 
-    def passages_of(self, terms: list[str]) -> dict[str, set[str]]:
-        """{term: its passages in scope} for these terms."""
-        out: dict[str, set[str]] = defaultdict(set)
-        for i in range(0, len(terms), _CHUNK):
-            chunk = terms[i:i + _CHUNK]
-            for t, p in self.query("DISTINCT m.term_id, m.passage_id", f"m.term_id IN ({','.join('?' * len(chunk))})",
-                                   tuple(chunk)):
-                out[t].add(p)
+    def _index(self, nodes: list[str]) -> None:
+        """The terms of these nodes, each with its node's place in the list, in `_T_TERMS`; their passages in scope,
+        one row per (passage, node), in `_T_PI`."""
+        for t in (_T_TERMS, _T_PI):
+            self.cx.execute(f"DROP TABLE IF EXISTS {t}")
+        self.cx.execute(f"CREATE TABLE {_T_TERMS}(term_id TEXT, i INT, PRIMARY KEY(term_id, i)) WITHOUT ROWID")
+        self.cx.executemany(f"INSERT OR IGNORE INTO {_T_TERMS} VALUES (?,?)",
+                            [(t, i) for i, x in enumerate(nodes) for t in self.g.terms_of(x)])
+        self.cx.execute(f"CREATE TABLE {_T_PI}(passage_id TEXT, i INT, PRIMARY KEY(passage_id, i)) WITHOUT ROWID")
+        self.cx.execute(f"INSERT OR IGNORE INTO {_T_PI} SELECT m.passage_id, n.i FROM {_T_TERMS} n JOIN term_mentions m "
+                        f"ON m.term_id=n.term_id JOIN {_T_PS} s ON s.passage_id=m.passage_id")
+
+    def together(self, nodes: list[str], least: int = 1) -> dict[tuple[int, int], int]:
+        """{(i, j): passages in scope that mention both} for the pairs i < j of these nodes (their places in the list)
+        mentioned together in at least `least` passages."""
+        self._index(nodes)
+        k = len(nodes) + 1                 # (one number per pair groups a third faster than two columns)
+        return {divmod(int(e), k): int(c) for e, c in self.cx.execute(
+            f"SELECT x.i*{k}+y.i AS e, COUNT(*) FROM {_T_PI} x JOIN {_T_PI} y ON y.passage_id=x.passage_id AND y.i>x.i "
+            f"GROUP BY e HAVING COUNT(*)>=?", (least,))}
+
+    def passages_of(self, nodes: list[str]) -> list[set[str]]:
+        """The passages in scope of each of these nodes (for one edge: two nodes, so few passages)."""
+        self._index(nodes)
+        out: list[set[str]] = [set() for _ in nodes]
+        for pid, i in self.cx.execute(f"SELECT passage_id, i FROM {_T_PI}"):
+            out[int(i)].add(pid)
         return out
 
 
@@ -383,54 +425,30 @@ def concept_map(ws: Workspace, f: Filters | None = None, n: int = DEFAULT_N) -> 
     """{"built", "filters", "passages" (in scope), "concepts_in_scope", "nodes": [{"id", "label", "passages",
     "group", "x", "y"}], "edges": [{"a", "b", "together", "pmi"}], "links": [{"a", "b", "relation", "source"}],
     "groups": [{"group", "size", "names"}], "links_off_map"}. `id` is a term id of the glossary (the page of the
-    concept). Raises KeyError for a theme set that does not exist."""
+    concept: for a concept of several wordings, `conceptpaths._Graph.term`), as are every edge's and link's "a" and "b".
+    Raises KeyError for a theme set that does not exist."""
     f = f or Filters()
     n = max(MIN_N, min(MAX_N, int(n or DEFAULT_N)))
-    out = {"built": _built(ws), "filters": f.applied, "n": n, "passages": 0, "concepts_in_scope": 0, "nodes": [],
-           "edges": [], "links": [], "groups": [], "links_off_map": 0}
+    out = {"built": _built(ws), "filters": f.applied or f.describe(), "n": n, "passages": 0, "concepts_in_scope": 0,
+           "nodes": [], "edges": [], "links": [], "groups": [], "links_off_map": 0}
     if not out["built"]:
         return out
     g = _Graph(ws)
-    sc = _Scope(ws, g, f)
-    total = sc.total()
-    out["passages"] = total
-    if not total:
-        return out
-    # rank the nodes: first by the sum of their terms' counts (an upper bound), then exactly among the candidates
-    per_term = sc.term_counts()
-    rough: Counter = Counter()
-    for t, c in per_term.items():
-        rough[g.node(t)] += c
-    out["concepts_in_scope"] = sum(1 for c in rough.values() if c >= MIN_TOGETHER)
-    cands = [x for x, c in sorted(rough.items(), key=lambda x: (-x[1], x[0])) if c >= MIN_TOGETHER][:CANDIDATES * n]
-    terms_needed = sorted({t for x in cands for t in g.terms_of(x)})
-    tp = sc.passages_of(terms_needed)
-    node_ps: dict[str, set[str]] = {}
-    for x in cands:
-        s: set[str] = set()
-        for t in g.terms_of(x):
-            s |= tp.get(t, set())
-        if len(s) >= MIN_TOGETHER:
-            node_ps[x] = s
-    label = lambda x: g.labels.get(x, x)  # noqa: E731
-    chosen = sorted(node_ps, key=lambda x: (-len(node_ps[x]), label(x).lower(), x))[:n]
-    idx = {x: i for i, x in enumerate(chosen)}
-    # how often each pair is mentioned together
-    in_passage: dict[str, list[int]] = defaultdict(list)
-    for x in chosen:
-        for p in node_ps[x]:
-            in_passage[p].append(idx[x])
-    together: Counter = Counter()
-    for p in sorted(in_passage):
-        ids = sorted(in_passage[p])
-        for a in range(len(ids)):
-            for b in range(a + 1, len(ids)):
-                together[(ids[a], ids[b])] += 1
+    with _Scope(ws, g, f) as sc:
+        total = sc.total()
+        out["passages"] = total
+        if not total:
+            return out
+        node_n = {x: c for x, c in sc.node_counts().items() if c >= MIN_TOGETHER}
+        out["concepts_in_scope"] = len(node_n)
+        label = lambda x: g.labels.get(x, x)  # noqa: E731
+        chosen = sorted(node_n, key=lambda x: (-node_n[x], label(x).lower(), x))[:n]
+        idx = {x: i for i, x in enumerate(chosen)}
+        # how often each pair is mentioned together (in SQLite: only the pairs that can be an edge come back)
+        together = sc.together(chosen, MIN_TOGETHER)
     pmi: dict[tuple[int, int], float] = {}
     for (a, b), c in together.items():
-        if c < MIN_TOGETHER:
-            continue
-        v = math.log2(c * total / (len(node_ps[chosen[a]]) * len(node_ps[chosen[b]])))
+        v = math.log2(c * total / (node_n[chosen[a]] * node_n[chosen[b]]))
         if v > 0:
             pmi[(a, b)] = v
     # keep each node's strongest, then the strongest of all
@@ -471,7 +489,7 @@ def concept_map(ws: Workspace, f: Filters | None = None, n: int = DEFAULT_N) -> 
     for i, c in enumerate(raw):
         members[c].append(i)
     real = [ms for ms in members.values() if len(ms) > 1]
-    real.sort(key=lambda ms: (-len(ms), -sum(len(node_ps[chosen[i]]) for i in ms), min(ms)))
+    real.sort(key=lambda ms: (-len(ms), -sum(node_n[chosen[i]] for i in ms), min(ms)))
     group: list[int | None] = [None] * len(chosen)
     for gi, ms in enumerate(real, 1):
         for i in ms:
@@ -482,13 +500,14 @@ def concept_map(ws: Workspace, f: Filters | None = None, n: int = DEFAULT_N) -> 
         e = tuple(sorted((idx[lk["a"]], idx[lk["b"]])))
         lay[e] = max(lay.get(e, 0.0), 0.5)
     pos = _layout(len(chosen), group, lay)
-    out["nodes"] = [{"id": x, "label": label(x), "passages": len(node_ps[x]), "group": group[i],
+    tid = g.term                       # (the id a concept's page and the edge route take)
+    out["nodes"] = [{"id": tid(x), "label": label(x), "passages": node_n[x], "group": group[i],
                      "x": pos[i][0], "y": pos[i][1]} for i, x in enumerate(chosen)]
-    out["edges"] = [{"a": chosen[a], "b": chosen[b], "together": together[(a, b)], "pmi": round(w, 2)}
+    out["edges"] = [{"a": tid(chosen[a]), "b": tid(chosen[b]), "together": together[(a, b)], "pmi": round(w, 2)}
                     for (a, b), w in sorted(edges.items(), key=lambda kv: order(kv[0]))]
-    out["links"] = links
+    out["links"] = [{**lk, "a": tid(lk["a"]), "b": tid(lk["b"])} for lk in links]
     out["groups"] = [{"group": gi, "size": len(ms),
-                      "names": [label(chosen[i]) for i in sorted(ms, key=lambda i: (-len(node_ps[chosen[i]]), i))[:3]]}
+                      "names": [label(chosen[i]) for i in sorted(ms, key=lambda i: (-node_n[chosen[i]], i))[:3]]}
                      for gi, ms in enumerate(real, 1)]
     out["links_off_map"] = len(off)
     return out
@@ -508,25 +527,31 @@ def _confirmed_links(g: _Graph) -> list[dict]:
 
 
 def edge(ws: Workspace, a_term: str, b_term: str, f: Filters | None = None) -> dict:
-    """One edge of the map: {"a", "b" ({"node", "label"}), "together" (passages in scope), "pmi", "link"
-    ({"relation", "source", "sentences"} or null), "passages": up to `PASSAGES_SHOWN`}. Raises KeyError for a term
-    the glossary does not know."""
+    """One edge of the map: {"a", "b" ({"node" (a term id, as the map's), "label"}), "together" (passages in scope),
+    "pmi", "link" ({"relation", "source", "sentences"} or null), "passages": up to `PASSAGES_SHOWN`}. Takes term ids
+    (a concept's id too, for an older link). Raises KeyError for a term the glossary does not know."""
     from .claimcheck import locate
+    from .docrole import not_evidence_docs
 
-    for t in (a_term, b_term):
-        if not ws.scalar("SELECT 1 FROM terms WHERE term_id=?", (t,)):
-            raise KeyError(t)
     f = f or Filters()
     g = _Graph(ws)
+
+    def resolve(t: str) -> str:
+        if ws.scalar("SELECT 1 FROM terms WHERE term_id=?", (t,)):
+            return t
+        if t in g.members:          # a concept's id: the term that stands for it
+            return g.term(t)
+        raise KeyError(t)
+
+    a_term, b_term = resolve(a_term), resolve(b_term)
     a, b = g.node(a_term), g.node(b_term)
-    sc = _Scope(ws, g, f)
-    tp = sc.passages_of(sorted(set(g.terms_of(a)) | set(g.terms_of(b))))
-    pa = set().union(*(tp.get(t, set()) for t in g.terms_of(a)))
-    pb = set().union(*(tp.get(t, set()) for t in g.terms_of(b)))
+    with _Scope(ws, g, f) as sc:
+        pa, pb = sc.passages_of([a, b])
+        total = sc.total()
+        docs = sc.docs
     both = pa & pb
-    total = sc.total()
     v = math.log2(len(both) * total / (len(pa) * len(pb))) if both and total else None
-    out = {"a": {"node": a, "label": g.labels.get(a, a)}, "b": {"node": b, "label": g.labels.get(b, b)},
+    out = {"a": {"node": g.term(a), "label": g.labels.get(a, a)}, "b": {"node": g.term(b), "label": g.labels.get(b, b)},
            "together": len(both), "pmi": round(v, 2) if v is not None else None, "link": None, "passages": []}
     lk = g.links.get(a, {}).get(b)
     if lk:
@@ -538,20 +563,29 @@ def edge(ws: Workspace, a_term: str, b_term: str, f: Filters | None = None) -> d
         if lk["source"] == "pattern":
             from .textrelations import sentences
 
-            sents = sentences(ws._conn(), lk["a"], lk["b"])
+            left = not_evidence_docs(ws._conn())   # the link's own sentences: from evidence documents in scope only
+            sents = [x for x in sentences(ws._conn(), lk["a"], lk["b"])
+                     if x["doc_id"] not in left and (docs is None or x["doc_id"] in docs)]
         else:
             sents = [{"quote": q} for q in (lk.get("quote_a"), lk.get("quote_b")) if q]
         out["link"] = {"relation": rel, "source": lk["source"], "sentences": sents}
     if both:
-        ids = sorted(both)
-        rows = []
-        for i in range(0, len(ids), _CHUNK):
-            chunk = ids[i:i + _CHUNK]
-            rows += ws.query(f"SELECT p.passage_id, p.doc_id, p.page, p.start, p.seq, p.text, d.title FROM passages p "
-                             f"JOIN documents d ON d.doc_id=p.doc_id WHERE p.passage_id IN ({','.join('?' * len(chunk))})",
-                             chunk)
-        rows.sort(key=lambda r: ((r["title"] or "").lower(), r["doc_id"], r["seq"] or 0))
-        rows = rows[:PASSAGES_SHOWN]
+        # the order first (no text), then the text of the few shown
+        cx = ws._conn()
+        cx.execute(f"DROP TABLE IF EXISTS {_T_WANT}")
+        cx.execute(f"CREATE TABLE {_T_WANT}(passage_id TEXT PRIMARY KEY) WITHOUT ROWID")
+        try:
+            cx.executemany(f"INSERT INTO {_T_WANT} VALUES (?)", [(x,) for x in sorted(both)])
+            keys = cx.execute(f"SELECT p.passage_id, p.doc_id, p.seq, d.title FROM {_T_WANT} w JOIN passages p ON "
+                              f"p.passage_id=w.passage_id JOIN documents d ON d.doc_id=p.doc_id").fetchall()
+        finally:
+            cx.execute(f"DROP TABLE IF EXISTS {_T_WANT}")
+        keys.sort(key=lambda r: ((r["title"] or "").lower(), r["doc_id"], r["seq"] or 0))
+        shown = [r["passage_id"] for r in keys[:PASSAGES_SHOWN]]
+        by_id = {r["passage_id"]: r for r in ws.query(
+            f"SELECT p.passage_id, p.doc_id, p.page, p.start, p.text, d.title FROM passages p JOIN documents d ON "
+            f"d.doc_id=p.doc_id WHERE p.passage_id IN ({','.join('?' * len(shown))})", shown)}
+        rows = [by_id[x] for x in shown]
         where = locate(ws, [(r["passage_id"], r["passage_id"], None) for r in rows])
         out["passages"] = [{"passage_id": r["passage_id"], "doc_id": r["doc_id"], "title": r["title"] or "",
                             "page": r["page"], "location": (where.get(r["passage_id"]) or {}).get("location") or "",
