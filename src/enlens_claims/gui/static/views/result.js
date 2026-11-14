@@ -851,14 +851,15 @@ export async function renderResult(view, [hypId], query) {
     const parts = [];
     if (m) {
       const busy = [...running.values()].filter((x) => x.kind === "read-unread");
-      const btn = button({ sm: true, disabled: busy.length > 0,
-        title: `The AI reads the best excerpts of ${m === 1 ? "that document" : "those documents"}, as a further search for ${current && current.decomposed ? "every part" : "this hypothesis"}. The check is not run again, so your reviews are kept.` },
+      const btn = button({ sm: true, disabled: busy.length > 0 || !!u.waits,
+        title: u.waits || `The AI reads the best excerpts of ${m === 1 ? "that document" : "those documents"} (up to one excerpt a document, at most 40 at a time), as a further search for ${current && current.decomposed ? "every part" : "this hypothesis"}. The check is not run again, so your reviews are kept.` },
         icon("book-open", { size: 13 }), m === 1 ? "Read it" : "Read these");
       btn.addEventListener("click", () => runReadUnread(btn));
       parts.push(h("div", { class: "unread-group" },
         h("p", {}, `${docs(m)} with the search words ${m === 1 ? "was" : "were"} never read in this check.`),
         list("matching", u.matching || [], m), busy.map((x) => x.mini.el),
         h("div", { class: "btn-row" }, withAI(btn)),
+        u.waits ? h("p", { class: "muted small" }, u.waits) : null,
         readsLine(m === 1 ? "only that document's excerpts" : "only those documents' excerpts")));
     }
     if (z) {
@@ -896,8 +897,10 @@ export async function renderResult(view, [hypId], query) {
           aboutN += newOnes.filter(about).length;
           if (newOnes.length && !newOnes.some(about)) openFolds.add(`rest:${rd.claim_id}`);
         }
-        const n = me.passages || 0;
-        followNote = n ? `${n} more ${n === 1 ? "excerpt" : "excerpts"} read from the documents with the search words, ${aboutN} of them about ${fresh.decomposed ? "a part of this hypothesis" : "this hypothesis"} (marked new below). Your reviews are kept.`
+        const n = me.passages || 0, dr = me.documents_read || 0, left = me.left || 0;
+        const docsWord = (k) => `${k} ${k === 1 ? "document" : "documents"}`;
+        const leftLine = left ? ` ${docsWord(left)} with the search words ${left === 1 ? "is" : "are"} still unread: press again to read further.` : "";
+        followNote = n ? `${n} more ${n === 1 ? "excerpt" : "excerpts"} read from ${docsWord(dr || 1)} with the search words, ${aboutN} of them about ${fresh.decomposed ? "a part of this hypothesis" : "this hypothesis"} (marked new below). Your reviews are kept.${leftLine}`
           : "No further excerpt of those documents could be read for this hypothesis.";
         toast(n ? `${n} more ${n === 1 ? "excerpt" : "excerpts"} read.` : "Nothing more was read.", n ? "ok" : "info", { small: true, ttl: 4000 });
       });

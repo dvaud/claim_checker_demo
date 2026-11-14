@@ -386,8 +386,10 @@ def strictness_text(thr: float) -> str:
 
 def _unread_n(ws: Workspace, hyp_id: str) -> int | str:
     """Roadmap N5: how many documents hold the check's search words but were never read in it ("" before it read)."""
-    u = _cc.unread_documents(ws, hyp_id)
-    return u["matching_n"] if u["checked"] else ""
+    from .check_results import _unread_split   # the counts alone: no titles, once per hypothesis of the export
+
+    split = _unread_split(ws, hyp_id)
+    return len(split[1]) if split else ""
 
 
 def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[str] | None = None,

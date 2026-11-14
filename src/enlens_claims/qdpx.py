@@ -83,11 +83,11 @@ def _stamp(at: str | None) -> str | None:
     if not at:
         return None
     at = str(at).strip()
-    return at if re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)?$", at) else None
+    return at if re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)?$", at) else None
 
 
 def _el(parent: ET.Element | None, tag: str, attrs: dict | None = None, text: str | None = None) -> ET.Element:
-    a = {k: str(v) for k, v in (attrs or {}).items() if v is not None}
+    a = {k: _x(str(v)) for k, v in (attrs or {}).items() if v is not None}   # PDF text holds control characters
     e = ET.Element(tag, a) if parent is None else ET.SubElement(parent, tag, a)
     if text is not None:
         e.text = _x(text)
@@ -118,7 +118,7 @@ class SourceText:
                 continue
             if prev_end is not None:
                 gap = doc_text[prev_end:s]
-                sep = gap if gap and not gap.strip() else "\n\n"
+                sep = gap if not gap.strip() else "\n\n"   # a passage cut mid-word joins its neighbour again
                 parts.append(sep)
                 pos += len(sep)
             segs.append((s, e, pos))
@@ -325,6 +325,7 @@ class _Builder:
             self.texts[d["doc_id"]] = SourceText(d.get("text") or "", spans.get(d["doc_id"], []),
                                                  whole=d["doc_id"] not in has)
             self.titles[d["doc_id"]] = d["title"] or Path(d["path"] or "").name or d["doc_id"]
+            d.pop("text", None)   # kept once, joined, in self.texts
             self.docs.append(d)
 
     def select(self, doc_id: str, key: tuple, start: int | None, end: int | None, user: str, at: str | None,
@@ -355,6 +356,7 @@ class _Builder:
     def codebooks(self, codes: ET.Element) -> None:
         from . import codebooks, profile
 
+        who = _label_people(self.ws)
         for fw in _frameworks_to_export(self.ws, self.framework):
             try:
                 codebooks.follow(self.ws, fw.name)   # labels follow the codebook's renames, as the Profile page does
@@ -364,7 +366,6 @@ class _Builder:
                                       "isCodable": "false"})
             _el(top, "Description", text=f"ENLENS codebook “{fw.name}”: each code is called “{fw.label}”.")
             self.summary["codes"] += 1 + _codebook_codes(top, fw)
-            who = _label_people(self.ws)
             for r in profile.effective(self.ws, fw.name):
                 if r["doc_id"] not in self.texts or r["code"] not in fw.codes:
                     continue
@@ -422,16 +423,16 @@ class _Builder:
             desc = [res["text"], f"Answer: {res.get('status_text') or res.get('status') or ''}",
                     f"Checked on {(res.get('created_at') or '')[:10]}"]
             _el(hc, "Description", text="\n\n".join(x for x in desc if x))
+            if (res.get("note") or "").strip():   # CodeType: Description, NoteRef*, Code* (in this order)
+                ng = self.g("hypothesis-note", hid)
+                self._note(ng, f"Your notes on: {_short(res['text'], 60)}", res["note"], self.users.person(None),
+                           res.get("created_at"))
+                _el(hc, "NoteRef", {"targetGUID": ng})
             verdict_code = {}
             for v, word, colour in VERDICT_CODES:
                 verdict_code[v] = self.g("hypothesis", hid, v)
                 _el(hc, "Code", {"guid": verdict_code[v], "name": word, "isCodable": "true", "color": colour})
             self.summary["codes"] += 1 + len(VERDICT_CODES)
-            if (res.get("note") or "").strip():
-                ng = self.g("hypothesis-note", hid)
-                self._note(ng, f"Your notes on: {_short(res['text'], 60)}", res["note"], self.users.person(None),
-                           res.get("created_at"))
-                _el(hc, "NoteRef", {"targetGUID": ng})
             n_parts = len(res["parts"])
             for part in res["parts"]:
                 models = {r["passage_id"]: r["model"] for r in self.ws.query(
@@ -445,7 +446,10 @@ class _Builder:
                     else:
                         model = models.get(x["passage_id"]) or part.get("model") or res.get("model")
                         user, by = self.users.ai(model), f"the AI ({model})"
-                    base = x.get("doc_start") or 0
+                    if x.get("not_placed") or x.get("in_corpus") is False or x.get("doc_start") is None:
+                        self.summary["not_placed"] += 1   # read before the document was read again: no place now
+                        continue
+                    base = x["doc_start"]
                     if x.get("quote") and x.get("quote_start") is not None and x.get("quote_end") is not None:
                         start, end = base + x["quote_start"], base + x["quote_end"]
                     else:

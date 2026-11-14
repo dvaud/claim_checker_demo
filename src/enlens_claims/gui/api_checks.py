@@ -208,13 +208,17 @@ class ChecksApi:
         ws = self.app.ws(name)
         fw = _str(q, "framework") or None
         thr = _float(q, "threshold", self.app.settings()["threshold"])   # the strictness, as the other exports
+        if fw:
+            from .. import frameworks
+
+            try:
+                frameworks.get(fw, ws)
+            except ValueError as e:   # an unknown codebook (checked first: any later error is ENLENS's, not the request's)
+                raise ApiError(400, str(e)) from e
         tmp = Path(tempfile.mkdtemp(prefix="enlens-qdpx-"))
         try:
             out = tmp / "project.qdpx"
-            try:
-                qdpx.export_project(ws, out, framework=fw, threshold=thr)
-            except ValueError as e:   # an unknown codebook
-                raise ApiError(400, str(e)) from e
+            qdpx.export_project(ws, out, framework=fw, threshold=thr)
             fname = _filename(f"ENLENS for NVivo - {name} - {time.strftime('%Y-%m-%d')}", "qdpx")
             self._stream(out, "application/zip", {"Content-Disposition": _disposition(fname)})
         finally:
@@ -350,14 +354,26 @@ class ChecksApi:
         """Roadmap N5: the documents this check never read, those with its search words apart (no model reads)."""
         ws = self.app.ws(name)
         try:
-            return claimcheck.unread_documents(ws, hyp_id)
+            out = claimcheck.unread_documents(ws, hyp_id)
         except KeyError:
             raise ApiError(404, "No such hypothesis.") from None
+        out["waits"] = claimcheck.further_round_waits(ws, hyp_id)   # *Read these* waits for the round being judged
+        return out
 
     def post_read_unread(self, name, hyp_id, q):
         ws = self.app.ws(name)
         if not ws.scalar("SELECT 1 FROM hypotheses WHERE hyp_id=?", (hyp_id,)):
             raise ApiError(404, "No such hypothesis.")
+        with self.app.jobs.lock:   # a second press, or a second tab: the same job, never a second round beside it
+            live = [j for j in self.app.jobs.jobs.values() if j.project == name and j.state in ("queued", "running")]
+        same = [j for j in live if j.kind == "read-unread" and j.scope == hyp_id]
+        if same:
+            return {"job": same[0].view()}
+        if any(j.kind == "read-new" for j in live):
+            raise ApiError(409, "Wait until the new documents have been read, then read these.")
+        wait = claimcheck.further_round_waits(ws, hyp_id)
+        if wait:
+            raise ApiError(409, wait)
         if not claimcheck.unread_documents(ws, hyp_id)["matching_n"]:
             raise ApiError(400, "No document with this check's search words is left unread.")
         return {"job": self.app.start_read_unread(name, hyp_id).view()}

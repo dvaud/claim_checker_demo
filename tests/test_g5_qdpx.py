@@ -20,15 +20,16 @@ from enlens_claims.store import now
 NS = {"q": qdpx.NS}
 Q = "{%s}" % qdpx.NS
 CB = "{%s}" % qdpx.NS_CODEBOOK
-# the order of the children the schema allows (Project Exchange 1.0), per element
+# the order of the children the schema allows, per element: REFI-QDA Project Exchange 1.0, Project.xsd (ProjectType,
+# CodeType, TextSourceType, NoteType, PlainTextSelectionType, CodingType), checked against the schema on 2026-11-14
 ORDER = {
     "Project": ["Users", "CodeBook", "Variables", "Cases", "Sources", "Notes", "Links", "Sets", "Graphs", "Description",
                 "NoteRef"],
-    "Code": ["Description", "Code", "NoteRef"],
-    "TextSource": ["Description", "PlainTextContent", "PlainTextSelection", "VariableValue", "NoteRef"],
-    "Note": ["Description", "PlainTextContent", "PlainTextSelection", "VariableValue", "NoteRef"],
+    "Code": ["Description", "NoteRef", "Code"],
+    "TextSource": ["Description", "PlainTextContent", "PlainTextSelection", "Coding", "NoteRef", "VariableValue"],
+    "Note": ["Description", "PlainTextContent", "PlainTextSelection", "Coding", "NoteRef", "VariableValue"],
     "PlainTextSelection": ["Description", "Coding", "NoteRef"],
-    "Coding": ["CodeRef"],
+    "Coding": ["CodeRef", "NoteRef"],
 }
 PAPER = "Water footprint of electrolytic hydrogen in arid export regions"
 
@@ -267,3 +268,46 @@ def test_the_command_line(project, tmp_path):
     assert cli.main(["--ws", str(ws.root), "export-qdpx", str(tmp_path / "c.qdpx")]) == 0
     assert cli.main(["--ws", str(ws.root), "export-qdc", "sdg", str(tmp_path / "c.qdc")]) == 0
     assert zipfile.is_zipfile(tmp_path / "c.qdpx") and (tmp_path / "c.qdc").read_bytes().startswith(b"<?xml")
+
+
+def test_control_characters_and_a_hypothesis_note_make_a_valid_file(project, tmp_path):
+    """Review of G5: PDF text holds control characters XML 1.0 forbids, in attributes too (titles, selection names);
+    a code's NoteRef comes before its child codes."""
+    ws = project["ws"]
+    with ws.connect() as cx:
+        cx.execute("UPDATE documents SET title=? WHERE doc_id=?", ("Water\x02 footprint\x1b report", project["paper"]))
+        cx.execute("UPDATE hypotheses SET note=? WHERE hyp_id=?", ("Ask \x01 Jones", project["hid"]))
+    out = tmp_path / "c.qdpx"
+    qdpx.export_project(ws, out)
+    root, _texts = _read(out)                       # parses: no forbidden character got through
+    _check_order(root)
+    want = qdpx.guid(ws.project_uid(), "hypothesis", project["hid"])
+    hyp = next(c for c in root.iter(Q + "Code") if c.get("guid") == want)
+    kids = [_local(c.tag) for c in hyp]
+    assert "NoteRef" in kids and kids.index("NoteRef") < kids.index("Code")
+
+
+def test_an_excerpt_with_no_place_today_is_not_coded(project, tmp_path, monkeypatch):
+    """Review of G5: an excerpt read before its document was read again has no place in today's text; it is counted
+    as not placed, never coded on other words."""
+    from enlens_claims import check_results
+
+    ws = project["ws"]
+    real = check_results.hypothesis_result
+
+    def moved(ws_, hid, *a, **kw):
+        res = real(ws_, hid, *a, **kw)
+        for part in res["parts"]:
+            for x in part["passages"]:
+                x["in_corpus"], x["doc_start"] = False, None
+        return res
+
+    monkeypatch.setattr(check_results, "hypothesis_result", moved)
+    summary = qdpx.export_project(ws, tmp_path / "m.qdpx")
+    assert summary["judgements"] == 0 and summary["not_placed"] >= 1
+
+
+def test_passages_cut_mid_word_join_again():
+    """Review of G5: two passages that touch (a forced cut in a long word) keep the text as it was."""
+    st = qdpx.SourceText("abcdef ghi", [(0, 3), (3, 6), (7, 10)])
+    assert st.text == "abcdef ghi"

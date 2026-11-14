@@ -4,7 +4,8 @@
   up. Under the evidence of a hypothesis, a small card *Documents not read in this check* now says how many documents
   no excerpt was read from, in two groups: those with the search words (an excerpt holds at least two different words
   of the hypothesis or its search words), with *Read these*, a further search limited to them that keeps your
-  reviews, as for documents added since; and those that share no word with the hypothesis, with *Search with other
+  reviews, as for documents added since (up to one excerpt a document, at most 40 at a press; the card then says how
+  many are left, and it waits while excerpts of the check still wait to be judged); and those that share no word with the hypothesis, with *Search with other
   words*. *Which ones* lists them, each opening the document. Theory documents, documents added since the check and
   documents the check was limited away from are left out. A document never read may be off your topic, or say it in
   other words: the count says nothing about how good it is. No AI reads anything until you press *Read these*. The

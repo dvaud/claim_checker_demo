@@ -826,8 +826,14 @@ def _cmd_07(a, ws) -> int:
                 "method": r["method"], "not_placed": r["missing"]})
         return 0
     if a.cmd in ("export-qdpx", "export-qdc"):
-        from . import qdpx
+        from . import frameworks, qdpx
 
+        if a.framework:
+            try:
+                frameworks.get(a.framework, ws)
+            except ValueError as e:   # an unknown codebook: a message, not a traceback
+                print(f"Problem: {e}", file=sys.stderr)
+                return 2
         _print(qdpx.export_project(ws, a.out, a.framework) if a.cmd == "export-qdpx" else
                qdpx.export_codebook(ws, a.framework, a.out))
         return 0

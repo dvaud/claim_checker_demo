@@ -166,7 +166,7 @@ def test_read_these_adds_one_round_limited_to_them_and_keeps_the_reviews(project
     assert claimcheck.new_documents(ws, hid) == []                              # nothing counts as added since
     # nothing left: another press reads nothing and makes no round
     again = claimcheck.read_unread_documents(ws, hid, BE, "m", k=8)
-    assert again == {"hyp_id": hid, "documents": 0, "passages": 0, "rounds": []}
+    assert again == {"hyp_id": hid, "documents": 0, "documents_read": 0, "left": 0, "passages": 0, "rounds": []}
 
 
 def test_the_routes_the_export_and_the_page_contract(project):
@@ -196,12 +196,14 @@ def test_the_endpoints_answer(project):
     ws, ids = project
     hid = _check(ws)
     started = []
-    stub = SimpleNamespace(app=SimpleNamespace(ws=lambda name: ws,
+    import threading
+
+    stub = SimpleNamespace(app=SimpleNamespace(ws=lambda name: ws, jobs=SimpleNamespace(lock=threading.Lock(), jobs={}),
                                                start_read_unread=lambda name, h: started.append((name, h)) or
                                                SimpleNamespace(view=lambda: {"id": "j1", "kind": "read-unread"})))
     got = ChecksApi.get_unread(stub, "Q", hid, {})
     assert set(got) == {"hyp_id", "checked", "considered", "matching", "matching_n", "one_word_n", "no_word",
-                        "no_word_n"}
+                        "no_word_n", "waits"} and got["waits"] is None
     assert all(set(d) == {"doc_id", "title"} for d in got["matching"] + got["no_word"])
     assert ChecksApi.post_read_unread(stub, "Q", hid, {}) == {"job": {"id": "j1", "kind": "read-unread"}}
     assert started == [("Q", hid)]
@@ -230,3 +232,43 @@ class _Skewed:
 
     def __getattr__(self, name):
         return getattr(self._real, name)
+
+
+def test_read_these_reads_every_listed_document_even_with_a_small_k(project):
+    """Review of N5: one press reads up to one excerpt a document (at most UNREAD_ROUND_MAX), not only the check's k."""
+    ws, ids = project
+    hid = _check(ws)
+    wanted = {d["doc_id"] for d in claimcheck.unread_documents(ws, hid)["matching"]}
+    assert len(wanted) == 3
+    r = claimcheck.read_unread_documents(ws, hid, BE, "m", k=1)
+    assert r["documents"] == 3 and r["documents_read"] == 3 and r["left"] == 0
+    assert {x["doc_id"] for x in claimcheck.result(ws, hid)["passages"] if x["round"] == 2} == wanted
+
+
+def test_read_these_waits_for_a_round_not_judged_yet(project):
+    """Review of N5: while a round waits for its grades (a Claude chat's, a helper's), no further round starts: it
+    would fail half-way, or take the place of a part's first round."""
+    import threading
+    from types import SimpleNamespace
+
+    from enlens_claims.gui.api_checks import ChecksApi
+    from enlens_claims.gui.api_common import ApiError
+
+    ws, ids = project
+    hid = _check(ws)
+    cid = ws.scalar("SELECT claim_id FROM user_claims WHERE hyp_id=?", (hid,))
+    claimcheck.more_passages(ws, cid, k=1)          # a round shown to a Claude chat, not graded yet
+    assert claimcheck.further_round_waits(ws, hid)
+    with pytest.raises(ValueError):
+        claimcheck.read_unread_documents(ws, hid, BE, "m", k=8)
+    stub = SimpleNamespace(app=SimpleNamespace(ws=lambda name: ws, jobs=SimpleNamespace(lock=threading.Lock(), jobs={}),
+                                               start_read_unread=lambda name, h: pytest.fail("started")))
+    assert ChecksApi.get_unread(stub, "Q", hid, {})["waits"]
+    with pytest.raises(ApiError) as e:
+        ChecksApi.post_read_unread(stub, "Q", hid, {})
+    assert e.value.status == 409
+    # a second press while the first job runs gets that job back
+    running = SimpleNamespace(kind="read-unread", project="Q", state="running", scope=hid,
+                              view=lambda: {"id": "j0", "kind": "read-unread"})
+    stub.app.jobs.jobs["j0"] = running
+    assert ChecksApi.post_read_unread(stub, "Q", hid, {}) == {"job": {"id": "j0", "kind": "read-unread"}}
