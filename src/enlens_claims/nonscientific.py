@@ -102,6 +102,22 @@ def why_here(cx, hyp_id: str | None) -> str | None:
 REASON = "they are the material this hypothesis is about"
 
 
+def answers_either_way(ws: Workspace, hyp_id: str) -> dict:
+    """The check's answer here now and the one it would have the other way (counting the non-scientific documents when
+    it does not, or not counting them when it does): {"counts", "now", "now_text", "other", "other_text"}. For the
+    report of what came in, when a colleague's change of the exception reaches this copy (the audit's DEC-1)."""
+    from .check_results import hypothesis_result
+    from .verdicts import STATUS_TEXT, nonsci_text
+
+    r = hypothesis_result(ws, hyp_id)
+    on = bool(r.get("count_nonscientific"))
+    every, without = r.get("status_all_sources") or r["status"], r.get("status_without_nonscientific") or r["status"]
+    other = without if on else every
+    other_text = (nonsci_text(other, every) if on else None) or STATUS_TEXT.get(other, other)
+    now_text = r.get("status_text") or STATUS_TEXT.get(r["status"], r["status"])
+    return {"counts": on, "now": r["status"], "now_text": now_text, "other": other, "other_text": other_text}
+
+
 def set_counting(ws: Workspace, hyp_id: str, on: bool, why: str | None = None) -> dict:
     """Count the non-scientific documents in this hypothesis's check (`on`), or leave them uncounted again, as in
     every other check. While it is on, a `why` replaces the reason, and an empty one takes the person's reason away

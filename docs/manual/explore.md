@@ -292,8 +292,12 @@ answer before and after. While it is on, a field under the switch takes your rea
 and choose *Save reason*, or empty it to give the usual reason (*they are the material this hypothesis is about*)
 again; the research log keeps each change. The switch is shown only where the check read a non-scientific document,
 and travels with the check in a shared project, as its note does: when the check is a colleague's, a line under the
-switch says so, and your change reaches their copy beside theirs, as a sync-clash copy. Everyone in the team needs
-this version: an older ENLENS keeps the setting but does not read it, so its copy still leaves them uncounted.
+switch says so, and your change reaches their copy beside theirs, as a sync-clash copy. Anyone in the team may turn it
+on or off, and nobody's change goes unsaid: when a colleague's change reaches your copy, *What came in* on the *Team*
+tab (and the report of a zip brought in) says who changed which check, their reason, and what it did to the answer
+here, for example *its answer here is now Supported by your documents; without them it would be No scientific evidence
+found*. Everyone in the team needs this version: an older ENLENS keeps the setting but does not read it, so its copy
+still leaves them uncounted, and says nothing of the change.
 
 **A suggestion from your bibliography.** When a document's work in the [bibliography](bibliography.md) is a kind that is
 usually not scientific (a newspaper or magazine article, a press release, a blog or forum post, a web page, a podcast
