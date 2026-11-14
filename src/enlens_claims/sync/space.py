@@ -50,6 +50,7 @@ import json
 import os
 import re
 import threading
+import time
 import uuid
 import zlib
 from contextlib import contextmanager
@@ -66,6 +67,7 @@ from .storage import NOT_FOUND, Storage, StorageProblem
 CONFIG = "shared_space"                 # config.json: where this project's storage space is (no keys)
 LINK = "enlens://join#"                 # an invite link: the rest, after the #, is never sent to any server
 MIN_EVERY = 10 * 60                     # a space is looked at every 10 minutes at most (calls cost; speed is no goal)
+FOLLOW_SEARCH_EVERY = 30 * 60           # a copy waiting to follow a move to a drive searches it whole this seldom
 _PART = re.compile(r"m[0-9a-f]{12}")
 _SPACE = re.compile(r"[0-9a-f]{16}")
 _M_FILES = ("person.json", "head.json", "read.json", "waiting.json")
@@ -521,9 +523,11 @@ def _setup_webdav_unlocked(ws: Workspace, address: str, user: str, password: str
     host = (urlsplit(address).hostname or "").lower()
     desc = {"id": sid, "service": "webdav", "endpoint": address, "host": host, "folder": folder_name, "region": None,
             "bucket": None, "prefix": f"enlens/{sid}/", "in_eu": webdav.in_eu(address), "drive_users": {},
-            "user": user}
+            "user": user, "drive_owner": {"user": user, "name": people.my_name() or None}}
     say("test", "Writing a test file", {})
     desc = _start_space(ws, desc, {"user": user, "password": password}, None, ident)
+    desc["drive_users"] = {desc["part"]: user}   # (handed on with the owner's role: a later move shares by itself)
+    webdav.remember(address)
     _connect(ws, desc, f"Set up a storage space in the drive at {host} (folder “{folder_name}”) for working "
                        "together.")
     out = status(ws)
@@ -542,11 +546,31 @@ def _dav(call):
         raise SpaceProblem(str(e), e.kind) from e
 
 
+def _folder_holder(desc: dict, access: dict | None = None) -> tuple[bool, str]:
+    """Whose drive holds the space's folder: (it is this person's own, the holder's name for messages). Only the
+    holder can share the folder or stop sharing it, also after handing the owner's role over."""
+    holder = desc.get("drive_owner") if isinstance(desc.get("drive_owner"), dict) else {}
+    hu = str(holder.get("user") or "").strip().lower()
+    mine = str((access or {}).get("user") or desc.get("user") or "").strip().lower()
+    if not hu or hu == mine:
+        return True, "you"
+    name = str(holder.get("name") or "").strip()[:80]
+    return False, f"{name} ({holder['user']})" if name else str(holder["user"])[:200]
+
+
 def _drive_share(desc: dict, access: dict, with_user: str) -> tuple[str | None, str | None]:
     """Share the space's folder with a colleague's user name at the drive: (the share's id, or None and the words that
-    tell the owner to share it in the drive's website)."""
+    tell the owner to share it in the drive's website). One share per user name: an earlier one is used again. When
+    the folder is in someone else's drive (the owner's role was handed over), only they can share it: the words say
+    so."""
     from . import webdav
 
+    mine, holder = _folder_holder(desc, access)
+    if not mine:
+        return None, (f"The folder “{desc.get('folder')}” is in the drive of {holder}: only they can share it. Ask "
+                      f"them to share it with {with_user or 'your colleague'} in the drive's website (allow them to "
+                      "edit), then send the invite. To share it yourself, move the team to a folder in your own drive "
+                      "(Move to another storage space).")
     by_hand = (f"Share the folder “{desc.get('folder')}” with {with_user or 'your colleague'} in the drive's website "
                "(allow them to edit), then send the invite.")
     if not with_user:
@@ -592,11 +616,13 @@ def _member_access(desc: dict, keeper: dict | None, part: str) -> tuple[dict, li
     raise SpaceProblem("This kind of storage space is not known to this ENLENS.", "service")
 
 
-def _drop_access(desc: dict, keeper: dict | None, ids: list[str]) -> list[str]:
+def _drop_access(desc: dict, keeper: dict | None, ids: list[str], part: str | None = None,
+                 others: set[str] | None = None) -> list[str]:
     """Delete a member's storage keys (they can no longer read or write the space). Best effort per key. On a drive,
-    stop sharing the folder with them; returns what the owner must still do by hand (words), if anything."""
+    stop sharing the folder with them (`part`; `others`: the parts that stay, members and invites waiting); returns
+    what the owner must still do by hand (words), if anything."""
     if desc.get("service") == "webdav":
-        return _drive_unshare(desc, ids)
+        return _drive_unshare(desc, ids, part, others)
     if not ids or desc.get("service") == "dir" or keeper is None:
         return []
     if desc.get("service") == "b2":
@@ -613,17 +639,30 @@ def _drop_access(desc: dict, keeper: dict | None, ids: list[str]) -> list[str]:
     return []
 
 
-def _drive_unshare(desc: dict, ids: list[str]) -> list[str]:
-    """Stop sharing a drive's folder with a colleague (the shares ENLENS made: `share:<id>`). Returns the words for
-    the owner when something is left to do in the drive's website."""
+def _drive_unshare(desc: dict, ids: list[str], part: str | None = None, others: set[str] | None = None) -> list[str]:
+    """Stop sharing a drive's folder with a colleague (the shares ENLENS made: `share:<id>`), unless a member who
+    stays or an invite still waiting uses the same account at the drive (one share per user name). Returns the words
+    for the owner when something is left to do in the drive's website."""
     from . import webdav
 
-    by_hand = (f"Stop sharing the folder “{desc.get('folder')}” with them in the drive's website, so they can no "
-               "longer read or write it.")
+    users = desc.get("drive_users") or {}
+    user = str(users.get(part) or "").strip() if part else ""
     shares = [i.split(":", 1)[1] for i in ids or [] if isinstance(i, str) and i.startswith("share:")]
+    rest = {p for p in (others if others is not None else set(users) | set(desc.get("access_ids") or {})) if p != part}
+    if any((user and str(users.get(p) or "").strip().lower() == user.lower())
+           or any(f"share:{sid}" in ((desc.get("access_ids") or {}).get(p) or []) for sid in shares) for p in rest):
+        return [f"The folder “{desc.get('folder')}” stays shared with {user or 'their account at the drive'}: another "
+                "member of the team, or an invite not used yet, uses the same account."]
+    who = user or "them"
+    access = _get_secret(desc["id"], "access") or {}
+    mine, holder = _folder_holder(desc, access)
+    if not mine:
+        return [f"The folder “{desc.get('folder')}” is in the drive of {holder}: only they can stop sharing it. Ask "
+                f"them to stop sharing it with {who} in the drive's website, so {who} can no longer read or write it."]
+    by_hand = (f"Stop sharing the folder “{desc.get('folder')}” with {who} in the drive's website, so they can no "
+               "longer read or write it.")
     if not shares:
         return [by_hand]
-    access = _get_secret(desc["id"], "access") or {}
     for sid in shares:
         try:
             webdav.unshare(desc["endpoint"], access.get("user") or "", access.get("password") or "", sid)
@@ -634,7 +673,7 @@ def _drive_unshare(desc: dict, ids: list[str]) -> list[str]:
 
 def _public_desc(desc: dict) -> dict:
     return {k: desc.get(k) for k in ("id", "service", "endpoint", "region", "bucket", "bucket_id", "account_id",
-                                     "prefix", "dir", "in_eu", "host", "folder")}
+                                     "prefix", "dir", "in_eu", "host", "folder", "drive_owner")}
 
 
 def _link(payload: dict) -> str:
@@ -667,6 +706,23 @@ def parse_link(text: str) -> dict:
           and payload.get("v") == 1)
     if not ok:
         raise SpaceProblem("This invite link is cut off, damaged, or made by a newer ENLENS.", "link")
+    if sp.get("service") == "webdav":   # (the drive's name shown is the one the password goes to, never another)
+        from . import webdav
+
+        try:
+            endpoint = webdav.normalise(str(sp.get("endpoint") or ""))
+        except webdav.WebDAVProblem as e:
+            raise SpaceProblem("This invite link names a drive ENLENS cannot use safely. Ask the owner for a new "
+                               "invite link.", "link") from e
+        host = (urlsplit(endpoint).hostname or "").lower()
+        if sp.get("host") is not None and str(sp.get("host")).strip().lower().rstrip(".") != host:
+            raise SpaceProblem(f"This invite link names the drive at {str(sp.get('host'))[:100]} but would send your "
+                               f"password to {host}. Do not use it: ask the owner for a new invite link.", "link")
+        if not isinstance(sp.get("folder"), str) or not sp["folder"].strip():
+            raise SpaceProblem("This invite link is cut off, damaged, or made by a newer ENLENS.", "link")
+        sp.update(endpoint=endpoint, host=host)
+        if not isinstance(sp.get("drive_owner"), dict):
+            sp["drive_owner"] = None
     return payload
 
 
@@ -685,7 +741,7 @@ def _invite_unlocked(ws: Workspace, label: str | None = None, drive_user: str | 
     part = _new_part()
     access, ids = _member_access(desc, keeper, part)
     share_note, drive_user = None, (drive_user or "").strip()[:200] or None
-    if desc.get("service") == "webdav":
+    if desc.get("service") == "webdav":   # (one share per user name at the drive: `webdav.share` finds an earlier one)
         share_id, share_note = _drive_share(desc, _get_secret(desc["id"], "access") or {}, drive_user or "")
         ids = [f"share:{share_id}"] if share_id else []
         if drive_user:
@@ -730,7 +786,7 @@ def _cancel_invite_unlocked(ws: Workspace, part: str) -> dict:
         raise SpaceProblem("There is no such invite waiting.", "no_invite")
     keeper = _get_secret(desc["id"], "keeper")
     ids = (desc.get("access_ids") or {}).get(part) or []
-    left_to_do = _drop_access(desc, keeper, ids)
+    left_to_do = _drop_access(desc, keeper, ids, part, _staying_parts(ws, desc, part))
     desc = {**desc, "invites": [i for i in desc.get("invites") or [] if i.get("part") != part],
             "access_ids": {k: v for k, v in (desc.get("access_ids") or {}).items() if k != part},
             "drive_users": {k: v for k, v in (desc.get("drive_users") or {}).items() if k != part}}
@@ -748,6 +804,18 @@ def _cancel_invite_unlocked(ws: Workspace, part: str) -> dict:
     return out
 
 
+def _staying_parts(ws: Workspace, desc: dict, leaving: str) -> set[str]:
+    """The parts that stay when one goes: the active members (as the last roster read says) and the invites
+    waiting."""
+    try:
+        st = json.loads((mirror_of(ws) / ".space-state.json").read_text(encoding="utf-8"))
+        roster = st.get("roster") or {}
+    except (OSError, ValueError, AttributeError, TypeError):
+        roster = {}
+    parts = set(_active(roster)) | {i.get("part") for i in desc.get("invites") or []}
+    return {p for p in parts if isinstance(p, str) and p != leaving}
+
+
 def _key_file(ident: Identity, payload: dict, person: str, epoch: int, key: bytes) -> bytes:
     public = ident.public()
     body = {"part": payload["part"], "person": person, **public, "name": people.my_name() or None, "at": now(),
@@ -758,20 +826,29 @@ def _key_file(ident: Identity, payload: dict, person: str, epoch: int, key: byte
 
 def peek(link: str) -> dict:
     """What the Team tab shows before joining: {"service", "host", "folder", "address" (the drive's address this
-    person most likely uses: the inviter's, which `join` adapts to their user name), "project", "from"}. Nothing in it
-    is a key."""
+    person most likely uses: the inviter's, which `join` adapts to their user name; its host is always "host"),
+    "known" (a drive of SURF's, or one this person has used on this computer: otherwise the dialog asks them to
+    confirm it is their institution's before the app password is sent), "project", "from"}. Nothing in it is a
+    key."""
+    from . import webdav
+
     payload = parse_link(link)
     sp = payload["space"]
+    dav = sp.get("service") == "webdav"
     return {"service": sp.get("service"), "host": sp.get("host"), "folder": sp.get("folder"),
-            "address": sp.get("endpoint") if sp.get("service") == "webdav" else None,
+            "address": sp.get("endpoint") if dav else None,
+            "known": webdav.known(sp["endpoint"]) if dav else None,
             "project": str(payload["project"].get("name") or "")[:80],
             "from": str((payload.get("from") or {}).get("name") or "")[:80] or None}
 
 
-def _drive_for_join(sp: dict, drive: dict | None) -> tuple[dict, dict]:
+def _drive_for_join(sp: dict, drive: dict | None, full: bool = True) -> tuple[dict, dict]:
     """A colleague joining (or following) a team in a drive: their own address, folder and access. `drive`:
-    {"user", "password", "address"?, "folder"?}. Raises SpaceProblem "drive_needed" without a user name and app
-    password, and "folder_not_found" (with "folders" to choose from) when the shared folder is not in their drive."""
+    {"user", "password", "address"?, "folder"?, "confirmed"?}. Raises SpaceProblem "drive_needed" without a user name
+    and app password; "drive_confirm" (with "address" and "host") before anything is sent to a drive that is neither
+    SURF's nor one this person has used on this computer, unless they confirmed it is their institution's; and
+    "folder_not_found" (with "folders" to choose from) when the shared folder is not in their drive. `full` False: the
+    folder is looked for under its own name only (`webdav.find_shared`)."""
     from . import webdav
 
     drive = drive or {}
@@ -782,10 +859,15 @@ def _drive_for_join(sp: dict, drive: dict | None) -> tuple[dict, dict]:
     address = str(drive.get("address") or "").strip()
     address = _dav(lambda: webdav.normalise(address, user) if address else
                    webdav.normalise(webdav.member_address(sp["endpoint"], user), user))
+    host = (urlsplit(address).hostname or "").lower()
+    if drive.get("confirmed") is not True and not webdav.known(address):
+        raise SpaceProblem(f"ENLENS has not used the drive at {host} on this computer before. Check that {address} is "
+                           "your institution's drive (its WebDAV address is in the drive's settings), and confirm it: "
+                           "your app password is sent there.", "drive_confirm", {"address": address, "host": host})
     _dav(lambda: webdav.check(address, user, password))
     chosen = str(drive.get("folder") or "").strip().strip("/")
     found, folders = _dav(lambda: webdav.find_shared(address, user, password, chosen or sp.get("folder") or "",
-                                                     sp["id"]))
+                                                     sp["id"], full=full or bool(chosen)))
     if found is None:
         if chosen:
             raise SpaceProblem(f"The folder “{chosen}” does not hold this team's work. Choose another, or ask the "
@@ -793,8 +875,7 @@ def _drive_for_join(sp: dict, drive: dict | None) -> tuple[dict, dict]:
         raise SpaceProblem(f"ENLENS did not find the shared folder “{sp.get('folder')}” in your drive. If the owner "
                            "has shared it with you, choose it below (it may have another name in your drive); if not, "
                            "ask them to share it.", "folder_not_found", {"folders": folders})
-    return ({"endpoint": address, "folder": found, "host": (urlsplit(address).hostname or "").lower(), "user": user},
-            {"user": user, "password": password})
+    return ({"endpoint": address, "folder": found, "host": host, "user": user}, {"user": user, "password": password})
 
 
 def _join_unlocked(ws: Workspace, link: str, drive: dict | None = None) -> dict:
@@ -847,6 +928,10 @@ def _join_unlocked(ws: Workspace, link: str, drive: dict | None = None) -> dict:
     keychain.put(_secret_name(desc["id"], "me"), ident.dump())
     _put_keys(desc["id"], names, epochs)
     _put_secret(desc["id"], "access", access)
+    if desc.get("service") == "webdav":
+        from . import webdav
+
+        webdav.remember(desc["endpoint"])
     who = (payload.get("from") or {}).get("name")
     _connect(ws, desc, f"Joined the team's storage space{f' from {who}' if who else ''}.")
     return status(ws)
@@ -1334,6 +1419,7 @@ def _hand_over_if_owner_changed(ctx: _Ctx) -> None:
     secret = {"keeper": _get_secret(ctx.id, "keeper"),
               "access": {} if ctx.desc.get("service") == "webdav" else ctx.access,
               "access_ids": ctx.desc.get("access_ids") or {}, "invites": invites,
+              "drive_users": ctx.desc.get("drive_users") or {},
               "invite_secrets": {i["part"]: _get_secret(ctx.id, f"invite:{i['part']}") for i in invites}}
     n = (_as_int(ctx.desc.get("keeper_n")) or 0) + 1
     seq = (_as_int(ctx.desc.get("roster_seq")) or 0) + 1   # the roster `_write_roster` writes next
@@ -1343,7 +1429,7 @@ def _hand_over_if_owner_changed(ctx: _Ctx) -> None:
     roster = json.loads(json.dumps(ctx.roster))
     roster.setdefault("keepers", []).append(_keeper_cert(ctx.ident, ctx.id, n, to, m["sign"], ctx.desc["part"], seq))
     _write_roster(ctx, roster, rekey=False)
-    ctx.desc.update(keeper_part=to, keeper_sign=m["sign"], keeper_n=n, invites=[], access_ids={},
+    ctx.desc.update(keeper_part=to, keeper_sign=m["sign"], keeper_n=n, invites=[], access_ids={}, drive_users={},
                     keepers=_history(ctx.desc) + [[to, m["sign"], seq]])
     ctx.changed_desc = True
     keychain.delete(_secret_name(ctx.id, "keeper"))
@@ -1382,6 +1468,9 @@ def _read_keeper_handover(ctx: _Ctx) -> None:
         ctx.access = secret["access"]
         ctx.store = storage_for(ctx.desc, ctx.access)
     ctx.desc["access_ids"] = secret.get("access_ids") if isinstance(secret.get("access_ids"), dict) else {}
+    if isinstance(secret.get("drive_users"), dict):   # (a drive: the user names, so a later move shares by itself)
+        ctx.desc["drive_users"] = {p: str(u)[:200] for p, u in secret["drive_users"].items()
+                                   if _PART.fullmatch(str(p)) and isinstance(u, str) and u.strip()}
     ctx.desc["invites"] = [i for i in secret.get("invites") or [] if isinstance(i, dict) and
                            _PART.fullmatch(str(i.get("part")))]
     for part, sec in (secret.get("invite_secrets") or {}).items():
@@ -1411,8 +1500,9 @@ def _remove_member_unlocked(ws: Workspace, part: str) -> dict:
         m = (roster.get("members") or {}).get(part)
         if m is None or m.get("removed") or part == ctx.desc["part"]:
             raise SpaceProblem("There is no such colleague in the storage space.", "no_member")
+        others = {p for p in _active(roster) if p != part} | {i.get("part") for i in ctx.desc.get("invites") or []}
         left_to_do = _drop_access(ctx.desc, _get_secret(ctx.id, "keeper"),
-                                  (ctx.desc.get("access_ids") or {}).get(part) or [])
+                                  (ctx.desc.get("access_ids") or {}).get(part) or [], part, others)
         m["removed"] = now()
         _write_roster(ctx, roster, rekey=True)
         ctx.desc["access_ids"] = {k: v for k, v in (ctx.desc.get("access_ids") or {}).items() if k != part}
@@ -1562,8 +1652,14 @@ def _read_moved(ctx: _Ctx) -> dict | None:
         return None
     access = payload.get("access") or {}
     if new.get("service") == "webdav":   # (this person's own account at the drive; the new folder shared with them)
+        # waiting for the new folder to be shared: its own name each round, the whole drive every half hour at most
+        last = ctx.state.get("follow_search_at")
+        full = not isinstance(last, (int, float)) or not 0 <= time.time() - last < FOLLOW_SEARCH_EVERY
+        if full:
+            ctx.state["follow_search_at"] = time.time()
         try:
-            drive_desc, access = _drive_for_join(sp, {**(ctx.access or {}), "address": ctx.desc.get("endpoint")})
+            drive_desc, access = _drive_for_join(sp, {**(ctx.access or {}), "address": ctx.desc.get("endpoint"),
+                                                      "confirmed": True}, full=full)
         except SpaceProblem as e:
             ctx.problem("moved", f"The team moved to a folder in the drive at {sp.get('host')} (“{sp.get('folder')}”), "
                                  f"and your copy follows once it can open it: {e} Until then it works with the old "
@@ -1671,12 +1767,31 @@ def _sync_now_unlocked(ws: Workspace, progress: Progress | None = None, should_s
             say("space", "Sending your shared work to the storage space", {})
             out["sent"] = _push(ctx)
             _hand_over_if_owner_changed(ctx)
+            _clean_temporaries(ctx)
     except StorageProblem as e:
         storage_problem(e, "write to")
     finally:
         ctx.save()
     out["problems"] += [p for p in ctx.problems if p not in out["problems"]]
     return out
+
+
+def _clean_temporaries(ctx: _Ctx) -> None:
+    """The keeper's round on a drive removes what writes cut off halfway left behind (hidden `.enlens-…` files older
+    than a day): the whole space is looked through once a day, a handful of files removed per round, best effort."""
+    from .storage import WebDAVStorage
+
+    if not ctx.keeper or not isinstance(ctx.store, WebDAVStorage):
+        return
+    last = ctx.state.get("temporaries_at")
+    if isinstance(last, (int, float)) and 0 <= time.time() - last < 86400:
+        return
+    try:
+        ctx.store.list("")
+        if ctx.store.clean_temporaries(86400, 5) < 5:   # (more left: the next round goes on)
+            ctx.state["temporaries_at"] = time.time()
+    except StorageProblem:
+        pass
 
 
 def describe(desc: dict | None) -> str | None:
@@ -1738,9 +1853,15 @@ def status(ws: Workspace) -> dict | None:
             "set_aside": [{k: v.get(k) for k in ("part", "why", "message", "at")}
                           for v in (state.get("aside") or {}).values()],
             "keychain": keychain.backend(),
-            "drive": ({"host": desc.get("host"), "folder": desc.get("folder"), "address": desc.get("endpoint"),
-                       "user": desc.get("user")}
-                      if desc.get("service") == "webdav" else None)}
+            "drive": _drive_status(desc) if desc.get("service") == "webdav" else None}
+
+
+def _drive_status(desc: dict) -> dict:
+    """The Team tab's lines about a drive: where, as whom, and whose drive holds the folder ("mine": this person's;
+    "holder": the name to show otherwise, who alone can share the folder or stop sharing it)."""
+    mine, holder = _folder_holder(desc)
+    return {"host": desc.get("host"), "folder": desc.get("folder"), "address": desc.get("endpoint"),
+            "user": desc.get("user"), "mine": mine, "holder": None if mine else holder}
 
 
 def _set_drive_password_unlocked(ws: Workspace, user: str, password: str) -> dict:
@@ -1762,6 +1883,7 @@ def _set_drive_password_unlocked(ws: Workspace, user: str, password: str) -> dic
         raise SpaceProblem(str(e), e.kind) from e
     _put_secret(desc["id"], "access", {"user": user, "password": password})
     _save(ws, {**desc, "user": user})
+    webdav.remember(desc["endpoint"])
     _note(ws, "space-password", "Entered a new app password for the drive.")
     return status(ws)
 

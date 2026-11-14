@@ -175,10 +175,19 @@ export async function joinDialog(ctx) {
   const davFolder = select({ id: "space-join-dav-folder" });
   const folderField = h("div", { hidden: true }, field("The shared folder in your drive", davFolder, { help: "It may have another name in your drive than the owner’s." }));
   const davIntro = h("p", { class: "muted small" });
+  // a drive ENLENS has not used on this computer (not SURF’s): the person confirms it is their institution’s before
+  // the app password goes there (a forged invite could name any address)
+  const davConfirm = h("input", { type: "checkbox", id: "space-join-dav-confirm" });
+  const davConfirmText = h("span", {});
+  const confirmField = h("div", { hidden: true },
+    notice({ kind: "attention" }, h("p", {}, "ENLENS has not used this drive on this computer before. Check the address above: it should be your institution’s drive, as its settings show it. Your app password is sent there.")),
+    h("label", { for: "space-join-dav-confirm", class: "team-check" }, davConfirm, davConfirmText));
+  const showConfirm = (host) => { davConfirmText.textContent = ` This is my institution’s drive (${host})`; confirmField.hidden = false; };
   const drive = h("div", { class: "team-space-drive", hidden: true }, davIntro,
+    field("The drive’s WebDAV address", davAddress, { help: "Your app password is sent to this address only. Filled in from the invite; change it only if your drive’s settings show another." }),
+    confirmField,
     field("Your user name at the drive", davUser),
     field("An app password", davPass, { help: "Make one in the drive’s settings, under Security (on SURFdrive: a WebDAV password). Never your main password." }),
-    fold({ sm: true }, "The drive’s WebDAV address", field("WebDAV address", davAddress, { help: "Filled in from the invite; change it only if your drive’s settings show another." })),
     folderField);
   let peeked = "";
   const peek = async () => {
@@ -189,15 +198,17 @@ export async function joinDialog(ctx) {
       const p = await api("POST", "/api/space/peek", { link: l });
       drive.hidden = p.service !== "webdav";
       if (p.service === "webdav") {
-        davIntro.textContent = `${p.from || "Your colleague"}’s team works in the drive at ${p.host}, in the folder “${p.folder}”. You use your own account there.`;
+        davIntro.textContent = `${p.from || "Your colleague"}’s team works in the drive at ${p.address}, in the folder “${p.folder}”. You use your own account there.`;
         if (!davAddress.value) davAddress.value = p.address || "";
+        if (p.known === false) showConfirm(p.host);
       }
     } catch (_) { drive.hidden = true; }
   };
   text.addEventListener("change", peek);
   text.addEventListener("input", () => setTimeout(peek, 50));
   const driveBody = () => (drive.hidden ? undefined : { user: davUser.value.trim(), password: davPass.value.trim(),
-    address: davAddress.value.trim().replace(/<user>/g, davUser.value.trim()) || undefined, folder: folderField.hidden ? undefined : davFolder.value || undefined });
+    address: davAddress.value.trim().replace(/<user>/g, davUser.value.trim()) || undefined, folder: folderField.hidden ? undefined : davFolder.value || undefined,
+    confirmed: !confirmField.hidden && davConfirm.checked });
   await dialog({
     title: "Join a team",
     body: h("div", {}, who.el, field("The invite link your colleague sent", text, { help: "It starts with enlens://join#. Paste all of it." }), drive,
@@ -211,6 +222,7 @@ export async function joinDialog(ctx) {
         if (!l) { err.textContent = "Paste the invite link first."; return false; }
         await peek();
         if (!drive.hidden && (!davUser.value.trim() || !davPass.value.trim())) { err.textContent = "Enter your user name at the drive and an app password."; return false; }
+        if (!drive.hidden && !confirmField.hidden && !davConfirm.checked) { err.textContent = "Check the drive’s address, then confirm that it is your institution’s drive."; return false; }
         dlg.querySelector("#dlg-confirm").disabled = true;
         try {
           await who.save();
@@ -229,6 +241,7 @@ export async function joinDialog(ctx) {
         } catch (e) {
           err.textContent = e.message || String(e);
           if (e.kind === "drive_needed") { peeked = ""; await peek(); }
+          if (e.kind === "drive_confirm") showConfirm((e.data && e.data.host) || "");
           if (e.kind === "folder_not_found" && e.data && Array.isArray(e.data.folders)) {   // the member picks it
             davFolder.replaceChildren(...e.data.folders.map((f) => h("option", { value: f }, f)));
             folderField.hidden = !e.data.folders.length;
@@ -268,12 +281,16 @@ function spaceSection(ctx) {
     h("p", { class: "muted small" }, dav
       ? `WebDAV at ${dav.address}, folder “${dav.folder}”, as ${dav.user || "you"}. Files are encrypted with AES-256-GCM using the project’s key and signed with each member’s own key (Ed25519): the drive cannot keep a colleague to their own part, so the signatures do. ${keys}`
       : `Bucket ${sp.where}. Files are encrypted with AES-256-GCM using the project’s key and signed with each member’s own key (Ed25519). ${keys}`));
+  // the owner’s role handed over in a drive: the folder stays in the drive of the person who set it up
+  const holderNote = dav && !dav.mine ? notice({ kind: "attention" }, h("p", {}, sp.keeper
+    ? `The folder “${dav.folder}” is in the drive of ${dav.holder}: only they can share it with colleagues or stop sharing it. To take full control, use Move to another storage space below and choose Your institution’s drive: ENLENS makes a folder in your own drive and takes the team there.`
+    : `The folder “${dav.folder}” is in the drive of ${dav.holder}.`)) : null;
   const davPassword = dav ? fold({ sm: true, id: "space-dav-password-fold" }, "A new app password for the drive",
     h("p", { class: "muted small team-text" }, "When the drive refuses your app password (it was removed, or expired), make a new one in the drive’s settings, under Security, and enter it here."),
     h("div", { class: "btn-row" }, button({ sm: true, id: "space-dav-new-password", onClick: () => drivePasswordDialog(ctx, dav) }, "Enter a new app password…"))) : null;
   return section("space", "The storage space",
     h("p", { class: "team-text team-space-where" }, sp.drive ? `The folder “${sp.drive.folder}” in the drive at ${sp.drive.host}` : sp.where, sp.in_eu === false ? " · not in the EU" : null),
-    waiting,
+    waiting, holderNote,
     aside.length ? noticeList([{ kind: "attention", text: `${plural(aside.length, "file")} in the storage space ${aside.length === 1 ? "was" : "were"} set aside: ${aside[0].message}${aside.length > 1 ? " (and others)" : ""} Nothing of ${aside.length === 1 ? "it" : "them"} came into this project.` }]) : null,
     invites.length ? listGroup(`Invites not used yet (${invites.length})`, ...invites) : null,
     invite ? h("div", { class: "btn-row" }, invite) : (sp.joined ? h("p", { class: "muted small team-text" }, `To add a colleague, ask ${keeper && !keeper.me ? keeper.name : "the owner"} for an invite.`) : null),

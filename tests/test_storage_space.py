@@ -270,3 +270,33 @@ def test_the_poller_looks_at_a_space_every_ten_minutes_at_most():
     from enlens_claims.gui import poller
 
     assert space.MIN_EVERY == 600 and hasattr(poller.Poller, "_wait")
+
+
+def test_a_move_puts_project_json_in_the_new_space_before_the_old_one_is_told(team, tmp_path, monkeypatch):
+    """14 November 2026 (review): a colleague who follows before the owner's next round finds project.json in the new
+    space, and the owner's copy does not wait for it."""
+    from enlens_claims.sync.storage import DirStorage
+
+    anna, carol = team
+    for p in (anna, carol, anna, carol):
+        _round(p)
+    puts = []
+    real_put = DirStorage.put
+
+    def put(self, name, data):
+        puts.append((str(self.root), name))
+        return real_put(self, name, data)
+
+    monkeypatch.setattr(DirStorage, "put", put)
+    other = tmp_path / "new-bucket"
+    other.mkdir()
+    with anna:
+        space.move(anna.ws, lambda w, ident: space.setup_dir(w, other, ident=ident))
+    told = next(i for i, (root, n) in enumerate(puts) if n == "space/moved.json")
+    sent = next(i for i, (root, n) in enumerate(puts) if n == "space/project.json" and root != puts[told][0])
+    assert sent < told
+    _round(carol)   # Carol follows before Anna's next round, and writes there
+    _round(carol)
+    _round(anna)    # no "arriving": Anna's copy does not wait for project.json
+    with anna:
+        assert (space.mirror_of(anna.ws) / folder.team_name(anna.ws) / "project.json").is_file()

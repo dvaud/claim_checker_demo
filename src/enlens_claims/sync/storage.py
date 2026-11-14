@@ -430,20 +430,37 @@ class S3Storage(Storage):
 
 _DAV = "{DAV:}"
 _PROPFIND = (b'<?xml version="1.0" encoding="utf-8"?>\n<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/>'
-             b'<d:getcontentlength/><d:getetag/></d:prop></d:propfind>')
+             b'<d:getcontentlength/><d:getetag/><d:getlastmodified/></d:prop></d:propfind>')
 _MAX_FOLDERS = 20000                # a listing walks at most this many folders
 _PATH_SAFE = "/@:~-._!$&'()*+,;="  # kept as they are in a URL's path (a user name like anna@uva.nl stays readable)
 _TMP = ".enlens-"                   # a file being written starts so (never listed: ENLENS's names never start with .)
+TEST_PLAIN_HTTP = "ENLENS_TEST_PLAIN_HTTP"   # "1": the tests' stand-in drive on this computer, over plain http
 
 
 def is_loopback(host: str) -> bool:
     return (host or "").split(":")[0].strip("[]").lower() in ("127.0.0.1", "localhost", "::1")
 
 
+def plain_http_allowed(host: str) -> bool:
+    """Plain http (no encryption) is never used for a password, except to the tests' stand-in on this computer: only
+    when the tests set ENLENS_TEST_PLAIN_HTTP=1, never in normal use."""
+    return is_loopback(host) and os.environ.get(TEST_PLAIN_HTTP) == "1"
+
+
+def _http_time(text: str) -> float | None:
+    from email.utils import parsedate_to_datetime
+
+    try:
+        return parsedate_to_datetime(text.strip()).timestamp()
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+
+
 class WebDAVStorage(Storage):
     """A folder in a WebDAV drive as a storage. `root_url` is the folder's address (with or without a final `/`;
     spaces and other characters as they read, or percent-encoded); `prefix` is put before every name. Basic
-    authentication with `user` and an app password, over HTTPS only (plain HTTP to this computer, for tests)."""
+    authentication with `user` and an app password, over HTTPS only (plain HTTP only to the tests' stand-in,
+    `plain_http_allowed`)."""
 
     def __init__(self, root_url: str, user: str, password: str, prefix: str = "", timeout: float = 60.0):
         from urllib.parse import unquote
@@ -451,7 +468,7 @@ class WebDAVStorage(Storage):
         parts = urlsplit(root_url.strip())
         if parts.scheme not in ("https", "http") or not parts.netloc:
             raise StorageProblem("The drive's address must start with https://.", BAD_ANSWER)
-        if parts.scheme == "http" and not is_loopback(parts.hostname or ""):
+        if parts.scheme == "http" and not plain_http_allowed(parts.hostname or ""):
             raise StorageProblem("ENLENS sends a password only over a secure connection: the drive's address must "
                                  "start with https://.", BAD_ANSWER)
         self.scheme, self.host = parts.scheme, parts.netloc
@@ -461,6 +478,7 @@ class WebDAVStorage(Storage):
         self._auth = f"Basic {token}"
         self.timeout = timeout
         self._made: set[str] = set()   # folders known to be there
+        self.temporaries: dict[str, float | None] = {}   # hidden files being written, seen by `list`: name -> time
 
     def describe(self) -> str:
         return f"WebDAV at {self.host.split('@')[-1]}, folder {self.root}"
@@ -475,6 +493,8 @@ class WebDAVStorage(Storage):
         from urllib.parse import unquote
 
         path = unquote(urlsplit(href).path or href)
+        if path + "/" == self.root:   # (the root itself, written without its final /)
+            return ""
         if not path.startswith(self.root):
             return None
         return path[len(self.root):]
@@ -517,7 +537,7 @@ class WebDAVStorage(Storage):
                                   "folder can make room, or ask their institution for more space.", FULL)
         if r.status == 413:
             return StorageProblem(f"{what} is too large for the drive.", TOO_LARGE)
-        if r.status in (301, 302, 303, 307, 308):
+        if 300 <= r.status < 400:   # (never followed: the password would go along to the other address)
             return StorageProblem("The drive answered from another address: check the WebDAV address in the drive's "
                                   "settings.", BAD_ANSWER)
         if r.status == 423:
@@ -529,9 +549,10 @@ class WebDAVStorage(Storage):
         return StorageProblem(f"The drive answered something ENLENS does not understand (HTTP {r.status}).",
                               BAD_ANSWER)
 
-    def propfind(self, rel: str, depth: str = "1") -> list[tuple[str, bool, int, str]] | None:
-        """One folder's entries (Depth 1), the folder itself left out: [(name below the root, is a folder, size,
-        etag)]; None when there is no such folder. With depth "0", only whether it is there ([] or None)."""
+    def _propfind(self, rel: str, depth: str) -> tuple[tuple, list[tuple]] | None:
+        """(the entry asked for, the entries in it): each (name below the root, is a folder, size, etag, time written
+        or None). None when there is no such file or folder. An answer about other files than the one asked for is
+        StorageProblem(BAD_ANSWER), never an empty folder."""
         r = self._request("PROPFIND", rel, _PROPFIND, {"Depth": depth,
                                                        "Content-Type": "application/xml; charset=utf-8"},
                           read_cap=_LIST_CAP)
@@ -547,13 +568,13 @@ class WebDAVStorage(Storage):
                 raise ValueError(root.tag)
         except (ET.ParseError, ValueError) as e:
             raise StorageProblem("The drive's list of files could not be understood.", BAD_ANSWER) from e
-        out = []
+        itself, out = None, []
         for resp in root.findall(_DAV + "response"):
             href = (resp.findtext(_DAV + "href") or "").strip()
             name = self._rel(href)
             if name is None:
                 continue
-            is_dir, size, etag = False, 0, ""
+            is_dir, size, etag, when = False, 0, "", None
             for ps in resp.findall(_DAV + "propstat"):
                 if " 200 " not in f" {(ps.findtext(_DAV + 'status') or '')} ":
                     continue
@@ -568,11 +589,33 @@ class WebDAVStorage(Storage):
                 except ValueError:
                     size = 0
                 etag = (prop.findtext(_DAV + "getetag") or etag).strip().strip('"')
+                when = _http_time(prop.findtext(_DAV + "getlastmodified") or "") or when
             name = name.rstrip("/")
+            entry = (name, is_dir, size, etag, when)
             if name == rel.rstrip("/"):
-                continue   # (the folder itself)
-            out.append((name, is_dir, size, etag))
-        return out
+                itself = entry
+            else:
+                out.append(entry)
+        if itself is None:
+            raise StorageProblem("The drive answered with the files of another folder than the one ENLENS asked for, "
+                                 "so ENLENS could not see what is in the shared folder. Check the WebDAV address in the "
+                                 "drive's settings; nothing was changed.", BAD_ANSWER)
+        return itself, out
+
+    def propfind(self, rel: str, depth: str = "1") -> list[tuple[str, bool, int, str]] | None:
+        """One folder's entries (Depth 1), the folder itself left out: [(name below the root, is a folder, size,
+        etag)]; None when there is no such folder. With depth "0", only whether it is there ([] or None)."""
+        got = self._propfind(rel, depth)
+        if got is None:
+            return None
+        return [(n, d, s, e) for n, d, s, e, _w in got[1]]
+
+    def stat(self, rel: str) -> tuple[int, str] | None:
+        """(size, etag) of one file below the root (already prefixed), or None when there is none."""
+        got = self._propfind(rel, "0")
+        if got is None or got[0][1]:
+            return None
+        return got[0][2], got[0][3]
 
     # -- the four things
     def list(self, prefix: str = "") -> dict[str, Obj]:
@@ -584,8 +627,8 @@ class WebDAVStorage(Storage):
             walked += 1
             if walked > _MAX_FOLDERS:
                 raise StorageProblem("The drive's shared folder holds far more folders than ENLENS reads.", TOO_LARGE)
-            entries = self.propfind(self.prefix + sub)
-            if entries is None:
+            got = self._propfind(self.prefix + sub, "1")
+            if got is None:
                 if sub == start:
                     if self.propfind("", "0") is None:   # (the shared folder itself is gone, or no longer shared)
                         raise StorageProblem("The shared folder is not in the drive (any more), or no longer shared "
@@ -593,12 +636,18 @@ class WebDAVStorage(Storage):
                     return out   # (no such folder: nothing in it)
                 continue
             self._made.add(self.prefix + sub)
-            for full, is_dir, size, etag in entries:
+            for full, is_dir, size, etag, when in got[1]:
                 if not full.startswith(self.prefix):
                     continue
                 name = full[len(self.prefix):]
                 leaf = name.rsplit("/", 1)[-1]
-                if not name or leaf.startswith(".") or not _NAME.fullmatch(name):
+                if leaf.startswith(_TMP) and not is_dir:
+                    self.temporaries[full] = when
+                if not name or leaf.startswith("."):
+                    continue
+                try:   # (a name ENLENS never writes, such as one with `..` in it, is left out: the round goes on)
+                    check_name(name)
+                except ValueError:
                     continue
                 if is_dir:
                     d = name + "/"
@@ -608,6 +657,25 @@ class WebDAVStorage(Storage):
                     out[name] = Obj(name, size, etag or f"{size}")
         return out
 
+    def clean_temporaries(self, older_than: float = 86400.0, at_most: int = 5) -> int:
+        """Remove hidden temporary files (`.enlens-…`) that `list` saw and that are older than `older_than` seconds:
+        what a write cut off halfway left behind. At most `at_most` per call (a round), best effort. Returns how many
+        went."""
+        cutoff, gone = time.time() - older_than, 0
+        for full, when in sorted(self.temporaries.items(), key=lambda x: x[1] or 0):
+            if gone >= at_most:
+                break
+            if when is None or when > cutoff:
+                continue
+            try:
+                r = self._request("DELETE", full)
+            except StorageProblem:
+                break
+            if r.status in (200, 202, 204, 404):
+                gone += 1
+                self.temporaries.pop(full, None)
+        return gone
+
     def get(self, name: str, max_size: int | None = None) -> bytes:
         r = self._request("GET", self.prefix + check_name(name), read_cap=max_size)
         if r.too_big:
@@ -615,6 +683,17 @@ class WebDAVStorage(Storage):
         if r.status != 200:
             raise self._problem(r, name, False)
         return r.body
+
+    def make_folder(self, rel_folder: str) -> bool:
+        """Make one new folder below the root: True when it was made, False when something of that name is there
+        already (405), even when the listing did not show it."""
+        r = self._request("MKCOL", rel_folder.strip("/") + "/")
+        if r.status == 201:
+            self._made.add(rel_folder.strip("/") + "/")
+            return True
+        if r.status == 405:
+            return False
+        raise self._problem(r, f"the folder {rel_folder.strip('/')}", True)
 
     def mkdirs(self, rel_folder: str) -> None:
         """Make a folder (below the root) and every folder above it that is not there yet."""
@@ -644,10 +723,18 @@ class WebDAVStorage(Storage):
         if r.status not in (200, 201, 204):
             raise self._problem(r, name, True)
         m = self._request("MOVE", tmp, headers={"Destination": self._url(rel), "Overwrite": "T"})
-        if m.status not in (201, 204):
+        etag = ""
+        if m.status == 404:
+            # a MOVE tried again (the first one's answer was lost, or a 5xx after it was done): the temporary file is
+            # gone; it counts when the file is now there whole
+            there = self.stat(rel)
+            if there is None or there[0] != len(body) or self.stat(tmp) is not None:
+                raise self._problem(m, name, True)
+            etag = there[1]
+        elif m.status not in (201, 204):
             self._request("DELETE", tmp)   # (best effort: a hidden temporary file is never listed)
             raise self._problem(m, name, True)
-        etag = (m.headers.get("etag") or r.headers.get("etag") or "").strip('"')
+        etag = etag or (m.headers.get("etag") or r.headers.get("etag") or "").strip('"')
         return etag or hashlib.md5(body).hexdigest()
 
     def delete(self, name: str) -> None:

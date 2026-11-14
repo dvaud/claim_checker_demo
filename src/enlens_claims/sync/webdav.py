@@ -22,7 +22,9 @@ Addresses (read 14 November 2026):
   https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html).
 - The OCS Share API: POST `<base>/ocs/v2.php/apps/files_sharing/api/v1/shares` with `path` (from the user's root),
   `shareType` 0 (a user), `shareWith`, `permissions` (1 read + 2 update + 4 create + 8 delete = 15; no resharing);
-  DELETE `…/shares/<id>`; every call with the header `OCS-APIRequest: true`; `?format=json` answers in JSON with
+  GET `…/shares?path=<path>&reshares=true` lists the folder's shares (one per user: a second share with the same user
+  is refused, so an earlier one is used again); DELETE `…/shares/<id>`; every call with the header
+  `OCS-APIRequest: true`; `?format=json` answers in JSON with
   `ocs.meta.statuscode` 200 (v2) and the share's `ocs.data.id`
   (https://docs.nextcloud.com/server/latest/developer_manual/client_apis/OCS/ocs-share-api.html; ownCloud's is the
   same, https://doc.owncloud.com/server/next/developer_manual/core/apis/ocs-share-api.html).
@@ -37,7 +39,7 @@ import re
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
 from . import _web
-from .storage import BAD_ANSWER, DENIED, NOT_FOUND, StorageProblem, WebDAVStorage, is_loopback
+from .storage import BAD_ANSWER, DENIED, NOT_FOUND, StorageProblem, WebDAVStorage, plain_http_allowed
 
 SURFDRIVE = "https://surfdrive.surf.nl/files/remote.php/nonshib-webdav/"
 NEXTCLOUD_FORM = "https://<host>/remote.php/dav/files/<user>/"
@@ -68,7 +70,7 @@ def normalise(address: str, user: str = "") -> str:
     if parts.scheme not in ("https", "http") or not parts.hostname or "<" in a:
         raise WebDAVProblem("This does not look like a WebDAV address. It starts with https:// and is shown in the "
                             "drive's settings.", "input")
-    if parts.scheme == "http" and not is_loopback(parts.hostname):
+    if parts.scheme == "http" and not plain_http_allowed(parts.hostname):
         raise WebDAVProblem("ENLENS sends a password only over a secure connection: use the address that starts with "
                             "https://.", "input")
     return f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}/"
@@ -83,10 +85,56 @@ def member_address(owner_address: str, user: str) -> str:
     return owner_address
 
 
+def _is_surf(host: str) -> bool:
+    h = (host or "").lower().rstrip(".")
+    return h in ("surf.nl", "surfsara.nl") or h.endswith((".surf.nl", ".surfsara.nl"))
+
+
 def in_eu(address: str) -> bool | None:
     """True for SURF's drives (in the Netherlands); None when ENLENS cannot tell."""
-    h = (urlsplit(address).hostname or "").lower()
-    return True if h.endswith(("surf.nl", "surfsara.nl")) else None
+    return True if _is_surf(urlsplit(address).hostname or "") else None
+
+
+# ---------------------------------------------------------------------------------------------
+# drives this person has used on this computer: an invite naming another one asks them to confirm it first (a forged
+# link could otherwise send their app password to an address of someone else's choosing)
+# ---------------------------------------------------------------------------------------------
+def _where(address: str) -> str:
+    p = urlsplit(address)
+    return (p.hostname or "").lower() + (f":{p.port}" if p.port else "")
+
+
+def _known_file():
+    from .. import home
+
+    return home.home() / "known-drives.json"
+
+
+def _known() -> list[str]:
+    try:
+        v = json.loads(_known_file().read_text(encoding="utf-8")).get("drives")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [str(x) for x in v] if isinstance(v, list) else []
+
+
+def known(address: str) -> bool:
+    """The drive at this address is one of SURF's, or one this person already used on this computer."""
+    return _is_surf(urlsplit(address).hostname or "") or _where(address) in _known()
+
+
+def remember(address: str) -> None:
+    """This person uses the drive at this address (set up, joined, a new app password): best effort."""
+    from .. import home
+
+    w = _where(address)
+    have = _known()
+    if not w or w in have:
+        return
+    try:
+        home._write_whole(_known_file(), json.dumps({"drives": (have + [w])[-200:]}, indent=2))
+    except OSError:
+        pass
 
 
 def folder_url(address: str, folder: str) -> str:
@@ -127,17 +175,20 @@ def make_folder(address: str, user: str, password: str, project: str) -> str:
     try:
         there = {n for n, _d, _s, _e in store.propfind("") or []}
         base = folder_name(project)
-        name = next(n for n in [base] + [f"{base} {i}" for i in range(2, 1000)] if n not in there)
-        store.mkdirs(name)
+        for name in [base] + [f"{base} {i}" for i in range(2, 1000)]:
+            if name not in there and store.make_folder(name):   # (405: there already, though not listed)
+                return name
     except StorageProblem as e:
         raise WebDAVProblem(f"ENLENS could not make a folder in the drive: {e}", e.kind) from e
-    return name
+    raise WebDAVProblem("ENLENS could not make a folder in the drive: every name it tried is taken.", BAD_ANSWER)
 
 
-def find_shared(address: str, user: str, password: str, folder: str, space_id: str) -> tuple[str | None, list[str]]:
+def find_shared(address: str, user: str, password: str, folder: str, space_id: str,
+                full: bool = True) -> tuple[str | None, list[str]]:
     """Where the project's folder is in a colleague's drive: (its path from their root, or None; the folders at their
     root, to choose from when it was not found). A folder counts when it holds the team's list of members for this
-    space. Looks under the folder's own name first, then in every folder at the root and in `Shared`."""
+    space. Looks under the folder's own name first, then in every folder at the root and in `Shared`. `full` False:
+    only under the folder's own name (one request: a copy waiting to follow a move asks often), and no folders."""
     store = storage(address, user, password)
     marker = f"enlens/{space_id}/space/roster.json"
 
@@ -151,6 +202,8 @@ def find_shared(address: str, user: str, password: str, folder: str, space_id: s
             raise
 
     try:
+        if not full:
+            return (folder if folder and holds(folder) else None), []
         top = [n for n, d, _s, _e in store.propfind("") or [] if d and "/" not in n]
         if folder in top and holds(folder):
             return folder, top
@@ -176,12 +229,29 @@ def _ocs_base(address: str) -> str:
     return f"{p.scheme}://{p.netloc}{path.rstrip('/')}"
 
 
+# the forms of a WebDAV address whose user's own root ENLENS knows: Nextcloud's `/remote.php/dav/files/<user>/`, the
+# older `/remote.php/webdav/` and SURFdrive's `/remote.php/nonshib-webdav/` (each with what follows: a deeper folder)
+_ROOT_FORMS = (re.compile(r"^.*?/remote\.php/dav/files/[^/]+(/.*)?$"),
+               re.compile(r"^.*?/remote\.php/(?:webdav|nonshib-webdav)(/.*)?$"))
+
+
 def _user_root_path(address: str, folder: str) -> str:
-    """The folder's path as the OCS Share API names it: from the user's own root (which the WebDAV address is)."""
-    return "/" + unquote(folder).strip("/")
+    """The folder's path as the OCS Share API names it, from the user's own root: the part of the WebDAV address
+    below that root (when it points deeper), then the folder. WebDAVProblem "no_share_path" when ENLENS cannot tell
+    where the address is in the user's files: it then shares nothing rather than a wrong folder."""
+    path = unquote(urlsplit(address).path).rstrip("/")
+    for rx in _ROOT_FORMS:
+        m = rx.match(path)
+        if m:
+            parts = [x for x in ((m.group(1) or "").strip("/"), unquote(folder).strip("/")) if x]
+            if any(p in (".", "..") for x in parts for p in x.split("/")):
+                break
+            return "/" + "/".join(parts)
+    raise WebDAVProblem("ENLENS cannot tell from the drive's WebDAV address where the folder is among your files, so "
+                        "it does not share it by itself.", "no_share_path")
 
 
-def _ocs(method: str, url: str, user: str, password: str, form: dict | None = None) -> dict:
+def _ocs(method: str, url: str, user: str, password: str, form: dict | None = None, what: str = "share the folder"):
     token = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
     headers = {"Authorization": f"Basic {token}", "OCS-APIRequest": "true", "Accept": "application/json"}
     body = None
@@ -205,15 +275,37 @@ def _ocs(method: str, url: str, user: str, password: str, form: dict | None = No
     code = meta.get("statuscode")
     if r.status >= 300 or code not in (100, 200):
         said = str(meta.get("message") or "").strip()[:200]
-        raise WebDAVProblem(f"The drive did not share the folder{': ' + said if said else ''} (HTTP {r.status}).",
+        raise WebDAVProblem(f"The drive did not {what}{': ' + said if said else ''} (HTTP {r.status}).",
                             NOT_FOUND if r.status == 404 or code == 404 else BAD_ANSWER)
     return doc["ocs"].get("data") or {}
 
 
+def find_share(address: str, user: str, password: str, folder: str, with_user: str) -> str | None:
+    """The id of the share of the project's folder with this user name that is there already, or None."""
+    query = urlencode({"path": _user_root_path(address, folder), "reshares": "true", "format": "json"})
+    data = _ocs("GET", _ocs_base(address) + _SHARE_PATH + "?" + query, user, password, what="list its shares")
+    for sh in data if isinstance(data, list) else []:
+        if (isinstance(sh, dict) and str(sh.get("share_type")) == "0" and sh.get("id") is not None
+                and str(sh.get("share_with") or "").strip().lower() == with_user.strip().lower()):
+            return str(sh["id"])
+    return None
+
+
 def share(address: str, user: str, password: str, folder: str, with_user: str) -> str:
-    """Share the project's folder with a colleague's user name at the same drive; returns the share's id."""
+    """Share the project's folder with a colleague's user name at the same drive; returns the share's id. A folder
+    is shared once per user name: a share that is there already (an earlier invite to the same account) is used
+    again."""
+    path = _user_root_path(address, folder)
+    try:
+        there = find_share(address, user, password, folder, with_user)
+    except WebDAVProblem as e:
+        if e.kind in (DENIED, "no_share_api"):
+            raise
+        there = None   # (no list of shares: sharing itself says what is wrong)
+    if there is not None:
+        return there
     data = _ocs("POST", _ocs_base(address) + _SHARE_PATH + "?format=json", user, password,
-                {"path": _user_root_path(address, folder), "shareType": "0", "shareWith": with_user.strip(),
+                {"path": path, "shareType": "0", "shareWith": with_user.strip(),
                  "permissions": str(SHARE_PERMISSIONS)})
     sid = data.get("id") if isinstance(data, dict) else None
     if sid is None:
@@ -225,7 +317,7 @@ def unshare(address: str, user: str, password: str, share_id: str) -> None:
     """Stop sharing (a share that is not there any more is no problem)."""
     try:
         _ocs("DELETE", _ocs_base(address) + _SHARE_PATH + f"/{quote(str(share_id), safe='')}?format=json", user,
-             password)
+             password, what="stop sharing the folder")
     except WebDAVProblem as e:
         if e.kind != NOT_FOUND:
             raise

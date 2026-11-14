@@ -11,6 +11,11 @@ API. Several users, each with an app password; a folder shared with a user shows
 Knobs on `srv.state`: `ocs` (False: no sharing interface, 404 without JSON), `maintenance` (503 "maintenance"),
 `quota` (bytes in all; a PUT beyond it answers 507), `fail` ({"PUT": 401, ...}: every such request answers that),
 `calls` ("METHOD path"). `files` (owner path -> bytes), `dirs`, `shares` (id -> dict) are the drive's contents.
+Since the review of 14 November 2026: `href_base` (PROPFIND answers name their files under this path instead),
+`extra_hrefs` (more hrefs, as they are, in every PROPFIND answer), `redirect` ((status, location): every WebDAV request
+answers so), `move_then` (statuses a MOVE answers after it was done, one per MOVE), `unlisted` (owner paths a listing
+leaves out), `mtimes` (owner path -> seconds; getlastmodified), `auth_to` (paths asked with an Authorization header).
+A second share of a folder with the same user is refused (403), as Nextcloud does; GET `…/shares?path=` lists them.
 """
 from __future__ import annotations
 
@@ -18,6 +23,8 @@ import base64
 import json
 import sys
 import threading
+import time
+from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
@@ -44,6 +51,13 @@ class State:
         self.fail: dict[str, int] = {}
         self.shares_in = ""                        # "" (the root) or "Shared"
         self.calls: list[str] = []
+        self.href_base: str | None = None
+        self.extra_hrefs: list[str] = []
+        self.redirect: tuple[int, str] | None = None
+        self.move_then: list[int] = []
+        self.unlisted: set[str] = set()
+        self.mtimes: dict[str, float] = {}
+        self.auth_to: list[str] = []
         self._n = 0
 
     # -- where a user's path is in its owner's files
@@ -62,6 +76,8 @@ class State:
         real = self.resolve(user, rel)
         out = {}
         for d in self.dirs:
+            if d in self.unlisted:
+                continue
             if d.startswith(real + "/") and "/" not in d[len(real) + 1:]:
                 out[d[len(real) + 1:]] = True
         for f in self.files:
@@ -145,6 +161,8 @@ class Handler(BaseHTTPRequestHandler):
         self._body_cache = self._body()
         with st.lock:
             st.calls.append(f"{self.command} {unquote(urlsplit(self.path).path)}")
+            if self.headers.get("Authorization"):
+                st.auth_to.append(unquote(urlsplit(self.path).path))
             if st.maintenance:
                 return self._send(503, b"Nextcloud is in maintenance mode")
             if self.command in st.fail:
@@ -159,6 +177,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, b"not here")
             if w[0] == "forbidden":
                 return self._send(403, b"not your files")
+            if st.redirect:
+                return self._send(st.redirect[0], b"moved", {"Location": st.redirect[1]})
             base, rel = w
             return getattr(self, "_dav_" + self.command.lower())(user, base, rel.rstrip("/"))
 
@@ -174,16 +194,21 @@ class Handler(BaseHTTPRequestHandler):
         if real in st.dirs and self.headers.get("Depth", "infinity") == "1":
             entries += [((rel + "/" if rel else "") + n, d) for n, d in st.children(user, rel)]
         out = ['<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">']
+        hrefs = []
         for name, is_dir in entries:
-            href = quote(base + name + ("/" if is_dir and name else ""), safe="/@")
+            href = quote((st.href_base or base) + name + ("/" if is_dir and name else ""), safe="/@")
+            hrefs.append((href, name, is_dir))
+        hrefs += [(h, rel, False) for h in st.extra_hrefs]
+        for href, name, is_dir in hrefs:
             r = st.resolve(user, name)
             size = len(st.files.get(r, b""))
             etag = f'"{st.etags.get(r, 0)}-{size}"'
             rt = "<d:collection/>" if is_dir else ""
             cl = "" if is_dir else f"<d:getcontentlength>{size}</d:getcontentlength>"
+            lm = f"<d:getlastmodified>{formatdate(st.mtimes.get(r, time.time()), usegmt=True)}</d:getlastmodified>"
             out.append(f"<d:response><d:href>{href}</d:href><d:propstat><d:prop><d:resourcetype>{rt}</d:resourcetype>"
-                       f"{cl}<d:getetag>{etag}</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>"
-                       "</d:response>")
+                       f"{cl}<d:getetag>{etag}</d:getetag>{lm}</d:prop><d:status>HTTP/1.1 200 OK</d:status>"
+                       "</d:propstat></d:response>")
         out.append("</d:multistatus>")
         return self._send(207, "".join(out).encode(), ctype="application/xml; charset=utf-8")
 
@@ -209,6 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(507, b"quota")
         st._n += 1
         st.files[real], st.etags[real] = data, st._n
+        st.mtimes[real] = time.time()
         return self._send(201, b"", {"ETag": f'"{st._n}"'})
 
     def _dav_mkcol(self, user, base, rel):
@@ -249,6 +275,9 @@ class Handler(BaseHTTPRequestHandler):
         if there and (self.headers.get("Overwrite") or "T") == "F":
             return self._send(412, b"")
         st.files[dst], st.etags[dst] = st.files.pop(src), st.etags.pop(src)
+        st.mtimes[dst] = st.mtimes.pop(src, time.time())
+        if st.move_then:   # (done, but the answer says otherwise: the client tries again)
+            return self._send(st.move_then.pop(0), b"gateway problem")
         return self._send(204 if there else 201, b"")
 
     def _dav_post(self, user, base, rel):
@@ -276,12 +305,24 @@ class Handler(BaseHTTPRequestHandler):
             real = st.resolve(user, folder)
             if real not in st.dirs or not real.startswith(user + "/"):
                 return self._ocs_answer(404, 404, message="Wrong path, file/folder does not exist")
+            if any(sh["owner"] == user and sh["path"] == real[len(user) + 1:] and sh["with"] == with_user
+                   for sh in st.shares.values()):
+                return self._ocs_answer(403, 403, message=f"Path is already shared with {with_user}")
             st._n += 1
             sid = str(st._n)
             st.shares[sid] = {"owner": user, "path": real[len(user) + 1:], "with": with_user,
                               "permissions": int(form.get("permissions") or 31),
                               "mount": st.mount_name(with_user, real.rsplit("/", 1)[-1])}
             return self._ocs_answer(200, 200, {"id": int(sid), "share_type": 0, "share_with": with_user})
+        if self.command == "GET" and path == OCS:
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+            real = st.resolve(user, (q.get("path") or "").strip("/"))
+            if real not in st.dirs:
+                return self._ocs_answer(404, 404, message="Wrong path, file/folder does not exist")
+            found = [{"id": int(i), "share_type": 0, "share_with": sh["with"], "path": "/" + sh["path"],
+                      "permissions": sh["permissions"]} for i, sh in st.shares.items()
+                     if sh["owner"] == user and f"{user}/{sh['path']}" == real]
+            return self._ocs_answer(200, 200, found)
         if self.command == "DELETE" and path.startswith(OCS + "/"):
             sid = path[len(OCS) + 1:]
             sh = st.shares.get(sid)

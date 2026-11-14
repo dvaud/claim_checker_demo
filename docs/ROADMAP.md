@@ -820,8 +820,11 @@ reader never sees half of one on any server. WebDAV has no keys ENLENS can make 
 account and app password, and the owner shares the folder, by ENLENS through the OCS Share API where the drive has it
 (read, change, add, remove; no resharing), otherwise in the drive's website. The invite carries the drive and the
 folder, no password; joining asks for the member's own and finds the shared folder (by its name, then any folder at
-their root or in `Shared` that holds the team's roster), or lets them choose. Removing unshares; as on R2, the
-signatures keep each part its writer's. A hand-over never passes the old owner's app password on. *Move to another
+their root or in `Shared` that holds the team's roster), or lets them choose. An invite's drive name must be its
+address's; a drive not used on this computer before (and not SURF's) is confirmed by the member before their password
+goes there. One share per user name; removing unshares when nobody staying uses that account; as on R2, the
+signatures keep each part its writer's. A hand-over never passes the old owner's app password on; the folder stays in
+the first owner's drive (only they share it), so the new owner is pointed to a move into their own drive. *Move to another
 storage space* works to and from WebDAV; members follow a move to a drive only from a drive at the same address (else
 their copy leaves the old space and asks for a new invite). *Not tried with a real SURFdrive, SURF Research Drive or
 Nextcloud account*: built against a stand-in that follows RFC 4918 and Nextcloud's documents (whether SURFdrive's

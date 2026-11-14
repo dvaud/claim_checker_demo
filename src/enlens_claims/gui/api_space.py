@@ -32,11 +32,13 @@ def _problem(e: space.SpaceProblem) -> ApiError:
 
 
 def _drive(body: dict) -> dict | None:
-    """A colleague's own account at the team's drive, as the join dialog sends it."""
+    """A colleague's own account at the team's drive, as the join dialog sends it ("confirmed": they said the drive
+    at this address is their institution's, `space._drive_for_join`)."""
     d = body.get("drive")
     if not isinstance(d, dict):
         return None
-    return {k: str(d.get(k) or "").strip() for k in ("user", "password", "address", "folder")}
+    return {**{k: str(d.get(k) or "").strip() for k in ("user", "password", "address", "folder")},
+            "confirmed": d.get("confirmed") is True}
 
 
 class SpaceApi:
@@ -105,8 +107,8 @@ class SpaceApi:
         return self._space_status(name)
 
     def post_space_peek(self, q):
-        """What an invite link is for, before joining: {"link"} → {"service", "host", "folder", "address", "project",
-        "from"} (no keys)."""
+        """What an invite link is for, before joining: {"link"} → {"service", "host", "folder", "address", "known",
+        "project", "from"} (no keys; `space.peek`)."""
         try:
             return space.peek(str(self._body().get("link") or ""))
         except space.SpaceProblem as e:

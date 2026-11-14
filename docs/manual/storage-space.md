@@ -66,10 +66,14 @@ ENLENS checks them, makes a folder named *ENLENS - <your project>* in your drive
 *Inviting a colleague:* *Invite a colleague…* also asks for their **user name at the drive**. ENLENS then shares the
 project's folder with them (they may read and change it, not share it on). Some drives do not let a program share
 folders; then, or when you leave the user name empty, the dialog says so: share the folder with them yourself in the
-drive's website, allowing them to edit. The invite link carries no password.
+drive's website, allowing them to edit. The invite link carries no password. The folder is shared once per account:
+a second invite to the same user name (a colleague's second computer, or an invite made again) uses the same share.
 
 *Joining:* the colleague chooses *Join a team…* and pastes the link as usual. ENLENS sees that the team works in a
-drive and asks for their own user name there and an app password they made for ENLENS. It finds the shared folder in
+drive, shows the drive's full address, and asks for their own user name there and an app password they made for
+ENLENS. The app password is sent to that address only. If ENLENS has not used that drive on their computer before (and
+it is not one of SURF's), the dialog first asks them to confirm that it is their institution's drive: check the address
+against the one the drive's settings show. A link that names one drive but points to another is refused. It finds the shared folder in
 their drive by itself (a shared folder may have another name in their drive, or sit in a *Shared* folder); when it
 cannot, it lists the folders at the top of their drive to choose from. If it is not there at all, the owner has not
 shared it with them yet.
@@ -77,6 +81,20 @@ shared it with them yet.
 *Removing a colleague* stops sharing the folder with them, where ENLENS shared it; otherwise ENLENS says to stop sharing
 it in the drive's website. As at Cloudflare, the drive cannot keep a colleague to their own part of the folder: the
 signatures do (a file written in someone else's name is set aside).
+
+*Handing the project over* (*Hand over…* on the Team page) works as everywhere, but the folder stays in the drive of
+the person who set it up: only they can share it with new colleagues or stop sharing it, and the dialogs then say to
+ask them. To take full control, the new owner chooses *Move to another storage space* → *Your institution's drive…*:
+ENLENS makes a folder in their own drive, shares it with the colleagues it knows the user names of, and takes the team
+there.
+
+*Replaced files and the drive's space:* ENLENS replaces some of its files in the folder at each round. A Nextcloud (and
+SURF's drives) keeps each replaced file in the trash bin, or as an older version, of the person whose drive holds the
+folder, and that counts against their storage space. The drive removes them by itself after a while (often 30 days).
+To make room sooner, open the drive's website, choose *Deleted files* (bottom left in *Files*) and *Delete
+permanently*. Whether replaced files are kept at all is a setting of the drive's administrators: ask your institution's
+help desk if the space runs short. ENLENS also removes, once a day, the hidden half-written files (named *.enlens-…*)
+that a cut-off connection can leave behind.
 
 *When the drive refuses your app password* (it was removed, or expired), make a new one in the drive's settings and
 enter it under *A new app password for the drive* on the card *The storage space*.
