@@ -932,7 +932,12 @@ characters: "Part 2 is too short…"); 502 when no model service is usable. The 
 `{"hyp_id": "h…", "status": "contested"}`. 0.18.8 (N3): with `from_doc` (a working document's *Check against the
 corpus*) the hypothesis records `origin` `"document"` and `origin_id` the document's id, and its result gains
 `origin_title` (the document's title, or its file's name; left out once the document is gone). 400 when `from_doc`
-is not a document of the project.
+is not a document of the project. The words keep that document's AI setting (`docrole.origin_floor`, as an add-on's
+draft does, see EXTENDING.md): from a document marked *Only a local AI* only a local model splits them, proposes
+their search words and judges their excerpts (by queue, Claude Code splits nothing and proposes no words: they are
+searched as written); from one marked *No AI* no model reads them, they are searched as written and every excerpt
+waits for the person's judgement. The result then gains `words_access` (`"local"` or `"none"`), and the connector
+does not list or open the check.
 
 With `parts`, the hypothesis is not split by the model: one part = checked as written (1–6 parts). With `terms`, the
 model writes no extra search words: each part is searched with its own words plus that list (`[]`: its own words
@@ -947,8 +952,8 @@ slightly fewer excerpts from the cited sources into the top 8 (147 against 154),
 
 #### Look before checking
 
-`POST /api/projects/<p>/prepare` `{"text": "…", "decompose": true, "expand": true, "framework", "code"}` → job
-(kind `prepare`, uses the model, progress like a check). `result`:
+`POST /api/projects/<p>/prepare` `{"text": "…", "decompose": true, "expand": true, "framework", "code", "from_doc"}`
+→ job (kind `prepare`, uses the model, progress like a check). `result`:
 ```json
 {"parts": [{"text": "Hybrid work improves wellbeing.", "role": "outcome"}, {"text": "…", "role": "outcome"}],
  "terms": [["well-being", "life satisfaction"], ["isolation", "younger workers"]],
@@ -956,7 +961,8 @@ slightly fewer excerpts from the cited sources into the top 8 (147 against 154),
 ```
 `terms` are the AI's extra search words for each part (the part's own words are always searched, so they are left
 out). Nothing is kept in the project. Show the parts as editable lines and the words as removable chips, then send
-the check with `parts`, `terms` and `edited`.
+the check with `parts`, `terms` and `edited`. 0.18.8 (N3): `from_doc` as for a check: words from a document no model
+you have may read come back unsplit and with no extra words.
 
 Check job `progress` (poll it to draw the live panel):
 ```json
@@ -1721,9 +1727,9 @@ terms.
 - `GET /api/projects/<p>/codebooks/<name>.qdc` → 0.18.7 (G5): the codebook as a REFI-QDA codebook (`urn:QDA-XML:codebook:1.0`) for NVivo, ATLAS.ti and MAXQDA: its groups as parent codes, each code's definition, when to use it and when not, keywords and examples as its description (`qdpx.codebook_xml`). 404 for an unknown codebook.
 - `GET /api/projects/{p}/document-roles` → `{"roles": {doc id: "theory"}, "nonscientific": [doc ids]}` (only the
   documents with a role; 0.18.6: and those marked Non-scientific).
-- `GET /api/projects/{p}/documents/{d}/role` → `{"doc_id", "role": "theory" | null, "impact": {"themes": [{"run_id",
-  "created_at", "passages"}], "labels": [{"framework", "name", "passages"}], "checks": [{"hyp_id", "text",
-  "excerpts"}]}}`: what was made with the document in.
+- `GET /api/projects/{p}/documents/{d}/role` → `{"doc_id", "role": "theory" | "working" | null, "impact":
+  {"themes": [{"run_id", "created_at", "passages"}], "labels": [{"framework", "name", "passages"}], "checks":
+  [{"hyp_id", "text", "excerpts"}]}}`: what was made with the document in.
 - `PUT /api/projects/{p}/documents/{d}/role` `{"role": "theory" | null, "why"?}` → `{"doc_id", "role", "changed",
   "impact"}`. 400 for any other role, 404 for no such document. Under an owner, a Member's mark becomes a proposal at
   the Team tab's next look (as *Leave out* does).
@@ -1732,9 +1738,7 @@ terms.
   non-scientific documents). `PUT /api/projects/{p}/documents/{d}/nonscientific` `{"nonscientific": true | false,
   "why"?}` → `{"doc_id", "nonscientific", "changed", "checks", "answers": [{"hyp_id", "text", "was", "was_text",
   "now", "now_text"}]}` (the answers the mark changed). 400 for a value that is not a boolean, 404 for no such
-  document. 0.18.8 (N3): it also gives `"started": [{"hyp_id", "text", "status", "status_text"}]`, the checks
-  started from the document's text (`from_doc`), newest first; one just started and not split yet is `"running"`.
-  A check's result gains `status_all_sources`, and each excerpt `nonscientific`; a part or a check that only
+  document. A check's result gains `status_all_sources`, and each excerpt `nonscientific`; a part or a check that only
   non-scientific documents speak to has the status text *No scientific evidence found*.
 - 0.18.8 (K3, `nonscientific.py`): `PUT /api/projects/{p}/hypotheses/{h}/nonscientific` `{"count": true | false,
   "why"?: text}` → `{"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now",
@@ -1756,6 +1760,9 @@ terms.
   `nonscientific_shown` and `nonscientific_shown_in_project` (columns of documents behind no answer, which
   `documents_without_evidence` still counts). The connector's check summary marks evidence `counted_by_exception` and
   gives `status_without_non_scientific` where a hypothesis counts them.
+- 0.18.8 (N3): `GET …/documents/{d}/role` also gives `"started": [{"hyp_id", "text", "status", "status_text"}]`, the
+  checks started from the document's text (`from_doc`), newest first, as the checks list has them (a check by queue
+  that waits for its parts is `"waiting"`; one interrupted before it had parts is left out).
 
 **A codebook from a theory document** (roadmap K2 part 2, `theorycodes.py`, no AI).
 

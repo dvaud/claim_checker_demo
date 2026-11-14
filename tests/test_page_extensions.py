@@ -81,6 +81,18 @@ out.batch = [reg.originLink({ batch_id: "b1" }), reg.originLink({ origin: "batch
 
 
 @pytest.mark.skipif(not NODE, reason="node is not installed")
+def test_a_check_started_from_a_document_links_back_while_the_document_is_there(tmp_path):
+    """0.18.8 (N3): origin "document" links to the document's page, named by `origin_title`; without a title (the
+    document is gone) there is no link."""
+    out = _node("""
+out.named = reg.originLink({ origin: "document", origin_id: "d 1", origin_title: "My chapter" });
+out.gone = reg.originLink({ origin: "document", origin_id: "d 1" });
+""", tmp_path)
+    assert out["named"] == {"eyebrow": None, "meta": "from My chapter", "href": "#/doc/d%201"}
+    assert out["gone"] is None
+
+
+@pytest.mark.skipif(not NODE, reason="node is not installed")
 def test_the_stand_in_page_module(tmp_path):
     out = _node("""
 out.added = reg.applyExtensions(fake, { FEATURES, SECTIONS });

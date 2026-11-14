@@ -281,6 +281,19 @@ def register_hidden(fn: Callable) -> Callable:
     return fn
 
 
+def _core_hooks() -> None:
+    """0.18.8 (N3): ENLENS's own floor and hidden rule, by the same hooks: the words of a check started from a
+    document's text (`hypotheses.origin` "document") keep that document's AI setting, and the connector does not
+    show such a check when the document is not `cloud` (docrole.origin_floor, docrole.kept_here)."""
+    from . import docrole
+
+    register_floor(docrole.origin_floor)
+    register_hidden(docrole.kept_here)
+
+
+_core_hooks()
+
+
 def _hooks(kind: list) -> list[Callable]:
     from .addons import load
 

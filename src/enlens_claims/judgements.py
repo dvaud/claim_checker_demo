@@ -107,6 +107,21 @@ def _set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str |
         people.refresh(cx, [claim_id], me)  # yours is in force; removed, a colleague's counts again (if any)
 
 
+def cannot_reread(level: str, own: str = "cloud") -> str:
+    """Why no model may read an excerpt again: its document's setting, or (0.18.8, N3) the setting of the document
+    the hypothesis's words come from."""
+    if level == "none":
+        return "This excerpt's document is marked No AI: no model may read it. Give your own judgement."
+    if own == "none":
+        return ("This hypothesis comes from a document marked No AI: no model may read its words. Give your own "
+                "judgement.")
+    if level == "local":
+        return ("This excerpt's document is marked Only a local AI, and no local model is chosen for such documents "
+                "(Settings → AI). Give your own judgement, or choose one.")
+    return ("This hypothesis comes from a document marked Only a local AI, and no local model is chosen for such "
+            "documents (Settings → AI). Give your own judgement, or choose one.")
+
+
 def reread_excerpt(ws: Workspace, claim_id: str, passage_id: str, backend, model: str, note: str | None = None,
                    progress: _cc.Progress | None = None, should_stop: Callable[[], bool] | None = None,
                    readers=None) -> dict:
@@ -137,11 +152,11 @@ def reread_excerpt(ws: Workspace, claim_id: str, passage_id: str, backend, model
         note = v.get("user_note")
     # 0.11: the excerpt is read again by a model its document's setting allows: the main one, or the local model
     level = access.levels(ws, [p["doc_id"]]).get(p["doc_id"], "none")
-    reader = _cc._readers(backend, model, readers).for_level(level)
+    # 0.18.8 (N3): and by the setting of the document the hypothesis's words come from (access.floor)
+    own = _cc._own_level(ws, uc["hyp_id"] or claim_id)
+    reader = _cc._readers(backend, model, readers).for_level(access.most([level, own]))
     if reader is None:
-        raise ValueError("This excerpt's document is marked No AI: no model may read it. Give your own judgement."
-                         if level == "none" else "This excerpt's document is marked Only a local AI, and no local "
-                         "model is chosen for such documents (Settings → AI). Give your own judgement, or choose one.")
+        raise ValueError(cannot_reread(level, own))
     backend, model = reader
     used = _cc._used(backend, model)
     payload = _cc._payload(ws, claim_id, uc["text"], uc["target"], uc.get("framework"), [p])

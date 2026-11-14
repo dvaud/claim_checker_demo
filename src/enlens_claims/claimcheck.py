@@ -507,6 +507,29 @@ def _readers(backend, model: str, readers=None):
     return readers if readers is not None else access.Readers(backend, model)
 
 
+_MAIN = object()  # _run_check: the hypothesis's own words go to the main model
+
+
+def _own_level(ws: Workspace, hyp_id: str) -> str:
+    """0.18.8 (N3): how far the hypothesis's own words may go, by the floors for its text (`access.floor`): a check
+    started from a document's text keeps that document's AI setting, an add-on's draft its own; `cloud` otherwise."""
+    return access.floor(ws._conn(), {"hyp_id": hyp_id})
+
+
+def _own_reader(ws: Workspace, hyp_id: str, readers):
+    """0.18.8 (N3): (backend, model) that may read the hypothesis's own words to split it or to propose search words:
+    the main model, the local model for restricted documents, or None (no model may: it is checked as written, with
+    its own words)."""
+    lv = _own_level(ws, hyp_id)
+    if lv in readers.main_levels:
+        return readers.backend, readers.model
+    return readers.for_level(lv)
+
+
+NO_MODEL_SPLIT = "Checked as written: no model you have may read words from its document"
+NO_MODEL_TERMS = "Searching with the words of the hypothesis only: no model you have may read words from its document"
+
+
 def _used(backend, model: str) -> str:
     return "baseline" if getattr(backend, "name", "") == "baseline" else model
 
@@ -595,6 +618,7 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
     own = readers is None  # 0.13.11: a batch shares one, so the local model is loaded once for all its checks
     readers = access.Readers(backend, model) if own else readers
     try:
+        words_by = _own_reader(ws, hid, readers)  # 0.18.8 (N3): who may read the hypothesis's own words
         plan = [{"text": text, "role": None, "part": 0}]
         if given is not None:
             plan = given
@@ -604,10 +628,12 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
                                (json.dumps([{"text": p["text"], "role": p["role"]} for p in plan], ensure_ascii=False), hid))
             say("decompose_done", f"Checked in the {len(plan)} parts you chose" if len(plan) > 1
                 else "Checked as written, as you chose", {"parts": [p["text"] for p in plan]})
+        elif decompose and words_by is None:
+            say("decompose_done", NO_MODEL_SPLIT, {"parts": [text]})
         elif decompose:
             stop()
             say("decompose", "Splitting your hypothesis into parts that can be checked one by one", {})
-            got = _decompose(ws, hid, text, backend, model, used)
+            got = _decompose(ws, hid, text, words_by[0], words_by[1], _used(*words_by))
             if len(got) > 1:
                 plan = [{"text": p["text"], "role": p.get("role"), "part": i} for i, p in enumerate(got, 1)]
                 say("decompose_done", f"Split into {len(plan)} parts", {"parts": [p["text"] for p in plan]})
@@ -622,7 +648,7 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
             _run_check(ws, cid, backend, model, used, k, per_doc, expand, doc_ids,
                        lambda s, m, extra=None, _i=info: say(s, m, {**_i, **(extra or {})}), embedder,
                        context=text if p["part"] else None, stop=stop, given_terms=mine, second_pass=second_pass,
-                       readers=readers)
+                       readers=readers, own=words_by)
         stop()
         with ws.connect() as cx:
             cx.execute("UPDATE hypotheses SET model=? WHERE hyp_id=?", (used, hid))
@@ -665,10 +691,12 @@ def _expand(ws: Workspace, cid: str, claim: str, backend, model: str, used: str,
 
 def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool = False, expand: bool = True,
                   framework: str | None = None, code: str | None = None, progress: Progress | None = None,
-                  should_stop: Callable[[], bool] | None = None) -> dict:
+                  should_stop: Callable[[], bool] | None = None, origin: str | None = None,
+                  origin_id: str | None = None) -> dict:
     """What a check would do before it reads anything ("Look before checking"): the parts the model splits the
     hypothesis into and the extra search words it proposes for each, for a person to edit and pass to
-    `check_hypothesis` as `parts` and `terms`. Nothing is kept in the project.
+    `check_hypothesis` as `parts` and `terms`. Nothing is kept in the project. 0.18.8 (N3): `origin`, `origin_id` as
+    for `check_hypothesis`: words from a document's text are read only by a model that document's AI setting allows.
 
     Returns {"parts": [{"text", "role"}], "terms": [[...] per part], "split": bool}.
     """
@@ -680,11 +708,18 @@ def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool
     for (old,) in ws.query("SELECT hyp_id FROM hypotheses WHERE hyp_id LIKE 'prep%'"):
         delete_hypothesis(ws, old, unmade=True)  # left by an earlier one that was interrupted
     hid = _new_id("prep")
-    new_hypothesis(ws, text, None, None, {"prepare": True}, None, hyp_id=hid)
+    new_hypothesis(ws, text, None, None, {"prepare": True}, None, hyp_id=hid, origin=origin, origin_id=origin_id)
+    readers = access.Readers(backend, model)
     try:
+        words_by = _own_reader(ws, hid, readers)  # 0.18.8 (N3): who may read these words
+        if words_by is not None:
+            backend, model = words_by
+            used = _used(backend, model)
         parts = [{"text": text, "role": None}]
         split = False
-        if decompose:
+        if decompose and words_by is None:
+            say("decompose_done", NO_MODEL_SPLIT, {"parts": [text]})
+        elif decompose:
             stop()
             say("decompose", "Splitting your hypothesis into parts that can be checked one by one", {})
             got = _decompose(ws, hid, text, backend, model, used)
@@ -694,8 +729,10 @@ def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool
                 {"parts": [p["text"] for p in parts]})
         terms: list[list[str]] = []
         for i, p in enumerate(parts, 1):
-            if not expand:
+            if not expand or words_by is None:
                 terms.append([])
+                if expand:
+                    say("terms_done", NO_MODEL_TERMS, {"terms": [], "new_terms": []})
                 continue
             stop()
             info = {"part": i, "parts": len(parts), "claim": p["text"]} if split else {}
@@ -709,6 +746,7 @@ def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool
         return {"parts": parts, "terms": terms, "split": split}
     finally:
         delete_hypothesis(ws, hid, unmade=True)
+        _let_go(readers)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -747,6 +785,14 @@ def queue_check(ws: Workspace, text: str, router, framework: str | None = None, 
         options["queue_terms"] = given_terms
     hid = _new_id("h")
     create_hypothesis(ws, text, fw, code, options, batch_id, hyp_id=hid, origin=origin, origin_id=origin_id)
+    # 0.18.8 (N3): Claude Code may not read words a floor keeps on this computer (a check started from a document
+    # marked Only a local AI or No AI): the hypothesis is checked as written, with its own words, and its excerpts are
+    # judged by the local model or by the person (_add_round)
+    if _own_level(ws, hid) != "cloud":
+        options.update(expand=options["expand"] and given_terms is not None, decompose=bool(given and len(given) > 1))
+        decompose = False
+        with ws.connect() as cx:
+            cx.execute("UPDATE hypotheses SET options_json=? WHERE hyp_id=?", (json.dumps(options), hid))
     with ws.connect() as cx:
         cx.execute("UPDATE hypotheses SET queue='waiting', model=? WHERE hyp_id=?", (model, hid))
         if given is not None:  # also one part, which a person may have reworded (0.11.1: that edit was lost)
@@ -931,7 +977,9 @@ def check_claim(ws: Workspace, text: str, backend, model: str, target: str | Non
 
 def _run_check(ws, cid, backend, model, used, k, per_doc, expand, doc_ids, say, embedder=None, context=None,
                stop=lambda: None, given_terms: list[str] | None = None, second_pass: bool = False,
-               readers=None) -> None:
+               readers=None, own=_MAIN) -> None:
+    """One part of a check. `own` (0.18.8, N3): (backend, model) that may read the part's own words for its search
+    words, or None (no model may: it is searched with its own words); the main model by default."""
     uc = ws.query("SELECT text, target, framework FROM user_claims WHERE claim_id=?", (cid,))[0]
     claim = uc["text"]
     terms: list[str] = []
@@ -942,10 +990,13 @@ def _run_check(ws, cid, backend, model, used, k, per_doc, expand, doc_ids, say, 
         new = [t for t in terms if t.lower() not in claim.lower()]
         say("terms_done", f"Also searching for the words you chose: {', '.join(new[:8])}{'…' if len(new) > 8 else ''}"
             if new else "Searching with the words of the hypothesis only, as you chose", {"terms": terms, "new_terms": new})
+    elif expand and own is None:
+        say("terms_done", NO_MODEL_TERMS, {"terms": [], "new_terms": []})
     elif expand:
         stop()
         say("terms", "Thinking of other words your documents might use")
-        terms = _expand(ws, cid, claim, backend, model, used, context)
+        eb, em, eu = (backend, model, used) if own is _MAIN else (own[0], own[1], _used(*own))
+        terms = _expand(ws, cid, claim, eb, em, eu, context)
         new = [t for t in terms if t.lower() not in claim.lower()]  # the hypothesis's own words are searched anyway
         say("terms_done", f"Also searching for: {', '.join(new[:8])}{'…' if len(new) > 8 else ''}" if new
             else "Searching with the words of the hypothesis only", {"terms": terms, "new_terms": new})

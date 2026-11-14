@@ -758,6 +758,20 @@ class App(LibraryMixin, QueueMixin):
 
     _wire = wire  # the name before 0.13.6
 
+    @staticmethod
+    def _from_doc(ws, body: dict) -> dict:
+        """0.18.8 (N3): a check started from a document's text (a working document's *Check against the corpus*)
+        remembers the document (`from_doc`): its page lists the checks started from it, the result links back, and
+        the words keep the document's AI setting (docrole.origin_floor). {} without one."""
+        if body.get("from_doc") is None:
+            return {}
+        from_doc = str(body["from_doc"])
+        if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (from_doc,)):
+            raise ApiError(400, "from_doc is not a document of this project.")
+        from ..docrole import ORIGIN
+
+        return {"origin": ORIGIN, "origin_id": from_doc}
+
     def start_check(self, name: str, body: dict) -> Job:
         ws = self.ws(name)
         s = self.settings()
@@ -778,13 +792,7 @@ class App(LibraryMixin, QueueMixin):
             prepared["terms"] = body["terms"]
         if prepared:
             prepared["edited"] = body.get("edited") if isinstance(body.get("edited"), dict) else {}
-        # 0.18.8 (N3): a check started from a document's text (a working document's *Check against the corpus*)
-        # remembers the document, so its page lists the checks started from it and the result links back
-        if body.get("from_doc") is not None:
-            from_doc = str(body["from_doc"])
-            if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (from_doc,)):
-                raise ApiError(400, "from_doc is not a document of this project.")
-            prepared["origin"], prepared["origin_id"] = "document", from_doc
+        prepared.update(self._from_doc(ws, body))
         be, model = self.backend(k=opts["k"])
         emb = home.make_embedder(s) if opts.pop("semantic", True) else None
         if self.queue_mode():
@@ -934,6 +942,7 @@ class App(LibraryMixin, QueueMixin):
         frameworks.resolve(ws, fw, code)
         decompose = bool(body["decompose"]) if "decompose" in body else bool(s["decompose"])
         expand = bool(body["expand"]) if "expand" in body else bool(s["expand"])
+        origin = self._from_doc(ws, body)  # 0.18.8 (N3): words from a document keep its AI setting here too
         be, model = self.backend()
 
         def run(job: Job):
@@ -941,7 +950,7 @@ class App(LibraryMixin, QueueMixin):
             job.tracker = tracker
             self._wire(job, be, tracker)
             return claimcheck.prepare_check(ws, text, be, model, decompose=decompose, expand=expand, framework=fw,
-                                            code=code, progress=tracker.step, should_stop=job.cancel.is_set)
+                                            code=code, progress=tracker.step, should_stop=job.cancel.is_set, **origin)
 
         return self._job("prepare", text[:120], name, run, withdraw=("decompose", "expand"), ws=ws)
 
@@ -963,6 +972,13 @@ class App(LibraryMixin, QueueMixin):
                                 "judgement instead." if level == "none" else
                                 "This excerpt's document is marked Only a local AI, and no local model is chosen for "
                                 "such documents. Choose one in Settings → AI, or give your own judgement.")
+        # 0.18.8 (N3): and the setting of the document the hypothesis's words come from
+        own = claimcheck._own_level(ws, ws.scalar("SELECT hyp_id FROM user_claims WHERE claim_id=?", (claim_id,))
+                                    or claim_id)
+        if own == "none" or (own == "local" and not access.Readers(be, model).local_configured()):
+            from ..judgements import cannot_reread
+
+            raise ApiError(409, cannot_reread(level, own))
 
         def run(job: Job):
             tracker = Tracker(expand=False, steps=("grade",))

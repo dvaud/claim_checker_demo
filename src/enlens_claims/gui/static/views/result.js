@@ -184,6 +184,15 @@ function retractedMark(docId) {
     bad ? "work retracted" : "work corrected or flagged");
 }
 
+// Why an excerpt waits for a person: its document's AI setting or (0.18.8, N3) that of the document the hypothesis's
+// words come from (`words_access` of the result)
+export function waitReason(docAccess, wordsAccess) {
+  if (docAccess === "none") return "its document is marked No AI";
+  if (wordsAccess === "none") return "the hypothesis comes from a document marked No AI";
+  if (docAccess === "local" || wordsAccess !== "local") return "its document is marked Only a local AI, and no local model is chosen";
+  return "the hypothesis comes from a document marked Only a local AI, and no local model is chosen";
+}
+
 export async function renderResult(view, [hypId], query) {
   const project = App.project;
   await loadRetractions(project);
@@ -1518,7 +1527,7 @@ export async function renderResult(view, [hypId], query) {
       append(top, [nonsciBadge(p) || gradeBadge(p.verdict, false), h("span", { class: "ev-fact ev-yours-fact", title: who ? `You have not judged this excerpt: ${who}’s judgement counts in your copy until you do.` : null }, who ? personMark([who]) : icon("user", { size: 12 }), `${who || "You"} agreed with the AI`)]);
     } else if (p.waiting_for_you) {
       append(top, [fact("Waiting for your judgement", { class: "ev-fact ev-yours-fact" }),
-        fact(p.access === "none" ? "its document is marked No AI" : "its document is marked Only a local AI, and no local model is chosen")]);
+        fact(waitReason(p.access, current && current.words_access))]);
     } else {
       // a judgement that does not count: its badge without fill, a dashed edge (the one meaning of a dashed edge)
       append(top, [nonsciBadge(p) || gradeBadge(p.verdict, !!p.verdict && !p.counted)]);

@@ -12,7 +12,7 @@
 // 0.18.8 (roadmap K3): a quiet suggestion from the bibliography's item type (a newspaper article, a blog post, a web
 // page): one line with Mark and No, never a mark by itself and never a pop-up. No is kept as a decision (the research
 // log), so it does not come back here or in a colleague's copy.
-import { api, h, P, toast, showError, tag, button, link, notice, plural, confirmDialog, icon } from "../lib.js";
+import { api, h, P, toast, showError, tag, button, link, notice, plural, confirmDialog, icon, fold } from "../lib.js";
 
 const ROLES_API = (p) => `/api/projects/${P(p)}/document-roles`;
 const ROLE_API = (p, d) => `/api/projects/${P(p)}/documents/${P(d)}/role`;
@@ -173,10 +173,15 @@ function answersList(answers) {
       : a.all !== a.status ? h("span", { class: "muted" }, ` (counting the non-scientific documents: ${a.all_text})`) : null));
 }
 
-// 0.18.8 (N3): the checks started from the document's text (Check against the corpus), each with its answer now
+// 0.18.8 (N3): the checks started from the document's text (Check against the corpus), each with its answer now: the
+// newest STARTED_SHOWN, the others in a fold (a chapter with forty checked sentences keeps its text in view)
+const STARTED_SHOWN = 8;
 function startedList(started) {
-  return started.map((a) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(a.hyp_id)}` }, a.text),
-    ` · ${a.status_text || a.status}`));
+  const li = (a) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(a.hyp_id)}` }, a.text),
+    ` · ${a.status_text || a.status}`);
+  const rest = started.slice(STARTED_SHOWN);
+  return [h("ul", { class: "doc-role-impact doc-started" }, started.slice(0, STARTED_SHOWN).map(li)),
+    rest.length ? fold({ sm: true, class: "doc-started-more" }, `and ${plural(rest.length, "more check")}`, h("ul", { class: "doc-role-impact doc-started" }, rest.map(li))) : null];
 }
 
 // the document page's box: what its role is, the button to change it, and what was made with it in; 0.18.6: whether
@@ -194,8 +199,8 @@ export async function roleBox(project, docId, title, onRole) {
     let sug = null, saidNo = null;   // 0.18.8 (K3)
     if (!ns) { try { const g = await api("GET", SUGGEST_API(project, docId)); sug = g.suggestion; saidNo = g.answered_no; } catch (_) { sug = null; } }
     const imp = impactList(r.impact || {});
-    const started = startedList(r.started || []);
-    const startedPart = started.length ? [h("p", {}, `${started.length === 1 ? "The check" : `The ${started.length} checks`} started from it:`), h("ul", { class: "doc-role-impact doc-started" }, started)] : null;
+    const started = r.started || [];
+    const startedPart = started.length ? [h("p", {}, `${started.length === 1 ? "The check" : `The ${started.length} checks`} started from it:`), startedList(started)] : null;
     const items = roleMenuItems(project, { doc_id: docId, title }, r.role, draw);
     const changes = items.map((it) => button({ kind: "quiet", sm: true, icon: it.icon, onClick: it.onClick }, it.button));
     const change = changes;

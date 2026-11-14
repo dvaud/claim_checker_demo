@@ -229,16 +229,49 @@ def checks_started_from(ws: Workspace, doc_id: str) -> list[dict]:
     """0.18.8 (N3): the checks started from the document's text (*Check against the corpus* on a working document),
     each with its answer now: [{"hyp_id", "text", "status", "status_text"}], newest first. A check remembers the
     document it was started from (`hypotheses.origin` "document", `origin_id`), not the sentence: the words may
-    have been changed into the claim before it was checked."""
-    rows = ws.query("SELECT hyp_id, text FROM hypotheses WHERE origin=? AND origin_id=? ORDER BY created_at DESC",
-                    (ORIGIN, doc_id))
+    have been changed into the claim before it was checked. Listed as the checks list lists them (`claimcheck.history`):
+    a check by queue that waits for its parts is there; one interrupted before it had any parts is left out."""
+    rows = ws.query("SELECT hyp_id FROM hypotheses WHERE origin=? AND origin_id=? ORDER BY created_at DESC, "
+                    "rowid DESC", (ORIGIN, doc_id))
     got = _answers(ws, [r[0] for r in rows])
-    out = []
-    for hid, text in rows:
-        h = got.get(hid)   # none yet: the check has just started and has no parts (the checks list leaves it out)
-        out.append({"hyp_id": hid, "text": h["text"] if h else text, "status": h["status"] if h else "running",
-                    "status_text": _text(h) if h else "Being checked"})
-    return out
+    return [{"hyp_id": hid, "text": got[hid]["text"], "status": got[hid]["status"], "status_text": _text(got[hid])}
+            for (hid,) in rows if hid in got]
+
+
+def origin_floor(cx, payload: Any, dflt: str | None = None) -> str | None:
+    """0.18.8 (N3): the words of a check started from a document's text go no further than that document's AI setting
+    (`access.register_floor`, as an add-on's drafts do): a task holding them (splitting it, its search words, judging
+    its excerpts, a second opinion, reading an excerpt again) names its hypothesis (`hyp_id`) or one of its parts
+    (`claim_id`, or `subject_id` of a `user_claim`). None for any other task. A document removed since counts as No AI
+    (`access.levels`)."""
+    if not isinstance(payload, dict):
+        return None
+    hid = payload.get("hyp_id")
+    cid = payload.get("claim_id")
+    if cid is None and payload.get("subject_kind") == "user_claim":
+        cid = payload.get("subject_id")
+    if not isinstance(hid, str) and not isinstance(cid, str):
+        return None
+    from . import access
+
+    row = cx.execute("SELECT origin_id FROM hypotheses WHERE origin=? AND hyp_id=COALESCE(?, (SELECT hyp_id FROM "
+                     "user_claims WHERE claim_id=?))", (ORIGIN, hid if isinstance(hid, str) else None,
+                                                        cid if isinstance(cid, str) else None)).fetchone()
+    if row is None:
+        return None
+    return access.levels(cx, [row[0]], dflt=dflt).get(row[0], "none") if row[0] else "none"
+
+
+def kept_here(ws: Workspace) -> set[str]:
+    """0.18.8 (N3): the checks started from the text of a document no cloud model may read (or one removed since),
+    which the connector does not show to a Claude chat (`access.register_hidden`)."""
+    from . import access
+
+    rows = ws.query("SELECT hyp_id, origin_id FROM hypotheses WHERE origin=?", (ORIGIN,))
+    if not rows:
+        return set()
+    lv = access.levels(ws, [r[1] for r in rows if r[1]])
+    return {hid for hid, d in rows if not d or lv.get(d, "none") != "cloud"}
 
 
 def _answers(ws: Workspace, hyp_ids: list[str]) -> dict[str, dict]:

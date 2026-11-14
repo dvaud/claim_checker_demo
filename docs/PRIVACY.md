@@ -98,8 +98,9 @@ says to rewrite it if it gives away what those documents say.
 
 **What a Claude chat sees through the connector.** The project names and the path of the projects folder; document
 titles, pages and counts, except that a document marked *No AI* is shown as *Restricted document 3*, because a title
-can name a person (`access.restricted_titles`); the hypotheses of the project's checks and their answers; and the
-excerpts, search lines and concept details of documents Claude may read. Text of documents marked *Only a local AI*
+can name a person (`access.restricted_titles`); the hypotheses of the project's checks and their answers, except a
+check started from words of a document marked *Only a local AI* or *No AI* (a working document's *Check against the
+corpus*), which it neither lists nor opens (`docrole.kept_here`); and the excerpts, search lines and concept details of documents Claude may read. Text of documents marked *Only a local AI*
 or *No AI* is reported as counts only, and what a model wrote after reading such text is left out. Excerpts are shown
 without the text before them. The connector reads files on the computer when asked to add sources; it sends nothing
 of them except what its tools return.
@@ -139,7 +140,8 @@ Points for an assessment:
 ## What never leaves the computer
 
 - The text of documents marked *Only a local AI* or *No AI*, to Claude or to a model server on another computer, in
-  any feature. (A team's shared folder or storage space does receive their text and files, unless the switch
+  any feature, words selected from them and checked against the corpus included: such a check is read by a local
+  model only, or, from a document marked *No AI*, by no model (`docrole.origin_floor`). (A team's shared folder or storage space does receive their text and files, unless the switch
   described [below](#working-together) keeps them out.)
 - The project's database (`enlens.sqlite`) as a file.
 - The answers ENLENS keeps so as not to ask the AI again (`ai_cache`), the search index, the glossary, embeddings,

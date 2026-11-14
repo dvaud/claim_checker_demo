@@ -6,11 +6,15 @@
   the excerpts a check reads, key terms, the glossary, a code's examples and the documents behind no answer leave it
   out. Its codes show on its own page and as its own row at the foot of the *Codes* grid, never in the corpus's
   counts, so you see what your draft covers beside what the corpus does. Select any sentence of it and choose *Check
-  against the corpus* to check that claim: the document's page lists every check started from it with its answer, and
-  each such check's page links back to the document. A document has one role: evidence, theory or your working document.
-  Grouping *Documents* by *Role* shows them apart. Travels in a shared project as the theory mark does: everyone in
-  the team needs this version, since an older ENLENS reads a working document as evidence. Changes no result by
-  itself: the document's page lists what was made with it in.
+  against the corpus* to check that claim: the document's page lists every check started from it with its answer (the
+  first eight, the others folded), and each such check's page links back to the document. The words keep the
+  document's AI setting, and the line above the box says who will read them before you press *Check*: from a document
+  marked *Only a local AI* only a local model reads them and the excerpts they are checked against, from one marked
+  *No AI* no model does and you judge the excerpts; a Claude chat connected to ENLENS is not shown such a check. A
+  document has one role: evidence, theory or your working document. Grouping *Documents* by *Role* shows them apart.
+  Travels in a shared project as the theory mark does: everyone in the team needs this version, since an older ENLENS
+  reads a working document as evidence. Changes no result by itself: the document's page lists what was made with it
+  in. The manual explains it under *Explore your documents → Working documents*.
 
 ### Not yet done
 

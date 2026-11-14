@@ -230,6 +230,37 @@ evidence* takes the mark back. In a shared project the mark travels like *Leave 
 holds at once, a Member's is a proposal ([Roles](roles.md)). A theory is also where a codebook can start
 ([Make your own codebook](codebooks.md#make-one)).
 
+### Working documents
+
+Your own draft or notes can be kept in the project beside the corpus (0.18.8). Mark it as **your working document**:
+in *Documents*, open a row → *Role* → *Mark as my working document…*, or on the document's page, *Mark as my working
+document*. A *Working document* tag then stands beside its title. A colleague's or another author's draft you study is
+evidence, not your working document.
+
+A working document is read, searched, opened, noted and labelled with your codebooks as any other, but it is **never
+a source**: it is left out of the themes, the excerpts a check reads, key terms, the glossary's counts and the
+evidence map. Its codes show on its own page and as its own row at the foot of the *Codes* grid, never in the
+corpus's counts, so you see what your draft covers beside what the corpus does.
+
+To check one of its claims, select the sentence in its text and choose **Check against the corpus**. *Hypotheses*
+opens with the words filled in: turn them into the claim you want to check, then press *Check*. A line above the box
+says that the check will be listed on the document's page and who will read these words, by the document's AI
+setting:
+
+- *Claude may read it*: the AI you chose, as for any hypothesis.
+- *Only a local AI*: only a local model on this computer reads the words and the excerpts they are checked against
+  (Claude reads none of them); without a local model, you judge the excerpts yourself. With Claude Code as the AI,
+  the hypothesis is checked as written, without parts or other search words.
+- *No AI*: no model reads the words. ENLENS finds the excerpts with the words as written, and you judge them.
+
+A check from a document marked *Only a local AI* or *No AI* is not shown to a Claude chat connected to ENLENS. The
+document's page lists every check started from it, newest first, each with its answer now (the first eight, the
+others under *and N more checks*), and each check's page links back to the document. The check remembers the
+document, not the sentence. A box of several lines is a list, which is not tied to the document.
+
+A document has one role: evidence, theory or your working document. In a shared project the mark travels like the
+theory mark; everyone in the team needs this version, since an older ENLENS reads a working document as evidence.
+
 ### Non-scientific documents
 
 A news article, a press release, a company brochure or a blog reports no method or data of its own. Mark it as
