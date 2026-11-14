@@ -1344,6 +1344,12 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
     me = _me()
     nonsci = nonscientific_docs(ws)  # 0.18.6: their judgements are shown, never counted (verdicts.set_aside)
     ver_all: dict[str, list] = {}    # with them counted, for the status text (only when there are any)
+    # 0.18.8 (K3): the hypotheses that count them in their own check, and their parts (nothing is set aside there)
+    from .nonscientific import counting_hyps
+
+    counting_all = counting_hyps(ws)
+    counting = counting_all if nonsci else set()
+    counting_cids = {c["claim_id"] for hid in counting for c in claims.get(hid, [])}
 
     def load(cids: list[str] | None) -> None:
         """The check tasks and judgements of these claims (of all, with None)."""
@@ -1356,15 +1362,16 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
         else:
             vs = [v for cid in cids for v in ws.query(sql + " AND subject_id=?", (cid,))]
         for v in vs:
+            ns = nonsci if v["subject_id"] not in counting_cids else None
             f = first_reading(v)
             if f is not None:
                 ef = effective(f)
                 first_of.setdefault(v["subject_id"], []).append(
-                    {**set_aside([ef], nonsci)[0], "_counts_as": ef} if nonsci else ef)
+                    {**set_aside([ef], ns)[0], "_counts_as": ef} if ns else ef)
             e = effective(v)
-            if nonsci:
+            if ns:
                 ver_all.setdefault(v["subject_id"], []).append(e)
-                e = set_aside([e], nonsci)[0]
+                e = set_aside([e], ns)[0]
                 e["_counts_as"] = v  # the row as it was: whether it counts is asked of it (_counting needs user_verdict)
             # 0.14.3: "changed by you" counts your own changes only (a colleague's judgement counts where you made none)
             e["_mine"] = bool(v["user_verdict"]) and (v["user_by"] or me) == me
@@ -1475,6 +1482,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
                     "status_text": st_text,
                     # 0.18.6: the answer counting the Non-scientific documents too
                     "status_all_sources": (st_all[0] if len(st_all) == 1 else aggregate(st_all)) if st_all else s,
+                    "count_nonscientific": h["hyp_id"] in counting_all,  # 0.18.8 (K3): its own setting
                     "status_any": st_any[0] if len(st_any) == 1 else aggregate(st_any),
                     "supports": counts["supports"], "partly": counts["partially_supports"], "refutes": counts["refutes"],
                     "uncounted": uncounted, "corrected": corrected, "reviewed": reviewed, "to_review": to_review,

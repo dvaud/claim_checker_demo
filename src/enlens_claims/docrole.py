@@ -291,8 +291,9 @@ def set_nonscientific(ws: Workspace, doc_id: str, on: bool, why: str | None = No
 
 def counted_without(ws: Workspace, doc_id: str) -> list[dict]:
     """The checks with an excerpt of the document, each with its answer now and the answer counting every
-    non-scientific document (`status_all_sources`): [{"hyp_id", "text", "status", "status_text", "all", "all_text"}],
-    newest first."""
+    non-scientific document (`status_all_sources`): [{"hyp_id", "text", "status", "status_text", "all", "all_text",
+    "count_nonscientific"}], newest first. 0.18.8 (K3): `count_nonscientific`, the check counts them (set on its
+    hypothesis)."""
     from .verdicts import STATUS_TEXT
 
     checks = _checks_reading(ws, doc_id)
@@ -304,5 +305,6 @@ def counted_without(ws: Workspace, doc_id: str) -> list[dict]:
             continue
         st_all = h.get("status_all_sources") or h["status"]
         out.append({"hyp_id": hid, "text": h["text"], "status": h["status"], "status_text": _text(h),
-                    "all": st_all, "all_text": STATUS_TEXT.get(st_all, st_all)})
+                    "all": st_all, "all_text": STATUS_TEXT.get(st_all, st_all),
+                    "count_nonscientific": bool(h.get("count_nonscientific"))})
     return out

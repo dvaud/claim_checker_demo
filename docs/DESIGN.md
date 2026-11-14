@@ -761,7 +761,9 @@ place, as `views/search.js` does. **Lives in:** `components.css` § 4.24.
 map). **Use:** those three pages. **Not for:** a single count (a count tag), a list of passages (concordance lines).
 **Looks:** a grid in a frame whose first column (the row's name, a title link) stays while it scrolls sideways; a
 cell is shaded in the teal by its level (`heat-l1` … `heat-l4`, on a log scale) and is a button when it has passages; an
-evidence-map cell holds the judgements as small symbols in their own colours. The long side runs down the page: the
+evidence-map cell holds the judgements as small symbols in their own colours; a non-scientific document's cell, read
+and not counted, has its symbol with no fill and a dashed edge (`.m-nonsci`, as a judgement that does not count), and
+the legend says so. The long side runs down the page: the
 documents are the rows wherever the columns would be few (Codes by document, Themes' documents by theme); only the
 Evidence map, where both sides can be long, has documents as columns. A grid wider than its frame never hides columns
 silently: a bar above it says which show ("Documents 1–6 of 23"), with arrows that move it a frame at a time, the
@@ -1083,6 +1085,7 @@ A few rules have exceptions, each argued for once. They are listed here and in t
 | `.doc-view .dv-fold .passage-row` | Passages left out of the reading |
 | `.dv-pbox-out` | A part left out of the reading |
 | `.cal-bar.cal-empty` | No excerpts in this band yet |
+| `.m-nonsci .map-sym` | Not in force: what a non-scientific document says on the evidence map, read and not counted |
 
 ---
 

@@ -10,7 +10,7 @@ import { LEVEL, accessChoice, accessAskCard, accessBanner, docAccessDialog, leve
 import { askWhy } from "./versions.js";
 import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
 import { docChip } from "./owner-state.js";   // 0.18.5: the owner's word as an icon on a closed line
-import { documentMarks, roleMenuItems, roleLine, nonsciMenuItem, NONSCI_MEANS } from "./doc-role.js";   // 0.18.1 K2: theory documents; 0.18.6: non-scientific ones; 0.18.8 N3: working documents
+import { documentMarks, roleMenuItems, roleLine, nonsciMenuItem, NONSCI_MEANS, suggestLine } from "./doc-role.js";   // 0.18.1 K2: theory documents; 0.18.6: non-scientific ones; 0.18.8 N3: working documents
 import { reader, newReaderFor, readingNote, READER_4_NEWS, READER_5_NEWS } from "./doc-shared.js";
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
@@ -282,7 +282,8 @@ export async function renderSources(view) {
   const answersOf = (d) => (use && use.answers[d.doc_id]) || 0;
   const afterLastCheck = (d) => Boolean(use && use.last_check && String(d.added_at || "") > use.last_check);
   let nonsci = new Set();     // 0.18.6: the documents marked Non-scientific
-  const loadMarks = async () => { const m = await documentMarks(project); roles = m.roles; nonsci = m.nonscientific; };
+  let suggested = {};         // 0.18.8 (K3): {doc id: "a newspaper article"}, suggested by the bibliography
+  const loadMarks = async () => { const m = await documentMarks(project); roles = m.roles; nonsci = m.nonscientific; suggested = m.suggested || {}; };
   // 0.18.5: what needs a look, for the grouping and the notice above the list: a fact that needs you (a check, a sync
   // clash, a scan with no text, a reading done badly), a reading to look over, or nothing
   const lookOf = (d) => {
@@ -311,6 +312,11 @@ export async function renderSources(view) {
       { key: "used", name: "Behind answers", icon: "layers", sub: "An excerpt of each counts in at least one answer; the line says in how many, the evidence map in which." },
       { key: "theory", name: "Theory", icon: "book-marked", sub: "Not evidence: checks leave them out, so they are behind no answer." },
       { key: "working", name: "Your working documents", short: "Working", icon: "notebook", sub: "Never a source: checks leave them out, so they are behind no answer." }] },
+    // 0.18.8 (K3): scientific or not, with those the bibliography suggests marking as a group of their own
+    science: { label: "Scientific or not", always: false, of: (d) => (nonsci.has(d.doc_id) ? "nonscientific" : suggested[d.doc_id] ? "suggested" : "scientific"), groups: [
+      { key: "suggested", name: "Suggested as non-scientific", short: "Suggested", icon: "library", sub: "Your bibliography lists them as news, magazine or blog posts, web pages or broadcasts. Open one to mark it, or to say No: nothing is marked by itself." },
+      { key: "nonscientific", name: "Non-scientific", icon: "newspaper", sub: "Read and judged, never counted in an answer (except in a check set to count them)." },
+      { key: "scientific", name: "Scientific", icon: "flask", sub: "Their judgements count in answers." }] },
     none: { label: "None", always: true, of: () => "all", groups: [{ key: "all", name: "All documents", icon: null, sub: null }] },
   };
   if (!GROUPINGS[grouping]) grouping = "ai";   // a grouping kept from an earlier version, named otherwise now
@@ -456,8 +462,10 @@ export async function renderSources(view) {
           h("dt", {}, "Role"), h("dd", {}, roleLine(roles[d.doc_id]),
             roleItems.map((it) => button({ kind: "quiet", sm: true, class: "doc-role-btn", onClick: it.onClick }, it.text))),
           // 0.18.6: whether its judgements count in answers
-          h("dt", {}, "Scientific"), h("dd", {}, nonsci.has(d.doc_id) ? `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its judgements never count in an answer` : "Yes: its judgements count in answers",
-            button({ kind: "quiet", sm: true, class: "doc-nonsci-btn", onClick: ns.onClick }, ns.text)),
+          h("dt", {}, "Scientific"), h("dd", {}, nonsci.has(d.doc_id) ? `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its judgements count in no answer, except in checks set to count non-scientific documents` : "Yes: its judgements count in answers",
+            button({ kind: "quiet", sm: true, class: "doc-nonsci-btn", onClick: ns.onClick }, ns.text),
+            // 0.18.8 (K3): the bibliography's suggestion, one quiet line (never a mark by itself)
+            suggested[d.doc_id] && !nonsci.has(d.doc_id) ? suggestLine(project, d.doc_id, d.title || d.file || "this document", suggested[d.doc_id], () => reloadDocs()) : null),
           d.bib && d.bib.cite ? [h("dt", {}, "In the bibliography"), h("dd", {}, h("span", { class: "it", title: d.bib.title || null }, icon("library", { size: 13 }), d.bib.cite),
             link({ href: "#/bibliography", class: "small" }, "Open the Bibliography"))] : null),
         h("div", { class: "doc-detail-foot" }, link({ kind: "next", href: docHref(d) }, "Open the document"),

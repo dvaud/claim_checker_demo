@@ -266,6 +266,31 @@ def _nonscientific(res: dict, items: list[dict], names: "_Names", thr: float) ->
     return [{"text": text, "rule": "non-scientific", "refs": [_ref(x) for x in said]}]
 
 
+def _counted_here(res: dict, items: list[dict]) -> list[dict]:
+    """0.18.8 (K3): this hypothesis counts the non-scientific documents (its own setting): said plainly, with why, what
+    they say, and the answer without them when it differs."""
+    if not res.get("count_nonscientific"):
+        return []
+    from .nonscientific import REASON
+
+    said = [x for x in items if x.get("nonscientific_counted") and x.get("counted") and x.get("verdict") in GRADES]
+    why = " ".join((res.get("count_nonscientific_why") or "").split()).rstrip(".")
+    text = f"Non-scientific documents count in this check, as set on this hypothesis: {why or REASON}."
+    pos = {x["doc_id"] for x in said if x["verdict"] in ("supports", "partially_supports")}
+    neg = {x["doc_id"] for x in said if x["verdict"] == "refutes"}
+    sides = []
+    if pos:
+        sides.append(f"{_n(len(pos), 'non-scientific document')} {'supports' if len(pos) == 1 else 'support'} it")
+    if neg:
+        sides.append(f"{_n(len(neg), 'non-scientific document')} {'contradicts' if len(neg) == 1 else 'contradict'} it")
+    if sides:
+        text += f" {_cap(_and(sides))}."
+    st, st_wo = res.get("status"), res.get("status_without_nonscientific")
+    if st_wo and st_wo != st and st_wo in SHORT:
+        text += f" Without them, as in other checks, the answer would be {SHORT[st_wo]}."
+    return [{"text": text, "rule": "non-scientific-counted", "refs": [_ref(x) for x in said]}]
+
+
 # ---------------------------------------------------------------------------------------------
 # what the person's judgements did
 # ---------------------------------------------------------------------------------------------
@@ -394,6 +419,7 @@ def assess(ws: Workspace, hypothesis: str | dict, res: dict | None = None) -> di
     sentences += _part_sentences(res)
     sentences += _not_counted(items, thr)
     sentences += _nonscientific(res, items, names, thr)
+    sentences += _counted_here(res, items)  # 0.18.8 (K3)
     moved = moved_by(res, names)
     if moved:
         sentences.append({k: moved[k] for k in ("text", "rule", "refs")})
