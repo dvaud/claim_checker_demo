@@ -833,10 +833,13 @@ def _free_name(ws: Workspace, name: str) -> str:
 
 
 def create(ws: Workspace, name: str, title: str = "", where: str = "project", start: str = "fresh",
-           source: dict | None = None, label: str = "code") -> dict:
+           source: dict | None = None, label: str = "code", prepared: dict | None = None) -> dict:
     """A new codebook. `start`: "fresh" (empty), "themes" (`source`: {"codes": [...]} drafts from `from_themes`, the
     ones a person kept), "theory" (0.18.1: `source`: {"codes": [...], "doc_id"} drafts from `theorycodes.candidates`,
-    the ones a person kept, examples from theory documents dropped), "copy" (`source`: {"of": a codebook's name}), "csv" (`source`: {"csv": text})."""
+    the ones a person kept, examples from theory documents dropped), "copy" (`source`: {"of": a codebook's name}), "csv" (`source`: {"csv": text}),
+    "qdc" (`source`: {"file": base64, "filename"} of a .qdc or .qdpx, or {"qdc": text}; the result's "imported" says
+    what was brought in, what was folded and what left out: qdc_import.py; `prepared`: qdc_import.from_path's result,
+    for a file on this computer, never from the app's API)."""
     from . import researchlog
 
     if where not in ("project", "home"):
@@ -846,6 +849,7 @@ def create(ws: Workspace, name: str, title: str = "", where: str = "project", st
     state: dict = {"title": title or n.replace("_", " ").capitalize(), "label": label or "code", "directional": False,
                    "groups": [], "codes": []}
     how = "an empty codebook"
+    imported = None
     if start == "copy":
         of = frameworks.get(str(source.get("of") or ""), ws)
         st = _state(of.name, of.codes, json.loads(json.dumps(of.meta or {})), of.title, of.label, of.directional)
@@ -857,6 +861,14 @@ def create(ws: Workspace, name: str, title: str = "", where: str = "project", st
         st = _state(n, codes, {}, state["title"], state["label"], False)
         state.update(groups=st["groups"], codes=[{**c, "uid": ""} for c in st["codes"]])
         how = "a CSV file"
+    elif start == "qdc":
+        # K1 "In and out": a REFI-QDA codebook (.qdc) or project (.qdpx) from NVivo, ATLAS.ti or MAXQDA (qdc_import.py)
+        from . import qdc_import
+
+        got = prepared if prepared is not None else qdc_import.from_source(source)   # prepared: a file read here (CLI)
+        state.update(groups=got["groups"], codes=got["codes"], title=title or got["title"] or state["title"])
+        imported = got["summary"]
+        how = "a REFI-QDA codebook (NVivo, ATLAS.ti or MAXQDA)"
     elif start == "themes":
         picked = [c for c in (source.get("codes") or []) if isinstance(c, dict)]
         if not picked:
@@ -877,7 +889,8 @@ def create(ws: Workspace, name: str, title: str = "", where: str = "project", st
                f"{researchlog.quoted(doc[0]['title'], 80)}" if doc else
                f"{len(picked)} concept{'s' if len(picked) != 1 else ''} of a theory document")
     elif start != "fresh":
-        raise ValueError("Start fresh, from themes, from a theory document, from a copy or from a CSV file.")
+        raise ValueError("Start fresh, from themes, from a theory document, from a copy, from a CSV file or from a "
+                         "REFI-QDA codebook (.qdc).")
     clean = _clean_state(state)
     for c in clean["codes"]:
         c["uid"] = _new_uid()
@@ -894,7 +907,10 @@ def create(ws: Workspace, name: str, title: str = "", where: str = "project", st
                                                  f"{how}, kept {'with all projects' if where == 'home' else 'in this project'}"
                                                  f" ({len(clean['codes'])} code{'s' if len(clean['codes']) != 1 else ''}).",
                            "codebook", n, clean["title"], data={"where": where, "start": start})
-    return load(ws, n)
+    out = load(ws, n)
+    if imported is not None:
+        out["imported"] = imported
+    return out
 
 
 def remove(ws: Workspace, name: str, why: str | None = None) -> None:

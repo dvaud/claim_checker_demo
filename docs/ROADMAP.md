@@ -300,7 +300,9 @@ G1 to G4 (the rest of Margin's writing companion) are Margin's.
 - Codes, labels, quotes, memos and your decisions as a REFI-QDA (`.qdpx`) project.
 - Built: `qdpx.py` writes the project (documents as text, codebooks and hypotheses as codes, the labels and judgements
   that count as codings by the person or "ENLENS AI (model)", notes and the research log as memos) and a codebook alone
-  as `.qdc`, from the Hypotheses, Codes, result and codebook pages and `enlens export-qdpx` / `export-qdc`.
+  as `.qdc`, from the Hypotheses, Codes, result and codebook pages and `enlens export-qdpx` / `export-qdc`. The way
+  back in (K1 *In and out*, unreleased): `qdc_import.py` brings a `.qdc` (or a `.qdpx`'s codebook) in as a new codebook,
+  from *New codebook* › *From NVivo, ATLAS.ti or MAXQDA* and `enlens import-qdc`.
 
 ## H. Optimisation across the board
 
@@ -581,7 +583,10 @@ its own)
   codebook's history (F5). An edit changes no result by itself.
 - **In and out.** CSV stays the file, so a codebook still opens in a spreadsheet. A REFI-QDA codebook (`.qdc`) can be
   brought in from and sent to NVivo, ATLAS.ti and MAXQDA, with G5. Codebooks already sync between colleagues; an
-  edit made on both sides comes in as a sync-clash copy, as today.
+  edit made on both sides comes in as a sync-clash copy, as today. *Built (unreleased):* sending out came with G5
+  (0.18.7); bringing in is `qdc_import.py` (*New codebook* › *From NVivo, ATLAS.ti or MAXQDA*, `enlens import-qdc`):
+  top codes become groups, deeper levels fold into their top group with their place in the tree kept in the
+  definition, and ENLENS's own export comes back as it went.
 - Optional (Level 2, then 3): a draft definition and *when to use it* for a code, from its example passages only,
   marked as a draft to rewrite. The editor is complete without it.
 - *Already in ENLENS:* codebooks as CSV files (code, description, group), kept in a project or for all projects;
