@@ -98,8 +98,10 @@ codes and groups came in and what was folded or left out; then the editor opens.
 | A code that cannot be coded, with nothing under it | Left out. |
 | Colours, sets, memos, a top code's own description when it cannot be coded | Left out (a group has only a name). |
 
-A codebook ENLENS exported (*Download as .qdc*) comes back as it went: definitions, when to use and when not,
-keywords, examples, groups and group names. It comes in as a new codebook with its own history; labels made with the
+A codebook ENLENS exported (*Download as .qdc*) comes back with its definitions, when to use and when not,
+keywords, examples (their words: a `.qdc` does not carry an example's document and page), groups and group names.
+Its label and direction setting are not in the file, so set them again in *Codebook settings*; the title is taken
+from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history; labels made with the
 codebook it was exported from stay with that one.
 
 ## Change it in the editor

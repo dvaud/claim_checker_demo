@@ -1,5 +1,5 @@
 """Roadmap K1 "In and out" (with G5): a REFI-QDA codebook (`.qdc`) or the codebook of a `.qdpx` project brought in
-from NVivo, ATLAS.ti or MAXQDA (qdc_import.py). No AI. ENLENS's own export comes back as it went; the shapes the
+from NVivo, ATLAS.ti or MAXQDA (qdc_import.py). No AI. ENLENS's own export comes back (all a .qdc carries); the shapes the
 three programs write (deep trees, headings that cannot be coded, codes without a description, with and without the
 namespace) map as the module says; hostile files are refused before they are parsed."""
 from __future__ import annotations
@@ -258,3 +258,80 @@ def test_the_command_line(ws, tmp_path, capsys):
     assert cli.main(["--ws", str(ws.root), "import-qdc", str(f), "again"]) == 2       # the name is taken
     assert "exists already" in capsys.readouterr().err
     assert cli.main(["--ws", str(ws.root), "import-qdc", str(tmp_path / "none.qdc")]) == 2
+
+
+# ---- review fixes ---------------------------------------------------------------------------------------------------
+def _zip(members: dict[str, bytes], method=zipfile.ZIP_DEFLATED) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", method) as z:
+        for n, b in members.items():
+            z.writestr(n, b)
+    return buf.getvalue()
+
+
+def test_a_project_outside_the_codebook_is_not_kept_element_by_element():
+    """Elements of a project outside its codebook leave the tree as they end (a cleared element would stay attached:
+    600,000 of them took about 80 MB at their peak, now about 6 MB)."""
+    import tracemalloc
+    many = "<a/>" * 600_000
+    raw = (f'<Project xmlns="urn:QDA-XML:project:1.0" name="P"><Sources>{many}</Sources>'
+           f'<CodeBook><Codes><Code name="Joy" isCodable="true"/></Codes></CodeBook><Notes>{many}</Notes></Project>').encode()
+    tracemalloc.start()
+    try:
+        book = qdc_import._safe_root(raw)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert [c.get("name") for c in book.iter() if c.tag.endswith("Code")] == ["Joy"]
+    assert peak < 30 * 1024 ** 2, peak
+
+
+def test_a_damaged_or_locked_project_file_is_refused_plainly(ws):
+    good = _zip({"project.qde": b'<Project><CodeBook><Codes><Code name="A"/></Codes></CodeBook></Project>'})
+    i = good.index(b"PK\x01\x02")          # the central directory: its CRC of the member made wrong
+    cd = bytearray(good)
+    crc_at = i + 16
+    cd[crc_at:crc_at + 4] = b"\x00\x00\x00\x00"
+    lh = bytearray(cd)
+    lh[14:18] = b"\x00\x00\x00\x00"         # and the local header's, so the reader checks against 0
+    with pytest.raises(ValueError, match="damaged or locked"):
+        qdc_import.read_tree(bytes(lh))
+    with pytest.raises(ValueError, match="damaged or locked"):
+        _make(ws, bytes(lh))
+
+
+def test_a_project_zipped_again_inside_a_folder_reads():
+    data = _zip({"MyProj/project.qde": b'<Project xmlns="urn:QDA-XML:project:1.0"><CodeBook><Codes>'
+                                       b'<Code name="Joy"/></Codes></CodeBook></Project>', "MyProj/Sources/a.txt": b"x"})
+    roots, info = qdc_import.read_tree(data)
+    assert [r.name for r in roots] == ["Joy"] and info["zip"]
+
+
+@pytest.mark.parametrize("origin, want", [
+    ("ENLENS 0.18.8", ["Paris, France"]),
+    ("ENLENS 0.19.0", ["Paris, France"]),
+    ("ENLENS 0.18.7", ["Paris", "France"]),     # 0.18.7 joined keywords with ", "
+    ("NVivo 14", ["Paris", "France"]),
+])
+def test_one_keyword_with_a_comma(origin, want):
+    data = _qdc('<Code name="place" isCodable="true"><Description>Where it is\n\nKeywords: Paris, France</Description></Code>',
+                origin=origin)
+    st = qdc_import.to_state(*qdc_import.read_tree(data))
+    assert st["codes"][0]["keywords"] == want
+
+
+def test_a_long_definition_is_shortened_keeping_its_place_in_the_tree():
+    long = "word " * 1200
+    data = _qdc(f'<Code name="Top"><Code name="Mid"><Code name="Leaf" isCodable="true"><Description>{long}</Description>'
+                '</Code></Code></Code>')
+    st = qdc_import.to_state(*qdc_import.read_tree(data))
+    d = st["codes"][0]["description"]
+    assert len(d) <= qdc_import.DEF_MAX and d.endswith("(In the tree: Top › Mid › Leaf.)")
+    assert any("shortened" in n for n in st["summary"]["notes"])
+
+
+def test_enlens_readings_only_for_enlens_files():
+    data = _qdc('<Code name="2 Methods" isCodable="true"><Description>Methods</Description></Code>'
+                '<Code name="Hypotheses (ENLENS)" isCodable="true"><Description>Our own</Description></Code>')
+    st = qdc_import.to_state(*qdc_import.read_tree(data))
+    assert sorted(c["code"] for c in st["codes"]) == ["2 Methods", "Hypotheses (ENLENS)"]

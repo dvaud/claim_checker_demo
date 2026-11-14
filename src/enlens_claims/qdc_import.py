@@ -19,11 +19,15 @@ what, and the choices made:
   it stands at the top: ENLENS needs a definition, and the summary asks for a real one.
 - **Names** longer than 40 characters (ENLENS's limit) are cut at a word, and the whole name opens the definition. Two
   codes of the same name (in different branches, say) are told apart: the second becomes "Name (2)".
-- **ENLENS's own export comes back as it went**: a code's description holds its definition, then "When to use it:",
+- **ENLENS's own export comes back** (as far as a `.qdc` carries it): a code's description holds its definition, then "When to use it:",
   "When not to use it:", "Keywords:" and "Example: “…”" paragraphs (qdpx._code_description), which go back to their
   columns; a group written as "<group> <group name>" with the group name as its description gets both back; a code
   that is only a number (an SDG target, "6.4") written with the start of its definition gets its number back. The
-  code ids (side file `ids`) are new: a codebook brought in is a new codebook, not the one it was exported from.
+  code ids (side file `ids`) are new: a codebook brought in is a new codebook, not the one it was exported from. A
+  `.qdc` does not carry an example's document and page (only its words), the codebook's label or its direction
+  setting, so those come back empty. Keywords were joined with ", " by ENLENS 0.18.7 and with "; " since (a keyword
+  may hold a comma): a later ENLENS file splits them only at semicolons. These readings (numbers, groups, the
+  hypotheses' codes, the "(codebook)" wrapper) apply only to files whose origin is ENLENS.
 - **Left out**: colours, Sets (ENLENS has no sets: the summary counts them), memos (NoteRef), a non-codable top
   code's own description (a group has only a name; the summary counts these), and, in a `.qdpx`, everything but the
   codebook, and the codes ENLENS writes for its hypotheses ("Hypotheses (ENLENS)"). A `.qdpx` ENLENS wrote holds each
@@ -42,6 +46,7 @@ import html
 import io
 import re
 import zipfile
+import zlib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +58,7 @@ MAX_QDE = 64 * 1024 ** 2
 MAX_MEMBERS = 5000
 MAX_DEPTH = 64
 NAME_MAX = 40
+DEF_MAX = 4000   # codebooks._clean_state keeps this many characters of a definition
 GROUP_MAX = 60
 HYPOTHESES = "Hypotheses (ENLENS)"
 _DECL = re.compile(r"^\s*<\?xml[^>]*\?>", re.S)
@@ -101,9 +107,10 @@ def _safe_root(data: bytes) -> ET.Element:
     book = None
     depth = 0
     in_book = 0
+    stack: list[ET.Element] = []   # the open elements outside the codebook (their parents, to drop finished ones)
     try:
-        for i in range(0, len(text), 1 << 20):
-            parser.feed(text[i:i + (1 << 20)])
+        for i in range(0, len(text), 1 << 16):   # small pieces: the events of one piece wait in memory
+            parser.feed(text[i:i + (1 << 16)])
             for ev, el in parser.read_events():
                 local = el.tag.rsplit("}", 1)[-1]
                 if ev == "start":
@@ -114,12 +121,20 @@ def _safe_root(data: bytes) -> ET.Element:
                         in_book += 1
                     elif local == "CodeBook" and book is None:
                         book, in_book = el, 1
+                    else:
+                        stack.append(el)
                 else:
                     depth -= 1
                     if in_book:
                         in_book -= 1
-                    elif el is not book:
-                        el.clear()   # the rest of a project (its sources, codings) is not kept in memory
+                    else:
+                        if stack and stack[-1] is el:
+                            stack.pop()
+                        # the rest of a project (its sources, codings) is not kept in memory: a finished element
+                        # leaves its parent, not only its contents (a cleared element still costs an object)
+                        el.clear()
+                        if stack:
+                            del stack[-1][:]
         parser.close()
     except ET.ParseError as e:
         raise ValueError(f"The file is not well-formed XML ({e}).") from None
@@ -139,14 +154,21 @@ def _qde_of_zip(data: bytes | Path) -> bytes:
         infos = zf.infolist()
         if len(infos) > MAX_MEMBERS:
             raise ValueError(f"The project file holds more than {MAX_MEMBERS:,} files: it was not read.")
-        qde = next((i for i in infos if i.filename.lower() == "project.qde"), None) or \
-            next((i for i in infos if i.filename.lower().endswith(".qde") and "/" not in i.filename), None)
+        qdes = [i for i in infos if i.filename.lower().endswith(".qde") and not i.is_dir()]
+        qde = next((i for i in qdes if i.filename.lower() == "project.qde"), None) or \
+            next((i for i in qdes if "/" not in i.filename), None) or (qdes[0] if len(qdes) == 1 else None)
         if qde is None:
             raise ValueError("The project file (.qdpx) holds no project.qde.")
         if qde.file_size > MAX_QDE:
             raise ValueError(_too_big())
-        with zf.open(qde) as f:
-            out = f.read(MAX_QDE + 1)
+        try:
+            with zf.open(qde) as f:
+                out = f.read(MAX_QDE + 1)
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, NotImplementedError, RuntimeError, zlib.error, OSError,
+                EOFError):
+            # a damaged member, a compression the standard library lacks, a password
+            raise ValueError("The project file (.qdpx) is damaged or locked with a password, or packed in a way "
+                             "ENLENS cannot unpack. Export only the codebook (.qdc) and bring that in.") from None
         if len(out) > MAX_QDE:
             raise ValueError(_too_big())
         return out
@@ -211,7 +233,14 @@ def read_tree(data: bytes | Path) -> tuple[list[Node], dict]:
 # ---------------------------------------------------------------------------------------------
 # the tree as ENLENS codes and groups
 # ---------------------------------------------------------------------------------------------
-def _split_desc(desc: str) -> dict:
+def _comma_keywords(origin: str) -> bool:
+    """Whether "Keywords:" may be split at commas: ENLENS 0.18.7 joined keywords with ", "; later versions with "; "
+    (a keyword may hold a comma), so their keywords split only at semicolons. Other programs: either."""
+    m = re.match(r"ENLENS (\d+)\.(\d+)\.(\d+)", origin or "")
+    return not m or tuple(int(x) for x in m.groups()) <= (0, 18, 7)
+
+
+def _split_desc(desc: str, comma: bool = True) -> dict:
     """A description's definition, and the when-to-use, when-not, keywords and examples paragraphs ENLENS writes."""
     out = {"description": [], "include": "", "exclude": "", "keywords": [], "examples": []}
     for p in desc.split("\n\n"):
@@ -219,7 +248,7 @@ def _split_desc(desc: str) -> dict:
             if p.startswith(label):
                 v = p[len(label):].strip()
                 if key == "keywords":
-                    out["keywords"] += [k.strip() for k in v.split(";" if ";" in v else ",") if k.strip()]
+                    out["keywords"] += [k.strip() for k in v.split(";" if ";" in v or not comma else ",") if k.strip()]
                 elif key == "example":
                     out["examples"].append(v[1:-1].strip() if v[:1] in "“\"" and v[-1:] in "”\"" else v)
                 else:
@@ -284,10 +313,13 @@ def to_state(roots: list[Node], info: dict | None = None) -> dict:
     """The tree as the editor's state ({title, groups, codes}) with a summary of what was done ({...,"notes": [...]})."""
     info = info or {}
     title = info.get("title") or ""
-    hyp = [r for r in roots if r.name == HYPOTHESES]
-    roots = [r for r in roots if r.name != HYPOTHESES]
+    origin = str(info.get("origin") or "")
+    ours = origin.startswith("ENLENS")   # readings that only ENLENS's own export calls for
+    comma = _comma_keywords(origin)
+    hyp = [r for r in roots if ours and r.name == HYPOTHESES]
+    roots = [r for r in roots if not (ours and r.name == HYPOTHESES)]
     wrappers = [r for r in roots if r.name.endswith(" (codebook)") and r.children]
-    if len(roots) == 1 and wrappers and str(info.get("origin", "")).startswith("ENLENS"):
+    if len(roots) == 1 and wrappers and ours:
         title = roots[0].name[:-len(" (codebook)")]
         roots = roots[0].children
     names = _Names()
@@ -295,21 +327,26 @@ def to_state(roots: list[Node], info: dict | None = None) -> dict:
     groups: list[dict] = []
     codes: list[dict] = []
     s = {"codes": 0, "groups": 0, "folded": 0, "parents_as_codes": 0, "headings": 0, "not_codable": 0,
-         "no_description": 0, "cut": 0, "group_descriptions": 0}
+         "no_description": 0, "cut": 0, "group_descriptions": 0, "long": 0}
 
     def add(n: Node, group: str, path: list[str]) -> None:
-        d = _split_desc(n.description)
-        code = _enlens_code(n.name, d["description"]) or n.name
+        d = _split_desc(n.description, comma)
+        code = (_enlens_code(n.name, d["description"]) if ours else None) or n.name
         definition = d["description"]
+        tail = ""
         if not definition:
             s["no_description"] += 1
             definition = SEP.join(path + [n.name]) if path else n.name
         elif len(path) >= 2:
-            definition += f" (In the tree: {SEP.join(path + [n.name])}.)"
+            tail = f" (In the tree: {SEP.join(path + [n.name])}.)"
         name = names.take(code or "Code")
         if len(code) > NAME_MAX:
             s["cut"] += 1
             definition = f"{code}: {definition}" if definition != code else code
+        if len(definition) + len(tail) > DEF_MAX:   # the editor keeps 4,000 characters: cut here, keep the tree
+            s["long"] += 1
+            definition = _cut(definition, max(200, DEF_MAX - len(tail)))
+        definition = (definition + tail)[:DEF_MAX]
         if len(path) >= 2:
             s["folded"] += 1
         codes.append({"code": name, "description": definition, "group": group, "include": d["include"],
@@ -335,7 +372,7 @@ def to_state(roots: list[Node], info: dict | None = None) -> dict:
         if not r.children:
             walk(r, "", [])
             continue
-        mine = _enlens_group(r.name, r.description) if str(info.get("origin", "")).startswith("ENLENS") else None
+        mine = _enlens_group(r.name, r.description) if ours else None
         key, gname = mine or (r.name, "")
         if len(key) > GROUP_MAX:
             key, gname = _cut(key, GROUP_MAX), gname or key[:120]
@@ -358,7 +395,7 @@ def to_state(roots: list[Node], info: dict | None = None) -> dict:
     if len(codes) > 5000:
         raise ValueError("A codebook can hold at most 5,000 codes.")
     s.update(sets=int(info.get("sets") or 0), renamed=[{"from": a, "to": b} for a, b in names.renamed],
-             hypotheses_left_out=bool(hyp), origin=str(info.get("origin") or ""))
+             hypotheses_left_out=bool(hyp), origin=origin)
     s["notes"] = _notes(s)
     return {"title": title, "groups": groups, "codes": codes, "summary": s}
 
@@ -385,6 +422,9 @@ def _notes(s: dict) -> list[str]:
     if s["cut"]:
         out.append(f"{_pl(s['cut'], 'name')} longer than 40 characters {'was' if s['cut'] == 1 else 'were'} cut; the "
                    "whole name opens the definition.")
+    if s["long"]:
+        out.append(f"{_pl(s['long'], 'definition')} longer than {DEF_MAX:,} characters {'was' if s['long'] == 1 else 'were'} "
+                   "shortened (a codebook keeps that many); its place in the tree stays at the end.")
     if s["renamed"]:
         out.append(f"{_pl(len(s['renamed']), 'code')} shared a name with another and got a number: "
                    + ", ".join(f"“{r['to']}”" for r in s["renamed"][:5]) + ("…" if len(s["renamed"]) > 5 else "") + ".")
