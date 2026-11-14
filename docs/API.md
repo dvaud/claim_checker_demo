@@ -1216,8 +1216,11 @@ readable ("ENLENS results - <project> - <date>.xlsx"). From 0.6 the *Excerpts* s
 (AI's note)" and "AI's earlier judgement (before reading it again)", and, when a second model read any of the
 excerpts, "Second model", "Second model's judgement", "Second model's certainty", "The two models agree". The
 *Summary* sheet has "Excerpts where the second opinion differs" (0.11.2; before: "…a second model disagrees"),
-"Answer before a stronger model read it again" (0.11.2), "Documents added since the check" and (0.18.7, roadmap N5)
-"Documents with the search words never read".
+"Answer before a stronger model read it again" (0.11.2), "Documents added since the check", (0.18.7, roadmap N5)
+"Documents with the search words never read" and (0.18.8, roadmap K3) "Answer counting non-scientific documents"
+(the answer counting the documents marked Non-scientific, `status_all_sources`; filled only where it differs from
+"Answer") and "Non-scientific documents counted here" ("yes: " and the reason, for a check set to count them; else
+empty).
 
 ### Exploring the documents (0.7)
 
@@ -1726,7 +1729,8 @@ terms.
 - 0.18.8 (K3, `nonscientific.py`): `PUT /api/projects/{p}/hypotheses/{h}/nonscientific` `{"count": true | false,
   "why"?: text}` → `{"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now",
   "now_text"}`: count the non-scientific documents in this check alone (stored in the hypothesis's options, so it
-  travels with the check); a new `why` while it is on replaces the reason. 400 for a `count` that is not a boolean or
+  travels with the check); a `why` while it is on replaces the reason, and an empty `why` takes it away (the usual
+  reason is given again); each change is one research-log entry. 400 for a `count` that is not a boolean or
   a `why` that is not text, 404 for no such check. A result gains `count_nonscientific`, `count_nonscientific_why`,
   `nonscientific_read` (excerpts of such documents read), `status_without_nonscientific` (the answer without them,
   where they count) and `count_nonscientific_author` (the check's author's name when it is not this person's, else

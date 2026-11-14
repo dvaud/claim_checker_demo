@@ -301,6 +301,8 @@ class _Builder:
         self.texts: dict[str, SourceText] = {}
         self.titles: dict[str, str] = {}
         self.docs: list[dict] = []
+        from .nonscientific import counting_hyps
+        self.counting = bool(counting_hyps(ws))   # 0.18.8 (K3): a check counts the non-scientific documents
         self.summary = {"documents": 0, "codes": 0, "codings": 0, "labels": 0, "judgements": 0, "notes": 0,
                         "not_placed": 0}
 
@@ -406,6 +408,7 @@ class _Builder:
     def hypotheses(self, codes: ET.Element) -> None:
         from .check_results import hypothesis_result
         from .claimcheck import history
+        from .nonscientific import REASON
         from .verdicts import GRADES
 
         hs = list(reversed(history(self.ws, self.threshold)))   # oldest first
@@ -422,6 +425,9 @@ class _Builder:
                                    "isCodable": "false"})
             desc = [res["text"], f"Answer: {res.get('status_text') or res.get('status') or ''}",
                     f"Checked on {(res.get('created_at') or '')[:10]}"]
+            if res.get("count_nonscientific"):   # 0.18.8 (K3): the exception, said where its codings are
+                desc.append("Non-scientific documents count in this check, as set on this hypothesis: "
+                            f"{(res.get('count_nonscientific_why') or REASON).rstrip('.')}.")
             _el(hc, "Description", text="\n\n".join(x for x in desc if x))
             if (res.get("note") or "").strip():   # CodeType: Description, NoteRef*, Code* (in this order)
                 ng = self.g("hypothesis-note", hid)
@@ -543,8 +549,9 @@ class _Builder:
                     desc.append("Theory document: the framework the research is read through, not evidence.")
                 elif d.get("role") == "working":
                     desc.append("Working document: the researcher's own draft or notes, never a source.")
-                if d.get("nonscientific"):
-                    desc.append("Non-scientific: read and judged, never counted in an answer.")
+                if d.get("nonscientific"):   # 0.18.8 (K3): a check may count it (said only when one does)
+                    desc.append("Non-scientific: read and judged, never counted in an answer"
+                                + (", except in checks set to count them." if self.counting else "."))
                 if d.get("ai_access") == "none":
                     desc.append("No AI reads this document.")
                 elif d.get("ai_access") == "local":
