@@ -12,9 +12,9 @@ the hypothesis's options (`count_nonscientific`, and `count_nonscientific_why`, 
 with the check between copies as its note does: a newer version of the check replaces an older one, and a check
 changed on both sides is kept beside as a sync-clash copy (sync/merge.py `_units`). Not a column of its own: a check
 whose only change is in a column added after 0.14.2 is not told newer (sync/fingerprints.py, the `old` form). Each
-change keeps its time (`count_nonscientific_at`), so turning it off again is never taken for the state before. Turning it on or off changes the answer at once
-and goes in the research log with the answers before and after. Off by default: nothing changes until a person turns
-it on.
+change keeps its time (`count_nonscientific_at`), so turning it off again is never taken for the state before.
+Turning it on or off changes the answer at once and goes in the research log with the answers before and after. Off
+by default: nothing changes until a person turns it on.
 
 **The suggestion, never a mark.** A document whose bibliography entry has an item type that is usually not scientific
 (a newspaper or magazine article, a blog post, a web page, a forum post, a podcast, a broadcast, a video, a
@@ -33,7 +33,7 @@ from .store import Workspace, now
 COUNT = "count_nonscientific"           # the key in the hypothesis's options: true (counted in this check)
 COUNT_WHY = "count_nonscientific_why"   # the person's reason, when they gave one
 COUNT_AT = "count_nonscientific_at"     # when it was last set: each change is a state of its own between copies
-DECLINED = "document-suggestion"  # the research log's kind for a suggestion the person said No to
+DECLINED = "document-suggestion"        # the research log's kind for a suggestion the person said No to
 
 # the bibliography's item types that are usually not scientific (Zotero, CSL JSON, RIS, BibTeX), in the words of
 # the suggestion: "Your bibliography lists this as a newspaper article."

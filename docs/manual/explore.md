@@ -219,6 +219,27 @@ documents. *Count as scientific* takes the mark back. A document can be theory a
 it; ENLENS never guesses. Do not mark documents that are your material: when you study what newspapers or companies
 say, they are your evidence. In a shared project the mark travels like *Leave out*.
 
+**When they are the material of one hypothesis.** Some hypotheses are about what newspapers, blogs or companies say
+(*Local newspapers framed the plant as a job engine*): there they are the evidence. Under the answer of such a
+hypothesis, turn on **Count non-scientific documents in this check**. Its answer then counts them as any document,
+for every part of it, and changes at once; every other check still leaves them uncounted. The page, the assessment
+under the answer and the Excel download say plainly that they count here and why, with the answer the check would have
+without them, and their excerpts read *Non-scientific, counted here*. The research log keeps each change with the
+answer before and after. The switch is shown only where the check read a non-scientific document, and travels with
+the check in a shared project, as its note does.
+
+**A suggestion from your bibliography.** When a document's work in the [bibliography](bibliography.md) is a kind that is
+usually not scientific (a newspaper or magazine article, a blog or forum post, a web page, a podcast, a broadcast, a
+video or a presentation), its page and its row in *Documents* show one quiet line: *Your bibliography lists this as
+a newspaper article. Mark it as non-scientific?* *Mark* opens the usual dialog; *No* keeps it as it is, and the
+research log keeps your answer, so it is not asked again here or in a colleague's copy. Nothing is marked by itself.
+Grouping *Documents* by *Scientific or not* lists the suggested ones together.
+
+**On the evidence map** a non-scientific document has a column too: what it says is drawn with the symbol unfilled
+and a dashed edge (*Non-scientific: read, not counted*). It changes no answer, count or colour of the map. In a
+hypothesis that counts them, its cells are drawn as any other. The Excel summary has the answer counting them,
+filled where it differs, and whether the hypothesis counts them.
+
 ## Quick look
 
 *Quick look at one document* (on the Overview and *Manage projects*) reads one file into a

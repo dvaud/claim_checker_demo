@@ -3,7 +3,7 @@
 // the same `passages` the cards are drawn from, so sections and numbers always agree. A person's judgement
 // replaces the AI's; it is protected (no silent overwrite) and every save can be undone.
 import { App, api, h, icon, madeWithFact, readsLine, aiWhere, judgementIcon, pageHead, replace, clear, append, toast, showError, fmt, statusBadge, gradeBadge, codeChip, passageNode, cpToIndex, indexToCp, cpLength, breaksToIndex, latest, popNote, gradeWords, navigate, watchJob, P, TOKEN, TERMINAL, confirmDialog, dialog, download, debounce, store, GRADE_TEXT, STATUS_SHORT, strictness, docsCountSentence, queueNotice, auditorName, strongerMark,
-  button, iconButton, link, tag, notice, card as cardBox, fold as foldBox, choice, helpMark, downloadButton, textarea, input as fieldInput, select as selectField, reviewedMark, emptyState, personMark, lazyList } from "../lib.js";
+  button, iconButton, link, tag, notice, card as cardBox, fold as foldBox, choice, helpMark, downloadButton, textarea, input as fieldInput, select as selectField, reviewedMark, emptyState, personMark, lazyList, switchControl } from "../lib.js";
 import { withAI } from "../features.js";
 import { ProgressPanel, MiniJob } from "./progress.js";
 import { originLink } from "../registry.js";
@@ -642,6 +642,8 @@ export async function renderResult(view, [hypId], query) {
     if (sentence) card.appendChild(h("p", { class: "answer-sentence" }, sentence));
     const said = assessmentBlock(r.assessment, r.status);
     if (said) card.appendChild(said);
+    const nsSwitch = nonsciSwitch(r);   // 0.18.8 (K3)
+    if (nsSwitch) card.appendChild(nsSwitch);
     if (r.decomposed) {
       card.appendChild(h("ol", { class: "answer-part-list part-grid" }, parts.map((p) => h("li", {},
         h("a", { href: `#part-${p.part}`, class: "part-claim-link", onClick: jumpTo(`part-${p.part}`) }, `${p.part}. ${p.claim}`),
@@ -701,6 +703,28 @@ export async function renderResult(view, [hypId], query) {
         x.refs && x.refs.length ? " " : null,
         x.refs && x.refs.length ? button({ kind: "quiet", sm: true, onClick: goTo(x.refs[0]),
           "aria-label": `Show the excerpt this rests on${x.refs.length > 1 ? ` (the first of ${x.refs.length})` : ""}` }, "Show") : null)));
+  }
+
+  // 0.18.8 (roadmap K3): the exception. Where the check read documents marked Non-scientific (or counts them already),
+  // a switch counts them in this check alone, for when newspapers, blogs or brochures are the material the hypothesis
+  // is about. The answer changes at once; the research log keeps both answers; it travels with the check.
+  function nonsciSwitch(r) {
+    if (!r.nonscientific_read && !r.count_nonscientific) return null;
+    const help = r.count_nonscientific
+      ? `Counted here as any document: ${r.count_nonscientific_why || "they are the material this hypothesis is about"}. In every other check they are read and judged, never counted.`
+      : "For when newspapers, blogs or brochures are the material this hypothesis is about, so they are its evidence. Off: their excerpts are read and judged here, never counted, as in every other check.";
+    const sw = switchControl("Count non-scientific documents in this check", !!r.count_nonscientific, { help });
+    sw.classList.add("answer-nonsci");
+    sw.input.addEventListener("change", async () => {
+      const on = sw.input.checked;
+      sw.input.disabled = true;
+      try {
+        const out = await api("PUT", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/nonscientific`, { count: on });
+        toast(out.was_text !== out.now_text ? `The answer changed from ${out.was_text} to ${out.now_text}.` : `The answer stays ${out.now_text}.`, "ok", { small: out.was_text === out.now_text });
+        await load();
+      } catch (e) { sw.input.checked = !on; sw.input.disabled = false; showError(e); }
+    });
+    return sw;
   }
 
   // "2 documents for, 1 partly, 1 against"
@@ -1507,6 +1531,8 @@ export async function renderResult(view, [hypId], query) {
     }
     // 0.18.6: an excerpt of a document marked Non-scientific: judged and shown, never counted (yours neither)
     if (p.nonscientific) append(top, [h("span", { class: "ev-fact ev-uncounted-fact", title: "Its document is marked Non-scientific: it reports no method or data of its own. Its judgement is shown, but never counts in the answer, whoever made it. Change the mark on the document's page." }, icon("newspaper", { size: 12 }), p.verdict ? "Not counted: non-scientific" : "Non-scientific")]);
+    // 0.18.8 (K3): marked Non-scientific, but this hypothesis counts them (its own setting, above the evidence)
+    else if (p.nonscientific_counted) append(top, [h("span", { class: "ev-fact", title: "Its document is marked Non-scientific. This hypothesis counts non-scientific documents (the switch under its answer), so its judgement counts here as any other; in other checks it does not." }, icon("newspaper", { size: 12 }), "Non-scientific, counted here")]);
     if (p.second && !p.second.agrees) append(top, [h("span", { class: "ev-fact ev-second", title: `Another model${p.second.model ? ` (${p.second.model})` : ""} read this excerpt on its own and judged it differently. It is shown for comparison only and never changes the answer.` }, h("span", { class: `who-dot who-${{ supports: "supports", partially_supports: "partly", refutes: "refutes" }[p.second.verdict] || "none"}`, "aria-hidden": "true" }), `Second opinion: ${p.second.verdict ? GRADE_TEXT[p.second.verdict].toLowerCase() : "not about this"}`)]);
     if (isNew) append(top, [tag({}, "new")]);
     if (p.read_by && !p.waiting_for_you && !oneReader) append(top, [h("span", { class: "spacer" }), readByChip(p)]);

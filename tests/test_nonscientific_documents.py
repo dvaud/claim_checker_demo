@@ -143,12 +143,12 @@ def test_the_routes(api, tmp_path):  # noqa: F811
     assert st == 200 and body["nonscientific"] is False and body["answers"] == []
     st, body = api("PUT", f"/api/projects/News/documents/{news}/nonscientific", {"nonscientific": True})
     assert st == 200 and body["nonscientific"] and body["changed"] and body["answers"] == []
-    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": [news], "suggested": {}}
+    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": [news]}
     assert api("GET", f"/api/projects/News/documents/{news}/role")[1]["nonscientific"] is True
     assert api("PUT", f"/api/projects/News/documents/{news}/nonscientific", {"nonscientific": "yes"})[0] == 400
     assert api("PUT", "/api/projects/News/documents/nope/nonscientific", {"nonscientific": True})[0] == 404
     api("PUT", f"/api/projects/News/documents/{news}/nonscientific", {"nonscientific": False})
-    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": [], "suggested": {}}
+    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": []}
 
 
 # ---- between copies: a decision about the document, like Leave out -------------------------------------------------

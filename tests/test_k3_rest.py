@@ -214,7 +214,7 @@ def test_the_routes(api, tmp_path):  # noqa: F811
         _bib(ws, news, "webpage")
     finally:
         ws.close_all()
-    assert api("GET", "/api/projects/News/document-roles")[1]["suggested"] == {news: "a web page"}
+    assert api("GET", "/api/projects/News/nonscientific-suggestions")[1] == {"suggested": {news: "a web page"}}
     st, body = api("GET", f"/api/projects/News/documents/{news}/nonscientific-suggestion")
     assert st == 200 and body["suggestion"]["words"] == "a web page"
     assert api("POST", f"/api/projects/News/documents/{news}/nonscientific-suggestion", {"answer": "yes"})[0] == 400
@@ -223,7 +223,7 @@ def test_the_routes(api, tmp_path):  # noqa: F811
     st, body = api("POST", f"/api/projects/News/documents/{news}/nonscientific-suggestion", {"answer": "no"})
     assert st == 200 and body["declined"]
     assert api("GET", f"/api/projects/News/documents/{news}/nonscientific-suggestion")[1]["suggestion"] is None
-    assert api("GET", "/api/projects/News/document-roles")[1]["suggested"] == {}
+    assert api("GET", "/api/projects/News/nonscientific-suggestions")[1] == {"suggested": {}}
     st, body = api("PUT", f"/api/projects/News/hypotheses/{hid}/nonscientific", {"count": True, "why": "Media study"})
     assert st == 200 and body["changed"] and body["count_nonscientific"]
     assert api("GET", f"/api/projects/News/hypotheses/{hid}")[1]["count_nonscientific"] is True
@@ -258,3 +258,19 @@ def test_the_exception_and_a_no_travel_with_the_project(anna_and_ben):  # noqa: 
 
 from test_shared_projects import anna_and_ben  # noqa: E402,F401  (fixture)
 from test_app import api, home  # noqa: E402,F401  (fixtures)
+
+
+# ---- the views (static: the repo tests its views by their words) ---------------------------------------------------
+def test_the_views_say_it():
+    from pathlib import Path
+
+    views = Path(__file__).resolve().parents[1] / "src" / "enlens_claims" / "gui" / "static" / "views"
+    result = (views / "result.js").read_text(encoding="utf-8")
+    assert "Count non-scientific documents in this check" in result and "/nonscientific`, { count: on }" in result
+    assert "Non-scientific, counted here" in result
+    role = (views / "doc-role.js").read_text(encoding="utf-8")
+    assert "Your bibliography lists this as ${words}. Mark it as non-scientific? " in role
+    assert '{ answer: "no" }' in role
+    m = (views / "map.js").read_text(encoding="utf-8")
+    assert "Non-scientific: read, not counted" in m and "m-nonsci" in m
+    assert "Suggested as non-scientific" in (views / "sources.js").read_text(encoding="utf-8")

@@ -628,8 +628,9 @@ its own)
   *Theoretical framework* as section headings (`reader.py`). Nothing marks a whole document as theory, and every
   document counts as evidence everywhere.
 
-**K3. Non-scientific documents: read, never counted** · Level 0 · built (13 November 2026, unreleased)
-(`docrole.py` for the mark, `verdicts.set_aside` for the rule)
+**K3. Non-scientific documents: read, never counted** · Level 0 · built (13 November 2026, unreleased; the rest 14
+November 2026, unreleased)
+(`docrole.py` for the mark, `verdicts.set_aside` for the rule, `nonscientific.py` for the exception and the suggestion)
 - **Why.** A news article, a press release or a company brochure can say what a hypothesis says, but it reports no
   method or data of its own. It should not make a hypothesis supported, mixed or contradicted by itself.
 - **The rule** (chosen by the researcher on a second opinion from Fable, 13 November 2026). A document marked
@@ -641,9 +642,26 @@ its own)
 - The mark sits beside the role (a theory document can carry it too), set by the researcher, never guessed. Unlike the
   role it changes answers at once: the reply and the research log list the answers it changed. It travels as *Leave
   out* does.
-- Not done: a per-hypothesis exception (when newspapers are the material a hypothesis is about, they are its
-  evidence), a suggestion from the bibliography's item type (newspaper, blog, web page), and a mark of its own on the
-  evidence map (non-scientific documents leave it, as documents that decide nothing).
+- **The rest, built (14 November 2026, unreleased)** (`nonscientific.py`):
+  - *A per-hypothesis exception.* Under a hypothesis's answer, where its check read a non-scientific document:
+    *Count non-scientific documents in this check*, for when newspapers or blogs are the material it is about. Its
+    answer then counts them as any document, for every part, and is the one counting them (`status_all_sources`);
+    every other check still leaves them uncounted. The page, the assessment in words, the excerpts and the Excel
+    download say plainly that they count here and why, with the answer without them. Changing it changes the answer
+    at once and goes in the research log with the answers before and after. Off by default. Kept in the hypothesis's
+    options with the time of each change, so it travels with the check as its note does (a column of its own would
+    not: a check whose only change is in a column added after 0.14.2 is not told newer).
+  - *A suggestion from the bibliography's item type, never a mark.* A document whose work is a newspaper or magazine
+    article, a blog or forum post, a web page, a podcast, a broadcast, a video or a presentation (Zotero, CSL, RIS and
+    BibTeX types) shows one quiet line on its page and in its *Documents* row: *Your bibliography lists this as a
+    newspaper article. Mark it as non-scientific?* with *Mark* and *No*. *No* is kept as a research log entry, so it
+    travels and is not asked again. *Documents* can be grouped by *Scientific or not*, with *Suggested as
+    non-scientific* as a group.
+  - *A mark of its own on the evidence map.* Non-scientific documents have a column again: their cells have the
+    symbol unfilled with a dashed edge, and the legend says *Non-scientific: read, not counted*. They change no answer,
+    count or colour; where a hypothesis counts them, its cells are as any other. The Excel map puts them in brackets.
+  - *The Excel summary* has *Answer counting non-scientific documents* (filled where it differs) and *Non-scientific
+    documents counted here*.
 
 ## L. Working together, live
 

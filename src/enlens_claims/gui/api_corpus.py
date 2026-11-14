@@ -34,6 +34,7 @@ ROUTES: list[tuple[str, str, str]] = [
     # 0.18.8 (K3, nonscientific.py): a hypothesis that counts the non-scientific documents, and the suggestion from
     # the bibliography's item type (Mark is the route above; No is this POST)
     ("PUT", rf"/api/projects/{P}/hypotheses/{P}/nonscientific", "put_hypothesis_nonscientific"),
+    ("GET", rf"/api/projects/{P}/nonscientific-suggestions", "get_nonscientific_suggestions"),
     ("GET", rf"/api/projects/{P}/documents/{P}/nonscientific-suggestion", "get_nonscientific_suggestion"),
     ("POST", rf"/api/projects/{P}/documents/{P}/nonscientific-suggestion", "post_nonscientific_suggestion"),
 ]
@@ -49,12 +50,8 @@ class CorpusApi:
         from .. import docrole
 
         ws = self.app.ws(name)
-        from .. import nonscientific
-
         return {"roles": {r[0]: r[1] for r in ws.query("SELECT doc_id, role FROM documents WHERE role IS NOT NULL")},
-                "nonscientific": sorted(docrole.nonscientific_docs(ws)),
-                # 0.18.8 (K3): those the bibliography suggests marking, {doc id: "a newspaper article"}
-                "suggested": {d: x["words"] for d, x in nonscientific.suggestions(ws).items()}}
+                "nonscientific": sorted(docrole.nonscientific_docs(ws))}
 
     def get_document_role(self, name, doc_id, q):
         """{"doc_id", "role" (null: evidence), "impact": what was made with it in (docrole.impact)}."""
@@ -233,6 +230,13 @@ class CorpusApi:
             return nonscientific.set_counting(self.app.ws(name), hyp_id, on, str(why) if why else None)
         except KeyError:
             raise ApiError(404, "No such result.") from None
+
+    def get_nonscientific_suggestions(self, name, q):
+        """{"suggested": {doc id: "a newspaper article"}}: the documents the bibliography suggests marking, for the
+        Documents list."""
+        from .. import nonscientific
+
+        return {"suggested": {d: x["words"] for d, x in nonscientific.suggestions(self.app.ws(name)).items()}}
 
     def get_nonscientific_suggestion(self, name, doc_id, q):
         """{"doc_id", "suggestion": {"item_type", "words", "text"} | null}."""
