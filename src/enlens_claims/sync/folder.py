@@ -2383,8 +2383,15 @@ def _sync_now(ws: Workspace, progress: Progress | None = None, should_stop: Shou
     if out["stopped"] or (should_stop is not None and should_stop()):
         out["stopped"] = True
         return out
+    from .report import marks_before, tell_marks  # K3 (DEC-1): marks the project's word applies in `write`'s settle
+
+    reports = [e["report"] for e in out["read"] if isinstance(e, dict) and isinstance(e.get("report"), dict)]
+    before = [(r, marks_before(ws, r)) for r in reports]
     try:
         out["wrote"] = write(ws, progress, should_stop)
+        told: set[str] = set()
+        for r, b in before:
+            tell_marks(ws, r, b, told)
         from ..ownership import moves_due  # 0.18 L2: new readings the owner accepted, due in this copy
 
         out["moves_due"] = moves_due(ws)

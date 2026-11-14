@@ -53,6 +53,9 @@ class _Graph:
         for c in list(self.members):
             self.labels[c] = named[c] if c in named else self.labels.get(min(self.members[c]), c)
         self.links: dict[str, dict[str, dict]] = defaultdict(dict)
+        # D1: every link of a pair (two wordings joined into one concept, or two sources, can give a pair two types);
+        # `links` keeps one per pair, as the paths (D3) need
+        self.all_links: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
         for lk in terms.links(ws):
             rel = lk["relation_effective"]
             if not lk["confirmed"] or rel in (None, "different") or lk["a"] not in self.labels or lk["b"] not in self.labels:
@@ -61,6 +64,8 @@ class _Graph:
             if a != b:
                 self.links[a][b] = lk
                 self.links[b][a] = lk
+                self.all_links[a][b].append(lk)
+                self.all_links[b][a].append(lk)
         self._n: dict[str, int] = {}
         self._nb: dict[str, dict[str, float]] = {}
 

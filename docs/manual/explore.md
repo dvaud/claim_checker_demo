@@ -119,15 +119,23 @@ same for two sets you tick (policy against academic, one country against another
   (pointwise mutual information): two common words that turn up together only as often as chance would give are not
   joined, however many passages they share. The thicker the line, the more often than by chance. Each concept keeps
   its strongest lines only, so the map stays readable.
-- **Groups** are concepts that are mentioned with each other more than with the rest. Each group has a colour and a
-  shape of its own; the legend names its concepts in the most passages. A concept with no line is in no group (grey).
-- **Your links** (those you accepted or added, the AI's confident ones and the abbreviations) are darker lines with
-  their words: *is part of* and *leads to* point the way they run, *is used instead of*, *is related to*. Two wordings
-  you joined as *the same* are one concept, so they are one mark.
+- **Groups** are concepts that are mentioned with each other more than with the rest; the legend names each group's
+  concepts in the most passages. Groups 1 to 5 are each a filled shape in a colour of their own (circle, square,
+  diamond, triangle, hexagon); groups 6 to 10 are the same five shapes outlined, in the same five colours; groups 11
+  and on, the smallest, are all grey stars, and *The map as lists* says which concepts each holds. A concept with no
+  line is in no group: a grey dashed circle. So no two kinds of mark differ by colour alone.
+- **Links** (those you accepted or added, the AI's confident ones and the abbreviations) are darker lines with their
+  words: *is part of* and *leads to* point the way they run, *is used instead of*, *is related to*. Two concepts with
+  links of two types (two wordings you joined, or two sources) have one line with both. Two wordings you joined as
+  *the same* are one concept, so they are one mark.
 
 Choose a concept to open its page. Choose a line to see, under the map, the passages that mention both (and, for a
-link, its sentences); *The map as lists* gives the groups, every line and your links as lists, with *Show the
-passages* on each. Pointing at a concept dims everything it is not joined to.
+link, its sentences); *The map as lists* gives the groups, every line and the links as lists, with *Show the
+passages* on each. Pointing at a concept dims everything it is not joined to. Marks that would cover each other are
+pushed apart a little, and on a narrow screen they are smaller.
+
+When fewer than 30 passages are counted (one short document, a narrow filter), the page says so: a line that rests on
+two or three passages can look strong by chance.
 
 The filters above the map narrow the passages it counts, and the map is drawn again from those passages alone:
 *Documents*, a *Theme* (of the latest set, with your merges and moves), a *Code* of a codebook (the passages labelled
@@ -222,6 +230,37 @@ evidence* takes the mark back. In a shared project the mark travels like *Leave 
 holds at once, a Member's is a proposal ([Roles](roles.md)). A theory is also where a codebook can start
 ([Make your own codebook](codebooks.md#make-one)).
 
+### Working documents
+
+Your own draft or notes can be kept in the project beside the corpus (0.18.8). Mark it as **your working document**:
+in *Documents*, open a row → *Role* → *Mark as my working document…*, or on the document's page, *Mark as my working
+document*. A *Working document* tag then stands beside its title. A colleague's or another author's draft you study is
+evidence, not your working document.
+
+A working document is read, searched, opened, noted and labelled with your codebooks as any other, but it is **never
+a source**: it is left out of the themes, the excerpts a check reads, key terms, the glossary's counts and the
+evidence map. Its codes show on its own page and as its own row at the foot of the *Codes* grid, never in the
+corpus's counts, so you see what your draft covers beside what the corpus does.
+
+To check one of its claims, select the sentence in its text and choose **Check against the corpus**. *Hypotheses*
+opens with the words filled in: turn them into the claim you want to check, then press *Check*. A line above the box
+says that the check will be listed on the document's page and who will read these words, by the document's AI
+setting:
+
+- *Claude may read it*: the AI you chose, as for any hypothesis.
+- *Only a local AI*: only a local model on this computer reads the words and the excerpts they are checked against
+  (Claude reads none of them); without a local model, you judge the excerpts yourself. With Claude Code as the AI,
+  the hypothesis is checked as written, without parts or other search words.
+- *No AI*: no model reads the words. ENLENS finds the excerpts with the words as written, and you judge them.
+
+A check from a document marked *Only a local AI* or *No AI* is not shown to a Claude chat connected to ENLENS. The
+document's page lists every check started from it, newest first, each with its answer now (the first eight, the
+others under *and N more checks*), and each check's page links back to the document. The check remembers the
+document, not the sentence. A box of several lines is a list, which is not tied to the document.
+
+A document has one role: evidence, theory or your working document. In a shared project the mark travels like the
+theory mark; everyone in the team needs this version, since an older ENLENS reads a working document as evidence.
+
 ### Non-scientific documents
 
 A news article, a press release, a company brochure or a blog reports no method or data of its own. Mark it as
@@ -249,19 +288,25 @@ hypothesis, turn on **Count non-scientific documents in this check**. Its answer
 for every part of it, and changes at once; every other check still leaves them uncounted. The page, the assessment
 under the answer and the Excel download say plainly that they count here and why, with the answer the check would have
 without them, and their excerpts read *Non-scientific, counted here*. The research log keeps each change with the
-answer before and after; so does a new reason given while it is on. The switch is shown only where the check read a
-non-scientific document, and travels with the check in a shared project, as its note does: when the check is a
-colleague's, a line under the switch says so, and your change reaches their copy beside theirs, as a sync-clash
-copy.
+answer before and after. While it is on, a field under the switch takes your reason, if you want to give one: change it
+and choose *Save reason*, or empty it to give the usual reason (*they are the material this hypothesis is about*)
+again; the research log keeps each change. The switch is shown only where the check read a non-scientific document,
+and travels with the check in a shared project, as its note does: when the check is a colleague's, a line under the
+switch says so, and your change reaches their copy beside theirs, as a sync-clash copy. Anyone in the team may turn it
+on or off, and nobody's change goes unsaid: when a colleague's change reaches your copy, *What came in* on the *Team*
+tab (and the report of a zip brought in) says who changed which check, their reason, and what it did to the answer
+here, for example *its answer here is now Supported by your documents; without them it would be No scientific evidence
+found*. Everyone in the team needs this version: an older ENLENS keeps the setting but does not read it, so its copy
+still leaves them uncounted, and says nothing of the change.
 
 **A suggestion from your bibliography.** When a document's work in the [bibliography](bibliography.md) is a kind that is
-usually not scientific (a newspaper or magazine article, a blog or forum post, a web page, a podcast or a broadcast),
-its page and its row in *Documents* show one quiet line: *Your bibliography lists this as a newspaper article. Mark it
-as non-scientific?* *Mark* opens the usual dialog; *No* keeps it as it is, and the research log keeps your answer.
-Nothing is marked by itself, and theory and working documents are never suggested. In a project with an owner, the
-Owner's or a Co-owner's *No* holds in every copy; a Member's hides the suggestion in their own copy only. Whoever said
-*No* can take it back on the document's page with *Suggest again* (the Owner and Co-owners can take back anyone's).
-Grouping *Documents* by *Scientific or not* lists the suggested ones together.
+usually not scientific (a newspaper or magazine article, a press release, a blog or forum post, a web page, a podcast
+or a broadcast), its page and its row in *Documents* show one quiet line: *Your bibliography lists this as a newspaper
+article. Mark it as non-scientific?* *Mark* opens the usual dialog; *No* keeps it as it is, and the research log keeps
+your answer. Nothing is marked by itself, and theory and working documents are never suggested. In a project with an
+owner, the Owner's or a Co-owner's *No* holds in every copy; a Member's hides the suggestion in their own copy only.
+Whoever said *No* can take it back on the document's page with *Suggest again* (the Owner and Co-owners can take back
+anyone's). Grouping *Documents* by *Scientific or not* lists the suggested ones together.
 
 **On the evidence map** a non-scientific document has a column too: what it says is drawn with the symbol unfilled
 and a dashed edge (*Non-scientific: read, not counted*). It changes no answer, count or colour of the map, and it

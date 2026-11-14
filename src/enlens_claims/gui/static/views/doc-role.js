@@ -12,7 +12,7 @@
 // 0.18.8 (roadmap K3): a quiet suggestion from the bibliography's item type (a newspaper article, a blog post, a web
 // page): one line with Mark and No, never a mark by itself and never a pop-up. No is kept as a decision (the research
 // log), so it does not come back here or in a colleague's copy.
-import { api, h, P, toast, showError, tag, button, link, notice, plural, confirmDialog, icon } from "../lib.js";
+import { api, h, P, toast, showError, tag, button, link, notice, plural, confirmDialog, icon, fold } from "../lib.js";
 
 const ROLES_API = (p) => `/api/projects/${P(p)}/document-roles`;
 const ROLE_API = (p, d) => `/api/projects/${P(p)}/documents/${P(d)}/role`;
@@ -173,6 +173,17 @@ function answersList(answers) {
       : a.all !== a.status ? h("span", { class: "muted" }, ` (counting the non-scientific documents: ${a.all_text})`) : null));
 }
 
+// 0.18.8 (N3): the checks started from the document's text (Check against the corpus), each with its answer now: the
+// newest STARTED_SHOWN, the others in a fold (a chapter with forty checked sentences keeps its text in view)
+const STARTED_SHOWN = 8;
+function startedList(started) {
+  const li = (a) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(a.hyp_id)}` }, a.text),
+    ` · ${a.status_text || a.status}`);
+  const rest = started.slice(STARTED_SHOWN);
+  return [h("ul", { class: "doc-role-impact doc-started" }, started.slice(0, STARTED_SHOWN).map(li)),
+    rest.length ? fold({ sm: true, class: "doc-started-more" }, `and ${plural(rest.length, "more check")}`, h("ul", { class: "doc-role-impact doc-started" }, rest.map(li))) : null];
+}
+
 // the document page's box: what its role is, the button to change it, and what was made with it in; 0.18.6: whether
 // it is marked Non-scientific, the button to change that, and the answers of the checks that read it. 0.18.8 (N3):
 // `onRole(role)` after each drawing, so the page knows a working document (its selection offers a check).
@@ -188,6 +199,8 @@ export async function roleBox(project, docId, title, onRole) {
     let sug = null, saidNo = null;   // 0.18.8 (K3)
     if (!ns) { try { const g = await api("GET", SUGGEST_API(project, docId)); sug = g.suggestion; saidNo = g.answered_no; } catch (_) { sug = null; } }
     const imp = impactList(r.impact || {});
+    const started = r.started || [];
+    const startedPart = started.length ? [h("p", {}, `${started.length === 1 ? "The check" : `The ${started.length} checks`} started from it:`), startedList(started)] : null;
     const items = roleMenuItems(project, { doc_id: docId, title }, r.role, draw);
     const changes = items.map((it) => button({ kind: "quiet", sm: true, icon: it.icon, onClick: it.onClick }, it.button));
     const change = changes;
@@ -201,6 +214,7 @@ export async function roleBox(project, docId, title, onRole) {
     if (working) parts.push(notice({ kind: "info", class: "doc-role-note doc-working-note" },
       h("p", {}, roleTag("working"), ` ${WORKING_MEANS}. It is left out of ${WORKING_LEFT_OUT}.`),
       h("p", {}, icon("list-checks", { size: 13 }), " To check one of its claims, select the sentence in the text and choose ", h("strong", {}, "Check against the corpus"), "."),
+      startedPart,
       imp.length ? [h("p", {}, "Made with it in, before it was marked (they stay as they are until you make them again):"), h("ul", { class: "doc-role-impact" }, imp)] : null,
       h("div", { class: "btn-row" }, change)));
     if (ns) {
@@ -210,6 +224,8 @@ export async function roleBox(project, docId, title, onRole) {
         ans.length ? [h("p", {}, "Checks that read it:"), h("ul", { class: "doc-role-impact" }, ans)] : null,
         h("div", { class: "btn-row" }, changeNs)));
     }
+    // checks started from it while it was a working document stay listed after its role changes
+    if (!working && startedPart) parts.push(h("div", { class: "doc-started-box" }, startedPart));
     const quiet = [...(theory || working ? [] : change), ns ? null : changeNs].filter(Boolean);
     if (quiet.length) parts.push(h("div", { class: "row doc-role-row" }, quiet));
     if (sug) parts.push(suggestLine(project, docId, title, sug.words, draw));

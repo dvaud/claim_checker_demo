@@ -62,9 +62,11 @@ export const PAGE_ROUTES = [];
 export const WELCOME_CARDS = [];
 
 // Where a hypothesis comes from (its `origin`): the result page links back to it. `eyebrow`: the link above the
-// hypothesis (in place of "All results"); `meta`: the words in the line under it; `href(id)`.
+// hypothesis (in place of "All results"); `meta`: the words in the line under it (or `meta(result)`); `href(id)`.
 export const ORIGINS = {
   batch: { meta: "part of a set", href: (id) => `#/hypotheses?batch=${encodeURIComponent(id)}` },   // 0.17.0: the answers are on Hypotheses
+  // 0.18.8 (N3): started from a document's text (a working document's Check against the corpus); none when it is gone
+  document: { meta: (r) => r.origin_title ? `from ${r.origin_title}` : null, href: (id) => `#/doc/${encodeURIComponent(id)}` },
 };
 
 // The back-link of a result: {eyebrow, meta, href} or null. A batch from before 0.13.6 has a batch id and no origin.
@@ -73,7 +75,9 @@ export function originLink(r) {
   if (!key) return null;
   const o = ORIGINS[key];
   const id = key === r.origin ? (r.origin_id || r.batch_id || "") : r.batch_id;
-  return { eyebrow: o.eyebrow || null, meta: o.meta || null, href: o.href(id) };
+  const meta = typeof o.meta === "function" ? o.meta(r) : o.meta;   // 0.18.8: a meta may depend on the result
+  if (!meta && !o.eyebrow) return null;
+  return { eyebrow: o.eyebrow || null, meta: meta || null, href: o.href(id) };
 }
 
 // The Overview's sections, in SECTIONS' order: each with the features that show a card there, in FEATURES' order

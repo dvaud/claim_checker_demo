@@ -128,7 +128,11 @@ steps. What already came in stays, nothing half-written counts as sent, and the 
 
 A small note says when something came in by itself, and the *Team* tab shows how many things are new. **What came in**
 lists them by colleague, newest first, in the words of the round's report. **Mark as seen** folds them under *Seen
-before*; until then they stay, also across a restart. The tab also shows, as needed:
+before*; until then they stay, also across a restart. A colleague's change of what counts in an answer comes first:
+who set a check to count the non-scientific documents, or to no longer count them, with their reason, and the check's
+answer here now beside the one it would have the other way (or that the answer is the same either way); and who marked
+a document as non-scientific, or counted it as scientific again, with the answers that changed here. A zip brought in
+says the same in its short report. The tab also shows, as needed:
 
 - **Needs your attention**, in plain words: another computer writing into the folder under your name (this comes first
   in the tab, because this copy then writes nothing), a colleague's copy on a newer ENLENS (only their work waits, with a word to

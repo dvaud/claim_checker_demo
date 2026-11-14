@@ -108,6 +108,11 @@ pages are [Check a hypothesis](manual/how-a-check-works.md#what-a-check-does) an
 together give *Mixed evidence*; otherwise support gives *Supported*, partial support *Partly supported* and
 contradiction *Contradicted*. Judgements all below the strictness give *Only uncertain evidence*; none about the
 claim gives *No evidence found*. Excerpts of documents no AI may read wait for the person and count once judged.
+The judgements of a document marked *Non-scientific* are read and shown but set aside (`verdicts.set_aside`), anyone's:
+a claim only such documents speak to gives *No scientific evidence found*, and the answer counting them is kept beside
+it (`status_all_sources`). A check set to count them (`nonscientific.counting_hyps`, the switch under its answer)
+counts them as any document's, for every part
+([Non-scientific documents](manual/explore.md#non-scientific-documents)).
 
 **A hypothesis in parts** (`verdicts.aggregate`): a part contradicted makes the whole contradicted; otherwise a part
 with mixed evidence makes it mixed; every part supported makes it supported; some parts (partly) supported make it
@@ -177,7 +182,9 @@ The glossary is built without a model (`terms.py`; [Concepts](manual/explore.md#
   concepts in all, never none for a concept that has one). Groups are found with the Louvain method (Blondel and others, 2008) on
   each concept's eight strongest joins, visiting the concepts in a fixed order; each group is laid out in a disc with
   Fruchterman and Reingold's force-directed method (1991) from fixed starting places, and the discs are placed by the
-  joins between them (`conceptmap.py`). A filter restricts the passages before anything is counted.
+  joins between them (`conceptmap.py`); the page then pushes apart marks that would overlap, in a fixed order. A filter
+  restricts the passages before anything is counted. Under 30 passages in scope the page says that its lines rest on
+  very little; the numbers are the same.
 
 ## Themes
 

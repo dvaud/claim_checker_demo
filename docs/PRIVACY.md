@@ -20,7 +20,7 @@ Releases are downloaded from GitHub ([below](#other-online-services-not-ai)).
 | The researcher (and their institution) | Decides what is processed, and how | Everything: the projects stay on their computer |
 | Anthropic | Runs the Claude models, when the researcher uses Claude | The passages and text inside the AI tasks Claude answers, from documents Claude may read ([below](#what-goes-to-claude)) |
 | A model server on the computer (Ollama, LM Studio and others) | Runs a local model | The text of the tasks it answers; it stays on the computer |
-| The team's shared folder, or its storage space at Backblaze or Cloudflare | Carries the work a team shares | Only when the researcher sets one up ([Working together](#working-together)) |
+| The team's shared folder, or its storage space at Backblaze, Cloudflare or the institution's drive (WebDAV) | Carries the work a team shares | Only when the researcher sets one up ([Working together](#working-together)) |
 | Crossref | Answers a retraction lookup | DOIs, only when the researcher asks ([Other online services](#other-online-services-not-ai)) |
 | GitHub | Hosts ENLENS's releases | A request for the latest version ([Other online services](#other-online-services-not-ai)) |
 
@@ -91,12 +91,16 @@ codes, pairs of glossary terms with short passages where each occurs, the passag
 consecutive passages of one document (references), the passages that hold a code's examples with the code's name and
 group (a draft definition, `codedefine.py`), and, when a person asks for an excerpt to be read again, their
 comment. A document linked to a bibliography entry is titled by that work's title
-(`bibliography.py`). Tasks of documents marked *Only a local AI* or *No AI* are never among them.
+(`bibliography.py`). Tasks of documents marked *Only a local AI* or *No AI* are never among them. A code's
+definition, *when to use it* and *when not* go with every label task of its codebook, whatever document it labels: a
+definition the local model drafted from documents marked *Only a local AI* does too once it is kept, so the editor
+says to rewrite it if it gives away what those documents say.
 
 **What a Claude chat sees through the connector.** The project names and the path of the projects folder; document
 titles, pages and counts, except that a document marked *No AI* is shown as *Restricted document 3*, because a title
-can name a person (`access.restricted_titles`); the hypotheses of the project's checks and their answers; and the
-excerpts, search lines and concept details of documents Claude may read. Text of documents marked *Only a local AI*
+can name a person (`access.restricted_titles`); the hypotheses of the project's checks and their answers, except a
+check started from words of a document marked *Only a local AI* or *No AI* (a working document's *Check against the
+corpus*), which it neither lists nor opens (`docrole.kept_here`); and the excerpts, search lines and concept details of documents Claude may read. Text of documents marked *Only a local AI*
 or *No AI* is reported as counts only, and what a model wrote after reading such text is left out. Excerpts are shown
 without the text before them. The connector reads files on the computer when asked to add sources; it sends nothing
 of them except what its tools return.
@@ -136,7 +140,8 @@ Points for an assessment:
 ## What never leaves the computer
 
 - The text of documents marked *Only a local AI* or *No AI*, to Claude or to a model server on another computer, in
-  any feature. (A team's shared folder or storage space does receive their text and files, unless the switch
+  any feature, words selected from them and checked against the corpus included: such a check is read by a local
+  model only, or, from a document marked *No AI*, by no model (`docrole.origin_floor`). (A team's shared folder or storage space does receive their text and files, unless the switch
   described [below](#working-together) keeps them out.)
 - The project's database (`enlens.sqlite`) as a file.
 - The answers ENLENS keeps so as not to ask the AI again (`ai_cache`), the search index, the glossary, embeddings,
@@ -193,7 +198,8 @@ folder](manual/privacy.md#what-goes-into-the-shared-folder)).
 - *Who can read it:* anyone with access to the folder. The files are ordinary zip files, neither encrypted nor
   signed ([Who can read the folder](manual/privacy.md#who-can-read-the-folder)).
 
-**A storage space** of the team's own, at Backblaze (B2) or Cloudflare (R2), holds the same things as a shared folder,
+**A storage space** of the team's own, at Backblaze (B2), Cloudflare (R2) or in a folder of the institution's drive
+over WebDAV (SURFdrive, SURF Research Drive, a Nextcloud; `sync/webdav.py`), holds the same things as a shared folder,
 sealed (`sync/seal.py`, `sync/space.py`; [Through a storage
 space](manual/privacy.md#through-a-storage-space-of-your-teams-own-0180rc2)):
 
@@ -209,7 +215,18 @@ space](manual/privacy.md#through-a-storage-space-of-your-teams-own-0180rc2)):
   must be sent privately, work once, and can be withdrawn before use
   ([Inviting a colleague](manual/storage-space.md#inviting-a-colleague)).
 - *Removing a member* deletes their storage keys and replaces the project's key for those who stay; what they already
-  had stays with them.
+  had stays with them. In a drive it stops sharing the folder with them where ENLENS can (a share it made, or one the
+  drive lists for their known account); where it cannot, they can still read and write the folder until the owner
+  stops sharing it in the drive's website, and the Team tab says so until then. The person whose drive holds the
+  folder keeps it: the team moves to another folder to leave them out.
+- *In a drive* (WebDAV): each person signs in with their own account and an **app password**, which opens their whole
+  account at the drive, not only the team's folder. ENLENS reads the names of the folders at the top of the drive at
+  set-up (to choose a free name) and when joining (to find the shared folder). The drive's administrators see the
+  folder's name, which holds the project's name (`ENLENS - <project>`), and the accounts it is shared with; at
+  Backblaze and Cloudflare they see random member identifiers instead. Requests go over HTTPS only, with the
+  certificate checked; redirects are never followed; an address with a user name or password in it is refused. After
+  the drive refuses the app password, ENLENS asks it nothing until a new one is entered. XML answers with a DOCTYPE are
+  refused, and every answer is read up to a limit, at every kind of storage space.
 
 **Settings across copies.** Anyone may make a document stricter, and it holds in every copy as soon as it reaches
 it. A looser setting
@@ -220,8 +237,8 @@ in with their work, with a count of what Claude read there.
 
 ## Keys and secrets
 
-- **The storage space's keys** (the project's key, each member's own keys, the storage service's keys) are kept in the
-  system's keychain: macOS Keychain, Windows Credential Manager, or `secret-tool` on Linux. Where none can be used,
+- **The storage space's keys** (the project's key, each member's own keys, the storage service's keys, a drive's app
+  password) are kept in the system's keychain: macOS Keychain, Windows Credential Manager, or `secret-tool` on Linux. Where none can be used,
   they are kept in files in ENLENS's folder readable by the user only (`keychain.py`). Never in a project, a zip, the
   shared folder or the space.
 - **A Claude API key**, if saved, is kept in `credentials.json` in the data folder, readable by the user only, or
@@ -267,8 +284,9 @@ on a local-only installation.
   and link to Anthropic's own page with the date it was checked ([Your Claude account and
   licences](manual/privacy.md#your-claude-account-and-licences)). Check Anthropic's current privacy policy, terms and
   the account's data settings for the application; mark documents that must not reach Anthropic *Only a local AI*.
-- **The shared folder's service** (OneDrive, Dropbox, a network drive) and **the storage company**, under the
-  institution's or team's own agreement with them. A service may keep earlier or deleted versions for a while.
+- **The shared folder's service** (OneDrive, Dropbox, a network drive), **the storage company** and **the
+  institution's drive** and its administrators, under the institution's or team's own agreement with them. A service
+  may keep earlier or deleted versions for a while.
 - **Copies on colleagues' computers.** What a colleague has brought in stays with them after it is unshared.
 - **The computer itself.** Projects are only as private as the data folder; on a computer other people use, keep it in
   the user's own folder.
@@ -286,6 +304,6 @@ A short description that can be adapted:
 > documents marked "Claude may read it", only the passages selected for each task were sent to Anthropic's Claude
 > models via [Claude Code on a [plan] account / the Claude API], under Anthropic's [commercial / consumer] terms.]
 > Every passage sent was logged by the software, and the log is kept with the project. [Collaboration used a storage
-> space at [Backblaze / Cloudflare] in the EU, with files encrypted (AES-256-GCM) and signed (Ed25519) before upload;
+> space at [Backblaze / Cloudflare / the institution's drive (SURFdrive, a Nextcloud)] in the EU, with files encrypted (AES-256-GCM) and signed (Ed25519) before upload;
 > the storage provider holds no keys.] [The installation was set to local-only, so no document text could be sent to
 > a cloud model.]

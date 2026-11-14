@@ -58,7 +58,9 @@ class CorpusApi:
                 "nonscientific": sorted(docrole.nonscientific_docs(ws))}
 
     def get_document_role(self, name, doc_id, q):
-        """{"doc_id", "role" (null: evidence), "impact": what was made with it in (docrole.impact)}."""
+        """{"doc_id", "role" (null: evidence), "impact": what was made with it in (docrole.impact), "nonscientific",
+        "answers" (the checks that read it, when it is non-scientific), "started" (0.18.8: the checks started from its
+        text)}."""
         from .. import docrole
 
         ws = self.app.ws(name)
@@ -67,7 +69,9 @@ class CorpusApi:
         ns = docrole.is_nonscientific(ws, doc_id)
         return {"doc_id": doc_id, "role": docrole.role_of(ws, doc_id), "impact": docrole.impact(ws, doc_id),
                 # 0.18.6: marked Non-scientific, and (when it is) each check that read it, now and counting it
-                "nonscientific": ns, "answers": docrole.counted_without(ws, doc_id) if ns else []}
+                "nonscientific": ns, "answers": docrole.counted_without(ws, doc_id) if ns else [],
+                # 0.18.8 (N3): the checks started from its text (*Check against the corpus*), each with its answer
+                "started": docrole.checks_started_from(ws, doc_id)}
 
     def put_document_role(self, name, doc_id, q):
         """{"role": "theory" | "working" | null, "why"?}: mark a document as theory, as a working document (N3), or
@@ -258,8 +262,8 @@ class CorpusApi:
     # ---- 0.18.8 (K3): the per-hypothesis exception and the bibliography's suggestion (nonscientific.py) ----------
     def put_hypothesis_nonscientific(self, name, hyp_id, q):
         """{"count": true | false, "why"?: text}: count the non-scientific documents in this hypothesis's check, or
-        not again; a new "why" while it is on replaces the reason. The answer changes at once: the reply has it before
-        and after (nonscientific.set_counting)."""
+        not again; a "why" while it is on replaces the reason, and an empty one takes it away (the usual reason is
+        given again). The answer changes at once: the reply has it before and after (nonscientific.set_counting)."""
         from .. import nonscientific
 
         body = self._body()

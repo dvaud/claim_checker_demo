@@ -19,7 +19,7 @@ from .fingerprints import (_canon, _check_unit, _fingerprints, _known, _plain, _
 from .owner_merge import OwnerRules
 from .readings import ReadingRules
 from .share_merge import ShareRules
-from .report import summary
+from .report import canon_blocks, counting_change, counting_said, marks_due, summary
 
 
 class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
@@ -59,6 +59,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         self.canon_ai: dict = {k: v for k, v in (info.get("canon_ai") or {}).items()}
         self.not_wanted: set[str] = set()
         self.taken: list[tuple[str, str]] = []  # roles (H5): units taken from the sender in this merge (`sync_from`)
+        self.counting: list[dict] = []  # K3 (DEC-1): checks whose exception their version changed here (report.py)
         self.r = {"from": self.sender, "project": info.get("name"), "version": info.get("version"), "at": self.at,
                   "documents": {"new": [], "clash": [], "removed_here": [], "removed_there": [],
                                 "not_wanted": [],  # 0.18 L2: the owner removed it from the project, or declined it
@@ -153,6 +154,7 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             if self.stubs:
                 self._remember_stubs(cx)         # 0.18: before anything is compared (fingerprints._canon reads them)
             self.hyps_before = {r[0] for r in cx.execute("SELECT hyp_id FROM hypotheses")}
+            canon_before = canon_blocks(cx)       # K3 (DEC-1): to know the documents' marks this merge changes
             self._withhold(cx)                    # 0.18: what its owner took back and you do not have stays out
             self._ownership(cx)                   # 0.18 L2: the owner, proposals, decisions (before the documents)
             self._other_readings(cx)              # 0.18: first, so the rest finds one reading of each document
@@ -177,6 +179,9 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             self._removed(cx)
             self._share_marks(cx)                 # 0.18: who shared what, by the owner's word
             self._people(cx)
+            due = marks_due(cx, canon_before, {self.docs[i] for i in self.new_docs})
+            if due:  # applied by `ownership.settle` after the merge; said then (report.py `tell_marks`)
+                self.r["documents"]["marks_due"] = due
             # the states the colleague's copy had of what this copy now holds as they do (not of a clash)
             cx.executemany("INSERT OR IGNORE INTO sync_seen(kind, key, fp) VALUES (?,?,?)",
                            [(r["kind"], r["key"], r["fp"]) for r in _rows(self.icx, "SELECT * FROM sync_seen")
@@ -200,6 +205,10 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
 
             if terms.status(self.ws)["built"]:
                 terms.rebuild_concepts(self.ws)
+        if self.counting:  # worked out here, after the merge: answers are computed when they are read
+            said = counting_said(self.ws, self.counting, self.sender)
+            if said:
+                self.r["checks"]["counting"] = said
         self.r["lines"] = summary(self.r)
         return self.r
 
@@ -545,6 +554,8 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
 
                 versions.snapshot(self.ws, cx, kind, key,
                                   f"before bringing in {self.sender['name'] or 'a colleague'}'s version")
+                if kind == "check":
+                    self._note_counting(mine, unit, key, text)
                 self._drop(cx, kind, mine)
                 self._put(cx, kind, unit)
                 self.taken.append((kind, key))
@@ -582,7 +593,10 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
             rep["running_here"].append((text or hyp[0].get("text") or key) if kind == "check" else running)
             return
         if follow:
-            self._drop(cx, kind, unit_of(cx, follow))
+            was = unit_of(cx, follow)
+            if kind == "check":
+                self._note_counting(was, unit, follow, text, beside=key)
+            self._drop(cx, kind, was)
             self._route(unit, key, follow)
             self._put(cx, kind, unit)
             self.taken.append((kind, follow))
@@ -594,10 +608,19 @@ class _Merge(CodebookRules, ReadingRules, ShareRules, OwnerRules):
         copy_id = f"{key}-{fp_in[1][:6]}"
         if copy_id in removed:
             return  # you removed their version of it: it does not come back (until they change it again)
+        if kind == "check":
+            self._note_counting(unit_of(cx, key), unit, copy_id, text, beside=key)
         self._route(unit, key, copy_id)
         self._put(cx, kind, unit)
         self._mark(cx, kind, copy_id, key)
         rep["clash"].append({"hyp_id" if kind == "check" else "run_id": copy_id, "of": key, "text": text})
+
+    def _note_counting(self, was: dict, unit: dict, here: str, text: str | None, beside: str | None = None) -> None:
+        """K3 (DEC-1): their version of a check (`here` in this copy; `beside`: kept beside this copy's check of that
+        id) counts the non-scientific documents where the version it replaces here did not, or the other way round."""
+        change = counting_change(was, unit)
+        if change is not None:
+            self.counting.append({**change, "hyp_id": here, "text": text or change["text"], "beside": beside})
 
     def _may_replace(self, cx: sqlite3.Connection, kind: str, key: str, fp_here: tuple[str, str]) -> bool:
         """Roles (H5, DESIGN-roles §4.9): whether the sender's newer version may take the place of this copy's `key`.

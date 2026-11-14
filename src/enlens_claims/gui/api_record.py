@@ -142,12 +142,17 @@ class RecordApi:
         return codebooks.save(self.app.ws(name), cb, state, merges, str(body.get("why") or "") or None)
 
     # -- K1 (the optional AI part): a code's definition drafted from its examples ------------------------------------
-    def _define_body(self) -> tuple[str, str, list[str]]:
+    def _define_body(self) -> tuple[str, str, list]:
+        """The code's name, its group's name and its examples: each a quote, or {"quote", "doc_id", "start",
+        "project"} with the place it was saved at (codedefine reads it there first)."""
         body = self._body()
-        quotes = body.get("examples") if isinstance(body.get("examples"), list) else []
-        quotes = [(e.get("quote") if isinstance(e, dict) else e) for e in quotes]
-        return (str(body.get("code") or "").strip(), str(body.get("group") or "").strip(),
-                [str(x) for x in quotes if isinstance(x, str) and x.strip()])
+        exs = body.get("examples") if isinstance(body.get("examples"), list) else []
+        out = []
+        for e in exs:
+            e = e if isinstance(e, dict) else {"quote": e}
+            if isinstance(e.get("quote"), str) and e["quote"].strip():
+                out.append({k: e[k] for k in ("quote", "doc_id", "start", "project") if k in e})
+        return str(body.get("code") or "").strip(), str(body.get("group") or "").strip(), out
 
     def post_codebook_define_offer(self, name, cb, q):
         """{"offered", "why", "reader", "passages", "left_line"}: whether the AI may draft this code's definition from
@@ -164,6 +169,10 @@ class RecordApi:
         from .. import codedefine
 
         ws = self.app.ws(name)
+        try:  # a codebook that is not there: nothing is drafted and nothing written to the research log
+            title = codebooks.frameworks.get(cb, ws).title or cb
+        except ValueError as e:
+            raise ApiError(404, f"There is no codebook called {cb!r} in this project.") from e
         code, group, quotes = self._define_body()
         if not code:
             raise ApiError(400, "Give the code a name first.")
@@ -171,15 +180,11 @@ class RecordApi:
         offer = codedefine.offer(ws, quotes, settings)
         if not offer["offered"]:
             raise ApiError(400, offer["why"])
-        try:
-            title = codebooks.frameworks.get(cb, ws).title or cb
-        except ValueError:
-            title = cb
         job = self.app.start_queued_job(
             "code-define", f"The AI drafts a definition of “{code[:40]}”", name,
             lambda job, be, model, prog: codedefine.draft(ws, cb, code, group, quotes, be, model, prog,
                                                           job.cancel.is_set, settings=settings, title=title),
-            withdraw=(codedefine.KIND,))
+            withdraw=())   # several drafts may wait at once: Stop takes back only this job's task (codedefine.draft)
         job.scope = f"{cb}/{code}"
         return {"job": job.view()}
 

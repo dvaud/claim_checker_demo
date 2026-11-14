@@ -60,7 +60,7 @@ from .fingerprints import (_COLS_0142, _COLS_0142_SETS, _FP_TABLES, _HOW, _PERSO
                            _check_unit, _codebook_fp, _core_columns, _fingerprints, _fp, _home_codebooks, _known,
                            _literal, _plain, _running, _themes_unit, _used_codebooks, record_seen)
 from .merge import _Merge  # noqa: F401
-from .report import _ORIGINALS, _label, _n, copies_of, history, overview, summary  # noqa: F401
+from .report import _ORIGINALS, _label, _n, copies_of, history, marks_before, overview, summary, tell_marks  # noqa: F401
 
 
 class NotThisProject(ValueError):
@@ -173,7 +173,9 @@ def bring_in(ws: Workspace, zip_path: str | Path, anyway: bool = False) -> dict:
         log_bring_in(cx, report)
     from .. import ownership  # 0.18 L2: what the owner decided is followed here, and what came in is looked at
 
+    before = marks_before(ws, report)  # K3 (DEC-1): a document's mark the project's word sets or takes away here
     report["owner"] = ownership.settle(ws)
+    tell_marks(ws, report, before)
     return report
 
 
@@ -182,8 +184,9 @@ def log_bring_in(cx: sqlite3.Connection, report: dict, where: str = "") -> None:
     in and what it brought (0.16). `where`: how it came (0.18: " from the shared folder")."""
     from .. import researchlog
 
-    cx.execute("INSERT INTO sync_log(at, person_id, report_json) VALUES (?,?,?)",
-               (report["at"], report["from"]["id"], json.dumps(report, ensure_ascii=False)))
+    cur = cx.execute("INSERT INTO sync_log(at, person_id, report_json) VALUES (?,?,?)",
+                     (report["at"], report["from"]["id"], json.dumps(report, ensure_ascii=False)))
+    report["log_id"] = cur.lastrowid  # (not in the row: `report.tell_marks` brings that row up to date)
     who = report["from"]["name"] or "a colleague"
     researchlog.record(cx, "sync", f"Brought in {who}'s work{where}. " + " ".join(report.get("lines") or []),
                        data={"from": report["from"], "version": report.get("version")})

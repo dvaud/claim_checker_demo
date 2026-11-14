@@ -352,7 +352,9 @@ def _main(argv: list[str] | None = None) -> int:
                                           "NVivo, ATLAS.ti or MAXQDA as a new codebook of this project")
     p.add_argument("file")
     p.add_argument("name", nargs="?", help="the new codebook's short name (default: from the file's name)")
-    p.add_argument("--title", help="its title (default: the file's, else from its name)")
+    p.add_argument("--title", help="its title (default: the file's, else the file's name)")
+    p.add_argument("--codebook", default="", help="in a file ENLENS wrote with several codebooks, the title of the one "
+                                                  "to bring in")
     p.add_argument("--home", action="store_true", help="keep it with all projects, not this one")
     p = sub.add_parser("export-flexiconc", help="write the project in the Cross-Doc SDG Explorer's FlexiConc SQLite layout")
     p.add_argument("out")
@@ -852,17 +854,31 @@ def _cmd_07(a, ws) -> int:
                 return 2
         _print(qdpx.export_project(ws, a.out, a.framework) if a.cmd == "export-qdpx" else
                qdpx.export_codebook(ws, a.framework, a.out))
+        from .codebooks import draft_note, drafted_codes  # the audit's DEC-2: the file does not carry the AI draft mark
+
+        names = [a.framework] if a.cmd == "export-qdc" else \
+            [fw.name for fw in qdpx._frameworks_to_export(ws, a.framework)]
+        note = draft_note(sum(drafted_codes(ws, n) for n in names))
+        if note:  # (on stderr, as the commands' other words: what they print on stdout stays JSON)
+            print(note, file=sys.stderr)
         return 0
     if a.cmd == "import-qdc":
         import re
+        import unicodedata
 
         from . import codebooks, qdc_import
 
         f = Path(a.file)
-        name = a.name or re.sub(r"[^a-z0-9_-]+", "_", f.stem.lower()).strip("_")[:40] or "imported"
+        plain = unicodedata.normalize("NFKD", f.stem.lower()).encode("ascii", "ignore").decode("ascii")   # kódkönyv: kodkonyv
+        name = a.name or re.sub(r"[^a-z0-9_-]+", "_", plain).strip("_")[:40] or "imported"
         try:
-            got = codebooks.create(ws, name, a.title or "", "home" if a.home else "project", "qdc",
-                                   prepared=qdc_import.from_path(f))
+            prepared = qdc_import.from_path(f, a.codebook)
+            # the title: --title, else the file's own (a project's name, a codebook ENLENS wrote), else the file's name
+            prepared["title"] = prepared["title"] or " ".join(f.stem.split())[:200]
+            got = codebooks.create(ws, name, a.title or "", "home" if a.home else "project", "qdc", prepared=prepared)
+        except qdc_import.SeveralCodebooks as e:
+            print(f"Problem: {e} Give its title with --codebook.", file=sys.stderr)
+            return 2
         except ValueError as e:
             print(f"Problem: {e}", file=sys.stderr)
             return 2

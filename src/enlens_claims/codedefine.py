@@ -55,16 +55,55 @@ def _local_reader(settings: dict) -> bool:
     return bool(home.main_reads_local(settings) or home.restricted_choice(settings))
 
 
-def gather(ws: Workspace, quotes: list[str], settings: dict | None = None) -> dict:
+def _examples(quotes: list) -> list[dict]:
+    """The examples as sent: each a quote, or {"quote", "doc_id", "start", "project"} with the place the editor saved
+    it at. One per quote, at most MAX_PASSAGES."""
+    out: dict[str, dict] = {}
+    for e in quotes or []:
+        e = e if isinstance(e, dict) else {"quote": e}
+        q = _clean(e.get("quote"), 600)
+        if not q or q in out:
+            continue
+        start = e.get("start")
+        out[q] = {"quote": q, "doc_id": str(e.get("doc_id") or "") or None,
+                  "start": start if isinstance(start, int) and not isinstance(start, bool) else None,
+                  "project": str(e.get("project") or "") or None}
+    return list(out.values())[:MAX_PASSAGES]
+
+
+def _at_place(ws: Workspace, e: dict) -> dict | None:
+    """K1: an example found where the editor saved it (its document, and the passage at its place when that passage
+    holds it); None when it is not there, and the search then looks in every document."""
+    from . import codebooks
+    from .textutil import find_quote
+
+    if not e["doc_id"] or (e["project"] and e["project"] != ws.project_uid()):
+        return None
+    if e["start"] is not None:
+        row = ws.query("SELECT start, text FROM passages WHERE doc_id=? AND start<=? AND end>? ORDER BY start DESC "
+                       "LIMIT 1", (e["doc_id"], e["start"], e["start"]))
+        hit = find_quote(row[0]["text"] or "", e["quote"]) if row else None
+        if hit:
+            return {"doc_id": e["doc_id"], "start": row[0]["start"] + hit[0],
+                    "quote": (row[0]["text"] or "")[hit[0]:hit[1]]}
+    return codebooks.find_examples(ws, [e["quote"]], e["doc_id"]).get(e["quote"])
+
+
+def gather(ws: Workspace, quotes: list, settings: dict | None = None) -> dict:
     """The passages the AI would read for these example quotes, and what is left out and why:
     {"passages": [{"n", "passage_id", "doc_id", "page", "text", "examples": [quotes in it]}], "level": the strictest
     setting kept ("cloud" | "local"), "left_out": {"elsewhere", "no_ai", "local"}: examples not found in this project,
-    in documents marked No AI, in documents only a local AI may read when none is chosen}."""
+    in documents marked No AI, in documents only a local AI may read when none is chosen}. An example sent with its
+    place (`_examples`) is read there; else, or when it is not there any more, where the quote check finds it."""
     from . import access, codebooks, home
 
     s = settings if settings is not None else home.load_settings()
-    qs = list(dict.fromkeys(_clean(q, 600) for q in quotes if _clean(q, 600)))[:MAX_PASSAGES]
-    found = codebooks.find_examples(ws, qs)
+    exs = _examples(quotes)
+    qs = [e["quote"] for e in exs]
+    found = {e["quote"]: _at_place(ws, e) for e in exs}
+    rest = [q for q in qs if not found[q]]
+    if rest:
+        found.update(codebooks.find_examples(ws, rest))
     left = {"elsewhere": 0, "no_ai": 0, "local": 0}
     hits = []
     for q in qs:
@@ -121,7 +160,7 @@ def _left_line(left: dict) -> str | None:
     return f"{n} example{'s' if n != 1 else ''} left out: " + "; ".join(parts) + "."
 
 
-def offer(ws: Workspace, quotes: list[str], settings: dict | None = None) -> dict:
+def offer(ws: Workspace, quotes: list, settings: dict | None = None) -> dict:
     """Whether the AI may draft a definition from these examples: {"offered", "why" (one line when not), "reader":
     "claude" | "local" | "main" | None, "passages": how many it would read, "left_out", "left_line"}."""
     from . import home
@@ -146,7 +185,7 @@ def _offer_of(g: dict, s: dict) -> dict:
     return {"offered": True, "why": None, "reader": "claude" if claude else "main", **out}
 
 
-def payload_for(ws: Workspace, code: str, group: str, quotes: list[str], settings: dict | None = None,
+def payload_for(ws: Workspace, code: str, group: str, quotes: list, settings: dict | None = None,
                 g: dict | None = None) -> dict:
     g = g if g is not None else gather(ws, quotes, settings)
     return {"code": _clean(code, 60), "group": _clean(group, 120),
@@ -233,18 +272,16 @@ def draft_of(ws: Workspace, task_id: str) -> dict | None:
             "note": _clean(a.note, 300) or None}
 
 
-def draft(ws: Workspace, codebook: str, code: str, group: str, quotes: list[str], backend, model: str,
+def draft(ws: Workspace, codebook: str, code: str, group: str, quotes: list, backend, model: str,
           progress: Callable | None = None, should_stop: Callable[[], bool] | None = None, readers=None,
           settings: dict | None = None, title: str | None = None) -> dict:
     """The AI drafts a code's definition, *when to use it* and *when not* from the passages that hold its examples
     (one task, see the module's notes). `codebook` is the codebook's name, `title` its title (the name when not
-    given). Written to the research log. Returns {"ok", "stopped", "withdrawn", "why",
+    given). Written to the research log. Returns {"ok", "stopped", "withdrawn", "why", "reader" (as `offer`),
     "problems", "reused", "model", "task_id", "passages", "left_line", "draft": draft_of(...) or None}."""
-    from . import access, researchlog
+    from . import access, home, researchlog, taskqueue, tasks
     from . import runs as runs_mod
-    from . import tasks
-
-    from . import home
+    from .llm import BackendError
 
     s = settings if settings is not None else home.load_settings()
     g = gather(ws, quotes, s)   # once: the reader and the passages sent come from the same reading of the settings
@@ -267,7 +304,14 @@ def draft(ws: Workspace, codebook: str, code: str, group: str, quotes: list[str]
         raise ValueError("A document of these examples may not be sent to this AI.")
     before = ws.scalar("SELECT status FROM tasks WHERE task_id=?", (tid,))
     rid = runs_mod.start(ws, KIND, payload["code"], be, call, 1)
-    ok, problems = tasks.run_one(ws, tid, be, call)
+    try:
+        ok, problems = tasks.run_one(ws, tid, be, call)
+    except BackendError:
+        if should_stop and should_stop():
+            # Stop takes back this draft's own task only: other drafts asked meanwhile wait on (the job's stop takes
+            # nothing back by kind, see gui/api_record.py)
+            taskqueue.withdraw(ws, [KIND], task_ids=[tid])
+        raise
     runs_mod.finish(ws, rid, 1)
     if progress:
         progress(1, 1)
@@ -276,7 +320,7 @@ def draft(ws: Workspace, codebook: str, code: str, group: str, quotes: list[str]
     used = last[0]["model"] if last else call
     reused = before == "done" or bool(last and "kept answer" in (last[0]["route"] or ""))
     base = {"task_id": tid, "passages": len(payload["passages"]), "left_line": off["left_line"], "model": used,
-            "problems": problems[:5]}
+            "reader": off["reader"], "problems": problems[:5]}
     if not ok and ws.scalar("SELECT status FROM tasks WHERE task_id=?", (tid,)) != "failed":
         stopped = bool(should_stop and should_stop())   # a stop asked for is quiet; a task taken back says so
         return {**base, "ok": False, "stopped": stopped, "withdrawn": not stopped,

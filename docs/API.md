@@ -356,7 +356,13 @@ reading known as an earlier or later one of a document here: the colleague's res
 [{"name", "of"}], "merged": [{"name", "theirs", "added", "removed", "clash", "kept_removed"}] (0.17.0: code names)},
 "judgements", "reviews", "labels", "labels_kept_yours", "links", "other_rows", "bibliography":
 null | "new" | "merged" | "kept_yours", "ai_access": [{"title", "doc_id", "yours", "theirs", "now", "why": "theirs" |
-"yours" | "default", "claude_read_here" | "claude_read_there"}]}`; it is kept in `sync_log`. `running_here`
+"yours" | "default", "claude_read_here" | "claude_read_there"}]}`; it is kept in `sync_log`. K3 (the audit's DEC-1),
+only when there is something to say: `checks.counting`: [{"hyp_id", "text", "on", "why", "by", "beside", "now",
+"now_text", "other", "other_text"}], each check whose version from the colleague counts the non-scientific documents
+where the one it replaced here did not, or the other way round (`beside`: the id of your check it came in beside, as a
+sync-clash copy), with its answer here now and the one it would have the other way; `documents.marks`: [{"doc_id",
+"title", "on", "by", "changed": [{"hyp_id", "text", "now_text"}]}], each document whose Non-scientific mark the
+project's word set or took away here, with the answers it changed. Both are said first in `lines`. `running_here`
 (0.14.3): results and theme runs the colleague changed whose work in this copy is not done yet (waiting for Claude
 Code, taken by a helper, a part for the local model): this copy's version stays as it is (before, it was replaced and
 that work deleted). 0.17.0: a file of a newer sync format than this copy knows (`bundle.json`'s `sync_needs` above
@@ -456,8 +462,8 @@ and original files are stored there once for the whole team.
   another round of the project: it waits its turn (`waiting_for`); it runs beside checks.
 
 **A storage space of the team's own (0.18.0rc2, roadmap L6: `sync/space.py`, `sync/seal.py`, `sync/storage.py`,
-`sync/b2.py`, `sync/r2.py`, `gui/api_space.py`).** An online storage space (an S3 bucket at Backblaze B2 or Cloudflare
-R2) in place of a shared folder. Each copy keeps a copy of the space on this computer (`<ENLENS folder>/spaces/<space
+`sync/b2.py`, `sync/r2.py`, `sync/webdav.py`, `gui/api_space.py`).** An online storage space (an S3 bucket at
+Backblaze B2 or Cloudflare R2, or a folder in the institution's drive over WebDAV) in place of a shared folder. Each copy keeps a copy of the space on this computer (`<ENLENS folder>/spaces/<space
 id>/`), laid out as a shared folder; a round brings the space's news into it (every file opened and checked: sealed
 for that place, signed by the member whose part it is in), runs the shared folder's round on it, and sends this copy's
 part back, sealed (AES-256-GCM with the project's key, Ed25519 signatures). The project's `config.json` says where the
@@ -465,16 +471,26 @@ space is (`shared_space`, no keys); the keys are in the system's keychain (`keyc
 …/shared-folder` has `"space"` (below) and `"folder"` is the copy on this computer; *Sync now* and the poller are the
 folder's (a space is looked at every 10 minutes at most, and about 20 s after a change). The round's `result` has
 `"space"` (where it is, in words), `"sent"` (files sent) and, when the team moved, `"moved"`. More problem kinds:
-`denied` (the space refused this copy's key: removed from the team, or a key deleted), `full` (the service's cap or
+`denied` (the space refused this copy's key: removed from the team, or a key deleted; a drive that refused the app
+password is asked nothing more until `PUT …/space/drive-password` or `POST …/space/drive-retry`), `not_found` (a drive's
+folder is not where this copy has it: looked for again by its contents every half hour), `full` (the service's cap or
 billing), `set_aside` (a file or the list of members not signed as it must be: nothing of it came in), `no_keys` (this
 computer has not got the space's keys: a project copied from elsewhere; ask for a new invite).
-- `GET …/shared-folder` → as above, with `"space": null | {"id", "service": "b2" | "r2" | "dir", "where", "region",
-  "in_eu", "keeper" (this copy keeps the space's keys: it invites, removes and moves), "joined" (the keeper's copy has
-  let this copy in), "members": [{"part", "person", "name", "me", "keeper", "removed", "since"}], "invites": [{"part",
-  "made_at", "label"}] (not used yet), "set_aside": [{"part", "why", "message", "at"}], "keychain": "macos" |
-  "windows" | "secret-tool" | "file"}`.
+- `GET …/shared-folder` → as above, with `"space": null | {"id", "service": "b2" | "r2" | "webdav" | "dir", "where",
+  "region", "in_eu", "keeper" (this copy keeps the space's keys: it invites, removes and moves), "joined" (the keeper's
+  copy has let this copy in), "members": [{"part", "person", "name", "me", "keeper", "removed", "since"}], "invites":
+  [{"part", "made_at", "label"}] (not used yet), "set_aside": [{"part", "why", "message", "at"}], "keychain": "macos" |
+  "windows" | "secret-tool" | "file", "drive": null | {"host", "folder", "address", "user", "mine" (the folder is in
+  this person's drive), "holder" (otherwise whose it is), "unshare": {part: "enlens" | "by_hand" | "holder_asks" |
+  "holds" | "stays"} (what removing that member does to the sharing)}, "left_to_do": [{"id", "who", "text", "at",
+  "check"}] (a share ENLENS could not stop after a removal; "check": ENLENS looks about once an hour and takes it away
+  when the share is gone), "restored": null | {"at", "files", "text"} (files missing from the space were written
+  again), "refused": null | {"at", "text"} (the drive refused the app password)}`. The last three are the Team tab's
+  standing notices.
 - `GET /api/space/links` → the services' pages the set-up opens (`b2_signup`, `b2_keys`, `b2_caps`, `r2_signup`,
-  `r2_dashboard`, `r2_token`: the link that fills in Cloudflare's token form).
+  `r2_dashboard`, `r2_token`: the link that fills in Cloudflare's token form; `webdav_surfdrive`, `webdav_nextcloud`:
+  a drive's WebDAV address, SURFdrive's and the form of a Nextcloud's), and `keychain` (as in the status: where this
+  computer keeps secrets).
 - `POST /api/projects/<p>/space/b2 {"key_id", "app_key"}` → `{"job": view}` (kind `space-setup`): the owner's set-up
   with a Backblaze master application key. The job checks the key and the region, makes a key of ENLENS's own (or keeps
   the master key, with a warning, when that key may not make keys), a private bucket keeping only each file's latest
@@ -484,18 +500,41 @@ computer has not got the space's keys: a project copied from elsewhere; ask for 
 - `POST /api/projects/<p>/space/r2 {"token", "account_id"?}` → `{"job": view}`: the same at Cloudflare R2 (a bucket in
   the EU jurisdiction). When the token reaches several accounts and none is named, the job's `result` has `"accounts":
   [{"id", "name"}]` and nothing is set up.
-- `POST /api/projects/<p>/space/invites {"label"?}` → `{"link", "message", "part", "status"}`: a new part with its own
-  storage keys, and an invite link (`enlens://join#…`, holding those keys, the project's keys and a one-time secret);
-  `message` is ready to send. The keeper's copy only (400 otherwise). The keeper's next round lets the colleague in.
-- `DELETE /api/projects/<p>/space/invites/<part>` → the status: an invite not used yet is withdrawn (its keys deleted).
-- `DELETE /api/projects/<p>/space/members/<part>` → the status: the colleague's keys are deleted and the project's key
-  is replaced for those who stay. The keeper's copy only.
+- `POST /api/projects/<p>/space/webdav {"address", "user", "password"}` → `{"job": view}`: the owner's set-up in the
+  institution's drive (an app password, kept in the keychain). 400 without all three; an address with a user name or
+  password in it is refused. The job checks them, makes a folder `ENLENS - <project>` at the top of the drive (reading
+  the names of the folders there) and a test file.
+- `PUT /api/projects/<p>/space/drive-password {"user", "password"}` → the status: a new app password, checked on the
+  project's folder before it is kept; the rounds ask the drive again. 400 in plain words when the drive refuses it.
+- `POST /api/projects/<p>/space/drive-retry` → the folder's state: after a refused app password, the next round asks
+  the drive once more (*Try the same one again*).
+- `DELETE /api/projects/<p>/space/notices/<id>` → the folder's state: a standing notice is dealt with: `unshare-<part>`
+  (the person stopped sharing the folder in the drive's website; said in the research log) or `restored`. 400 for one
+  that is not there.
+- `POST /api/space/peek {"link"}` → what the join dialog shows before joining: `{"service", "host", "folder",
+  "address", "known" (a drive of SURF's or one used on this computer: otherwise the person confirms it first),
+  "project", "from"}`; no key. 400 for a link that is not an invite or names a drive ENLENS cannot use safely.
+- `POST /api/projects/<p>/space/invites {"label"?, "drive_user"?}` → `{"link", "message", "part", "status"}`: a new
+  part with its own storage keys, and an invite link (`enlens://join#…`, holding those keys, the project's keys and a
+  one-time secret); `message` is ready to send. The keeper's copy only (400 otherwise). The keeper's next round lets
+  the colleague in. In a drive also `"shared"` (ENLENS shared the folder with `drive_user`), `"shared_with"`: null |
+  {"user", "name"} (the account's display name as the drive gave it, or null when it gave none) and `"share_note"`
+  (what to do in the drive's website instead).
+- `DELETE /api/projects/<p>/space/invites/<part>` → the status with `"warnings": [text]`: an invite not used yet is
+  withdrawn (its keys deleted; in a drive, the folder no longer shared with its account where ENLENS can).
+- `DELETE /api/projects/<p>/space/members/<part>` → the status with `"warnings": [text]`: the colleague's keys are
+  deleted (in a drive, the folder no longer shared with them where ENLENS can; what is left to do also stays in
+  `"left_to_do"`) and the project's key is replaced for those who stay. The keeper's copy only.
 - `POST /api/projects/<p>/space/move {"service": "b2", "key_id", "app_key"} | {"service": "r2", "token",
-  "account_id"?}` → `{"job": view}`: a new space; every member gets a part and keys there, sealed to them in the old
+  "account_id"?} | {"service": "webdav", "address", "user", "password"}` → `{"job": view}`: a new space; every member gets a part and keys there, sealed to them in the old
   space, and their copies follow at their next round. The `result` has `"moved": {"told": n, "not_told": [names]}`
   (the old space could not be reached: send them new invites).
-- `POST /api/projects/<p>/space/join {"link"}` → the status: this project joins the team's space (409 when it has one).
-- `POST /api/join-team {"link", "name"?}` → `{"project"}`: *Join a team* under Projects: a new project (named as the
+- `POST /api/projects/<p>/space/join {"link", "drive"?}` → the status: this project joins the team's space (409 when it
+  has one). `"drive"`, in a team that works in a drive: `{"user", "password", "address"?, "folder"?, "confirmed"?}`;
+  without it such a link answers 400 with kind `drive_needed`; `drive_confirm` (with `"address"`, `"host"`) before
+  anything is sent to a drive neither SURF's nor used on this computer; `folder_not_found` with `"folders"` to choose
+  from.
+- `POST /api/join-team {"link", "name"?, "drive"?}` → `{"project"}`: *Join a team* under Projects: a new project (named as the
   inviter's, or `name`), joined, and made the current project. 400 in plain words for a link that is cut off or not an
   invite.
 - `DELETE /api/projects/<p>/space` → the status: this copy stops using the space and forgets its keys (nothing in the
@@ -924,11 +963,20 @@ commas, semicolons or tabs.
  "second_pass": false,                        // default from settings (see below)
  "parts": ["…", {"text": "…", "role": "outcome"}],   // optional, from "Look before checking": the parts to check
  "terms": [["aquifer", "desalination"], []],  // optional: the extra search words, one list per part
- "edited": {"parts": false, "terms": true}}   // optional: whether the person changed what the AI proposed
+ "edited": {"parts": false, "terms": true},  // optional: whether the person changed what the AI proposed
+ "from_doc": "d…"}                            // optional (0.18.8): started from this document's text
 ```
 → `{"job": Job}` (kind `check`). 400 for a text under 10 characters or an unknown code (or a part under 10
 characters: "Part 2 is too short…"); 502 when no model service is usable. The job's `result` is
-`{"hyp_id": "h…", "status": "contested"}`.
+`{"hyp_id": "h…", "status": "contested"}`. 0.18.8 (N3): with `from_doc` (a working document's *Check against the
+corpus*) the hypothesis records `origin` `"document"` and `origin_id` the document's id, and its result gains
+`origin_title` (the document's title, or its file's name; left out once the document is gone). 400 when `from_doc`
+is not a document of the project. The words keep that document's AI setting (`docrole.origin_floor`, as an add-on's
+draft does, see EXTENDING.md): from a document marked *Only a local AI* only a local model splits them, proposes
+their search words and judges their excerpts (by queue, Claude Code splits nothing and proposes no words: they are
+searched as written); from one marked *No AI* no model reads them, they are searched as written and every excerpt
+waits for the person's judgement. The result then gains `words_access` (`"local"` or `"none"`), and the connector
+does not list or open the check.
 
 With `parts`, the hypothesis is not split by the model: one part = checked as written (1–6 parts). With `terms`, the
 model writes no extra search words: each part is searched with its own words plus that list (`[]`: its own words
@@ -943,8 +991,8 @@ slightly fewer excerpts from the cited sources into the top 8 (147 against 154),
 
 #### Look before checking
 
-`POST /api/projects/<p>/prepare` `{"text": "…", "decompose": true, "expand": true, "framework", "code"}` → job
-(kind `prepare`, uses the model, progress like a check). `result`:
+`POST /api/projects/<p>/prepare` `{"text": "…", "decompose": true, "expand": true, "framework", "code", "from_doc"}`
+→ job (kind `prepare`, uses the model, progress like a check). `result`:
 ```json
 {"parts": [{"text": "Hybrid work improves wellbeing.", "role": "outcome"}, {"text": "…", "role": "outcome"}],
  "terms": [["well-being", "life satisfaction"], ["isolation", "younger workers"]],
@@ -952,7 +1000,8 @@ slightly fewer excerpts from the cited sources into the top 8 (147 against 154),
 ```
 `terms` are the AI's extra search words for each part (the part's own words are always searched, so they are left
 out). Nothing is kept in the project. Show the parts as editable lines and the words as removable chips, then send
-the check with `parts`, `terms` and `edited`.
+the check with `parts`, `terms` and `edited`. 0.18.8 (N3): `from_doc` as for a check: words from a document no model
+you have may read come back unsplit and with no extra words.
 
 Check job `progress` (poll it to draw the live panel):
 ```json
@@ -1216,8 +1265,11 @@ readable ("ENLENS results - <project> - <date>.xlsx"). From 0.6 the *Excerpts* s
 (AI's note)" and "AI's earlier judgement (before reading it again)", and, when a second model read any of the
 excerpts, "Second model", "Second model's judgement", "Second model's certainty", "The two models agree". The
 *Summary* sheet has "Excerpts where the second opinion differs" (0.11.2; before: "…a second model disagrees"),
-"Answer before a stronger model read it again" (0.11.2), "Documents added since the check" and (0.18.7, roadmap N5)
-"Documents with the search words never read".
+"Answer before a stronger model read it again" (0.11.2), "Documents added since the check", (0.18.7, roadmap N5)
+"Documents with the search words never read" and (0.18.8, roadmap K3) "Answer counting non-scientific documents"
+(the answer counting the documents marked Non-scientific, `status_all_sources`; filled only where it differs from
+"Answer") and "Non-scientific documents counted here" ("yes: " and the reason, for a check set to count them; else
+empty).
 
 ### Exploring the documents (0.7)
 
@@ -1672,8 +1724,15 @@ codes, where each example was found, the groups and their order. The old routes 
   follow a new name as after any edit). A version is kept and the research log says so. 404 when there is no such
   clash.
 - `POST /api/projects/<p>/codebooks {"name", "title"?, "where"?: "project" | "home", "start"?: "fresh" | "themes" |
-  "copy" | "csv", "source"?, "label"?}` → `{"codebook"}`. `source`: `{"codes": [...]}` (drafts from
-  `GET …/codebooks/sources`, the ones kept), `{"of": "<codebook name>"}` or `{"csv": "<text>"}`. The columns of a CSV
+  "theory" | "copy" | "csv" | "qdc", "source"?, "label"?}` → `{"codebook"}`. `source`: `{"codes": [...]}` (drafts from
+  `GET …/codebooks/sources`, the ones kept), `{"of": "<codebook name>"}`, `{"csv": "<text>"}`, or for `"qdc"` (a
+  codebook from NVivo, ATLAS.ti or MAXQDA, `qdc_import.py`) `{"file": "<base64 of a .qdc or .qdpx>", "filename"}` or
+  `{"qdc": "<the XML as text>"}`, each with `"codebook"?: "<title>"`: in a project file ENLENS wrote with several
+  codebooks, the one to bring in. Without it such a file answers 400 with `"codebooks": [titles]` beside `"error"`, to
+  choose from. A path on disk is never read from here. For `"qdc"` the answer's `codebook` also holds `"imported"`: what
+  was brought in (`codes`, `groups`, `folded`, `parents_as_codes`, `headings`, `not_codable`, `no_description`, `cut`,
+  `long`, `group_descriptions`, `sets`, `sets_as_groups`, `colours`, `renamed`: [{"from", "to"}],
+  `hypotheses_left_out`, `origin`) and `"notes"`, the same in sentences. The columns of a CSV
   are `code`, `description`, `group`, `group_name`, `when_to_use`, `when_not_to_use`, `keywords` (separated by `;`) and
   `examples` (one per line); `code` and `description` are required. A cell that starts with an apostrophe before text a
   spreadsheet would run as a formula (`'=1+1`, `'@x`, `'-x`) loses that one apostrophe: it is what the CSV download
@@ -1710,9 +1769,9 @@ terms.
 - `GET /api/projects/<p>/codebooks/<name>.qdc` → 0.18.7 (G5): the codebook as a REFI-QDA codebook (`urn:QDA-XML:codebook:1.0`) for NVivo, ATLAS.ti and MAXQDA: its groups as parent codes, each code's definition, when to use it and when not, keywords and examples as its description (`qdpx.codebook_xml`). 404 for an unknown codebook.
 - `GET /api/projects/{p}/document-roles` → `{"roles": {doc id: "theory"}, "nonscientific": [doc ids]}` (only the
   documents with a role; 0.18.6: and those marked Non-scientific).
-- `GET /api/projects/{p}/documents/{d}/role` → `{"doc_id", "role": "theory" | null, "impact": {"themes": [{"run_id",
-  "created_at", "passages"}], "labels": [{"framework", "name", "passages"}], "checks": [{"hyp_id", "text",
-  "excerpts"}]}}`: what was made with the document in.
+- `GET /api/projects/{p}/documents/{d}/role` → `{"doc_id", "role": "theory" | "working" | null, "impact":
+  {"themes": [{"run_id", "created_at", "passages"}], "labels": [{"framework", "name", "passages"}], "checks":
+  [{"hyp_id", "text", "excerpts"}]}}`: what was made with the document in.
 - `PUT /api/projects/{p}/documents/{d}/role` `{"role": "theory" | null, "why"?}` → `{"doc_id", "role", "changed",
   "impact"}`. 400 for any other role, 404 for no such document. Under an owner, a Member's mark becomes a proposal at
   the Team tab's next look (as *Leave out* does).
@@ -1726,7 +1785,8 @@ terms.
 - 0.18.8 (K3, `nonscientific.py`): `PUT /api/projects/{p}/hypotheses/{h}/nonscientific` `{"count": true | false,
   "why"?: text}` → `{"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now",
   "now_text"}`: count the non-scientific documents in this check alone (stored in the hypothesis's options, so it
-  travels with the check); a new `why` while it is on replaces the reason. 400 for a `count` that is not a boolean or
+  travels with the check); a `why` while it is on replaces the reason, and an empty `why` takes it away (the usual
+  reason is given again); each change is one research-log entry. 400 for a `count` that is not a boolean or
   a `why` that is not text, 404 for no such check. A result gains `count_nonscientific`, `count_nonscientific_why`,
   `nonscientific_read` (excerpts of such documents read), `status_without_nonscientific` (the answer without them,
   where they count) and `count_nonscientific_author` (the check's author's name when it is not this person's, else
@@ -1743,6 +1803,9 @@ terms.
   `nonscientific_shown` and `nonscientific_shown_in_project` (columns of documents behind no answer, which
   `documents_without_evidence` still counts). The connector's check summary marks evidence `counted_by_exception` and
   gives `status_without_non_scientific` where a hypothesis counts them.
+- 0.18.8 (N3): `GET …/documents/{d}/role` also gives `"started": [{"hyp_id", "text", "status", "status_text"}]`, the
+  checks started from the document's text (`from_doc`), newest first, as the checks list has them (a check by queue
+  that waits for its parts is `"waiting"`; one interrupted before it had parts is left out).
 
 **A codebook from a theory document** (roadmap K2 part 2, `theorycodes.py`, no AI).
 
@@ -1773,13 +1836,15 @@ terms.
 - `GET /api/projects/{p}/concept-map[?n=60&…filters]` → `{"built", "filters", "n", "passages" (in scope),
   "concepts_in_scope", "nodes": [{"id" (a term id), "label", "passages", "group" (1… or null), "x", "y" (0 to 1, for a
   map 1.6 times as wide as high)}], "edges": [{"a", "b", "together", "pmi"}], "links": [{"a", "b", "relation",
-  "source"}], "groups": [{"group", "size", "names"}], "links_off_map"}`. `n` is 10 to 150. 400 for a malformed filter
-  or an unknown codebook, 404 for a set of themes that is gone.
+  "source", "types": [{"relation" (seen from a), "source"}]}] (one per pair; "relation" and "source" are its first
+  type), "groups": [{"group", "size", "names"}], "links_off_map" (links with exactly one end on the map)}`. `n` is 10
+  to 150. 400 for a malformed filter or an unknown codebook, 404 for a set of themes that is gone.
 - `GET /api/projects/{p}/concept-map/options` → `{"documents": [{"doc_id", "title"}], "themes": {"run_id", "themes":
   [{"theme_id", "name"}]}, "codebooks": [{"name", "title", "codes": [{"code", "description"}]}], "years": [yyyy]}`:
   what the filters can choose from (evidence documents only).
 - `GET /api/projects/{p}/concept-map/edge?a={term id}&b={term id}[&…filters]` → `{"a", "b" ({"node", "label"}),
-  "together", "pmi", "link": {"relation" (seen from a), "source", "sentences"} | null, "passages": [{"passage_id",
+  "together", "pmi", "links": [{"relation" (seen from a), "source", "sentences"}], "link" (the first of "links") |
+  null, "passages": [{"passage_id",
   "doc_id", "title", "page", "location", "text", "start"}]}` (the first 5, by document). 400 without both, 404 for a
   term the glossary does not know.
 

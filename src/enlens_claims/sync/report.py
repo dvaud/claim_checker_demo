@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from .. import people
 from ..store import Workspace
@@ -24,7 +25,7 @@ def summary(r: dict) -> list[str]:
     """The report as a few plain sentences, most important first."""
     who = r["from"]["name"] or "your colleague"
     d, c, t, cb = r["documents"], r["checks"], r["themes"], r["codebooks"]
-    out = []
+    out = counting_lines(r)  # K3 (DEC-1): what changed what counts in an answer, first
     came = [x for x in (_n(len(d["new"]), "new document") if d["new"] else "",
                         _n(c["new"], "new result") if c["new"] else "",
                         _n(c["updated"], "result", "results") + " brought up to date" if c["updated"] else "",
@@ -171,6 +172,185 @@ def summary(r: dict) -> list[str]:
     if not out:
         out.append(f"Nothing new: this copy already has everything in {who}'s file.")
     return out
+
+
+# ---- K3 (the audit's DEC-1): a colleague's change of what counts in an answer ---------------------------------------
+# Worked out in the receiving copy, from what the merge changed: a check whose version from the colleague counts the
+# non-scientific documents where the one it replaces here did not (or the other way round), and a document whose
+# Non-scientific mark the project's word sets or takes away here (`ownership.settle`, after the merge). Nothing of it is
+# stored but the report's own lines; a change this copy has already adds none.
+def counting_lines(r: dict) -> list[str]:
+    """The lines of the report about what counts in an answer: one per check whose exception a colleague changed
+    (`checks.counting`), one per document whose mark came in applied (`documents.marks`)."""
+    who = r["from"]["name"] or "your colleague"
+    out = []
+    for x in (r.get("checks") or {}).get("counting") or []:
+        by = x.get("by") or who
+        check = _title(x["text"])
+        line = (f"{by} set the check {check} to count the non-scientific documents"
+                + (f" (the reason given: {_title(x['why'], 120)})" if x.get("why") else "")
+                if x["on"] else f"{by} set the check {check} to no longer count the non-scientific documents")
+        if x.get("beside"):
+            line += (f". You both changed the check, so {by}'s version came in beside yours, marked “sync clash”, and "
+                     "yours stays as it was")
+            its = "That version's answer here"
+        else:
+            its = "Its answer here"
+        if x["now_text"] == x["other_text"]:
+            line += f". This does not change the answer here: {x['now_text']} either way."
+        else:
+            line += (f". {its} is now {x['now_text']}; " + ("without them" if x["on"] else "counting them")
+                     + f" it would be {x['other_text']}.")
+        out.append(line)
+    for m in (r.get("documents") or {}).get("marks") or []:
+        by = m.get("by") or "The owner"
+        line = (f"{by} marked {_title(m['title'])} as non-scientific: no judgement of it counts in an answer here "
+                "now, except in checks set to count them." if m["on"] else
+                f"{by} counted {_title(m['title'])} as scientific again: its judgements count in answers here now.")
+        ch = m.get("changed") or []
+        if not ch:
+            line += " It changes no answer here."
+        elif len(ch) <= 3:
+            parts = [f"{_title(a['text'], 60)} (now {a['now_text']})" for a in ch]
+            line += (f" It changed the answer of {_n(len(ch), 'check')} here: "
+                     + (parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]) + ".")
+        else:
+            line += f" It changed the answers of {_n(len(ch), 'check')} here."
+        out.append(line)
+    return out
+
+
+def counting_change(was: dict | None, unit: dict) -> dict | None:
+    """{"on", "why", "at", "text"} when a check's incoming version (`unit`, as fingerprints.py reads it) counts the
+    non-scientific documents and the version it replaces here (`was`) does not, or the other way round; None when both
+    count them alike (a new reason alone changes no answer)."""
+    from ..nonscientific import COUNT_AT, _options, setting
+
+    def opts(u: dict | None) -> dict:
+        h = (u or {}).get("hypotheses") or [{}]
+        return _options(h[0].get("options_json"))
+
+    new, old = opts(unit), opts(was)
+    on, why = setting(new)
+    if on == setting(old)[0]:
+        return None
+    text = (unit.get("hypotheses") or [{}])[0].get("text") or ""
+    return {"on": on, "why": why, "at": new.get(COUNT_AT), "text": text}
+
+
+def counting_said(ws: Workspace, changes: list[dict], sender: dict) -> list[dict]:
+    """The checks of `changes` (`counting_change`, with "hyp_id" here and "beside") with who changed them and their
+    answers here now and the other way: [{"hyp_id", "text", "on", "why", "by", "beside", "now", "now_text", "other",
+    "other_text"}]. Who: the person of the research log's entry of that change (it carries the setting's time), else the
+    sender. A change of this person's own coming back says nothing."""
+    from ..nonscientific import answers_either_way
+
+    names, me = people.names(ws), people.me()
+    here = {r[0] for r in ws.query("SELECT hyp_id FROM hypotheses")}
+    out = []
+    for x in changes:
+        if x["hyp_id"] not in here:
+            continue
+        pid = None
+        if x.get("at"):
+            rows = ws.query("SELECT person_id FROM research_log WHERE kind='check-setting' AND at=? LIMIT 1",
+                            (x["at"],))
+            pid = rows[0][0] if rows else None
+        if pid == me or (pid is None and sender.get("id") == me):
+            continue
+        by = names.get(pid) if pid else None
+        out.append({"hyp_id": x["hyp_id"], "text": x["text"], "on": x["on"], "why": x["why"],
+                    "by": by or sender.get("name") or None,
+                    "beside": x["beside"] if x.get("beside") in here else None,
+                    **{k: v for k, v in answers_either_way(ws, x["hyp_id"]).items() if k != "counts"}})
+    return out
+
+
+def canon_blocks(cx: sqlite3.Connection) -> dict[tuple[str, str], str | None]:
+    """{(doc, writer): blocks_json} of the project's word on the documents (ownership.py's `canon`), to compare after a
+    merge."""
+    try:
+        return {(r[0], r[1]): r[2] for r in cx.execute("SELECT doc, by, blocks_json FROM canon")}
+    except sqlite3.OperationalError:
+        return {}
+
+
+def marks_due(cx: sqlite3.Connection, before: dict, new_docs: set[str]) -> list[dict]:
+    """The documents held here before the merge whose Non-scientific mark the project's word, as the merge changed it,
+    gives otherwise than this copy has it now: [{"doc_id", "on", "by"}]. `ownership.settle` applies it after the merge
+    (or not, when this person's own choice stays on top: `tell_marks` then says nothing)."""
+    from ..docrole import nonscientific_from_choices
+
+    try:
+        rows = cx.execute("SELECT c.doc, c.by, c.blocks_json, c.blocks_by, d.nonscientific FROM canon c "
+                          "JOIN documents d ON d.doc_id=c.doc").fetchall()
+    except sqlite3.OperationalError:
+        return []
+    due: dict[str, dict] = {}
+    for doc, by, blocks, blocks_by, marked in rows:
+        if doc in new_docs or before.get((doc, by), "") == blocks or blocks is None:
+            continue
+        try:
+            choices = json.loads(blocks)
+        except ValueError:
+            continue
+        on = isinstance(choices, dict) and nonscientific_from_choices(choices)
+        if on != bool(marked):
+            due[doc] = {"doc_id": doc, "on": on, "by": blocks_by or by}
+    return list(due.values())
+
+
+def marks_before(ws: Workspace, report: dict | None) -> dict | None:
+    """Before `ownership.settle` applies the marks a merge brought (`documents.marks_due`): the answers of the checks
+    that read those documents, as they are now. None when there are none (nothing more to do)."""
+    from ..docrole import _answers, _checks_reading, is_nonscientific
+
+    due = ((report or {}).get("documents") or {}).get("marks_due")
+    if not due:
+        return None
+    checks = {m["doc_id"]: _checks_reading(ws, m["doc_id"]) for m in due}
+    return {"checks": checks, "marked": {d: is_nonscientific(ws, d) for d in checks},
+            "answers": _answers(ws, sorted({h for hs in checks.values() for h in hs}))}
+
+
+def tell_marks(ws: Workspace, report: dict, before: dict | None, told: set[str] | None = None) -> None:
+    """After `ownership.settle`: the marks it applied of those the merge brought (`marks_before`) go into the report,
+    with the answers each changed here, and the report kept in `sync_log` (`log_id`) is brought up to date. `told`:
+    the documents a report of the same round said already (two colleagues' work can bring the same word); those said
+    here are added to it."""
+    from ..docrole import _answers, _text, is_nonscientific
+
+    if before is None:
+        return
+    told = set() if told is None else told
+    d = report["documents"]
+    due = d.pop("marks_due", None) or []
+    names, me = people.names(ws), people.me()
+    after = _answers(ws, list(before["answers"]))
+    marks = []
+    for m in due:
+        doc = m["doc_id"]
+        now = is_nonscientific(ws, doc)
+        if now == before["marked"].get(doc) or now != m["on"] or m.get("by") == me or doc in told:
+            continue
+        told.add(doc)
+        b, a = before["answers"], after
+        changed = [{"hyp_id": h, "text": a[h]["text"], "now_text": _text(a[h])} for h in before["checks"].get(doc, [])
+                   if h in b and h in a and (b[h]["status"], _text(b[h])) != (a[h]["status"], _text(a[h]))]
+        title = ws.scalar("SELECT title FROM documents WHERE doc_id=?", (doc,))
+        marks.append({"doc_id": doc, "title": title, "on": now, "by": names.get(m.get("by")) or None,
+                      "changed": changed})
+    if marks:
+        d["marks"] = marks
+    report["lines"] = summary(report)
+    if report.get("log_id"):  # the row as it was kept, with these two parts brought up to date
+        with ws.connect() as cx:
+            row = cx.execute("SELECT report_json FROM sync_log WHERE log_id=?", (report["log_id"],)).fetchone()
+            kept = json.loads(row[0]) if row else None
+            if isinstance(kept, dict):
+                kept["documents"], kept["lines"] = d, report["lines"]
+                cx.execute("UPDATE sync_log SET report_json=? WHERE log_id=?",
+                           (json.dumps(kept, ensure_ascii=False), report["log_id"]))
 
 
 def _label(level: str) -> str:

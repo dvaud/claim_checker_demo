@@ -186,7 +186,9 @@ added only when it is missing. Table and column names are plain names (letters, 
 **Where a hypothesis comes from.** `claimcheck.create_hypothesis(ws, text, …, origin="draft", origin_id=draft_id)`
 records it in the hypothesis's `origin` and `origin_id` columns, so an add-on that makes hypotheses needs no column
 or argument of its own. `check_hypothesis` and `queue_check` take the same two arguments. ENLENS uses `origin="batch"`
-for *Check several*; a hypothesis typed by a person has none. Results and the history return both.
+for *Check several* and (0.18.8) `origin="document"` for a check started from a document's text (a working
+document's *Check against the corpus*, `origin_id` the document's id); a hypothesis typed by a person has none. Both
+names are ENLENS's own: an add-on uses a name of its own. Results and the history return both.
 
 ## Access (0.13.6)
 
@@ -219,6 +221,13 @@ access.register_hidden(drafts_kept_here)
   to open them. A hook that fails hides every hypothesis.
 
 ENLENS loads the add-ons before it decides anything, so hooks an add-on registers when it is imported always count.
+
+ENLENS's own `origin="document"` uses the same two hooks (`docrole.origin_floor`, `docrole.kept_here`, registered by
+`access.py`): the words of a check started from a document's text keep that document's AI setting. A floor restricts
+every task that names the hypothesis (`hyp_id`) or one of its parts (`claim_id`, or `subject_id` of a `user_claim`);
+when the floor leaves the main model out, `check_hypothesis` and `prepare_check` have the hypothesis split and its
+search words proposed by the local model for restricted documents, or not at all (it is checked as written), and
+`queue_check` asks Claude Code for neither. An add-on's floor that keys on `hyp_id` is followed the same way.
 
 ## A kind of AI task of its own (0.13.6)
 

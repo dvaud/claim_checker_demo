@@ -598,14 +598,16 @@ its own)
   (0.18.7); bringing in is `qdc_import.py` (*New codebook* › *From NVivo, ATLAS.ti or MAXQDA*, `enlens import-qdc`):
   top codes become groups, deeper levels fold into their top group with their place in the tree kept in the
   definition, and ENLENS's own export comes back with everything a `.qdc` carries (not an example's document and
-  page, nor the codebook's label and direction setting).
+  page, nor the codebook's label and direction setting, nor the *AI draft* mark of words taken from the AI's draft).
 - Optional (Level 2, then 3): a draft definition and *when to use it* for a code, from its example passages only,
   marked as a draft to rewrite. The editor is complete without it. *Built (14 November 2026, unreleased):*
   `codedefine.py`, task kind `code_definition` (code-definition-v1, Sonnet stepping up to Opus, the large local model,
   the enlens-namer helper). *Draft from the examples* on an open code with two example passages or more drafts its
   definition, *when to use it* and *when not*, the first two each shown by a checked quote; each document's AI setting
   decides whether its passage is read and by whom. The draft waits beside the fields; what is taken stays marked *AI
-  draft* (the codebook's side file, `drafted`) until the words are rewritten.
+  draft* (the codebook's side file, `drafted`) until the words are rewritten, also through a copy, a split, a removed
+  code brought back and a colleague's version kept in a sync clash. A `.qdc`, `.qdpx` or CSV sent out and brought
+  back does not carry the mark.
 - *Already in ENLENS:* codebooks as CSV files (code, description, group), kept in a project or for all projects;
   added, viewed and removed in *Settings → Exploring*; marked as aims a text can help or hinder; brought in by the
   sync. The themes page shows which codes each theme holds. Nothing edits a codebook in the app, and themes cannot
@@ -665,25 +667,26 @@ November 2026, unreleased)
   role it changes answers at once: the reply and the research log list the answers it changed. It travels as *Leave
   out* does.
 - **The rest, built (14 November 2026, unreleased)** (`nonscientific.py`):
-  - *A per-hypothesis exception.* Under a hypothesis's answer, where its check read a non-scientific document:
-    *Count non-scientific documents in this check*, for when newspapers or blogs are the material it is about. Its
-    answer then counts them as any document, for every part, and is the one counting them (`status_all_sources`);
-    every other check still leaves them uncounted. The page, the assessment in words, the excerpts and the Excel
-    download say plainly that they count here and why, with the answer without them. Changing it changes the answer
-    at once and goes in the research log, in one entry, with the answers before and after; a new reason while it is on
-    is logged too. Off by default. Kept in the hypothesis's options with the time of each change, so it travels with
-    the check as its note does (a column of its own would not: a check whose only change is in a column added after
-    0.14.2 is not told newer); a change by someone other than the check's author reaches the author's copy as a
-    sync-clash copy (H5), and the page says so under the switch. The document's page marks the checks that count it.
+  - *A per-hypothesis exception.* Under a hypothesis's answer, where its check read a non-scientific document: *Count
+    non-scientific documents in this check*, for when newspapers or blogs are the material it is about. Its answer then
+    counts them as any document, for every part, and is the one counting them (`status_all_sources`); every other check
+    still leaves them uncounted. The page, the assessment in words, the excerpts and the Excel download say plainly that
+    they count here and why, with the answer without them. Changing it changes the answer at once and goes in the
+    research log, in one entry, with the answers before and after. While it is on, an optional reason sits under the
+    switch; changing or emptying it (the usual reason again) is logged too. Off by default. Kept in the hypothesis's
+    options with the time of each change, so it travels with the check as its note does (a column of its own would not:
+    a check whose only change is in a column added after 0.14.2 is not told newer); a change by someone other than the
+    check's author reaches the author's copy as a sync-clash copy (H5), and the page says so under the switch. The
+    document's page marks the checks that count it.
   - *A suggestion from the bibliography's item type, never a mark.* A document whose work is a newspaper or magazine
-    article, a blog or forum post, a web page, a podcast or a broadcast (Zotero, CSL, RIS and BibTeX types; not a
-    presentation, a speech or a video, which can be a scholar's talk) shows one quiet line on its page and in its
-    *Documents* row: *Your bibliography lists this as a newspaper article. Mark it as non-scientific?* with *Mark* and
-    *No*; never for theory or working documents. *No* is kept as a research log entry, so it travels: the Owner's or a
-    Co-owner's holds in every copy, a Member's in their own copy only. *Suggest again* on the document's page takes a
-    *No* back (one's own; the Owner and Co-owners anyone's), as a log entry that supersedes it. A *No* with no
-    suggestion to answer (a stale list) is refused and logs nothing. *Documents* can be grouped by *Scientific or
-    not*, with *Suggested as non-scientific* as a group.
+    article, a press release, a blog or forum post, a web page, a podcast or a broadcast (its first linked work, as the
+    Documents list shows it; Zotero, CSL, RIS and BibTeX types; not a presentation, a speech or a video, which can be a
+    scholar's talk) shows one quiet line on its page and in its *Documents* row: *Your bibliography lists this as a
+    newspaper article. Mark it as non-scientific?* with *Mark* and *No*; never for theory or working documents. *No* is
+    kept as a research log entry, so it travels: the Owner's or a Co-owner's holds in every copy, a Member's in their
+    own copy only. *Suggest again* on the document's page takes a *No* back (one's own; the Owner and Co-owners
+    anyone's), as a log entry that supersedes it. A *No* with no suggestion to answer (a stale list) is refused and logs
+    nothing. *Documents* can be grouped by *Scientific or not*, with *Suggested as non-scientific* as a group.
   - *A mark of its own on the evidence map.* Non-scientific documents have a column again: their cells have the
     symbol unfilled with a dashed edge, and the legend says *Non-scientific: read, not counted*. They change no answer,
     count or colour (they still count among the documents behind no answer, as in *Documents*); where a hypothesis
@@ -869,8 +872,10 @@ account and app password, and the owner shares the folder, by ENLENS through the
 folder, no password; joining asks for the member's own and finds the shared folder (by its name, then any folder at
 their root or in `Shared` that holds the team's roster), or lets them choose. An invite's drive name must be its
 address's; a drive not used on this computer before (and not SURF's) is confirmed by the member before their password
-goes there. One share per user name; removing unshares when nobody staying uses that account; as on R2, the
-signatures keep each part its writer's. A hand-over never passes the old owner's app password on; the folder stays in
+goes there. One share per user name; removing unshares when nobody staying uses that account, and what ENLENS
+cannot stop stays as a note on the Team tab until it is done (audit of 14 November 2026, which also added: files
+deleted from any kind of space written again, no request after a refused app password, the account's display name at
+an invite, a renamed folder found again); as on R2, the signatures keep each part its writer's. A hand-over never passes the old owner's app password on; the folder stays in
 the first owner's drive (only they share it), so the new owner is pointed to a move into their own drive. *Move to another
 storage space* works to and from WebDAV; members follow a move to a drive only from a drive at the same address (else
 their copy leaves the old space and asks for a new invite). *Not tried with a real SURFdrive, SURF Research Drive or
@@ -1000,8 +1005,11 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   rule finds a draft's claims well enough without AI (Level 0), and Margin already has the AI claim finder. Instead,
   any words selected in a working document's text offer *Check against the corpus*, which opens *Hypotheses* with
   them filled in.
-- *Not done:* a document page that lists the checks started from it (a check does not record the sentence it came
-  from), and the role in the bulk bar (one document at a time, as theory).
+- *Built (14 November 2026):* the document's page lists the checks started from it, each with its answer now, and
+  each such check's page links back to the document (`hypotheses.origin` "document", `origin_id`; `from_doc` on
+  `POST …/checks`). The check remembers the document, not the sentence: the words may be changed into the claim
+  before it is checked.
+- *Not done:* the role in the bulk bar (one document at a time, as theory).
 
 **N4. The assessment in words** · Level 0 · built in 0.18.1
 - A short written assessment on each hypothesis's page, under its verdict, made by rules from the judgements and

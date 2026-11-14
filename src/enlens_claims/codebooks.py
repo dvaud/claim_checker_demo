@@ -112,6 +112,25 @@ def _still_drafted(d: Any, code: dict) -> dict | None:
     return {"model": _clean_text(d.get("model"), 80), "at": _clean_text(d.get("at"), 40), **out}
 
 
+def drafted_codes(ws: Workspace, name: str) -> int:
+    """K1 (the audit's DEC-2): how many codes of the saved codebook still hold the AI's draft words, by the check the
+    editor's *AI draft* tag uses (`_still_drafted`). A file written from the codebook (.qdc, .qdpx, CSV) does not carry
+    that mark."""
+    try:
+        return sum(1 for c in state_of(ws, name)["codes"] if c.get("ai_draft"))
+    except (KeyError, ValueError, OSError):
+        return 0
+
+
+def draft_note(n: int) -> str | None:
+    """The one sentence said beside the editor's downloads, and by `export-qdc` and `export-qdpx`, while `n` codes still
+    hold the AI's draft (codebooks.js `draftNote` says the same); None when no code does."""
+    if n <= 0:
+        return None
+    return (f"{n} {'code still holds' if n == 1 else 'codes still hold'} the AI’s draft. A downloaded file does not carry "
+            "that mark: say so to whoever you send it to.")
+
+
 # ---------------------------------------------------------------------------------------------
 # a codebook as the editor sees it
 # ---------------------------------------------------------------------------------------------
@@ -188,6 +207,9 @@ def clashes(ws: Workspace, name: str) -> list[dict]:
             continue
         theirs = {k: c.get(k) for k in ("code", "description", "group", "group_name", "include", "exclude",
                                         "keywords", "examples")}
+        d = _still_drafted(c.get("ai_draft"), theirs)  # K1: their words that are still the AI's
+        if d:
+            theirs["ai_draft"] = d
         out.append({"uid": uid, "code": (by_uid.get(uid) or {}).get("code"), "removed_here": bool(c.get("removed_here")),
                     "theirs": theirs, "person_id": c.get("person_id"), "name": c.get("name") or "a colleague",
                     "at": c.get("at")})
@@ -216,6 +238,8 @@ def settle_clash(ws: Workspace, name: str, uid: str, keep: str, why: str | None 
                   "group": str(clash.get("group") or ""), "include": str(clash.get("include") or ""),
                   "exclude": str(clash.get("exclude") or ""), "keywords": list(clash.get("keywords") or []),
                   "examples": [{"quote": q} for q in (clash.get("examples") or []) if isinstance(q, str)]}
+        if isinstance(clash.get("ai_draft"), dict):  # K1: their AI words keep their mark (checked word for word)
+            theirs["ai_draft"] = clash["ai_draft"]
         codes = [theirs if c["uid"] == uid else c for c in st["codes"]]
         if not any(c["uid"] == uid for c in st["codes"]):
             codes.append(theirs)  # you had removed it: it comes back as they have it
@@ -266,6 +290,9 @@ def removed_codes(ws: Workspace, name: str) -> list[dict]:
         uid, v = gone.get(code, (None, {}))
         out.append({"code": code, "labels": n, "uid": uid, "description": v.get("description") or "",
                     "removed_at": v.get("at"), "definition": v or None})
+        d = _still_drafted(v.get("ai_draft"), v)  # K1: brought back, the AI's words keep their mark
+        if d:
+            out[-1]["ai_draft"] = d
     return out
 
 
@@ -514,6 +541,11 @@ def _took_draft(new: dict, old: dict) -> str | None:
     return d.get("model") or ""
 
 
+def _mark_of(code: dict) -> dict:
+    """K1: a code's AI-draft mark, kept with it when it is removed or merged away, so it comes back marked."""
+    return {"ai_draft": code["ai_draft"]} if code.get("ai_draft") else {}
+
+
 def _new_uid() -> str:
     return "k" + uuid.uuid4().hex[:10]
 
@@ -589,12 +621,12 @@ def save(ws: Workspace, name: str, state: dict, merges: list[dict] | None = None
             removed_meta[u] = {**{k: old[k] for k in ("code", "description", "group", "include", "exclude",
                                                        "keywords")},
                                "examples": [e["quote"] for e in old["examples"]], "at": at, "merged_into": into,
-                               "merged_into_uid": merged_into[u]}
+                               "merged_into_uid": merged_into[u], **_mark_of(old)}
         else:
             changes.append(f"removed {researchlog.quoted(old['code'], 60)} (its labels wait under Removed codes)")
             removed_meta[u] = {**{k: old[k] for k in ("code", "description", "group", "include", "exclude",
                                                        "keywords")},
-                               "examples": [e["quote"] for e in old["examples"]], "at": at}
+                               "examples": [e["quote"] for e in old["examples"]], "at": at, **_mark_of(old)}
     for c in new["codes"]:
         if c["uid"] and c["uid"] in cur_by_uid:
             continue
@@ -942,6 +974,9 @@ def create(ws: Workspace, name: str, title: str = "", where: str = "project", st
             "ids": {c["code"]: c["uid"] for c in clean["codes"]}, "groups": clean["groups"], "events": [],
             "removed": {}, "places": {c["uid"]: [{k: v for k, v in e.items() if v is not None} for e in c["examples"]]
                                       for c in clean["codes"] if c["examples"]}}
+    drafted = {c["uid"]: c["ai_draft"] for c in clean["codes"] if c.get("ai_draft")}
+    if drafted:  # K1: the AI's words keep their mark in a copy, as in a save
+        meta["drafted"] = drafted
     if clean["directional"]:
         meta["directional"] = True
     _write(f, n, _csv_text(clean["codes"], clean["groups"]), meta)

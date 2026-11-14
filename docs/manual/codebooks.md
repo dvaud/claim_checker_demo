@@ -91,18 +91,21 @@ codes and groups came in and what was folded or left out; then the editor opens.
 | --- | --- |
 | A code at the top with codes under it | A group of that name; the codes under it are its codes. |
 | A code three or more levels down | A code of its top group (ENLENS's groups have one level); its place in the tree ends its definition, as in “(In the tree: Emotions › Positive › Joy.)” |
-| A code with codes under it that has a description | A code as well as a group (or a step in the tree). Without a description it is a heading only. |
+| A code with codes under it that has a description | A code as well as a group (or a step in the tree). Without a description, or when it cannot be coded, it is a heading only. |
 | A code's description | Its definition. A code without one gets its place in the tree (or its name) as its definition: write a real one in the editor. |
 | A name longer than 40 characters | Cut at a word; the whole name opens the definition. |
 | Two codes of the same name | The second becomes “Name (2)”. |
 | A code that cannot be coded, with nothing under it | Left out. |
-| Colours, sets, memos, a top code's own description when it cannot be coded | Left out (a group has only a name). |
+| Sets of codes (ATLAS.ti's code groups) | Groups, when no code has codes under it and no code is in two sets; otherwise left out. |
+| Colours, memos, the description of a heading that cannot be coded | Left out (a group has only a name). The summary counts them. |
 
 A codebook ENLENS exported (*Download as .qdc*) comes back with its definitions, when to use and when not,
 keywords, examples (their words: a `.qdc` does not carry an example's document and page), groups and group names.
-Its label and direction setting are not in the file, so set them again in *Codebook settings*; the title is taken
-from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history; labels made with the
-codebook it was exported from stay with that one.
+Its label and direction setting are not in the file, so set them again in *Codebook settings*. Nor is the *AI draft*
+mark: words you took from the AI's draft and had not rewritten come back unmarked, as if you wrote them. The title is
+taken from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history;
+labels made with the codebook it was exported from stay with that one. A project file ENLENS wrote with several
+codebooks asks which one to bring in.
 
 ## Change it in the editor
 
@@ -131,8 +134,13 @@ What you take is marked *AI draft*, under the fields and on the code's row, unti
 the mark stays across saves while the words are still the AI's, and *Save* writes in the research log that the
 wording came from the AI's draft. Each document's AI setting decides who reads its passage: an example in a document
 marked *No AI* is left out, and one in a document marked *Only a local AI* is read by the local model (then the whole
-draft is) or left out when there is none; the line under the button says how many were left out and why. Asking again
-with the same examples reuses the answer. The editor is complete without it.
+draft is) or left out when there is none; the line under the button says how many were left out and why. Each example
+is read where it was added: the same sentence in another document, with another AI setting, does not take its place.
+A definition you keep is sent with every later label task, to whichever AI labels your other documents, as every
+definition is: when the local model drafted it from documents marked *Only a local AI*, rewrite it if it gives away
+what those documents say. The mark goes with the words when you copy the codebook, split the code, remove it and bring
+it back, or keep a colleague's version of it. Asking again with the same examples reuses the answer. The editor is
+complete without it.
 
 Changes are kept as drafts until you press *Save*, where you can write *Why?* for the research log
 ([Notes, the research log and earlier versions](notes-and-log.md#the-research-log)). *Discard* throws them away. A
@@ -164,5 +172,10 @@ kept with all projects, *This project's own copy (change it here only)*; and *Re
 Labels made with a codebook stay when it is removed: they are results. *CSV* downloads the codebook (a cell that starts with `=`, `@` or a sign gets an apostrophe in front, so a spreadsheet
 shows it and does not run it as a formula; ENLENS takes the apostrophe off again when it reads the file), *Download
 as .qdc* downloads it as a REFI-QDA codebook for NVivo, ATLAS.ti and MAXQDA (each code with its definition, when to
-use it, keywords and examples; [the whole project](explore.md#for-nvivo-atlasti-and-maxqda) goes too), and *History*
+use it, keywords and examples; [the whole project](explore.md#for-nvivo-atlasti-and-maxqda) goes too). Neither file
+carries the *AI draft* mark: brought back in, the AI's words read as yours. So while codes still hold the AI's
+draft, one quiet line beside the downloads says how many: *3 codes still hold the AI’s draft. A downloaded file does
+not carry that mark: say so to whoever you send it to.* It counts what is on screen and goes when you have rewritten
+them; the download is still one click. `enlens export-qdc` and `enlens export-qdpx` print the same sentence after
+their usual answer. *History*
 lists its earlier versions, to compare and restore ([earlier versions](notes-and-log.md#earlier-versions)).

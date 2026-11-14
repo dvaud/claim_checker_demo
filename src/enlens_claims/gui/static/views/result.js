@@ -10,6 +10,7 @@ import { originLink } from "../registry.js";
 import { addNoteToPart } from "./notes.js";
 import { historyButton, askWhy } from "./versions.js";
 import { shareBar, zipButton, ZIP_WORDS } from "./share.js";   // 0.18 (L1)
+import { field } from "../lib.js";   // K3: the reason beside the switch that counts non-scientific documents
 
 const LIST_PAGE = 40;   // 0.18.1 (H5): the excerpt cards of a long evidence list are drawn this many at a time, as the page scrolls
 const USER_VERDICTS = [["supports", "Supports"], ["partially_supports", "Partly supports"], ["refutes", "Contradicts"], ["not_relevant", "Not about this"]];
@@ -182,6 +183,15 @@ function retractedMark(docId) {
   const what = [...new Set(ns.map((n) => (n.type || "notice").replace(/_/g, " ")))].join(", ");
   return tag({ kind: "attention", title: `Crossref lists a ${what} for the work this document is${ns[0].date ? ` (notice dated ${ns[0].date})` : ""}. Checked ${fmt.dateShort(ns[0].checked_at)}. Read the notice before relying on this excerpt.` },
     bad ? "work retracted" : "work corrected or flagged");
+}
+
+// Why an excerpt waits for a person: its document's AI setting or (0.18.8, N3) that of the document the hypothesis's
+// words come from (`words_access` of the result)
+export function waitReason(docAccess, wordsAccess) {
+  if (docAccess === "none") return "its document is marked No AI";
+  if (wordsAccess === "none") return "the hypothesis comes from a document marked No AI";
+  if (docAccess === "local" || wordsAccess !== "local") return "its document is marked Only a local AI, and no local model is chosen";
+  return "the hypothesis comes from a document marked Only a local AI, and no local model is chosen";
 }
 
 export async function renderResult(view, [hypId], query) {
@@ -707,14 +717,17 @@ export async function renderResult(view, [hypId], query) {
 
   // 0.18.8 (roadmap K3): the exception. Where the check read documents marked Non-scientific (or counts them already),
   // a switch counts them in this check alone, for when newspapers, blogs or brochures are the material the hypothesis
-  // is about. The answer changes at once; the research log keeps both answers; it travels with the check.
+  // is about. The answer changes at once; the research log keeps both answers; it travels with the check. Turning it on
+  // is one action; while it is on, an optional reason sits under it (changed, or emptied for the usual one, on Save).
+  const NONSCI_REASON = "they are the material this hypothesis is about";   // nonscientific.REASON
   function nonsciSwitch(r) {
     if (!r.nonscientific_read && !r.count_nonscientific) return null;
     const help = r.count_nonscientific
-      ? `Counted here as any document: ${r.count_nonscientific_why || "they are the material this hypothesis is about"}. In every other check they are read and judged, never counted.`
+      ? `Counted here as any document: ${r.count_nonscientific_why || NONSCI_REASON}. In every other check they are read and judged, never counted.`
       : "For when newspapers, blogs or brochures are the material this hypothesis is about, so they are its evidence. Off: their excerpts are read and judged here, never counted, as in every other check.";
     const sw = switchControl("Count non-scientific documents in this check", !!r.count_nonscientific, { help });
     sw.classList.add("answer-nonsci");
+    if (r.count_nonscientific) sw.appendChild(nonsciReason(r));
     // a check of someone else's: a change made here reaches their copy beside theirs, as a sync-clash copy (H5)
     if (r.count_nonscientific_author) sw.appendChild(h("p", { class: "muted small answer-nonsci-author" }, `This is ${r.count_nonscientific_author}’s check: if you change this, your version reaches their copy beside theirs, as a sync-clash copy, as a changed note does.`));
     sw.input.addEventListener("change", async () => {
@@ -727,6 +740,31 @@ export async function renderResult(view, [hypId], query) {
       } catch (e) { sw.input.checked = !on; sw.input.disabled = false; showError(e); }
     });
     return sw;
+  }
+
+  // the reason under the switch while it is on: optional; saved on Save or Enter; an emptied one gives the usual reason
+  // back. Each change is one research-log entry (nonscientific.set_counting).
+  function nonsciReason(r) {
+    const was = r.count_nonscientific_why || "";
+    const why = fieldInput({ maxlength: 500, autocomplete: "off", value: was, placeholder: NONSCI_REASON });
+    const save = button({ kind: "quiet", disabled: true }, "Save reason");
+    const f = field("Why they count here (optional)", why, { class: "answer-nonsci-why",
+      help: "Shown on this page, in the assessment and in the Excel download, and kept in the research log. Left empty, the usual reason is given." });
+    const row = h("div", { class: "answer-nonsci-why-row" });
+    why.replaceWith(row);
+    append(row, [why, save]);
+    why.addEventListener("input", () => { save.disabled = why.value.trim() === was; });
+    why.addEventListener("keydown", (e) => { if (e.key === "Enter" && !save.disabled) { e.preventDefault(); save.click(); } });
+    save.addEventListener("click", async () => {
+      const now = why.value.trim();
+      save.disabled = true;
+      try {
+        await api("PUT", `/api/projects/${P(project)}/hypotheses/${P(hypId)}/nonscientific`, { count: true, why: now });
+        toast(now ? "Your reason is saved." : "Your reason is taken away: the usual one is given again.", "ok", { small: true });
+        await load();
+      } catch (e) { save.disabled = false; showError(e); }
+    });
+    return f;
   }
 
   // "2 documents for, 1 partly, 1 against"
@@ -1518,7 +1556,7 @@ export async function renderResult(view, [hypId], query) {
       append(top, [nonsciBadge(p) || gradeBadge(p.verdict, false), h("span", { class: "ev-fact ev-yours-fact", title: who ? `You have not judged this excerpt: ${who}’s judgement counts in your copy until you do.` : null }, who ? personMark([who]) : icon("user", { size: 12 }), `${who || "You"} agreed with the AI`)]);
     } else if (p.waiting_for_you) {
       append(top, [fact("Waiting for your judgement", { class: "ev-fact ev-yours-fact" }),
-        fact(p.access === "none" ? "its document is marked No AI" : "its document is marked Only a local AI, and no local model is chosen")]);
+        fact(waitReason(p.access, current && current.words_access))]);
     } else {
       // a judgement that does not count: its badge without fill, a dashed edge (the one meaning of a dashed edge)
       append(top, [nonsciBadge(p) || gradeBadge(p.verdict, !!p.verdict && !p.counted)]);

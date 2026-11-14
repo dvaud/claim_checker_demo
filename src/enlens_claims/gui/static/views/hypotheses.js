@@ -16,6 +16,14 @@ const MIN_CHARS = 10;     // the shortest hypothesis a check accepts (claimcheck
 const MAX_CHARS = 2000;   // and the longest
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 
+// 0.18.8 (N3): who reads words taken from a document, by its AI setting (docrole.origin_floor keeps them to it)
+export const WHO_READS = {
+  cloud: "The AI you chose reads these words, as it reads any hypothesis.",
+  local: "It is marked Only a local AI, so only a local model on this computer reads these words and the excerpts they are checked against; without one, you judge the excerpts yourself.",
+  none: "It is marked No AI, so no model reads these words: ENLENS finds the excerpts with the words as written, and you judge them yourself.",
+};
+const LOST_DOC = "The document these words came from is no longer in this project, so nothing was started. Start again to check them as any hypothesis you type; the check will not be listed on a document's page.";
+
 // One non-empty line is one hypothesis; two or more are a list (a CSV has its header and at least one row).
 export function composerMode(text) {
   return String(text || "").split(/\r?\n/).filter((l) => l.trim()).length >= 2 ? "list" : "single";
@@ -38,6 +46,11 @@ export async function renderHypotheses(view, params, query) {
   if (oldList && !draft.text) draft.text = String(oldList);
   if (oldList !== null) session("batchDraft", null);
   if (query.text) draft.text = String(query.text).slice(0, MAX_CHARS);   // "Check a hypothesis about this…"
+  // 0.18.8 (N3): words from a document's text (a working document's Check against the corpus): the check remembers
+  // the document, so the document's page lists it. Kept while the box holds text, forgotten once it is checked.
+  // Opened without the document's words (later, from the sidebar), the box is no longer tied to the document.
+  if (query.text && query.from) draft.fromDoc = String(query.from); else delete draft.fromDoc;
+  let fromDoc = draft.fromDoc || null;
   session("draft", Object.keys(draft).length ? { ...draft } : null);
 
   // ---- the head: the place, its views, the downloads of every answer
@@ -54,6 +67,24 @@ export async function renderHypotheses(view, params, query) {
   const setMapTab = (batch) => { if (mapTab) mapTab.setAttribute("href", batch ? `#/map?batch=${encodeURIComponent(batch)}` : "#/map"); };
 
   if (query.text) view.appendChild(h("p", { class: "muted small hyp-chosen-note" }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check."));
+  // 0.18.8 (N3): while the box holds one hypothesis from a document, where the check will be listed and who reads it
+  const fromNote = h("p", { class: "muted small hyp-chosen-note hyp-from-note", "aria-live": "polite", hidden: true });
+  view.appendChild(fromNote);
+  function drawFromNote(lost) {
+    const d = fromDoc && composerMode(ta.value) === "single" ? docs.find((x) => x.doc_id === fromDoc) : null;
+    fromNote.hidden = !d && !lost;
+    if (lost) replace(fromNote, icon("info", { size: 12 }), ` ${LOST_DOC}`);
+    else if (d) replace(fromNote, icon(d.ai_access === "cloud" ? "info" : "shield", { size: 12 }), ` The check will be listed on the page of ${d.title || d.file}. ${WHO_READS[d.ai_access] || WHO_READS.none}`);
+    else clear(fromNote);
+  }
+  // the words are no longer tied to the document: a list, a hypothesis checked, an emptied box, or the document gone
+  function untie(lost) {
+    if (!fromDoc) return;
+    fromDoc = null;
+    saveDraft();
+    drawFromNote(lost);
+  }
+  const lostDoc = (err) => err && err.status === 400 && /from_doc/.test(err.message || "");
   if (!App.modelConfigured()) {
     view.appendChild(notice({ kind: "attention", class: "hyp-setup-notice" },
       h("p", {}, "No AI model is set up yet, so checks cannot run."), link({ kind: "next", href: "#/settings/model" }, "Set up the AI model")));
@@ -89,7 +120,10 @@ export async function renderHypotheses(view, params, query) {
   const suggestBox = h("div", { class: "suggest", "aria-live": "polite" });
   let suggestions = [];
   const fwLabel = () => (frameworks.find((f) => f.name === fwSelect.value) || {}).label || "code";
-  const saveDraft = () => session("draft", ta.value || code ? { text: ta.value, framework: fwSelect.value, code, codeDesc } : null);
+  const saveDraft = () => {
+    if (!ta.value.trim() && fromDoc) { fromDoc = null; drawFromNote(); }   // an emptied box is a new hypothesis, not the document's words
+    session("draft", ta.value || code ? { text: ta.value, framework: fwSelect.value, code, codeDesc, ...(fromDoc ? { fromDoc } : {}) } : null);
+  };
   const setCode = (c, d) => {
     code = c || ""; codeDesc = d || "";
     const fwName = fwSelect.value;
@@ -211,7 +245,9 @@ export async function renderHypotheses(view, params, query) {
       if (prepared || !prepBox.hidden) discardPrepared();
       suggestions = []; replace(suggestBox);
       if (list.text === null) replace(listLine, icon("list-checks", { size: 13 }), " Reading your list…");
+      untie();   // a list is checked by /batches, which keeps no document
     } else updateSplitHint();
+    drawFromNote();
   }
 
   const updateSplitHint = () => {
@@ -351,6 +387,7 @@ export async function renderHypotheses(view, params, query) {
     const o = options.values();
     const body = { text, decompose: o.decompose, expand: o.expand };
     if (fwSelect.value && code) { body.framework = fwSelect.value; body.code = code; }
+    if (fromDoc) body.from_doc = fromDoc;   // 0.18.8 (N3): its AI setting decides who proposes parts and words
     looking = true; drawButtons();
     const panel = new ProgressPanel({ title: "Looking at your hypothesis", steps: ["terms"] });
     replace(prepBox, h("div", { class: "section-title" }, h("h2", {}, "Looking before checking"), h("span", { class: "muted" }, o.decompose ? "how the AI splits it, and which words it would add to the search" : o.expand ? "which words the AI would add to the search" : "the sentence as it will be checked")), panel.el);
@@ -368,7 +405,7 @@ export async function renderHypotheses(view, params, query) {
         drawPrepared();
       } else if (job.state === "cancelled") discardPrepared();
       else if (job.state === "error") { discardPrepared(); showError({ message: job.error, kind: job.error_kind }); }
-    } catch (e) { looking = false; discardPrepared(); showError(e); }
+    } catch (e) { looking = false; discardPrepared(); if (lostDoc(e)) untie(true); else showError(e); }
     drawButtons();
   });
 
@@ -528,6 +565,7 @@ export async function renderHypotheses(view, params, query) {
     const body = { text, decompose: o.decompose, expand: o.expand, k: o.k, per_doc: o.per_doc, semantic: o.semantic };
     if (o.doc_ids) body.doc_ids = o.doc_ids;
     if (fwSelect.value && code) { body.framework = fwSelect.value; body.code = code; }
+    if (fromDoc) body.from_doc = fromDoc;   // 0.18.8 (N3): listed on the document's page, read as its AI setting allows
     if (prepared && prepared.text === text) {
       const parts = prepared.parts.map((p) => ({ text: p.text.trim(), role: p.role }));
       const short = parts.findIndex((p) => p.text.length < MIN_CHARS);
@@ -543,9 +581,10 @@ export async function renderHypotheses(view, params, query) {
       const how = prepared && prepared.text === text ? (prepared.parts.length > 1 ? `${prepared.parts.length} parts, as you set them` : "as you set it") : "";
       busy = false;
       startedText = text;
+      untie();   // the next hypothesis written here is not the document's
       discardPrepared();
       followCheck(r.job.id, text, how);
-    } catch (err) { busy = false; showError(err); }
+    } catch (err) { busy = false; if (lostDoc(err)) untie(true); else showError(err); }
     drawButtons();
   }
 

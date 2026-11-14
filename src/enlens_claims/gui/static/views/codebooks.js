@@ -27,6 +27,13 @@ function draftFields(c) {
 }
 const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 function listWords(xs) { return xs.length < 2 ? (xs[0] || "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`; }
+// The audit's DEC-2: a downloaded file (CSV, .qdc) does not carry the AI draft mark. While codes on screen still hold
+// the AI's words, one short line beside the downloads says so (codebooks.py `draft_note`, which the commands print);
+// none when no code does. No dialog: the download stays one click.
+function draftNote(codes) {
+  const n = (codes || []).filter((c) => draftFields(c).length).length;
+  return n ? `${n} ${n === 1 ? "code still holds" : "codes still hold"} the AI’s draft. A downloaded file does not carry that mark: say so to whoever you send it to.` : null;
+}
 
 function whereBadge(where) {
   const [t, ic] = WHERE[where] || [where, "circle"];
@@ -154,7 +161,16 @@ export async function newCodebook(start = "fresh", opts = {}) {
     body.source = picked;
   }
   try {
-    const res = await api("POST", base, body);
+    let res;
+    try { res = await api("POST", base, body); } catch (e) {
+      // a .qdpx ENLENS wrote with several codebooks: choose one, and send it again (qdc_import.SeveralCodebooks)
+      const several = start === "qdc" && e.data && Array.isArray(e.data.codebooks) ? e.data.codebooks : null;
+      if (!several) throw e;
+      const one = await pickQdcCodebook(several);
+      if (!one) return;
+      body.source.codebook = one;
+      res = await api("POST", base, body);
+    }
     forgetFrameworks();
     if (res.codebook.imported) await importSummary(res.codebook);
     else toast("Codebook made. The research log says so.", "ok");
@@ -168,6 +184,16 @@ async function fileBase64(f) {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+// Which of the codebooks in a project file ENLENS wrote to bring in (each was a "<title> (codebook)" code).
+async function pickQdcCodebook(titles) {
+  let picked = titles[0];
+  const pick = optionCards({ label: "Codebook", value: picked, options: titles.map((t) => ({ value: t, title: t })), onPick: (t) => { picked = t; } });
+  const r = await dialog({ title: "Which codebook?", body: h("div", { class: "stack" },
+    h("p", {}, `The file holds ${plural(titles.length, "codebook")}. Choose the one to bring in.`), pick),
+    actions: [{ text: "Cancel", value: null }, { text: "Bring it in", value: true, primary: true }] });
+  return r ? picked : null;
 }
 
 // What a REFI-QDA codebook brought in became: codes, groups, and what was folded or left out (qdc_import.py).
@@ -375,6 +401,8 @@ export async function renderCodebook(view, [name]) {
   const defineOffers = new Map();   // K1: whether the AI may draft from these examples, by the examples' quotes
   const pendingDraft = new Map();   // K1: a draft not taken or put aside yet, by code (its uid; the code itself while unsaved)
   const definingNow = new Set();    // K1: the codes whose draft is being made (same keys)
+  const savedAs = new WeakMap();    // K1: an unsaved code's key → its uid once saved (a draft asked before the save)
+  const defineBoxes = new Map();    // K1: each open code's define box, by the same keys (refreshed alone)
   let st, merges, dirty = false, tried = null, openCode = session(`cb-open:${key}`) || null;
   // what the codebook was when unsaved edits began: a draft made on another state (restored meanwhile, or changed in
   // another window) is set aside rather than saved over it
@@ -425,7 +453,14 @@ export async function renderCodebook(view, [name]) {
   const ro = !cb.editable;
 
   // ---- the head
+  const dlNote = h("span", { class: "muted small cb-dl-note" });   // DEC-2: beside the downloads (`draftNote`)
+  function drawDlNote() {
+    const t = draftNote(st.codes);
+    dlNote.textContent = t || "";
+    dlNote.hidden = !t;
+  }
   function drawHead() {
+    drawDlNote();
     const moreItems = [];
     if (!ro) {
       if (cb.where === "project" && !cb.in_home) moreItems.push(["layers", "Keep it with all my projects", () => move("home")]);
@@ -447,7 +482,7 @@ export async function renderCodebook(view, [name]) {
         downloadButton({ onClick: () => download(`${base}.csv`).catch(showError) }, "CSV"),
         // 0.18.7 (G5): the codebook for NVivo, ATLAS.ti and MAXQDA
         downloadButton({ title: "A REFI-QDA codebook, for NVivo, ATLAS.ti and MAXQDA: each code with its definition", onClick: () => download(`${base}.qdc`).catch(showError) }, "Download as .qdc"),
-        more),
+        dlNote, more),
     }), sharing);
   }
 
@@ -546,6 +581,7 @@ export async function renderCodebook(view, [name]) {
     drawClashes();
     drawNotices();
     clear(body);
+    defineBoxes.clear();
     if (!ro) {
       body.appendChild(card({ as: "details", class: "cb-settings" }, h("summary", {}, icon("sliders", { size: 14 }), "Codebook settings"),
         h("div", { class: "fields-2" },
@@ -672,6 +708,7 @@ export async function renderCodebook(view, [name]) {
       const f = draftFields(c);
       replace(mark, f.length ? h("p", { class: "small" }, tag({ icon: "sparkles" }, "AI draft"), " ",
         `${capital(listWords(f.map((k) => DRAFT_LABEL[k])))} ${f.length === 1 ? "is" : "are"} still the AI’s words${c.ai_draft.model ? ` (${c.ai_draft.model})` : ""}, drafted from the examples. Rewrite ${f.length === 1 ? "it" : "them"} in your own words; the mark goes when you do.`) : null);
+      drawDlNote();   // the line beside the downloads counts what is on screen
     };
     drawMark();
     const exList = h("ul", { class: "cb-examples" });
@@ -725,19 +762,35 @@ export async function renderCodebook(view, [name]) {
   // keeps while the fields still hold them word for word.
   // an unsaved code is its own key (it keeps it through renames and redraws); at a save its draft moves to its uid
   function defineKey(c) { return c.uid || c; }
-  function keepPendingThroughSave(before) {
-    for (const [k, d] of before) {
-      if (typeof k === "string") continue;   // a saved code: its uid stays
-      pendingDraft.delete(k);
+  function keepPendingThroughSave(before, busy) {
+    const moved = (k) => {
+      if (typeof k === "string") return null;   // a saved code: its uid stays
       const now = st.codes.find((x) => x.code === k.code);
-      if (now && now.uid) pendingDraft.set(now.uid, d);
+      if (now && now.uid) savedAs.set(k, now.uid);
+      return savedAs.get(k) || null;
+    };
+    for (const [k, d] of before) {
+      const uid = moved(k);
+      if (!uid) continue;
+      pendingDraft.delete(k);
+      pendingDraft.set(uid, d);
     }
+    // a draft still being made stays busy under the code's uid (a second click must not ask it twice)
+    for (const k of busy) { const uid = moved(k); if (uid) { definingNow.delete(k); definingNow.add(uid); } }
   }
-  function exampleQuotes(c) { return (c.examples || []).map((e) => (typeof e === "string" ? e : e && e.quote) || "").filter(Boolean); }
+  // the key a draft asked for an unsaved code has now (the code saved meanwhile: its uid)
+  function keyNow(k) { return typeof k === "string" ? k : savedAs.get(k) || k; }
+  // each example with the place it was saved at, so the draft reads that passage (another document may hold the
+  // same words with another AI setting)
+  function exampleRefs(c) {
+    return (c.examples || []).map((e) => (typeof e === "string" ? { quote: e }
+      : { quote: (e && e.quote) || "", doc_id: e.doc_id, start: e.start, project: e.project })).filter((e) => e.quote);
+  }
   function defineBox(c) {
     const box = h("div", { class: "cb-define" });
-    const quotes = exampleQuotes(c);
+    const quotes = exampleRefs(c);
     const k = defineKey(c);
+    defineBoxes.set(k, box);
     const pend = pendingDraft.get(k);
     if (pend) { box.appendChild(draftPanel(c, pend)); return box; }
     if (quotes.length < 2) {
@@ -750,7 +803,7 @@ export async function renderCodebook(view, [name]) {
       if (!offer) { clear(box); return; }
       if (!offer.offered) { replace(box, h("p", { class: "muted small" }, offer.why)); return; }
       const btn = button({ onClick: () => askDraft(c, btn) }, icon("sparkles", { size: 14 }), "Draft from the examples");
-      if (definingNow.has(k)) setBusy(btn, true);
+      if (definingNow.has(keyNow(k))) setBusy(btn, true);
       const what = `the ${offer.passages} passages that hold this code’s examples, and its name`;
       replace(box, h("div", { class: "btn-row" }, withAI(btn)),
         offer.reader === "local" ? aiWhere(`The AI on this computer reads ${what}: the text never leaves it.`, "local") : readsLine(what),
@@ -761,28 +814,36 @@ export async function renderCodebook(view, [name]) {
     else api("POST", `${base}/define/offer`, { examples: quotes }).then((o) => { defineOffers.set(sig, o); fill(o); }).catch(() => fill(null));
     return box;
   }
+  // the define box of the code a key names, made again alone: what is typed in the other fields, and the caret, stay
+  function refreshDefineBox(k) {
+    const box = defineBoxes.get(k);
+    const c = typeof k === "string" ? st.codes.find((x) => x.uid === k) : st.codes.includes(k) ? k : null;
+    if (box && box.isConnected && c) box.replaceWith(defineBox(c));
+  }
   async function askDraft(c, btn) {
     const k = defineKey(c);
-    if (definingNow.has(k)) return;
+    if (definingNow.has(keyNow(k))) return;
     definingNow.add(k);
     setBusy(btn, true);
     try {
       const group = (groupsInOrder().find((g) => g.group === c.group) || {}).group_name || "";
-      const res = await api("POST", `${base}/define`, { code: c.code, group, examples: exampleQuotes(c) });
+      const res = await api("POST", `${base}/define`, { code: c.code, group, examples: exampleRefs(c) });
       const job = await watchJob(res.job.id).promise;
       if (job.state !== "done") { if (job.error) toast(job.error, "error"); return; }
       const got = job.result || {};
       if (got.stopped) return;
       if (got.withdrawn) { toast(got.why || "The request was taken back before the AI answered. Try again.", "warn"); return; }
       if (!got.ok || !got.draft) { toast("The AI’s quotes could not be found in the example passages, so nothing was drafted. Try again, or write the definition yourself.", "warn"); return; }
-      // saved meanwhile: the unsaved code it was asked for is now the code of that name with a uid
-      const now = typeof k === "string" || st.codes.includes(k) ? k : defineKey(st.codes.find((x) => x.code === k.code) || k);
-      pendingDraft.set(now, { ...got.draft, at: new Date().toISOString(), reused: got.reused });
+      // saved meanwhile: the unsaved code it was asked for now goes by its uid
+      pendingDraft.set(keyNow(k), { ...got.draft, at: new Date().toISOString(), reused: got.reused, reader: got.reader });
     } catch (e) { showError(e); }
     finally {
+      const now = keyNow(k);
       definingNow.delete(k);
+      definingNow.delete(now);
       if (btn.isConnected) setBusy(btn, false);
-      if (body.isConnected) draw();   // a redraw meanwhile made another button: it must not stay busy
+      // only this code's define box is made again (the draft, or a button no longer busy): the person may be typing
+      if (body.isConnected) refreshDefineBox(now);
     }
   }
   function takeDraft(c, d, fields) {
@@ -807,6 +868,7 @@ export async function renderCodebook(view, [name]) {
       h("p", { class: "small" }, tag({ icon: "sparkles" }, "AI draft"), " ",
         `Drafted${d.model ? ` by ${d.model}` : ""} from the passages that hold this code’s examples${d.reused ? " (the answer kept from the same request before)" : ""}. Read it, take what fits, and rewrite it in your own words.`),
       d.note ? h("p", { class: "small" }, h("strong", {}, "The AI notes: "), d.note) : null,
+      d.reader === "local" ? h("p", { class: "muted small" }, "The AI on this computer read these passages. Words you keep go with the code to every later label task, to whichever AI labels your other documents, as every definition does: rewrite them if they give away what these documents say.") : null,
       row("description", "Definition"), row("include", "When to use it"), row("exclude", "When not to use it"),
       h("div", { class: "btn-row" },
         button({ kind: "main", sm: true, onClick: () => { takeDraft(c, d, FIELDS_OF_DRAFT); done(); } }, "Use all of it"),
@@ -858,7 +920,8 @@ export async function renderCodebook(view, [name]) {
   function bringBack(r) {
     const d = r.definition || {};
     st.codes.push({ uid: r.uid, code: d.code || r.code, description: d.description || r.description || r.code, group: d.group || "",
-      include: d.include || "", exclude: d.exclude || "", keywords: d.keywords || [], examples: (d.examples || []).map((q) => ({ quote: q })) });
+      include: d.include || "", exclude: d.exclude || "", keywords: d.keywords || [], examples: (d.examples || []).map((q) => ({ quote: q })),
+      ...(r.ai_draft ? { ai_draft: { ...r.ai_draft } } : {}) });   // K1: the AI's words come back marked
     touch(); draw();
     toast(`“${r.code}” is back in the codebook. Save to keep it; its labels count again.`, "info");
   }
@@ -878,9 +941,9 @@ export async function renderCodebook(view, [name]) {
       const r = await api("PUT", base, { codebook: st, merges, why: why || null });
       drafts.delete(key);
       cb = r.codebook;
-      const pend = [...pendingDraft];
+      const pend = [...pendingDraft], busy = [...definingNow];
       fresh();
-      keepPendingThroughSave(pend);
+      keepPendingThroughSave(pend, busy);
       whyInput.value = "";
       setAside = false;
       forgetFrameworks();

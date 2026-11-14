@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import bisect
 import json
+import re
 import sqlite3
 
-from . import access, frameworks, tasks
+from . import access, docrole, frameworks, tasks
 from .reread import is_tombstone
 from .store import Workspace
 from .textutil import find_quote
@@ -520,6 +521,13 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
            "decomposed": len(parts) > 1, "model": h["model"] or (parts[0]["model"] if parts else None),
            "batch_id": h["batch_id"], "note": h["note"], "threshold": thr, "parts": parts,
            "origin": h.get("origin"), "origin_id": h.get("origin_id")}  # 0.13.6: where it comes from
+    if h.get("origin") == docrole.ORIGIN and h.get("origin_id"):   # 0.18.8 (N3): started from a document's text
+        doc = ws.query("SELECT title, path FROM documents WHERE doc_id=?", (h["origin_id"],))
+        if doc:   # the document's title, or its file's name (none: the document is gone; the link is then left out)
+            out["origin_title"] = doc[0][0] or re.sub(r".*[/\\]", "", doc[0][1] or "") or "this document"
+    own = access.floor(ws._conn(), {"hyp_id": hyp_id})   # 0.18.8 (N3): how far the hypothesis's own words may go
+    if own != "cloud":
+        out["words_access"] = own
     if h["code"]:
         try:
             _fw, _c, out["code_description"], out["code_label"] = frameworks.resolve(ws, h["framework"] or "sdg", h["code"])
