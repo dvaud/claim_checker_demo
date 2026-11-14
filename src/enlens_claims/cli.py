@@ -348,6 +348,12 @@ def _main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("export-qdc", help="write one codebook as a REFI-QDA codebook (.qdc)")
     p.add_argument("framework")
     p.add_argument("out")
+    p = sub.add_parser("import-qdc", help="bring in a REFI-QDA codebook (.qdc, or the codebook of a .qdpx project) from "
+                                          "NVivo, ATLAS.ti or MAXQDA as a new codebook of this project")
+    p.add_argument("file")
+    p.add_argument("name", nargs="?", help="the new codebook's short name (default: from the file's name)")
+    p.add_argument("--title", help="its title (default: the file's, else from its name)")
+    p.add_argument("--home", action="store_true", help="keep it with all projects, not this one")
     p = sub.add_parser("export-flexiconc", help="write the project in the Cross-Doc SDG Explorer's FlexiConc SQLite layout")
     p.add_argument("out")
     p.add_argument("--framework", default="sdg")
@@ -694,7 +700,7 @@ def _main(argv: list[str] | None = None) -> int:
         path = report.build(ws, a.out, a.strict)
         print(f"Report written to {path}")
     elif a.cmd in ("search", "profile", "terms", "concept", "themes", "resolve", "annotate", "export-flexiconc",
-                   "acceptance", "export-qdpx", "export-qdc"):
+                   "acceptance", "export-qdpx", "export-qdc", "import-qdc"):
         return _cmd_07(a, ws)
     elif a.cmd in ("prepare", "queue"):
         return _cmd_08(a, ws)
@@ -836,6 +842,22 @@ def _cmd_07(a, ws) -> int:
                 return 2
         _print(qdpx.export_project(ws, a.out, a.framework) if a.cmd == "export-qdpx" else
                qdpx.export_codebook(ws, a.framework, a.out))
+        return 0
+    if a.cmd == "import-qdc":
+        import re
+
+        from . import codebooks, qdc_import
+
+        f = Path(a.file)
+        name = a.name or re.sub(r"[^a-z0-9_-]+", "_", f.stem.lower()).strip("_")[:40] or "imported"
+        try:
+            got = codebooks.create(ws, name, a.title or "", "home" if a.home else "project", "qdc",
+                                   prepared=qdc_import.from_path(f))
+        except ValueError as e:
+            print(f"Problem: {e}", file=sys.stderr)
+            return 2
+        _print({"codebook": got["name"], "title": got["title"], "codes": len(got["codes"]),
+                "groups": len([g for g in got["groups"] if g["group"]]), "notes": got["imported"]["notes"]})
         return 0
     if a.cmd == "export-flexiconc":
         from . import flexiconc_export

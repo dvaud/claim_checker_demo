@@ -705,6 +705,7 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .cb-meta { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .cb-start-pick { grid-template-columns: 1fr; }
 .cb-start-extra { margin-top: 8px; }
+.cb-import-notes { margin: 0; padding-left: 1.25em; }   /* K1: the .qdc summary, in a .stack (no extra gap) */
 .cb-theme-pick { display: flex; flex-direction: column; gap: 12px; max-height: 55vh; overflow: auto; }
 /* a run of themes is a group under its heading, not a box; its themes are rows divided by lines (DESIGN 4.11) */
 .cb-run { border: 0; padding: 0; margin: 0; min-width: 0; }

@@ -80,13 +80,22 @@ export async function newCodebook(start = "fresh", opts = {}) {
     ["themes", "From the themes", "The themes found in the documents become draft codes: short names made of their names, their descriptions, key terms and best passages. Tick the ones to keep.", "shapes"],
     ["theory", "From a theory document", "The concepts of a theory you read the documents through (terms it defines, its headings, words it uses often) become draft codes, each with its definition quoted from the theory and its page. Examples come only from the evidence, when you tick them. Without AI; the AI can draft more when you ask.", "book-marked"],
     ["copy", "A copy of a codebook", "The SDG targets or one of yours, to change.", "copy"],
-    ["csv", "From a CSV file", "Columns code and description (and group, group_name, when_to_use, when_not_to_use, keywords, examples).", "upload"]];
+    ["csv", "From a CSV file", "Columns code and description (and group, group_name, when_to_use, when_not_to_use, keywords, examples).", "upload"],
+    // K1 "In and out" (qdc_import.py): a REFI-QDA codebook, or the codebook of a REFI-QDA project
+    ["qdc", "From NVivo, ATLAS.ti or MAXQDA", "A REFI-QDA codebook (.qdc), or a project (.qdpx) whose codebook you want. Top codes with codes under them become groups; deeper levels fold into their top group.", "upload"]];
   let fws = [];
   try { fws = (await api("GET", base)).codebooks; } catch (_) { /* the copy choice lists none */ }
   const copySel = select({ "aria-label": "Codebook to copy" }, fws.map((f) => h("option", { value: f.name, selected: f.name === opts.of }, `${f.title || f.name} (${f.codes} codes)`)));
   const file = input({ type: "file", accept: ".csv,text/csv", "aria-label": "CSV file" });
+  const qdcFile = input({ type: "file", accept: ".qdc,.qdpx,.xml", "aria-label": "REFI-QDA file" });
+  // a title from the file's name, when none is typed yet
+  qdcFile.addEventListener("change", () => {
+    const f = qdcFile.files && qdcFile.files[0];
+    if (f && !title.value.trim()) { title.value = f.name.replace(/\.(qdc|qdpx|xml)$/i, ""); title.dispatchEvent(new Event("input")); }
+  });
   const extra = h("div", { class: "cb-start-extra" });
-  const drawExtra = () => { replace(extra, start === "copy" ? field("Copy of", copySel) : start === "csv" ? field("CSV file", file) : null); };
+  const drawExtra = () => { replace(extra, start === "copy" ? field("Copy of", copySel) : start === "csv" ? field("CSV file", file)
+    : start === "qdc" ? field("File", qdcFile, { help: "In the other program, export the codebook as a REFI-QDA codebook (.qdc)." }) : null); };
   // how to start: option cards (docs/DESIGN.md 4.7), one under the other
   const startSel = optionCards({ label: "Start", class: "cb-start-pick", value: start, options: STARTS.map(([k, t, sub, ic]) => ({ value: k, title: t, text: sub, icon: ic })),
     onPick: (k) => {
@@ -116,6 +125,12 @@ export async function newCodebook(start = "fresh", opts = {}) {
     if (!f) { toast("Choose a CSV file.", "info"); return; }
     body.source = { csv: await readTextFile(f) };
   }
+  if (start === "qdc") {
+    const f = qdcFile.files && qdcFile.files[0];
+    if (!f) { toast("Choose a .qdc or .qdpx file.", "info"); return; }
+    if (f.size > 14 * 1024 * 1024) { toast("The file is larger than 14 MB. Export only the codebook (.qdc) and bring that in.", "info"); return; }
+    body.source = { file: await fileBase64(f), filename: f.name };
+  }
   if (start === "themes") {
     const picked = await pickThemes(where === "home");
     if (!picked) return;
@@ -129,9 +144,28 @@ export async function newCodebook(start = "fresh", opts = {}) {
   try {
     const res = await api("POST", base, body);
     forgetFrameworks();
-    toast("Codebook made. The research log says so.", "ok");
+    if (res.codebook.imported) await importSummary(res.codebook);
+    else toast("Codebook made. The research log says so.", "ok");
     location.hash = `#/codebooks/${encodeURIComponent(res.codebook.name)}`;
   } catch (e) { showError(e); }
+}
+
+// A file's bytes as base64, for a JSON body (a .qdpx is a zip; a .qdc may be UTF-16, read on the server).
+async function fileBase64(f) {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+// What a REFI-QDA codebook brought in became: codes, groups, and what was folded or left out (qdc_import.py).
+async function importSummary(cb) {
+  const notes = cb.imported.notes || [];
+  await dialog({ title: "Codebook brought in", body: h("div", { class: "stack" },
+    h("p", {}, notes[0] || `${plural(cb.codes.length, "code")} brought in.`),
+    notes.length > 1 ? h("ul", { class: "cb-import-notes" }, notes.slice(1).map((n) => h("li", {}, n))) : null,
+    h("p", { class: "muted small" }, "Check the codes in the editor: each needs a definition the AI can read. The research log says so.")),
+    actions: [{ text: "Open the codebook", value: true, primary: true }] });
 }
 
 // The themes found (this project's, and with `all` every project's) to start from: tick the ones to keep. 0.16.1:

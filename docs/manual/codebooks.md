@@ -5,7 +5,8 @@
 > **In short**
 > - A codebook is your list of codes: each with a definition, when to use it and when not, the words it is matched by
 >   and examples from your documents. *Codes* › *Codebooks* makes, changes and removes them.
-> - Start fresh, from the themes already found, from a copy of another codebook, or from a CSV file.
+> - Start fresh, from the themes already found, from a copy of another codebook, from a CSV file, or from a codebook
+>   made in NVivo, ATLAS.ti or MAXQDA (`.qdc`).
 > - Changing a codebook changes no result by itself: labels follow renames and merges, and wait when a code is removed.
 
 ## What a codebook is for
@@ -32,6 +33,7 @@ above them, with the reason.
 | *From a theory document* (0.18.1) | You tick the concepts of a theory you read the documents through; each becomes a draft code with its definition quoted from the theory (see below). |
 | *A copy of a codebook* | The SDG targets, or one of yours, to change. |
 | *From a CSV file* | A spreadsheet saved as CSV (see below). |
+| *From NVivo, ATLAS.ti or MAXQDA* | A REFI-QDA codebook (`.qdc`), or the codebook of a REFI-QDA project (`.qdpx`) (see below). |
 
 **From the themes.** Each theme you tick becomes a draft code with a short name, its description where the AI named
 the theme, its key terms as *Words it is matched by* and its best passages as examples. Removed themes are left out.
@@ -79,6 +81,28 @@ the columns, and a file saved in a Windows code page (a spreadsheet saved in Hun
 | `when_to_use`, `when_not_to_use` | When the code applies, and when it does not |
 | `keywords` | The words it is matched by, separated by `;` |
 | `examples` | Quotes from the documents, one per line |
+
+**From NVivo, ATLAS.ti or MAXQDA.** In the other program, export the codebook as a REFI-QDA codebook (`.qdc`), then
+choose that file (a whole REFI-QDA project, `.qdpx`, works too: only its codebook is read, up to 14 MB in the app).
+The title is the file's name until you type another. No AI reads the file. After *Create*, a summary says how many
+codes and groups came in and what was folded or left out; then the editor opens. What maps to what:
+
+| In the other program | In ENLENS |
+| --- | --- |
+| A code at the top with codes under it | A group of that name; the codes under it are its codes. |
+| A code three or more levels down | A code of its top group (ENLENS's groups have one level); its place in the tree ends its definition, as in “(In the tree: Emotions › Positive › Joy.)” |
+| A code with codes under it that has a description | A code as well as a group (or a step in the tree). Without a description it is a heading only. |
+| A code's description | Its definition. A code without one gets its place in the tree (or its name) as its definition: write a real one in the editor. |
+| A name longer than 40 characters | Cut at a word; the whole name opens the definition. |
+| Two codes of the same name | The second becomes “Name (2)”. |
+| A code that cannot be coded, with nothing under it | Left out. |
+| Colours, sets, memos, a top code's own description when it cannot be coded | Left out (a group has only a name). |
+
+A codebook ENLENS exported (*Download as .qdc*) comes back with its definitions, when to use and when not,
+keywords, examples (their words: a `.qdc` does not carry an example's document and page), groups and group names.
+Its label and direction setting are not in the file, so set them again in *Codebook settings*; the title is taken
+from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history; labels made with the
+codebook it was exported from stay with that one.
 
 ## Change it in the editor
 

@@ -84,6 +84,7 @@ enlens --ws myproject annotate <doc_id> --hyp <hyp_id> --layers judgements label
 enlens --ws myproject export-flexiconc project.sqlite [--no-embeddings]
 enlens --ws myproject export-qdpx project.qdpx [--framework NAME]   # for NVivo, ATLAS.ti, MAXQDA (REFI-QDA)
 enlens --ws myproject export-qdc NAME codebook.qdc                  # one codebook, REFI-QDA
+enlens --ws myproject import-qdc codebook.qdc [NAME] [--title T] [--home]   # a codebook from NVivo, ATLAS.ti, MAXQDA (.qdc or .qdpx)
 enlens measure [--folder DIR] [--ws PROJECT] [--timings] [--report FILE.md]       # how well ENLENS reads
 enlens validate prepare|score|report [--project NAME] [--again NAME] [--latest DIR] [--out FILE.md]   # the AI's answers against known right answers
 ```
