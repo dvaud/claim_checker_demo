@@ -1,4 +1,4 @@
-"""0.18.8 (roadmap K3, the rest): the per-hypothesis exception (*Count non-scientific documents in this check*), the
+"""0.19.0 (roadmap K3, the rest): the per-hypothesis exception (*Count non-scientific documents in this check*), the
 suggestion from the bibliography's item type (never a mark by itself), the evidence map's own mark for a
 non-scientific document (read, not counted), and the Excel summary's answer counting them."""
 from __future__ import annotations

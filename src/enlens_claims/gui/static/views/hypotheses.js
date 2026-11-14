@@ -16,7 +16,7 @@ const MIN_CHARS = 10;     // the shortest hypothesis a check accepts (claimcheck
 const MAX_CHARS = 2000;   // and the longest
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 
-// 0.18.8 (N3): who reads words taken from a document, by its AI setting (docrole.origin_floor keeps them to it)
+// 0.19.0 (N3): who reads words taken from a document, by its AI setting (docrole.origin_floor keeps them to it)
 export const WHO_READS = {
   cloud: "The AI you chose reads these words, as it reads any hypothesis.",
   local: "It is marked Only a local AI, so only a local model on this computer reads these words and the excerpts they are checked against; without one, you judge the excerpts yourself.",
@@ -46,7 +46,7 @@ export async function renderHypotheses(view, params, query) {
   if (oldList && !draft.text) draft.text = String(oldList);
   if (oldList !== null) session("batchDraft", null);
   if (query.text) draft.text = String(query.text).slice(0, MAX_CHARS);   // "Check a hypothesis about this…"
-  // 0.18.8 (N3): words from a document's text (a working document's Check against the corpus): the check remembers
+  // 0.19.0 (N3): words from a document's text (a working document's Check against the corpus): the check remembers
   // the document, so the document's page lists it. Kept while the box holds text, forgotten once it is checked.
   // Opened without the document's words (later, from the sidebar), the box is no longer tied to the document.
   if (query.text && query.from) draft.fromDoc = String(query.from); else delete draft.fromDoc;
@@ -67,7 +67,7 @@ export async function renderHypotheses(view, params, query) {
   const setMapTab = (batch) => { if (mapTab) mapTab.setAttribute("href", batch ? `#/map?batch=${encodeURIComponent(batch)}` : "#/map"); };
 
   if (query.text) view.appendChild(h("p", { class: "muted small hyp-chosen-note" }, icon("info", { size: 12 }), " The words you chose are filled in below: turn them into the claim you want to check."));
-  // 0.18.8 (N3): while the box holds one hypothesis from a document, where the check will be listed and who reads it
+  // 0.19.0 (N3): while the box holds one hypothesis from a document, where the check will be listed and who reads it
   const fromNote = h("p", { class: "muted small hyp-chosen-note hyp-from-note", "aria-live": "polite", hidden: true });
   view.appendChild(fromNote);
   function drawFromNote(lost) {
@@ -387,7 +387,7 @@ export async function renderHypotheses(view, params, query) {
     const o = options.values();
     const body = { text, decompose: o.decompose, expand: o.expand };
     if (fwSelect.value && code) { body.framework = fwSelect.value; body.code = code; }
-    if (fromDoc) body.from_doc = fromDoc;   // 0.18.8 (N3): its AI setting decides who proposes parts and words
+    if (fromDoc) body.from_doc = fromDoc;   // 0.19.0 (N3): its AI setting decides who proposes parts and words
     looking = true; drawButtons();
     const panel = new ProgressPanel({ title: "Looking at your hypothesis", steps: ["terms"] });
     replace(prepBox, h("div", { class: "section-title" }, h("h2", {}, "Looking before checking"), h("span", { class: "muted" }, o.decompose ? "how the AI splits it, and which words it would add to the search" : o.expand ? "which words the AI would add to the search" : "the sentence as it will be checked")), panel.el);
@@ -565,7 +565,7 @@ export async function renderHypotheses(view, params, query) {
     const body = { text, decompose: o.decompose, expand: o.expand, k: o.k, per_doc: o.per_doc, semantic: o.semantic };
     if (o.doc_ids) body.doc_ids = o.doc_ids;
     if (fwSelect.value && code) { body.framework = fwSelect.value; body.code = code; }
-    if (fromDoc) body.from_doc = fromDoc;   // 0.18.8 (N3): listed on the document's page, read as its AI setting allows
+    if (fromDoc) body.from_doc = fromDoc;   // 0.19.0 (N3): listed on the document's page, read as its AI setting allows
     if (prepared && prepared.text === text) {
       const parts = prepared.parts.map((p) => ({ text: p.text.trim(), role: p.role }));
       const short = parts.findIndex((p) => p.text.length < MIN_CHARS);

@@ -7,7 +7,7 @@ out of what counts as evidence: themes, labelling with codebooks, the excerpts a
 glossary's counts (and so the evidence map, which is drawn from the checks' excerpts).
 
 In code the mark is a *role*, never "framework": a framework is a codebook. `documents.role` is NULL (evidence) or
-`"theory"` or (0.18.8, roadmap N3) `"working"`.
+`"theory"` or (0.19.0, roadmap N3) `"working"`.
 
 A **working document** (N3) is the researcher's own draft or notes, kept in the project: read, searched, opened,
 noted, labelled with codebooks (its codes show on its own page and as its own row of the profile's grid) and checked
@@ -45,7 +45,7 @@ from typing import Any
 from .store import Workspace, now
 
 THEORY = "theory"
-WORKING = "working"        # 0.18.8 (N3): the researcher's own draft or notes
+WORKING = "working"        # 0.19.0 (N3): the researcher's own draft or notes
 ROLES = (THEORY, WORKING)
 NOT_EVIDENCE = ROLES       # every role but evidence (NULL) is never a source
 KEY = "role:"              # the prefix of a role's block choice
@@ -53,7 +53,7 @@ ROLE_TEXT = {THEORY: "Theory", WORKING: "Working document", None: "Evidence"}
 NONSCIENTIFIC = "nonscientific"
 MARK = "mark:"             # 0.18.6: the prefix of a mark's block choice (beside the role, never cleared by set_role)
 NONSCI_KEY = MARK + NONSCIENTIFIC
-ORIGIN = "document"         # 0.18.8 (N3): `hypotheses.origin` of a check started from a document's text
+ORIGIN = "document"         # 0.19.0 (N3): `hypotheses.origin` of a check started from a document's text
 
 
 def key(role: str) -> str:
@@ -106,7 +106,7 @@ def theory_docs(cx: sqlite3.Connection) -> set[str]:
 
 
 def working_docs(cx: sqlite3.Connection) -> set[str]:
-    """0.18.8 (N3): the ids of the researcher's own working documents."""
+    """0.19.0 (N3): the ids of the researcher's own working documents."""
     try:
         return {r[0] for r in cx.execute("SELECT doc_id FROM documents WHERE role=?", (WORKING,))}
     except sqlite3.OperationalError:   # a database opened before the column (migrations not run): none
@@ -145,7 +145,7 @@ def evidence_sql(col: str = "doc_id") -> str:
 
 
 def labelled_sql(col: str = "doc_id") -> str:
-    """0.18.8 (N3): the SQL condition for the documents a codebook labels: all but theory (a working document is
+    """0.19.0 (N3): the SQL condition for the documents a codebook labels: all but theory (a working document is
     coded like any document, and its codes counted apart)."""
     return f"{col} NOT IN (SELECT doc_id FROM documents WHERE role='{THEORY}')"
 
@@ -226,7 +226,7 @@ def _checks_reading(ws: Workspace, doc_id: str) -> list[str]:
 
 
 def checks_started_from(ws: Workspace, doc_id: str) -> list[dict]:
-    """0.18.8 (N3): the checks started from the document's text (*Check against the corpus* on a working document),
+    """0.19.0 (N3): the checks started from the document's text (*Check against the corpus* on a working document),
     each with its answer now: [{"hyp_id", "text", "status", "status_text"}], newest first. A check remembers the
     document it was started from (`hypotheses.origin` "document", `origin_id`), not the sentence: the words may
     have been changed into the claim before it was checked. Listed as the checks list lists them (`claimcheck.history`):
@@ -239,7 +239,7 @@ def checks_started_from(ws: Workspace, doc_id: str) -> list[dict]:
 
 
 def origin_floor(cx, payload: Any, dflt: str | None = None) -> str | None:
-    """0.18.8 (N3): the words of a check started from a document's text go no further than that document's AI setting
+    """0.19.0 (N3): the words of a check started from a document's text go no further than that document's AI setting
     (`access.register_floor`, as an add-on's drafts do): a task holding them (splitting it, its search words, judging
     its excerpts, a second opinion, reading an excerpt again) names its hypothesis (`hyp_id`) or one of its parts
     (`claim_id`, or `subject_id` of a `user_claim`). None for any other task. A document removed since counts as No AI
@@ -263,7 +263,7 @@ def origin_floor(cx, payload: Any, dflt: str | None = None) -> str | None:
 
 
 def kept_here(ws: Workspace) -> set[str]:
-    """0.18.8 (N3): the checks started from the text of a document no cloud model may read (or one removed since),
+    """0.19.0 (N3): the checks started from the text of a document no cloud model may read (or one removed since),
     which the connector does not show to a Claude chat (`access.register_hidden`)."""
     from . import access
 
@@ -343,7 +343,7 @@ def set_nonscientific(ws: Workspace, doc_id: str, on: bool, why: str | None = No
 def counted_without(ws: Workspace, doc_id: str) -> list[dict]:
     """The checks with an excerpt of the document, each with its answer now and the answer counting every
     non-scientific document (`status_all_sources`): [{"hyp_id", "text", "status", "status_text", "all", "all_text",
-    "count_nonscientific"}], newest first. 0.18.8 (K3): `count_nonscientific`, the check counts them (set on its
+    "count_nonscientific"}], newest first. 0.19.0 (K3): `count_nonscientific`, the check counts them (set on its
     hypothesis)."""
     from .verdicts import STATUS_TEXT
 

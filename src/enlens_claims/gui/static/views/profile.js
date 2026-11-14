@@ -6,7 +6,7 @@
 import { featureEyebrow, viewTabs, withAI } from "../features.js";
 import { App, api, h, icon, madeWithFact, replace, clear, toast, showError, addDocumentsFirst, fmt, pageHead, P, emptyState, download, switchControl, navigate, plural, shortTitle, cap, runningJob, heatCell, downloadLinks, helpMark, drawInSteps, button, link, notice, card, tag, input, select, fold, choice, readsLine, inset, heatGrid } from "../lib.js";
 import { jobCard } from "./progress.js";
-import { roleTag } from "./doc-role.js";   // 0.18.8 (N3): a working document's row in the grid
+import { roleTag } from "./doc-role.js";   // 0.19.0 (N3): a working document's row in the grid
 
 // The largest count in a grid of rows of cells (at least 1), found by a loop: Math.max(...every cell) throws a
 // RangeError above about 125,000 arguments, which a project of thousands of documents reaches.
@@ -393,7 +393,7 @@ export async function renderProfile(view, params, query) {
         h("div", {}, h("dt", {}, "Read by the AI"), h("dd", {}, fmt.num(prof.read_by_model || 0)))))));
     if (!ai) { ai = aiLabelCard({ project, framework, watchers, onEnd: () => reload() }); replace(aiBox, ai.el); }
     // the codes addressed most
-    // (0.18.8, N3: a code found only in a working document has no passage of the corpus: not among them)
+    // (0.19.0, N3: a code found only in a working document has no passage of the corpus: not among them)
     const codes = [...(g.codes || [])].filter((c) => c.passages > 0).sort((a, b) => b.passages - a.passages || b.documents - a.documents).slice(0, 8);
     if (codes.length) {
       const max = Math.max(1, ...codes.map((c) => c.passages));
@@ -446,7 +446,7 @@ export async function renderProfile(view, params, query) {
       const href = docHref(d);
       return h("tr", { class: "row-link", onClick: (e) => { if (e.target.closest("a, td.pf-cell")) return; location.hash = href; } },
         h("th", { scope: "row", class: "map-hyp pf-doc" }, link({ kind: "title", serif: true, href, title: d.title }, shortTitle(d.title, 90)),
-          // 0.18.8 (N3): a working document's codes are its own, never the corpus's
+          // 0.19.0 (N3): a working document's codes are its own, never the corpus's
           h("div", { class: "map-hyp-meta muted small" }, d.working ? [roleTag("working"), ` ${plural(d.passages, "passage")} with a code · not in the totals`] : `${plural(d.passages, "passage")} with a code`)),
         codes.map((c) => heatCell(row[c.code] || 0, max, `${shortTitle(d.title, 50)}, ${unit} ${c.code}`, "pf", () => { location.hash = docHref(d, c.code); })));
     }, { first: 40, step: 80, more: (left, onClick) => h("tr", { class: "draw-more-row" }, h("th", { scope: "row", class: "map-hyp" },

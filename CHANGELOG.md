@@ -1,5 +1,214 @@
 # Changelog
 
+## 0.19.0rc1 (November 2026): Your own drafts, a concept map, codebooks from other programs, and a university drive for the team
+
+A candidate for 0.19.0, with six new features to try before the release. You can keep your own drafts beside the
+corpus and check them a sentence at a time, see the concepts your documents mention together as a map, bring a
+codebook in from NVivo, ATLAS.ti or MAXQDA, let the AI draft a code's definition from its examples, let one check
+count non-scientific documents when they are its material, and use a folder in your institution's drive as the
+team's storage space. Each of these was audited on 14 November 2026, and what the audit found was fixed before this
+candidate. No answer changes by itself. *Update* offers a candidate only when you chose *Try new versions early*. In
+a team everyone needs this version, so try it on a project you do not share, or with the whole team at once.
+
+### New
+
+- **Your own working documents.** Keep your drafts and notes in the project beside the corpus: in *Documents*, open
+  a row → *Role* → *Mark as my working document*, or use the same button on the document's page. A working document
+  is read, searched, opened, noted and labelled with your codebooks as any other, but it is never a source: themes,
+  the excerpts a check reads, key terms, the glossary, a code's examples and the documents behind no answer leave it
+  out. Its codes show on its own page and as its own row at the foot of the *Codes* grid, never in the corpus's
+  counts, so you see what your draft covers beside what the corpus does. Select any sentence of it and choose *Check
+  against the corpus* to check that claim: the document's page lists every check started from it with its answer (the
+  first eight, the others folded), and each such check's page links back to the document. The words keep the
+  document's AI setting, and the line above the box says who will read them before you press *Check*: from a document
+  marked *Only a local AI* only a local model reads them and the excerpts they are checked against, from one marked
+  *No AI* no model does and you judge the excerpts; a Claude chat connected to ENLENS is not shown such a check. A
+  document has one role: evidence, theory or your working document. Grouping *Documents* by *Role* shows them apart.
+  Travels in a shared project as the theory mark does: everyone in the team needs this version, since an older ENLENS
+  reads a working document as evidence. Changes no result by itself: the document's page lists what was made with it
+  in. The manual explains it under *Explore your documents → Working documents*.
+- **A concept map.** *Concepts* has a second tab, *Map*: the concepts mentioned in the most passages, joined by a line
+  when the documents mention two together more often than by chance (pointwise mutual information, not a raw count),
+  in groups, and with the links you accepted or added, the AI's confident ones and the abbreviations drawn in their
+  types (*is part of*, *leads to*, *is used instead of*, *is related to*; two types between the same two concepts are
+  both named). Groups 1 to 5 are filled shapes, each in its own colour; groups 6 to 10 the same shapes outlined; the
+  smaller groups after them grey stars; a concept in no group a grey dashed circle, so no mark is told apart by colour
+  alone. Choose a concept to open it, or a line to see the passages that join the two; the map is given as lists too.
+  Filter it by document, theme, code or year of publication; theory and working documents are left out. A line says
+  when the map is being counted, and the page says when it rests on fewer than 30 passages. Made on this computer
+  without AI, the same map every time. Also `enlens concept-map`. Does not change results.
+- **Bring in a codebook from NVivo, ATLAS.ti or MAXQDA.** *Codes* › *Codebooks* › *New codebook* › *From NVivo,
+  ATLAS.ti or MAXQDA* takes a REFI-QDA codebook (`.qdc`), or the codebook of a REFI-QDA project (`.qdpx`), and makes
+  it a codebook of your own, still a CSV file. Top codes with codes under them become groups; deeper levels fold into
+  their top group, each code keeping its place in the tree at the end of its definition; a code without a description
+  gets its place in the tree as a stand-in definition. Sets of codes over flat codes (ATLAS.ti's code groups) become
+  groups. A summary says what came in and what was folded or left out (colours, sets, codes that cannot be coded,
+  descriptions of headings). A codebook ENLENS exported comes back with its definitions, when to use and when not,
+  keywords, examples (their words) and groups; from a project file ENLENS wrote with several codebooks you choose one.
+  No AI. On the command line: `enlens import-qdc FILE [NAME] [--codebook TITLE]`. Changes no result by itself: it is a
+  new codebook.
+- **A code's definition drafted from its examples.** In the codebook editor, open a code with two examples or more and
+  press *Draft from the examples*: the AI reads only the passages that hold those examples (with the code's name and
+  group) and drafts a definition, *when to use it* and *when not to use it*. The definition and *when to use it* each
+  come with a quote from those passages that shows them, checked like every quote. The draft waits under the examples
+  until you take a part of it, all of it, or put it aside; what you take is marked *AI draft* until you rewrite it in
+  your own words, and the research log says the wording came from the AI. The mark goes with the words when you copy
+  the codebook, split the code, remove it and bring it back, or keep a colleague's version of it in a sync clash; a
+  `.qdc` or CSV sent out and brought back holds the words alone, so while codes still hold the AI's draft, one quiet
+  line beside the editor's downloads says how many and that a downloaded file does not carry the mark;
+  `export-qdc` and `export-qdpx` print the same sentence. Each document's AI setting decides whether its
+  passage is read and by whom (Claude, only the local model, or not at all); each example is read in the document it
+  was added from, and asking again with the same examples reuses the answer. Several drafts may be asked at once, and
+  stopping one leaves the others waiting. With Claude Code, its helpers answer these as *Code definitions from
+  examples*. Changes no result by itself: a label changes only when a code you saved is used to label again. Roadmap
+  K1, its optional AI part.
+- **Count non-scientific documents in one check.** When newspapers, blogs or company brochures are the material a
+  hypothesis is about, they are its evidence. Under the answer of such a hypothesis, turn on *Count non-scientific
+  documents in this check*: its answer then counts them as any document, for every part, and changes at once. Every
+  other check still reads them without counting them. The page, the assessment under the answer, the excerpts and the
+  Excel download say plainly that they count here and why, with the answer the check would have without them. While
+  it is on, you can give your reason in the field under the switch, change it, or empty it for the usual one. The
+  research log keeps each change with the answers before and after, and the setting travels with the check in a shared
+  project, as its note does; on a colleague's check, a line under the switch says your change reaches them as a
+  sync-clash copy. Everyone in the team needs this version: an older ENLENS reads the check without the exception.
+  When a colleague's change reaches your copy, *What came in* on the *Team* tab (and the report of a zip brought in)
+  says it first: who set which check to count them or to no longer count them, with their reason, and its answer here
+  now beside the one it would have the other way, or that the answer is the same either way. A document marked
+  non-scientific, or counted as scientific again, by the Owner or a Co-owner is said there too, by whom and with the
+  answers it changed in your copy. A change you already have says nothing, and no pop-up is added.
+  The document's page marks the checks that count it. Off by default: no answer changes until you turn it on.
+- **Your institution's drive as the team's storage space.** Besides Backblaze and Cloudflare, the Team page offers
+  *Your institution's drive…*: a folder in SURFdrive, SURF Research Drive or a university's Nextcloud (any drive that
+  speaks WebDAV), with nobody signing up anywhere new. The owner gives the drive's WebDAV address (a button fills in
+  SURFdrive's), their user name and an app password made for ENLENS in the drive's settings (never their main
+  password; it stays in the keychain). ENLENS makes a folder *ENLENS - <project>* there and tries it. Everyone in the
+  team needs an account at the same drive: *Invite a colleague…* asks for their user name there and shares the folder
+  with them, where the drive lets a program share (Nextcloud and ownCloud do); otherwise it says to share it in the
+  drive's website. Joining asks the colleague for their own user name and app password and finds the shared folder in
+  their drive, or lets them choose it. Removing a colleague stops sharing the folder with them where ENLENS can (it
+  shared the folder, or knows their account and the drive lets a program share); where it cannot, a note on the card
+  *The storage space* says what is left to do in the drive's website until it is done. Everything in the
+  folder is locked and signed as at Backblaze and Cloudflare; as at Cloudflare, the drive cannot keep a colleague to
+  their own part, so the signatures do. *A new app password for the drive* on the card *The storage space* replaces one
+  the drive no longer accepts. *Move to another storage space* works to and from a drive. Changes no result.
+- **A suggestion from your bibliography.** A document your bibliography lists as a newspaper or magazine article, a
+  press release, a blog or forum post, a web page, a podcast or a broadcast shows one quiet line on its page and in its
+  *Documents* row: *Your bibliography lists this as a newspaper article. Mark it as non-scientific?* *Mark* opens the
+  usual dialog; *No* is kept in the research log. The Owner's or a Co-owner's *No* holds in every copy, a Member's in
+  their own copy only; *Suggest again* on the document's page takes a *No* back. Nothing is marked by itself, and
+  theory and working documents are never suggested. Group *Documents* by *Scientific or not* to see the suggested ones
+  together. A document linked to several works is suggested from the first, the one *Documents* shows.
+- **Non-scientific documents on the evidence map.** They have a column again, their cells drawn with the symbol
+  unfilled and a dashed edge (*Non-scientific: read, not counted*). They change no answer or count of the map; in a
+  hypothesis that counts them, they are drawn as any other. In the Excel map they stand in brackets.
+- **Claude through the connector** is told which excerpts count by the exception and what the answer would be
+  without them.
+- **The Excel summary** has two new columns: *Answer counting non-scientific documents* (filled where it differs from
+  the answer) and *Non-scientific documents counted here*.
+- **Safety and economy in the drive** (review of 14 November 2026): an invite link whose drive name and address differ
+  is refused; joining shows the drive's full address and, for a drive not used on this computer before (and not
+  SURF's), asks the colleague to confirm it is their institution's before the app password is sent. The folder is
+  shared once per user name, and stops being shared only when nobody staying uses that account. After a hand-over the
+  dialogs name the person whose drive holds the folder, and the Team tab suggests moving to a folder in the new
+  owner's own drive (the user names go along, so that move shares by itself). Sharing works when the WebDAV address
+  points deeper than the drive's top folder; when ENLENS cannot tell where the folder is, it says to share by hand. A
+  drive's answer about another folder is reported, never read as an empty folder; a name no storage takes is left out
+  of a listing; a replaced file whose answer was lost counts as written; the owner's round removes old half-written
+  files once a day; a copy waiting to follow a move to a drive looks for the folder by its name each round and through
+  the whole drive at most every half hour. The manual says how the drive's trash bin fills with replaced files.
+- **What the audit of 14 November 2026 changed in the drive.**
+  - *A removal that cannot stop the sharing is not forgotten.* The removal dialog says beforehand what will happen to
+    the sharing. When ENLENS cannot stop it (shared by hand with an account it does not know, a drive without a
+    sharing interface, a folder in someone else's drive), a note stays on the card *The storage space* until you
+    choose *It is done*, or until ENLENS sees the share gone (it looks about once an hour where it can, and stops a
+    share it could not stop at first). The research log says it too. A share made in the drive's website is stopped
+    by ENLENS when it knows the colleague's user name. Removing the person whose drive holds the folder now says the
+    truth: the folder stays theirs, so move the team to a folder in your own drive first.
+  - *A refused app password is not tried again and again.* After the drive refuses it, ENLENS asks the drive nothing
+    until you enter a new one, and the card says so (*Try the same one again* lets one round try). When the drive asks
+    ENLENS to slow down, the round stops and the next one tries again, or waits as long as the drive asks when that is
+    short.
+  - *Whose account?* Where the drive says whose account a user name is, the invite dialog shows the name (*shared with
+    Carol de Vries (cdevries)*), with *Not them: withdraw the invite*; where it does not, the dialog says so.
+  - *A renamed or moved folder is found again* by what it holds, every half hour, and the words for the owner's own
+    folder are the owner's.
+  - *An address with a user name or password in it is refused*, and never shown back.
+  - *A drive without ETags*: a file written again with the same size is still seen as new.
+  - The set-up form says where the app password is kept on this computer (the keychain, or a file only you can read),
+    and that it opens your whole account at the drive. The manual and the privacy pages now say that ENLENS reads the
+    names of the folders at the top of your drive, and what the drive's administrators see (the folder's name, with
+    the project's name, and the accounts it is shared with).
+- **Files deleted from a storage space are written again** (every kind: Backblaze, Cloudflare, a drive). The owner's
+  copy writes the team's list of members, keys and project file again at its next round when they are missing (no
+  extra requests: it reads them anyway), and each copy writes its own files again within a day; the card *The storage
+  space* says files were missing and were written again. The manual asks to change nothing in the drive's folder by
+  hand and to leave it out of the drive's desktop program.
+- **Safer reading of a storage service's answers** (every kind): an XML answer with a DOCTYPE is refused (as the
+  `.qdc` import does), and every answer is read up to a limit. An idle round of a storage space now writes nothing on
+  this computer.
+
+### Safer
+
+- A REFI-QDA file that declares a DOCTYPE or an ENTITY is refused, whatever its encoding, and a `.qdpx` is read no
+  further than its `project.qde` (at most 64 MB unpacked, 5,000 files). A file with more than 10,000 codes is refused
+  as it is read, and long names and descriptions cost time only in step with their length.
+
+### Fixed
+
+- **After *Move to another storage space*, the owner's copy could wait for ever** when a colleague's copy followed
+  before the owner's next round ("The shared folder has not brought this project's own file … yet"). The project's own
+  file now goes along with the move.
+
+### Privacy
+
+- A draft definition sends the passages that hold the code's examples, with the code's name and group; never a
+  passage of a document marked *No AI*, and one marked *Only a local AI* only to the local model (`docs/PRIVACY.md`).
+  A definition you keep goes with later label tasks, as every definition does: when the local model drafted it, the
+  draft says so and asks you to rewrite it if it gives away what those documents say.
+
+### For developers
+
+- `conceptmap.py` (D1) builds on `conceptpaths._Graph`; routes `GET /api/projects/{p}/concept-map`, `…/options` and
+  `…/edge` (docs/API.md); `views/concept-map.js`. New tokens `--group-1` to `--group-5` (docs/DESIGN.md 3.1), each at
+  3:1 or more against `--surface` in both themes. The map's temporary tables are kept in memory
+  (`PRAGMA temp_store=MEMORY` on the connection), so a request writes no temporary file.
+- *Download as .qdc* writes a code's keywords separated by `; ` (was `, `), as the CSV does, and a single keyword that
+  holds a comma ends with `;`, so a keyword holding a comma comes back whole.
+
+### Tests
+
+- `tests/test_webdav_storage.py` with a stand-in drive (`tests/fake_webdav.py`: WebDAV, the OCS Share API, several
+  users and shares): the storage, refusals in plain words, a file written whole or not at all, set-up, invite, join,
+  working together, removal, a new app password, the hand-over, and moves to and from a drive; since the review, also
+  answers from another address (never followed), forged invites, unknown drives, one share per user name, the share
+  path, the holder after a hand-over, the waiting copy's requests, old temporary files, and a move that puts
+  `project.json` in the new space before the old one is told (also for a folder space and Backblaze); since the audit,
+  removals that leave a share (by hand, after a failure, the holder), files deleted in the folder (also in a folder
+  space), a refused password across rounds, a slow-down, display names, a DOCTYPE in a listing, read caps, a renamed
+  folder, an address with a password, no ETags, an href as a whole address or in another Unicode form, a share for
+  reading only, and an idle round's requests and writes. The stand-in now keeps a share's rights and display names.
+
+### Not yet done
+
+- The concept map has no "needs", "shapes" or "clashes with" links (ENLENS has no such link types yet), does not name
+  its groups with the AI, and cannot be saved as a picture.
+- A working document's claims are not found by themselves (no rule finds them well enough without AI). A check
+  remembers the document it was started from, not the sentence: the words may be changed into the claim first.
+- The drive support has not been tried with a real SURFdrive, SURF Research Drive or Nextcloud account: it was built
+  against a stand-in that follows the WebDAV standard and Nextcloud's documents. Not seen on a real drive in
+  particular: how it counts refused sign-ins and whether it answers a slow-down with Retry-After, whether it gives the
+  account's display name when sharing, and how it names a folder with accents.
+- A colleague cannot follow a move to a drive from Backblaze, Cloudflare or another drive by themselves (ENLENS knows
+  no account of theirs there): their Team tab asks them for a new invite. A colleague who becomes the owner cannot
+  share the drive's folder with new colleagues through ENLENS (a shared folder cannot be shared on); the person whose
+  drive holds it shares it in the drive's website, or the new owner moves the team to a folder in their own drive.
+- The codebook import has not been tried with a file written by NVivo, ATLAS.ti or MAXQDA themselves: it was built
+  against the REFI-QDA standard, ENLENS's own export and hand-made files.
+- The pages this release adds or changes were loaded in a browser, in light and dark and at a phone's width, with no
+  error. The storage space's new notes, the reason under the exception's switch and the codebook editor's draft were
+  not clicked through there: they rest on their tests.
+- None of this has been used by a real team yet.
+
 ## 0.18.7 (November 2026): Your project in NVivo, ATLAS.ti and MAXQDA, and the documents a check never read
 
 A project can now be opened in NVivo, ATLAS.ti or MAXQDA, with your codes, quotes, judgements and notes, and a codebook

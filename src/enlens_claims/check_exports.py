@@ -56,11 +56,11 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     from .nonscientific import counting_hyps
 
     nonsci = nonscientific_docs(ws)  # 0.18.6: their judgements never decide an answer (verdicts.set_aside)
-    # 0.18.8 (K3): except in the checks of the hypotheses that count them (their own setting, flagged whatever is
+    # 0.19.0 (K3): except in the checks of the hypotheses that count them (their own setting, flagged whatever is
     # marked, as the checks list does)
     counts_ns = counting_hyps(ws)
     ns_cids = {cid for hid in counts_ns for cid, _st in claims.get(hid, [])}
-    # 0.18.8 (K3): the judgements of non-scientific documents set aside, kept to draw them with a mark of their own
+    # 0.19.0 (K3): the judgements of non-scientific documents set aside, kept to draw them with a mark of their own
     # (read, not counted): they change no count, colour or answer of the map
     ns_ver: dict[str, list[dict]] = {}
     for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model FROM "
@@ -95,7 +95,7 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     cells: dict[str, dict[str, dict]] = {}
     answers: dict[str, int] = {}
     decides: dict[str, int] = {}
-    shown_ns: set[str] = set()  # 0.18.8 (K3): non-scientific documents shown with their own mark only
+    shown_ns: set[str] = set()  # 0.19.0 (K3): non-scientific documents shown with their own mark only
     hyps = []
     for h in hs:
         hid = h["hyp_id"]
@@ -111,7 +111,7 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
             if decide and decided and status_of(hid, doc) != h["status"]:
                 decides[doc] = decides.get(doc, 0) + 1
         counted_docs = len(row)
-        # 0.18.8 (K3): what the non-scientific documents say, read and not counted: a cell of its own look, never in
+        # 0.19.0 (K3): what the non-scientific documents say, read and not counted: a cell of its own look, never in
         # the counts (`docs_counted`, `answers`, `decides`)
         for doc, c in sides([v for cid, _stage in claims.get(hid, []) for v in ns_ver.get(cid, [])]).items():
             if doc not in row:
@@ -169,7 +169,7 @@ def map_table(m: dict) -> list[dict]:
                "Documents it rests on": h["docs_counted"] if not h["single_document"] else "1 (only one document)"}
         for d, name in zip(m["documents"], heads):
             c = m["cells"].get(h["hyp_id"], {}).get(d["doc_id"])
-            # 0.18.8 (K3): a non-scientific document's, read and not counted, in brackets
+            # 0.19.0 (K3): a non-scientific document's, read and not counted, in brackets
             row[name] = ("" if not c else f"[{MAP_SYMBOL[c['side']]} {c['excerpts']}]" if c.get("counted") is False
                          else f"{MAP_SYMBOL[c['side']]} {c['excerpts']}")
         rows.append(row)
@@ -361,7 +361,7 @@ def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[st
                     "AI certainty": f"{cert} ({round(p['confidence'] * 100)}%)" if cert else "",
                     "Counted in the answer": (  # 0.18.6: why not, for a Non-scientific one
                         ("yes: a non-scientific document, counted in this check" if p.get("nonscientific_counted")
-                         else "yes") if p["counted"] else  # 0.18.8 (K3): counted by the hypothesis's own setting
+                         else "yes") if p["counted"] else  # 0.19.0 (K3): counted by the hypothesis's own setting
                         "no: a non-scientific document" if p.get("nonscientific") and p["verdict"]
                         else "no") if p else "",
                     "Quote": (p["quote"] or "") if p else "",
@@ -450,7 +450,7 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
             # 0.11.2: a stronger model read the excerpts again and its reading changed the answer
             "Answer before a stronger model read it again": STATUS_TEXT.get(res["status_before_stronger"], "")
             if res.get("status_before_stronger") else "",
-            # 0.18.6 / 0.18.8 (K3): the answer counting the non-scientific documents, where it differs; and whether this
+            # 0.18.6 / 0.19.0 (K3): the answer counting the non-scientific documents, where it differs; and whether this
             # hypothesis counts them (its own setting), with why
             "Answer counting non-scientific documents": STATUS_TEXT.get(res["status_all_sources"],
                                                                          res["status_all_sources"])

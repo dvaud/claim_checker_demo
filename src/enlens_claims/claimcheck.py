@@ -511,13 +511,13 @@ _MAIN = object()  # _run_check: the hypothesis's own words go to the main model
 
 
 def _own_level(ws: Workspace, hyp_id: str) -> str:
-    """0.18.8 (N3): how far the hypothesis's own words may go, by the floors for its text (`access.floor`): a check
+    """0.19.0 (N3): how far the hypothesis's own words may go, by the floors for its text (`access.floor`): a check
     started from a document's text keeps that document's AI setting, an add-on's draft its own; `cloud` otherwise."""
     return access.floor(ws._conn(), {"hyp_id": hyp_id})
 
 
 def _own_reader(ws: Workspace, hyp_id: str, readers):
-    """0.18.8 (N3): (backend, model) that may read the hypothesis's own words to split it or to propose search words:
+    """0.19.0 (N3): (backend, model) that may read the hypothesis's own words to split it or to propose search words:
     the main model, the local model for restricted documents, or None (no model may: it is checked as written, with
     its own words)."""
     lv = _own_level(ws, hyp_id)
@@ -618,7 +618,7 @@ def check_hypothesis(ws: Workspace, text: str, backend, model: str, framework: s
     own = readers is None  # 0.13.11: a batch shares one, so the local model is loaded once for all its checks
     readers = access.Readers(backend, model) if own else readers
     try:
-        words_by = _own_reader(ws, hid, readers)  # 0.18.8 (N3): who may read the hypothesis's own words
+        words_by = _own_reader(ws, hid, readers)  # 0.19.0 (N3): who may read the hypothesis's own words
         plan = [{"text": text, "role": None, "part": 0}]
         if given is not None:
             plan = given
@@ -695,7 +695,7 @@ def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool
                   origin_id: str | None = None) -> dict:
     """What a check would do before it reads anything ("Look before checking"): the parts the model splits the
     hypothesis into and the extra search words it proposes for each, for a person to edit and pass to
-    `check_hypothesis` as `parts` and `terms`. Nothing is kept in the project. 0.18.8 (N3): `origin`, `origin_id` as
+    `check_hypothesis` as `parts` and `terms`. Nothing is kept in the project. 0.19.0 (N3): `origin`, `origin_id` as
     for `check_hypothesis`: words from a document's text are read only by a model that document's AI setting allows.
 
     Returns {"parts": [{"text", "role"}], "terms": [[...] per part], "split": bool}.
@@ -711,7 +711,7 @@ def prepare_check(ws: Workspace, text: str, backend, model: str, decompose: bool
     new_hypothesis(ws, text, None, None, {"prepare": True}, None, hyp_id=hid, origin=origin, origin_id=origin_id)
     readers = access.Readers(backend, model)
     try:
-        words_by = _own_reader(ws, hid, readers)  # 0.18.8 (N3): who may read these words
+        words_by = _own_reader(ws, hid, readers)  # 0.19.0 (N3): who may read these words
         if words_by is not None:
             backend, model = words_by
             used = _used(backend, model)
@@ -785,7 +785,7 @@ def queue_check(ws: Workspace, text: str, router, framework: str | None = None, 
         options["queue_terms"] = given_terms
     hid = _new_id("h")
     create_hypothesis(ws, text, fw, code, options, batch_id, hyp_id=hid, origin=origin, origin_id=origin_id)
-    # 0.18.8 (N3): Claude Code may not read words a floor keeps on this computer (a check started from a document
+    # 0.19.0 (N3): Claude Code may not read words a floor keeps on this computer (a check started from a document
     # marked Only a local AI or No AI): the hypothesis is checked as written, with its own words, and its excerpts are
     # judged by the local model or by the person (_add_round)
     if _own_level(ws, hid) != "cloud":
@@ -978,7 +978,7 @@ def check_claim(ws: Workspace, text: str, backend, model: str, target: str | Non
 def _run_check(ws, cid, backend, model, used, k, per_doc, expand, doc_ids, say, embedder=None, context=None,
                stop=lambda: None, given_terms: list[str] | None = None, second_pass: bool = False,
                readers=None, own=_MAIN) -> None:
-    """One part of a check. `own` (0.18.8, N3): (backend, model) that may read the part's own words for its search
+    """One part of a check. `own` (0.19.0, N3): (backend, model) that may read the part's own words for its search
     words, or None (no model may: it is searched with its own words); the main model by default."""
     uc = ws.query("SELECT text, target, framework FROM user_claims WHERE claim_id=?", (cid,))[0]
     claim = uc["text"]
@@ -1395,7 +1395,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
     me = _me()
     nonsci = nonscientific_docs(ws)  # 0.18.6: their judgements are shown, never counted (verdicts.set_aside)
     ver_all: dict[str, list] = {}    # with them counted, for the status text (only when there are any)
-    # 0.18.8 (K3): the hypotheses that count them in their own check, and their parts (nothing is set aside there)
+    # 0.19.0 (K3): the hypotheses that count them in their own check, and their parts (nothing is set aside there)
     from .nonscientific import counting_hyps
 
     counting_all = counting_hyps(ws)
@@ -1533,7 +1533,7 @@ def history(ws: Workspace, threshold: float | None = None, limit: int | None = N
                     "status_text": st_text,
                     # 0.18.6: the answer counting the Non-scientific documents too
                     "status_all_sources": (st_all[0] if len(st_all) == 1 else aggregate(st_all)) if st_all else s,
-                    "count_nonscientific": h["hyp_id"] in counting_all,  # 0.18.8 (K3): its own setting
+                    "count_nonscientific": h["hyp_id"] in counting_all,  # 0.19.0 (K3): its own setting
                     "status_any": st_any[0] if len(st_any) == 1 else aggregate(st_any),
                     "supports": counts["supports"], "partly": counts["partially_supports"], "refutes": counts["refutes"],
                     "uncounted": uncounted, "corrected": corrected, "reviewed": reviewed, "to_review": to_review,

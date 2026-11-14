@@ -10,7 +10,7 @@ import { LEVEL, accessChoice, accessAskCard, accessBanner, docAccessDialog, leve
 import { askWhy } from "./versions.js";
 import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
 import { docChip } from "./owner-state.js";   // 0.18.5: the owner's word as an icon on a closed line
-import { documentMarks, roleMenuItems, roleLine, nonsciMenuItem, NONSCI_MEANS, suggestLine } from "./doc-role.js";   // 0.18.1 K2: theory documents; 0.18.6: non-scientific ones; 0.18.8 N3: working documents
+import { documentMarks, roleMenuItems, roleLine, nonsciMenuItem, NONSCI_MEANS, suggestLine } from "./doc-role.js";   // 0.18.1 K2: theory documents; 0.18.6: non-scientific ones; 0.19.0 N3: working documents
 import { reader, newReaderFor, readingNote, READER_4_NEWS, READER_5_NEWS } from "./doc-shared.js";
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
@@ -273,7 +273,7 @@ export async function renderSources(view) {
   let sorting = store(`docs-sort:${project}`) || "title";   // 0.18.5: by title, or the newest first
   const rows = new Map();     // doc_id -> its row
   const opened = new Set();   // 0.18.2: the documents whose panel is open (kept across re-draws)
-  let roles = {};             // 0.18.1 (K2): doc_id -> "theory"; 0.18.8 (N3): or "working"
+  let roles = {};             // 0.18.1 (K2): doc_id -> "theory"; 0.19.0 (N3): or "working"
   const notSource = (d) => !!roles[d.doc_id];   // theory and working documents are never a source
   // roadmap N5: how many answers each document is behind, as the evidence map counts them ({answers, hypotheses,
   // last_check}; null while unknown). A neutral count: a document behind no answer may be off the topic, or word it
@@ -282,7 +282,7 @@ export async function renderSources(view) {
   const answersOf = (d) => (use && use.answers[d.doc_id]) || 0;
   const afterLastCheck = (d) => Boolean(use && use.last_check && String(d.added_at || "") > use.last_check);
   let nonsci = new Set();     // 0.18.6: the documents marked Non-scientific
-  let suggested = {};         // 0.18.8 (K3): {doc id: "a newspaper article"}, suggested by the bibliography
+  let suggested = {};         // 0.19.0 (K3): {doc id: "a newspaper article"}, suggested by the bibliography
   const loadMarks = async () => { const m = await documentMarks(project); roles = m.roles; nonsci = m.nonscientific; suggested = m.suggested || {}; };
   // 0.18.5: what needs a look, for the grouping and the notice above the list: a fact that needs you (a check, a sync
   // clash, a scan with no text, a reading done badly), a reading to look over, or nothing
@@ -299,7 +299,7 @@ export async function renderSources(view) {
     role: { label: "Role", always: true, of: (d) => roles[d.doc_id] || "evidence", groups: [
       { key: "evidence", name: "Evidence", icon: "file-text", sub: "What hypotheses are checked against, and what themes, codes and key terms are made from." },
       { key: "theory", name: "Theory", icon: "book-marked", sub: "The lens the research is read through: left out of themes, codebook labels, the excerpts a check reads and key terms." },
-      // 0.18.8 (N3): the researcher's own drafts and notes
+      // 0.19.0 (N3): the researcher's own drafts and notes
       { key: "working", name: "Your working documents", short: "Working", icon: "notebook", sub: "Your own drafts and notes: read, labelled with codes and checked against the corpus a sentence at a time, but never a source. Left out of themes, the excerpts a check reads, key terms and the corpus’s code counts." }] },
     look: { label: "Needs a look", always: false, of: lookOf, groups: [
       // what needs you wears the needs-you look (an amber tag), as on its lines and in the notice above the list
@@ -312,7 +312,7 @@ export async function renderSources(view) {
       { key: "used", name: "Behind answers", icon: "layers", sub: "An excerpt of each counts in at least one answer; the line says in how many, the evidence map in which." },
       { key: "theory", name: "Theory", icon: "book-marked", sub: "Not evidence: checks leave them out, so they are behind no answer." },
       { key: "working", name: "Your working documents", short: "Working", icon: "notebook", sub: "Never a source: checks leave them out, so they are behind no answer." }] },
-    // 0.18.8 (K3): scientific or not, with those the bibliography suggests marking as a group of their own
+    // 0.19.0 (K3): scientific or not, with those the bibliography suggests marking as a group of their own
     science: { label: "Scientific or not", always: false, of: (d) => (nonsci.has(d.doc_id) ? "nonscientific" : suggested[d.doc_id] ? "suggested" : "scientific"), groups: [
       { key: "suggested", name: "Suggested as non-scientific", short: "Suggested", icon: "library", sub: "Your bibliography lists them as news, magazine or blog posts, web pages or broadcasts. Open one to mark it, or to say No: nothing is marked by itself." },
       { key: "nonscientific", name: "Non-scientific", icon: "newspaper", sub: "Read and judged, never counted in an answer (except in a check set to count them)." },
@@ -464,7 +464,7 @@ export async function renderSources(view) {
           // 0.18.6: whether its judgements count in answers
           h("dt", {}, "Scientific"), h("dd", {}, nonsci.has(d.doc_id) ? `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its judgements count in no answer, except in checks set to count non-scientific documents` : "Yes: its judgements count in answers",
             button({ kind: "quiet", sm: true, class: "doc-nonsci-btn", onClick: ns.onClick }, ns.text),
-            // 0.18.8 (K3): the bibliography's suggestion, one quiet line (never a mark by itself)
+            // 0.19.0 (K3): the bibliography's suggestion, one quiet line (never a mark by itself)
             suggested[d.doc_id] && !nonsci.has(d.doc_id) ? suggestLine(project, d.doc_id, d.title || d.file || "this document", suggested[d.doc_id], () => reloadDocs()) : null),
           d.bib && d.bib.cite ? [h("dt", {}, "In the bibliography"), h("dd", {}, h("span", { class: "it", title: d.bib.title || null }, icon("library", { size: 13 }), d.bib.cite),
             link({ href: "#/bibliography", class: "small" }, "Open the Bibliography"))] : null),
@@ -518,7 +518,7 @@ export async function renderSources(view) {
             // 0.18.5: the file name when another document has the same title (the one fact that tells them apart)
             sameTitle.has((d.title || "").trim().toLowerCase()) ? h("span", { class: "doc-fact", title: d.file || null }, d.file) : null,
             grouping === "role" || !roles[d.doc_id] ? null : roles[d.doc_id] === "working"
-              ? iconMark("notebook", "Your working document: your own draft or notes, never a source")   // 0.18.8 N3
+              ? iconMark("notebook", "Your working document: your own draft or notes, never a source")   // 0.19.0 N3
               : iconMark("book-marked", "Theory: the lens the research is read through, not evidence"),   // 0.18.1 K2
             ...useFacts(d),   // roadmap N5: only when the list is grouped or sorted by the answers
             nonsci.has(d.doc_id) ? iconMark("newspaper", "Non-scientific: read and judged, never counted in an answer") : null,   // 0.18.6

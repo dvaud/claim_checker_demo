@@ -325,7 +325,7 @@ def test_a_project_zipped_again_inside_a_folder_reads():
 
 
 @pytest.mark.parametrize("origin, want", [
-    ("ENLENS 0.18.8", ["Paris, France"]),
+    ("ENLENS 0.19.0", ["Paris, France"]),
     ("ENLENS 0.19.0", ["Paris, France"]),
     ("ENLENS 0.18.7", ["Paris", "France"]),     # 0.18.7 joined keywords with ", "
     ("NVivo 14", ["Paris", "France"]),
@@ -399,7 +399,7 @@ def test_hostile_names_and_descriptions_cost_time_in_step_with_their_length():
         _quick(lambda: qdc_import.to_state(*qdc_import.read_tree(_qdc(f'<Code name="a"><Description>{desc}</Description></Code>'))))
     name = " ".join(["w"] * 4000)
     _quick(lambda: qdc_import.to_state(*qdc_import.read_tree(_qdc(
-        f'<Code name="{name}" isCodable="false"><Description>zzz</Description><Code name="c"/></Code>', origin="ENLENS 0.18.8"))))
+        f'<Code name="{name}" isCodable="false"><Description>zzz</Description><Code name="c"/></Code>', origin="ENLENS 0.19.0"))))
 
 
 def test_a_definition_that_opens_with_a_label_stays_the_definition(ws):
@@ -421,7 +421,7 @@ def test_a_definition_that_opens_with_a_label_stays_the_definition(ws):
 def _enlens_project(*books: str) -> bytes:
     codes = "".join(f'<Code name="{b} (codebook)" isCodable="false"><Code name="{b} code" isCodable="true">'
                     f'<Description>A code of {b}</Description></Code></Code>' for b in books)
-    return _zip({"project.qde": (f'<Project xmlns="urn:QDA-XML:project:1.0" name="ws" origin="ENLENS 0.18.8"><CodeBook>'
+    return _zip({"project.qde": (f'<Project xmlns="urn:QDA-XML:project:1.0" name="ws" origin="ENLENS 0.19.0"><CodeBook>'
                                  f'<Codes>{codes}<Code name="Hypotheses (ENLENS)" isCodable="false"/></Codes></CodeBook>'
                                  f'</Project>').encode()})
 
@@ -459,7 +459,7 @@ def test_sets_and_the_project_attributes_outside_the_codebook():
     st = qdc_import.to_state(*qdc_import.read_tree(_zip({"project.qde": qde.encode()})))
     assert st["summary"]["sets"] == 1 and "1 set left out: ENLENS has no sets." in st["summary"]["notes"]
     qde2 = ("<?xml version='1.0' encoding='utf-8'?><Project xmlns='urn:QDA-XML:project:1.0' name='Interviews' "
-            "origin='ENLENS 0.18.8'><CodeBook><Codes><Code name='Remote work (codebook)' isCodable='false'>"
+            "origin='ENLENS 0.19.0'><CodeBook><Codes><Code name='Remote work (codebook)' isCodable='false'>"
             "<Code name='1 Short' isCodable='true'><Description>Short</Description></Code></Code></Codes></CodeBook></Project>")
     st = qdc_import.to_state(*qdc_import.read_tree(_zip({"project.qde": qde2.encode()})))
     assert st["title"] == "Remote work" and [c["code"] for c in st["codes"]] == ["1"]

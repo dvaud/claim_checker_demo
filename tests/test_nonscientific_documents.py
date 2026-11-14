@@ -97,7 +97,7 @@ def test_only_non_scientific_support_is_no_evidence(project):
     assert (row["status"], row["status_text"], row["supports"]) == ("unsupported", UNSUPPORTED_NONSCI, 0)
     m = evidence_map(ws)
     assert next(h for h in m["hypotheses"] if h["hyp_id"] == hid)["status"] == "unsupported"
-    # 0.18.8 (K3): shown with a mark of its own, behind no answer
+    # 0.19.0 (K3): shown with a mark of its own, behind no answer
     assert {d["doc_id"]: d["answers"] for d in m["documents"]}[news] == 0
     assert m["cells"][hid][news]["counted"] is False
     # counted again: the answer comes back

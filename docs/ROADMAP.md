@@ -256,7 +256,7 @@ B1 to B4 and B6 (citations in Word, reference lists, the reference-list check, r
 
 D5 (concepts in the writing) is Margin's.
 
-**D1. A concept map** · Level 0 · built (14 November 2026, unreleased) (`conceptmap.py`, the Concepts page)
+**D1. A concept map** · Level 0 · built (14 November 2026, 0.19.0rc1) (`conceptmap.py`, the Concepts page)
 - A graph of the concepts that occur together in passages (weighted by how much more often than by chance, such as
   PMI, not by raw counts), clustered, with the links you and the AI accepted drawn in their types (same, broader,
   narrower, related, needs, shapes, clashes with). Filter by document, theme, code or year.
@@ -312,7 +312,7 @@ G1 to G4 (the rest of Margin's writing companion) are Margin's.
 - Built: `qdpx.py` writes the project (documents as text, codebooks and hypotheses as codes, the labels and judgements
   that count as codings by the person or "ENLENS AI (model)", notes and the research log as memos) and a codebook alone
   as `.qdc`, from the Hypotheses, Codes, result and codebook pages and `enlens export-qdpx` / `export-qdc`. The way
-  back in (K1 *In and out*, unreleased): `qdc_import.py` brings a `.qdc` (or a `.qdpx`'s codebook) in as a new codebook,
+  back in (K1 *In and out*, 0.19.0rc1): `qdc_import.py` brings a `.qdc` (or a `.qdpx`'s codebook) in as a new codebook,
   from *New codebook* › *From NVivo, ATLAS.ti or MAXQDA* and `enlens import-qdc`.
 
 ## H. Optimisation across the board
@@ -594,13 +594,13 @@ its own)
   codebook's history (F5). An edit changes no result by itself.
 - **In and out.** CSV stays the file, so a codebook still opens in a spreadsheet. A REFI-QDA codebook (`.qdc`) can be
   brought in from and sent to NVivo, ATLAS.ti and MAXQDA, with G5. Codebooks already sync between colleagues; an
-  edit made on both sides comes in as a sync-clash copy, as today. *Built (unreleased):* sending out came with G5
+  edit made on both sides comes in as a sync-clash copy, as today. *Built (0.19.0rc1):* sending out came with G5
   (0.18.7); bringing in is `qdc_import.py` (*New codebook* › *From NVivo, ATLAS.ti or MAXQDA*, `enlens import-qdc`):
   top codes become groups, deeper levels fold into their top group with their place in the tree kept in the
   definition, and ENLENS's own export comes back with everything a `.qdc` carries (not an example's document and
   page, nor the codebook's label and direction setting, nor the *AI draft* mark of words taken from the AI's draft).
 - Optional (Level 2, then 3): a draft definition and *when to use it* for a code, from its example passages only,
-  marked as a draft to rewrite. The editor is complete without it. *Built (14 November 2026, unreleased):*
+  marked as a draft to rewrite. The editor is complete without it. *Built (14 November 2026, 0.19.0rc1):*
   `codedefine.py`, task kind `code_definition` (code-definition-v1, Sonnet stepping up to Opus, the large local model,
   the enlens-namer helper). *Draft from the examples* on an open code with two example passages or more drafts its
   definition, *when to use it* and *when not*, the first two each shown by a checked quote; each document's AI setting
@@ -652,8 +652,8 @@ its own)
   *Theoretical framework* as section headings (`reader.py`). Nothing marks a whole document as theory, and every
   document counts as evidence everywhere.
 
-**K3. Non-scientific documents: read, never counted** · Level 0 · built (13 November 2026, unreleased; the rest 14
-November 2026, unreleased)
+**K3. Non-scientific documents: read, never counted** · Level 0 · built (0.18.6; the rest 14 November 2026,
+0.19.0rc1)
 (`docrole.py` for the mark, `verdicts.set_aside` for the rule, `nonscientific.py` for the exception and the suggestion)
 - **Why.** A news article, a press release or a company brochure can say what a hypothesis says, but it reports no
   method or data of its own. It should not make a hypothesis supported, mixed or contradicted by itself.
@@ -666,7 +666,7 @@ November 2026, unreleased)
 - The mark sits beside the role (a theory document can carry it too), set by the researcher, never guessed. Unlike the
   role it changes answers at once: the reply and the research log list the answers it changed. It travels as *Leave
   out* does.
-- **The rest, built (14 November 2026, unreleased)** (`nonscientific.py`):
+- **The rest, built (14 November 2026, 0.19.0rc1)** (`nonscientific.py`):
   - *A per-hypothesis exception.* Under a hypothesis's answer, where its check read a non-scientific document: *Count
     non-scientific documents in this check*, for when newspapers or blogs are the material it is about. Its answer then
     counts them as any document, for every part, and is the one counting them (`status_all_sources`); every other check
@@ -861,7 +861,7 @@ Cloudflare (keys on B2, tokens on R2: the only part written per service), then *
 removing a colleague. WebDAV (SURFdrive, SURF Research Drive, a university's Nextcloud) can come later on the same
 layer.
 
-*Built (14 November 2026, unreleased): WebDAV* (`storage.py` `WebDAVStorage`, `sync/webdav.py`, `views/team-space.js`),
+*Built (14 November 2026, 0.19.0rc1): WebDAV* (`storage.py` `WebDAVStorage`, `sync/webdav.py`, `views/team-space.js`),
 a third kind of storage space on the same layer, with sealing, signatures, the mirror and keeper = owner unchanged.
 The owner gives the drive's WebDAV address (SURFdrive's is offered; a Nextcloud's is
 `https://<host>/remote.php/dav/files/<user>/`), their user name and an app password (keychain only); ENLENS makes a
@@ -989,7 +989,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - The choice beside *Start Claude Code* becomes *Energy efficient*, *Balanced* and *Intelligence*: which models, and
   how much effort, answer each kind of task. How many helpers run at once moves to Settings.
 
-**N3. Your own working documents** · Level 0 · built (14 November 2026, unreleased) (`docrole.py`)
+**N3. Your own working documents** · Level 0 · built (14 November 2026, 0.19.0rc1) (`docrole.py`)
 - A tab under Documents for the researcher's own drafts and notes: kept in the project, read, coded and checked
   against the corpus like any document, but never a source (not in search results used as evidence, the glossary, the
   themes or the evidence map). Build it with K2's theory mark: one role per document with three values.
@@ -1031,7 +1031,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   each source is. The text points to these and does not decide them. If an AI's wording is ever wanted, it is a
   separate draft sentence marked as the AI's (as in K1), never mixed into the sentences made by rules.
 
-**N5. Documents behind no answer** · Level 0 · built (unreleased)
+**N5. Documents behind no answer** · Level 0 · built (0.18.6 and 0.18.7)
 - *The wish:* once several hypotheses are checked, see which documents the answers rest on, and which none do, so a
   corpus is not read through the same three documents. A neutral count, never a verdict on a document: one behind no
   answer may be off the hypotheses' topic, or say it in other words.

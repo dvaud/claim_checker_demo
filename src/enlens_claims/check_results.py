@@ -311,7 +311,7 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
     from .nonscientific import counts_here
 
     marked = nonscientific_docs(ws)
-    # 0.18.8 (K3): a hypothesis can count them in its own check (they are the material it is about): then none is
+    # 0.19.0 (K3): a hypothesis can count them in its own check (they are the material it is about): then none is
     # set aside here, and its excerpts say they count by that exception (`nonscientific_counted`)
     counted_here = out["count_nonscientific"] = counts_here(ws, out["hyp_id"])
     nonsci = set() if counted_here else marked
@@ -445,7 +445,7 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
             item["counted"] = (bool(item["verdict"]) and (eff["confidence"] or 0) >= thr and counts(v)
                                and p["doc_id"] not in nonsci)
         item["nonscientific"] = p["doc_id"] in nonsci  # 0.18.6: its judgement is shown, never counted
-        item["nonscientific_counted"] = counted_here and p["doc_id"] in marked  # 0.18.8 (K3): counted by exception
+        item["nonscientific_counted"] = counted_here and p["doc_id"] in marked  # 0.19.0 (K3): counted by exception
         if earlier and is_tombstone(p["passage_id"]):
             item["not_placed"] = True  # its quote has no place in the document as it reads now
         so = seconds.get(p["passage_id"])
@@ -461,7 +461,7 @@ def _result(ws: Workspace, claim_id: str, threshold: float | None = None) -> tup
     # 0.18.6: the answer counting the Non-scientific documents too (what the mark changed)
     out["status_all_sources"] = (_status_of_rounds(statuses, vs_all, thr, stage, waiting)
                                  if any(v["doc_id"] in nonsci for v in vs_all) else out["status"])
-    # 0.18.8 (K3): where they count by the exception, the answer the check would have without them
+    # 0.19.0 (K3): where they count by the exception, the answer the check would have without them
     out["status_without_nonscientific"] = (_status_of_rounds(statuses, set_aside(vs_all, marked), thr, stage, waiting)
                                            if counted_here and any(v["doc_id"] in marked for v in vs_all)
                                            else out["status"])
@@ -521,11 +521,11 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
            "decomposed": len(parts) > 1, "model": h["model"] or (parts[0]["model"] if parts else None),
            "batch_id": h["batch_id"], "note": h["note"], "threshold": thr, "parts": parts,
            "origin": h.get("origin"), "origin_id": h.get("origin_id")}  # 0.13.6: where it comes from
-    if h.get("origin") == docrole.ORIGIN and h.get("origin_id"):   # 0.18.8 (N3): started from a document's text
+    if h.get("origin") == docrole.ORIGIN and h.get("origin_id"):   # 0.19.0 (N3): started from a document's text
         doc = ws.query("SELECT title, path FROM documents WHERE doc_id=?", (h["origin_id"],))
         if doc:   # the document's title, or its file's name (none: the document is gone; the link is then left out)
             out["origin_title"] = doc[0][0] or re.sub(r".*[/\\]", "", doc[0][1] or "") or "this document"
-    own = access.floor(ws._conn(), {"hyp_id": hyp_id})   # 0.18.8 (N3): how far the hypothesis's own words may go
+    own = access.floor(ws._conn(), {"hyp_id": hyp_id})   # 0.19.0 (N3): how far the hypothesis's own words may go
     if own != "cloud":
         out["words_access"] = own
     if h["code"]:
@@ -545,7 +545,7 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
         out["status_any"] = aggregate([p["status_any"] for p in parts])
         out["status_all_sources"] = aggregate([p["status_all_sources"] for p in parts])
         out["status_without_nonscientific"] = aggregate([p["status_without_nonscientific"] for p in parts])
-    # 0.18.8 (K3): this hypothesis counts the non-scientific documents (its own setting, off by default), why, and how
+    # 0.19.0 (K3): this hypothesis counts the non-scientific documents (its own setting, off by default), why, and how
     # many excerpts of documents marked so its check read (the page offers the setting only where there are some)
     from .nonscientific import setting
 
