@@ -46,10 +46,12 @@ class SpaceApi:
         return self._folder_status(name)   # (api_folder.FolderApi: the folder's state, with "space")
 
     def get_space_links(self, q):
-        """The pages the owner opens during the set-up (the services' own sign-up and key pages)."""
+        """The pages the owner opens during the set-up (the services' own sign-up and key pages), and "keychain":
+        where this computer keeps secrets ("file" or the system's keychain), for the set-up form's words."""
+        from .. import keychain
         from ..sync import r2
 
-        return {**LINKS, "r2_token": getattr(r2, "TOKEN_LINK", None)}
+        return {**LINKS, "r2_token": getattr(r2, "TOKEN_LINK", None), "keychain": keychain.backend()}
 
     def _setup_job(self, name: str, title: str, fn):
         ws = self.app.ws(name)
@@ -158,6 +160,21 @@ class SpaceApi:
         except space.SpaceProblem as e:
             raise _problem(e) from e
         return {**self._space_status(name), "warnings": (out or {}).get("warnings") or []}
+
+    def delete_space_notice(self, name, notice, q):
+        """A standing notice of the Team tab is dealt with: "unshare-<part>" (the folder is no longer shared with a
+        removed colleague: done in the drive's website) or "restored" (`space.dismiss`). Answers the folder's state."""
+        try:
+            space.dismiss(self.app.ws(name), notice)
+        except space.SpaceProblem as e:
+            raise _problem(e) from e
+        return self._space_status(name)
+
+    def post_space_drive_retry(self, name, q):
+        """*Try again* after the drive refused the app password: the next round asks the drive once more."""
+        self._body()
+        space.retry_drive(self.app.ws(name))
+        return self._space_status(name)
 
     def post_space_move(self, name, q):
         """*Move to another storage space*: {"service": "b2", "key_id", "app_key"}, {"service": "r2", "token",

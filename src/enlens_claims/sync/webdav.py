@@ -30,6 +30,10 @@ Addresses (read 14 November 2026):
   same, https://doc.owncloud.com/server/next/developer_manual/core/apis/ocs-share-api.html).
 - A folder shared with a user lands in their own files under its name (renamed when they have one of that name
   already), or inside the folder an administrator chose for shares (often `Shared`).
+- A share's answer and the list of shares carry the account's display name, `share_with_displayname` (Nextcloud's and
+  ownCloud's OCS Share API documents above). ENLENS shows it beside the user name so the owner sees whose account the
+  folder went to; a drive that gives none, or gives only the user name again, is said to have shown no name. Never
+  tried against a real drive (14 November 2026): the stand-in gives the field.
 """
 from __future__ import annotations
 
@@ -64,6 +68,9 @@ def normalise(address: str, user: str = "") -> str:
         raise WebDAVProblem("Enter the drive's WebDAV address.", "input")
     if "://" not in a:
         a = "https://" + a
+    if "@" in urlsplit(a).netloc:   # (never echoed back: it may hold a password)
+        raise WebDAVProblem("Leave your user name and password out of the WebDAV address: they have fields of their "
+                            "own. The address starts with https:// and the drive's name.", "input")
     if user:
         a = a.replace("<user>", quote(user, safe="@")).replace("%3Cuser%3E", quote(user, safe="@"))
     parts = urlsplit(a)
@@ -259,7 +266,7 @@ def _ocs(method: str, url: str, user: str, password: str, form: dict | None = No
         body = urlencode(form).encode("utf-8")
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     try:
-        r = _web.send_retrying(lambda: (method, url, headers, body), 30.0, 1024 ** 2)
+        r = _web.send_retrying(lambda: (method, url, headers, body), 30.0, 1024 ** 2, retry_429=False)
     except _web.NetError as e:
         raise WebDAVProblem(f"ENLENS could not reach the drive ({e.reason}).", "unreachable") from e
     try:
@@ -280,37 +287,57 @@ def _ocs(method: str, url: str, user: str, password: str, form: dict | None = No
     return doc["ocs"].get("data") or {}
 
 
-def find_share(address: str, user: str, password: str, folder: str, with_user: str) -> str | None:
-    """The id of the share of the project's folder with this user name that is there already, or None."""
+_NAME_JUNK = re.compile(r"[\x00-\x1f\x7f<>]+")
+
+
+def display_name(sh: dict, with_user: str) -> str | None:
+    """The account's display name as the drive gives it with a share, or None when it gives none, or only the user
+    name again."""
+    name = _NAME_JUNK.sub(" ", str(sh.get("share_with_displayname") or "")).strip()[:100]
+    return name if name and name.lower() != with_user.strip().lower() else None
+
+
+def _find(address: str, user: str, password: str, folder: str, with_user: str) -> dict | None:
     query = urlencode({"path": _user_root_path(address, folder), "reshares": "true", "format": "json"})
     data = _ocs("GET", _ocs_base(address) + _SHARE_PATH + "?" + query, user, password, what="list its shares")
     for sh in data if isinstance(data, list) else []:
         if (isinstance(sh, dict) and str(sh.get("share_type")) == "0" and sh.get("id") is not None
                 and str(sh.get("share_with") or "").strip().lower() == with_user.strip().lower()):
-            return str(sh["id"])
+            return sh
     return None
 
 
-def share(address: str, user: str, password: str, folder: str, with_user: str) -> str:
-    """Share the project's folder with a colleague's user name at the same drive; returns the share's id. A folder
-    is shared once per user name: a share that is there already (an earlier invite to the same account) is used
-    again."""
+def find_share(address: str, user: str, password: str, folder: str, with_user: str) -> str | None:
+    """The id of the share of the project's folder with this user name that is there already, or None."""
+    sh = _find(address, user, password, folder, with_user)
+    return None if sh is None else str(sh["id"])
+
+
+def share_named(address: str, user: str, password: str, folder: str, with_user: str) -> tuple[str, str | None]:
+    """Share the project's folder with a colleague's user name at the same drive: (the share's id, the account's
+    display name as the drive gives it, or None: `display_name`). A folder is shared once per user name: a share that
+    is there already (an earlier invite to the same account) is used again."""
     path = _user_root_path(address, folder)
     try:
-        there = find_share(address, user, password, folder, with_user)
+        there = _find(address, user, password, folder, with_user)
     except WebDAVProblem as e:
         if e.kind in (DENIED, "no_share_api"):
             raise
         there = None   # (no list of shares: sharing itself says what is wrong)
     if there is not None:
-        return there
+        return str(there["id"]), display_name(there, with_user)
     data = _ocs("POST", _ocs_base(address) + _SHARE_PATH + "?format=json", user, password,
                 {"path": path, "shareType": "0", "shareWith": with_user.strip(),
                  "permissions": str(SHARE_PERMISSIONS)})
     sid = data.get("id") if isinstance(data, dict) else None
     if sid is None:
         raise WebDAVProblem("The drive's answer to sharing the folder could not be understood.", BAD_ANSWER)
-    return str(sid)
+    return str(sid), display_name(data, with_user)
+
+
+def share(address: str, user: str, password: str, folder: str, with_user: str) -> str:
+    """As `share_named`, the share's id only."""
+    return share_named(address, user, password, folder, with_user)[0]
 
 
 def unshare(address: str, user: str, password: str, share_id: str) -> None:

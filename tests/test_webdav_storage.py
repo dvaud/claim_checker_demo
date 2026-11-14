@@ -649,3 +649,415 @@ def test_a_move_puts_project_json_in_the_new_space_before_the_old_one_is_told(an
     _round(anna)   # Anna's copy does not wait for project.json (no "arriving": `_round` allows none)
     with anna:
         assert (space.mirror_of(anna.ws) / folder.team_name(anna.ws) / "project.json").is_file()
+
+
+# ---------------------------------------------------------------------------------------------
+# the audit of 14 November 2026 (DAV-1 to DAV-11)
+# ---------------------------------------------------------------------------------------------
+def _log(p: Person) -> list[str]:
+    with p:
+        return [r[0] for r in p.ws._conn().execute("SELECT text FROM research_log WHERE kind='sync' ORDER BY at")]
+
+
+def _age(p: Person, key: str, seconds: float) -> None:
+    """Make a time kept in the copy's state of the space `seconds` older (a day or an hour passes)."""
+    import json
+
+    with p:
+        f = space.mirror_of(p.ws) / ".space-state.json"
+        st = json.loads(f.read_text(encoding="utf-8"))
+        st[key] -= seconds
+        f.write_text(json.dumps(st), encoding="utf-8")
+
+
+def _tree(root: Path) -> dict:
+    return {str(f): (f.stat().st_size, f.stat().st_mtime_ns) for f in root.rglob("*") if f.is_file()}
+
+
+def _rename(drive, old: str, new: str) -> None:
+    """A folder renamed or moved in its owner's drive (`old`, `new`: owner paths); its shares follow it."""
+    st = drive.state
+    with st.lock:
+        st.dirs = {new + d[len(old):] if d == old or d.startswith(old + "/") else d for d in st.dirs}
+        for k in [k for k in st.files if k.startswith(old + "/")]:
+            nk = new + k[len(old):]
+            st.files[nk], st.etags[nk] = st.files.pop(k), st.etags.pop(k)
+            st.mtimes[nk] = st.mtimes.pop(k, 0)
+        for sh in st.shares.values():
+            if f"{sh['owner']}/{sh['path']}" == old:
+                sh["path"] = new.split("/", 1)[1]
+
+
+def _invited_by_hand(anna_and_ben, drive, tmp_path, monkeypatch, drive_user=None):
+    """Carol in Anna's space; the folder was shared with her in the drive's website, not by ENLENS."""
+    anna, _ben = anna_and_ben
+    carol = Person(tmp_path, "Carol", monkeypatch)
+    desc = _set_up(anna, drive)
+    _round(anna)
+    drive.state.ocs = False   # (ENLENS cannot share it: the owner does, in the drive's website)
+    with anna:
+        inv = space.invite(anna.ws, "Carol", drive_user=drive_user)
+    assert not inv["shared"]
+    drive.state.ocs = True
+    webdav.share(desc["endpoint"], "anna@uva.nl", USERS["anna@uva.nl"], desc["folder"], "carol")
+    with carol:
+        carol.ws = enlens_home.open_project(space.join_new_project(inv["link"], drive=_carol_drive(drive)))
+        cdesc = space.configured(carol.ws)
+    for p in (anna, carol, anna, carol):
+        _round(p)
+    return anna, carol, desc, cdesc
+
+
+def test_a_removal_that_cannot_stop_the_sharing_stays_on_the_team_tab(anna_and_ben, drive, tmp_path, monkeypatch):
+    """DAV-1: shared by hand with an account ENLENS does not know: the removal says what is left, and the Team tab
+    keeps saying it until the owner says it is done."""
+    anna, carol, desc, cdesc = _invited_by_hand(anna_and_ben, drive, tmp_path, monkeypatch)
+    with anna:
+        assert space.status(anna.ws)["drive"]["unshare"][cdesc["part"]] == "by_hand"
+        out = space.remove_member(anna.ws, cdesc["part"])
+    assert len(drive.state.shares) == 1 and out["warnings"][0].startswith("Stop sharing the folder")
+    assert "with Carol" in out["warnings"][0]
+    _round(anna)
+    with anna:
+        left = space.status(anna.ws)["left_to_do"]
+    assert [t["text"] for t in left] == out["warnings"] and left[0]["check"] is False
+    assert left[0]["id"] == f"unshare-{cdesc['part']}" and left[0]["who"] == "Carol"
+    assert any("Left to do: Stop sharing" in t for t in _log(anna))   # the research log's entry of the removal
+    n = len(drive.state.calls)
+    _round(anna)
+    assert not any("/ocs/" in c for c in drive.state.calls[n:])   # (nothing ENLENS can look at: nothing asked)
+    with anna:
+        space.dismiss(anna.ws, left[0]["id"])
+        assert space.status(anna.ws)["left_to_do"] == []
+        with pytest.raises(space.SpaceProblem):
+            space.dismiss(anna.ws, left[0]["id"])
+    assert any(t.startswith("Marked as done") for t in _log(anna))
+
+
+def test_a_share_made_in_the_website_is_stopped_when_the_account_is_known(anna_and_ben, drive, tmp_path,
+                                                                         monkeypatch):
+    """DAV-1: ENLENS did not make the share, but knows the account: the drive's list of shares says which it is."""
+    anna, carol, desc, cdesc = _invited_by_hand(anna_and_ben, drive, tmp_path, monkeypatch, drive_user="carol")
+    with anna:
+        assert space.status(anna.ws)["drive"]["unshare"][cdesc["part"]] == "enlens"
+        out = space.remove_member(anna.ws, cdesc["part"])
+        assert space.status(anna.ws)["left_to_do"] == []
+    assert out["warnings"] == [] and drive.state.shares == {}
+
+
+def test_a_share_left_after_a_failed_removal_is_stopped_by_a_later_round(anna_and_ben, drive, tmp_path, monkeypatch):
+    """DAV-1: the drive did not answer the removal's request: the keeper's round tries again, then the note goes."""
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    drive.state.fail["DELETE"] = 502
+    with anna:
+        out = space.remove_member(anna.ws, cdesc["part"])
+        left = space.status(anna.ws)["left_to_do"]
+    assert len(drive.state.shares) == 1 and "could not stop sharing" in out["warnings"][0]
+    assert left[0]["check"] is True
+    drive.state.fail.clear()
+    _round(anna)
+    assert drive.state.shares == {}
+    with anna:
+        assert space.status(anna.ws)["left_to_do"] == []
+    assert any("is no longer shared with Carol" in t for t in _log(anna))
+
+
+def test_inviting_the_same_account_again_ends_what_was_left_to_do(anna_and_ben, drive, tmp_path, monkeypatch):
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    drive.state.fail["DELETE"] = 502
+    with anna:
+        space.remove_member(anna.ws, cdesc["part"])
+    drive.state.fail.clear()
+    with anna:
+        inv = space.invite(anna.ws, "Carol again", drive_user="carol")
+        assert inv["shared"] and space.status(anna.ws)["left_to_do"] == []
+    _round(anna)
+    assert len(drive.state.shares) == 1   # (shared with her again on purpose: kept)
+
+
+def test_removing_the_member_whose_drive_holds_the_folder(anna_and_ben, drive, tmp_path, monkeypatch):
+    """DAV-5: the folder is in the removed person's own drive: they keep it, and the words say so."""
+    from enlens_claims import ownership
+
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    with anna:
+        ownership.hand_over(anna.ws, carol.id)
+    for p in (anna, carol, anna, carol):
+        _round(p)
+    with carol:
+        assert space.status(carol.ws)["drive"]["unshare"][desc["part"]] == "holds"
+        out = space.remove_member(carol.ws, desc["part"])
+        left = space.status(carol.ws)["left_to_do"]
+    w = out["warnings"][0]
+    assert "stays theirs" in w and "Move to another storage space" in w and "Ask them" not in w
+    assert left[0]["text"] == w and left[0]["check"] is False
+
+
+def test_files_deleted_in_the_drives_website_are_written_again(anna_and_ben, drive, tmp_path, monkeypatch):
+    """DAV-2: a member deletes the space's own files and the owner's part in the drive's website."""
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    theirs = webdav.storage(cdesc["endpoint"], "carol", USERS["carol"], folder=cdesc["folder"], prefix=cdesc["prefix"])
+    gone = [n for n in theirs.list("") if n.startswith("space/") or n.startswith(f"parts/{desc['part']}/")]
+    assert {"space/roster.json", "space/keys.json", "space/project.json"} <= set(gone) and len(gone) > 5
+    for n in gone:
+        theirs.delete(n)
+    _round(anna)   # the space's own files: at once (the round reads them anyway)
+    assert {"space/roster.json", "space/keys.json", "space/project.json"} <= set(theirs.list(""))
+    with anna:
+        st = space.status(anna.ws)["restored"]
+    assert st["files"] == 3 and "drive's website" in st["text"]
+    _age(anna, "walked_at", space.WALK_EVERY + 1)   # her own files: on the daily walk
+    _round(anna)
+    assert set(gone) <= set(theirs.list(""))
+    with anna:
+        assert space.status(anna.ws)["restored"]["files"] == len(gone)
+    assert any("written again" in t for t in _log(anna))
+    _round(carol)   # the team goes on (the list of members has a new number)
+    with anna:
+        space.dismiss(anna.ws, "restored")
+        assert space.status(anna.ws)["restored"] is None
+
+
+def test_a_file_deleted_from_any_kind_of_space_is_written_again(anna_and_ben, tmp_path):
+    """DAV-2 is older than the drive: the walk is the same for every kind (here a folder on this computer)."""
+    anna, _ben = anna_and_ben
+    with anna:
+        space.setup_dir(anna.ws, tmp_path / "plain")
+        desc = space.configured(anna.ws)
+    _round(anna)
+    root = Path(desc["dir"]) / desc["prefix"]
+    mine = sorted(f for f in (root / "parts" / desc["part"]).rglob("*") if f.is_file())
+    assert mine
+    for f in mine:
+        f.unlink()
+    _age(anna, "walked_at", space.WALK_EVERY + 1)
+    _round(anna)
+    assert all(f.is_file() for f in mine)
+    with anna:
+        assert "at the storage service" in space.status(anna.ws)["restored"]["text"]
+
+
+def test_a_refused_password_stops_the_rounds_until_a_new_one(anna_and_ben, drive, tmp_path, monkeypatch):
+    """DAV-3: one try, then no request and nothing written, until a new app password (or Try again)."""
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    drive.state.users["carol"] = "revoked"
+    seen = []
+    for _ in range(3):
+        n, before = len(drive.state.calls), _tree(carol.home)
+        with carol:
+            out = folder.sync_now(carol.ws)
+        seen.append((len(drive.state.calls) - n, [x["kind"] for x in out["problems"]], _tree(carol.home) == before))
+    assert seen[0][0] >= 1 and seen[0][1] == [DENIED] and seen[1:] == [(0, [DENIED], True)] * 2
+    assert USERS["carol"] not in str(seen)
+    with carol:
+        st = space.status(carol.ws)["refused"]
+        assert "new app password" in st["text"]
+        space.retry_drive(carol.ws)   # Try the same one again: one more try, then stopped again
+        n = len(drive.state.calls)
+        folder.sync_now(carol.ws)
+        assert len(drive.state.calls) > n and space.status(carol.ws)["refused"]
+        drive.state.users["carol"] = "app-pw-new"
+        space.set_drive_password(carol.ws, "carol", "app-pw-new")
+        assert space.status(carol.ws)["refused"] is None
+    _round(carol)
+
+
+def test_a_drive_that_asks_to_slow_down_is_not_asked_again_at_once(drive, monkeypatch):
+    """DAV-3: a 429 is not tried again within the round; a Retry-After is waited for, or ends the round."""
+    from enlens_claims.sync import _web
+
+    waits = []
+    monkeypatch.setattr(_web, "sleep", waits.append)
+    s = _store(drive)
+    drive.state.fail["PROPFIND"] = 429
+    for header, calls, waited in ((None, 1, []), ("3", 4, [3.0, 3.0, 3.0]), ("120", 1, [])):
+        drive.state.fail_headers = {"Retry-After": header} if header else {}
+        waits.clear()
+        n = len(drive.state.calls)
+        with pytest.raises(StorageProblem) as e:
+            s.list()
+        assert e.value.kind == "unreachable" and len(drive.state.calls) - n == calls and waits == waited
+
+
+def test_the_invite_says_whose_account_the_folder_was_shared_with(anna_and_ben, drive):
+    """DAV-4: the display name the drive gives; none when it gives only the user name; withdrawn at once."""
+    anna, _ben = anna_and_ben
+    _set_up(anna, drive)
+    drive.state.names["carol"] = "Carol de Vries"
+    with anna:
+        inv = space.invite(anna.ws, "Carol", drive_user="carol")
+        again = space.invite(anna.ws, "Carol's laptop", drive_user="carol")   # the share there already
+        ben = space.invite(anna.ws, "Ben", drive_user="ben")
+    assert inv["shared_with"] == {"user": "carol", "name": "Carol de Vries"}
+    assert again["shared_with"]["name"] == "Carol de Vries"
+    assert ben["shared_with"] == {"user": "ben", "name": None}
+    with anna:   # not them: the invite is withdrawn and the folder no longer shared with that account
+        out = space.cancel_invite(anna.ws, ben["part"])
+    assert out["warnings"] == [] and not any(sh["with"] == "ben" for sh in drive.state.shares.values())
+
+
+def test_a_doctype_in_an_answer_is_refused(drive, monkeypatch):
+    """DAV-6: a drive's listing, an S3 listing and an S3 error alike."""
+    from enlens_claims.sync import _web, storage
+    from enlens_claims.sync.storage import S3Storage
+
+    s = _store(drive)
+    s.put("space/roster.json", b"r")
+    drive.state.doctype = '<!DOCTYPE d [<!ENTITY a "' + "x" * 100 + '"><!ENTITY b "&a;&a;&a;&a;&a;">]>'
+    with pytest.raises(StorageProblem) as e:
+        s.list()
+    assert e.value.kind == BAD_ANSWER
+    drive.state.doctype = None
+    assert set(s.list()) == {"space/roster.json"}
+    body = (b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]><ListBucketResult><Contents><Key>p/space/x</Key>'
+            b'<Size>1</Size><ETag>&a;</ETag></Contents></ListBucketResult>')
+    monkeypatch.setattr(_web, "send_retrying", lambda *a, **k: _web.Reply(200, {}, body))
+    with pytest.raises(StorageProblem) as e:
+        S3Storage("https://s3.example.org", "auto", "b", "k", "s", prefix="p/").list()
+    assert e.value.kind == BAD_ANSWER
+    assert storage._xml_fields(b'<!DOCTYPE x [<!ENTITY a "AccessDenied">]><Error><Code>&a;</Code></Error>') == {}
+    assert storage._xml_fields(b"<Error><Code>AccessDenied</Code></Error>") == {"Code": "AccessDenied"}
+
+
+def test_every_answer_is_read_up_to_a_cap(drive, monkeypatch):
+    """DAV-6: writes, moves, removals and new folders too."""
+    from enlens_claims.sync import _web
+
+    caps = []
+    real = _web.send
+
+    def send(method, url, headers=None, body=None, timeout=60.0, read_cap=None):
+        caps.append((method, read_cap))
+        return real(method, url, headers, body, timeout, read_cap)
+
+    monkeypatch.setattr(_web, "send", send)
+    s = _store(drive)
+    s.put("space/x", b"x")
+    s.get("space/x")
+    s.list()
+    s.delete("space/x")
+    webdav.share(drive.address("anna@uva.nl"), "anna@uva.nl", USERS["anna@uva.nl"], "Team folder", "carol")
+    assert {m for m, _c in caps} >= {"PUT", "MOVE", "GET", "PROPFIND", "DELETE", "MKCOL", "POST"}
+    assert all(c is not None and c <= 1024 ** 3 + 64 * 1024 for _m, c in caps)
+    assert all(c <= 64 * 1024 for m, c in caps if m in ("PUT", "MOVE", "DELETE", "MKCOL"))
+
+
+def test_a_folder_renamed_in_the_drive_is_found_again(anna_and_ben, drive, tmp_path, monkeypatch):
+    """DAV-7: by the owner in her drive, by a member in theirs; and the owner's own words when it is not found."""
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    _rename(drive, f"anna@uva.nl/{desc['folder']}", "anna@uva.nl/Our team")
+    with anna:
+        out = folder.sync_now(anna.ws)
+        assert [x["kind"] for x in out["problems"]] == [NOT_FOUND] and "found it again" in out["problems"][0]["message"]
+        assert space.configured(anna.ws)["folder"] == "Our team"
+    _round(anna)
+    _round(carol)   # (her share follows the folder, not its name)
+    for sh in drive.state.shares.values():
+        sh["mount"] = "Team work"   # Carol renames it in her own files
+    with carol:
+        out = folder.sync_now(carol.ws)
+        assert "found it again" in out["problems"][0]["message"] and space.configured(carol.ws)["folder"] == "Team work"
+    _round(carol)
+    drive.state.dirs.add("anna@uva.nl/Archive")
+    _rename(drive, "anna@uva.nl/Our team", "anna@uva.nl/Archive/Our team")   # deeper than ENLENS looks
+    _age(anna, "folder_search_at", space.FOLLOW_SEARCH_EVERY + 1)
+    with anna:
+        n = len(drive.state.calls)
+        out = folder.sync_now(anna.ws)
+        first = len(drive.state.calls) - n
+        assert "not in your drive under that name" in out["problems"][0]["message"]
+        n = len(drive.state.calls)
+        folder.sync_now(anna.ws)   # (looked for again in half an hour, not each round)
+        assert len(drive.state.calls) - n < first
+
+
+def test_an_address_with_a_password_in_it_is_refused_without_showing_it(anna_and_ben, drive):
+    """DAV-8."""
+    with pytest.raises(webdav.WebDAVProblem) as e:
+        webdav.normalise("https://anna:secret@drive.example.org/remote.php/webdav/")
+    assert e.value.kind == "input" and "secret" not in str(e.value) and "anna" not in str(e.value)
+    with pytest.raises(StorageProblem) as e:
+        WebDAVStorage("https://anna:secret@drive.example.org/remote.php/webdav/", "u", "p")
+    assert "secret" not in str(e.value)
+    assert webdav.normalise("https://cloud.uni.nl/remote.php/dav/files/anna@uva.nl/") == \
+        "https://cloud.uni.nl/remote.php/dav/files/anna@uva.nl/"   # (an @ in the path is a user name, and fine)
+    anna, _ben = anna_and_ben
+    _set_up(anna, drive)
+    with anna:
+        inv = space.invite(anna.ws, "Carol", drive_user="carol")
+    forged = _forged(inv["link"], endpoint="https://x:secret@surfdrive.surf.nl/files/remote.php/nonshib-webdav/",
+                     host="surfdrive.surf.nl")
+    with pytest.raises(space.SpaceProblem) as e:
+        space.peek(forged)
+    assert e.value.kind == "link" and "secret" not in str(e.value)
+
+
+def test_without_etags_a_file_written_again_is_still_seen_as_new(drive):
+    """DAV-9: the size and the time written stand in for a missing ETag."""
+    s = _store(drive)
+    drive.state.no_etag = True
+    s.put("space/x", b"one")
+    first = s.list()["space/x"].etag
+    s.put("space/x", b"two")   # the same size
+    drive.state.mtimes["anna@uva.nl/Team folder/enlens/abc/space/x"] += 5
+    assert s.list()["space/x"].etag != first
+
+
+def test_hrefs_as_full_addresses_and_in_another_unicode_form(drive):
+    """DAV-11: an href may be a whole address, and a folder's é may come back as e and an accent."""
+    import unicodedata
+    from urllib.parse import quote
+
+    nfc = unicodedata.normalize("NFC", "Kódkönyv")
+    s = _store(drive, folder=nfc)
+    s.put("space/roster.json", b"r")
+    base = f"/remote.php/dav/files/anna@uva.nl/{nfc}/enlens/abc/"
+    drive.state.extra_hrefs = [quote(f"{drive.url}{base}space/keys.json", safe=":/@"),
+                               quote(unicodedata.normalize("NFD", f"{base}space/read.json"), safe="/@")]
+    assert set(s.list()) == {"space/roster.json", "space/keys.json", "space/read.json"}
+
+
+def test_a_folder_shared_for_reading_only(anna_and_ben, drive, tmp_path, monkeypatch):
+    """DAV-11: a share without the right to write: the round says so in words, and goes on asking (not a refused
+    password)."""
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    for sh in drive.state.shares.values():
+        sh["permissions"] = 1
+    with carol:
+        h = claimcheck.check_hypothesis(carol.ws, "Hydrogen storage is cheap.", BaselineBackend(), "baseline", k=2)
+        sharing.share(carol.ws, [{"kind": "check", "key": h}])
+        out = folder.sync_now(carol.ws)
+        probs = [x for x in out["problems"] if x["kind"] != "documents"]
+        assert [x["kind"] for x in probs] == [DENIED] and "only for reading" in probs[0]["message"]
+        assert space.status(carol.ws)["refused"] is None
+
+
+def test_an_idle_round_asks_little_and_writes_nothing(anna_and_ben, drive, tmp_path, monkeypatch):
+    anna, carol, desc, cdesc = _with_carol(anna_and_ben, drive, tmp_path, monkeypatch)
+    _round(anna)
+    _round(carol)
+    for p, most in ((anna, 10), (carol, 6)):
+        n, before = len(drive.state.calls), _tree(p.home)
+        _round(p)
+        assert len(drive.state.calls) - n <= most and _tree(p.home) == before
+
+
+def test_the_team_tabs_notices_through_the_app(api, drive):  # noqa: F811
+    assert api("POST", "/api/projects", {"name": "Demo"})[0] == 200
+    assert api("GET", "/api/space/links")[1]["keychain"]
+    st, r = api("POST", "/api/projects/Demo/space/webdav", {"address": drive.address("anna@uva.nl"),
+                                                           "user": "anna@uva.nl", "password": USERS["anna@uva.nl"]})
+    assert api.wait(r["job"]["id"])["state"] == "done"
+    drive.state.names["carol"] = "Carol de Vries"
+    st, inv = api("POST", "/api/projects/Demo/space/invites", {"label": "Carol", "drive_user": "carol"})
+    assert st == 200 and inv["shared_with"] == {"user": "carol", "name": "Carol de Vries"}
+    drive.state.users["anna@uva.nl"] = "revoked"
+    st, r = api("POST", "/api/projects/Demo/shared-folder/sync", {})
+    api.wait(r["job"]["id"])
+    sp = api("GET", "/api/projects/Demo/shared-folder")[1]["space"]
+    assert sp["refused"] and USERS["anna@uva.nl"] not in str(sp)
+    st, r = api("POST", "/api/projects/Demo/space/drive-retry", {})
+    assert st == 200 and r["space"]["refused"] is None
+    assert api("DELETE", "/api/projects/Demo/space/notices/restored")[0] == 200
+    assert api("DELETE", "/api/projects/Demo/space/notices/unshare-m0123456789ab")[0] == 400
+    drive.state.users["anna@uva.nl"] = USERS["anna@uva.nl"]

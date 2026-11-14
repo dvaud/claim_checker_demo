@@ -35,6 +35,10 @@ Sources for `WebDAVStorage` (read 14 November 2026):
 - Nextcloud (and ownCloud, from which it came) writes an upload to a part file and renames it when it is whole; other
   WebDAV servers need not. So `put` writes under a hidden temporary name in the same folder and MOVEs it into place:
   a reader never sees half a file under its name, on any server.
+
+Since the WebDAV audit (14 November 2026): every answer is read up to a cap (a listing to `_LIST_CAP`, a file to what
+its caller reads, anything else to `_SMALL_ANSWER`), and XML is read without a DOCTYPE (`_xml.parse`), for a drive and
+an S3 service alike.
 """
 from __future__ import annotations
 
@@ -44,11 +48,14 @@ import hmac
 import os
 import re
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from collections import namedtuple
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlsplit
+
+from . import _xml
 
 # StorageProblem kinds
 UNREACHABLE = "unreachable"   # no connection, the service did not answer, a time-out
@@ -59,6 +66,10 @@ MAINTENANCE = "maintenance"   # the service says it is down for maintenance
 BAD_ANSWER = "bad_answer"     # the service answered something ENLENS does not understand
 FULL = "full"                 # the service refuses more data (a cap, an unpaid account)
 
+# StorageProblem.why: what a drive's refusal or absence means, beyond its kind (14 November 2026)
+PASSWORD_REFUSED = "password_refused"   # DENIED: the drive refused the user name and app password themselves (401)
+FOLDER_GONE = "folder_gone"             # NOT_FOUND: the shared folder itself is not there (moved, renamed, unshared)
+
 _NAME = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*")
 
 
@@ -66,9 +77,10 @@ class StorageProblem(Exception):
     """Why a storage could not be used just now, in words for a researcher (`str(e)`); `kind` is one of the constants
     above."""
 
-    def __init__(self, message: str, kind: str = UNREACHABLE):
+    def __init__(self, message: str, kind: str = UNREACHABLE, why: str | None = None):
         super().__init__(message)
         self.kind = kind
+        self.why = why
 
 
 @dataclass(frozen=True)
@@ -220,6 +232,8 @@ def sigv4(method: str, path: str, query, headers: dict, payload_hash: str, secre
 # S3Storage
 
 _LIST_CAP = 16 * 1024 * 1024        # a listing page is read up to this much
+_SMALL_ANSWER = 64 * 1024           # the answer to a write, a removal or a new folder is read up to this much
+_WHOLE_FILE = 1024 ** 3 + 64 * 1024   # a file read without a size of the caller's: never more than the largest ENLENS reads
 _PAGE = 1000
 _CAP_WORDS = re.compile(r"cap[_ ]exceeded|\bcaps?\b|billing|suspended|AccountProblem|payment|quota", re.I)
 _EMPTY_SHA = hashlib.sha256(b"").hexdigest()
@@ -232,7 +246,7 @@ def _local(tag: str) -> str:
 def _xml_fields(body: bytes) -> dict[str, str]:
     """Code and Message of an S3 error document ({} when it is not one)."""
     try:
-        root = ET.fromstring(body)
+        root = _xml.parse(body)
     except ET.ParseError:
         return {}
     return {_local(c.tag): (c.text or "") for c in root}
@@ -302,6 +316,8 @@ class S3Storage(Storage):
             url = self.endpoint + uri_encode(path, True) + (f"?{qs}" if qs else "")
             return method, url, out, body
 
+        if read_cap is None:
+            read_cap = _WHOLE_FILE if method == "GET" else _SMALL_ANSWER
         try:
             return _web.send_retrying(build, self.timeout, read_cap)
         except _web.NetError as e:
@@ -361,7 +377,7 @@ class S3Storage(Storage):
             if r.status != 200:
                 raise self._problem(r, "the list of files", False)
             try:
-                root = ET.fromstring(r.body)
+                root = _xml.parse(r.body)
                 if _local(root.tag) != "ListBucketResult":
                     raise ValueError(root.tag)
                 truncated, token = False, None
@@ -471,8 +487,11 @@ class WebDAVStorage(Storage):
         if parts.scheme == "http" and not plain_http_allowed(parts.hostname or ""):
             raise StorageProblem("ENLENS sends a password only over a secure connection: the drive's address must "
                                  "start with https://.", BAD_ANSWER)
+        if "@" in parts.netloc:   # (a user name or password in the address: never sent, never shown)
+            raise StorageProblem("The drive's address must not hold a user name or password.", BAD_ANSWER)
         self.scheme, self.host = parts.scheme, parts.netloc
         self.root = unquote(parts.path or "/").rstrip("/") + "/"
+        self._root_nfc = unicodedata.normalize("NFC", self.root)   # (compared with hrefs; requests use the root as given)
         self.prefix = prefix if (not prefix or prefix.endswith("/")) else prefix + "/"
         token = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
         self._auth = f"Basic {token}"
@@ -492,12 +511,12 @@ class WebDAVStorage(Storage):
         """A PROPFIND answer's href back to a name below the root (None when it is outside it)."""
         from urllib.parse import unquote
 
-        path = unquote(urlsplit(href).path or href)
-        if path + "/" == self.root:   # (the root itself, written without its final /)
+        path = unicodedata.normalize("NFC", unquote(urlsplit(href).path or href))   # (a drive may answer é as e + ´)
+        if path + "/" == self._root_nfc:   # (the root itself, written without its final /)
             return ""
-        if not path.startswith(self.root):
+        if not path.startswith(self._root_nfc):
             return None
-        return path[len(self.root):]
+        return path[len(self._root_nfc):]
 
     # -- requests
     def _request(self, method: str, rel: str, body: bytes | None = None, headers: dict | None = None,
@@ -505,6 +524,8 @@ class WebDAVStorage(Storage):
         from . import _web
 
         url = self._url(rel)
+        if read_cap is None:
+            read_cap = _WHOLE_FILE if method == "GET" else _SMALL_ANSWER
 
         def build():
             h = {"Authorization": self._auth, **(headers or {})}
@@ -513,7 +534,7 @@ class WebDAVStorage(Storage):
             return method, url, h, body
 
         try:
-            return _web.send_retrying(build, self.timeout, read_cap)
+            return _web.send_retrying(build, self.timeout, read_cap, retry_429=False)
         except _web.NetError as e:
             raise StorageProblem(f"ENLENS could not reach the drive ({e.reason}). It tries again on the next round.",
                                  UNREACHABLE) from e
@@ -526,7 +547,7 @@ class WebDAVStorage(Storage):
         if r.status == 401:
             return StorageProblem("The drive refused the user name or app password (the app password may have been "
                                   "removed). Make a new app password in the drive's settings and enter it in the Team "
-                                  "tab.", DENIED)
+                                  "tab.", DENIED, PASSWORD_REFUSED)
         if r.status == 403:
             return StorageProblem(f"The drive does not let you {'write' if write else 'read'} {what} in the shared "
                                   "folder (the folder may no longer be shared with you, or only for reading).", DENIED)
@@ -563,7 +584,7 @@ class WebDAVStorage(Storage):
         if r.status != 207:
             raise self._problem(r, "the list of files", False)
         try:
-            root = ET.fromstring(r.body)
+            root = _xml.parse(r.body)
             if root.tag != _DAV + "multistatus":
                 raise ValueError(root.tag)
         except (ET.ParseError, ValueError) as e:
@@ -632,7 +653,8 @@ class WebDAVStorage(Storage):
                 if sub == start:
                     if self.propfind("", "0") is None:   # (the shared folder itself is gone, or no longer shared)
                         raise StorageProblem("The shared folder is not in the drive (any more), or no longer shared "
-                                             "with you. The owner can share it with you again.", NOT_FOUND)
+                                             "with you. The owner can share it with you again.", NOT_FOUND,
+                                             FOLDER_GONE)
                     return out   # (no such folder: nothing in it)
                 continue
             self._made.add(self.prefix + sub)
@@ -653,8 +675,8 @@ class WebDAVStorage(Storage):
                     d = name + "/"
                     if d.startswith(prefix) or prefix.startswith(d):
                         folders.append(d)
-                elif name.startswith(prefix):
-                    out[name] = Obj(name, size, etag or f"{size}")
+                elif name.startswith(prefix):   # (no ETag: the size and the time written tell a new file apart)
+                    out[name] = Obj(name, size, etag or (f"{size}-{when:.0f}" if when is not None else f"{size}"))
         return out
 
     def clean_temporaries(self, older_than: float = 86400.0, at_most: int = 5) -> int:
@@ -705,7 +727,7 @@ class WebDAVStorage(Storage):
             r = self._request("MKCOL", path)
             if r.status == 409 and path.count("/") == 1:   # (the folder above it, the shared one, is not there)
                 raise StorageProblem("The shared folder is not in the drive (any more), or not shared with you. The "
-                                     "owner can share it with you again.", NOT_FOUND)
+                                     "owner can share it with you again.", NOT_FOUND, FOLDER_GONE)
             if r.status not in (201, 405):   # (405: there already)
                 raise self._problem(r, f"the folder {path.rstrip('/')}", True)
             self._made.add(path)
