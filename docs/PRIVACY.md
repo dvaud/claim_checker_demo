@@ -88,7 +88,8 @@ Claude is reached by three routes (`routing.ROUTE_NAMES`, `routing.OFF_COMPUTER`
 **What a task holds.** Depending on its kind (`prompts.py`): the hypothesis or claim, the search words, the excerpts
 and the 300 characters before each one (to resolve words such as "it"), each document's title and page, a codebook's
 codes, pairs of glossary terms with short passages where each occurs, the passages that best represent a theme,
-consecutive passages of one document (references), and, when a person asks for an excerpt to be read again, their
+consecutive passages of one document (references), the passages that hold a code's examples with the code's name and
+group (a draft definition, `codedefine.py`), and, when a person asks for an excerpt to be read again, their
 comment. A document linked to a bibliography entry is titled by that work's title
 (`bibliography.py`). Tasks of documents marked *Only a local AI* or *No AI* are never among them.
 

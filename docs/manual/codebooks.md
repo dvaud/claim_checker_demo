@@ -97,6 +97,19 @@ labels); *Merge into…* sends a code's labels to another and takes the code out
 and *Add a group* are in each group and at the foot. *Codebook settings* holds the title, what one code is called
 (*code*, *theme*, *category*) and whether its codes are aims that a text can help or hinder, like the SDG targets.
 
+**Draft from the examples.** A code with two examples or more (in different passages) can have its definition, *when
+to use it* and *when not to use it* drafted by the AI: open the code and press *Draft from the examples*. The AI reads
+only the passages that hold the code's examples, with its name and group: not the rest of the documents, not the
+other codes, and not the definition you already wrote. The definition and *when to use it* each come with a quote
+from one of those passages that shows them, checked like every quote. The draft appears under the examples, not in
+the fields: *Use* (or *Use instead*) takes one part, *Use all of it* takes all three, and *Put it aside* drops it.
+What you take is marked *AI draft*, under the fields and on the code's row, until you rewrite it in your own words;
+the mark stays across saves while the words are still the AI's, and *Save* writes in the research log that the
+wording came from the AI's draft. Each document's AI setting decides who reads its passage: an example in a document
+marked *No AI* is left out, and one in a document marked *Only a local AI* is read by the local model (then the whole
+draft is) or left out when there is none; the line under the button says how many were left out and why. Asking again
+with the same examples reuses the answer. The editor is complete without it.
+
 Changes are kept as drafts until you press *Save*, where you can write *Why?* for the research log
 ([Notes, the research log and earlier versions](notes-and-log.md#the-research-log)). *Discard* throws them away. A
 draft stays while you look at another page.

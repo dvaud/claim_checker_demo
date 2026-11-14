@@ -583,7 +583,12 @@ its own)
   brought in from and sent to NVivo, ATLAS.ti and MAXQDA, with G5. Codebooks already sync between colleagues; an
   edit made on both sides comes in as a sync-clash copy, as today.
 - Optional (Level 2, then 3): a draft definition and *when to use it* for a code, from its example passages only,
-  marked as a draft to rewrite. The editor is complete without it.
+  marked as a draft to rewrite. The editor is complete without it. *Built (14 November 2026, unreleased):*
+  `codedefine.py`, task kind `code_definition` (code-definition-v1, Sonnet stepping up to Opus, the large local model,
+  the enlens-namer helper). *Draft from the examples* on an open code with two example passages or more drafts its
+  definition, *when to use it* and *when not*, the first two each shown by a checked quote; each document's AI setting
+  decides whether its passage is read and by whom. The draft waits beside the fields; what is taken stays marked *AI
+  draft* (the codebook's side file, `drafted`) until the words are rewritten.
 - *Already in ENLENS:* codebooks as CSV files (code, description, group), kept in a project or for all projects;
   added, viewed and removed in *Settings → Exploring*; marked as aims a text can help or hinder; brought in by the
   sync. The themes page shows which codes each theme holds. Nothing edits a codebook in the app, and themes cannot

@@ -751,6 +751,16 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .cb-code-actions { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .cb-merge { width: auto; max-width: 220px; }
 .cb-tried { margin-top: var(--space-2); }
+/* K1 (the optional AI part): a code's definition drafted from its examples */
+.cb-define { margin-top: var(--space-2); }
+.cb-define .ai-where, .cb-define p { margin: 4px 0 0; }
+.cb-draft { margin-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.cb-draft > p { margin: 0; }
+.cb-draft-row { display: flex; gap: var(--space-3); align-items: flex-start; justify-content: space-between; }
+.cb-draft-text { min-width: 0; flex: 1; }
+.cb-draft-text p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.cb-draft-mark p { margin: 0 0 var(--space-2); }
+@media (max-width: 560px) { .cb-draft-row { flex-direction: column; } }
 .cb-tried p { margin: 0 0 4px; }
 .cb-tried-list { margin: 0; padding-left: 1.1em; font-size: var(--fs-small); display: flex; flex-direction: column; gap: 4px; }
 .cb-foot { margin: 6px 0 calc(2 * var(--space-6)); }

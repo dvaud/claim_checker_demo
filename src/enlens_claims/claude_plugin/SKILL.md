@@ -1,6 +1,6 @@
 ---
 name: enlens-run
-description: Work through an ENLENS project's task queue (labels, concept links, theme names, codes from a theory document, references, search words, checks, and the SDG pack's extractions, splits, VCA checks and audits) with the ENLENS helper agents, each on the model ENLENS names for that kind of task. Use when the user types /enlens-run with a project name.
+description: Work through an ENLENS project's task queue (labels, concept links, theme names, codes from a theory document, code definitions from examples, references, search words, checks, and the SDG pack's extractions, splits, VCA checks and audits) with the ENLENS helper agents, each on the model ENLENS names for that kind of task. Use when the user types /enlens-run with a project name.
 argument-hint: "<project> [kind] [--parallel N] [--helpers checker=2,labeller=1]"
 disable-model-invocation: true
 allowed-tools: {{TOOL_PREFIX}}queue_status Agent
@@ -16,8 +16,8 @@ Arguments: `$ARGUMENTS`
 
 - The first argument is the project's name (in quotes when it has spaces). If there is none, call `queue_status`
   without a project to list the projects that have work waiting, and ask which one.
-- An optional second argument is one kind of task (label, link, theme, theory_codes, expand, decompose, resolve,
-  check, reread, second, or the SDG pack's split, extract, verify, verify_set): then work only on that kind.
+- An optional second argument is one kind of task (label, link, theme, theory_codes, code_definition, expand,
+  decompose, resolve, check, reread, second, or the SDG pack's split, extract, verify, verify_set): then work only on that kind.
 - `--parallel N` sets how many helpers work at the same time (1 to 8; without it, the speed chosen in the ENLENS
   app: normally 2). More is faster but uses the plan's limit faster.
 - `--helpers checker=2,labeller=1` names the helpers for this run and how many of each may work at the same time;

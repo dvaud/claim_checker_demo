@@ -232,6 +232,29 @@ Output format
 {{"concepts": [{{"name": "reinforcing loop", "definition": {{"passage": 2, "quote": "exact words"}},
   "reason": "one line"}}], "note": null}}
 {_JSON_RULE}"""
+    if kind == "code_definition":  # K1 (the optional AI part): a draft to rewrite, from the code's examples only
+        return f"""You draft the definition of one code of a qualitative codebook from its example passages. A person
+chose these examples as instances of the code; your draft is offered to them to rewrite, and the definition is what an
+AI labeller later reads to decide which passages the code fits.
+
+You are given the code's name (and its group, when it has one) and the passages that hold its examples, each example
+marked. Write, from these passages only:
+- definition: one or two plain sentences on what the code is about, general enough to fit every example and no
+  broader than they show (not a summary of one passage, and not a repeat of the name);
+- definition_quote: one quote, copied exactly from one passage, at least three whole words, that shows the definition
+  best, with that passage's number;
+- when_to_use: one sentence on the signs in a passage that the code applies;
+- when_to_use_quote: one quote, as above, that shows those signs;
+- when_not_to_use: one sentence on what the examples are not, which a labeller could confuse with the code (a nearby
+  topic the passages mention but the examples do not stand for); an empty string when the passages give no ground.
+Use no outside knowledge and no knowledge of the field: only what the passages show. Say in note, in one line, when
+the examples seem to stand for more than one code.
+
+Output format
+{{"definition": "one or two sentences", "definition_quote": {{"passage": 1, "quote": "exact words"}},
+ "when_to_use": "one sentence", "when_to_use_quote": {{"passage": 2, "quote": "exact words"}},
+ "when_not_to_use": "one sentence or empty", "note": null}}
+{_JSON_RULE}"""
     if kind == "resolve":
         return f"""You find chains of references in consecutive passages of one document: the places that refer to the same
 thing (a plant, a policy, a country, a group of people, a technology).
@@ -395,6 +418,12 @@ def user_prompt(kind: str, payload: dict, codes_once: bool = False) -> str:
                  "CANDIDATE CONCEPTS (found without AI): " + (", ".join(payload.get("candidates") or []) or "none")]
         for p in payload["passages"]:
             parts.append(f"P{p['n']}" + (f" (page {p['page']})" if p.get("page") else "") + f"\n{p['text']}")
+        return "\n\n".join(parts)
+    if kind == "code_definition":
+        parts = [f"CODE: {payload.get('code') or 'unnamed'}" + (f" (group: {payload['group']})" if payload.get("group") else "")]
+        for p in payload["passages"]:
+            ex = "\n".join(f"EXAMPLE: \u201c{e}\u201d" for e in p.get("examples") or [])
+            parts.append(f"P{p['n']}" + (f" (page {p['page']})" if p.get("page") else "") + f"\n{ex}\n{p['text']}")
         return "\n\n".join(parts)
     if kind == "resolve":
         parts = [f"DOCUMENT: {payload.get('title') or 'untitled'}"]

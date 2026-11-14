@@ -141,6 +141,48 @@ class RecordApi:
         merges = body.get("merges") if isinstance(body.get("merges"), list) else []
         return codebooks.save(self.app.ws(name), cb, state, merges, str(body.get("why") or "") or None)
 
+    # -- K1 (the optional AI part): a code's definition drafted from its examples ------------------------------------
+    def _define_body(self) -> tuple[str, str, list[str]]:
+        body = self._body()
+        quotes = body.get("examples") if isinstance(body.get("examples"), list) else []
+        quotes = [(e.get("quote") if isinstance(e, dict) else e) for e in quotes]
+        return (str(body.get("code") or "").strip(), str(body.get("group") or "").strip(),
+                [str(x) for x in quotes if isinstance(x, str) and x.strip()])
+
+    def post_codebook_define_offer(self, name, cb, q):
+        """{"offered", "why", "reader", "passages", "left_line"}: whether the AI may draft this code's definition from
+        its examples (sent as {"examples": [quotes]}), and who would read their passages (codedefine.offer)."""
+        from .. import codedefine
+
+        _code, _group, quotes = self._define_body()
+        return codedefine.offer(self.app.ws(name), quotes, self.app.settings())
+
+    def post_codebook_define(self, name, cb, q):
+        """{"job"}: the AI drafts a code's definition, when to use it and when not from the passages that hold its
+        examples ({"code", "group", "examples"}), as a job that waits its turn like every AI job; its result holds
+        the draft, offered beside the fields (codedefine.draft)."""
+        from .. import codedefine
+
+        ws = self.app.ws(name)
+        code, group, quotes = self._define_body()
+        if not code:
+            raise ApiError(400, "Give the code a name first.")
+        settings = self.app.settings()
+        offer = codedefine.offer(ws, quotes, settings)
+        if not offer["offered"]:
+            raise ApiError(400, offer["why"])
+        try:
+            title = codebooks.frameworks.get(cb, ws).title or cb
+        except ValueError:
+            title = cb
+        job = self.app.start_queued_job(
+            "code-define", f"The AI drafts a definition of “{code[:40]}”", name,
+            lambda job, be, model, prog: codedefine.draft(ws, title, code, group, quotes, be, model, prog,
+                                                          job.cancel.is_set, settings=settings),
+            withdraw=(codedefine.KIND,))
+        job.scope = f"{cb}/{code}"
+        return {"job": job.view()}
+
     def post_codebook_clash(self, name, cb, uid, q):
         """0.18: keep your version of a code you and a colleague both changed, or theirs (sync/codebook_merge.py)."""
         body = self._body()
