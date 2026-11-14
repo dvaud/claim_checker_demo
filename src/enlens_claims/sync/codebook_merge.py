@@ -131,6 +131,13 @@ class CodebookRules:
         def known(fp: str, seen: dict, uid: str) -> bool:
             return fp in seen.get(key(uid), set())
 
+        t_drafted = t_meta.get("drafted") if isinstance(t_meta.get("drafted"), dict) else {}
+
+        def their_mark(uid: str) -> dict:
+            """K1: the AI-draft mark of their version, kept with it in a clash (settle_clash checks it word for word)."""
+            d = t_drafted.get(uid)
+            return {"ai_draft": d} if isinstance(d, dict) else {}
+
         out: list[dict] = []
         theirs_in: set[str] = set()  # the codes taken from their version (new there, or newer there)
         for uid, mc in m_codes.items():
@@ -158,7 +165,7 @@ class CodebookRules:
                 clashes[uid] = {**{k: tc[k] for k in ("code", "description", "group", "include", "exclude",
                                                       "keywords")},
                                 "group_name": t_groups.get(tc["group"], ""),
-                                "examples": [e["quote"] for e in tc["examples"]], **who}
+                                "examples": [e["quote"] for e in tc["examples"]], **their_mark(uid), **who}
                 rep["clash"].append(mc["code"])
         for uid, tc in t_codes.items():
             if uid in m_codes:
@@ -168,7 +175,8 @@ class CodebookRules:
                     clashes[uid] = {**{k: tc[k] for k in ("code", "description", "group", "include", "exclude",
                                                           "keywords")},
                                     "group_name": t_groups.get(tc["group"], ""),
-                                    "examples": [e["quote"] for e in tc["examples"]], "removed_here": True, **who}
+                                    "examples": [e["quote"] for e in tc["examples"]], "removed_here": True,
+                                    **their_mark(uid), **who}
                     rep["kept_removed"].append(tc["code"])
                 continue
             out.append(tc)  # new there

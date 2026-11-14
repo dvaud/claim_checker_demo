@@ -100,8 +100,9 @@ codes and groups came in and what was folded or left out; then the editor opens.
 
 A codebook ENLENS exported (*Download as .qdc*) comes back with its definitions, when to use and when not,
 keywords, examples (their words: a `.qdc` does not carry an example's document and page), groups and group names.
-Its label and direction setting are not in the file, so set them again in *Codebook settings*; the title is taken
-from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history; labels made with the
+Its label and direction setting are not in the file, so set them again in *Codebook settings*. Nor is the *AI draft*
+mark: words you took from the AI's draft and had not rewritten come back unmarked, as if you wrote them. The title is
+taken from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history; labels made with the
 codebook it was exported from stay with that one.
 
 ## Change it in the editor
@@ -131,8 +132,13 @@ What you take is marked *AI draft*, under the fields and on the code's row, unti
 the mark stays across saves while the words are still the AI's, and *Save* writes in the research log that the
 wording came from the AI's draft. Each document's AI setting decides who reads its passage: an example in a document
 marked *No AI* is left out, and one in a document marked *Only a local AI* is read by the local model (then the whole
-draft is) or left out when there is none; the line under the button says how many were left out and why. Asking again
-with the same examples reuses the answer. The editor is complete without it.
+draft is) or left out when there is none; the line under the button says how many were left out and why. Each example
+is read where it was added: the same sentence in another document, with another AI setting, does not take its place.
+A definition you keep is sent with every later label task, to whichever AI labels your other documents, as every
+definition is: when the local model drafted it from documents marked *Only a local AI*, rewrite it if it gives away
+what those documents say. The mark goes with the words when you copy the codebook, split the code, remove it and bring
+it back, or keep a colleague's version of it. Asking again with the same examples reuses the answer. The editor is
+complete without it.
 
 Changes are kept as drafts until you press *Save*, where you can write *Why?* for the research log
 ([Notes, the research log and earlier versions](notes-and-log.md#the-research-log)). *Discard* throws them away. A
@@ -164,5 +170,6 @@ kept with all projects, *This project's own copy (change it here only)*; and *Re
 Labels made with a codebook stay when it is removed: they are results. *CSV* downloads the codebook (a cell that starts with `=`, `@` or a sign gets an apostrophe in front, so a spreadsheet
 shows it and does not run it as a formula; ENLENS takes the apostrophe off again when it reads the file), *Download
 as .qdc* downloads it as a REFI-QDA codebook for NVivo, ATLAS.ti and MAXQDA (each code with its definition, when to
-use it, keywords and examples; [the whole project](explore.md#for-nvivo-atlasti-and-maxqda) goes too), and *History*
+use it, keywords and examples; [the whole project](explore.md#for-nvivo-atlasti-and-maxqda) goes too). Neither file
+carries the *AI draft* mark: brought back in, the AI's words read as yours. *History*
 lists its earlier versions, to compare and restore ([earlier versions](notes-and-log.md#earlier-versions)).

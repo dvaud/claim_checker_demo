@@ -313,3 +313,212 @@ def test_a_colleagues_ai_draft_mark_comes_with_their_code(shared_codebook):
 
 
 from test_codebook_merge import shared_codebook  # noqa: E402,F401  (fixture)
+
+
+# ---- 2026-11-14 audit: the AI-draft mark follows the AI's words wherever they go --------------------------------
+WORDS = "Residents left waiting for something they need from the home."
+
+
+def _marked_codebook(ws, name="waits"):
+    """A codebook whose one code holds the AI's definition, marked (as the editor saves a draft taken)."""
+    cb = codebooks.create(ws, name, "Waits")
+    code = {"uid": "", "code": "Waiting", "description": WORDS, "group": "", "include": "", "exclude": "",
+            "keywords": [], "examples": [{"quote": q} for q in EXAMPLES],
+            "ai_draft": {"model": "claude-sonnet-5-5", "at": "2026-11-14", "description": WORDS}}
+    return codebooks.save(ws, name, {**cb, "codes": [code]})["codebook"]
+
+
+def test_a_copy_of_the_codebook_keeps_the_mark(project):
+    ws, _a, _b = project
+    _marked_codebook(ws)
+    cp = codebooks.create(ws, "waits2", "Waits copy", start="copy", source={"of": "waits"})
+    got = cp["codes"][0]
+    assert got["description"] == WORDS and got["ai_draft"]["description"] == WORDS
+    meta = json.loads((ws.root / "frameworks" / "waits2.json").read_text(encoding="utf-8"))
+    assert meta["drafted"][got["uid"]]["description"] == WORDS
+
+
+def test_a_split_and_a_code_brought_back_keep_the_mark(project):
+    from enlens_claims import profile
+
+    ws, _a, _b = project
+    st = _marked_codebook(ws)
+    first = st["codes"][0]
+    # a split copies the AI's words with their mark (the editor sends it, the save keeps it)
+    split = {**first, "uid": "", "code": "Waiting (2)", "split_from": first["uid"], "examples": []}
+    r = codebooks.save(ws, "waits", {**st, "codes": [first, split]})
+    assert any("split" in c and "AI's draft wording" in c for c in r["changes"])
+    st = r["codebook"]
+    assert all(c["ai_draft"]["description"] == WORDS for c in st["codes"])
+    # removed (its labels wait under Removed codes): the mark waits with it, and comes back with it
+    pid = ws.scalar("SELECT passage_id FROM passages ORDER BY passage_id LIMIT 1")
+    profile.add_label(ws, "waits", pid, "Waiting")
+    uid = st["codes"][0]["uid"]
+    st = codebooks.save(ws, "waits", {**st, "codes": st["codes"][1:]})["codebook"]
+    gone = next(x for x in st["removed"] if x["uid"] == uid)
+    assert gone["ai_draft"]["description"] == WORDS
+    back = {"uid": uid, "code": "Waiting", "description": gone["definition"]["description"], "group": "",
+            "include": "", "exclude": "", "keywords": [], "examples": [], "ai_draft": gone["ai_draft"]}
+    st = codebooks.save(ws, "waits", {**st, "codes": st["codes"] + [back]})["codebook"]
+    assert next(c for c in st["codes"] if c["uid"] == uid)["ai_draft"]["description"] == WORDS
+    # merged away into the split: the same
+    other = next(c for c in st["codes"] if c["uid"] != uid)
+    st = codebooks.save(ws, "waits", {**st, "codes": [other]}, merges=[{"from": uid, "into": other["uid"]}])["codebook"]
+    meta = json.loads((ws.root / "frameworks" / "waits.json").read_text(encoding="utf-8"))
+    assert meta["removed"][uid]["merged_into_uid"] == other["uid"]
+    assert meta["removed"][uid]["ai_draft"]["description"] == WORDS
+
+
+def test_a_colleagues_ai_words_kept_from_a_clash_stay_marked(shared_codebook):
+    from test_codebook_merge import _edit
+
+    anna, ben = shared_codebook
+    words = "Water drawn by electrolysers, as the AI drafted it."
+
+    def take_draft(codes):
+        a = next(c for c in codes if c["code"] == "A")
+        a["description"] = words
+        a["ai_draft"] = {"model": "claude-sonnet-5-5", "at": "2026-11-14", "description": words}
+    with anna:
+        _edit(anna.ws, "water", take_draft)
+    with ben:
+        _edit(ben.ws, "water", lambda codes: next(c for c in codes if c["code"] == "A").update(
+            description="Ben's own words on water"))
+    rep = ben.bring_in(anna.send())
+    assert [m["clash"] for m in rep["codebooks"]["merged"]] == [["A"]]
+    with ben:
+        cl = codebooks.load(ben.ws, "water")["clashes"]
+        assert cl[0]["theirs"]["ai_draft"]["description"] == words      # shown as the AI's in the clash too
+        cb = codebooks.settle_clash(ben.ws, "water", cl[0]["uid"], "theirs")
+        got = next(c for c in cb["codes"] if c["code"] == "A")
+        assert got["description"] == words and got["ai_draft"]["description"] == words
+
+
+def test_stopping_one_draft_leaves_another_waiting(api, tmp_path):  # noqa: F811
+    from test_app import _wait_until
+
+    from enlens_claims.store import Workspace
+
+    st, r = api("PUT", "/api/settings", {"allow_claude_code": True, "backend": "claude_code", "embed_backend": "off"})
+    assert st == 200, r
+    assert api("POST", "/api/projects", {"name": "Stop"})[0] == 200
+    d = tmp_path / "in"
+    d.mkdir()
+    (d / "a.txt").write_text(DOC_A, encoding="utf-8")
+    (d / "b.txt").write_text(DOC_B, encoding="utf-8")
+    ws = Workspace.open(ehome.project_path("Stop"))
+    try:
+        ingest.ingest(ws, [d])
+        codebooks.create(ws, "waits", "Waits")
+        with tasks.queueing(True):   # another code's draft, asked a moment before (a second job of the editor)
+            other = codedefine.make_task(ws, codedefine.payload_for(ws, "Night help", "", [WAIT_LIFT, WAIT_NIGHT]),
+                                         "sonnet")
+        st, r = api("POST", "/api/projects/Stop/codebooks/waits/define", {"code": "Waiting", "examples": EXAMPLES})
+        assert st == 200, r
+        _wait_until(lambda: ws.scalar("SELECT COUNT(*) FROM tasks WHERE kind='code_definition' AND queued=1") == 2)
+        mine = ws.scalar("SELECT task_id FROM tasks WHERE kind='code_definition' AND task_id != ?", (other,))
+        api("POST", f"/api/jobs/{r['job']['id']}/cancel")
+        assert api.wait(r["job"]["id"])["state"] == "cancelled"
+        assert ws.scalar("SELECT 1 FROM tasks WHERE task_id=?", (other,)) == 1          # still waits
+        assert ws.scalar("SELECT 1 FROM tasks WHERE task_id=?", (mine,)) is None        # its own task taken back
+    finally:
+        ws.close_all()
+
+
+def test_define_on_a_codebook_that_is_not_there_is_404_and_logs_nothing(api, tmp_path):  # noqa: F811
+    from enlens_claims.store import Workspace
+
+    assert api("PUT", "/api/settings", {"backend": "baseline", "embed_backend": "off"})[0] == 200
+    assert api("POST", "/api/projects", {"name": "None"})[0] == 200
+    st, body = api("POST", "/api/projects/None/codebooks/nowhere/define", {"code": "Waiting", "examples": EXAMPLES})
+    assert st == 404 and "nowhere" in json.dumps(body)
+    ws = Workspace.open(ehome.project_path("None"))
+    try:
+        assert ws.query("SELECT 1 FROM research_log WHERE kind='codebook-drafted'") == []
+    finally:
+        ws.close_all()
+
+
+def test_each_example_is_read_where_it_was_added(project, tmp_path):
+    ws, a, b = project
+    d = tmp_path / "more"
+    d.mkdir()
+    (d / "c.txt").write_text(f"Staff notes\n\n{WAIT_LIFT} {_PAD}\n\n{WAIT_NIGHT} {_PAD}", encoding="utf-8")
+    ingest.ingest(ws, [d])
+    c = ws.scalar("SELECT doc_id FROM documents WHERE doc_id NOT IN (?, ?)", (a, b))
+
+    def placed(doc):
+        return [{**codebooks.find_examples(ws, [q], doc)[q], "quote": q} for q in (WAIT_LIFT, WAIT_NIGHT)]
+    # the same two sentences in a (Claude may read it) and in c (No AI): read where they were added, whichever
+    # document comes first in the table
+    access.set_documents(ws, [c], "none")
+    off = codedefine.offer(ws, placed(a))
+    assert off["offered"] and off["passages"] == 2 and off["left_out"] == {"elsewhere": 0, "no_ai": 0, "local": 0}
+    model = FakeModel()
+    r = _draft(ws, model, quotes=placed(a))
+    assert r["ok"] and json.loads(ws.scalar("SELECT payload_json FROM tasks WHERE task_id=?", (r["task_id"],)))[
+        "docs"] == [a]
+    # and the other way round
+    access.set_documents(ws, [c], "cloud")
+    access.set_documents(ws, [a], "none")
+    g = codedefine.gather(ws, placed(c))
+    assert {p["doc_id"] for p in g["passages"]} == {c} and g["left_out"]["no_ai"] == 0
+    # a place that is not there any more (or of another project): the quote check's search finds the words
+    access.set_documents(ws, [a], "cloud")
+    stale = [{**e, "doc_id": "gone", "start": 3} for e in placed(c)] + [{**placed(c)[0], "project": "elsewhere"}]
+    assert len(codedefine.gather(ws, stale)["passages"]) == 2
+
+
+def test_a_draft_goes_ahead_on_the_cloud_passages_without_the_local_ones(project):
+    ws, _a, b = project
+    access.set_documents(ws, [b], "local")   # no local model chosen: the letters' example is left out
+    model = FakeModel()
+    r = _draft(ws, model)
+    assert r["ok"] and r["reader"] == "claude" and r["passages"] == 2 and "no local AI is chosen" in r["left_line"]
+    assert WAIT_MEAL[:20] not in model.prompts[0]
+    assert ws.scalar("SELECT access FROM tasks WHERE task_id=?", (r["task_id"],)) == "cloud"
+
+
+def test_the_claude_code_queue_hands_it_out_and_takes_it_back(project):
+    from enlens_claims import taskqueue
+
+    ws, _a, b = project
+    with tasks.queueing(True):
+        tid = codedefine.make_task(ws, codedefine.payload_for(ws, "Waiting", "", EXAMPLES), "sonnet")
+    st = taskqueue.status(ws)
+    assert any(k.get("kind") == "code_definition" for k in st.get("kinds") or []), st
+    got = taskqueue.next_tasks(ws, kind="code_definition")
+    assert got["claim"] and got["helper"] == "enlens-namer" and [t["task_id"] for t in got["tasks"]] == [tid]
+    res = taskqueue.submit(ws, got["claim"], [{"task_id": tid, "answer": _answer(got["tasks"][0]["prompt"])}])
+    assert res["stored"] == 1, res
+    assert codedefine.draft_of(ws, tid)["description"].startswith("Residents left waiting")
+    # another draft waits; a document's AI setting changes meanwhile: it is no longer handed out
+    with tasks.queueing(True):
+        t2 = codedefine.make_task(ws, codedefine.payload_for(ws, "Waiting at meals", "", EXAMPLES[1:]), "sonnet")
+    access.set_documents(ws, [b], "local")
+    assert taskqueue.next_tasks(ws, kind="code_definition")["claim"] is None
+    assert ws.scalar("SELECT COALESCE(access, 'cloud') FROM tasks WHERE task_id=?", (t2,)) in (None, "local")
+    access.set_documents(ws, [b], "cloud")
+    # and Remove in the queue panel takes a waiting one back, by its id
+    with tasks.queueing(True):
+        t3 = codedefine.make_task(ws, codedefine.payload_for(ws, "Waiting for lifts", "", EXAMPLES[:2]), "sonnet")
+    assert taskqueue.withdraw(ws, [codedefine.KIND], task_ids=[t3]) == 1
+    assert ws.scalar("SELECT 1 FROM tasks WHERE task_id=?", (t3,)) is None
+    assert ws.scalar("SELECT 1 FROM tasks WHERE task_id=?", (tid,)) == 1   # the answered one stays
+
+
+def test_the_editor_keeps_what_is_typed_the_busy_state_and_the_places():
+    js = (ROOT / "src/enlens_claims/gui/static/views/codebooks.js").read_text(encoding="utf-8")
+    ask = js.split("  async function askDraft(c, btn) {", 1)[1].split("\n  }\n", 1)[0]
+    # an arriving draft makes only that code's define box again, not the whole editor (typing and caret stay)
+    assert "draw()" not in ask and "refreshDefineBox(now)" in ask
+    assert "box.replaceWith(defineBox(c))" in js
+    # each example goes with the place it was saved at
+    assert "examples: exampleRefs(c)" in ask and "doc_id: e.doc_id, start: e.start" in js
+    # a draft of an unsaved code stays busy through a save, under the code's uid
+    assert "keepPendingThroughSave(pend, busy)" in js and "definingNow.add(uid)" in js
+    assert "if (definingNow.has(keyNow(k))) return;" in ask
+    # a draft read by the local model says that a kept definition goes with later label tasks
+    assert 'd.reader === "local"' in js and "give away what these documents say" in js
+    # a code brought back from Removed codes comes back marked
+    assert "...(r.ai_draft ? { ai_draft: { ...r.ai_draft } } : {})" in js
