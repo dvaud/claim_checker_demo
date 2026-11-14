@@ -586,7 +586,8 @@ its own)
   edit made on both sides comes in as a sync-clash copy, as today. *Built (unreleased):* sending out came with G5
   (0.18.7); bringing in is `qdc_import.py` (*New codebook* › *From NVivo, ATLAS.ti or MAXQDA*, `enlens import-qdc`):
   top codes become groups, deeper levels fold into their top group with their place in the tree kept in the
-  definition, and ENLENS's own export comes back with everything a `.qdc` carries (not an example's document and page, nor the codebook's label and direction setting).
+  definition, and ENLENS's own export comes back with everything a `.qdc` carries (not an example's document and
+  page, nor the codebook's label and direction setting).
 - Optional (Level 2, then 3): a draft definition and *when to use it* for a code, from its example passages only,
   marked as a draft to rewrite. The editor is complete without it. *Built (14 November 2026, unreleased):*
   `codedefine.py`, task kind `code_definition` (code-definition-v1, Sonnet stepping up to Opus, the large local model,
