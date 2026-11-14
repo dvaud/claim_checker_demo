@@ -177,7 +177,9 @@ The glossary is built without a model (`terms.py`; [Concepts](manual/explore.md#
   concepts in all, never none for a concept that has one). Groups are found with the Louvain method (Blondel and others, 2008) on
   each concept's eight strongest joins, visiting the concepts in a fixed order; each group is laid out in a disc with
   Fruchterman and Reingold's force-directed method (1991) from fixed starting places, and the discs are placed by the
-  joins between them (`conceptmap.py`). A filter restricts the passages before anything is counted.
+  joins between them (`conceptmap.py`); the page then pushes apart marks that would overlap, in a fixed order. A filter
+  restricts the passages before anything is counted. Under 30 passages in scope the page says that its lines rest on
+  very little; the numbers are the same.
 
 ## Themes
 

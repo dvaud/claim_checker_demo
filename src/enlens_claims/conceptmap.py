@@ -27,7 +27,9 @@ concept, `_Graph.term`), since a concept's page and the edge route take term ids
 
 **Counting** is done in SQLite, in temporary tables of this thread's connection (`_Scope`): the passages in scope, then
 each concept's passages and each pair's passages together, so a request's work grows with the mentions in scope, not
-with lists in Python, and no query binds a list of ids (SQLite's limit on variables).
+with lists in Python, and no query binds a list of ids (SQLite's limit on variables). The tables are kept in memory
+(`_Scope` sets `temp_store=MEMORY` on the connection): SQLite's own default is a file in the system's temporary folder,
+which a large project would write on every request, and a full or unwritable temporary folder would break the map.
 """
 from __future__ import annotations
 
@@ -46,6 +48,7 @@ EDGES_PER_NODE = 2      # at most 2 × n co-occurrence edges drawn in all
 GROUP_EDGES = 8         # the groups are found from each concept's 8 strongest edges (more than are drawn)
 ROUNDS = 150            # layout rounds within a group
 PASSAGES_SHOWN = 5      # passages an edge shows
+FEW_PASSAGES = 30       # under this many passages in scope, the page says its lines rest on very little
 
 
 @dataclass
@@ -68,9 +71,19 @@ class Filters:
         return {k: v for k, v in d.items() if v is not None}
 
 
-# temporary tables on this thread's connection to the project (in memory: `temp_store=MEMORY`), so that no query binds
-# a list of ids (SQLite allows 999 variables on old versions, 32766 on new ones) and the counting is done in SQLite
+# temporary tables on this thread's connection to the project, so that no query binds a list of ids (SQLite allows 999
+# variables on old versions, 32766 on new ones) and the counting is done in SQLite. In memory: `_in_memory` sets
+# `temp_store=MEMORY` on the connection (the app's connections keep SQLite's default, a file; only the tests set memory
+# for every connection, `store.tune`)
 _T_DOCS, _T_WANT, _T_PS, _T_TERMS, _T_PI = "temp.d1_docs", "temp.d1_want", "temp.d1_ps", "temp.d1_terms", "temp.d1_pi"
+
+
+def _in_memory(cx) -> None:
+    """Temporary tables and sorts of this connection in memory from now on (`PRAGMA temp_store=MEMORY`). Set only when
+    it is not already: changing it drops the connection's temporary tables, and SQLite refuses it inside a transaction
+    (the project's connections are in autocommit, so a map request is never in one)."""
+    if int(cx.execute("PRAGMA temp_store").fetchone()[0]) != 2 and not cx.in_transaction:
+        cx.execute("PRAGMA temp_store=MEMORY")
 
 
 class _Scope:
@@ -107,6 +120,7 @@ class _Scope:
 
     def __enter__(self) -> "_Scope":
         self.cx = self.ws._conn()
+        _in_memory(self.cx)
         self._drop()
         self.cx.execute(f"CREATE TABLE {_T_PS}(passage_id TEXT PRIMARY KEY) WITHOUT ROWID")
         if self.empty():
@@ -466,20 +480,26 @@ def concept_map(ws: Workspace, f: Filters | None = None, n: int = DEFAULT_N) -> 
     rest = sorted(kept - must, key=order)
     kept = must | set(rest[:max(0, EDGES_PER_NODE * len(chosen) - len(must))])
     edges = {e: pmi[e] for e in sorted(kept)}
-    # the person's links among the concepts shown (one per pair, as stored: from a to b)
+    # the confirmed links among the concepts shown: one entry per pair, from a to b as its first link is stored, with
+    # every type the pair has ("types", each seen from a: two wordings joined into one concept, or two sources, can give
+    # one pair two types); a link with exactly one end on the map is counted (one with neither end is not the map's)
     links, off = [], set()
-    seen = set()
+    by_pair: dict[tuple[str, str], dict] = {}
     for lk in _confirmed_links(g):
         a, b = g.node(lk["a"]), g.node(lk["b"])
         if a == b:
             continue
         key = tuple(sorted((a, b)))
         if a in idx and b in idx:
-            if key in seen:
-                continue
-            seen.add(key)
-            links.append({"a": a, "b": b, "relation": lk["relation_effective"], "source": lk["source"]})
-        else:
+            entry = by_pair.get(key)
+            if entry is None:
+                entry = by_pair[key] = {"a": a, "b": b, "relation": lk["relation_effective"], "source": lk["source"],
+                                        "types": []}
+                links.append(entry)
+            rel = lk["relation_effective"] if a == entry["a"] else _inverse(lk["relation_effective"])
+            if not any(t["relation"] == rel for t in entry["types"]):
+                entry["types"].append({"relation": rel, "source": lk["source"]})
+        elif a in idx or b in idx:
             off.add(key)
     links.sort(key=lambda x: (idx[x["a"]], idx[x["b"]]))
     # groups, from the co-occurrence edges only (what the documents group); a lone concept is in none
@@ -513,23 +533,32 @@ def concept_map(ws: Workspace, f: Filters | None = None, n: int = DEFAULT_N) -> 
     return out
 
 
+def _inverse(rel: str) -> str:
+    """A relation seen from the other end ("narrower" from a is "broader" from b)."""
+    from .terms import _INVERSE
+
+    return _INVERSE.get(rel, rel)
+
+
 def _confirmed_links(g: _Graph) -> list[dict]:
-    """The links `_Graph` keeps (confirmed, not rejected, not "different"), each once, in a fixed order."""
+    """Every link `_Graph` keeps (confirmed, not rejected, not "different"), each once, in a fixed order: all of a
+    pair's links (`_Graph.all_links`), not only the last one stored (`_Graph.links`), so no type is dropped."""
     out, seen = [], set()
-    for a in sorted(g.links):
-        for b in sorted(g.links[a]):
-            lk = g.links[a][b]
-            key = (lk["a"], lk["b"], lk["source"])
-            if key not in seen:
-                seen.add(key)
-                out.append(lk)
+    for a in sorted(g.all_links):
+        for b in sorted(g.all_links[a]):
+            for lk in g.all_links[a][b]:
+                key = (lk["a"], lk["b"], lk["source"])
+                if key not in seen:
+                    seen.add(key)
+                    out.append(lk)
     return out
 
 
 def edge(ws: Workspace, a_term: str, b_term: str, f: Filters | None = None) -> dict:
     """One edge of the map: {"a", "b" ({"node" (a term id, as the map's), "label"}), "together" (passages in scope),
-    "pmi", "link" ({"relation", "source", "sentences"} or null), "passages": up to `PASSAGES_SHOWN`}. Takes term ids
-    (a concept's id too, for an older link). Raises KeyError for a term the glossary does not know."""
+    "pmi", "links" (every confirmed link of the pair, each {"relation" (seen from a), "source", "sentences"}), "link"
+    (the first of them, or null), "passages": up to `PASSAGES_SHOWN`}. Takes term ids (a concept's id too, for an older
+    link). Raises KeyError for a term the glossary does not know."""
     from .claimcheck import locate
     from .docrole import not_evidence_docs
 
@@ -552,26 +581,30 @@ def edge(ws: Workspace, a_term: str, b_term: str, f: Filters | None = None) -> d
     both = pa & pb
     v = math.log2(len(both) * total / (len(pa) * len(pb))) if both and total else None
     out = {"a": {"node": g.term(a), "label": g.labels.get(a, a)}, "b": {"node": g.term(b), "label": g.labels.get(b, b)},
-           "together": len(both), "pmi": round(v, 2) if v is not None else None, "link": None, "passages": []}
-    lk = g.links.get(a, {}).get(b)
-    if lk:
+           "together": len(both), "pmi": round(v, 2) if v is not None else None, "link": None, "links": [],
+           "passages": []}
+    left = None
+    for lk in g.all_links.get(a, {}).get(b, []):
         rel = lk["relation_effective"]
         if g.node(lk["a"]) != a:     # stored from b to a: seen from a
-            from .terms import _INVERSE
-
-            rel = _INVERSE.get(rel, rel)
+            rel = _inverse(rel)
+        if any(x["relation"] == rel for x in out["links"]):
+            continue
         if lk["source"] == "pattern":
             from .textrelations import sentences
 
-            left = not_evidence_docs(ws._conn())   # the link's own sentences: from evidence documents in scope only
+            if left is None:          # the link's own sentences: from evidence documents in scope only
+                left = not_evidence_docs(ws._conn())
             sents = [x for x in sentences(ws._conn(), lk["a"], lk["b"])
                      if x["doc_id"] not in left and (docs is None or x["doc_id"] in docs)]
         else:
             sents = [{"quote": q} for q in (lk.get("quote_a"), lk.get("quote_b")) if q]
-        out["link"] = {"relation": rel, "source": lk["source"], "sentences": sents}
+        out["links"].append({"relation": rel, "source": lk["source"], "sentences": sents})
+    out["link"] = out["links"][0] if out["links"] else None
     if both:
         # the order first (no text), then the text of the few shown
         cx = ws._conn()
+        _in_memory(cx)
         cx.execute(f"DROP TABLE IF EXISTS {_T_WANT}")
         cx.execute(f"CREATE TABLE {_T_WANT}(passage_id TEXT PRIMARY KEY) WITHOUT ROWID")
         try:
@@ -601,6 +634,9 @@ def as_text(m: dict) -> str:
         return "No concept is mentioned in two passages within these filters."
     lab = {x["id"]: x["label"] for x in m["nodes"]}
     lines = [f"{len(m['nodes'])} of {m['concepts_in_scope']} concepts, from {m['passages']} passages."]
+    if m["edges"] and m["passages"] < FEW_PASSAGES:
+        lines.append(f"Only {m['passages']} passages are counted: the lines rest on very little, and a pair mentioned "
+                     "together in two or three of them can look strong by chance.")
     for gr in m["groups"]:
         ms = [x["label"] for x in m["nodes"] if x["group"] == gr["group"]]
         lines.append(f"Group {gr['group']} ({gr['size']}): {', '.join(ms)}")
@@ -614,5 +650,6 @@ def as_text(m: dict) -> str:
     if m["links"]:
         lines.append("Links:")
         for lk in m["links"]:
-            lines.append(f"  {lab[lk['a']]} {lk['relation']} {lab[lk['b']]} ({lk['source']})")
+            for t in lk.get("types") or [lk]:
+                lines.append(f"  {lab[lk['a']]} {t['relation']} {lab[lk['b']]} ({t['source']})")
     return "\n".join(lines)

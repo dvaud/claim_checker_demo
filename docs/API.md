@@ -1753,13 +1753,15 @@ terms.
 - `GET /api/projects/{p}/concept-map[?n=60&…filters]` → `{"built", "filters", "n", "passages" (in scope),
   "concepts_in_scope", "nodes": [{"id" (a term id), "label", "passages", "group" (1… or null), "x", "y" (0 to 1, for a
   map 1.6 times as wide as high)}], "edges": [{"a", "b", "together", "pmi"}], "links": [{"a", "b", "relation",
-  "source"}], "groups": [{"group", "size", "names"}], "links_off_map"}`. `n` is 10 to 150. 400 for a malformed filter
-  or an unknown codebook, 404 for a set of themes that is gone.
+  "source", "types": [{"relation" (seen from a), "source"}]}] (one per pair; "relation" and "source" are its first
+  type), "groups": [{"group", "size", "names"}], "links_off_map" (links with exactly one end on the map)}`. `n` is 10
+  to 150. 400 for a malformed filter or an unknown codebook, 404 for a set of themes that is gone.
 - `GET /api/projects/{p}/concept-map/options` → `{"documents": [{"doc_id", "title"}], "themes": {"run_id", "themes":
   [{"theme_id", "name"}]}, "codebooks": [{"name", "title", "codes": [{"code", "description"}]}], "years": [yyyy]}`:
   what the filters can choose from (evidence documents only).
 - `GET /api/projects/{p}/concept-map/edge?a={term id}&b={term id}[&…filters]` → `{"a", "b" ({"node", "label"}),
-  "together", "pmi", "link": {"relation" (seen from a), "source", "sentences"} | null, "passages": [{"passage_id",
+  "together", "pmi", "links": [{"relation" (seen from a), "source", "sentences"}], "link" (the first of "links") |
+  null, "passages": [{"passage_id",
   "doc_id", "title", "page", "location", "text", "start"}]}` (the first 5, by document). 400 without both, 404 for a
   term the glossary does not know.
 
