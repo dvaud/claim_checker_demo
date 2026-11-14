@@ -10,7 +10,7 @@ import { LEVEL, accessChoice, accessAskCard, accessBanner, docAccessDialog, leve
 import { askWhy } from "./versions.js";
 import { proposalChip, proposedToast, removalNote } from "./owner.js";   // 0.18 L2
 import { docChip } from "./owner-state.js";   // 0.18.5: the owner's word as an icon on a closed line
-import { documentMarks, roleMenuItem, nonsciMenuItem, NONSCI_MEANS } from "./doc-role.js";   // 0.18.1 K2: theory documents; 0.18.6: non-scientific ones
+import { documentMarks, roleMenuItems, roleLine, nonsciMenuItem, NONSCI_MEANS } from "./doc-role.js";   // 0.18.1 K2: theory documents; 0.18.6: non-scientific ones; 0.18.8 N3: working documents
 import { reader, newReaderFor, readingNote, READER_4_NEWS, READER_5_NEWS } from "./doc-shared.js";
 
 const ACCEPT = ".pdf,.docx,.html,.htm,.txt,.md,.zip";
@@ -273,7 +273,8 @@ export async function renderSources(view) {
   let sorting = store(`docs-sort:${project}`) || "title";   // 0.18.5: by title, or the newest first
   const rows = new Map();     // doc_id -> its row
   const opened = new Set();   // 0.18.2: the documents whose panel is open (kept across re-draws)
-  let roles = {};             // 0.18.1 (K2): doc_id -> "theory"
+  let roles = {};             // 0.18.1 (K2): doc_id -> "theory"; 0.18.8 (N3): or "working"
+  const notSource = (d) => !!roles[d.doc_id];   // theory and working documents are never a source
   // roadmap N5: how many answers each document is behind, as the evidence map counts them ({answers, hypotheses,
   // last_check}; null while unknown). A neutral count: a document behind no answer may be off the topic, or word it
   // otherwise. Never a mark of its own on a line; the list groups or sorts by it when asked, and says it in the panel.
@@ -294,19 +295,22 @@ export async function renderSources(view) {
       { key: "cloud", name: LEVEL.cloud.many, short: LEVEL.cloud.short, icon: LEVEL.cloud.icon, sub: "Claude may read them when Claude is the AI you use; when you use a local model, it reads them instead." },
       { key: "local", name: LEVEL.local.many, short: LEVEL.local.short, icon: LEVEL.local.icon, sub: "Read only by a model on this computer, or by you. Never sent to Claude." },
       { key: "none", name: LEVEL.none.many, short: LEVEL.none.short, icon: LEVEL.none.icon, sub: "Only you judge their excerpts. Search, the keyword codes, concepts and themes still work." }] },
-    role: { label: "Role", always: true, of: (d) => (roles[d.doc_id] === "theory" ? "theory" : "evidence"), groups: [
+    role: { label: "Role", always: true, of: (d) => roles[d.doc_id] || "evidence", groups: [
       { key: "evidence", name: "Evidence", icon: "file-text", sub: "What hypotheses are checked against, and what themes, codes and key terms are made from." },
-      { key: "theory", name: "Theory", icon: "book-marked", sub: "The lens the research is read through: left out of themes, codebook labels, the excerpts a check reads and key terms." }] },
+      { key: "theory", name: "Theory", icon: "book-marked", sub: "The lens the research is read through: left out of themes, codebook labels, the excerpts a check reads and key terms." },
+      // 0.18.8 (N3): the researcher's own drafts and notes
+      { key: "working", name: "Your working documents", short: "Working", icon: "notebook", sub: "Your own drafts and notes: read, labelled with codes and checked against the corpus a sentence at a time, but never a source. Left out of themes, the excerpts a check reads, key terms and the corpus’s code counts." }] },
     look: { label: "Needs a look", always: false, of: lookOf, groups: [
       // what needs you wears the needs-you look (an amber tag), as on its lines and in the notice above the list
       { key: "attention", name: "Needs a look", needsYou: true, sub: "Something about the file or its reading needs you: point at the mark on each, or open it, to see what." },
       { key: "reading", name: "To check in its reading", icon: "info", sub: "Read with a few doubts: open the reading to see where, then mark it as checked." },
       { key: "clear", name: "Fine", icon: "check", sub: "Read well: nothing about them needs you." }] },
     // roadmap N5: by the answers they are behind (offered once that is known); theory documents are never behind one
-    answers: { label: "Answers behind them", always: false, of: (d) => (roles[d.doc_id] === "theory" ? "theory" : answersOf(d) ? "used" : "unused"), groups: [
+    answers: { label: "Answers behind them", always: false, of: (d) => (roles[d.doc_id] || (answersOf(d) ? "used" : "unused")), groups: [
       { key: "unused", name: "Behind no answer", short: "Behind none", icon: "text-search", sub: "No excerpt of them counts in any of your answers. They may be off your hypotheses’ topic, or say it in other words: a search with other words tells which. It says nothing about how good they are." },
       { key: "used", name: "Behind answers", icon: "layers", sub: "An excerpt of each counts in at least one answer; the line says in how many, the evidence map in which." },
-      { key: "theory", name: "Theory", icon: "book-marked", sub: "Not evidence: checks leave them out, so they are behind no answer." }] },
+      { key: "theory", name: "Theory", icon: "book-marked", sub: "Not evidence: checks leave them out, so they are behind no answer." },
+      { key: "working", name: "Your working documents", short: "Working", icon: "notebook", sub: "Never a source: checks leave them out, so they are behind no answer." }] },
     none: { label: "None", always: true, of: () => "all", groups: [{ key: "all", name: "All documents", icon: null, sub: null }] },
   };
   if (!GROUPINGS[grouping]) grouping = "ai";   // a grouping kept from an earlier version, named otherwise now
@@ -348,7 +352,7 @@ export async function renderSources(view) {
     // answers (those there at the last check, theory left out), with a way to see them; not when the list shows it
     let unusedNote = h("div");
     const drawUnused = () => {
-      const pool = !use || use.hypotheses < UNUSED_AFTER ? [] : docs.filter((d) => roles[d.doc_id] !== "theory" && !afterLastCheck(d));
+      const pool = !use || use.hypotheses < UNUSED_AFTER ? [] : docs.filter((d) => !notSource(d) && !afterLastCheck(d));
       const none = pool.filter((d) => !answersOf(d)).length;
       const n = !none || grouping === "answers" ? h("div", { hidden: true }) : h("p", { class: "muted small docs-unused" },
         icon("text-search", { size: 13 }), ` ${none} of ${plural(pool.length, "document")} ${none === 1 ? "is" : "are"} behind none of your ${plural(use.hypotheses, "answer")}. `,
@@ -406,7 +410,7 @@ export async function renderSources(view) {
     const needsYou = (label) => tag({ kind: "attention", class: "doc-icon-tag", role: "img", "aria-label": label, title: label });
     // roadmap N5: the answers it is behind, in words, on its line only when the list is grouped or sorted by them
     const useFacts = (d) => {
-      if (!use || roles[d.doc_id] === "theory" || (grouping !== "answers" && sorting !== "answers")) return [];
+      if (!use || notSource(d) || (grouping !== "answers" && sorting !== "answers")) return [];
       const n = answersOf(d);
       if (n) return [h("span", { class: "doc-fact", title: "An excerpt of it counts in this many answers (the evidence map shows which)" }, `behind ${plural(n, "answer")}`)];
       return afterLastCheck(d) ? [h("span", { class: "doc-fact", title: "Added after the latest check: no check has read it yet" }, "added after the last check")] : [];
@@ -431,7 +435,7 @@ export async function renderSources(view) {
       const access = choice({ sm: true, class: "doc-access", label: `Who may read ${name} with AI`, value: d.ai_access,
         options: accessLevels().map((lv) => [lv, [icon(LEVEL[lv].icon, { size: 13 }), LEVEL[lv].title]]), onPick: (lv) => setAccess([d.doc_id], lv) });
       const marks = readingMarks(d);
-      const role = roleMenuItem(project, d, roles[d.doc_id], async () => { try { await loadMarks(); } catch (_) { /* as it was */ } drawGroups([d.doc_id], ".doc-role-btn"); });
+      const roleItems = roleMenuItems(project, d, roles[d.doc_id], async () => { try { await loadMarks(); } catch (_) { /* as it was */ } drawGroups([d.doc_id], ".doc-role-btn"); });
       const ns = nonsciMenuItem(project, d, nonsci.has(d.doc_id), async () => { try { await loadMarks(); } catch (_) { /* as it was */ } drawGroups([d.doc_id], ".doc-nonsci-btn"); });
       const facts = [KIND_TEXT[d.kind] || d.kind || "", d.pages ? plural(d.pages, "page") : null, (fmt.dateShort(d.added_at || "") || d.added) ? `added ${fmt.dateShort(d.added_at || "") || d.added}` : null].filter(Boolean).join(" · ");
       return h("div", { class: "doc-detail", id: `doc-detail-${d.doc_id}` },
@@ -445,12 +449,12 @@ export async function renderSources(view) {
             proposalChip(d.proposal),   // 0.18 L2: waits for the owner, or in your copy only
           )] : null,
           // roadmap N5: the answers it is behind, said plainly (a theory document is behind none, by design)
-          use && use.hypotheses && roles[d.doc_id] !== "theory" && !nonsci.has(d.doc_id) ? [h("dt", {}, "Behind answers"), h("dd", {},
+          use && use.hypotheses && !notSource(d) && !nonsci.has(d.doc_id) ? [h("dt", {}, "Behind answers"), h("dd", {},
             h("span", {}, answersOf(d) ? `${answersOf(d)} of your ${plural(use.hypotheses, "answer")}: an excerpt of it counts in each`
               : afterLastCheck(d) ? "None yet: it was added after the last check" : `None of your ${plural(use.hypotheses, "answer")}`),
             answersOf(d) ? link({ href: "#/map", class: "small" }, "Open the evidence map") : null)] : null,
-          h("dt", {}, "Role"), h("dd", {}, roles[d.doc_id] === "theory" ? "Theory: the lens the research is read through, not evidence" : "Evidence",
-            button({ kind: "quiet", sm: true, class: "doc-role-btn", onClick: role.onClick }, role.text)),
+          h("dt", {}, "Role"), h("dd", {}, roleLine(roles[d.doc_id]),
+            roleItems.map((it) => button({ kind: "quiet", sm: true, class: "doc-role-btn", onClick: it.onClick }, it.text))),
           // 0.18.6: whether its judgements count in answers
           h("dt", {}, "Scientific"), h("dd", {}, nonsci.has(d.doc_id) ? `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its judgements never count in an answer` : "Yes: its judgements count in answers",
             button({ kind: "quiet", sm: true, class: "doc-nonsci-btn", onClick: ns.onClick }, ns.text)),
@@ -505,7 +509,9 @@ export async function renderSources(view) {
           h("div", { class: "doc-marks" },
             // 0.18.5: the file name when another document has the same title (the one fact that tells them apart)
             sameTitle.has((d.title || "").trim().toLowerCase()) ? h("span", { class: "doc-fact", title: d.file || null }, d.file) : null,
-            grouping === "role" || roles[d.doc_id] !== "theory" ? null : iconMark("book-marked", "Theory: the lens the research is read through, not evidence"),   // 0.18.1 K2
+            grouping === "role" || !roles[d.doc_id] ? null : roles[d.doc_id] === "working"
+              ? iconMark("notebook", "Your working document: your own draft or notes, never a source")   // 0.18.8 N3
+              : iconMark("book-marked", "Theory: the lens the research is read through, not evidence"),   // 0.18.1 K2
             ...useFacts(d),   // roadmap N5: only when the list is grouped or sorted by the answers
             nonsci.has(d.doc_id) ? iconMark("newspaper", "Non-scientific: read and judged, never counted in an answer") : null,   // 0.18.6
             ...rowMarks(d))),

@@ -104,7 +104,7 @@ export function timeCard(project, termId) {
       run.disabled = true;
       try {
         const r = await api("POST", `${base}/concept-groups/${P(termId)}`, { groups });
-        replace(out, profileRows(r.groups, (g) => [g.name, g.theory_left_out ? h("span", { class: "muted small" }, ` (${plural(g.theory_left_out, "theory document")} left out)`) : null]));
+        replace(out, profileRows(r.groups, (g) => [g.name, g.theory_left_out ? h("span", { class: "muted small" }, ` (${plural(g.theory_left_out, "theory or working document")} left out)`) : null]));
       } catch (e) { showError(e); } finally { run.disabled = false; }
     });
     replace(pickBox, h("div", { class: "table-wrap" }, h("table", { class: "table cp-pick" },

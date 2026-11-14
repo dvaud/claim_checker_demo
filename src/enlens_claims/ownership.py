@@ -1721,6 +1721,9 @@ class _Ctx:
         if role != was:  # 0.18.1 (K2): a theory mark the project took is a log entry of its own, as one's own mark is
             who = self.names.get(by or self.owner, "the owner")
             researchlog.record(self.cx, "document-role",
+                               f"Marked as a working document by {who}: never a source, left out of themes, check "
+                               "excerpts, key terms and the corpus's code counts from now on." if role == docrole.WORKING
+                               else  # 0.18.8 (N3)
                                f"Marked as theory by {who}: it is left out of themes, codebook labels, check excerpts "
                                "and key terms from now on." if role else
                                f"Marked as evidence again by {who}: it counts in themes, codebook labels, check excerpts "
@@ -2545,7 +2548,8 @@ def what(p: dict) -> str:
     if p["kind"] == "blocks" and isinstance(det, dict) and det.get("role") and \
             not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):
         out = (f"marking {_q(p.get('title'))} as evidence again" if det["role"] == "evidence" else
-               f"marking {_q(p.get('title'))} as {det['role']} (the lens, not the evidence)")
+               f"marking {_q(p.get('title'))} as a working document (never a source)" if det["role"] == "working"
+               else f"marking {_q(p.get('title'))} as {det['role']} (the lens, not the evidence)")   # (N3: working)
     elif p["kind"] == "blocks" and isinstance(det, dict) and "nonscientific" in det and \
             not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):  # 0.18.6
         out = (f"marking {_q(p.get('title'))} as non-scientific (its judgements no longer count in answers)"

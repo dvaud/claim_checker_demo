@@ -2,7 +2,7 @@
 // beside it: Reading and Page (doc-reading.js), Codes (doc-codes.js), Key terms, References and Search (doc-lookup.js).
 import { App, api, h, icon, replace, clear, toast, showError, fmt, pageHead, P, emptyState, KIND_TEXT, dialog,
   breakSegments, breaksToIndex, textPositions, wordSpan, cpLength, safeHref, session, download, plural, TOKEN,
-  button, downloadButton, link, card, textarea, fold, choice } from "../lib.js";
+  button, downloadButton, link, card, textarea, fold, choice, navigate } from "../lib.js";
 import { blockUnit, originalLink } from "./result.js";
 import { colourPicker, editNote, removeNote, useAsEvidence, noteCard } from "./notes.js";
 import { roleBox } from "./doc-role.js";   // 0.18.1 K2: theory documents
@@ -70,7 +70,8 @@ export async function renderDocument(view, [docId], query) {
         originalLink(project, docId, hit >= 0 ? blocks[hit].page : null, d.kind, { info: d.original || undefined, quote: quoteText, text: d.kind === "pdf" ? (hit >= 0 && blocks[hit].page ? `Open the original PDF at page ${blocks[hit].page}` : "Open the original PDF") : quoteText ? "Open the original at the quote" : "Open the original" }),
         copyBtn),
       span ? h("p", { class: "muted small dv-span-note" }, hit >= 0 ? (span.whole ? `The excerpt from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.` : `The quote from the result is highlighted, in ${blocks[hit].label.toLowerCase()}.`) : "The quote could not be placed in this text.") : null] }));
-  view.appendChild(await roleBox(project, docId, d.title || d.file || "this document"));   // 0.18.1 K2: theory or evidence
+  let docRole = null;   // 0.18.8 (N3): a working document's selection offers Check against the corpus
+  view.appendChild(await roleBox(project, docId, d.title || d.file || "this document", (r) => { docRole = r; }));   // 0.18.1 K2: theory or evidence
 
   // ----------------------------------------------------------------- the text, with layers of highlights
   const nodeAt = new WeakMap();        // text node -> document offset of its first character
@@ -420,7 +421,9 @@ export async function renderDocument(view, [docId], query) {
         act("note", "Note", (x) => noteDialog(x)),
         act("text-search", "Search in this document", (x) => { openTab("search"); panels.search.searchFor(x.text.split(" ").length > 1 ? `"${x.text}"` : x.text); }),
         x0(s) ? act("link", "Every mention of this", (x) => { openTab("refs"); panels.refs.lookup(x); }) : null,
-        act("tag", "Label it with a code", (x) => { openTab("codes"); panels.codes.labelSelection(x); }));
+        act("tag", "Label it with a code", (x) => { openTab("codes"); panels.codes.labelSelection(x); }),
+        // 0.18.8 (N3): a sentence of your own draft, checked against the corpus (the draft itself is never a source)
+        docRole === "working" && s.text.length <= 1000 ? act("list-checks", "Check against the corpus", (x) => navigate(`#/hypotheses?text=${encodeURIComponent(x.text)}`)) : null);
     }
     const lr = list.getBoundingClientRect();
     const rect = (s.rect) || lr;

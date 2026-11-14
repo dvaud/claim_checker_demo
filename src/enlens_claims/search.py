@@ -197,9 +197,9 @@ def rank_passages(ws: Workspace, query_text: str, terms: list[str] | None = None
         return []
     allowed = set(doc_ids) if doc_ids else None
     if evidence_only and allowed is None:
-        from .docrole import theory_docs
+        from .docrole import not_evidence_docs  # 0.18.8 (N3): working documents are never a source either
 
-        theory = theory_docs(ws._conn())
+        theory = not_evidence_docs(ws._conn())
         if theory:
             allowed = set(idx.doc_of) - theory
     skip = exclude or set()
@@ -287,9 +287,9 @@ def docs_matching(ws: Workspace, query_text: str, terms: list[str] | None, doc_i
     two-word search term found whole, is what the check's own ranking needs to put an excerpt near the top. The bar
     counts words, not their weight, so it can be said in a sentence ("holds at least two of its words"). The default,
     1, keeps the old rule (any shared word), which the documents added since a check use."""
-    from .docrole import theory_docs
+    from .docrole import not_evidence_docs
 
-    doc_ids = set(doc_ids) - theory_docs(ws._conn())   # 0.18.1 (K2): a theory document added since is not evidence
+    doc_ids = set(doc_ids) - not_evidence_docs(ws._conn())   # K2, N3: a theory or working document is not evidence
     if not doc_ids:
         return set()
     idx = passage_index(ws)

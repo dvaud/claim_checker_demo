@@ -623,7 +623,7 @@ its own)
   definitions, each quote checked against the text as everywhere, marked as a draft to edit. The codebook is then an
   ordinary K1 codebook: edited, tried before labelling, used in checks and exports.
 - Related: N3 (your own working documents) is the other document that is kept in a project but is never a source;
-  both are a document's role, and should be built as one mark with three values (evidence, theory, working document).
+  both are a document's role, one mark with three values (evidence, theory, working document), built with N3.
 - *Already in ENLENS:* a check can be limited to some documents by hand; the reader recognises *Theory* and
   *Theoretical framework* as section headings (`reader.py`). Nothing marks a whole document as theory, and every
   document counts as evidence everywhere.
@@ -918,11 +918,24 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
 - The choice beside *Start Claude Code* becomes *Energy efficient*, *Balanced* and *Intelligence*: which models, and
   how much effort, answer each kind of task. How many helpers run at once moves to Settings.
 
-**N3. Your own working documents** · Level 0
+**N3. Your own working documents** · Level 0 · built (14 November 2026, unreleased) (`docrole.py`)
 - A tab under Documents for the researcher's own drafts and notes: kept in the project, read, coded and checked
   against the corpus like any document, but never a source (not in search results used as evidence, the glossary, the
-  themes or the evidence map). Still to settle: whether their claims are found by themselves, and how their codes are
-  counted. Build it with K2's theory mark: one role per document with three values.
+  themes or the evidence map). Build it with K2's theory mark: one role per document with three values.
+- *Built:* the role `working` beside `theory` (one role per document: evidence, theory or working document), set in
+  *Documents* (a row's panel → *Role*) or on the document's page, and travelling in a shared project as the theory mark
+  does. The Documents list grouped by *Role* has *Your working documents*; grouped by the answers, they stand apart
+  from *Behind no answer*. A working document is read, searched, opened and noted as any other, and left out of
+  themes, the excerpts a check reads (unless the check is limited to it by hand), key terms and the glossary, the
+  concepts over time and across groups, a code's examples and the documents behind no answer.
+- *Decided (the two open questions):* **its codes** are found as any document's (keyword pass and AI labelling), shown
+  on its own page and as its own row at the foot of the profile's grid, and never added into a code's totals or the
+  profile's counts: they show what the draft covers beside the corpus. **Its claims are not found by themselves**: no
+  rule finds a draft's claims well enough without AI (Level 0), and Margin already has the AI claim finder. Instead,
+  any words selected in a working document's text offer *Check against the corpus*, which opens *Hypotheses* with
+  them filled in.
+- *Not done:* a document page that lists the checks started from it (a check does not record the sentence it came
+  from), and the role in the bulk bar (one document at a time, as theory).
 
 **N4. The assessment in words** · Level 0 · built in 0.18.1
 - A short written assessment on each hypothesis's page, under its verdict, made by rules from the judgements and

@@ -6,7 +6,10 @@
 // 0.18.6: the Non-scientific mark, beside the role (a document of either role can carry it): read and judged as any
 // other, but no judgement of its excerpts counts in an answer. Unlike the role it changes answers at once, so the
 // dialog says how many checks read it, and the reply lists the answers it changed.
-import { api, h, P, toast, showError, tag, button, link, notice, plural, confirmDialog } from "../lib.js";
+// 0.18.8 (roadmap N3): a third role, the working document: the researcher's own draft or notes, kept in the project,
+// read, searched, noted and labelled with codebooks, and checked against the corpus a sentence at a time (select it in
+// the text, then Check against the corpus), but never a source. Its codes are its own: never in the corpus's counts.
+import { api, h, P, toast, showError, tag, button, link, notice, plural, confirmDialog, icon } from "../lib.js";
 
 const ROLES_API = (p) => `/api/projects/${P(p)}/document-roles`;
 const ROLE_API = (p, d) => `/api/projects/${P(p)}/documents/${P(d)}/role`;
@@ -14,13 +17,32 @@ const NONSCI_API = (p, d) => `/api/projects/${P(p)}/documents/${P(d)}/nonscienti
 export const NONSCI_MEANS = "It reports no method or data of its own (a news article, a press release, a company brochure, a blog)";
 
 export const LEFT_OUT = "themes, codebook labels, the excerpts a check reads and key terms";
+// N3: what a working document is left out of (it is labelled with codebooks, but its codes are counted apart)
+export const WORKING_LEFT_OUT = "themes, the excerpts a check reads, key terms and the corpus’s code counts";
+export const WORKING_MEANS = "Your own draft or notes: kept here, read, labelled with codes and checked against the corpus, but never a source";
 
-// {doc id: "theory"} for the Documents list ({} when it cannot be read: the list still draws)
+// each role's words: its tag, its menu item, its dialog and its line in the Documents list's panel
+const ROLE = {
+  theory: { tag: "Theory", icon: "book-marked", title: `Theory: the lens the research is read through. Left out of ${LEFT_OUT}.`,
+    menu: "Mark as theory…", button: "Mark as theory", ask: "Mark as theory?", toast: "Marked as theory.",
+    line: "Theory: the lens the research is read through, not evidence",
+    means: (t) => `“${t}” is then the lens the research is read through, not evidence about your field. It is still read, searched, opened and noted, but left out of ${LEFT_OUT}.`,
+    small: "A study that uses a theory is still evidence." },
+  working: { tag: "Working document", icon: "notebook", title: `Working document: ${WORKING_MEANS.charAt(0).toLowerCase()}${WORKING_MEANS.slice(1)}. Left out of ${WORKING_LEFT_OUT}.`,
+    menu: "Mark as my working document…", button: "Mark as my working document", ask: "Mark as your working document?", toast: "Marked as your working document.",
+    line: "Working document: your own draft or notes, never a source",
+    means: (t) => `“${t}” is then your own draft or notes, never a source. It is still read, searched, opened, noted and labelled with codebooks, and you can check any of its sentences against the corpus (select it in the text), but it is left out of ${WORKING_LEFT_OUT}.`,
+    small: "A colleague’s or another author’s draft you study is evidence, not your working document." },
+  evidence: { menu: "Mark as evidence…", button: "Mark as evidence", ask: "Mark as evidence again?", toast: "Marked as evidence.", line: "Evidence",
+    means: (t) => `“${t}” then counts as evidence again: in themes, codebook labels, the excerpts a check reads and key terms.` },
+};
+
+// {doc id: "theory" | "working"} for the Documents list ({} when it cannot be read: the list still draws)
 export async function documentRoles(project) {
   return (await documentMarks(project)).roles;
 }
 
-// 0.18.6: {roles: {doc id: "theory"}, nonscientific: Set of doc ids}, for the Documents list
+// 0.18.6: {roles: {doc id: "theory" | "working"}, nonscientific: Set of doc ids}, for the Documents list
 export async function documentMarks(project) {
   try {
     const r = await api("GET", ROLES_API(project));
@@ -64,38 +86,40 @@ export function nonsciMenuItem(project, d, on, done) {
     : { text: "Mark as non-scientific…", icon: "newspaper", onClick: () => setNonscientific(project, d.doc_id, title, true, done) };
 }
 
-// the small grey Theory tag beside a document's title (DESIGN 4.10: a fact about the item, never pressed)
+// the small grey Theory or Working document tag beside a document's title (DESIGN 4.10: a fact about the item, never
+// pressed)
 export function roleTag(role) {
-  if (role !== "theory") return null;
-  return tag({ icon: "book-marked", class: "doc-role-tag", title: `Theory: the lens the research is read through. Left out of ${LEFT_OUT}.` }, "Theory");
+  const r = ROLE[role];
+  if (!r || !r.tag) return null;
+  return tag({ icon: r.icon, class: `doc-role-tag doc-role-${role}`, title: r.title }, r.tag);
 }
 
-// ask, then mark (role "theory") or unmark (null); `done(answer)` after a change
+// the words of a document's role in the Documents list's panel
+export const roleLine = (role) => (ROLE[role] || ROLE.evidence).line;
+
+// ask, then mark (role "theory" or, N3, "working") or unmark (null); `done(answer)` after a change
 export async function setRole(project, docId, title, role, done) {
-  const marking = role === "theory";
-  const ok = await confirmDialog({ title: marking ? "Mark as theory?" : "Mark as evidence again?", danger: false,
-    confirmText: marking ? "Mark as theory" : "Mark as evidence",
+  const w = ROLE[role || "evidence"];
+  const ok = await confirmDialog({ title: w.ask, danger: false, confirmText: w.button,
     message: h("div", {},
-      h("p", {}, marking
-        ? `“${title}” is then the lens the research is read through, not evidence about your field. It is still read, searched, opened and noted, but left out of ${LEFT_OUT}.`
-        : `“${title}” then counts as evidence again: in ${LEFT_OUT}.`),
+      h("p", {}, w.means(title)),
       h("p", {}, "Results made before stay as they are: its page lists them, so you can make them again."),
-      h("p", { class: "muted small" }, "A study that uses a theory is still evidence. In a project you share, the owner decides: your mark is a proposal until it is accepted.")) });
+      h("p", { class: "muted small" }, `${w.small ? `${w.small} ` : ""}In a project you share, the owner decides: your mark is a proposal until it is accepted.`)) });
   if (!ok) return null;
   try {
     const r = await api("PUT", ROLE_API(project, docId), { role });
-    toast(marking ? "Marked as theory." : "Marked as evidence.", "ok", { small: true });
+    toast(w.toast, "ok", { small: true });
     if (done) done(r);
     return r;
   } catch (e) { showError(e); return null; }
 }
 
-// the row menu's item in the Documents list
-export function roleMenuItem(project, d, role, done) {
+// the row menu's items in the Documents list: every role the document does not have (N3: three roles)
+export function roleMenuItems(project, d, role, done) {
   const title = d.title || d.file || "this document";
-  return role === "theory"
-    ? { text: "Mark as evidence…", icon: "book-open", onClick: () => setRole(project, d.doc_id, title, null, done) }
-    : { text: "Mark as theory…", icon: "book-marked", onClick: () => setRole(project, d.doc_id, title, "theory", done) };
+  return [["evidence", null, "book-open"], ["theory", "theory", "book-marked"], ["working", "working", "notebook"]]
+    .filter(([, r]) => r !== (role || null))
+    .map(([k, r, ic]) => ({ text: ROLE[k].menu, button: ROLE[k].button, icon: ic, onClick: () => setRole(project, d.doc_id, title, r, done) }));
 }
 
 // what was made with the document in: theme runs, codebook labels, checks (each a link)
@@ -116,22 +140,31 @@ function answersList(answers) {
 }
 
 // the document page's box: what its role is, the button to change it, and what was made with it in; 0.18.6: whether
-// it is marked Non-scientific, the button to change that, and the answers of the checks that read it
-export async function roleBox(project, docId, title) {
+// it is marked Non-scientific, the button to change that, and the answers of the checks that read it. 0.18.8 (N3):
+// `onRole(role)` after each drawing, so the page knows a working document (its selection offers a check).
+export async function roleBox(project, docId, title, onRole) {
   const box = h("div", { class: "doc-role-box" });
   async function draw() {
     let r;
     try { r = await api("GET", ROLE_API(project, docId)); } catch (_) { box.replaceChildren(); return; }
+    if (onRole) onRole(r.role || null);
     const theory = r.role === "theory";
+    const working = r.role === "working";
     const ns = !!r.nonscientific;
     const imp = impactList(r.impact || {});
-    const change = button({ kind: "quiet", sm: true, icon: theory ? "book-open" : "book-marked", onClick: () => setRole(project, docId, title, theory ? null : "theory", draw) },
-      theory ? "Mark as evidence" : "Mark as theory");
+    const items = roleMenuItems(project, { doc_id: docId, title }, r.role, draw);
+    const changes = items.map((it) => button({ kind: "quiet", sm: true, icon: it.icon, onClick: it.onClick }, it.button));
+    const change = changes;
     const changeNs = button({ kind: "quiet", sm: true, icon: ns ? "flask" : "newspaper", onClick: () => setNonscientific(project, docId, title, !ns, draw) },
       ns ? "Count as scientific" : "Mark as non-scientific");
     const parts = [];
     if (theory) parts.push(notice({ kind: "info", class: "doc-role-note" },
       h("p", {}, roleTag("theory"), ` The lens the research is read through, not evidence. It is still read, searched and noted; it is left out of ${LEFT_OUT}.`),
+      imp.length ? [h("p", {}, "Made with it in, before it was marked (they stay as they are until you make them again):"), h("ul", { class: "doc-role-impact" }, imp)] : null,
+      h("div", { class: "btn-row" }, change)));
+    if (working) parts.push(notice({ kind: "info", class: "doc-role-note doc-working-note" },
+      h("p", {}, roleTag("working"), ` ${WORKING_MEANS}. It is left out of ${WORKING_LEFT_OUT}.`),
+      h("p", {}, icon("list-checks", { size: 13 }), " To check one of its claims, select the sentence in the text and choose ", h("strong", {}, "Check against the corpus"), "."),
       imp.length ? [h("p", {}, "Made with it in, before it was marked (they stay as they are until you make them again):"), h("ul", { class: "doc-role-impact" }, imp)] : null,
       h("div", { class: "btn-row" }, change)));
     if (ns) {
@@ -141,7 +174,7 @@ export async function roleBox(project, docId, title) {
         ans.length ? [h("p", {}, "Checks that read it:"), h("ul", { class: "doc-role-impact" }, ans)] : null,
         h("div", { class: "btn-row" }, changeNs)));
     }
-    const quiet = [theory ? null : change, ns ? null : changeNs].filter(Boolean);
+    const quiet = [...(theory || working ? [] : change), ns ? null : changeNs].filter(Boolean);
     if (quiet.length) parts.push(h("div", { class: "row doc-role-row" }, quiet));
     box.replaceChildren(...parts);
   }
