@@ -667,25 +667,26 @@ November 2026, unreleased)
   role it changes answers at once: the reply and the research log list the answers it changed. It travels as *Leave
   out* does.
 - **The rest, built (14 November 2026, unreleased)** (`nonscientific.py`):
-  - *A per-hypothesis exception.* Under a hypothesis's answer, where its check read a non-scientific document:
-    *Count non-scientific documents in this check*, for when newspapers or blogs are the material it is about. Its
-    answer then counts them as any document, for every part, and is the one counting them (`status_all_sources`);
-    every other check still leaves them uncounted. The page, the assessment in words, the excerpts and the Excel
-    download say plainly that they count here and why, with the answer without them. Changing it changes the answer
-    at once and goes in the research log, in one entry, with the answers before and after; a new reason while it is on
-    is logged too. Off by default. Kept in the hypothesis's options with the time of each change, so it travels with
-    the check as its note does (a column of its own would not: a check whose only change is in a column added after
-    0.14.2 is not told newer); a change by someone other than the check's author reaches the author's copy as a
-    sync-clash copy (H5), and the page says so under the switch. The document's page marks the checks that count it.
+  - *A per-hypothesis exception.* Under a hypothesis's answer, where its check read a non-scientific document: *Count
+    non-scientific documents in this check*, for when newspapers or blogs are the material it is about. Its answer then
+    counts them as any document, for every part, and is the one counting them (`status_all_sources`); every other check
+    still leaves them uncounted. The page, the assessment in words, the excerpts and the Excel download say plainly that
+    they count here and why, with the answer without them. Changing it changes the answer at once and goes in the
+    research log, in one entry, with the answers before and after. While it is on, an optional reason sits under the
+    switch; changing or emptying it (the usual reason again) is logged too. Off by default. Kept in the hypothesis's
+    options with the time of each change, so it travels with the check as its note does (a column of its own would not:
+    a check whose only change is in a column added after 0.14.2 is not told newer); a change by someone other than the
+    check's author reaches the author's copy as a sync-clash copy (H5), and the page says so under the switch. The
+    document's page marks the checks that count it.
   - *A suggestion from the bibliography's item type, never a mark.* A document whose work is a newspaper or magazine
-    article, a blog or forum post, a web page, a podcast or a broadcast (Zotero, CSL, RIS and BibTeX types; not a
-    presentation, a speech or a video, which can be a scholar's talk) shows one quiet line on its page and in its
-    *Documents* row: *Your bibliography lists this as a newspaper article. Mark it as non-scientific?* with *Mark* and
-    *No*; never for theory or working documents. *No* is kept as a research log entry, so it travels: the Owner's or a
-    Co-owner's holds in every copy, a Member's in their own copy only. *Suggest again* on the document's page takes a
-    *No* back (one's own; the Owner and Co-owners anyone's), as a log entry that supersedes it. A *No* with no
-    suggestion to answer (a stale list) is refused and logs nothing. *Documents* can be grouped by *Scientific or
-    not*, with *Suggested as non-scientific* as a group.
+    article, a press release, a blog or forum post, a web page, a podcast or a broadcast (its first linked work, as the
+    Documents list shows it; Zotero, CSL, RIS and BibTeX types; not a presentation, a speech or a video, which can be a
+    scholar's talk) shows one quiet line on its page and in its *Documents* row: *Your bibliography lists this as a
+    newspaper article. Mark it as non-scientific?* with *Mark* and *No*; never for theory or working documents. *No* is
+    kept as a research log entry, so it travels: the Owner's or a Co-owner's holds in every copy, a Member's in their
+    own copy only. *Suggest again* on the document's page takes a *No* back (one's own; the Owner and Co-owners
+    anyone's), as a log entry that supersedes it. A *No* with no suggestion to answer (a stale list) is refused and logs
+    nothing. *Documents* can be grouped by *Scientific or not*, with *Suggested as non-scientific* as a group.
   - *A mark of its own on the evidence map.* Non-scientific documents have a column again: their cells have the
     symbol unfilled with a dashed edge, and the legend says *Non-scientific: read, not counted*. They change no answer,
     count or colour (they still count among the documents behind no answer, as in *Documents*); where a hypothesis

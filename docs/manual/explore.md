@@ -288,19 +288,21 @@ hypothesis, turn on **Count non-scientific documents in this check**. Its answer
 for every part of it, and changes at once; every other check still leaves them uncounted. The page, the assessment
 under the answer and the Excel download say plainly that they count here and why, with the answer the check would have
 without them, and their excerpts read *Non-scientific, counted here*. The research log keeps each change with the
-answer before and after; so does a new reason given while it is on. The switch is shown only where the check read a
-non-scientific document, and travels with the check in a shared project, as its note does: when the check is a
-colleague's, a line under the switch says so, and your change reaches their copy beside theirs, as a sync-clash
-copy.
+answer before and after. While it is on, a field under the switch takes your reason, if you want to give one: change it
+and choose *Save reason*, or empty it to give the usual reason (*they are the material this hypothesis is about*)
+again; the research log keeps each change. The switch is shown only where the check read a non-scientific document,
+and travels with the check in a shared project, as its note does: when the check is a colleague's, a line under the
+switch says so, and your change reaches their copy beside theirs, as a sync-clash copy. Everyone in the team needs
+this version: an older ENLENS keeps the setting but does not read it, so its copy still leaves them uncounted.
 
 **A suggestion from your bibliography.** When a document's work in the [bibliography](bibliography.md) is a kind that is
-usually not scientific (a newspaper or magazine article, a blog or forum post, a web page, a podcast or a broadcast),
-its page and its row in *Documents* show one quiet line: *Your bibliography lists this as a newspaper article. Mark it
-as non-scientific?* *Mark* opens the usual dialog; *No* keeps it as it is, and the research log keeps your answer.
-Nothing is marked by itself, and theory and working documents are never suggested. In a project with an owner, the
-Owner's or a Co-owner's *No* holds in every copy; a Member's hides the suggestion in their own copy only. Whoever said
-*No* can take it back on the document's page with *Suggest again* (the Owner and Co-owners can take back anyone's).
-Grouping *Documents* by *Scientific or not* lists the suggested ones together.
+usually not scientific (a newspaper or magazine article, a press release, a blog or forum post, a web page, a podcast
+or a broadcast), its page and its row in *Documents* show one quiet line: *Your bibliography lists this as a newspaper
+article. Mark it as non-scientific?* *Mark* opens the usual dialog; *No* keeps it as it is, and the research log keeps
+your answer. Nothing is marked by itself, and theory and working documents are never suggested. In a project with an
+owner, the Owner's or a Co-owner's *No* holds in every copy; a Member's hides the suggestion in their own copy only.
+Whoever said *No* can take it back on the document's page with *Suggest again* (the Owner and Co-owners can take back
+anyone's). Grouping *Documents* by *Scientific or not* lists the suggested ones together.
 
 **On the evidence map** a non-scientific document has a column too: what it says is drawn with the symbol unfilled
 and a dashed edge (*Non-scientific: read, not counted*). It changes no answer, count or colour of the map, and it

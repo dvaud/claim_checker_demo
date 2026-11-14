@@ -262,8 +262,8 @@ class CorpusApi:
     # ---- 0.18.8 (K3): the per-hypothesis exception and the bibliography's suggestion (nonscientific.py) ----------
     def put_hypothesis_nonscientific(self, name, hyp_id, q):
         """{"count": true | false, "why"?: text}: count the non-scientific documents in this hypothesis's check, or
-        not again; a new "why" while it is on replaces the reason. The answer changes at once: the reply has it before
-        and after (nonscientific.set_counting)."""
+        not again; a "why" while it is on replaces the reason, and an empty one takes it away (the usual reason is
+        given again). The answer changes at once: the reply has it before and after (nonscientific.set_counting)."""
         from .. import nonscientific
 
         body = self._body()

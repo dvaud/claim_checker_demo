@@ -1734,7 +1734,7 @@ class _Ctx:
             who = self.names.get(by or self.owner, "the owner")
             researchlog.record(self.cx, "document-mark",
                                f"Marked as non-scientific by {who}: no judgement of its excerpts counts in an answer "
-                               "from now on." if ns else
+                               "from now on, except in checks set to count them." if ns else
                                f"Counted as scientific again by {who}: its judgements count in answers from now on.",
                                "document", doc, self.docs[doc]["title"], data={"nonscientific": ns, "by": by or self.owner})
 

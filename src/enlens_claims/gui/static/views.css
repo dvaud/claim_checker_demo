@@ -1233,6 +1233,9 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .result .answer-sentence { font-size: var(--fs-doc); line-height: 1.5; margin: 0 0 12px; max-width: 48em; color: var(--text); }
 /* 0.18.8 (K3): Count non-scientific documents in this check, under the assessment */
 .result .answer-nonsci { margin: 12px 0 4px; max-width: 48em; }
+.result .answer-nonsci-why { margin: 8px 0 0; }   /* its reason, while it is on: the field, then Save */
+.result .answer-nonsci-why-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.result .answer-nonsci-why-row .input { flex: 1 1 16em; }
 .result .answer .who { margin: 0 0 12px; padding: 0; border-top: 0; }
 /* who says what: one document per row, its sides with their judgement marks */
 .result .who-list { list-style: none; margin: 0 0 12px; padding: 0; border-top: 0; display: grid; gap: 8px; }

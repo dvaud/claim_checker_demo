@@ -320,7 +320,8 @@ def set_nonscientific(ws: Workspace, doc_id: str, on: bool, why: str | None = No
         entry = researchlog.record(
             cx, "document-mark",
             "Marked as non-scientific: it reports no method or data of its own. Its excerpts are still read and "
-            "judged, but no judgement of them counts in an answer from now on." if on else
+            "judged, but no judgement of them counts in an answer from now on, except in checks set to count them."
+            if on else
             "Counted as scientific again: its judgements count in answers from now on.",
             "document", doc_id, title, data={"nonscientific": on}, why=why)
     after = _answers(ws, checks)

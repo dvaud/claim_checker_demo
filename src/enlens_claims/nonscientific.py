@@ -15,8 +15,9 @@ the check's author arrives in the author's copy as a sync-clash copy too, never 
 `merge._may_replace`), as a note does; the page says so under the switch. Not a column of its own: a check whose only
 change is in a column added after 0.14.2 is not told newer (sync/fingerprints.py, the `old` form). Each change keeps
 its time (`count_nonscientific_at`), so turning it off again is never taken for the state before. Turning it on or
-off, or giving a new reason while it is on, goes in the research log (with the answers before and after). Off by
-default: nothing changes until a person turns it on.
+off, or giving a new reason while it is on (or taking it away: the stock reason shows again), goes in the research log
+(with the answers before and after), in the same transaction as the setting. Off by default: nothing changes until a
+person turns it on.
 
 **The suggestion, never a mark.** A document whose bibliography entry has an item type that is usually not scientific
 (a newspaper or magazine article, a blog post, a web page, a forum post, a podcast, a broadcast) is suggested as
@@ -52,8 +53,9 @@ TYPE_WORDS = {
     "post-weblog": "a blog post", "post": "a post", "broadcast": "a broadcast",
     # RIS
     "NEWS": "a newspaper article", "MGZN": "a magazine article", "BLOG": "a blog post", "ELEC": "a web page",
-    # BibTeX / BibLaTeX
-    "online": "a web page", "www": "a web page",
+    "PRESS": "a press release", "ICOMM": "an online message",   # ICOMM: RIS's internet communication (an email, a post)
+    # BibTeX / BibLaTeX (@electronic is BibLaTeX's other name for @online)
+    "online": "a web page", "www": "a web page", "electronic": "a web page",
 }
 # not suggested: a presentation, a speech or a video can be a scholar's talk (a conference paper, a lecture)
 
@@ -102,52 +104,63 @@ REASON = "they are the material this hypothesis is about"
 
 def set_counting(ws: Workspace, hyp_id: str, on: bool, why: str | None = None) -> dict:
     """Count the non-scientific documents in this hypothesis's check (`on`), or leave them uncounted again, as in
-    every other check; a new `why` while it is on replaces the reason. The answer changes at once: returns
-    {"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now", "now_text"}. The setting is
-    saved first; the research log then keeps the change in one entry, with both answers."""
+    every other check. While it is on, a `why` replaces the reason, and an empty one takes the person's reason away
+    (the stock one, `REASON`, shows again); None leaves it as it is. The answer changes at once: returns
+    {"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now", "now_text"}. The setting and
+    its research-log entry are one transaction (`researchlog.record`: the entry is part of the change); the answers
+    after it are known only once it is made, and are written into that entry then, as `docrole.set_nonscientific`
+    does."""
     from . import researchlog
     from .check_results import hypothesis_result
 
     on = bool(on)
+    given = why is not None
     why = (why or "").strip()[:researchlog.MAX_WHY] or None
     rows = ws.query("SELECT text, options_json FROM hypotheses WHERE hyp_id=?", (hyp_id,))
     if not rows:
         raise KeyError(hyp_id)
     text, opts = rows[0][0] or "", _options(rows[0][1])
     was_on, was_why = setting(opts)
-    new_why = on and was_on and why is not None and why != was_why
+    new_why = on and was_on and given and why != was_why
     before = hypothesis_result(ws, hyp_id)
     if was_on == on and not new_why:
         return {"hyp_id": hyp_id, "count_nonscientific": on, "changed": False, "why_changed": False,
                 "was": before["status"], "was_text": before["status_text"], "now": before["status"],
                 "now_text": before["status_text"]}
     # kept as false once turned off, with the time of each change: turned off (or on again) it is a version of its
-    # own, never one a colleague's copy has had (which would make theirs look newer)
+    # own, never one a colleague's copy has had (which would make theirs look newer). The entry takes the same time.
+    at = now()
     opts.pop(COUNT_WHY, None)
-    opts.update({COUNT: on, COUNT_AT: now()})
-    if on and why:
+    opts.update({COUNT: on, COUNT_AT: at})
+    if on and why:   # on now: turned on, or a new reason (an emptied one leaves the stock reason)
         opts[COUNT_WHY] = why
+    check = researchlog.quoted(text, 200)
+    if new_why and why:
+        said = f"A new reason for counting non-scientific documents in the check of {check}."
+    elif new_why:
+        said = (f"The reason for counting non-scientific documents in the check of {check} was taken away; the usual "
+                f"one shows again: {REASON}.")
+    elif on:   # the person's own reason is the entry's why; the stock one is said only when they gave none
+        said = f"Non-scientific documents count in the check of {check}" + ("." if why else f": {REASON}.")
+    else:
+        said = (f"Non-scientific documents no longer count in the check of {check}: their judgements are shown, never "
+                "counted, as in every other check.")
+    data = {"count_nonscientific": on, **({"why_changed": True} if new_why else {})}
     with ws.connect() as cx:
         cx.execute("UPDATE hypotheses SET options_json=? WHERE hyp_id=?", (json.dumps(opts), hyp_id))
+        entry = researchlog.record(cx, "check-setting", said, "check", hyp_id, text, data=data, why=why, at=at)
     after = hypothesis_result(ws, hyp_id)
     out = {"hyp_id": hyp_id, "count_nonscientific": on, "changed": True, "why_changed": bool(new_why),
            "was": before["status"], "was_text": before["status_text"], "now": after["status"],
            "now_text": after["status_text"]}
-    check = researchlog.quoted(text, 200)
-    if new_why:
-        said = f"A new reason for counting non-scientific documents in the check of {check}."
-    elif on:
-        said = f"Non-scientific documents count in the check of {check}: {REASON}."
-    else:
-        said = (f"Non-scientific documents no longer count in the check of {check}: their judgements are shown, never "
-                "counted, as in every other check.")
-    said += (f" The answer changed from {out['was_text']} to {out['now_text']}."
-             if (out["was"], out["was_text"]) != (out["now"], out["now_text"]) else
-             f" The answer stays {out['now_text']}.")
+    more = (f" The answer changed from {out['was_text']} to {out['now_text']}."
+            if (out["was"], out["was_text"]) != (out["now"], out["now_text"]) else
+            f" The answer stays {out['now_text']}.")
     data = {"count_nonscientific": on, **{k: out[k] for k in ("was", "was_text", "now", "now_text")},
             **({"why_changed": True} if new_why else {})}
     with ws.connect() as cx:
-        researchlog.record(cx, "check-setting", said, "check", hyp_id, text, data=data, why=why)
+        cx.execute("UPDATE research_log SET text=text || ?, data_json=? WHERE entry_id=?",
+                   (more, json.dumps(data, ensure_ascii=False), entry))
     return out
 
 
@@ -157,7 +170,7 @@ def type_words(item_type: str | None) -> str | None:
     if not item_type:
         return None
     low = item_type.lower()
-    return TYPE_WORDS.get(item_type) or (TYPE_WORDS[low] if low in ("online", "www") else None)
+    return TYPE_WORDS.get(item_type) or (TYPE_WORDS[low] if low in ("online", "www", "electronic") else None)
 
 
 class NoSuggestion(ValueError):
@@ -214,23 +227,27 @@ def declined(ws: Workspace) -> set[str]:
 def suggestions(ws: Workspace) -> dict[str, dict]:
     """{doc_id: {"item_type", "words"}}: the documents to suggest as non-scientific, from the item type of the work
     the bibliography links them to (linked or confirmed), not marked yet, not declined, and neither a theory nor a
-    working document (never evidence anyway)."""
+    working document (never evidence anyway). A document linked to several works is the first one, as the Documents
+    list and its page show it (`bibliography.doc_citations`, the same query): a journal article also linked to its
+    web page is never suggested as a web page."""
     from .docrole import ROLES, nonscientific_docs
 
     try:
         rows = ws.query("SELECT l.doc_id, b.item_type FROM bib_links l JOIN bib_items b ON b.item_key=l.item_key "
-                        "JOIN documents d ON d.doc_id=l.doc_id WHERE l.status IN ('auto', 'confirmed') "
-                        f"AND (d.role IS NULL OR d.role NOT IN ({','.join('?' * len(ROLES))})) ORDER BY b.seq",
-                        ROLES)
+                        "WHERE l.status IN ('auto', 'confirmed') ORDER BY b.seq")
+        roles = {r[0] for r in ws.query(f"SELECT doc_id FROM documents WHERE role IN ({','.join('?' * len(ROLES))})",
+                                        ROLES)}
     except sqlite3.OperationalError:   # no bibliography tables, or a database before the role column
         return {}
-    skip = nonscientific_docs(ws) | declined(ws)
-    out: dict[str, dict] = {}
+    first: dict[str, str | None] = {}
     for doc, item_type in rows:
+        first.setdefault(doc, item_type)
+    skip = nonscientific_docs(ws) | declined(ws) | roles
+    out: dict[str, dict] = {}
+    for doc, item_type in first.items():
         words = type_words(item_type)
-        if doc in skip or doc in out or not words:
-            continue
-        out[doc] = {"item_type": item_type, "words": words}
+        if doc not in skip and words:
+            out[doc] = {"item_type": item_type, "words": words}
     return out
 
 
