@@ -858,6 +858,25 @@ Cloudflare (keys on B2, tokens on R2: the only part written per service), then *
 removing a colleague. WebDAV (SURFdrive, SURF Research Drive, a university's Nextcloud) can come later on the same
 layer.
 
+*Built (14 November 2026, unreleased): WebDAV* (`storage.py` `WebDAVStorage`, `sync/webdav.py`, `views/team-space.js`),
+a third kind of storage space on the same layer, with sealing, signatures, the mirror and keeper = owner unchanged.
+The owner gives the drive's WebDAV address (SURFdrive's is offered; a Nextcloud's is
+`https://<host>/remote.php/dav/files/<user>/`), their user name and an app password (keychain only); ENLENS makes a
+folder `ENLENS - <project>` and tests it. A file is written under a hidden temporary name and moved into place, so a
+reader never sees half of one on any server. WebDAV has no keys ENLENS can make for others: each member uses their own
+account and app password, and the owner shares the folder, by ENLENS through the OCS Share API where the drive has it
+(read, change, add, remove; no resharing), otherwise in the drive's website. The invite carries the drive and the
+folder, no password; joining asks for the member's own and finds the shared folder (by its name, then any folder at
+their root or in `Shared` that holds the team's roster), or lets them choose. An invite's drive name must be its
+address's; a drive not used on this computer before (and not SURF's) is confirmed by the member before their password
+goes there. One share per user name; removing unshares when nobody staying uses that account; as on R2, the
+signatures keep each part its writer's. A hand-over never passes the old owner's app password on; the folder stays in
+the first owner's drive (only they share it), so the new owner is pointed to a move into their own drive. *Move to another
+storage space* works to and from WebDAV; members follow a move to a drive only from a drive at the same address (else
+their copy leaves the old space and asks for a new invite). *Not tried with a real SURFdrive, SURF Research Drive or
+Nextcloud account*: built against a stand-in that follows RFC 4918 and Nextcloud's documents (whether SURFdrive's
+`nonshib-webdav` address offers the OCS Share API, where shares land, and the exact refusals are unchecked).
+
 *Decided (12 November 2026):* a storage space of the team's own is the recommended way, Backblaze first, Cloudflare
 beside it; the shared folder (L7) and the zip stay. Not chosen: **an ENLENS server**, also one ENLENS sets up at a
 cloud host with one click (it costs money and needs someone to keep it secure for years); **OneDrive or Google Drive
