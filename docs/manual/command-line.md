@@ -82,6 +82,8 @@ enlens --ws myproject themes --k 20 --mode auto --name-with-model --out themes.x
 enlens --ws myproject resolve <doc_id> [--name "the plant"]                        # follow references
 enlens --ws myproject annotate <doc_id> --hyp <hyp_id> --layers judgements labels --out highlighted.pdf
 enlens --ws myproject export-flexiconc project.sqlite [--no-embeddings]
+enlens --ws myproject export-qdpx project.qdpx [--framework NAME]   # for NVivo, ATLAS.ti, MAXQDA (REFI-QDA)
+enlens --ws myproject export-qdc NAME codebook.qdc                  # one codebook, REFI-QDA
 enlens measure [--folder DIR] [--ws PROJECT] [--timings] [--report FILE.md]       # how well ENLENS reads
 enlens validate prepare|score|report [--project NAME] [--again NAME] [--latest DIR] [--out FILE.md]   # the AI's answers against known right answers
 ```

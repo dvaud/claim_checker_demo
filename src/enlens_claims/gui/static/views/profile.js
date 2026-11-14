@@ -292,7 +292,10 @@ export async function renderProfile(view, params, query) {
   function draw() {
     // 0.13.3: the download is a quiet link, shown once there is a profile to download (it was a disabled button)
     const xlsx = prof.pass1.done ? downloadLinks([{ text: "Excel (.xlsx)",
-      onClick: (e) => { const b = e.currentTarget; b.disabled = true; download(`${base}/profile.xlsx?framework=${encodeURIComponent(framework)}&level=${level}`).catch(showError).finally(() => { b.disabled = false; }); } }]) : null;
+      onClick: (e) => { const b = e.currentTarget; b.disabled = true; download(`${base}/profile.xlsx?framework=${encodeURIComponent(framework)}&level=${level}`).catch(showError).finally(() => { b.disabled = false; }); } },
+      // 0.18.7 (G5): the whole project, its labels as codings, for another program of qualitative analysis
+      { text: "NVivo, ATLAS.ti, MAXQDA (.qdpx)", title: "A REFI-QDA project: the documents, the codes, the labels and judgements that count, and your notes as memos",
+        onClick: (e) => { const b = e.currentTarget; b.disabled = true; download(`${base}/export.qdpx`).catch(showError).finally(() => { b.disabled = false; }); } }]) : null;
     replace(head, pageHead("Codes", { eyebrow: featureEyebrow("profile"),
       sub: "Which codes of a codebook each document addresses, how much and where.",
       actions: xlsx,

@@ -296,8 +296,11 @@ F1 (a reading queue) and F3 (Zotero annotations) are Margin's. F2, F4 and F5 are
 
 G1 to G4 (the rest of Margin's writing companion) are Margin's.
 
-**G5. Export to NVivo and ATLAS.ti** · Level 0 · ENLENS candidate
+**G5. Export to NVivo and ATLAS.ti** · Level 0 · built (unreleased)
 - Codes, labels, quotes, memos and your decisions as a REFI-QDA (`.qdpx`) project.
+- Built: `qdpx.py` writes the project (documents as text, codebooks and hypotheses as codes, the labels and judgements
+  that count as codings by the person or "ENLENS AI (model)", notes and the research log as memos) and a codebook alone
+  as `.qdc`, from the Hypotheses, Codes, result and codebook pages and `enlens export-qdpx` / `export-qdc`.
 
 ## H. Optimisation across the board
 

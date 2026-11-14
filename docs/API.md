@@ -334,6 +334,8 @@ is taken out of the copy of the database (`sharing.strip`, then VACUUM), a withd
 codebooks not shared stay here, and the tables about this copy only (versions, the log of work brought in, the
 glossary) are empty; the documents and their files go along. `?scope=all` (the default) is the whole project, as
 before; either way each item says whose it is. Another `scope` → 400.
+
+`GET /api/projects/<p>/export.qdpx` → 0.18.7 (G5): the project for NVivo, ATLAS.ti and MAXQDA, as a REFI-QDA project (`urn:QDA-XML:project:1.0`: `project.qde` and `sources/<guid>.txt`): every document as its passages joined, the codebooks with labels and the project's own as codes, the hypotheses as codes with *Supports*, *Partly supports* and *Contradicts*, the labels and judgements that count as codings on their quotes (coded by the person or by "ENLENS AI (<model>)"), notes and highlights as memos on their words, and the research log as one memo (`qdpx.export_project`; its docstring has every rule). `?framework=<name>` keeps one codebook (400 for an unknown one); `?threshold=` the strictness a judgement counts at (else Settings'). Built in a temporary file and sent in chunks ("ENLENS for NVivo - Demo - 2026-11-14.qdpx"). GUIDs are uuid5 of ENLENS's ids: two exports give the same.
 `POST /api/projects/import?name=<name>` with the zip as the raw body → `{"project": summary}` (it becomes the
 current project). Without `name` the project keeps the name it had, with " (2)" added when that is taken; a `name`
 that is taken → 409. 400 for a file that is not a zip, or a zip without a project (`enlens.sqlite`). Paths in the zip
@@ -1691,6 +1693,7 @@ codes, where each example was found, the groups and their order. The old routes 
 through: still read, searched and noted, but left out of themes, codebook labels, the excerpts a check reads and key
 terms.
 
+- `GET /api/projects/<p>/codebooks/<name>.qdc` → 0.18.7 (G5): the codebook as a REFI-QDA codebook (`urn:QDA-XML:codebook:1.0`) for NVivo, ATLAS.ti and MAXQDA: its groups as parent codes, each code's definition, when to use it and when not, keywords and examples as its description (`qdpx.codebook_xml`). 404 for an unknown codebook.
 - `GET /api/projects/{p}/document-roles` → `{"roles": {doc id: "theory"}, "nonscientific": [doc ids]}` (only the
   documents with a role; 0.18.6: and those marked Non-scientific).
 - `GET /api/projects/{p}/documents/{d}/role` → `{"doc_id", "role": "theory" | null, "impact": {"themes": [{"run_id",
