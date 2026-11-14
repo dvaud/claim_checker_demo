@@ -522,3 +522,80 @@ def test_the_editor_keeps_what_is_typed_the_busy_state_and_the_places():
     assert 'd.reader === "local"' in js and "give away what these documents say" in js
     # a code brought back from Removed codes comes back marked
     assert "...(r.ai_draft ? { ai_draft: { ...r.ai_draft } } : {})" in js
+
+
+# ---- the audit's DEC-2: a file does not carry the mark, said once where it matters ----------------------------------
+def _one_code_marked(ws, name: str = "waits") -> dict:
+    """A codebook of two codes, one whose definition is still the AI's words (marked), one written by the person."""
+    cb = codebooks.create(ws, name, "Waits")
+    words = "Residents kept waiting by the home, as the AI drafted it."
+    codes = [{"uid": "", "code": "Waiting", "description": words, "group": "", "include": "", "exclude": "",
+              "keywords": [], "examples": [], "ai_draft": {"model": "claude-sonnet-5-5", "at": "2026-11-14",
+                                                           "description": words}},
+             {"uid": "", "code": "Garden", "description": "Time spent in the garden.", "group": "", "include": "",
+              "exclude": "", "keywords": [], "examples": []}]
+    return codebooks.save(ws, name, {**cb, "codes": codes})["codebook"]
+
+
+def test_the_commands_say_a_file_does_not_carry_the_mark(project, tmp_path, capsys):
+    from enlens_claims import cli
+
+    ws, _a, _b = project
+    cb = _one_code_marked(ws)
+    assert codebooks.drafted_codes(ws, "waits") == 1 and codebooks.drafted_codes(ws, "nope") == 0
+    said = ("1 code still holds the AI’s draft. A downloaded file does not carry that mark: say so to whoever you send "
+            "it to.")
+    assert codebooks.draft_note(1) == said and codebooks.draft_note(0) is None
+    assert codebooks.draft_note(3).startswith("3 codes still hold the AI’s draft. ")
+    for cmd in (["export-qdc", "waits", str(tmp_path / "w.qdc")], ["export-qdpx", str(tmp_path / "w.qdpx")],
+                ["export-qdpx", str(tmp_path / "w1.qdpx"), "--framework", "waits"]):
+        capsys.readouterr()
+        assert cli.main(["--ws", str(ws.root), *cmd]) == 0
+        out = capsys.readouterr()
+        assert json.loads(out.out)                                   # the usual line, still JSON on its own
+        assert out.err.strip().splitlines()[-1] == said, cmd
+    # the file itself is as it was: no mark in it
+    qdc = (tmp_path / "w.qdc").read_text(encoding="utf-8")
+    assert "claude-sonnet-5-5" not in qdc and "2026-11-14" not in qdc and "ai_draft" not in qdc
+    # rewritten in the person's own words: nothing more is said
+    got = cb["codes"]
+    got[0]["description"] = "Residents kept waiting by the home, in my words."
+    codebooks.save(ws, "waits", {**cb, "codes": got})
+    assert codebooks.drafted_codes(ws, "waits") == 0
+    for cmd in (["export-qdc", "waits", str(tmp_path / "x.qdc")], ["export-qdpx", str(tmp_path / "x.qdpx")]):
+        capsys.readouterr()
+        assert cli.main(["--ws", str(ws.root), *cmd]) == 0
+        assert "AI’s draft" not in capsys.readouterr().err
+
+
+def test_the_editor_says_it_beside_the_downloads():
+    js = (ROOT / "src/enlens_claims/gui/static/views/codebooks.js").read_text(encoding="utf-8")
+    # beside the two downloads, in the page head's row; kept up to date as the fields are rewritten; no dialog
+    head = js.split("  function drawHead() {", 1)[1].split("\n  }\n", 1)[0]
+    assert '"Download as .qdc"),\n        dlNote, more),' in head and "drawDlNote();" in head
+    assert 'h("span", { class: "muted small cb-dl-note" })' in js
+    assert js.count("drawDlNote();") == 2      # in the head, and with the AI draft mark under the fields
+    assert "confirm(" not in head and "dialog(" not in head
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="Node is not installed")
+def test_the_editors_line_counts_what_is_on_screen_in_node(tmp_path):
+    import shutil
+    import subprocess
+
+    js = (ROOT / "src/enlens_claims/gui/static/views/codebooks.js").read_text(encoding="utf-8")
+    start = js.index("const FIELDS_OF_DRAFT")
+    end = js.index("\n}\n", js.index("function draftNote(codes)")) + 3
+    run = tmp_path / "run.mjs"
+    run.write_text(js[start:end] + """
+const draft = { model: "m", description: "The AI's words." };
+const marked = { description: "The AI's  words.", ai_draft: draft };          // spaces apart: the same words
+const rewritten = { description: "My own words.", ai_draft: draft };
+console.log(JSON.stringify([draftNote([]), draftNote([rewritten, {}]), draftNote([marked, rewritten]),
+  draftNote([marked, marked, marked])]));
+""", encoding="utf-8")
+    r = subprocess.run([shutil.which("node"), str(run)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    none, rewritten, one, three = json.loads(r.stdout)
+    assert none is None and rewritten is None
+    assert one == codebooks.draft_note(1) and three == codebooks.draft_note(3)   # the commands say the same

@@ -27,6 +27,13 @@ function draftFields(c) {
 }
 const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 function listWords(xs) { return xs.length < 2 ? (xs[0] || "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`; }
+// The audit's DEC-2: a downloaded file (CSV, .qdc) does not carry the AI draft mark. While codes on screen still hold
+// the AI's words, one short line beside the downloads says so (codebooks.py `draft_note`, which the commands print);
+// none when no code does. No dialog: the download stays one click.
+function draftNote(codes) {
+  const n = (codes || []).filter((c) => draftFields(c).length).length;
+  return n ? `${n} ${n === 1 ? "code still holds" : "codes still hold"} the AI’s draft. A downloaded file does not carry that mark: say so to whoever you send it to.` : null;
+}
 
 function whereBadge(where) {
   const [t, ic] = WHERE[where] || [where, "circle"];
@@ -446,7 +453,14 @@ export async function renderCodebook(view, [name]) {
   const ro = !cb.editable;
 
   // ---- the head
+  const dlNote = h("span", { class: "muted small cb-dl-note" });   // DEC-2: beside the downloads (`draftNote`)
+  function drawDlNote() {
+    const t = draftNote(st.codes);
+    dlNote.textContent = t || "";
+    dlNote.hidden = !t;
+  }
   function drawHead() {
+    drawDlNote();
     const moreItems = [];
     if (!ro) {
       if (cb.where === "project" && !cb.in_home) moreItems.push(["layers", "Keep it with all my projects", () => move("home")]);
@@ -468,7 +482,7 @@ export async function renderCodebook(view, [name]) {
         downloadButton({ onClick: () => download(`${base}.csv`).catch(showError) }, "CSV"),
         // 0.18.7 (G5): the codebook for NVivo, ATLAS.ti and MAXQDA
         downloadButton({ title: "A REFI-QDA codebook, for NVivo, ATLAS.ti and MAXQDA: each code with its definition", onClick: () => download(`${base}.qdc`).catch(showError) }, "Download as .qdc"),
-        more),
+        dlNote, more),
     }), sharing);
   }
 
@@ -694,6 +708,7 @@ export async function renderCodebook(view, [name]) {
       const f = draftFields(c);
       replace(mark, f.length ? h("p", { class: "small" }, tag({ icon: "sparkles" }, "AI draft"), " ",
         `${capital(listWords(f.map((k) => DRAFT_LABEL[k])))} ${f.length === 1 ? "is" : "are"} still the AI’s words${c.ai_draft.model ? ` (${c.ai_draft.model})` : ""}, drafted from the examples. Rewrite ${f.length === 1 ? "it" : "them"} in your own words; the mark goes when you do.`) : null);
+      drawDlNote();   // the line beside the downloads counts what is on screen
     };
     drawMark();
     const exList = h("ul", { class: "cb-examples" });

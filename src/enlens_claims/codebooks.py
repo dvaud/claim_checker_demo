@@ -112,6 +112,25 @@ def _still_drafted(d: Any, code: dict) -> dict | None:
     return {"model": _clean_text(d.get("model"), 80), "at": _clean_text(d.get("at"), 40), **out}
 
 
+def drafted_codes(ws: Workspace, name: str) -> int:
+    """K1 (the audit's DEC-2): how many codes of the saved codebook still hold the AI's draft words, by the check the
+    editor's *AI draft* tag uses (`_still_drafted`). A file written from the codebook (.qdc, .qdpx, CSV) does not carry
+    that mark."""
+    try:
+        return sum(1 for c in state_of(ws, name)["codes"] if c.get("ai_draft"))
+    except (KeyError, ValueError, OSError):
+        return 0
+
+
+def draft_note(n: int) -> str | None:
+    """The one sentence said beside the editor's downloads, and by `export-qdc` and `export-qdpx`, while `n` codes still
+    hold the AI's draft (codebooks.js `draftNote` says the same); None when no code does."""
+    if n <= 0:
+        return None
+    return (f"{n} {'code still holds' if n == 1 else 'codes still hold'} the AI’s draft. A downloaded file does not carry "
+            "that mark: say so to whoever you send it to.")
+
+
 # ---------------------------------------------------------------------------------------------
 # a codebook as the editor sees it
 # ---------------------------------------------------------------------------------------------

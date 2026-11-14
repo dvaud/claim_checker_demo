@@ -173,5 +173,9 @@ Labels made with a codebook stay when it is removed: they are results. *CSV* dow
 shows it and does not run it as a formula; ENLENS takes the apostrophe off again when it reads the file), *Download
 as .qdc* downloads it as a REFI-QDA codebook for NVivo, ATLAS.ti and MAXQDA (each code with its definition, when to
 use it, keywords and examples; [the whole project](explore.md#for-nvivo-atlasti-and-maxqda) goes too). Neither file
-carries the *AI draft* mark: brought back in, the AI's words read as yours. *History*
+carries the *AI draft* mark: brought back in, the AI's words read as yours. So while codes still hold the AI's
+draft, one quiet line beside the downloads says how many: *3 codes still hold the AI’s draft. A downloaded file does
+not carry that mark: say so to whoever you send it to.* It counts what is on screen and goes when you have rewritten
+them; the download is still one click. `enlens export-qdc` and `enlens export-qdpx` print the same sentence after
+their usual answer. *History*
 lists its earlier versions, to compare and restore ([earlier versions](notes-and-log.md#earlier-versions)).
