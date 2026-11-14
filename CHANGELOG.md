@@ -2,6 +2,10 @@
 
 ## 0.18.7 (November 2026): Your project in NVivo, ATLAS.ti and MAXQDA, and the documents a check never read
 
+A project can now be opened in NVivo, ATLAS.ti or MAXQDA, with your codes, quotes, judgements and notes, and a codebook
+can go on its own. Each hypothesis also shows which documents its check never read, and can read those that hold its
+words. No answer changes unless you press *Read these*.
+
 ### New
 
 - **Your project for NVivo, ATLAS.ti and MAXQDA (roadmap G5).** *NVivo, ATLAS.ti, MAXQDA (.qdpx)* on the Hypotheses
@@ -19,9 +23,9 @@
   no excerpt was read from, in two groups: those with the search words (an excerpt holds at least two different words
   of the hypothesis or its search words), with *Read these*, a further search limited to them that keeps your
   reviews, as for documents added since (up to one excerpt a document, at most 40 at a press; the card then says how
-  many are left, and it waits while excerpts of the check still wait to be judged); and those that share no word with the hypothesis, with *Search with other
-  words*. *Which ones* lists them, each opening the document. Theory documents, documents added since the check and
-  documents the check was limited away from are left out. A document never read may be off your topic, or say it in
+  many are left, and it waits while excerpts of the check still wait to be judged); and those that share no word with
+  the hypothesis, with *Search with other words*. *Which ones* lists them, each opening the document. Theory
+  documents, documents added since the check and documents the check was limited away from are left out. A document never read may be off your topic, or say it in
   other words: the count says nothing about how good it is. No AI reads anything until you press *Read these*. The
   Excel summary has a new column, *Documents with the search words never read*. Changes no result.
 
@@ -35,6 +39,11 @@
   title or a note no longer make the file unreadable; a hypothesis's memo comes before its *Supports* … codes, as the
   schema asks; a judgement on an excerpt read before its document was read again is left out (counted as not placed)
   instead of landing on other words; two passages cut inside a long word join without a blank line.
+- `test_n5_unread_documents.py`: the split by the check's own words; one shared word is not enough; theory, unreadable,
+  late and limited-away documents left out, a non-scientific one kept; a check that read nothing has none; *Read
+  these* adds one round limited to exactly those documents, keeps your reviews and reads every listed document even
+  with a small number of excerpts per search; it waits while a round waits to be judged, and a second press gets the
+  running job back; the routes, the Excel column and the page.
 
 ### Not yet done
 
