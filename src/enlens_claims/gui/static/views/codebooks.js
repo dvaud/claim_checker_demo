@@ -339,8 +339,8 @@ export async function renderCodebook(view, [name]) {
   }
   let trying = false, tryWatch = null;   // the job of Try it, while it runs
   const defineOffers = new Map();   // K1: whether the AI may draft from these examples, by the examples' quotes
-  const pendingDraft = new Map();   // K1: a draft not taken or put aside yet, by code
-  const definingNow = new Set();    // K1: the codes whose draft is being made
+  const pendingDraft = new Map();   // K1: a draft not taken or put aside yet, by code (its uid; the code itself while unsaved)
+  const definingNow = new Set();    // K1: the codes whose draft is being made (same keys)
   let st, merges, dirty = false, tried = null, openCode = session(`cb-open:${key}`) || null;
   // what the codebook was when unsaved edits began: a draft made on another state (restored meanwhile, or changed in
   // another window) is set aside rather than saved over it
@@ -689,7 +689,16 @@ export async function renderCodebook(view, [name]) {
   // Asked only for an open code with two examples or more; the answer waits beside the fields (`pending`) until you
   // take it or put it aside, and survives a redraw. Taken words are marked as the AI's (`c.ai_draft`), which the save
   // keeps while the fields still hold them word for word.
-  function defineKey(c) { return c.uid || `new:${c.code}`; }
+  // an unsaved code is its own key (it keeps it through renames and redraws); at a save its draft moves to its uid
+  function defineKey(c) { return c.uid || c; }
+  function keepPendingThroughSave(before) {
+    for (const [k, d] of before) {
+      if (typeof k === "string") continue;   // a saved code: its uid stays
+      pendingDraft.delete(k);
+      const now = st.codes.find((x) => x.code === k.code);
+      if (now && now.uid) pendingDraft.set(now.uid, d);
+    }
+  }
   function exampleQuotes(c) { return (c.examples || []).map((e) => (typeof e === "string" ? e : e && e.quote) || "").filter(Boolean); }
   function defineBox(c) {
     const box = h("div", { class: "cb-define" });
@@ -732,10 +741,15 @@ export async function renderCodebook(view, [name]) {
       if (got.stopped) return;
       if (got.withdrawn) { toast(got.why || "The request was taken back before the AI answered. Try again.", "warn"); return; }
       if (!got.ok || !got.draft) { toast("The AI’s quotes could not be found in the example passages, so nothing was drafted. Try again, or write the definition yourself.", "warn"); return; }
-      pendingDraft.set(k, { ...got.draft, at: new Date().toISOString(), reused: got.reused });
-      if (body.isConnected) draw();
+      // saved meanwhile: the unsaved code it was asked for is now the code of that name with a uid
+      const now = typeof k === "string" || st.codes.includes(k) ? k : defineKey(st.codes.find((x) => x.code === k.code) || k);
+      pendingDraft.set(now, { ...got.draft, at: new Date().toISOString(), reused: got.reused });
     } catch (e) { showError(e); }
-    finally { definingNow.delete(k); if (btn.isConnected) setBusy(btn, false); }
+    finally {
+      definingNow.delete(k);
+      if (btn.isConnected) setBusy(btn, false);
+      if (body.isConnected) draw();   // a redraw meanwhile made another button: it must not stay busy
+    }
   }
   function takeDraft(c, d, fields) {
     const took = {};
@@ -787,7 +801,8 @@ export async function renderCodebook(view, [name]) {
   }
   function splitCode(c) {
     const copy = { uid: "", split_from: c.uid || null, code: freeName(`${c.code.slice(0, 34)} (2)`), description: c.description, group: c.group,
-      include: c.include, exclude: c.exclude, keywords: (c.keywords || []).slice(), examples: [] };
+      include: c.include, exclude: c.exclude, keywords: (c.keywords || []).slice(), examples: [],
+      ...(c.ai_draft ? { ai_draft: { ...c.ai_draft } } : {}) };   // K1: the AI's words keep their mark
     st.codes.splice(st.codes.indexOf(c) + 1, 0, copy);
     openCode = copy.code;
     touch(); draw();
@@ -829,7 +844,9 @@ export async function renderCodebook(view, [name]) {
       const r = await api("PUT", base, { codebook: st, merges, why: why || null });
       drafts.delete(key);
       cb = r.codebook;
+      const pend = [...pendingDraft];
       fresh();
+      keepPendingThroughSave(pend);
       whyInput.value = "";
       setAside = false;
       forgetFrameworks();

@@ -125,10 +125,14 @@ def offer(ws: Workspace, quotes: list[str], settings: dict | None = None) -> dic
     """Whether the AI may draft a definition from these examples: {"offered", "why" (one line when not), "reader":
     "claude" | "local" | "main" | None, "passages": how many it would read, "left_out", "left_line"}."""
     from . import home
-    from .routing import OFF_COMPUTER
 
     s = settings if settings is not None else home.load_settings()
-    g = gather(ws, quotes, s)
+    return _offer_of(gather(ws, quotes, s), s)
+
+
+def _offer_of(g: dict, s: dict) -> dict:
+    from .routing import OFF_COMPUTER
+
     n = len(g["passages"])
     out = {"passages": n, "left_out": g["left_out"], "left_line": _left_line(g["left_out"])}
     if n < MIN_EXAMPLES:
@@ -142,8 +146,9 @@ def offer(ws: Workspace, quotes: list[str], settings: dict | None = None) -> dic
     return {"offered": True, "why": None, "reader": "claude" if claude else "main", **out}
 
 
-def payload_for(ws: Workspace, code: str, group: str, quotes: list[str], settings: dict | None = None) -> dict:
-    g = gather(ws, quotes, settings)
+def payload_for(ws: Workspace, code: str, group: str, quotes: list[str], settings: dict | None = None,
+                g: dict | None = None) -> dict:
+    g = g if g is not None else gather(ws, quotes, settings)
     return {"code": _clean(code, 60), "group": _clean(group, 120),
             "docs": sorted({p["doc_id"] for p in g["passages"]}),   # for taking the task away with a document
             "passages": [{k: p[k] for k in ("n", "passage_id", "page", "text", "examples")} for p in g["passages"]],
@@ -230,19 +235,24 @@ def draft_of(ws: Workspace, task_id: str) -> dict | None:
 
 def draft(ws: Workspace, codebook: str, code: str, group: str, quotes: list[str], backend, model: str,
           progress: Callable | None = None, should_stop: Callable[[], bool] | None = None, readers=None,
-          settings: dict | None = None) -> dict:
+          settings: dict | None = None, title: str | None = None) -> dict:
     """The AI drafts a code's definition, *when to use it* and *when not* from the passages that hold its examples
-    (one task, see the module's notes). Written to the research log. Returns {"ok", "stopped", "withdrawn", "why",
+    (one task, see the module's notes). `codebook` is the codebook's name, `title` its title (the name when not
+    given). Written to the research log. Returns {"ok", "stopped", "withdrawn", "why",
     "problems", "reused", "model", "task_id", "passages", "left_line", "draft": draft_of(...) or None}."""
     from . import access, researchlog
     from . import runs as runs_mod
     from . import tasks
 
-    off = offer(ws, quotes, settings)
+    from . import home
+
+    s = settings if settings is not None else home.load_settings()
+    g = gather(ws, quotes, s)   # once: the reader and the passages sent come from the same reading of the settings
+    off = _offer_of(g, s)
     if not off["offered"]:
         raise ValueError(off["why"])
-    payload = payload_for(ws, code, group, quotes, settings)
-    readers = readers or access.Readers(backend, model, settings=settings, should_stop=should_stop)
+    payload = payload_for(ws, code, group, quotes, s, g)
+    readers = readers or access.Readers(backend, model, settings=s, should_stop=should_stop)
     lv = "local" if off["reader"] == "local" else "cloud"
     got = readers.for_level(lv)
     if got is None:
@@ -277,14 +287,14 @@ def draft(ws: Workspace, codebook: str, code: str, group: str, quotes: list[str]
     with ws.connect() as cx:
         if ok:
             text = (f"The AI ({used}) drafted a definition, when to use it and when not for the code "
-                    f"{researchlog.quoted(payload['code'], 60)} of the codebook {researchlog.quoted(codebook, 60)}, "
+                    f"{researchlog.quoted(payload['code'], 60)} of the codebook {researchlog.quoted(title or codebook, 60)}, "
                     f"from the {n} passages that hold its examples"
                     + (" (the answer kept from the same request before)" if reused else "")
                     + ". It is a draft to rewrite: nothing changes in the codebook until you take it and save.")
         else:
             text = (f"The AI ({used}) could not draft a definition for the code "
                     f"{researchlog.quoted(payload['code'], 60)}: its quotes were not found in the passages.")
-        researchlog.record(cx, "codebook-drafted", text, "codebook", codebook, codebook,
+        researchlog.record(cx, "codebook-drafted", text, "codebook", codebook, title or codebook,
                            data={"task_id": tid, "model": used, "code": payload["code"], "passages": n,
                                  "reused": reused, "ok": ok, "kind": KIND})
     return {**base, "ok": ok, "stopped": False, "withdrawn": False, "why": None, "reused": reused, "draft": d}

@@ -279,3 +279,36 @@ def test_the_routes_offer_it_and_run_it_as_a_job(api, tmp_path):  # noqa: F811
 
 
 from test_app import api, home  # noqa: E402,F401  (fixtures)
+
+
+def test_the_log_entry_names_the_codebook_by_its_name_and_title(project):
+    ws, _a, _b = project
+    codedefine.draft(ws, "kxyz", "Waiting", "", EXAMPLES, FakeModel(), "claude-sonnet-5-5", title="Interview codes")
+    e = researchlog.entries(ws)["entries"][0]
+    assert e["subject_kind"] == "codebook" and e["subject_id"] == "kxyz" and "“Interview codes”" in e["text"]
+
+
+def test_a_colleagues_ai_draft_mark_comes_with_their_code(shared_codebook):
+    from test_codebook_merge import _edit
+
+    anna, ben = shared_codebook
+    words = "Water drawn by electrolysers, as the AI drafted it."
+
+    def take_draft(codes):
+        a = next(c for c in codes if c["code"] == "A")
+        a["description"] = words
+        a["ai_draft"] = {"model": "claude-sonnet-5-5", "at": "2026-11-14", "description": words}
+    with anna:
+        _edit(anna.ws, "water", take_draft)
+    with ben:
+        _edit(ben.ws, "water", lambda codes: next(c for c in codes if c["code"] == "B").update(
+            description="Local jobs and training"))
+    rep = ben.bring_in(anna.send())
+    assert [(m["theirs"], m["clash"]) for m in rep["codebooks"]["merged"]] == [(["A"], [])]
+    with ben:
+        got = {c["code"]: c for c in codebooks.load(ben.ws, "water")["codes"]}
+    assert got["A"]["description"] == words and got["A"]["ai_draft"]["description"] == words
+    assert "ai_draft" not in got["B"]
+
+
+from test_codebook_merge import shared_codebook  # noqa: E402,F401  (fixture)

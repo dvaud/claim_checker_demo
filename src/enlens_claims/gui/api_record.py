@@ -177,8 +177,8 @@ class RecordApi:
             title = cb
         job = self.app.start_queued_job(
             "code-define", f"The AI drafts a definition of “{code[:40]}”", name,
-            lambda job, be, model, prog: codedefine.draft(ws, title, code, group, quotes, be, model, prog,
-                                                          job.cancel.is_set, settings=settings),
+            lambda job, be, model, prog: codedefine.draft(ws, cb, code, group, quotes, be, model, prog,
+                                                          job.cancel.is_set, settings=settings, title=title),
             withdraw=(codedefine.KIND,))
         job.scope = f"{cb}/{code}"
         return {"job": job.view()}
