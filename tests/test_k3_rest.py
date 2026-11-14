@@ -416,6 +416,6 @@ def test_the_views_say_it():
     assert "r.count_nonscientific_author" in result and "as a sync-clash copy" in result
     m = (views / "map.js").read_text(encoding="utf-8")
     assert "Non-scientific: read, not counted" in m and "m-nonsci" in m
-    assert "and per non-scientific document that was read" in m and "nonscientific_shown_in_project" in m
+    assert "a column per document that counts or is non-scientific" in m and "nonscientific_shown_in_project" in m
     src = (views / "sources.js").read_text(encoding="utf-8")
     assert "Suggested as non-scientific" in src and "except in checks set to count non-scientific documents" in src

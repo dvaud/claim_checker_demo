@@ -26,7 +26,7 @@ export async function renderMap(view, params, query) {
   const xlsx = downloadLinks([{ text: "Excel (.xlsx)", title: "Three sheets: a summary, every excerpt read, and this map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) }]);
   view.appendChild(pageHead("Hypotheses", {
     eyebrow: featureEyebrow("check"),
-    sub: "Which documents are behind which answers: one row per hypothesis, one column per document with an excerpt that counts, and per non-scientific document that was read (with a dashed edge: not counted).",
+    sub: "Which documents are behind which answers: a row per hypothesis, a column per document that counts or is non-scientific.",
     actions: xlsx,
   }));
   // the tabs of the place; the answers of one set stay one set when you go back to them
