@@ -168,9 +168,9 @@ this), labels and checks read junk, and quotes fail to place.
     and reference chains. Tasks named by the old passages are dropped, so they are asked again.
   - A theme run keeps its members where the passages map one to one, and is marked out of date where they do not.
   - The researcher gets a list of everything that could not be placed.
-  - Open: a colleague who still has the old reading brings it in as a second copy at the next sync (`sync.py` treats
-    other text as another document). The document should remember its old text's fingerprint, so both are known as
-    one.
+  - Built in 0.17.0 (`sync/readings.py`): a document remembers the fingerprints of its earlier texts, so a colleague
+    who still has the old reading (or a newer one) is known as the same document, not brought in as a second copy;
+    each keeps their reading, and their results are placed on yours.
   - Built with A1: it can only be tried once there is a second reader.
 
 **A1. Layout-aware reading of PDFs** · Level 0, Level 1 optional · ENLENS candidate (`ingest.py`) · ⚠ results
@@ -307,7 +307,7 @@ F1 (a reading queue) and F3 (Zotero annotations) are Margin's. F2, F4 and F5 are
 
 G1 to G4 (the rest of Margin's writing companion) are Margin's.
 
-**G5. Export to NVivo and ATLAS.ti** · Level 0 · built (unreleased)
+**G5. Export to NVivo and ATLAS.ti** · Level 0 · built in 0.18.7
 - Codes, labels, quotes, memos and your decisions as a REFI-QDA (`.qdpx`) project.
 - Built: `qdpx.py` writes the project (documents as text, codebooks and hypotheses as codes, the labels and judgements
   that count as codings by the person or "ENLENS AI (model)", notes and the research log as memos) and a codebook alone
@@ -650,8 +650,9 @@ its own)
   *Theoretical framework* as section headings (`reader.py`). Nothing marks a whole document as theory, and every
   document counts as evidence everywhere.
 
-**K3. Non-scientific documents: read, never counted** · Level 0 · built (13 November 2026, unreleased)
-(`docrole.py` for the mark, `verdicts.set_aside` for the rule)
+**K3. Non-scientific documents: read, never counted** · Level 0 · built (13 November 2026, unreleased; the rest 14
+November 2026, unreleased)
+(`docrole.py` for the mark, `verdicts.set_aside` for the rule, `nonscientific.py` for the exception and the suggestion)
 - **Why.** A news article, a press release or a company brochure can say what a hypothesis says, but it reports no
   method or data of its own. It should not make a hypothesis supported, mixed or contradicted by itself.
 - **The rule** (chosen by the researcher on a second opinion from Fable, 13 November 2026). A document marked
@@ -663,9 +664,33 @@ its own)
 - The mark sits beside the role (a theory document can carry it too), set by the researcher, never guessed. Unlike the
   role it changes answers at once: the reply and the research log list the answers it changed. It travels as *Leave
   out* does.
-- Not done: a per-hypothesis exception (when newspapers are the material a hypothesis is about, they are its
-  evidence), a suggestion from the bibliography's item type (newspaper, blog, web page), and a mark of its own on the
-  evidence map (non-scientific documents leave it, as documents that decide nothing).
+- **The rest, built (14 November 2026, unreleased)** (`nonscientific.py`):
+  - *A per-hypothesis exception.* Under a hypothesis's answer, where its check read a non-scientific document:
+    *Count non-scientific documents in this check*, for when newspapers or blogs are the material it is about. Its
+    answer then counts them as any document, for every part, and is the one counting them (`status_all_sources`);
+    every other check still leaves them uncounted. The page, the assessment in words, the excerpts and the Excel
+    download say plainly that they count here and why, with the answer without them. Changing it changes the answer
+    at once and goes in the research log, in one entry, with the answers before and after; a new reason while it is on
+    is logged too. Off by default. Kept in the hypothesis's options with the time of each change, so it travels with
+    the check as its note does (a column of its own would not: a check whose only change is in a column added after
+    0.14.2 is not told newer); a change by someone other than the check's author reaches the author's copy as a
+    sync-clash copy (H5), and the page says so under the switch. The document's page marks the checks that count it.
+  - *A suggestion from the bibliography's item type, never a mark.* A document whose work is a newspaper or magazine
+    article, a blog or forum post, a web page, a podcast or a broadcast (Zotero, CSL, RIS and BibTeX types; not a
+    presentation, a speech or a video, which can be a scholar's talk) shows one quiet line on its page and in its
+    *Documents* row: *Your bibliography lists this as a newspaper article. Mark it as non-scientific?* with *Mark* and
+    *No*; never for theory or working documents. *No* is kept as a research log entry, so it travels: the Owner's or a
+    Co-owner's holds in every copy, a Member's in their own copy only. *Suggest again* on the document's page takes a
+    *No* back (one's own; the Owner and Co-owners anyone's), as a log entry that supersedes it. A *No* with no
+    suggestion to answer (a stale list) is refused and logs nothing. *Documents* can be grouped by *Scientific or
+    not*, with *Suggested as non-scientific* as a group.
+  - *A mark of its own on the evidence map.* Non-scientific documents have a column again: their cells have the
+    symbol unfilled with a dashed edge, and the legend says *Non-scientific: read, not counted*. They change no answer,
+    count or colour (they still count among the documents behind no answer, as in *Documents*); where a hypothesis
+    counts them, its cells are as any other. The Excel map puts them in brackets. The connector (MCP) marks the
+    excerpts counted by the exception and gives the status without them.
+  - *The Excel summary* has *Answer counting non-scientific documents* (filled where it differs) and *Non-scientific
+    documents counted here*.
 
 ## L. Working together, live
 
@@ -832,6 +857,25 @@ encryption and signatures, then invite and join in the Team tab, then the one-cl
 Cloudflare (keys on B2, tokens on R2: the only part written per service), then *Move to another storage space* and
 removing a colleague. WebDAV (SURFdrive, SURF Research Drive, a university's Nextcloud) can come later on the same
 layer.
+
+*Built (14 November 2026, unreleased): WebDAV* (`storage.py` `WebDAVStorage`, `sync/webdav.py`, `views/team-space.js`),
+a third kind of storage space on the same layer, with sealing, signatures, the mirror and keeper = owner unchanged.
+The owner gives the drive's WebDAV address (SURFdrive's is offered; a Nextcloud's is
+`https://<host>/remote.php/dav/files/<user>/`), their user name and an app password (keychain only); ENLENS makes a
+folder `ENLENS - <project>` and tests it. A file is written under a hidden temporary name and moved into place, so a
+reader never sees half of one on any server. WebDAV has no keys ENLENS can make for others: each member uses their own
+account and app password, and the owner shares the folder, by ENLENS through the OCS Share API where the drive has it
+(read, change, add, remove; no resharing), otherwise in the drive's website. The invite carries the drive and the
+folder, no password; joining asks for the member's own and finds the shared folder (by its name, then any folder at
+their root or in `Shared` that holds the team's roster), or lets them choose. An invite's drive name must be its
+address's; a drive not used on this computer before (and not SURF's) is confirmed by the member before their password
+goes there. One share per user name; removing unshares when nobody staying uses that account; as on R2, the
+signatures keep each part its writer's. A hand-over never passes the old owner's app password on; the folder stays in
+the first owner's drive (only they share it), so the new owner is pointed to a move into their own drive. *Move to another
+storage space* works to and from WebDAV; members follow a move to a drive only from a drive at the same address (else
+their copy leaves the old space and asks for a new invite). *Not tried with a real SURFdrive, SURF Research Drive or
+Nextcloud account*: built against a stand-in that follows RFC 4918 and Nextcloud's documents (whether SURFdrive's
+`nonshib-webdav` address offers the OCS Share API, where shares land, and the exact refusals are unchecked).
 
 *Decided (12 November 2026):* a storage space of the team's own is the recommended way, Backblaze first, Cloudflare
 beside it; the shared folder (L7) and the zip stay. Not chosen: **an ENLENS server**, also one ENLENS sets up at a

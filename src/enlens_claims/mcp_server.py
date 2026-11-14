@@ -197,6 +197,9 @@ def _summary(ws, check_id: str) -> dict:
             evidence.append({"grade": p["verdict"], "confidence": p["confidence"], "quote": p["quote"],
                              "document": p["title"], "page": p["page"], "counted": bool(p.get("counted")),
                              **({"non_scientific": True} if p.get("nonscientific") else {}),
+                             # 0.18.8 (K3): marked non-scientific, counted by this hypothesis's own setting
+                             **({"non_scientific": True, "counted_by_exception": True}
+                                if p.get("nonscientific_counted") else {}),
                              **({"about_another_group": note} if note else {})})
     out = {"check_id": check_id, "claim": r["claim"], "status": r["status"],
            "status_text": r.get("status_text") or claimcheck.STATUS_TEXT.get(r["status"], r["status"]),
@@ -222,6 +225,13 @@ def _summary(ws, check_id: str) -> dict:
         out["non_scientific_note"] = (f"{nonsci} judged excerpt(s) come from documents the user marked non-scientific "
                                       "(no method or data of their own): they are shown, but never count in the "
                                       "status. Say so when you report them.")
+    if r.get("count_nonscientific") and any(p.get("nonscientific_counted") for p in r["passages"]):  # 0.18.8 (K3)
+        out["non_scientific_counted_here"] = True
+        out["status_without_non_scientific"] = r.get("status_without_nonscientific") or r["status"]
+        out["non_scientific_note"] = ("The user set this hypothesis to count documents marked non-scientific (they are "
+                                      "the material it is about), so their grades count in the status here: the "
+                                      "evidence marked counted_by_exception. status_without_non_scientific is the "
+                                      "status without them, as in other checks. Say so when you report them.")
     if r["status_any"] != r["status"]:
         low = sum(1 for e in evidence if (e["confidence"] or 0) < r["threshold"])
         out["note"] = (f"Counting every grade: {claimcheck.STATUS_TEXT.get(r['status_any'], r['status_any']).lower()}. "

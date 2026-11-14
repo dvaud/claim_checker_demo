@@ -1103,6 +1103,7 @@ DASHED = {
     ".doc-view .dv-fold .passage-row": "passages left out of the reading",
     ".dv-pbox-out": "a part left out of the reading",
     ".cal-bar.cal-empty": "no excerpts in this band yet",
+    ".m-nonsci .map-sym": "not in force: what a non-scientific document says on the evidence map, read and not counted",
 }
 
 

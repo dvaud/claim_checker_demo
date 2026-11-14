@@ -148,3 +148,43 @@ def test_cloudflare_set_up_invite_and_join(anna_and_ben, cloudflare, tmp_path, m
     _work_together(anna, carol, tmp_path)
     with anna:
         assert keychain.get(space._secret_name(desc["id"], "keeper"))
+
+
+def test_a_move_to_backblaze_puts_project_json_there_before_the_old_space_is_told(anna_and_ben, backblaze, tmp_path,
+                                                                                  monkeypatch):
+    """14 November 2026 (review): as for a folder space (test_storage_space.py), with a move to Backblaze."""
+    from enlens_claims.sync.storage import S3Storage, Storage
+
+    anna, _ben = anna_and_ben
+    carol = Person(tmp_path, "Carol", monkeypatch)
+    old_dir = tmp_path / "old-space"
+    old_dir.mkdir()
+    with anna:
+        space.setup_dir(anna.ws, old_dir)
+    _round(anna)
+    with anna:
+        inv = space.invite(anna.ws, "Carol")
+    with carol:
+        carol.ws = home.open_project(space.join_new_project(inv["link"]))
+    for p in (anna, carol, anna, carol):
+        _round(p)
+    puts = []
+    real = {c: c.put for c in (S3Storage, *Storage.__subclasses__()) if "put" in c.__dict__}
+
+    def recorder(cls):
+        def put(self, name, data):
+            puts.append((cls.__name__, name))
+            return real[cls](self, name, data)
+        return put
+
+    for cls in real:
+        monkeypatch.setattr(cls, "put", recorder(cls))
+    with anna:
+        space.move(anna.ws, lambda w, ident: space.setup_b2(w, *backblaze.master, ident=ident))
+    told = puts.index(("DirStorage", "space/moved.json"))
+    assert puts.index(("S3Storage", "space/project.json")) < told
+    _round(carol)   # Carol follows before Anna's next round, and writes there
+    _round(carol)
+    _round(anna)    # no "arriving"
+    with carol:
+        assert space.configured(carol.ws)["service"] == "b2"
