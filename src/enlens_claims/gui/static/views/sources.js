@@ -462,7 +462,7 @@ export async function renderSources(view) {
           h("dt", {}, "Role"), h("dd", {}, roleLine(roles[d.doc_id]),
             roleItems.map((it) => button({ kind: "quiet", sm: true, class: "doc-role-btn", onClick: it.onClick }, it.text))),
           // 0.18.6: whether its judgements count in answers
-          h("dt", {}, "Scientific"), h("dd", {}, nonsci.has(d.doc_id) ? `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its judgements never count in an answer` : "Yes: its judgements count in answers",
+          h("dt", {}, "Scientific"), h("dd", {}, nonsci.has(d.doc_id) ? `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its judgements count in no answer, except in checks set to count non-scientific documents` : "Yes: its judgements count in answers",
             button({ kind: "quiet", sm: true, class: "doc-nonsci-btn", onClick: ns.onClick }, ns.text),
             // 0.18.8 (K3): the bibliography's suggestion, one quiet line (never a mark by itself)
             suggested[d.doc_id] && !nonsci.has(d.doc_id) ? suggestLine(project, d.doc_id, d.title || d.file || "this document", suggested[d.doc_id], () => reloadDocs()) : null),

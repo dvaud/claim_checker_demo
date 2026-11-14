@@ -56,8 +56,9 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     from .nonscientific import counting_hyps
 
     nonsci = nonscientific_docs(ws)  # 0.18.6: their judgements never decide an answer (verdicts.set_aside)
-    # 0.18.8 (K3): except in the checks of the hypotheses that count them (their own setting)
-    counts_ns = counting_hyps(ws) if nonsci else set()
+    # 0.18.8 (K3): except in the checks of the hypotheses that count them (their own setting, flagged whatever is
+    # marked, as the checks list does)
+    counts_ns = counting_hyps(ws)
     ns_cids = {cid for hid in counts_ns for cid, _st in claims.get(hid, [])}
     # 0.18.8 (K3): the judgements of non-scientific documents set aside, kept to draw them with a mark of their own
     # (read, not counted): they change no count, colour or answer of the map
@@ -129,8 +130,11 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
                      "key": n >= 2 and n >= 0.2 * max(1, len(hyps)), "in_project": doc in in_project,
                      "nonscientific": doc in nonsci})
     return {"threshold": thr, "hypotheses": hyps, "documents": docs, "cells": cells,
-            "documents_without_evidence": len(set(in_project) - set(answers) - shown_ns),
-            "nonscientific_shown": len(shown_ns - set(answers))}
+            # behind no answer, as the Documents list counts them (N5): a non-scientific column has no excerpt that
+            # counts, so it is one of them; `nonscientific_shown` says how many of them are drawn as a column
+            "documents_without_evidence": len(set(in_project) - set(answers)),
+            "nonscientific_shown": len(shown_ns - set(answers)),
+            "nonscientific_shown_in_project": len((shown_ns - set(answers)) & set(in_project))}
 
 
 def document_answers(ws: Workspace, threshold: float | None = None) -> dict:

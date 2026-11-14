@@ -69,6 +69,19 @@ export function suggestLine(project, docId, title, words, done) {
     button({ kind: "quiet", sm: true, title: "Keep counting it as scientific; the research log keeps your answer", onClick: no }, "No"));
 }
 
+// 0.18.8 (K3): after a No, for whoever said it (the Owner and Co-owners for anyone's): one quiet line to take it
+// back, kept in the research log as a decision that replaces the No
+export function suggestAgainLine(project, docId, by, done) {
+  const who = by.length ? by.join(" and ") : "Someone";
+  const again = async () => {
+    try { await api("POST", SUGGEST_API(project, docId), { answer: "again" }); toast("Suggested as non-scientific again.", "ok", { small: true }); if (done) done(); }
+    catch (e) { showError(e); }
+  };
+  return h("p", { class: "doc-nonsci-suggest small muted" }, icon("library", { size: 13 }),
+    ` ${who.charAt(0).toUpperCase()}${who.slice(1)} said No to the bibliography's suggestion to mark it as non-scientific. `,
+    button({ kind: "quiet", sm: true, title: "Take the No back: the suggestion shows again; the research log keeps it", onClick: again }, "Suggest again"));
+}
+
 // 0.18.6: the small grey Non-scientific tag (a fact about the document, never pressed)
 export function nonsciTag() {
   return tag({ icon: "newspaper", class: "doc-nonsci-tag", title: `Non-scientific: ${NONSCI_MEANS.charAt(0).toLowerCase()}${NONSCI_MEANS.slice(1)}. Its excerpts are read and judged, but never counted in an answer.` }, "Non-scientific");
@@ -152,10 +165,12 @@ function impactList(imp) {
 }
 
 // 0.18.6: the checks that read a Non-scientific document, each with its answer now and, where it differs, counting
-// the non-scientific documents
+// the non-scientific documents; 0.18.8 (K3): a check set to count them says so
 function answersList(answers) {
   return answers.map((a) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(a.hyp_id)}` }, a.text),
-    ` · ${a.status_text || a.status}`, a.all !== a.status ? h("span", { class: "muted" }, ` (counting the non-scientific documents: ${a.all_text})`) : null));
+    ` · ${a.status_text || a.status}`,
+    a.count_nonscientific ? h("span", { class: "muted" }, " · counted in this check (set on the hypothesis)")
+      : a.all !== a.status ? h("span", { class: "muted" }, ` (counting the non-scientific documents: ${a.all_text})`) : null));
 }
 
 // the document page's box: what its role is, the button to change it, and what was made with it in; 0.18.6: whether
@@ -170,8 +185,8 @@ export async function roleBox(project, docId, title, onRole) {
     const theory = r.role === "theory";
     const working = r.role === "working";
     const ns = !!r.nonscientific;
-    let sug = null;   // 0.18.8 (K3)
-    if (!ns) { try { sug = (await api("GET", SUGGEST_API(project, docId))).suggestion; } catch (_) { sug = null; } }
+    let sug = null, saidNo = null;   // 0.18.8 (K3)
+    if (!ns) { try { const g = await api("GET", SUGGEST_API(project, docId)); sug = g.suggestion; saidNo = g.answered_no; } catch (_) { sug = null; } }
     const imp = impactList(r.impact || {});
     const items = roleMenuItems(project, { doc_id: docId, title }, r.role, draw);
     const changes = items.map((it) => button({ kind: "quiet", sm: true, icon: it.icon, onClick: it.onClick }, it.button));
@@ -191,13 +206,14 @@ export async function roleBox(project, docId, title, onRole) {
     if (ns) {
       const ans = answersList(r.answers || []);
       parts.push(notice({ kind: "info", class: "doc-nonsci-note" },
-        h("p", {}, nonsciTag(), ` ${NONSCI_MEANS}. Its excerpts are read and judged, but no judgement of them counts in an answer.`),
+        h("p", {}, nonsciTag(), ` ${NONSCI_MEANS}. Its excerpts are read and judged, but their judgements count in no answer, except in checks set to count non-scientific documents.`),
         ans.length ? [h("p", {}, "Checks that read it:"), h("ul", { class: "doc-role-impact" }, ans)] : null,
         h("div", { class: "btn-row" }, changeNs)));
     }
     const quiet = [...(theory || working ? [] : change), ns ? null : changeNs].filter(Boolean);
     if (quiet.length) parts.push(h("div", { class: "row doc-role-row" }, quiet));
     if (sug) parts.push(suggestLine(project, docId, title, sug.words, draw));
+    else if (saidNo && saidNo.may_suggest_again) parts.push(suggestAgainLine(project, docId, saidNo.by || [], draw));
     box.replaceChildren(...parts);
   }
   await draw();

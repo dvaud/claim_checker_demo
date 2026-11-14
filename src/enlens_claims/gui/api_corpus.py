@@ -217,8 +217,9 @@ class CorpusApi:
 
     # ---- 0.18.8 (K3): the per-hypothesis exception and the bibliography's suggestion (nonscientific.py) ----------
     def put_hypothesis_nonscientific(self, name, hyp_id, q):
-        """{"count": true | false, "why"?}: count the non-scientific documents in this hypothesis's check, or not
-        again. The answer changes at once: the reply has it before and after (nonscientific.set_counting)."""
+        """{"count": true | false, "why"?: text}: count the non-scientific documents in this hypothesis's check, or
+        not again; a new "why" while it is on replaces the reason. The answer changes at once: the reply has it before
+        and after (nonscientific.set_counting)."""
         from .. import nonscientific
 
         body = self._body()
@@ -226,8 +227,10 @@ class CorpusApi:
         if not isinstance(on, bool):
             raise ApiError(400, "\"count\" is true or false.")
         why = body.get("why")
+        if why is not None and not isinstance(why, str):
+            raise ApiError(400, "\"why\" is text, or left out.")
         try:
-            return nonscientific.set_counting(self.app.ws(name), hyp_id, on, str(why) if why else None)
+            return nonscientific.set_counting(self.app.ws(name), hyp_id, on, why)
         except KeyError:
             raise ApiError(404, "No such result.") from None
 
@@ -239,24 +242,41 @@ class CorpusApi:
         return {"suggested": {d: x["words"] for d, x in nonscientific.suggestions(self.app.ws(name)).items()}}
 
     def get_nonscientific_suggestion(self, name, doc_id, q):
-        """{"doc_id", "suggestion": {"item_type", "words", "text"} | null}."""
+        """{"doc_id", "suggestion": {"item_type", "words", "text"} | null, "answered_no": {"by", "may_suggest_again"}
+        | null}."""
         from .. import nonscientific
 
         ws = self.app.ws(name)
         if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
             raise ApiError(404, "No such document in this project.")
-        return {"doc_id": doc_id, "suggestion": nonscientific.suggestion(ws, doc_id)}
+        return {"doc_id": doc_id, "suggestion": nonscientific.suggestion(ws, doc_id),
+                "answered_no": nonscientific.answered_no(ws, doc_id)}
 
     def post_nonscientific_suggestion(self, name, doc_id, q):
-        """{"answer": "no", "why"?}: the person's No to the suggestion, kept as a decision (the research log)."""
+        """{"answer": "no", "why"?}: the person's No to the suggestion, kept as a decision (the research log);
+        {"answer": "again"}: take a No back (*Suggest again*). 409 when there is nothing to answer now."""
         from .. import nonscientific
 
         body = self._body()
-        if body.get("answer") != "no":
-            raise ApiError(400, "\"answer\" is \"no\" (to mark the document, use its nonscientific route).")
+        answer = body.get("answer")
+        if answer not in ("no", "again"):
+            raise ApiError(400, "\"answer\" is \"no\" or \"again\" (to mark the document, use its nonscientific "
+                                "route).")
         why = body.get("why")
+        if why is not None and not isinstance(why, str):
+            raise ApiError(400, "\"why\" is text, or left out.")
+        ws = self.app.ws(name)
         try:
-            return nonscientific.decline(self.app.ws(name), doc_id, str(why) if why else None)
+            if answer == "again":
+                return nonscientific.suggest_again(ws, doc_id)
+            return nonscientific.decline(ws, doc_id, why)
+        except nonscientific.NoSuggestion:
+            if answer == "again":
+                raise ApiError(409, "There is nothing to take back: no No that you may take back hides the "
+                                    "suggestion now.") from None
+            raise ApiError(409, "This document has no suggestion to answer now: it is marked already, someone said "
+                                "No, or its bibliography entry is of a scientific kind. Reload the page to see it as "
+                                "it is.") from None
         except KeyError:
             raise ApiError(404, "No such document in this project.") from None
 
@@ -289,4 +309,3 @@ def _render_crop(path, page: int, box: tuple[float, float, float, float], scale:
     buf = io.BytesIO()
     img.crop((int(left), int(top), int(right) + 1, int(bottom) + 1)).save(buf, "PNG", optimize=True)
     return buf.getvalue()
-

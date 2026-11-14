@@ -715,6 +715,8 @@ export async function renderResult(view, [hypId], query) {
       : "For when newspapers, blogs or brochures are the material this hypothesis is about, so they are its evidence. Off: their excerpts are read and judged here, never counted, as in every other check.";
     const sw = switchControl("Count non-scientific documents in this check", !!r.count_nonscientific, { help });
     sw.classList.add("answer-nonsci");
+    // a check of someone else's: a change made here reaches their copy beside theirs, as a sync-clash copy (H5)
+    if (r.count_nonscientific_author) sw.appendChild(h("p", { class: "muted small answer-nonsci-author" }, `This is ${r.count_nonscientific_author}’s check: if you change this, your version reaches their copy beside theirs, as a sync-clash copy, as a changed note does.`));
     sw.input.addEventListener("change", async () => {
       const on = sw.input.checked;
       sw.input.disabled = true;

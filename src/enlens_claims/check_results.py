@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import sqlite3
 
 from . import access, frameworks, tasks
 from .reread import is_tombstone
@@ -543,6 +544,18 @@ def hypothesis_result(ws: Workspace, hyp_id: str, threshold: float | None = None
     out["count_nonscientific"], out["count_nonscientific_why"] = setting(out["options"])
     out["nonscientific_read"] = sum(1 for p in parts for x in p["passages"]
                                     if x.get("nonscientific") or x.get("nonscientific_counted"))
+    # whose check it is, where the page offers the switch: a change by someone else arrives in the author's copy as a
+    # sync-clash copy (H5), so the page says so under the switch. None: this person's own
+    out["count_nonscientific_author"] = None
+    if out["nonscientific_read"] or out["count_nonscientific"]:
+        from . import people, sharing
+
+        try:
+            st = sharing.state(ws._conn(), "check", hyp_id)
+        except sqlite3.OperationalError:   # a database before sharing (0.18): this person's own
+            st = {"mine": True}
+        if not st["mine"]:
+            out["count_nonscientific_author"] = people.names(ws).get(st["owner"]) or "a colleague"
     # 0.14.3: as each part counts them (not the AI's judgements of a round that failed): the parts worked them out
     out["balance"] = balance([v for cid in part_ids for v in extras[cid]["vs"]], thr)
     out["documents_in_project"] = int(ws.scalar("SELECT COUNT(*) FROM documents") or 0)

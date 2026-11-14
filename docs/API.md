@@ -1724,17 +1724,25 @@ terms.
   document. A check's result gains `status_all_sources`, and each excerpt `nonscientific`; a part or a check that only
   non-scientific documents speak to has the status text *No scientific evidence found*.
 - 0.18.8 (K3, `nonscientific.py`): `PUT /api/projects/{p}/hypotheses/{h}/nonscientific` `{"count": true | false,
-  "why"?}` → `{"hyp_id", "count_nonscientific", "changed", "was", "was_text", "now", "now_text"}`: count the
-  non-scientific documents in this check alone (stored in the hypothesis's options, so it travels with the check);
-  400 for a value that is not a boolean, 404 for no such check. A result gains `count_nonscientific`,
-  `count_nonscientific_why`, `nonscientific_read` (excerpts of such documents read) and `status_without_nonscientific`
-  (the answer without them, where they count), each part `count_nonscientific`, each excerpt `nonscientific_counted`.
+  "why"?: text}` → `{"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now",
+  "now_text"}`: count the non-scientific documents in this check alone (stored in the hypothesis's options, so it
+  travels with the check); a new `why` while it is on replaces the reason. 400 for a `count` that is not a boolean or
+  a `why` that is not text, 404 for no such check. A result gains `count_nonscientific`, `count_nonscientific_why`,
+  `nonscientific_read` (excerpts of such documents read), `status_without_nonscientific` (the answer without them,
+  where they count) and `count_nonscientific_author` (the check's author's name when it is not this person's, else
+  null), each part `count_nonscientific`, each excerpt `nonscientific_counted`. The document's `answers` (its role
+  route) gain `count_nonscientific`.
   `GET /api/projects/{p}/nonscientific-suggestions` → `{"suggested": {doc id: "a newspaper article"}}` (from the
   bibliography's item type; never marked by itself); `GET …/documents/{d}/nonscientific-suggestion` →
-  `{"doc_id", "suggestion": {"item_type", "words", "text"} | null}`; `POST …/documents/{d}/nonscientific-suggestion`
-  `{"answer": "no", "why"?}` → `{"doc_id", "declined": true}` (kept in the research log). The evidence map's cells
-  gain `nonscientific` and `counted` (false: read, not counted), its documents `nonscientific`, its hypotheses
-  `count_nonscientific`, and it has `nonscientific_shown`.
+  `{"doc_id", "suggestion": {"item_type", "words", "text"} | null, "answered_no": {"by": [names], "may_suggest_again"}
+  | null}`; `POST …/documents/{d}/nonscientific-suggestion` `{"answer": "no", "why"?}` → `{"doc_id", "declined":
+  true}` (kept in the research log; the Owner's or a Co-owner's counts in every copy, a Member's in their own), or
+  `{"answer": "again"}` → `{"doc_id", "suggestion"}` (*Suggest again*: one's own No, or anyone's for the Owner or a
+  Co-owner); 409 when there is nothing to answer or take back. The evidence map's cells gain `nonscientific` and
+  `counted` (false: read, not counted), its documents `nonscientific`, its hypotheses `count_nonscientific`, and it has
+  `nonscientific_shown` and `nonscientific_shown_in_project` (columns of documents behind no answer, which
+  `documents_without_evidence` still counts). The connector's check summary marks evidence `counted_by_exception` and
+  gives `status_without_non_scientific` where a hypothesis counts them.
 
 **A codebook from a theory document** (roadmap K2 part 2, `theorycodes.py`, no AI).
 

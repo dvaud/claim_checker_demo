@@ -228,6 +228,7 @@ def test_the_connector_says_which_quotes_count(project):
     assert row["status_all_sources"] == "supported"
     assert docrole.counted_without(ws, news) == [{"hyp_id": hid, "text": CLAIM, "status": "unsupported",
                                                   "status_text": UNSUPPORTED_NONSCI, "all": "supported",
-                                                  "all_text": "Supported by your documents"}]
+                                                  "all_text": "Supported by your documents",
+                                                  "count_nonscientific": False}]
     log = ws.query("SELECT text, data_json FROM research_log WHERE kind='document-mark' AND subject_id=?", (news,))
     assert len(log) == 1 and "Answers changed" in log[0][0] and hid in log[0][1]

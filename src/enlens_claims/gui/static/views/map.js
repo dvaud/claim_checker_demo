@@ -26,7 +26,7 @@ export async function renderMap(view, params, query) {
   const xlsx = downloadLinks([{ text: "Excel (.xlsx)", title: "Three sheets: a summary, every excerpt read, and this map", onClick: () => download(`/api/projects/${P(project)}/export.xlsx?threshold=${threshold}`).catch(showError) }]);
   view.appendChild(pageHead("Hypotheses", {
     eyebrow: featureEyebrow("check"),
-    sub: "Which documents are behind which answers: one row per hypothesis, one column per document with an excerpt that counts.",
+    sub: "Which documents are behind which answers: one row per hypothesis, one column per document with an excerpt that counts, and per non-scientific document that was read (with a dashed edge: not counted).",
     actions: xlsx,
   }));
   // the tabs of the place; the answers of one set stay one set when you go back to them
@@ -56,7 +56,11 @@ export async function renderMap(view, params, query) {
   if (single) notes.push(h("p", {}, icon("info", { size: 13 }), ` ${single === 1 ? "1 answer rests" : `${single} answers rest`} on one document only (marked “rests on one document”): a second source would make ${single === 1 ? "it" : "them"} more solid.`));
   if (key.length) notes.push(h("p", {}, icon("star", { size: 13 }), ` ${key.length === 1 ? "1 document is a key document" : `${key.length} documents are key documents`} (marked “decides N answers”): leaving it out would change those answers, so it deserves a careful read.`));
   if (m.nonscientific_shown) notes.push(h("p", {}, icon("newspaper", { size: 13 }), ` ${m.nonscientific_shown === 1 ? "1 document is" : `${m.nonscientific_shown} documents are`} marked non-scientific: what ${m.nonscientific_shown === 1 ? "it says is" : "they say is"} shown with a dashed edge, read and not counted, so ${m.nonscientific_shown === 1 ? "it changes" : "they change"} no answer here.`));
-  if (m.documents_without_evidence) notes.push(h("p", { class: "muted" }, `${m.documents_without_evidence} ${m.documents_without_evidence === 1 ? "document has" : "documents have"} no excerpt that counts in any answer, so ${m.documents_without_evidence === 1 ? "it is" : "they are"} not shown as a column.`,
+  // the same number as the Documents list's "Behind no answer" group (N5): a non-scientific column is one of them
+  const noneN = m.documents_without_evidence || 0, nsN = Math.min(m.nonscientific_shown_in_project || 0, noneN), hidN = noneN - nsN;
+  if (noneN) notes.push(h("p", { class: "muted" }, `${noneN} ${noneN === 1 ? "document has" : "documents have"} no excerpt that counts in any answer`,
+    nsN ? (hidN ? `: ${nsN} of them, marked non-scientific, ${nsN === 1 ? "is" : "are"} shown with a dashed edge, and ${hidN === 1 ? "1 is" : `${hidN} are`} not shown as a column.` : `: ${noneN === 1 ? "it is" : "they are"} marked non-scientific, shown with a dashed edge.`)
+      : `, so ${noneN === 1 ? "it is" : "they are"} not shown as a column.`,
     // roadmap N5: the Documents list, grouped by the answers behind them, with those behind none open
     " ", link({ kind: "jump", onClick: () => {
       const fk = `docs-folded:${project}`;
