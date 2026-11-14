@@ -137,6 +137,7 @@ all). **Who may use which colour:**
 | Greys (`--text`, `--text-2`, `--muted`, `--faint`, `--surface*`, `--border*`, `--bg*`) | Everything else | Text, facts, tags, AI marks, the AI line, work states, done notices | — |
 | Yellow (`--mark`, `--mark-line`) | The quote the AI found | `mark.quote` | A search hit, a highlight, anything else |
 | Highlight colours (`--hl-*`) | Your own highlights | `mark.hl-*`, their swatches, a quoted highlight's edge | Anything the app says |
+| Group colours (`--group-1` … `--group-5`) | Which group a concept falls in on the concept map (D1) | The concept map's marks and its legend, each always with its group's own shape (circle, square, diamond, triangle, hexagon), never colour alone | A judgement, a state, anything outside the map |
 
 Amber and red each serve a judgement and a state. They are told apart by form, always: **a judgement is a pill with a
 circle-family icon; a state is never a pill and carries the triangle (needs you) or the alert circle (went wrong).**
@@ -210,7 +211,7 @@ rule outside `tokens.css` names a theme** (no `prefers-color-scheme`, no `data-t
 named in `CHANGELOG.md`. Besides the colours above: the faces (`--font-ui`, `--font-serif`, `--font-mono`), the type
 scale (`--fs-*`, `--fw-*`), the spacing scale (`--space-*`), the corners (`--radius-*`), `--shadow`, `--shadow-lg`,
 `--sidebar-w`, `--content-w`, `--drawer-w` (300 px, 340 px from 1,200 px wide; `--logdrawer-w` holds the same width for forks that use it),
-`--heat-4` (the darkest heat cell), `--paper` (behind a picture of a document's page), and the quote's tint in an
+`--heat-4` (the darkest heat cell), the concept map's group colours (`--group-1` to `--group-5`, D1), `--paper` (behind a picture of a document's page), and the quote's tint in an
 excerpt card by its grade (`--quote-ok`, `--quote-partly`, `--quote-bad`, `--quote-none`).
 
 ---
@@ -334,7 +335,7 @@ in Settings (*Claude, on your plan, reads the excerpts again.*), `aiWhere(senten
 ### 4.5 View tabs
 
 **Means:** other views of this place; each has its address. **Use:** a place's views (*Overview* | *Research log*,
-*Documents* | *Notes* | *Bibliography*, *By document* | *Codebooks*, *Answers* | *Evidence map*), Settings' tabs, the
+*Documents* | *Notes* | *Bibliography*, *By document* | *Codebooks*, *Glossary* | *Map*, *Answers* | *Evidence map*), Settings' tabs, the
 drawer's tabs. A place's views are reached through these tabs only, never through entries under a sidebar entry.
 **Not for:** switching how the same content is shown (a [choice](#46-choices)).
 

@@ -14,6 +14,7 @@ import { renderMap } from "./views/map.js";
 import { renderSearch } from "./views/search.js";
 import { renderProfile } from "./views/profile.js";
 import { renderConcepts, renderConcept } from "./views/concepts.js";
+import { renderConceptMap } from "./views/concept-map.js";   // D1
 import { renderThemes, renderThemeRun, renderTheme } from "./views/themes.js";
 import { quickLookBanner } from "./views/quicklook.js";
 import { renderOverview } from "./views/overview.js";
@@ -41,6 +42,7 @@ const ROUTES = [
   [/^\/codebooks$/, "codes", renderCodebooks],             // Codes › Codebooks
   [/^\/codebooks\/([^/]+)$/, "codes", renderCodebook],
   [/^\/concepts$/, "concepts", renderConcepts],
+  [/^\/concept-map$/, "concepts", renderConceptMap],     // Concepts › Map (D1)
   [/^\/concepts\/([^/]+)$/, "concepts", renderConcept],
   [/^\/themes$/, "themes", renderThemes],
   [/^\/themes\/([^/]+)$/, "themes", renderThemeRun],

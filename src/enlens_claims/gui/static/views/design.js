@@ -26,6 +26,7 @@ const COLOURS = [
   ["Judgements of the evidence", ["--ok", "--ok-soft", "--partly", "--partly-soft", "--bad", "--bad-soft", "--mixed", "--mixed-soft", "--none", "--none-soft"]],
   ["Needs you, went wrong", ["--attention", "--attention-soft", "--danger", "--danger-soft"]],
   ["The documents' own words", ["--mark", "--mark-line", "--hl-yellow", "--hl-green", "--hl-blue", "--hl-pink"]],
+  ["The concept map's groups", ["--group-1", "--group-2", "--group-3", "--group-4", "--group-5"]],
 ];
 
 // A section of the guide: its number and title as the guide writes them, what the element means in a line, its samples.

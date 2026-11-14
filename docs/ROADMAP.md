@@ -256,11 +256,22 @@ B1 to B4 and B6 (citations in Word, reference lists, the reference-list check, r
 
 D5 (concepts in the writing) is Margin's.
 
-**D1. A concept map** · Level 0 · ENLENS candidate (`terms.py`, the Concepts page)
+**D1. A concept map** · Level 0 · built (14 November 2026, unreleased) (`conceptmap.py`, the Concepts page)
 - A graph of the concepts that occur together in passages (weighted by how much more often than by chance, such as
   PMI, not by raw counts), clustered, with the links you and the AI accepted drawn in their types (same, broader,
   narrower, related, needs, shapes, clashes with). Filter by document, theme, code or year.
 - *Already in ENLENS:* `concordance.py` computes PMI, and `concept_links` stores typed relations with quotes.
+- *Built:* *Concepts › Map*, beside *Glossary*: the 60 concepts (30 to 150) in the most passages, joined by PMI over the
+  passages in scope (two passages or more, each concept's 4 strongest lines, at most 2 × n), grouped by the Louvain
+  method on those joins, laid out with each group in a disc of its own (force-directed, fixed starting places and
+  rounds: the same map every time), drawn as inline SVG with no new dependency. The confirmed links are drawn in
+  their types (*is part of*, *leads to*, *is used instead of*, *is related to*; a "same" link makes one node). A
+  concept opens its page; a line shows the passages that join the two; the map is also given as lists. Filters:
+  documents, a theme (with a person's merges and moves), a code, publication years; theory and working documents are
+  always left out. Also `enlens concept-map` and `GET /api/projects/{p}/concept-map`.
+- *Not done:* "needs", "shapes" and "clashes with" are not relations ENLENS has (its links are those of D2 and the
+  concept card); they would come with new link types. Clusters are not named by the AI, nor kept between visits, and
+  the map is not exported as a picture.
 
 **D2. Relations found from the text** · Level 0 · built in 0.18.1 (`textrelations.py`)
 - Propose links from the sentences themselves, without AI: "X such as Y", "Y and other X" (broader and narrower),

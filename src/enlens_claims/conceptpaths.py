@@ -9,7 +9,7 @@ graph whose nodes are the glossary's concepts (a concept's wordings count as one
   `MIN_TOGETHER` passages and PMI is above zero; the cost of a step falls as PMI rises.
 
 Each step comes with its bridge passages: passages that mention both ends (a link a person accepted with no passage
-in common shows the link's own sentences or quotes). A list, not a drawn map (D1, the concept map, is not built).
+in common shows the link's own sentences or quotes). A list; the drawn map is D1 (conceptmap.py), built on `_Graph`.
 
 **D4. A concept over time and across groups.** A concept's wordings and its neighbours (the concepts most often
 mentioned with it, by PMI) by publication year (from the bibliography: a document's year is its linked work's; those
