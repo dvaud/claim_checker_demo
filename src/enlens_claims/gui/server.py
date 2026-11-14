@@ -760,7 +760,7 @@ class App(LibraryMixin, QueueMixin):
 
     @staticmethod
     def _from_doc(ws, body: dict) -> dict:
-        """0.18.8 (N3): a check started from a document's text (a working document's *Check against the corpus*)
+        """0.19.0 (N3): a check started from a document's text (a working document's *Check against the corpus*)
         remembers the document (`from_doc`): its page lists the checks started from it, the result links back, and
         the words keep the document's AI setting (docrole.origin_floor). {} without one."""
         if body.get("from_doc") is None:
@@ -942,7 +942,7 @@ class App(LibraryMixin, QueueMixin):
         frameworks.resolve(ws, fw, code)
         decompose = bool(body["decompose"]) if "decompose" in body else bool(s["decompose"])
         expand = bool(body["expand"]) if "expand" in body else bool(s["expand"])
-        origin = self._from_doc(ws, body)  # 0.18.8 (N3): words from a document keep its AI setting here too
+        origin = self._from_doc(ws, body)  # 0.19.0 (N3): words from a document keep its AI setting here too
         be, model = self.backend()
 
         def run(job: Job):
@@ -972,7 +972,7 @@ class App(LibraryMixin, QueueMixin):
                                 "judgement instead." if level == "none" else
                                 "This excerpt's document is marked Only a local AI, and no local model is chosen for "
                                 "such documents. Choose one in Settings → AI, or give your own judgement.")
-        # 0.18.8 (N3): and the setting of the document the hypothesis's words come from
+        # 0.19.0 (N3): and the setting of the document the hypothesis's words come from
         own = claimcheck._own_level(ws, ws.scalar("SELECT hyp_id FROM user_claims WHERE claim_id=?", (claim_id,))
                                     or claim_id)
         if own == "none" or (own == "local" and not access.Readers(be, model).local_configured()):

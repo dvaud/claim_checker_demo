@@ -826,7 +826,7 @@ mark.kw-also { background: color-mix(in srgb, var(--accent-soft) 60%, transparen
 .m-part .map-sym { background: var(--partly-soft); color: var(--partly); }
 .m-ref .map-sym { background: var(--bad-soft); color: var(--bad); }
 .m-both .map-sym { background: var(--mixed-soft); color: var(--mixed); }
-/* 0.18.8 (K3): a non-scientific document's cell, read and not counted: the symbol with no fill and a dashed edge in its
+/* 0.19.0 (K3): a non-scientific document's cell, read and not counted: the symbol with no fill and a dashed edge in its
    colour, as a judgement that does not count (4.9) */
 .m-nonsci .map-sym { background: transparent; border: 1px dashed currentColor; }
 @media (max-width: 860px) {

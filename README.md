@@ -59,11 +59,11 @@ Windows from 0.15.4 on). Your projects and settings (the `enlens` folder in your
 <!-- new-in:start (written by `python tools/release.py prepare`: change the changelog entry, not this) -->
 ## New in 0.19.0rc1: Your own drafts, a concept map, codebooks from other programs, and a university drive for the team
 
+- **Your own working documents.** Keep your drafts and notes in the project beside the corpus: in *Documents*, open a row → *Role* → *Mark as my working document*, or use the same button on the document's page.
 - **A concept map.** *Concepts* has a second tab, *Map*: the concepts mentioned in the most passages, joined by a line when the documents mention two together more often than by chance (pointwise mutual information, not…
+- **Bring in a codebook from NVivo, ATLAS.ti or MAXQDA.** *Codes* › *Codebooks* › *New codebook* › *From NVivo, ATLAS.ti or MAXQDA* takes a REFI-QDA codebook (`.qdc`), or the codebook of a REFI-QDA project (`.qdpx`), and makes it a codebook of your own.
 - **A code's definition drafted from its examples.** In the codebook editor, open a code with two examples or more and press *Draft from the examples*: the AI reads only the passages that hold those examples (with the code's name and group) and drafts…
 - **Count non-scientific documents in one check.** When newspapers, blogs or company brochures are the material a hypothesis is about, they are its evidence.
-- **A suggestion from your bibliography.** A document your bibliography lists as a newspaper or magazine article, a press release, a blog or forum post, a web page.
-- **Non-scientific documents on the evidence map.** They have a column again, their cells drawn with the symbol unfilled and a dashed edge (*Non-scientific: read, not counted*).
 <!-- new-in:end -->
 
 How it works: [Work together](docs/manual/together.md) in the manual. Every release, with what was not tested:

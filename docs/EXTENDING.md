@@ -186,7 +186,7 @@ added only when it is missing. Table and column names are plain names (letters, 
 **Where a hypothesis comes from.** `claimcheck.create_hypothesis(ws, text, …, origin="draft", origin_id=draft_id)`
 records it in the hypothesis's `origin` and `origin_id` columns, so an add-on that makes hypotheses needs no column
 or argument of its own. `check_hypothesis` and `queue_check` take the same two arguments. ENLENS uses `origin="batch"`
-for *Check several* and (0.18.8) `origin="document"` for a check started from a document's text (a working
+for *Check several* and (0.19.0) `origin="document"` for a check started from a document's text (a working
 document's *Check against the corpus*, `origin_id` the document's id); a hypothesis typed by a person has none. Both
 names are ENLENS's own: an add-on uses a name of its own. Results and the history return both.
 

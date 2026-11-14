@@ -267,7 +267,7 @@ def _nonscientific(res: dict, items: list[dict], names: "_Names", thr: float) ->
 
 
 def _counted_here(res: dict, items: list[dict]) -> list[dict]:
-    """0.18.8 (K3): this hypothesis counts the non-scientific documents (its own setting): said plainly, with why, what
+    """0.19.0 (K3): this hypothesis counts the non-scientific documents (its own setting): said plainly, with why, what
     they say, and the answer without them when it differs."""
     if not res.get("count_nonscientific"):
         return []
@@ -419,7 +419,7 @@ def assess(ws: Workspace, hypothesis: str | dict, res: dict | None = None) -> di
     sentences += _part_sentences(res)
     sentences += _not_counted(items, thr)
     sentences += _nonscientific(res, items, names, thr)
-    sentences += _counted_here(res, items)  # 0.18.8 (K3)
+    sentences += _counted_here(res, items)  # 0.19.0 (K3)
     moved = moved_by(res, names)
     if moved:
         sentences.append({k: moved[k] for k in ("text", "rule", "refs")})

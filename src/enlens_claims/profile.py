@@ -291,7 +291,7 @@ def label_plan(ws: Workspace, framework: str = "sdg", doc_ids: list[str] | None 
     """What a model pass would read: the passages (with at least one candidate unless `all_passages`) not read yet,
     and how long it is likely to take (from this project's recent label tasks, or the model test)."""
     st = pass1_status(ws, framework)
-    from .docrole import labelled_sql   # 0.18.8 (N3): a working document is labelled too; theory never
+    from .docrole import labelled_sql   # 0.19.0 (N3): a working document is labelled too; theory never
 
     sql = (f"SELECT p.passage_id FROM passages p WHERE p.section='body' AND {labelled_sql('p.doc_id')}" +
            (f" AND p.doc_id IN ({','.join('?' * len(doc_ids))})" if doc_ids else "") + " ORDER BY p.doc_id, p.seq")
@@ -627,7 +627,7 @@ def grid(ws: Workspace, framework: str, doc_ids: list[str] | None = None, level:
          labs: list[dict] | None = None) -> dict:
     """Documents × codes: in each cell the number of passages of the document with that code (`level` "group":
     codes added up by their group, the 17 goals for the SDG targets). 0.16: `labs`, the labels that count for these
-    documents when already known (`effective(..., light=True)`), so the profile page works them out once. 0.18.8
+    documents when already known (`effective(..., light=True)`), so the profile page works them out once. 0.19.0
     (N3): a working document has its own row, marked `"working": true`, after the corpus's, and is never added into a
     code's `passages` or `documents`."""
     fw = frameworks.get(framework, ws)
@@ -636,7 +636,7 @@ def grid(ws: Workspace, framework: str, doc_ids: list[str] | None = None, level:
     titles = {r["doc_id"]: r["title"] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
     from .docrole import working_docs
 
-    working = working_docs(ws._conn())   # 0.18.8 (N3): their own rows, never in the codes' totals
+    working = working_docs(ws._conn())   # 0.19.0 (N3): their own rows, never in the codes' totals
     cells: dict[str, dict[str, set]] = defaultdict(lambda: defaultdict(set))
     for r in labs:
         key = r["code"]
@@ -673,7 +673,7 @@ def grid(ws: Workspace, framework: str, doc_ids: list[str] | None = None, level:
 def grid_table(g: dict) -> list[dict]:
     rows = []
     for d in g["documents"]:
-        # 0.18.8 (N3): a working document's row says so, so a column's sum in a spreadsheet is not taken for the corpus's
+        # 0.19.0 (N3): a working document's row says so, so a column's sum in a spreadsheet is not taken for the corpus's
         row = {"Document": (d["title"] or d["doc_id"]) + (" (your working document, not in the totals)"
                                                           if d.get("working") else "")}
         for c in g["codes"]:
@@ -892,7 +892,7 @@ def stats(ws: Workspace, framework: str, labs: list[dict] | None = None) -> dict
         labs = effective(ws, framework, light=True)
     from .docrole import working_docs
 
-    working = working_docs(ws._conn())   # 0.18.8 (N3): a working document's codes are never the corpus's
+    working = working_docs(ws._conn())   # 0.19.0 (N3): a working document's codes are never the corpus's
     if working:
         labs = [r for r in labs if r["doc_id"] not in working]
     return {"labels": len(labs), "documents": len({r["doc_id"] for r in labs}),

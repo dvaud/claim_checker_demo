@@ -1,4 +1,4 @@
-"""0.18.8 (roadmap N3): a working document is the researcher's own draft or notes, kept in the project, never a source.
+"""0.19.0 (roadmap N3): a working document is the researcher's own draft or notes, kept in the project, never a source.
 
 It is the third value of a document's role (docrole.py), beside evidence and theory. It is read, searched, opened,
 noted and labelled with codebooks (its codes are its own: a row of the profile's grid, never in the corpus's code
@@ -134,7 +134,7 @@ def test_the_proposal_and_the_log_say_working_document():
 
 
 def test_a_check_started_from_a_document_is_listed_on_it(project):
-    """0.18.8 (N3's leftover): a check started from a working document's text remembers the document (`origin`
+    """0.19.0 (N3's leftover): a check started from a working document's text remembers the document (`origin`
     "document"), so the document's page lists it with its answer, and the check's result names the document."""
     from enlens_claims import claimcheck
     from enlens_claims.check_results import hypothesis_result

@@ -964,11 +964,11 @@ commas, semicolons or tabs.
  "parts": ["…", {"text": "…", "role": "outcome"}],   // optional, from "Look before checking": the parts to check
  "terms": [["aquifer", "desalination"], []],  // optional: the extra search words, one list per part
  "edited": {"parts": false, "terms": true},  // optional: whether the person changed what the AI proposed
- "from_doc": "d…"}                            // optional (0.18.8): started from this document's text
+ "from_doc": "d…"}                            // optional (0.19.0): started from this document's text
 ```
 → `{"job": Job}` (kind `check`). 400 for a text under 10 characters or an unknown code (or a part under 10
 characters: "Part 2 is too short…"); 502 when no model service is usable. The job's `result` is
-`{"hyp_id": "h…", "status": "contested"}`. 0.18.8 (N3): with `from_doc` (a working document's *Check against the
+`{"hyp_id": "h…", "status": "contested"}`. 0.19.0 (N3): with `from_doc` (a working document's *Check against the
 corpus*) the hypothesis records `origin` `"document"` and `origin_id` the document's id, and its result gains
 `origin_title` (the document's title, or its file's name; left out once the document is gone). 400 when `from_doc`
 is not a document of the project. The words keep that document's AI setting (`docrole.origin_floor`, as an add-on's
@@ -1000,7 +1000,7 @@ slightly fewer excerpts from the cited sources into the top 8 (147 against 154),
 ```
 `terms` are the AI's extra search words for each part (the part's own words are always searched, so they are left
 out). Nothing is kept in the project. Show the parts as editable lines and the words as removable chips, then send
-the check with `parts`, `terms` and `edited`. 0.18.8 (N3): `from_doc` as for a check: words from a document no model
+the check with `parts`, `terms` and `edited`. 0.19.0 (N3): `from_doc` as for a check: words from a document no model
 you have may read come back unsplit and with no extra words.
 
 Check job `progress` (poll it to draw the live panel):
@@ -1266,7 +1266,7 @@ readable ("ENLENS results - <project> - <date>.xlsx"). From 0.6 the *Excerpts* s
 excerpts, "Second model", "Second model's judgement", "Second model's certainty", "The two models agree". The
 *Summary* sheet has "Excerpts where the second opinion differs" (0.11.2; before: "…a second model disagrees"),
 "Answer before a stronger model read it again" (0.11.2), "Documents added since the check", (0.18.7, roadmap N5)
-"Documents with the search words never read" and (0.18.8, roadmap K3) "Answer counting non-scientific documents"
+"Documents with the search words never read" and (0.19.0, roadmap K3) "Answer counting non-scientific documents"
 (the answer counting the documents marked Non-scientific, `status_all_sources`; filled only where it differs from
 "Answer") and "Non-scientific documents counted here" ("yes: " and the reason, for a check set to count them; else
 empty).
@@ -1782,7 +1782,7 @@ terms.
   "now", "now_text"}]}` (the answers the mark changed). 400 for a value that is not a boolean, 404 for no such
   document. A check's result gains `status_all_sources`, and each excerpt `nonscientific`; a part or a check that only
   non-scientific documents speak to has the status text *No scientific evidence found*.
-- 0.18.8 (K3, `nonscientific.py`): `PUT /api/projects/{p}/hypotheses/{h}/nonscientific` `{"count": true | false,
+- 0.19.0 (K3, `nonscientific.py`): `PUT /api/projects/{p}/hypotheses/{h}/nonscientific` `{"count": true | false,
   "why"?: text}` → `{"hyp_id", "count_nonscientific", "changed", "why_changed", "was", "was_text", "now",
   "now_text"}`: count the non-scientific documents in this check alone (stored in the hypothesis's options, so it
   travels with the check); a `why` while it is on replaces the reason, and an empty `why` takes it away (the usual
@@ -1803,7 +1803,7 @@ terms.
   `nonscientific_shown` and `nonscientific_shown_in_project` (columns of documents behind no answer, which
   `documents_without_evidence` still counts). The connector's check summary marks evidence `counted_by_exception` and
   gives `status_without_non_scientific` where a hypothesis counts them.
-- 0.18.8 (N3): `GET …/documents/{d}/role` also gives `"started": [{"hyp_id", "text", "status", "status_text"}]`, the
+- 0.19.0 (N3): `GET …/documents/{d}/role` also gives `"started": [{"hyp_id", "text", "status", "status_text"}]`, the
   checks started from the document's text (`from_doc`), newest first, as the checks list has them (a check by queue
   that waits for its parts is `"waiting"`; one interrupted before it had parts is left out).
 

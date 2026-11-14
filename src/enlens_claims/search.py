@@ -197,7 +197,7 @@ def rank_passages(ws: Workspace, query_text: str, terms: list[str] | None = None
         return []
     allowed = set(doc_ids) if doc_ids else None
     if evidence_only and allowed is None:
-        from .docrole import not_evidence_docs  # 0.18.8 (N3): working documents are never a source either
+        from .docrole import not_evidence_docs  # 0.19.0 (N3): working documents are never a source either
 
         theory = not_evidence_docs(ws._conn())
         if theory:

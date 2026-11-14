@@ -1723,7 +1723,7 @@ class _Ctx:
             researchlog.record(self.cx, "document-role",
                                f"Marked as a working document by {who}: never a source, left out of themes, check "
                                "excerpts, key terms and the corpus's code counts from now on." if role == docrole.WORKING
-                               else  # 0.18.8 (N3)
+                               else  # 0.19.0 (N3)
                                f"Marked as theory by {who}: it is left out of themes, codebook labels, check excerpts "
                                "and key terms from now on." if role else
                                f"Marked as evidence again by {who}: it counts in themes, codebook labels, check excerpts "
@@ -1800,7 +1800,7 @@ def _apply_delta(base: dict, delta: dict) -> dict:
             out.pop(fp, None)
         elif isinstance(v, list) and v:
             side = fp.split(":", 1)[0] if fp.startswith(("start:", "end:", "role:")) else None
-            if side:  # the text starts (or ends) in one place only; 0.18.8 (N3): a document has one role only
+            if side:  # the text starts (or ends) in one place only; 0.19.0 (N3): a document has one role only
                 for other in [f for f in out if f.startswith(side + ":")]:
                     out.pop(other)
             out[fp] = [1 if v[0] else 0, v[1] if len(v) > 1 else None]
@@ -1813,7 +1813,7 @@ def _delta_words(delta: dict) -> dict:
         if fp.startswith(("start:", "end:")):
             out["bounds"] += 1
         elif fp.startswith("role:"):  # 0.18.1 (K2, docrole.py): marked as theory (a role), or as evidence again
-            # 0.18.8 (N3): theory to working is a role set and one taken away: the role set wins, in any order
+            # 0.19.0 (N3): theory to working is a role set and one taken away: the role set wins, in any order
             if v is not None and v[0]:
                 out["role"] = fp.split(":", 1)[1]
             else:

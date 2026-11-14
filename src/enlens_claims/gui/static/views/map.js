@@ -1,6 +1,6 @@
 // Evidence map: hypotheses as rows, documents as columns, each cell the side a document takes on a hypothesis
 // (judgements that count at the strictness; a person's always count), with symbols as well as colours. 0.17.0: a view
-// of the Hypotheses page (its tab beside Answers), with the page's head. 0.18.8 (roadmap K3): a document marked
+// of the Hypotheses page (its tab beside Answers), with the page's head. 0.19.0 (roadmap K3): a document marked
 // Non-scientific is shown too, its cells with a mark of their own (the symbol with no fill and a dashed edge: read, not
 // counted); they change no count or answer. Where a hypothesis counts them (its own setting), its cells are as any.
 import { featureEyebrow, viewTabs } from "../features.js";
@@ -80,7 +80,7 @@ export async function renderMap(view, params, query) {
         h("span", { class: "map-doc-title" }, short(d.title)),
         // a key document: a fact about it (a tag with the star), not something that needs you
         d.key ? tag({ icon: "star", class: "map-flag" }, `decides ${d.decides} ${d.decides === 1 ? "answer" : "answers"}`) : d.decides ? h("span", { class: "map-flag-text" }, `decides ${d.decides} ${d.decides === 1 ? "answer" : "answers"}`) : null,
-        d.nonscientific ? h("span", { class: "map-flag-text" }, "non-scientific") : null,   // 0.18.8 (K3)
+        d.nonscientific ? h("span", { class: "map-flag-text" }, "non-scientific") : null,   // 0.19.0 (K3)
         d.in_project === false ? h("span", { class: "map-flag-text" }, "removed since") : null),
       d.in_project === false ? null : iconButton({ icon: "download", sm: true, size: 13, class: "map-doc-dl", label: `Download ${short(d.title)} as a PDF with the quotes highlighted`, title: "Download this PDF with the quotes highlighted",
         onClick: (e) => { e.stopPropagation(); download(`/api/projects/${P(project)}/documents/${P(d.doc_id)}/annotated.pdf?${new URLSearchParams({ hyp: hyps.map((x) => x.hyp_id).join(","), threshold: String(threshold) })}`).catch(showError); } })))));
@@ -98,7 +98,7 @@ export async function renderMap(view, params, query) {
         const c = row[d.doc_id];
         if (!c) return h("td", { class: "map-cell m-none" }, h("span", { class: "visually-hidden" }, `${short(d.title)}: no excerpt that counts`), h("span", { "aria-hidden": "true" }, "·"));
         const s = SIDE[c.side] || SIDE.supports;
-        // 0.18.8 (K3): a non-scientific document's cell: read, not counted (its own mark); or counted by the exception
+        // 0.19.0 (K3): a non-scientific document's cell: read, not counted (its own mark); or counted by the exception
         if (c.counted === false) return h("td", { class: `map-cell ${s.cls} m-nonsci`, title: `${d.title || "untitled"} ${s.word} “${x.text}”: ${c.excerpts} ${c.excerpts === 1 ? "excerpt" : "excerpts"}, not counted (a non-scientific document)` },
           h("span", { class: "visually-hidden" }, `${short(d.title)}: ${s.word}, ${c.excerpts} ${c.excerpts === 1 ? "excerpt" : "excerpts"}, non-scientific, not counted`),
           h("span", { class: "map-mark", "aria-hidden": "true" }, h("span", { class: "map-sym" }, s.symbol), h("span", { class: "map-n" }, String(c.excerpts))));

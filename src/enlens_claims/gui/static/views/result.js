@@ -185,7 +185,7 @@ function retractedMark(docId) {
     bad ? "work retracted" : "work corrected or flagged");
 }
 
-// Why an excerpt waits for a person: its document's AI setting or (0.18.8, N3) that of the document the hypothesis's
+// Why an excerpt waits for a person: its document's AI setting or (0.19.0, N3) that of the document the hypothesis's
 // words come from (`words_access` of the result)
 export function waitReason(docAccess, wordsAccess) {
   if (docAccess === "none") return "its document is marked No AI";
@@ -652,7 +652,7 @@ export async function renderResult(view, [hypId], query) {
     if (sentence) card.appendChild(h("p", { class: "answer-sentence" }, sentence));
     const said = assessmentBlock(r.assessment, r.status);
     if (said) card.appendChild(said);
-    const nsSwitch = nonsciSwitch(r);   // 0.18.8 (K3)
+    const nsSwitch = nonsciSwitch(r);   // 0.19.0 (K3)
     if (nsSwitch) card.appendChild(nsSwitch);
     if (r.decomposed) {
       card.appendChild(h("ol", { class: "answer-part-list part-grid" }, parts.map((p) => h("li", {},
@@ -715,7 +715,7 @@ export async function renderResult(view, [hypId], query) {
           "aria-label": `Show the excerpt this rests on${x.refs.length > 1 ? ` (the first of ${x.refs.length})` : ""}` }, "Show") : null)));
   }
 
-  // 0.18.8 (roadmap K3): the exception. Where the check read documents marked Non-scientific (or counts them already),
+  // 0.19.0 (roadmap K3): the exception. Where the check read documents marked Non-scientific (or counts them already),
   // a switch counts them in this check alone, for when newspapers, blogs or brochures are the material the hypothesis
   // is about. The answer changes at once; the research log keeps both answers; it travels with the check. Turning it on
   // is one action; while it is on, an optional reason sits under it (changed, or emptied for the usual one, on Save).
@@ -1571,7 +1571,7 @@ export async function renderResult(view, [hypId], query) {
     }
     // 0.18.6: an excerpt of a document marked Non-scientific: judged and shown, never counted (yours neither)
     if (p.nonscientific) append(top, [h("span", { class: "ev-fact ev-uncounted-fact", title: "Its document is marked Non-scientific: it reports no method or data of its own. Its judgement is shown, but never counts in the answer, whoever made it. Change the mark on the document's page." }, icon("newspaper", { size: 12 }), p.verdict ? "Not counted: non-scientific" : "Non-scientific")]);
-    // 0.18.8 (K3): marked Non-scientific, but this hypothesis counts them (its own setting, above the evidence)
+    // 0.19.0 (K3): marked Non-scientific, but this hypothesis counts them (its own setting, above the evidence)
     else if (p.nonscientific_counted) append(top, [h("span", { class: "ev-fact", title: "Its document is marked Non-scientific. This hypothesis counts non-scientific documents (the switch under its answer), so its judgement counts here as any other; in other checks it does not." }, icon("newspaper", { size: 12 }), "Non-scientific, counted here")]);
     if (p.second && !p.second.agrees) append(top, [h("span", { class: "ev-fact ev-second", title: `Another model${p.second.model ? ` (${p.second.model})` : ""} read this excerpt on its own and judged it differently. It is shown for comparison only and never changes the answer.` }, h("span", { class: `who-dot who-${{ supports: "supports", partially_supports: "partly", refutes: "refutes" }[p.second.verdict] || "none"}`, "aria-hidden": "true" }), `Second opinion: ${p.second.verdict ? GRADE_TEXT[p.second.verdict].toLowerCase() : "not about this"}`)]);
     if (isNew) append(top, [tag({}, "new")]);

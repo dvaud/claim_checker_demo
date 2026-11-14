@@ -108,7 +108,7 @@ def _set_judgement(ws: Workspace, claim_id: str, passage_id: str, verdict: str |
 
 
 def cannot_reread(level: str, own: str = "cloud") -> str:
-    """Why no model may read an excerpt again: its document's setting, or (0.18.8, N3) the setting of the document
+    """Why no model may read an excerpt again: its document's setting, or (0.19.0, N3) the setting of the document
     the hypothesis's words come from."""
     if level == "none":
         return "This excerpt's document is marked No AI: no model may read it. Give your own judgement."
@@ -152,7 +152,7 @@ def reread_excerpt(ws: Workspace, claim_id: str, passage_id: str, backend, model
         note = v.get("user_note")
     # 0.11: the excerpt is read again by a model its document's setting allows: the main one, or the local model
     level = access.levels(ws, [p["doc_id"]]).get(p["doc_id"], "none")
-    # 0.18.8 (N3): and by the setting of the document the hypothesis's words come from (access.floor)
+    # 0.19.0 (N3): and by the setting of the document the hypothesis's words come from (access.floor)
     own = _cc._own_level(ws, uc["hyp_id"] or claim_id)
     reader = _cc._readers(backend, model, readers).for_level(access.most([level, own]))
     if reader is None:

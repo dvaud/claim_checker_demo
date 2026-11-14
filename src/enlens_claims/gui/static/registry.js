@@ -65,7 +65,7 @@ export const WELCOME_CARDS = [];
 // hypothesis (in place of "All results"); `meta`: the words in the line under it (or `meta(result)`); `href(id)`.
 export const ORIGINS = {
   batch: { meta: "part of a set", href: (id) => `#/hypotheses?batch=${encodeURIComponent(id)}` },   // 0.17.0: the answers are on Hypotheses
-  // 0.18.8 (N3): started from a document's text (a working document's Check against the corpus); none when it is gone
+  // 0.19.0 (N3): started from a document's text (a working document's Check against the corpus); none when it is gone
   document: { meta: (r) => r.origin_title ? `from ${r.origin_title}` : null, href: (id) => `#/doc/${encodeURIComponent(id)}` },
 };
 
@@ -75,7 +75,7 @@ export function originLink(r) {
   if (!key) return null;
   const o = ORIGINS[key];
   const id = key === r.origin ? (r.origin_id || r.batch_id || "") : r.batch_id;
-  const meta = typeof o.meta === "function" ? o.meta(r) : o.meta;   // 0.18.8: a meta may depend on the result
+  const meta = typeof o.meta === "function" ? o.meta(r) : o.meta;   // 0.19.0: a meta may depend on the result
   if (!meta && !o.eyebrow) return null;
   return { eyebrow: o.eyebrow || null, meta: meta || null, href: o.href(id) };
 }

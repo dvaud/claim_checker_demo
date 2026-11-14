@@ -6,10 +6,10 @@
 // 0.18.6: the Non-scientific mark, beside the role (a document of either role can carry it): read and judged as any
 // other, but no judgement of its excerpts counts in an answer. Unlike the role it changes answers at once, so the
 // dialog says how many checks read it, and the reply lists the answers it changed.
-// 0.18.8 (roadmap N3): a third role, the working document: the researcher's own draft or notes, kept in the project,
+// 0.19.0 (roadmap N3): a third role, the working document: the researcher's own draft or notes, kept in the project,
 // read, searched, noted and labelled with codebooks, and checked against the corpus a sentence at a time (select it in
 // the text, then Check against the corpus), but never a source. Its codes are its own: never in the corpus's counts.
-// 0.18.8 (roadmap K3): a quiet suggestion from the bibliography's item type (a newspaper article, a blog post, a web
+// 0.19.0 (roadmap K3): a quiet suggestion from the bibliography's item type (a newspaper article, a blog post, a web
 // page): one line with Mark and No, never a mark by itself and never a pop-up. No is kept as a decision (the research
 // log), so it does not come back here or in a colleague's copy.
 import { api, h, P, toast, showError, tag, button, link, notice, plural, confirmDialog, icon, fold } from "../lib.js";
@@ -46,7 +46,7 @@ export async function documentRoles(project) {
   return (await documentMarks(project)).roles;
 }
 
-// 0.18.6: {roles: {doc id: "theory" | "working"}, nonscientific: Set of doc ids}, for the Documents list; 0.18.8 (K3):
+// 0.18.6: {roles: {doc id: "theory" | "working"}, nonscientific: Set of doc ids}, for the Documents list; 0.19.0 (K3):
 // suggested: {doc id: "a newspaper article"}, the documents the bibliography suggests marking ({} when it cannot be
 // read: the list still draws)
 export async function documentMarks(project) {
@@ -57,7 +57,7 @@ export async function documentMarks(project) {
   } catch (_) { return { roles: {}, nonscientific: new Set(), suggested: await sug }; }
 }
 
-// 0.18.8 (K3): the suggestion's line: "Your bibliography lists this as a newspaper article. Mark it as
+// 0.19.0 (K3): the suggestion's line: "Your bibliography lists this as a newspaper article. Mark it as
 // non-scientific?" with Mark (the usual dialog) and No (remembered); `done()` after either
 export function suggestLine(project, docId, title, words, done) {
   const no = async () => {
@@ -69,7 +69,7 @@ export function suggestLine(project, docId, title, words, done) {
     button({ kind: "quiet", sm: true, title: "Keep counting it as scientific; the research log keeps your answer", onClick: no }, "No"));
 }
 
-// 0.18.8 (K3): after a No, for whoever said it (the Owner and Co-owners for anyone's): one quiet line to take it
+// 0.19.0 (K3): after a No, for whoever said it (the Owner and Co-owners for anyone's): one quiet line to take it
 // back, kept in the research log as a decision that replaces the No
 export function suggestAgainLine(project, docId, by, done) {
   const who = by.length ? by.join(" and ") : "Someone";
@@ -165,7 +165,7 @@ function impactList(imp) {
 }
 
 // 0.18.6: the checks that read a Non-scientific document, each with its answer now and, where it differs, counting
-// the non-scientific documents; 0.18.8 (K3): a check set to count them says so
+// the non-scientific documents; 0.19.0 (K3): a check set to count them says so
 function answersList(answers) {
   return answers.map((a) => h("li", {}, link({ kind: "title", serif: true, href: `#/h/${encodeURIComponent(a.hyp_id)}` }, a.text),
     ` · ${a.status_text || a.status}`,
@@ -173,7 +173,7 @@ function answersList(answers) {
       : a.all !== a.status ? h("span", { class: "muted" }, ` (counting the non-scientific documents: ${a.all_text})`) : null));
 }
 
-// 0.18.8 (N3): the checks started from the document's text (Check against the corpus), each with its answer now: the
+// 0.19.0 (N3): the checks started from the document's text (Check against the corpus), each with its answer now: the
 // newest STARTED_SHOWN, the others in a fold (a chapter with forty checked sentences keeps its text in view)
 const STARTED_SHOWN = 8;
 function startedList(started) {
@@ -185,7 +185,7 @@ function startedList(started) {
 }
 
 // the document page's box: what its role is, the button to change it, and what was made with it in; 0.18.6: whether
-// it is marked Non-scientific, the button to change that, and the answers of the checks that read it. 0.18.8 (N3):
+// it is marked Non-scientific, the button to change that, and the answers of the checks that read it. 0.19.0 (N3):
 // `onRole(role)` after each drawing, so the page knows a working document (its selection offers a check).
 export async function roleBox(project, docId, title, onRole) {
   const box = h("div", { class: "doc-role-box" });
@@ -196,7 +196,7 @@ export async function roleBox(project, docId, title, onRole) {
     const theory = r.role === "theory";
     const working = r.role === "working";
     const ns = !!r.nonscientific;
-    let sug = null, saidNo = null;   // 0.18.8 (K3)
+    let sug = null, saidNo = null;   // 0.19.0 (K3)
     if (!ns) { try { const g = await api("GET", SUGGEST_API(project, docId)); sug = g.suggestion; saidNo = g.answered_no; } catch (_) { sug = null; } }
     const imp = impactList(r.impact || {});
     const started = r.started || [];

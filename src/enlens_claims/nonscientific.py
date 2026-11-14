@@ -1,4 +1,4 @@
-"""Roadmap K3, the rest (0.18.8): the per-hypothesis exception, and the suggestion from the bibliography.
+"""Roadmap K3, the rest (0.19.0): the per-hypothesis exception, and the suggestion from the bibliography.
 
 A document marked *Non-scientific* (docrole.py, 0.18.6) is read and judged, but no judgement of it counts in an
 answer (`verdicts.set_aside`). Two things build on that mark here; the evidence map's own mark for such documents is

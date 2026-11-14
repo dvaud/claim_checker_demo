@@ -2,8 +2,31 @@
 
 ## 0.19.0rc1 (November 2026): Your own drafts, a concept map, codebooks from other programs, and a university drive for the team
 
+A candidate for 0.19.0, with six new features to try before the release. You can keep your own drafts beside the
+corpus and check them a sentence at a time, see the concepts your documents mention together as a map, bring a
+codebook in from NVivo, ATLAS.ti or MAXQDA, let the AI draft a code's definition from its examples, let one check
+count non-scientific documents when they are its material, and use a folder in your institution's drive as the
+team's storage space. Each of these was audited on 14 November 2026, and what the audit found was fixed before this
+candidate. No answer changes by itself. *Update* offers a candidate only when you chose *Try new versions early*. In
+a team everyone needs this version, so try it on a project you do not share, or with the whole team at once.
+
 ### New
 
+- **Your own working documents.** Keep your drafts and notes in the project beside the corpus: in *Documents*, open
+  a row → *Role* → *Mark as my working document*, or use the same button on the document's page. A working document
+  is read, searched, opened, noted and labelled with your codebooks as any other, but it is never a source: themes,
+  the excerpts a check reads, key terms, the glossary, a code's examples and the documents behind no answer leave it
+  out. Its codes show on its own page and as its own row at the foot of the *Codes* grid, never in the corpus's
+  counts, so you see what your draft covers beside what the corpus does. Select any sentence of it and choose *Check
+  against the corpus* to check that claim: the document's page lists every check started from it with its answer (the
+  first eight, the others folded), and each such check's page links back to the document. The words keep the
+  document's AI setting, and the line above the box says who will read them before you press *Check*: from a document
+  marked *Only a local AI* only a local model reads them and the excerpts they are checked against, from one marked
+  *No AI* no model does and you judge the excerpts; a Claude chat connected to ENLENS is not shown such a check. A
+  document has one role: evidence, theory or your working document. Grouping *Documents* by *Role* shows them apart.
+  Travels in a shared project as the theory mark does: everyone in the team needs this version, since an older ENLENS
+  reads a working document as evidence. Changes no result by itself: the document's page lists what was made with it
+  in. The manual explains it under *Explore your documents → Working documents*.
 - **A concept map.** *Concepts* has a second tab, *Map*: the concepts mentioned in the most passages, joined by a line
   when the documents mention two together more often than by chance (pointwise mutual information, not a raw count),
   in groups, and with the links you accepted or added, the AI's confident ones and the abbreviations drawn in their
@@ -14,6 +37,16 @@
   Filter it by document, theme, code or year of publication; theory and working documents are left out. A line says
   when the map is being counted, and the page says when it rests on fewer than 30 passages. Made on this computer
   without AI, the same map every time. Also `enlens concept-map`. Does not change results.
+- **Bring in a codebook from NVivo, ATLAS.ti or MAXQDA.** *Codes* › *Codebooks* › *New codebook* › *From NVivo,
+  ATLAS.ti or MAXQDA* takes a REFI-QDA codebook (`.qdc`), or the codebook of a REFI-QDA project (`.qdpx`), and makes
+  it a codebook of your own, still a CSV file. Top codes with codes under them become groups; deeper levels fold into
+  their top group, each code keeping its place in the tree at the end of its definition; a code without a description
+  gets its place in the tree as a stand-in definition. Sets of codes over flat codes (ATLAS.ti's code groups) become
+  groups. A summary says what came in and what was folded or left out (colours, sets, codes that cannot be coded,
+  descriptions of headings). A codebook ENLENS exported comes back with its definitions, when to use and when not,
+  keywords, examples (their words) and groups; from a project file ENLENS wrote with several codebooks you choose one.
+  No AI. On the command line: `enlens import-qdc FILE [NAME] [--codebook TITLE]`. Changes no result by itself: it is a
+  new codebook.
 - **A code's definition drafted from its examples.** In the codebook editor, open a code with two examples or more and
   press *Draft from the examples*: the AI reads only the passages that hold those examples (with the code's name and
   group) and drafts a definition, *when to use it* and *when not to use it*. The definition and *when to use it* each
@@ -44,45 +77,6 @@
   non-scientific, or counted as scientific again, by the Owner or a Co-owner is said there too, by whom and with the
   answers it changed in your copy. A change you already have says nothing, and no pop-up is added.
   The document's page marks the checks that count it. Off by default: no answer changes until you turn it on.
-- **A suggestion from your bibliography.** A document your bibliography lists as a newspaper or magazine article, a
-  press release, a blog or forum post, a web page, a podcast or a broadcast shows one quiet line on its page and in its
-  *Documents* row: *Your bibliography lists this as a newspaper article. Mark it as non-scientific?* *Mark* opens the
-  usual dialog; *No* is kept in the research log. The Owner's or a Co-owner's *No* holds in every copy, a Member's in
-  their own copy only; *Suggest again* on the document's page takes a *No* back. Nothing is marked by itself, and
-  theory and working documents are never suggested. Group *Documents* by *Scientific or not* to see the suggested ones
-  together. A document linked to several works is suggested from the first, the one *Documents* shows.
-- **Non-scientific documents on the evidence map.** They have a column again, their cells drawn with the symbol
-  unfilled and a dashed edge (*Non-scientific: read, not counted*). They change no answer or count of the map; in a
-  hypothesis that counts them, they are drawn as any other. In the Excel map they stand in brackets.
-- **Claude, through the connector,** is told which excerpts count by the exception and what the answer would be
-  without them.
-- **The Excel summary** has two new columns: *Answer counting non-scientific documents* (filled where it differs from
-  the answer) and *Non-scientific documents counted here*.
-- **Your own working documents.** Keep your drafts and notes in the project beside the corpus: in *Documents*, open
-  a row → *Role* → *Mark as my working document*, or use the same button on the document's page. A working document
-  is read, searched, opened, noted and labelled with your codebooks as any other, but it is never a source: themes,
-  the excerpts a check reads, key terms, the glossary, a code's examples and the documents behind no answer leave it
-  out. Its codes show on its own page and as its own row at the foot of the *Codes* grid, never in the corpus's
-  counts, so you see what your draft covers beside what the corpus does. Select any sentence of it and choose *Check
-  against the corpus* to check that claim: the document's page lists every check started from it with its answer (the
-  first eight, the others folded), and each such check's page links back to the document. The words keep the
-  document's AI setting, and the line above the box says who will read them before you press *Check*: from a document
-  marked *Only a local AI* only a local model reads them and the excerpts they are checked against, from one marked
-  *No AI* no model does and you judge the excerpts; a Claude chat connected to ENLENS is not shown such a check. A
-  document has one role: evidence, theory or your working document. Grouping *Documents* by *Role* shows them apart.
-  Travels in a shared project as the theory mark does: everyone in the team needs this version, since an older ENLENS
-  reads a working document as evidence. Changes no result by itself: the document's page lists what was made with it
-  in. The manual explains it under *Explore your documents → Working documents*.
-- **Bring in a codebook from NVivo, ATLAS.ti or MAXQDA.** *Codes* › *Codebooks* › *New codebook* › *From NVivo,
-  ATLAS.ti or MAXQDA* takes a REFI-QDA codebook (`.qdc`), or the codebook of a REFI-QDA project (`.qdpx`), and makes
-  it a codebook of your own, still a CSV file. Top codes with codes under them become groups; deeper levels fold into
-  their top group, each code keeping its place in the tree at the end of its definition; a code without a description
-  gets its place in the tree as a stand-in definition. Sets of codes over flat codes (ATLAS.ti's code groups) become
-  groups. A summary says what came in and what was folded or left out (colours, sets, codes that cannot be coded,
-  descriptions of headings). A codebook ENLENS exported comes back with its definitions, when to use and when not,
-  keywords, examples (their words) and groups; from a project file ENLENS wrote with several codebooks you choose one.
-  No AI. On the command line: `enlens import-qdc FILE [NAME] [--codebook TITLE]`. Changes no result by itself: it is a
-  new codebook.
 - **Your institution's drive as the team's storage space.** Besides Backblaze and Cloudflare, the Team page offers
   *Your institution's drive…*: a folder in SURFdrive, SURF Research Drive or a university's Nextcloud (any drive that
   speaks WebDAV), with nobody signing up anywhere new. The owner gives the drive's WebDAV address (a button fills in
@@ -97,6 +91,20 @@
   folder is locked and signed as at Backblaze and Cloudflare; as at Cloudflare, the drive cannot keep a colleague to
   their own part, so the signatures do. *A new app password for the drive* on the card *The storage space* replaces one
   the drive no longer accepts. *Move to another storage space* works to and from a drive. Changes no result.
+- **A suggestion from your bibliography.** A document your bibliography lists as a newspaper or magazine article, a
+  press release, a blog or forum post, a web page, a podcast or a broadcast shows one quiet line on its page and in its
+  *Documents* row: *Your bibliography lists this as a newspaper article. Mark it as non-scientific?* *Mark* opens the
+  usual dialog; *No* is kept in the research log. The Owner's or a Co-owner's *No* holds in every copy, a Member's in
+  their own copy only; *Suggest again* on the document's page takes a *No* back. Nothing is marked by itself, and
+  theory and working documents are never suggested. Group *Documents* by *Scientific or not* to see the suggested ones
+  together. A document linked to several works is suggested from the first, the one *Documents* shows.
+- **Non-scientific documents on the evidence map.** They have a column again, their cells drawn with the symbol
+  unfilled and a dashed edge (*Non-scientific: read, not counted*). They change no answer or count of the map; in a
+  hypothesis that counts them, they are drawn as any other. In the Excel map they stand in brackets.
+- **Claude through the connector** is told which excerpts count by the exception and what the answer would be
+  without them.
+- **The Excel summary** has two new columns: *Answer counting non-scientific documents* (filled where it differs from
+  the answer) and *Non-scientific documents counted here*.
 - **Safety and economy in the drive** (review of 14 November 2026): an invite link whose drive name and address differ
   is refused; joining shows the drive's full address and, for a drive not used on this computer before (and not
   SURF's), asks the colleague to confirm it is their institution's before the app password is sent. The folder is
@@ -194,6 +202,12 @@
   no account of theirs there): their Team tab asks them for a new invite. A colleague who becomes the owner cannot
   share the drive's folder with new colleagues through ENLENS (a shared folder cannot be shared on); the person whose
   drive holds it shares it in the drive's website, or the new owner moves the team to a folder in their own drive.
+- The codebook import has not been tried with a file written by NVivo, ATLAS.ti or MAXQDA themselves: it was built
+  against the REFI-QDA standard, ENLENS's own export and hand-made files.
+- The pages this release adds or changes were loaded in a browser, in light and dark and at a phone's width, with no
+  error. The storage space's new notes, the reason under the exception's switch and the codebook editor's draft were
+  not clicked through there: they rest on their tests.
+- None of this has been used by a real team yet.
 
 ## 0.18.7 (November 2026): Your project in NVivo, ATLAS.ti and MAXQDA, and the documents a check never read
 

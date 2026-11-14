@@ -232,7 +232,7 @@ holds at once, a Member's is a proposal ([Roles](roles.md)). A theory is also wh
 
 ### Working documents
 
-Your own draft or notes can be kept in the project beside the corpus (0.18.8). Mark it as **your working document**:
+Your own draft or notes can be kept in the project beside the corpus (0.19.0). Mark it as **your working document**:
 in *Documents*, open a row → *Role* → *Mark as my working document…*, or on the document's page, *Mark as my working
 document*. A *Working document* tag then stands beside its title. A colleague's or another author's draft you study is
 evidence, not your working document.
