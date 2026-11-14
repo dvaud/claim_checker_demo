@@ -1672,8 +1672,15 @@ codes, where each example was found, the groups and their order. The old routes 
   follow a new name as after any edit). A version is kept and the research log says so. 404 when there is no such
   clash.
 - `POST /api/projects/<p>/codebooks {"name", "title"?, "where"?: "project" | "home", "start"?: "fresh" | "themes" |
-  "copy" | "csv", "source"?, "label"?}` → `{"codebook"}`. `source`: `{"codes": [...]}` (drafts from
-  `GET …/codebooks/sources`, the ones kept), `{"of": "<codebook name>"}` or `{"csv": "<text>"}`. The columns of a CSV
+  "theory" | "copy" | "csv" | "qdc", "source"?, "label"?}` → `{"codebook"}`. `source`: `{"codes": [...]}` (drafts from
+  `GET …/codebooks/sources`, the ones kept), `{"of": "<codebook name>"}`, `{"csv": "<text>"}`, or for `"qdc"` (a
+  codebook from NVivo, ATLAS.ti or MAXQDA, `qdc_import.py`) `{"file": "<base64 of a .qdc or .qdpx>", "filename"}` or
+  `{"qdc": "<the XML as text>"}`, each with `"codebook"?: "<title>"`: in a project file ENLENS wrote with several
+  codebooks, the one to bring in. Without it such a file answers 400 with `"codebooks": [titles]` beside `"error"`, to
+  choose from. A path on disk is never read from here. For `"qdc"` the answer's `codebook` also holds `"imported"`: what
+  was brought in (`codes`, `groups`, `folded`, `parents_as_codes`, `headings`, `not_codable`, `no_description`, `cut`,
+  `long`, `group_descriptions`, `sets`, `sets_as_groups`, `colours`, `renamed`: [{"from", "to"}],
+  `hypotheses_left_out`, `origin`) and `"notes"`, the same in sentences. The columns of a CSV
   are `code`, `description`, `group`, `group_name`, `when_to_use`, `when_not_to_use`, `keywords` (separated by `;`) and
   `examples` (one per line); `code` and `description` are required. A cell that starts with an apostrophe before text a
   spreadsheet would run as a formula (`'=1+1`, `'@x`, `'-x`) loses that one apostrophe: it is what the CSV download

@@ -91,18 +91,20 @@ codes and groups came in and what was folded or left out; then the editor opens.
 | --- | --- |
 | A code at the top with codes under it | A group of that name; the codes under it are its codes. |
 | A code three or more levels down | A code of its top group (ENLENS's groups have one level); its place in the tree ends its definition, as in “(In the tree: Emotions › Positive › Joy.)” |
-| A code with codes under it that has a description | A code as well as a group (or a step in the tree). Without a description it is a heading only. |
+| A code with codes under it that has a description | A code as well as a group (or a step in the tree). Without a description, or when it cannot be coded, it is a heading only. |
 | A code's description | Its definition. A code without one gets its place in the tree (or its name) as its definition: write a real one in the editor. |
 | A name longer than 40 characters | Cut at a word; the whole name opens the definition. |
 | Two codes of the same name | The second becomes “Name (2)”. |
 | A code that cannot be coded, with nothing under it | Left out. |
-| Colours, sets, memos, a top code's own description when it cannot be coded | Left out (a group has only a name). |
+| Sets of codes (ATLAS.ti's code groups) | Groups, when no code has codes under it and no code is in two sets; otherwise left out. |
+| Colours, memos, the description of a heading that cannot be coded | Left out (a group has only a name). The summary counts them. |
 
 A codebook ENLENS exported (*Download as .qdc*) comes back with its definitions, when to use and when not,
 keywords, examples (their words: a `.qdc` does not carry an example's document and page), groups and group names.
 Its label and direction setting are not in the file, so set them again in *Codebook settings*; the title is taken
 from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history; labels made with the
-codebook it was exported from stay with that one.
+codebook it was exported from stay with that one. A project file ENLENS wrote with several codebooks asks which one to
+bring in.
 
 ## Change it in the editor
 

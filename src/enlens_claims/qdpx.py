@@ -198,7 +198,10 @@ def _code_description(c) -> str:
     if c.exclude:
         lines.append(f"When not to use it: {c.exclude}")
     if c.keywords:
-        lines.append("Keywords: " + "; ".join(c.keywords))   # "; " as in the CSV: a keyword may hold a comma
+        # "; " as in the CSV: a keyword may hold a comma. One keyword that holds a comma ends with ";", so the file
+        # itself says it is one (0.18.7 joined keywords with ", " and never wrote it; qdc_import._split_desc)
+        one = len(c.keywords) == 1 and "," in c.keywords[0]
+        lines.append("Keywords: " + "; ".join(c.keywords) + (";" if one else ""))
     for ex in c.examples:
         lines.append(f"Example: “{ex}”")
     return "\n\n".join(x for x in lines if x).strip()
