@@ -322,6 +322,22 @@ class ChecksApi:
             raise ApiError(404, "No such hypothesis.")
         return {"job": self.app.start_read_new(name, [hyp_id]).view()}
 
+    def get_unread(self, name, hyp_id, q):
+        """Roadmap N5: the documents this check never read, those with its search words apart (no model reads)."""
+        ws = self.app.ws(name)
+        try:
+            return claimcheck.unread_documents(ws, hyp_id)
+        except KeyError:
+            raise ApiError(404, "No such hypothesis.") from None
+
+    def post_read_unread(self, name, hyp_id, q):
+        ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM hypotheses WHERE hyp_id=?", (hyp_id,)):
+            raise ApiError(404, "No such hypothesis.")
+        if not claimcheck.unread_documents(ws, hyp_id)["matching_n"]:
+            raise ApiError(400, "No document with this check's search words is left unread.")
+        return {"job": self.app.start_read_unread(name, hyp_id).view()}
+
     def post_read_new(self, name, q):
         ws = self.app.ws(name)
         body = self._body()

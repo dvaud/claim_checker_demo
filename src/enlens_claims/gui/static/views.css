@@ -1180,6 +1180,12 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .result .answer-added { margin: 0 0 var(--space-3); }
 .result .answer-added .btn-row { margin-top: var(--space-2); }
 .result .added-list { margin: 4px 0 0; padding-left: 1.1em; font-size: var(--fs-small); }
+/* roadmap N5: the documents a check never read, between the evidence and the other AI models */
+.result .unread-card { margin-top: 32px; }
+.result .unread-card p { margin: 0; overflow-wrap: anywhere; }
+.result .unread-group + .unread-group { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.result .unread-group .btn-row { margin-top: var(--space-2); }
+.result .unread-list { overflow-wrap: anywhere; }
 .result .answer .answer-note { margin: 0 0 var(--space-3); }
 .ev-moved { margin: 0 0 var(--space-2); }
 .ev-comment { margin: var(--space-2) 0 0; color: var(--text-2); }

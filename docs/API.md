@@ -1136,6 +1136,19 @@ since), `{"hyp_ids": […]}` or `{"batch": "b…"}` → one job that does this f
 none has new documents). `result`: `{"hypotheses": [{"hyp_id", "documents", "matching", "passages", "rounds"}],
 "passages"}`.
 
+`GET /api/projects/<p>/hypotheses/<hyp_id>/unread` (roadmap N5, 0.18.7) → the documents this check never showed an
+excerpt of, asked again of the keyword search with each part's claim and search words (no model reads anything):
+`{"hyp_id", "checked": false before the check read anything, "considered": documents it could have read,
+"matching": [{"doc_id", "title"}] (an excerpt holds at least two different words of a part and its search words),
+"matching_n", "one_word_n" (single words in common only), "no_word": [{"doc_id", "title"}], "no_word_n"}`; each list
+sorted by title and cut at 200 (the counts are whole). Theory documents, documents added after the check (its
+documents added since), documents with no readable text and those a limited check was limited away from are left
+out. A neutral count: it changes no result. `POST /api/projects/<p>/hypotheses/<hyp_id>/read-unread` → job (kind
+`read-unread`): reads the `matching` group for every part (each part the documents that hold its own words, within
+its limit) as a further round limited to them, as `read-new` does; the check is not run again, so reviews are kept.
+400 when there are none. `result`: `{"hyp_id", "documents", "passages", "rounds": [{"claim_id", "round", "passages",
+"ok"}]}`.
+
 `POST /api/projects/<p>/second-opinion` `{"hyp_ids": […]}` or `{"batch": "b…"}` → job (kind `second-opinion`): the
 second model of Settings (`second_model`) grades every excerpt these checks already read, with the same prompt. Its
 judgements are kept apart (`second` on each excerpt) and never change an answer. Only one model is in memory at a
@@ -1201,7 +1214,8 @@ readable ("ENLENS results - <project> - <date>.xlsx"). From 0.6 the *Excerpts* s
 (AI's note)" and "AI's earlier judgement (before reading it again)", and, when a second model read any of the
 excerpts, "Second model", "Second model's judgement", "Second model's certainty", "The two models agree". The
 *Summary* sheet has "Excerpts where the second opinion differs" (0.11.2; before: "…a second model disagrees"),
-"Answer before a stronger model read it again" (0.11.2) and "Documents added since the check".
+"Answer before a stronger model read it again" (0.11.2), "Documents added since the check" and (0.18.7, roadmap N5)
+"Documents with the search words never read".
 
 ### Exploring the documents (0.7)
 
@@ -1796,8 +1810,8 @@ and `threshold`) answers one page of the list: `hypotheses` holds at most `limit
 
 `GET /api/jobs` → `{"jobs": [Job summary]}` newest first. `GET /api/jobs/<id>` → full Job:
 ```json
-{"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "second-opinion" |
-         "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
+{"id": "fdd6a426a6f0", "kind": "check" | "prepare" | "batch" | "more" | "reread" | "read-new" | "read-unread" |
+         "second-opinion" | "ingest" | "index" | "benchmark" | "label" | "link" | "theme-names" | "resolve" | "stronger" | "queue-run" |
          "claude-install" | "bibliography" | "new_reader" | "theme-new" | "folder-sync" | …,
  "title": "…", "queue": false,
  "project": "Demo" | null, "state": "queued" | "running" | "done" | "error" | "cancelled",
