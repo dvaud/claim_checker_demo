@@ -9,7 +9,7 @@ graph whose nodes are the glossary's concepts (a concept's wordings count as one
   `MIN_TOGETHER` passages and PMI is above zero; the cost of a step falls as PMI rises.
 
 Each step comes with its bridge passages: passages that mention both ends (a link a person accepted with no passage
-in common shows the link's own sentences or quotes). A list, not a drawn map (D1, the concept map, is not built).
+in common shows the link's own sentences or quotes). A list; the drawn map is D1 (conceptmap.py), built on `_Graph`.
 
 **D4. A concept over time and across groups.** A concept's wordings and its neighbours (the concepts most often
 mentioned with it, by PMI) by publication year (from the bibliography: a document's year is its linked work's; those
@@ -20,6 +20,7 @@ evidence documents too, in case the glossary was made before a document was mark
 """
 from __future__ import annotations
 
+import functools
 import heapq
 import math
 import re
@@ -48,11 +49,9 @@ class _Graph:
         for t, c in self.group.items():
             self.members[c].append(t)
         self.labels = {r[0]: r[1] for r in ws.query("SELECT term_id, label FROM terms")}
+        named = {r[0]: r[1] for r in ws.query("SELECT concept_id, label FROM concepts")}   # (one query, not one each)
         for c in list(self.members):
-            row = ws.query("SELECT label FROM concepts WHERE concept_id=?", (c,))
-            self.labels[c] = row[0][0] if row else self.labels.get(min(self.members[c]), c)
-        self.total = int(ws.scalar(f"SELECT COUNT(DISTINCT m.passage_id) FROM term_mentions m JOIN passages p ON "
-                                   f"p.passage_id=m.passage_id WHERE {self.ev}") or 1)
+            self.labels[c] = named[c] if c in named else self.labels.get(min(self.members[c]), c)
         self.links: dict[str, dict[str, dict]] = defaultdict(dict)
         for lk in terms.links(ws):
             rel = lk["relation_effective"]
@@ -62,15 +61,33 @@ class _Graph:
             if a != b:
                 self.links[a][b] = lk
                 self.links[b][a] = lk
-        # the passages of every term, at once (one query, not one per neighbour: review 10)
-        self._term_n = {r[0]: int(r[1]) for r in ws.query(
-            f"SELECT m.term_id, COUNT(DISTINCT m.passage_id) FROM term_mentions m JOIN passages p ON "
-            f"p.passage_id=m.passage_id WHERE {self.ev} GROUP BY m.term_id")}
         self._n: dict[str, int] = {}
         self._nb: dict[str, dict[str, float]] = {}
 
+    # the corpus-wide counts are made when first needed: the concept map (D1) counts within its own scope instead
+    @functools.cached_property
+    def total(self) -> int:
+        return int(self.ws.scalar(f"SELECT COUNT(DISTINCT m.passage_id) FROM term_mentions m JOIN passages p ON "
+                                  f"p.passage_id=m.passage_id WHERE {self.ev}") or 1)
+
+    @functools.cached_property
+    def _term_n(self) -> dict[str, int]:
+        """The passages of every term, at once (one query, not one per neighbour: review 10)."""
+        return {r[0]: int(r[1]) for r in self.ws.query(
+            f"SELECT m.term_id, COUNT(DISTINCT m.passage_id) FROM term_mentions m JOIN passages p ON "
+            f"p.passage_id=m.passage_id WHERE {self.ev} GROUP BY m.term_id")}
+
     def node(self, term: str) -> str:
         return self.group.get(term, term)
+
+    def term(self, node: str) -> str:
+        """A term id that stands for a node (a concept's page and the routes take term ids, not concept ids): the
+        wording whose label is the concept's (the smallest such id), else the concept's smallest term id."""
+        ms = self.members.get(node)
+        if not ms:
+            return node
+        same = sorted(t for t in ms if self.labels.get(t) == self.labels.get(node))
+        return same[0] if same else min(ms)
 
     def terms_of(self, node: str) -> list[str]:
         return self.members.get(node) or [node]

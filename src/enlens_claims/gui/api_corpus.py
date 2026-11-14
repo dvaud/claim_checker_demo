@@ -7,7 +7,7 @@ part adds, kept out of server.py so the two parts of 0.18.1, built side by side,
 the changes after which the shared folder's poller does not bring a round forward."""
 from __future__ import annotations
 
-from .api_common import ApiError, _str
+from .api_common import ApiError, _int, _list, _str
 
 P = r"([^/]+)"  # one path segment, as in server.py
 
@@ -29,6 +29,10 @@ ROUTES: list[tuple[str, str, str]] = [
     ("GET", rf"/api/projects/{P}/concept-paths", "get_concept_paths"),
     ("GET", rf"/api/projects/{P}/concept-time/{P}", "get_concept_time"),
     ("POST", rf"/api/projects/{P}/concept-groups/{P}", "post_concept_groups"),
+    # D1: the concept map, its filters' choices, and one edge's passages (conceptmap.py)
+    ("GET", rf"/api/projects/{P}/concept-map", "get_concept_map"),
+    ("GET", rf"/api/projects/{P}/concept-map/options", "get_concept_map_options"),
+    ("GET", rf"/api/projects/{P}/concept-map/edge", "get_concept_map_edge"),
     # A7 (reader 5): a figure's picture, drawn from the original PDF when it is shown, never stored
     ("GET", rf"/api/projects/{P}/documents/{P}/figures/{P}\.png", "get_figure_image"),
 ]
@@ -138,6 +142,42 @@ class CorpusApi:
         except ValueError as e:
             raise ApiError(400, str(e)) from None
 
+    # ---- D1: the concept map ---------------------------------------------------------------------------------------
+    def get_concept_map(self, name, q):
+        """?doc=<id>[,<id>…]&theme=<run id>:<theme id>&framework=<codebook>&code=<code>&year_from=&year_to=&n=: the
+        concept map within these filters (conceptmap.concept_map)."""
+        from .. import conceptmap
+
+        ws = self.app.ws(name)
+        try:
+            return conceptmap.concept_map(ws, _map_filters(q), _int(q, "n", conceptmap.DEFAULT_N, conceptmap.MIN_N,
+                                                                     conceptmap.MAX_N))
+        except KeyError:
+            raise ApiError(404, "That set of themes is gone: make the themes again, or choose another theme.") from None
+        except ValueError as e:
+            raise ApiError(400, str(e)) from None
+
+    def get_concept_map_options(self, name, q):
+        """{"documents", "themes", "codebooks", "years"}: what the map's filters can choose from."""
+        from .. import conceptmap
+
+        return conceptmap.options(self.app.ws(name))
+
+    def get_concept_map_edge(self, name, q):
+        """?a=<term id>&b=<term id> and the map's filters: how two concepts on the map are joined, with the passages
+        that mention both (conceptmap.edge)."""
+        from .. import conceptmap
+
+        a, b = _str(q, "a"), _str(q, "b")
+        if not a or not b:
+            raise ApiError(400, "Say both concepts: ?a=<term id>&b=<term id>.")
+        try:
+            return conceptmap.edge(self.app.ws(name), a, b, _map_filters(q))
+        except KeyError:
+            raise ApiError(404, "No such term in the glossary, or that set of themes is gone: make them again.") from None
+        except ValueError as e:
+            raise ApiError(400, str(e)) from None
+
     def get_codebook_theory(self, name, doc_id, q):
         """The candidate concepts of a document, as draft codes with their quoted definitions and the evidence's
         suggested examples (theorycodes.candidates)."""
@@ -238,3 +278,33 @@ def _render_crop(path, page: int, box: tuple[float, float, float, float], scale:
     buf = io.BytesIO()
     img.crop((int(left), int(top), int(right) + 1, int(bottom) + 1)).save(buf, "PNG", optimize=True)
     return buf.getvalue()
+
+
+def _map_filters(q):
+    """The concept map's filters from a query (D1): documents, a theme, a code, years."""
+    from ..conceptmap import Filters
+
+    f = Filters()
+    f.docs = _list(q, "doc")
+    th = _str(q, "theme")
+    if th:
+        run, _, tid = th.rpartition(":")
+        try:
+            f.theme = (run, int(tid))
+        except ValueError:
+            raise ApiError(400, "A theme is <run id>:<theme id>.") from None
+        if not run:
+            raise ApiError(400, "A theme is <run id>:<theme id>.")
+    fw, code = _str(q, "framework"), _str(q, "code")
+    if code:
+        if not fw:
+            raise ApiError(400, "Say the codebook of the code: &framework=<name>.")
+        f.code = (fw, code)
+    for k in ("year_from", "year_to"):
+        v = _str(q, k)
+        if v:
+            if not v.isdigit() or len(v) != 4 or int(v) < 1:
+                raise ApiError(400, f"{k} is a year of four digits.")
+            setattr(f, k, int(v))
+    f.applied = f.describe()
+    return f

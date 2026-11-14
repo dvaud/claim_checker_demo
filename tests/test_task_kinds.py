@@ -54,6 +54,22 @@ for _key, _value in {"routing.ROW_OF": _TC, "routing.CLAUDE_DEFAULTS": ("sonnet"
                      "taskqueue.SHORT": "theory documents to draft codes from",
                      "taskqueue.KIND_TITLE": "Codes from a theory document", "llm.OUTPUT_CAP": 3000}.items():
     SNAPSHOT[_key][_TC] = _value
+# K1 (the optional AI part): a code's definition drafted from its examples (codedefine.py)
+_CD = "code_definition"
+SNAPSHOT["routing.KINDS"] += (_CD,)
+SNAPSHOT["tasks.KINDS"] += (_CD,)
+_rows = list(SNAPSHOT["routing.ROWS"])
+_rows.insert(_rows.index((_TC, (_TC,), "Codes from a theory document")) + 1, (_CD, (_CD,), "Code definitions from examples"))
+SNAPSHOT["routing.ROWS"] = tuple(_rows)
+_order = list(SNAPSHOT["taskqueue.ORDER"])
+_order.insert(_order.index(_TC) + 1, _CD)
+SNAPSHOT["taskqueue.ORDER"] = tuple(_order)
+for _key, _value in {"routing.ROW_OF": _CD, "routing.CLAUDE_DEFAULTS": ("sonnet", "opus"), "routing.LOCAL_DEFAULTS": "large",
+                     "routing.HELPERS": "enlens-namer", "prompts.VERSIONS": "code-definition-v1", "taskqueue.BATCH": 1,
+                     "taskqueue.NOUN": ("code to define from its examples", "codes to define from their examples"),
+                     "taskqueue.SHORT": "codes to define from their examples",
+                     "taskqueue.KIND_TITLE": "Code definitions from examples", "llm.OUTPUT_CAP": 1500}.items():
+    SNAPSHOT[_key][_CD] = _value
 
 
 def _table(key):
@@ -79,14 +95,15 @@ def test_the_other_tables_too():
         "link": "How concepts relate", "theme": "Theme names", "resolve": "References in a document",
         "extract": "Extracting claims (SDG pack)", "verify_set": "Checking VCA claims (SDG pack)",
         "verify": "Checking claims (SDG pack)", "split": "Splitting justifications (SDG pack)",
-        "theory_codes": "Codes from a theory document"}
+        "theory_codes": "Codes from a theory document", "code_definition": "A code's definition from its examples"}
     assert dict(tasks.HANDLERS) == {"extract": tasks._store_extract, "split": tasks._store_split,
                                     "verify": tasks._store_verify, "verify_set": tasks._store_verify_set,
                                     "expand": tasks._store_expand, "check": tasks._store_check,
                                     "decompose": tasks._store_decompose, "reread": tasks._store_reread,
                                     "second": tasks._store_second, "label": tasks._store_label,
                                     "link": tasks._store_link, "theme": tasks._store_theme,
-                                    "resolve": tasks._store_resolve, "theory_codes": tasks._store_theory_codes}
+                                    "resolve": tasks._store_resolve, "theory_codes": tasks._store_theory_codes,
+                                    "code_definition": tasks._store_code_definition}
     assert dict(routing.HELPER_MODEL)["enlens-checker"] == "sonnet" and len(routing.HELPER_MODEL) == 7
     # the certainty of an answer, as 0.13.5 read it
     assert routing.certainty("verify", {"confidence": 0.4}) == 0.4

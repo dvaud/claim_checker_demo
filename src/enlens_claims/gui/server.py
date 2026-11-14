@@ -1539,6 +1539,9 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/codebooks/{P}/try", "post_codebook_try"),
     ("POST", rf"/api/projects/{P}/codebooks/{P}/relabel", "post_codebook_relabel"),
     ("POST", rf"/api/projects/{P}/codebooks/{P}/clashes/{P}", "post_codebook_clash"),  # 0.18
+    # K1 (the optional AI part): a code's definition drafted from its examples (codedefine.py)
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/define/offer", "post_codebook_define_offer"),
+    ("POST", rf"/api/projects/{P}/codebooks/{P}/define", "post_codebook_define"),
     # 0.18 (L1): private until shared (api_sharing.py)
     ("GET", rf"/api/projects/{P}/sharing", "get_sharing"),
     ("GET", rf"/api/projects/{P}/sharing/(check|themes|codebook|note|log|link)/{P}", "get_sharing_item"),

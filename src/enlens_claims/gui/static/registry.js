@@ -33,6 +33,7 @@ export const JOB_KINDS = {
   "theme-new": { icon: "shapes", text: "Finding a new theme", link: (j) => (j.scope ? `#/themes/${encodeURIComponent(j.scope)}` : "#/themes") },
   resolve: { icon: "link", text: "Following references", link: "#/sources" },
   "theory-codes": { icon: "book-marked", text: "Drafting codes from a theory", link: "#/codebooks" },   // 0.18.4 (K2)
+  "code-define": { icon: "sparkles", text: "Drafting a code's definition", link: "#/codebooks" },   // K1, the optional AI part
   quicklook: { icon: "eye", text: "Quick look", link: "#/sources" },
   "claude-install": { icon: "download", text: "Installing Claude Code", link: "#/settings/model" },
   "model-pull": { icon: "download", text: "Downloading a model", link: "#/settings/model" },   // 0.13.7

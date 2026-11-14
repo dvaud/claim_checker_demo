@@ -69,6 +69,7 @@ export const ACTIONS = [
   ["Make a codebook from a theory document", "in Codes", "#/codebooks", "book-marked", "theory concepts definitions codebook framework codes from theory"],
   ["Find the path between two concepts", "on a concept’s page, in Concepts", "#/concepts", "network", "path chain bridge link connect between two concepts route argument"],
   ["See a concept over time or across groups", "on a concept’s page, in Concepts", "#/concepts", "clock", "year years time trend change groups compare sets policy academic country"],
+  ["See the concept map", "in Concepts", "#/concept-map", "network", "map graph network concepts together co-occurrence clusters groups links pmi visual overview diagram"],
   // end of 0.18.1 part A
   // 0.18.1 part B: its actions below this line
   ["Check for retractions", "on the Bibliography", "#/bibliography", "alert-triangle", "retracted retraction corrected correction crossref doi withdrawn check works"],

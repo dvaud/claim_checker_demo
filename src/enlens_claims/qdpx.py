@@ -198,7 +198,7 @@ def _code_description(c) -> str:
     if c.exclude:
         lines.append(f"When not to use it: {c.exclude}")
     if c.keywords:
-        lines.append("Keywords: " + ", ".join(c.keywords))
+        lines.append("Keywords: " + "; ".join(c.keywords))   # "; " as in the CSV: a keyword may hold a comma
     for ex in c.examples:
         lines.append(f"Example: “{ex}”")
     return "\n\n".join(x for x in lines if x).strip()

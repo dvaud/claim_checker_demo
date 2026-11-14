@@ -256,11 +256,22 @@ B1 to B4 and B6 (citations in Word, reference lists, the reference-list check, r
 
 D5 (concepts in the writing) is Margin's.
 
-**D1. A concept map** · Level 0 · ENLENS candidate (`terms.py`, the Concepts page)
+**D1. A concept map** · Level 0 · built (14 November 2026, unreleased) (`conceptmap.py`, the Concepts page)
 - A graph of the concepts that occur together in passages (weighted by how much more often than by chance, such as
   PMI, not by raw counts), clustered, with the links you and the AI accepted drawn in their types (same, broader,
   narrower, related, needs, shapes, clashes with). Filter by document, theme, code or year.
 - *Already in ENLENS:* `concordance.py` computes PMI, and `concept_links` stores typed relations with quotes.
+- *Built:* *Concepts › Map*, beside *Glossary*: the 60 concepts (30 to 150) in the most passages, joined by PMI over the
+  passages in scope (two passages or more, each concept's 4 strongest lines, at most 2 × n), grouped by the Louvain
+  method on those joins, laid out with each group in a disc of its own (force-directed, fixed starting places and
+  rounds: the same map every time), drawn as inline SVG with no new dependency. The confirmed links are drawn in
+  their types (*is part of*, *leads to*, *is used instead of*, *is related to*; a "same" link makes one node). A
+  concept opens its page; a line shows the passages that join the two; the map is also given as lists. Filters:
+  documents, a theme (with a person's merges and moves), a code, publication years; theory and working documents are
+  always left out. Also `enlens concept-map` and `GET /api/projects/{p}/concept-map`.
+- *Not done:* "needs", "shapes" and "clashes with" are not relations ENLENS has (its links are those of D2 and the
+  concept card); they would come with new link types. Clusters are not named by the AI, nor kept between visits, and
+  the map is not exported as a picture.
 
 **D2. Relations found from the text** · Level 0 · built in 0.18.1 (`textrelations.py`)
 - Propose links from the sentences themselves, without AI: "X such as Y", "Y and other X" (broader and narrower),
@@ -300,7 +311,9 @@ G1 to G4 (the rest of Margin's writing companion) are Margin's.
 - Codes, labels, quotes, memos and your decisions as a REFI-QDA (`.qdpx`) project.
 - Built: `qdpx.py` writes the project (documents as text, codebooks and hypotheses as codes, the labels and judgements
   that count as codings by the person or "ENLENS AI (model)", notes and the research log as memos) and a codebook alone
-  as `.qdc`, from the Hypotheses, Codes, result and codebook pages and `enlens export-qdpx` / `export-qdc`.
+  as `.qdc`, from the Hypotheses, Codes, result and codebook pages and `enlens export-qdpx` / `export-qdc`. The way
+  back in (K1 *In and out*, unreleased): `qdc_import.py` brings a `.qdc` (or a `.qdpx`'s codebook) in as a new codebook,
+  from *New codebook* › *From NVivo, ATLAS.ti or MAXQDA* and `enlens import-qdc`.
 
 ## H. Optimisation across the board
 
@@ -581,9 +594,18 @@ its own)
   codebook's history (F5). An edit changes no result by itself.
 - **In and out.** CSV stays the file, so a codebook still opens in a spreadsheet. A REFI-QDA codebook (`.qdc`) can be
   brought in from and sent to NVivo, ATLAS.ti and MAXQDA, with G5. Codebooks already sync between colleagues; an
-  edit made on both sides comes in as a sync-clash copy, as today.
+  edit made on both sides comes in as a sync-clash copy, as today. *Built (unreleased):* sending out came with G5
+  (0.18.7); bringing in is `qdc_import.py` (*New codebook* › *From NVivo, ATLAS.ti or MAXQDA*, `enlens import-qdc`):
+  top codes become groups, deeper levels fold into their top group with their place in the tree kept in the
+  definition, and ENLENS's own export comes back with everything a `.qdc` carries (not an example's document and
+  page, nor the codebook's label and direction setting).
 - Optional (Level 2, then 3): a draft definition and *when to use it* for a code, from its example passages only,
-  marked as a draft to rewrite. The editor is complete without it.
+  marked as a draft to rewrite. The editor is complete without it. *Built (14 November 2026, unreleased):*
+  `codedefine.py`, task kind `code_definition` (code-definition-v1, Sonnet stepping up to Opus, the large local model,
+  the enlens-namer helper). *Draft from the examples* on an open code with two example passages or more drafts its
+  definition, *when to use it* and *when not*, the first two each shown by a checked quote; each document's AI setting
+  decides whether its passage is read and by whom. The draft waits beside the fields; what is taken stays marked *AI
+  draft* (the codebook's side file, `drafted`) until the words are rewritten.
 - *Already in ENLENS:* codebooks as CSV files (code, description, group), kept in a project or for all projects;
   added, viewed and removed in *Settings → Exploring*; marked as aims a text can help or hinder; brought in by the
   sync. The themes page shows which codes each theme holds. Nothing edits a codebook in the app, and themes cannot

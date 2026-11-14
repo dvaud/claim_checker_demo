@@ -172,6 +172,12 @@ The glossary is built without a model (`terms.py`; [Concepts](manual/explore.md#
   a step costs 1 / (1 + PMI), and only concepts that share at least two passages with PMI above zero are joined
   (`conceptpaths.py`). The shortest path is found with Dijkstra's algorithm (1959) and the next ones with Yen's
   method (1971).
+- **The concept map** joins the concepts in the most passages by pointwise mutual information over the passages in
+  scope (two passages or more, PMI above zero; each concept's four strongest joins drawn, at most twice as many as
+  concepts in all, never none for a concept that has one). Groups are found with the Louvain method (Blondel and others, 2008) on
+  each concept's eight strongest joins, visiting the concepts in a fixed order; each group is laid out in a disc with
+  Fruchterman and Reingold's force-directed method (1991) from fixed starting places, and the discs are placed by the
+  joins between them (`conceptmap.py`). A filter restricts the passages before anything is counted.
 
 ## Themes
 
@@ -285,6 +291,8 @@ the Excel download) and your own review procedure.
 
 - Arthur, D., and Vassilvitskii, S. (2007). k-means++: the advantages of careful seeding. *Proceedings of the 18th
   Annual ACM-SIAM Symposium on Discrete Algorithms*, 1027–1035.
+- Blondel, V. D., Guillaume, J.-L., Lambiotte, R., and Lefebvre, E. (2008). Fast unfolding of communities in large
+  networks. *Journal of Statistical Mechanics: Theory and Experiment*, 2008(10), P10008.
 - Church, K. W., and Hanks, P. (1990). Word association norms, mutual information, and lexicography. *Computational
   Linguistics*, 16(1), 22–29.
 - Cohen, J. (1960). A coefficient of agreement for nominal scales. *Educational and Psychological Measurement*, 20(1),
@@ -296,6 +304,8 @@ the Excel download) and your own review procedure.
 - Dijkstra, E. W. (1959). A note on two problems in connexion with graphs. *Numerische Mathematik*, 1, 269–271.
 - Frantzi, K., Ananiadou, S., and Mima, H. (2000). Automatic recognition of multi-word terms: the C-value/NC-value
   method. *International Journal on Digital Libraries*, 3(2), 115–130.
+- Fruchterman, T. M. J., and Reingold, E. M. (1991). Graph drawing by force-directed placement. *Software: Practice
+  and Experience*, 21(11), 1129–1164.
 - Hearst, M. A. (1992). Automatic acquisition of hyponyms from large text corpora. *Proceedings of COLING 1992*,
   539–545.
 - Robertson, S., and Zaragoza, H. (2009). The probabilistic relevance framework: BM25 and beyond. *Foundations and

@@ -5,7 +5,8 @@
 > **In short**
 > - A codebook is your list of codes: each with a definition, when to use it and when not, the words it is matched by
 >   and examples from your documents. *Codes* › *Codebooks* makes, changes and removes them.
-> - Start fresh, from the themes already found, from a copy of another codebook, or from a CSV file.
+> - Start fresh, from the themes already found, from a copy of another codebook, from a CSV file, or from a codebook
+>   made in NVivo, ATLAS.ti or MAXQDA (`.qdc`).
 > - Changing a codebook changes no result by itself: labels follow renames and merges, and wait when a code is removed.
 
 ## What a codebook is for
@@ -32,6 +33,7 @@ above them, with the reason.
 | *From a theory document* (0.18.1) | You tick the concepts of a theory you read the documents through; each becomes a draft code with its definition quoted from the theory (see below). |
 | *A copy of a codebook* | The SDG targets, or one of yours, to change. |
 | *From a CSV file* | A spreadsheet saved as CSV (see below). |
+| *From NVivo, ATLAS.ti or MAXQDA* | A REFI-QDA codebook (`.qdc`), or the codebook of a REFI-QDA project (`.qdpx`) (see below). |
 
 **From the themes.** Each theme you tick becomes a draft code with a short name, its description where the AI named
 the theme, its key terms as *Words it is matched by* and its best passages as examples. Removed themes are left out.
@@ -80,6 +82,28 @@ the columns, and a file saved in a Windows code page (a spreadsheet saved in Hun
 | `keywords` | The words it is matched by, separated by `;` |
 | `examples` | Quotes from the documents, one per line |
 
+**From NVivo, ATLAS.ti or MAXQDA.** In the other program, export the codebook as a REFI-QDA codebook (`.qdc`), then
+choose that file (a whole REFI-QDA project, `.qdpx`, works too: only its codebook is read, up to 14 MB in the app).
+The title is the file's name until you type another. No AI reads the file. After *Create*, a summary says how many
+codes and groups came in and what was folded or left out; then the editor opens. What maps to what:
+
+| In the other program | In ENLENS |
+| --- | --- |
+| A code at the top with codes under it | A group of that name; the codes under it are its codes. |
+| A code three or more levels down | A code of its top group (ENLENS's groups have one level); its place in the tree ends its definition, as in “(In the tree: Emotions › Positive › Joy.)” |
+| A code with codes under it that has a description | A code as well as a group (or a step in the tree). Without a description it is a heading only. |
+| A code's description | Its definition. A code without one gets its place in the tree (or its name) as its definition: write a real one in the editor. |
+| A name longer than 40 characters | Cut at a word; the whole name opens the definition. |
+| Two codes of the same name | The second becomes “Name (2)”. |
+| A code that cannot be coded, with nothing under it | Left out. |
+| Colours, sets, memos, a top code's own description when it cannot be coded | Left out (a group has only a name). |
+
+A codebook ENLENS exported (*Download as .qdc*) comes back with its definitions, when to use and when not,
+keywords, examples (their words: a `.qdc` does not carry an example's document and page), groups and group names.
+Its label and direction setting are not in the file, so set them again in *Codebook settings*; the title is taken
+from the file's name, which you can change before *Create*. It comes in as a new codebook with its own history; labels made with the
+codebook it was exported from stay with that one.
+
 ## Change it in the editor
 
 Codes sit in groups. Click a code to open it:
@@ -96,6 +120,19 @@ To move a code, drag it by its grip, or use *Up* and *Down*. *Split* makes a sec
 labels); *Merge into…* sends a code's labels to another and takes the code out; *Remove* takes a code out. *Add a code*
 and *Add a group* are in each group and at the foot. *Codebook settings* holds the title, what one code is called
 (*code*, *theme*, *category*) and whether its codes are aims that a text can help or hinder, like the SDG targets.
+
+**Draft from the examples.** A code with two examples or more (in different passages) can have its definition, *when
+to use it* and *when not to use it* drafted by the AI: open the code and press *Draft from the examples*. The AI reads
+only the passages that hold the code's examples, with its name and group: not the rest of the documents, not the
+other codes, and not the definition you already wrote. The definition and *when to use it* each come with a quote
+from one of those passages that shows them, checked like every quote. The draft appears under the examples, not in
+the fields: *Use* (or *Use instead*) takes one part, *Use all of it* takes all three, and *Put it aside* drops it.
+What you take is marked *AI draft*, under the fields and on the code's row, until you rewrite it in your own words;
+the mark stays across saves while the words are still the AI's, and *Save* writes in the research log that the
+wording came from the AI's draft. Each document's AI setting decides who reads its passage: an example in a document
+marked *No AI* is left out, and one in a document marked *Only a local AI* is read by the local model (then the whole
+draft is) or left out when there is none; the line under the button says how many were left out and why. Asking again
+with the same examples reuses the answer. The editor is complete without it.
 
 Changes are kept as drafts until you press *Save*, where you can write *Why?* for the research log
 ([Notes, the research log and earlier versions](notes-and-log.md#the-research-log)). *Discard* throws them away. A

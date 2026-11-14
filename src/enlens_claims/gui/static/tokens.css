@@ -71,6 +71,8 @@
   --drawer-w: 300px;
   --paper: #ffffff;   /* behind a picture of a document's page, in both themes: the page itself is white */
   --logdrawer-w: var(--drawer-w);   /* 0.17.0rc1's name, kept for forks */
+  /* D1: the groups of the concept map, each also drawn in its own shape (never colour alone); none is a judgement */
+  --group-1: #2a78d6; --group-2: #eb6834; --group-3: #1baf7a; --group-4: #6250d6; --group-5: #e87ba4;
   color-scheme: light;
 }
 
@@ -110,6 +112,7 @@
     --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, .7);
     --attention-line: #7a5a24;
     --on-danger: #2a0e0c;
+    --group-1: #3987e5; --group-2: #d95926; --group-3: #199e70; --group-4: #9085e9; --group-5: #d55181;
     --quote-ok: color-mix(in srgb, var(--ok) 30%, transparent);
     --quote-partly: color-mix(in srgb, var(--partly) 24%, transparent);
     --quote-bad: color-mix(in srgb, var(--bad) 30%, transparent);
@@ -152,6 +155,7 @@
   --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, .7);
   --attention-line: #7a5a24;
   --on-danger: #2a0e0c;
+  --group-1: #3987e5; --group-2: #d95926; --group-3: #199e70; --group-4: #9085e9; --group-5: #d55181;
   --quote-ok: color-mix(in srgb, var(--ok) 30%, transparent);
   --quote-partly: color-mix(in srgb, var(--partly) 24%, transparent);
   --quote-bad: color-mix(in srgb, var(--bad) 30%, transparent);

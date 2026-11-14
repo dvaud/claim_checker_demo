@@ -223,6 +223,14 @@ class CodebookRules:
             meta.pop("directional", None)
         if not meta["clashes"]:
             meta.pop("clashes")
+        # K1: the AI-draft marks go with the codes: theirs for the codes taken from their version, yours otherwise
+        drafted = {u: d for src, keep in ((m_meta, lambda u: u not in theirs_in), (t_meta, lambda u: u in theirs_in))
+                   for u, d in (src.get("drafted") if isinstance(src.get("drafted"), dict) else {}).items()
+                   if u in uids and keep(u)}
+        if drafted:
+            meta["drafted"] = drafted
+        else:
+            meta.pop("drafted", None)
         from .. import codebooks
 
         scratch = Path(self.inc.root) / "merged-codebooks"

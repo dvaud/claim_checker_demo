@@ -705,6 +705,7 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .cb-meta { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .cb-start-pick { grid-template-columns: 1fr; }
 .cb-start-extra { margin-top: 8px; }
+.cb-import-notes { margin: 0; padding-left: 1.25em; }   /* K1: the .qdc summary, in a .stack (no extra gap) */
 .cb-theme-pick { display: flex; flex-direction: column; gap: 12px; max-height: 55vh; overflow: auto; }
 /* a run of themes is a group under its heading, not a box; its themes are rows divided by lines (DESIGN 4.11) */
 .cb-run { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -751,6 +752,16 @@ p.dv-selnote { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; 
 .cb-code-actions { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .cb-merge { width: auto; max-width: 220px; }
 .cb-tried { margin-top: var(--space-2); }
+/* K1 (the optional AI part): a code's definition drafted from its examples */
+.cb-define { margin-top: var(--space-2); }
+.cb-define .ai-where, .cb-define p { margin: 4px 0 0; }
+.cb-draft { margin-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.cb-draft > p { margin: 0; }
+.cb-draft-row { display: flex; gap: var(--space-3); align-items: flex-start; justify-content: space-between; }
+.cb-draft-text { min-width: 0; flex: 1; }
+.cb-draft-text p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.cb-draft-mark p { margin: 0 0 var(--space-2); }
+@media (max-width: 560px) { .cb-draft-row { flex-direction: column; } }
 .cb-tried p { margin: 0 0 4px; }
 .cb-tried-list { margin: 0; padding-left: 1.1em; font-size: var(--fs-small); display: flex; flex-direction: column; gap: 4px; }
 .cb-foot { margin: 6px 0 calc(2 * var(--space-6)); }
@@ -840,6 +851,46 @@ html:has(.cb-savebar:not([hidden])) { scroll-padding-bottom: 6rem; }
 .ct-related-help { margin: 0 0 var(--space-2); }
 .ct-related-empty { margin-top: 0; }
 .ct-together-help { margin: 0 0 var(--space-2); }
+
+/* ==== Concept map */
+/* Concepts › Map (D1, views/concept-map.js): a drawn map of concepts. Its groups take the --group-* tokens, each with a
+   shape of its own; lines are greys; a link a person accepted is the darker line with its words. */
+.cm-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
+.cm-filters .field { margin: 0; flex: 1 1 160px; min-width: 0; max-width: 260px; }
+.cm-filters .select { width: 100%; }
+.cm-facts { margin: 0 0 var(--space-2); }
+.cm-note { margin-bottom: var(--space-3); }
+.cm-legend { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-2); }
+.cm-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); font-size: var(--fs-small); }
+.cm-key { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.cm-swatch { flex: none; }
+.cm-how { margin: 0; }
+.cm-svg-wrap { width: 100%; overflow: hidden; }
+.cm-svg { display: block; width: 100%; height: auto; }
+.cm-edge { stroke: var(--border-strong); stroke-linecap: round; }
+.cm-link { stroke: var(--text-2); stroke-width: 2px; stroke-linecap: round; }
+.cm-arrow { fill: var(--text-2); }
+.cm-hit { stroke: transparent; stroke-width: 12px; cursor: pointer; }
+.cm-pair:hover .cm-edge { stroke: var(--text-2); }
+.cm-rel { font-size: var(--fs-label); fill: var(--text-2); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.cm-mark { stroke: var(--surface); stroke-width: 2px; }
+.cm-g0 { fill: var(--faint); }
+.cm-g1 { fill: var(--group-1); }
+.cm-g2 { fill: var(--group-2); }
+.cm-g3 { fill: var(--group-3); }
+.cm-g4 { fill: var(--group-4); }
+.cm-g5 { fill: var(--group-5); }
+.cm-label { font-size: var(--fs-xs); fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.cm-label[data-hidden="true"], .cm-rel[data-hidden="true"] { display: none; }
+.cm-pair:hover .cm-rel { display: inline; }
+.cm-node:hover .cm-label, .cm-node:focus .cm-label, .cm-node[data-near="true"] .cm-label { display: inline; }
+.cm-node:hover .cm-mark, .cm-node:focus-visible .cm-mark { stroke: var(--focus); stroke-width: 3px; }
+.cm-svg[data-focus="true"] .cm-node:not([data-near="true"]), .cm-svg[data-focus="true"] .cm-pair:not([data-near="true"]) { opacity: .2; }
+.cm-detail .ct-quotes { margin-top: var(--space-2); }
+.cm-detail-part { margin-bottom: var(--space-2); }
+.cm-list-h { font-size: var(--fs-body); margin: var(--space-4) 0 var(--space-2); }
+.cm-group-name { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.cm-link-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: var(--space-1); }
 
 /* ==== Themes */
 .th-title { overflow-wrap: anywhere; }

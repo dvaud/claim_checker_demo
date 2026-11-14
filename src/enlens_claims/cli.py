@@ -348,6 +348,12 @@ def _main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("export-qdc", help="write one codebook as a REFI-QDA codebook (.qdc)")
     p.add_argument("framework")
     p.add_argument("out")
+    p = sub.add_parser("import-qdc", help="bring in a REFI-QDA codebook (.qdc, or the codebook of a .qdpx project) from "
+                                          "NVivo, ATLAS.ti or MAXQDA as a new codebook of this project")
+    p.add_argument("file")
+    p.add_argument("name", nargs="?", help="the new codebook's short name (default: from the file's name)")
+    p.add_argument("--title", help="its title (default: the file's, else from its name)")
+    p.add_argument("--home", action="store_true", help="keep it with all projects, not this one")
     p = sub.add_parser("export-flexiconc", help="write the project in the Cross-Doc SDG Explorer's FlexiConc SQLite layout")
     p.add_argument("out")
     p.add_argument("--framework", default="sdg")
@@ -449,6 +455,16 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--open", action="store_true", help="start ENLENS afterwards (or show the copy already running)")
     p.add_argument("--home", help="data folder built into the icon (default: ~/enlens, or ENLENS_HOME)")
     # 0.18.1 part A (documents, theory, concepts, team copies): its subcommands below this line; name each in _PART_A
+    p = sub.add_parser("concept-map", help="the concept map (D1): concepts mentioned together more often than by "
+                       "chance, in groups, with your links; words or --json")
+    p.add_argument("--n", type=int, default=60, help="concepts on the map (10 to 150, default 60)")
+    p.add_argument("--doc", action="append", help="only this document (an id; repeat for more)")
+    p.add_argument("--theme", help="only the passages of a theme: <run id>:<theme id>")
+    p.add_argument("--framework", help="the codebook of --code")
+    p.add_argument("--code", help="only the passages labelled with this code")
+    p.add_argument("--year-from", type=int)
+    p.add_argument("--year-to", type=int)
+    p.add_argument("--json", action="store_true", help="the whole map as JSON (with its layout)")
     # end of 0.18.1 part A
     # 0.18.1 part B (AI mix, checks, retractions): its subcommands below this line; name each in _PART_B
     p = sub.add_parser("retractions", help="check the DOIs of the bibliography and the documents for retractions and "
@@ -694,7 +710,7 @@ def _main(argv: list[str] | None = None) -> int:
         path = report.build(ws, a.out, a.strict)
         print(f"Report written to {path}")
     elif a.cmd in ("search", "profile", "terms", "concept", "themes", "resolve", "annotate", "export-flexiconc",
-                   "acceptance", "export-qdpx", "export-qdc"):
+                   "acceptance", "export-qdpx", "export-qdc", "import-qdc"):
         return _cmd_07(a, ws)
     elif a.cmd in ("prepare", "queue"):
         return _cmd_08(a, ws)
@@ -836,6 +852,22 @@ def _cmd_07(a, ws) -> int:
                 return 2
         _print(qdpx.export_project(ws, a.out, a.framework) if a.cmd == "export-qdpx" else
                qdpx.export_codebook(ws, a.framework, a.out))
+        return 0
+    if a.cmd == "import-qdc":
+        import re
+
+        from . import codebooks, qdc_import
+
+        f = Path(a.file)
+        name = a.name or re.sub(r"[^a-z0-9_-]+", "_", f.stem.lower()).strip("_")[:40] or "imported"
+        try:
+            got = codebooks.create(ws, name, a.title or "", "home" if a.home else "project", "qdc",
+                                   prepared=qdc_import.from_path(f))
+        except ValueError as e:
+            print(f"Problem: {e}", file=sys.stderr)
+            return 2
+        _print({"codebook": got["name"], "title": got["title"], "codes": len(got["codes"]),
+                "groups": len([g for g in got["groups"] if g["group"]]), "notes": got["imported"]["notes"]})
         return 0
     if a.cmd == "export-flexiconc":
         from . import flexiconc_export
@@ -1108,15 +1140,44 @@ def _write_csv(path: str, rows: list[dict]) -> None:
         review.write_csv(f, rows)
 
 
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())
-
-
 # 0.18.1 part A (documents, theory, concepts, team copies): its commands, run with the project open
-_PART_A: tuple[str, ...] = ()
+_PART_A: tuple[str, ...] = ("concept-map",)
 
 
 def _cmd_part_a(a, ws) -> int:
+    if a.cmd == "concept-map":
+        from . import conceptmap
+
+        f = conceptmap.Filters(docs=a.doc, year_from=a.year_from, year_to=a.year_to)
+        if a.theme:
+            run, _, tid = a.theme.rpartition(":")
+            if not run or not tid.isdigit():
+                print("A theme is <run id>:<theme id>.", file=sys.stderr)
+                return 1
+            f.theme = (run, int(tid))
+        if a.code:
+            if not a.framework:
+                print("Say the codebook of the code with --framework.", file=sys.stderr)
+                return 1
+            f.code = (a.framework, a.code)
+        for y in (a.year_from, a.year_to):
+            if y is not None and not 1 <= y <= 9999:
+                print("A year is a number from 1 to 9999.", file=sys.stderr)
+                return 1
+        f.applied = f.describe()
+        try:
+            m = conceptmap.concept_map(ws, f, a.n)
+        except KeyError:
+            print("No such set of themes: see enlens themes.", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        if a.json:
+            _print(m)
+        else:
+            print(conceptmap.as_text(m))
+        return 0
     return 1
 # end of 0.18.1 part A
 
@@ -1140,3 +1201,8 @@ def _cmd_part_b(a, ws) -> int:
         return 0
     return 1
 # end of 0.18.1 part B
+
+
+# last, so every name above exists when it runs (`python -m enlens_claims.cli` found no _PART_A)
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())
