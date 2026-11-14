@@ -154,7 +154,16 @@ export async function newCodebook(start = "fresh", opts = {}) {
     body.source = picked;
   }
   try {
-    const res = await api("POST", base, body);
+    let res;
+    try { res = await api("POST", base, body); } catch (e) {
+      // a .qdpx ENLENS wrote with several codebooks: choose one, and send it again (qdc_import.SeveralCodebooks)
+      const several = start === "qdc" && e.data && Array.isArray(e.data.codebooks) ? e.data.codebooks : null;
+      if (!several) throw e;
+      const one = await pickQdcCodebook(several);
+      if (!one) return;
+      body.source.codebook = one;
+      res = await api("POST", base, body);
+    }
     forgetFrameworks();
     if (res.codebook.imported) await importSummary(res.codebook);
     else toast("Codebook made. The research log says so.", "ok");
@@ -168,6 +177,16 @@ async function fileBase64(f) {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+// Which of the codebooks in a project file ENLENS wrote to bring in (each was a "<title> (codebook)" code).
+async function pickQdcCodebook(titles) {
+  let picked = titles[0];
+  const pick = optionCards({ label: "Codebook", value: picked, options: titles.map((t) => ({ value: t, title: t })), onPick: (t) => { picked = t; } });
+  const r = await dialog({ title: "Which codebook?", body: h("div", { class: "stack" },
+    h("p", {}, `The file holds ${plural(titles.length, "codebook")}. Choose the one to bring in.`), pick),
+    actions: [{ text: "Cancel", value: null }, { text: "Bring it in", value: true, primary: true }] });
+  return r ? picked : null;
 }
 
 // What a REFI-QDA codebook brought in became: codes, groups, and what was folded or left out (qdc_import.py).

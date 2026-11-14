@@ -131,7 +131,8 @@ MAXQDA = _qdc("""
   <Code guid="m2" name="Hours" isCodable="true"><Description>Time spent working</Description></Code>
   <Code guid="m3" name="hours" isCodable="true"><Description>Lower-case twin</Description></Code>
 </Code>
-""", origin="MAXQDA 2024").replace(b"<Codes>", b"<Codes>").replace(b"</CodeBook>", b'<Sets><Set guid="s1" name="Mine"/></Sets></CodeBook>')
+""", origin="MAXQDA 2024").replace(b"</CodeBook>", b'<Sets><Set guid="s1" name="Mine"><MemberCode targetGUID="m2"/></Set>'
+                                    b'<Set guid="s2" name="Documents"><MemberSource targetGUID="d1"/></Set></Sets></CodeBook>')
 
 
 def test_maxqda_names_that_differ_only_by_case_and_sets_noted(ws):
@@ -147,6 +148,11 @@ def test_maxqda_names_that_differ_only_by_case_and_sets_noted(ws):
     assert "REFI-QDA" in log[0]["text"]
 
 
+_LAUGHS = ('<?xml version="1.0"?><!DOCTYPE l [<!ENTITY a "lollollollol"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">'
+           '<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;">]><CodeBook><Codes><Code name="x" isCodable="true">'
+           '<Description>&c;</Description></Code></Codes></CodeBook>')
+
+
 @pytest.mark.parametrize("data, says", [
     (_qdc(""), "no codes"),
     (_qdc('<Code guid="h" name="Heading" isCodable="false"/>'), "no codes"),
@@ -156,6 +162,9 @@ def test_maxqda_names_that_differ_only_by_case_and_sets_noted(ws):
      "DOCTYPE"),
     (b'<CodeBook><Codes><!ENTITY x SYSTEM "file:///etc/passwd"></Codes></CodeBook>', "ENTITY"),
     ('<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE x><CodeBook/>'.encode("utf-16"), "DOCTYPE"),
+    # without a byte order mark (QDC-1): the zero bytes say how it is encoded, and the guard still sees the DOCTYPE
+    *[(_LAUGHS.encode(enc), "DOCTYPE") for enc in ("utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be")],
+    (b"<CodeBook><Codes><Code name='a\x00b'/></Codes></CodeBook>", "zero bytes"),
 ])
 def test_files_that_are_refused(ws, data, says):
     with pytest.raises(ValueError, match=says):
@@ -226,6 +235,14 @@ def test_through_the_app(home_api):
     st, res = api("POST", "/api/projects/Demo/codebooks",
                   {"name": "p", "title": "P", "start": "qdc", "source": {"path": "/etc/passwd"}})
     assert st == 400
+    # a project file ENLENS wrote with several codebooks: the answer names them, and one is chosen (QDC-4)
+    two = base64.b64encode(_enlens_project("Remote work", "SDG targets")).decode()
+    st, res = api("POST", "/api/projects/Demo/codebooks", {"name": "two", "title": "Two", "start": "qdc",
+                                                           "source": {"file": two}})
+    assert st == 400 and res["codebooks"] == ["Remote work", "SDG targets"]
+    st, res = api("POST", "/api/projects/Demo/codebooks", {"name": "two", "title": "Two", "start": "qdc",
+                                                           "source": {"file": two, "codebook": "Remote work"}})
+    assert st == 200 and [c["code"] for c in res["codebook"]["codes"]] == ["Remote work code"]
 
 
 @pytest.fixture
@@ -278,11 +295,11 @@ def test_a_project_outside_the_codebook_is_not_kept_element_by_element():
            f'<CodeBook><Codes><Code name="Joy" isCodable="true"/></Codes></CodeBook><Notes>{many}</Notes></Project>').encode()
     tracemalloc.start()
     try:
-        book = qdc_import._safe_root(raw)
+        got = qdc_import._read(raw)
         peak = tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()
-    assert [c.get("name") for c in book.iter() if c.tag.endswith("Code")] == ["Joy"]
+    assert [r.name for r in got.roots] == ["Joy"] and got.title == "P"
     assert peak < 30 * 1024 ** 2, peak
 
 
@@ -335,3 +352,180 @@ def test_enlens_readings_only_for_enlens_files():
                 '<Code name="Hypotheses (ENLENS)" isCodable="true"><Description>Our own</Description></Code>')
     st = qdc_import.to_state(*qdc_import.read_tree(data))
     assert sorted(c["code"] for c in st["codes"]) == ["2 Methods", "Hypotheses (ENLENS)"]
+
+
+# ---- audit fixes (2026-11-14) ---------------------------------------------------------------------------------------
+def test_the_parser_itself_refuses_a_doctype(monkeypatch):
+    """QDC-1: the DOCTYPE is refused by the parser, not only by the first look at the text, so a file whose encoding
+    that look gets wrong is still refused before any entity is declared."""
+    import re
+    monkeypatch.setattr(qdc_import, "_DANGER", re.compile(r"(?!)"))   # the first look sees nothing
+    for data in (_LAUGHS.encode(), _LAUGHS.encode("utf-16-le"), _LAUGHS.encode("utf-16")):
+        with pytest.raises(ValueError, match="DOCTYPE"):
+            qdc_import.read_tree(data)
+
+
+def test_utf16_without_a_byte_order_mark_reads():
+    body = '<?xml version="1.0" encoding="UTF-16"?><CodeBook><Codes><Code name="Élmény"/></Codes></CodeBook>'
+    for enc in ("utf-16-le", "utf-16-be"):
+        roots, _ = qdc_import.read_tree(body.encode(enc))
+        assert [r.name for r in roots] == ["Élmény"]
+
+
+def _quick(fn, limit=2.0):
+    import time
+    t = time.perf_counter()
+    out = fn()
+    assert time.perf_counter() - t < limit
+    return out
+
+
+def test_too_many_codes_are_refused_as_they_are_read():
+    """QDC-2: the reader stops past 10,000 codes before the tree is built; 5,001 named codes are refused after."""
+    with pytest.raises(ValueError, match="more than 10,000 codes"):
+        _quick(lambda: qdc_import.read_tree(_qdc('<Code name="a"/>' * 20_000)))
+    with pytest.raises(ValueError, match="at most 5,000 codes"):
+        qdc_import.to_state(*qdc_import.read_tree(_qdc("".join(f'<Code name="c{i}"/>' for i in range(5001)))))
+
+
+def test_hostile_names_and_descriptions_cost_time_in_step_with_their_length():
+    """QDC-2: many codes of one name, and descriptions or names that made the patterns quadratic."""
+    st = _quick(lambda: qdc_import.to_state(*qdc_import.read_tree(_qdc('<Code name="a"/>' * 5000))))
+    assert len({c["code"] for c in st["codes"]}) == 5000 and st["codes"][-1]["code"] == "a (5000)"
+    many_groups = '<Code name="g"><Code name="x"/></Code>' * 2000
+    st = _quick(lambda: qdc_import.to_state(*qdc_import.read_tree(_qdc(many_groups))))
+    assert len({g["group"].lower() for g in st["groups"]}) == 2000
+    for desc in (("&lt;" + " " * 4000) * 20, "&lt;p&gt;" + "&lt;" * 40_000, "&lt;b " + "x" * 100_000 + "&gt;" * 3):
+        _quick(lambda: qdc_import.to_state(*qdc_import.read_tree(_qdc(f'<Code name="a"><Description>{desc}</Description></Code>'))))
+    name = " ".join(["w"] * 4000)
+    _quick(lambda: qdc_import.to_state(*qdc_import.read_tree(_qdc(
+        f'<Code name="{name}" isCodable="false"><Description>zzz</Description><Code name="c"/></Code>', origin="ENLENS 0.18.8"))))
+
+
+def test_a_definition_that_opens_with_a_label_stays_the_definition(ws):
+    """QDC-3: the first paragraph is always the definition."""
+    csv = ("code,description,group,group_name,when_to_use,when_not_to_use,keywords,examples\n"
+           "eg,Example: the classic case of a definition that opens with a label,,,,,,\n"
+           "kw,Keywords: are the words a code is matched by,g1,g1,,,a; b,\n")
+    codebooks.create(ws, "lab", "Labels", "project", "csv", {"csv": csv})
+    got = _make(ws, qdpx.codebook_xml(ws, "lab"), "lab_back")
+    c = _codes(got)
+    assert c["eg"]["description"] == "Example: the classic case of a definition that opens with a label"
+    assert c["kw"]["description"] == "Keywords: are the words a code is matched by" and c["kw"]["keywords"] == ["a", "b"]
+    assert not c["eg"]["examples"] and got["imported"]["no_description"] == 0
+    st = qdc_import.to_state(*qdc_import.read_tree(_qdc(
+        '<Code name="Trust"><Description>Example: when a participant says they rely on the manager</Description></Code>')))
+    assert st["codes"][0]["description"].startswith("Example: when") and not st["codes"][0]["examples"]
+
+
+def _enlens_project(*books: str) -> bytes:
+    codes = "".join(f'<Code name="{b} (codebook)" isCodable="false"><Code name="{b} code" isCodable="true">'
+                    f'<Description>A code of {b}</Description></Code></Code>' for b in books)
+    return _zip({"project.qde": (f'<Project xmlns="urn:QDA-XML:project:1.0" name="ws" origin="ENLENS 0.18.8"><CodeBook>'
+                                 f'<Codes>{codes}<Code name="Hypotheses (ENLENS)" isCodable="false"/></Codes></CodeBook>'
+                                 f'</Project>').encode()})
+
+
+def test_a_project_with_several_codebooks_asks_which(ws, tmp_path, capsys):
+    """QDC-4: a .qdpx ENLENS wrote with every codebook in use: one is chosen, none merged."""
+    data = _enlens_project("Remote work", "SDG targets")
+    with pytest.raises(qdc_import.SeveralCodebooks, match="“Remote work”, “SDG targets”") as e:
+        qdc_import.from_source({"file": base64.b64encode(data).decode()})
+    assert e.value.extra == {"codebooks": ["Remote work", "SDG targets"]}
+    st = qdc_import.from_source({"file": base64.b64encode(data).decode(), "codebook": "SDG targets"})
+    assert st["title"] == "SDG targets" and [c["code"] for c in st["codes"]] == ["SDG targets code"]
+    with pytest.raises(ValueError, match="no codebook called “Other”"):
+        qdc_import.from_source({"file": base64.b64encode(data).decode(), "codebook": "Other"})
+    # a real export of two codebooks, and the command line
+    codebooks.create(ws, "orig", "Remote work", "project", "csv", {"csv": SOURCE_CSV})
+    codebooks.create(ws, "other", "Other book", "project", "csv", {"csv": "code,description\nx,An x\n"})
+    out = tmp_path / "p.qdpx"
+    qdpx.export_project(ws, out)
+    with pytest.raises(qdc_import.SeveralCodebooks, match="“Other book”"):
+        qdc_import.from_path(out)
+    from enlens_claims import cli
+    assert cli.main(["--ws", str(ws.root), "import-qdc", str(out)]) == 2
+    assert "--codebook" in capsys.readouterr().err
+    assert cli.main(["--ws", str(ws.root), "import-qdc", str(out), "rw", "--codebook", "Remote work"]) == 0
+    assert json.loads(capsys.readouterr().out)["codes"] == 4 and frameworks.get("rw", ws).title == "Remote work"
+
+
+def test_sets_and_the_project_attributes_outside_the_codebook():
+    """QDC-5: a project's sets (children of <Project>) are counted; its name and origin are read in single quotes."""
+    qde = ('<Project xmlns="urn:QDA-XML:project:1.0" name="Interviews" origin="NVivo 14"><CodeBook><Codes>'
+           '<Code guid="p0" name="Work"><Code guid="p1" name="Trust"/></Code></Codes></CodeBook>'
+           '<Sets><Set guid="s1" name="Feelings"><MemberCode targetGUID="p1"/></Set>'
+           '<Set guid="s2" name="Women"><MemberSource targetGUID="d1"/></Set></Sets></Project>')
+    st = qdc_import.to_state(*qdc_import.read_tree(_zip({"project.qde": qde.encode()})))
+    assert st["summary"]["sets"] == 1 and "1 set left out: ENLENS has no sets." in st["summary"]["notes"]
+    qde2 = ("<?xml version='1.0' encoding='utf-8'?><Project xmlns='urn:QDA-XML:project:1.0' name='Interviews' "
+            "origin='ENLENS 0.18.8'><CodeBook><Codes><Code name='Remote work (codebook)' isCodable='false'>"
+            "<Code name='1 Short' isCodable='true'><Description>Short</Description></Code></Code></Codes></CodeBook></Project>")
+    st = qdc_import.to_state(*qdc_import.read_tree(_zip({"project.qde": qde2.encode()})))
+    assert st["title"] == "Remote work" and [c["code"] for c in st["codes"]] == ["1"]
+
+
+def test_sets_over_flat_codes_become_groups():
+    """QDC-6: ATLAS.ti-style code groups. Strict: only flat codes, each in at most one set."""
+    sets = ('<Sets><Set guid="s1" name="Feelings"><MemberCode targetGUID="a"/><MemberCode targetGUID="b"/></Set>'
+            '<Set guid="s2" name="Places"><MemberCode targetGUID="c"/></Set></Sets>')
+    flat = '<Code guid="a" name="Joy"/><Code guid="b" name="Fear"/><Code guid="c" name="Home"/><Code guid="d" name="Other"/>'
+    data = _qdc(flat, origin="ATLAS.ti 24").replace(b"</CodeBook>", sets.encode() + b"</CodeBook>")
+    st = qdc_import.to_state(*qdc_import.read_tree(data))
+    assert {c["code"]: c["group"] for c in st["codes"]} == {"Joy": "Feelings", "Fear": "Feelings", "Home": "Places",
+                                                          "Other": ""}
+    s = st["summary"]
+    assert s["sets_as_groups"] == 2 and s["sets"] == 0 and any("2 sets of codes became groups" in n for n in s["notes"])
+    twice = sets.replace('<MemberCode targetGUID="c"/>', '<MemberCode targetGUID="a"/>')
+    st = qdc_import.to_state(*qdc_import.read_tree(
+        _qdc(flat, origin="ATLAS.ti 24").replace(b"</CodeBook>", twice.encode() + b"</CodeBook>")))
+    assert all(c["group"] == "" for c in st["codes"]) and st["summary"]["sets"] == 2
+    tree = '<Code guid="t" name="Top"><Code guid="a" name="Joy"/></Code><Code guid="b" name="Fear"/>'
+    st = qdc_import.to_state(*qdc_import.read_tree(
+        _qdc(tree, origin="ATLAS.ti 24").replace(b"</CodeBook>", sets.encode() + b"</CodeBook>")))
+    assert st["summary"]["sets_as_groups"] == 0 and st["summary"]["sets"] == 2
+
+
+def test_one_keyword_with_a_comma_survives_a_real_round_trip(ws, monkeypatch):
+    """QDC-7: the exporter marks one keyword holding a comma with ";", so even a build that reports 0.18.7 or 0.0.0
+    (a run from the sources) gives it back whole."""
+    csv = ("code,description,group,group_name,when_to_use,when_not_to_use,keywords,examples\n"
+           "place,Where it is,,,,,\"Paris, France\",\n" "two,Two words,,,,,\"a, b; c\",\n" "plain,Plain,,,,,one,\n")
+    codebooks.create(ws, "kw", "Keywords", "project", "csv", {"csv": csv})
+    for version in ("0.18.7", "0.0.0", "0.19.0"):
+        monkeypatch.setattr(qdpx, "__version__", version)
+        body = qdpx.codebook_xml(ws, "kw")
+        assert "Keywords: Paris, France;<" in body.decode() and "Keywords: one<" in body.decode()
+        c = {x["code"]: x for x in qdc_import.to_state(*qdc_import.read_tree(body))["codes"]}
+        assert (c["place"]["keywords"], c["two"]["keywords"], c["plain"]["keywords"]) == \
+            (["Paris, France"], ["a, b", "c"], ["one"]), version
+
+
+def test_the_command_line_takes_the_title_from_an_accented_file_name(ws, tmp_path, capsys):
+    """QDC-8: without --title, the file's own name (accents and all) is the title."""
+    from enlens_claims import cli
+    d = tmp_path / "Dávid mappa"
+    d.mkdir()
+    for fname, name, title in (("kódkönyv 2024.qdc", "kodkonyv_2024", "kódkönyv 2024"), ("éő.qdc", "eo", "éő")):
+        (d / fname).write_bytes(_qdc('<Code name="A"><Description>a</Description></Code>'))
+        assert cli.main(["--ws", str(ws.root), "import-qdc", str(d / fname)]) == 0
+        out = json.loads(capsys.readouterr().out)
+        assert (out["codebook"], out["title"]) == (name, title)
+
+
+def test_a_deeper_heading_that_cannot_be_coded_has_its_description_counted():
+    """QDC-9: Top › Mid (cannot be coded, with a description) › Leaf."""
+    st = qdc_import.to_state(*qdc_import.read_tree(_qdc(
+        '<Code name="Top"><Code name="Mid" isCodable="false"><Description>Important guidance</Description>'
+        '<Code name="Leaf"/></Code></Code>')))
+    s = st["summary"]
+    assert (s["headings"], s["group_descriptions"]) == (1, 1)
+    assert "1 description of a group or a heading was left out: a group, or a step in the tree, has only a name." \
+        in s["notes"]
+    assert any("has no description or cannot be coded" in n for n in s["notes"])
+
+
+def test_colours_are_counted():
+    """QDC-10: the summary says how many codes had a colour."""
+    st = qdc_import.to_state(*qdc_import.read_tree(NVIVO))
+    assert st["summary"]["colours"] == 1 and "1 code had a colour: ENLENS keeps none." in st["summary"]["notes"]

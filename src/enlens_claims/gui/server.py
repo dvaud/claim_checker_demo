@@ -1776,8 +1776,8 @@ class Handler(BaseHTTPRequestHandler, DocumentsApi, ExploreApi, ChecksApi, Setup
             self._json(502, {"error": str(e), "kind": "backend"})
         except KeyError as e:
             self._json(404, {"error": f"Not found: {e.args[0] if e.args else e}", "kind": "request"})
-        except (ValueError, FileNotFoundError) as e:
-            self._json(400, {"error": str(e), "kind": "request"})
+        except (ValueError, FileNotFoundError) as e:   # `extra`: what else a person may choose from (qdc_import.SeveralCodebooks)
+            self._json(400, {"error": str(e), "kind": "request", **(getattr(e, "extra", None) or {})})
         except PermissionError as e:  # 0.16: a colleague's note or log entry, which only they can change
             self._json(403, {"error": str(e), "kind": "request"})
         except (BrokenPipeError, ConnectionResetError):
