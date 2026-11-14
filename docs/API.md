@@ -456,8 +456,8 @@ and original files are stored there once for the whole team.
   another round of the project: it waits its turn (`waiting_for`); it runs beside checks.
 
 **A storage space of the team's own (0.18.0rc2, roadmap L6: `sync/space.py`, `sync/seal.py`, `sync/storage.py`,
-`sync/b2.py`, `sync/r2.py`, `gui/api_space.py`).** An online storage space (an S3 bucket at Backblaze B2 or Cloudflare
-R2) in place of a shared folder. Each copy keeps a copy of the space on this computer (`<ENLENS folder>/spaces/<space
+`sync/b2.py`, `sync/r2.py`, `sync/webdav.py`, `gui/api_space.py`).** An online storage space (an S3 bucket at
+Backblaze B2 or Cloudflare R2, or a folder in the institution's drive over WebDAV) in place of a shared folder. Each copy keeps a copy of the space on this computer (`<ENLENS folder>/spaces/<space
 id>/`), laid out as a shared folder; a round brings the space's news into it (every file opened and checked: sealed
 for that place, signed by the member whose part it is in), runs the shared folder's round on it, and sends this copy's
 part back, sealed (AES-256-GCM with the project's key, Ed25519 signatures). The project's `config.json` says where the
@@ -465,16 +465,26 @@ space is (`shared_space`, no keys); the keys are in the system's keychain (`keyc
 …/shared-folder` has `"space"` (below) and `"folder"` is the copy on this computer; *Sync now* and the poller are the
 folder's (a space is looked at every 10 minutes at most, and about 20 s after a change). The round's `result` has
 `"space"` (where it is, in words), `"sent"` (files sent) and, when the team moved, `"moved"`. More problem kinds:
-`denied` (the space refused this copy's key: removed from the team, or a key deleted), `full` (the service's cap or
+`denied` (the space refused this copy's key: removed from the team, or a key deleted; a drive that refused the app
+password is asked nothing more until `PUT …/space/drive-password` or `POST …/space/drive-retry`), `not_found` (a drive's
+folder is not where this copy has it: looked for again by its contents every half hour), `full` (the service's cap or
 billing), `set_aside` (a file or the list of members not signed as it must be: nothing of it came in), `no_keys` (this
 computer has not got the space's keys: a project copied from elsewhere; ask for a new invite).
-- `GET …/shared-folder` → as above, with `"space": null | {"id", "service": "b2" | "r2" | "dir", "where", "region",
-  "in_eu", "keeper" (this copy keeps the space's keys: it invites, removes and moves), "joined" (the keeper's copy has
-  let this copy in), "members": [{"part", "person", "name", "me", "keeper", "removed", "since"}], "invites": [{"part",
-  "made_at", "label"}] (not used yet), "set_aside": [{"part", "why", "message", "at"}], "keychain": "macos" |
-  "windows" | "secret-tool" | "file"}`.
+- `GET …/shared-folder` → as above, with `"space": null | {"id", "service": "b2" | "r2" | "webdav" | "dir", "where",
+  "region", "in_eu", "keeper" (this copy keeps the space's keys: it invites, removes and moves), "joined" (the keeper's
+  copy has let this copy in), "members": [{"part", "person", "name", "me", "keeper", "removed", "since"}], "invites":
+  [{"part", "made_at", "label"}] (not used yet), "set_aside": [{"part", "why", "message", "at"}], "keychain": "macos" |
+  "windows" | "secret-tool" | "file", "drive": null | {"host", "folder", "address", "user", "mine" (the folder is in
+  this person's drive), "holder" (otherwise whose it is), "unshare": {part: "enlens" | "by_hand" | "holder_asks" |
+  "holds" | "stays"} (what removing that member does to the sharing)}, "left_to_do": [{"id", "who", "text", "at",
+  "check"}] (a share ENLENS could not stop after a removal; "check": ENLENS looks about once an hour and takes it away
+  when the share is gone), "restored": null | {"at", "files", "text"} (files missing from the space were written
+  again), "refused": null | {"at", "text"} (the drive refused the app password)}`. The last three are the Team tab's
+  standing notices.
 - `GET /api/space/links` → the services' pages the set-up opens (`b2_signup`, `b2_keys`, `b2_caps`, `r2_signup`,
-  `r2_dashboard`, `r2_token`: the link that fills in Cloudflare's token form).
+  `r2_dashboard`, `r2_token`: the link that fills in Cloudflare's token form; `webdav_surfdrive`, `webdav_nextcloud`:
+  a drive's WebDAV address, SURFdrive's and the form of a Nextcloud's), and `keychain` (as in the status: where this
+  computer keeps secrets).
 - `POST /api/projects/<p>/space/b2 {"key_id", "app_key"}` → `{"job": view}` (kind `space-setup`): the owner's set-up
   with a Backblaze master application key. The job checks the key and the region, makes a key of ENLENS's own (or keeps
   the master key, with a warning, when that key may not make keys), a private bucket keeping only each file's latest
@@ -484,18 +494,41 @@ computer has not got the space's keys: a project copied from elsewhere; ask for 
 - `POST /api/projects/<p>/space/r2 {"token", "account_id"?}` → `{"job": view}`: the same at Cloudflare R2 (a bucket in
   the EU jurisdiction). When the token reaches several accounts and none is named, the job's `result` has `"accounts":
   [{"id", "name"}]` and nothing is set up.
-- `POST /api/projects/<p>/space/invites {"label"?}` → `{"link", "message", "part", "status"}`: a new part with its own
-  storage keys, and an invite link (`enlens://join#…`, holding those keys, the project's keys and a one-time secret);
-  `message` is ready to send. The keeper's copy only (400 otherwise). The keeper's next round lets the colleague in.
-- `DELETE /api/projects/<p>/space/invites/<part>` → the status: an invite not used yet is withdrawn (its keys deleted).
-- `DELETE /api/projects/<p>/space/members/<part>` → the status: the colleague's keys are deleted and the project's key
-  is replaced for those who stay. The keeper's copy only.
+- `POST /api/projects/<p>/space/webdav {"address", "user", "password"}` → `{"job": view}`: the owner's set-up in the
+  institution's drive (an app password, kept in the keychain). 400 without all three; an address with a user name or
+  password in it is refused. The job checks them, makes a folder `ENLENS - <project>` at the top of the drive (reading
+  the names of the folders there) and a test file.
+- `PUT /api/projects/<p>/space/drive-password {"user", "password"}` → the status: a new app password, checked on the
+  project's folder before it is kept; the rounds ask the drive again. 400 in plain words when the drive refuses it.
+- `POST /api/projects/<p>/space/drive-retry` → the folder's state: after a refused app password, the next round asks
+  the drive once more (*Try the same one again*).
+- `DELETE /api/projects/<p>/space/notices/<id>` → the folder's state: a standing notice is dealt with: `unshare-<part>`
+  (the person stopped sharing the folder in the drive's website; said in the research log) or `restored`. 400 for one
+  that is not there.
+- `POST /api/space/peek {"link"}` → what the join dialog shows before joining: `{"service", "host", "folder",
+  "address", "known" (a drive of SURF's or one used on this computer: otherwise the person confirms it first),
+  "project", "from"}`; no key. 400 for a link that is not an invite or names a drive ENLENS cannot use safely.
+- `POST /api/projects/<p>/space/invites {"label"?, "drive_user"?}` → `{"link", "message", "part", "status"}`: a new
+  part with its own storage keys, and an invite link (`enlens://join#…`, holding those keys, the project's keys and a
+  one-time secret); `message` is ready to send. The keeper's copy only (400 otherwise). The keeper's next round lets
+  the colleague in. In a drive also `"shared"` (ENLENS shared the folder with `drive_user`), `"shared_with"`: null |
+  {"user", "name"} (the account's display name as the drive gave it, or null when it gave none) and `"share_note"`
+  (what to do in the drive's website instead).
+- `DELETE /api/projects/<p>/space/invites/<part>` → the status with `"warnings": [text]`: an invite not used yet is
+  withdrawn (its keys deleted; in a drive, the folder no longer shared with its account where ENLENS can).
+- `DELETE /api/projects/<p>/space/members/<part>` → the status with `"warnings": [text]`: the colleague's keys are
+  deleted (in a drive, the folder no longer shared with them where ENLENS can; what is left to do also stays in
+  `"left_to_do"`) and the project's key is replaced for those who stay. The keeper's copy only.
 - `POST /api/projects/<p>/space/move {"service": "b2", "key_id", "app_key"} | {"service": "r2", "token",
-  "account_id"?}` → `{"job": view}`: a new space; every member gets a part and keys there, sealed to them in the old
+  "account_id"?} | {"service": "webdav", "address", "user", "password"}` → `{"job": view}`: a new space; every member gets a part and keys there, sealed to them in the old
   space, and their copies follow at their next round. The `result` has `"moved": {"told": n, "not_told": [names]}`
   (the old space could not be reached: send them new invites).
-- `POST /api/projects/<p>/space/join {"link"}` → the status: this project joins the team's space (409 when it has one).
-- `POST /api/join-team {"link", "name"?}` → `{"project"}`: *Join a team* under Projects: a new project (named as the
+- `POST /api/projects/<p>/space/join {"link", "drive"?}` → the status: this project joins the team's space (409 when it
+  has one). `"drive"`, in a team that works in a drive: `{"user", "password", "address"?, "folder"?, "confirmed"?}`;
+  without it such a link answers 400 with kind `drive_needed`; `drive_confirm` (with `"address"`, `"host"`) before
+  anything is sent to a drive neither SURF's nor used on this computer; `folder_not_found` with `"folders"` to choose
+  from.
+- `POST /api/join-team {"link", "name"?, "drive"?}` → `{"project"}`: *Join a team* under Projects: a new project (named as the
   inviter's, or `name`), joined, and made the current project. 400 in plain words for a link that is cut off or not an
   invite.
 - `DELETE /api/projects/<p>/space` → the status: this copy stops using the space and forgets its keys (nothing in the

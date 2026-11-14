@@ -872,8 +872,10 @@ account and app password, and the owner shares the folder, by ENLENS through the
 folder, no password; joining asks for the member's own and finds the shared folder (by its name, then any folder at
 their root or in `Shared` that holds the team's roster), or lets them choose. An invite's drive name must be its
 address's; a drive not used on this computer before (and not SURF's) is confirmed by the member before their password
-goes there. One share per user name; removing unshares when nobody staying uses that account; as on R2, the
-signatures keep each part its writer's. A hand-over never passes the old owner's app password on; the folder stays in
+goes there. One share per user name; removing unshares when nobody staying uses that account, and what ENLENS
+cannot stop stays as a note on the Team tab until it is done (audit of 14 November 2026, which also added: files
+deleted from any kind of space written again, no request after a refused app password, the account's display name at
+an invite, a renamed folder found again); as on R2, the signatures keep each part its writer's. A hand-over never passes the old owner's app password on; the folder stays in
 the first owner's drive (only they share it), so the new owner is pointed to a move into their own drive. *Move to another
 storage space* works to and from WebDAV; members follow a move to a drive only from a drive at the same address (else
 their copy leaves the old space and asks for a new invite). *Not tried with a real SURFdrive, SURF Research Drive or

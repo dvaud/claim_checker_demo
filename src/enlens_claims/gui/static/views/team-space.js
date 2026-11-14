@@ -6,6 +6,10 @@
 // space's keys) invites, removes and moves. Joining a team as a new project is also in the sidebar's project menu
 // (Join a team…, app.js). Built on gui/api_space.py; the round itself is the shared folder's (*Sync now*, team.js).
 // Placed in views.css ("Working together"); the set-up runs in a dialog.
+// Since the WebDAV audit (14 November 2026), three standing notices of the space section, each until it is dealt with
+// (never a pop-up): the drive refused the app password (no round asks it anything until a new one is entered), a share
+// ENLENS could not stop after a removal (until the owner says it is done, or a round sees it gone), and files missing
+// from the space that were written again.
 import { App, api, h, toast, showError, P, plural, field, button, link, input, select, fold, noticeList, notice, dialog,
   confirmDialog, listRow, listGroup, watchJob, navigate, textarea, copyLine, helpMark } from "../lib.js";
 
@@ -56,6 +60,10 @@ function setupSection(ctx) {
     h("div", { class: "btn-row" }, join));
 }
 
+// Where secrets are kept on this computer, in words for a form's help ("file": ENLENS's own file, readable by this
+// person only; otherwise the system's keychain)
+const keptIn = (backend) => (backend === "file" ? "Kept in a file in ENLENS’s folder that only you can read" : "Kept in this computer’s keychain");
+
 // The owner's set-up (or a move to another space), in a dialog. `move`: the team moves there.
 export async function setupDialog(ctx, service, { move = false } = {}) {
   const L = await links();
@@ -98,7 +106,7 @@ export async function setupDialog(ctx, service, { move = false } = {}) {
         h("div", { class: "btn-row" }, surf)),
       h("li", {}, "In the drive’s settings, under ", h("strong", {}, "Security"), ", make an ", h("strong", {}, "app password"), " for ENLENS (on SURFdrive: a WebDAV password). Never use your main password here.",
         field("User name", user, { help: "As the drive’s settings show it: not always your e-mail address." }),
-        field("App password", pass, { help: "Kept in this computer’s keychain, never sent to your colleagues." })),
+        field("App password", pass, { help: `${keptIn(L.keychain)}, never sent to your colleagues. It opens your whole account at the drive, not only the team’s folder.` })),
       h("li", {}, "ENLENS makes a folder for the project in your drive and shares it with each colleague you invite. Each colleague needs an account at the same drive."));
     read = () => ({ address: address.value.trim(), user: user.value.trim(), password: pass.value.trim() });
   }
@@ -285,25 +293,51 @@ function spaceSection(ctx) {
   const holderNote = dav && !dav.mine ? notice({ kind: "attention" }, h("p", {}, sp.keeper
     ? `The folder “${dav.folder}” is in the drive of ${dav.holder}: only they can share it with colleagues or stop sharing it. To take full control, use Move to another storage space below and choose Your institution’s drive: ENLENS makes a folder in your own drive and takes the team there.`
     : `The folder “${dav.folder}” is in the drive of ${dav.holder}.`)) : null;
-  const davPassword = dav ? fold({ sm: true, id: "space-dav-password-fold" }, "A new app password for the drive",
+  const davPassword = dav ? fold({ sm: true, id: "space-dav-password-fold", open: !!sp.refused }, "A new app password for the drive",
     h("p", { class: "muted small team-text" }, "When the drive refuses your app password (it was removed, or expired), make a new one in the drive’s settings, under Security, and enter it here."),
-    h("div", { class: "btn-row" }, button({ sm: true, id: "space-dav-new-password", onClick: () => drivePasswordDialog(ctx, dav) }, "Enter a new app password…"))) : null;
+    h("div", { class: "btn-row" }, button({ sm: true, id: "space-dav-new-password", onClick: () => drivePasswordDialog(ctx, dav, sp) }, "Enter a new app password…"),
+      sp.refused ? button({ kind: "quiet", sm: true, id: "space-dav-retry", onClick: () => retryDrive(ctx) }, "Try the same one again") : null)) : null;
+  // standing notices, each until it is dealt with: never a pop-up
+  const standing = [
+    sp.refused ? { kind: "attention", text: sp.refused.text,
+      action: button({ sm: true, id: "space-refused-password", onClick: () => drivePasswordDialog(ctx, dav, sp) }, "Enter a new app password…") } : null,
+    ...(sp.left_to_do || []).map((t) => ({ kind: "attention",
+      text: `${t.text}${t.check ? " ENLENS looks now and then, and takes this note away when the folder is no longer shared." : ""}`,
+      action: button({ sm: true, id: `space-left-${t.id}`, onClick: () => dismissNotice(ctx, t.id) }, "It is done") })),
+    sp.restored ? { kind: "info", text: sp.restored.text,
+      action: button({ kind: "quiet", sm: true, id: "space-restored-ok", onClick: () => dismissNotice(ctx, "restored") }, "Dismiss") } : null,
+  ].filter(Boolean);
   return section("space", "The storage space",
     h("p", { class: "team-text team-space-where" }, sp.drive ? `The folder “${sp.drive.folder}” in the drive at ${sp.drive.host}` : sp.where, sp.in_eu === false ? " · not in the EU" : null),
-    waiting, holderNote,
+    waiting, holderNote, standing.length ? noticeList(standing) : null,
     aside.length ? noticeList([{ kind: "attention", text: `${plural(aside.length, "file")} in the storage space ${aside.length === 1 ? "was" : "were"} set aside: ${aside[0].message}${aside.length > 1 ? " (and others)" : ""} Nothing of ${aside.length === 1 ? "it" : "them"} came into this project.` }]) : null,
     invites.length ? listGroup(`Invites not used yet (${invites.length})`, ...invites) : null,
     invite ? h("div", { class: "btn-row" }, invite) : (sp.joined ? h("p", { class: "muted small team-text" }, `To add a colleague, ask ${keeper && !keeper.me ? keeper.name : "the owner"} for an invite.`) : null),
     moveFold, davPassword, tech);
 }
 
-async function drivePasswordDialog(ctx, dav) {
+async function dismissNotice(ctx, id) {
+  try {
+    await api("DELETE", `${S(ctx.project)}/notices/${P(id)}`);
+    await ctx.refresh({ force: true });
+  } catch (e) { showError(e); }
+}
+
+async function retryDrive(ctx) {
+  try {
+    await api("POST", `${S(ctx.project)}/drive-retry`, {});
+    await ctx.refresh({ force: true });
+    ctx.startRound();
+  } catch (e) { showError(e); }
+}
+
+async function drivePasswordDialog(ctx, dav, sp) {
   const user = input({ id: "space-dav-user-again", autocomplete: "off", spellcheck: "false", value: dav.user || "" });
   const pass = input({ mono: true, id: "space-dav-password-again", type: "password", autocomplete: "off", spellcheck: "false" });
   const err = h("p", { class: "field-error", role: "alert" });
   await dialog({
     title: "A new app password for the drive",
-    body: h("div", {}, field("User name", user), field("App password", pass, { help: "Kept in this computer’s keychain." }), err),
+    body: h("div", {}, field("User name", user), field("App password", pass, { help: `${keptIn(sp && sp.keychain)}.` }), err),
     actions: [{ text: "Cancel", value: null }, {
       text: "Use it", primary: true, id: "dlg-confirm",
       async onClick() {
@@ -349,7 +383,19 @@ async function inviteDialog(ctx) {
             catch (_) { msg.select(); toast("Selected: copy it with Ctrl+C (or Cmd+C).", "info"); }
           });
           if (dav) {
-            out.append(made.shared ? notice({ kind: "done" }, h("p", {}, `The folder “${dav.folder}” is shared with ${driveUser.value.trim()}.`))
+            const w = made.shared_with || {};
+            const account = w.name ? `${w.name} (${w.user})` : (w.user || driveUser.value.trim());
+            const takeBack = button({ kind: "quiet", sm: true, id: "space-invite-take-back", onClick: async () => {
+              try {
+                const r = await api("DELETE", `${S(ctx.project)}/invites/${P(made.part)}`);
+                const left = ((r && r.warnings) || []).join(" ");
+                out.replaceChildren(notice({ kind: left ? "attention" : "done", live: "status" }, h("p", {}, `The invite was withdrawn: its link opens nothing now${left ? `. ${left}` : `, and the folder is no longer shared with ${w.user}.`}`)));
+                btn.textContent = "Done";
+                ctx.refresh({ force: true });
+              } catch (e) { showError(e); }
+            } }, "Not them: withdraw the invite");
+            out.append(made.shared
+              ? notice({ kind: w.name ? "done" : "attention" }, h("p", {}, `The folder “${dav.folder}” is shared with ${account}, who can read, change and delete what is in it.${w.name ? " Check that this is your colleague." : " The drive did not say whose account this is: check in the drive’s website that it is your colleague’s."}`), takeBack)
               : notice({ kind: "attention" }, h("p", {}, made.share_note || `Share the folder “${dav.folder}” with your colleague in the drive’s website.`)));
           }
           out.append(h("p", {}, "Send this to your colleague, privately (it holds the keys to your storage space). The link works once."), msg, h("div", { class: "btn-row" }, copy));
@@ -364,26 +410,44 @@ async function inviteDialog(ctx) {
   });
 }
 
+// The warnings of a removal or a withdrawn invite: what is left to do stands as a notice on the page (the answer's
+// "space.left_to_do"); only the others are said once, as toasts.
+function sayWarnings(r) {
+  const standing = new Set((((r && r.space) || {}).left_to_do || []).map((t) => t.text));
+  for (const w of (r && r.warnings) || []) if (!standing.has(w)) toast(w, "warn", { ttl: 15000 });
+  return [...standing].length > 0;
+}
+
 async function withdraw(ctx, inv) {
   try {
     const r = await api("DELETE", `${S(ctx.project)}/invites/${P(inv.part)}`);
     toast("The invite was withdrawn: its link opens nothing now.", "ok");
-    for (const w of (r && r.warnings) || []) toast(w, "warn", { ttl: 15000 });
+    sayWarnings(r);
     await ctx.refresh({ force: true });
   } catch (e) { showError(e); }
 }
 
+// What removing a colleague does to a drive's sharing, as the space's state says ("drive.unshare")
+const UNSHARE_WORDS = {
+  enlens: (f, n) => `ENLENS stops sharing the folder “${f}” with ${n}, so they can no longer read or write it.`,
+  by_hand: (f, n) => `ENLENS cannot stop sharing the folder “${f}” with ${n} by itself (it was shared in the drive’s website): you do that there. Until then they can still read and write it; a note on this page reminds you.`,
+  holder_asks: (f, n, dav) => `The folder “${f}” is in the drive of ${dav.holder}: only they can stop sharing it with ${n}. Until they do, ${n} can still read and write it; a note on this page reminds you.`,
+  holds: (f, n) => `The folder “${f}” is in ${n}’s own drive: it stays theirs, with everything the team puts in it. To keep the team’s work from now on away from them, move the team to a folder in your own drive first (Move to another storage space).`,
+  stays: (f, n) => `The folder “${f}” stays shared with ${n}’s account at the drive, because another member or an invite uses the same account.`,
+};
+
 export async function removeMember(ctx, m) {
   const dav = ctx.status && ctx.status.space && ctx.status.space.drive;
+  const how = dav && ((dav.unshare || {})[m.part] || "by_hand");
   const ok = await confirmDialog({ title: `Remove ${m.name} from the storage space?`, confirmText: "Remove",
     message: h("div", {}, h("p", {}, dav
-      ? `The folder “${dav.folder}” stops being shared with ${m.name}, and the project’s key is replaced for everyone else. What ${m.name} shared before stays in the project, and what they already have stays with them.`
+      ? `${UNSHARE_WORDS[how](dav.folder, m.name, dav)} The project’s key is replaced for everyone else, so what is shared from now on is locked against ${m.name}. What ${m.name} shared before stays in the project, and what they already have stays with them.`
       : `${m.name}’s keys to the storage space stop working, and the project’s key is replaced for everyone else. What ${m.name} shared before stays in the project, and what they already have stays with them.`)) });
   if (!ok) return;
   try {
     const r = await api("DELETE", `${S(ctx.project)}/members/${P(m.part)}`);
-    toast(`${m.name} was removed from the storage space.`, "ok");
-    for (const w of (r && r.warnings) || []) toast(w, "warn", { ttl: 20000 });
+    const left = sayWarnings(r);
+    toast(left ? `${m.name} was removed from the storage space. Something is left to do in the drive: see the note on this page.` : `${m.name} was removed from the storage space.`, left ? "warn" : "ok");
     await ctx.refresh({ force: true });
   } catch (e) { showError(e); }
 }

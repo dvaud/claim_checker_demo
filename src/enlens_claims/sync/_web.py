@@ -1,7 +1,11 @@
 """Plain HTTP for the online-storage clients (`storage.py`, `b2.py`, `r2.py`): the standard library only.
 
 `send` makes one request and hands back the answer whatever its status; a network failure is a `NetError` with a
-reason in words. `send_retrying` tries again, with a short back-off, after a cut connection, a 429 or a 5xx.
+reason in words. `send_retrying` tries again, with a short back-off, after a cut connection, a 429 or a 5xx; when the
+service says how long to wait (`Retry-After`, 14 November 2026), it waits that long, or, past `RETRY_AFTER_MAX`, hands
+the answer back so the round ends and the next one tries again. A drive (WebDAV) never has a 429 tried again within
+the same round (`retry_429=False`): a drive that counts too many requests from one address may slow down or block the
+person's other programs and their colleagues behind the same address.
 Redirects are never followed (a signed request must not travel on), and nothing here ever puts a key in a message.
 """
 from __future__ import annotations
@@ -18,6 +22,7 @@ from urllib.parse import urlsplit
 BACKOFF = (0.5, 1.0, 2.0)          # seconds before the 2nd, 3rd and 4th try
 sleep = time.sleep                  # tests replace it
 ERROR_BODY_CAP = 64 * 1024          # an error page is read up to this much
+RETRY_AFTER_MAX = 10.0              # a Retry-After longer than this (seconds) ends the round instead of waiting in it
 _LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
@@ -111,10 +116,27 @@ def is_maintenance(r: Reply) -> bool:
     return r.status == 503 and b"maintenance" in r.body.lower()
 
 
-def send_retrying(build, timeout: float = 60.0, read_cap: int | None = None) -> Reply:
+def retry_after(r: Reply) -> float | None:
+    """The wait a 429 or 503 asks for, in seconds (`Retry-After`: a number of seconds or a date), or None."""
+    v = str(r.headers.get("retry-after") or "").strip()
+    if not v:
+        return None
+    if v.isdigit():
+        return float(v)
+    from email.utils import parsedate_to_datetime
+
+    try:
+        return max(0.0, parsedate_to_datetime(v).timestamp() - time.time())
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+
+
+def send_retrying(build, timeout: float = 60.0, read_cap: int | None = None, retry_429: bool = True) -> Reply:
     """`build()` returns `(method, url, headers, body)` afresh for each try (a signature carries the time).
-    A cut connection, a 429 and a 5xx (but not a maintenance page) are tried again after 0.5, 1 and 2 seconds; the last
-    answer comes back, or the last NetError is raised."""
+    A cut connection, a 429 and a 5xx (but not a maintenance page) are tried again after 0.5, 1 and 2 seconds, or after
+    the wait the answer's Retry-After asks for (its answer comes back at once when that is longer than
+    RETRY_AFTER_MAX); `retry_429` False: a 429 without a Retry-After comes back at once. The last answer comes back, or
+    the last NetError is raised."""
     tries = 1 + len(BACKOFF)
     for i in range(tries):
         last = i == tries - 1
@@ -127,6 +149,14 @@ def send_retrying(build, timeout: float = 60.0, read_cap: int | None = None) -> 
                 continue
             raise
         if (r.status == 429 or r.status >= 500) and not is_maintenance(r) and not last:
+            wait = retry_after(r) if r.status in (429, 503) else None
+            if wait is not None:
+                if wait > RETRY_AFTER_MAX:
+                    return r
+                sleep(max(wait, BACKOFF[i]))
+                continue
+            if r.status == 429 and not retry_429:
+                return r
             sleep(BACKOFF[i])
             continue
         return r

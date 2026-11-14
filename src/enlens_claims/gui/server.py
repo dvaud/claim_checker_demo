@@ -1588,6 +1588,8 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("POST", rf"/api/projects/{P}/space/invites", "post_space_invites"),
     ("DELETE", rf"/api/projects/{P}/space/invites/(m[0-9a-f]{{12}})", "delete_space_invite"),
     ("DELETE", rf"/api/projects/{P}/space/members/(m[0-9a-f]{{12}})", "delete_space_member"),
+    ("DELETE", rf"/api/projects/{P}/space/notices/(restored|unshare-m[0-9a-f]{{12}})", "delete_space_notice"),
+    ("POST", rf"/api/projects/{P}/space/drive-retry", "post_space_drive_retry"),
     ("POST", rf"/api/projects/{P}/space/move", "post_space_move"),
     ("POST", rf"/api/projects/{P}/space/join", "post_space_join"),
     ("DELETE", rf"/api/projects/{P}/space", "delete_space"),

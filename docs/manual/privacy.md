@@ -223,10 +223,22 @@ A storage space (at Backblaze, Cloudflare, or a folder in your institution's dri
   part of the space it is in, as the list of members signed by the space's keeper (the owner) says. A file anyone else
   put there never comes into your project; the *Team* tab lists it. At Backblaze, each colleague's key can write only
   in their own part in the first place. In a drive, each person signs in with their own account and an app password
-  kept in their own keychain; the drive's administrators see the folder's files as the storage company would: locked.
-- **Removing a colleague** deletes their keys to the space (in a drive: stops sharing the folder with them), so they
-  can no longer read or write it, and replaces the project's key for those who stay: what is written afterwards does
-  not open for them. What they already had stays with them, as with *Unshare*.
+  kept on their own computer; the drive's administrators see the folder's files as the storage company would: locked.
+- **Removing a colleague** deletes their keys to the space, so they can no longer read or write it, and replaces the
+  project's key for those who stay: what is written afterwards does not open for them. What they already had stays
+  with them, as with *Unshare*. In a drive, removing stops sharing the folder with them where ENLENS can (the removal
+  dialog says beforehand whether it can). Where it cannot (the folder was shared in the drive's website with an account
+  ENLENS does not know, or it is in someone else's drive), they can still read and write the folder until it is no
+  longer shared with them, and the card *The storage space* says what is left to do until then. The person whose drive
+  holds the folder keeps it: to leave them out, move the team to a folder in your own drive.
+
+**In your institution's drive** (WebDAV), three more things to know:
+- An **app password** opens your whole account at the drive, not only the team's folder. Make one for ENLENS alone,
+  and remove it in the drive's settings when you stop.
+- ENLENS reads the **names of the folders at the top of your drive** (only their names): at set-up, to choose a free
+  name, and when you join, to find the folder shared with you.
+- The drive's **administrators** see the folder's name, which holds the project's name (*ENLENS - <project>*), and the
+  accounts it is shared with. At Backblaze and Cloudflare they see random member identifiers instead.
 
 The keys (the project's, your own, the space's) are kept in this computer's keychain (on a computer without one, in a
 file in ENLENS's folder that only you can read), never in the project, a zip or the space. The space is never the

@@ -16,6 +16,11 @@ Since the review of 14 November 2026: `href_base` (PROPFIND answers name their f
 answers so), `move_then` (statuses a MOVE answers after it was done, one per MOVE), `unlisted` (owner paths a listing
 leaves out), `mtimes` (owner path -> seconds; getlastmodified), `auth_to` (paths asked with an Authorization header).
 A second share of a folder with the same user is refused (403), as Nextcloud does; GET `…/shares?path=` lists them.
+Since the audit of 14 November 2026: `names` (user -> display name: a share's answer and the list of shares give
+`share_with_displayname`, the user name itself when there is none, as Nextcloud does), a share's `permissions` are kept
+(writing through a share without 2|4 answers 403, deleting without 8 too), `fail_headers` (headers sent with a `fail`
+answer, such as Retry-After), `doctype` (text put before every PROPFIND answer's root, such as a DOCTYPE) and
+`no_etag` (listings give no getetag, as some WebDAV servers do not).
 """
 from __future__ import annotations
 
@@ -58,6 +63,10 @@ class State:
         self.unlisted: set[str] = set()
         self.mtimes: dict[str, float] = {}
         self.auth_to: list[str] = []
+        self.names: dict[str, str] = {}
+        self.fail_headers: dict[str, str] = {}
+        self.doctype: str | None = None
+        self.no_etag = False
         self._n = 0
 
     # -- where a user's path is in its owner's files
@@ -90,6 +99,14 @@ class State:
                 if parent == here:
                     out[leaf] = True
         return sorted(out.items())
+
+    def share_of(self, user: str, rel: str) -> dict | None:
+        """The share through which a user reaches this path of theirs (None: their own files)."""
+        rel = rel.strip("/")
+        for sh in self.shares.values():
+            if sh["with"] == user and (rel == sh["mount"] or rel.startswith(sh["mount"] + "/")):
+                return sh
+        return None
 
     def mount_name(self, user: str, name: str) -> str:
         base = f"{self.shares_in}/" if self.shares_in else ""
@@ -166,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
             if st.maintenance:
                 return self._send(503, b"Nextcloud is in maintenance mode")
             if self.command in st.fail:
-                return self._send(st.fail[self.command], b"refused")
+                return self._send(st.fail[self.command], b"refused", dict(st.fail_headers))
             user = self._user()
             if user is None:
                 return self._send(401, b"", {"WWW-Authenticate": 'Basic realm="Nextcloud"'})
@@ -180,6 +197,11 @@ class Handler(BaseHTTPRequestHandler):
             if st.redirect:
                 return self._send(st.redirect[0], b"moved", {"Location": st.redirect[1]})
             base, rel = w
+            sh = st.share_of(user, rel)   # (a share's rights: 1 read, 2 update, 4 create, 8 delete)
+            if sh is not None:
+                need = {"PUT": 2 | 4, "MKCOL": 4, "MOVE": 2 | 4, "DELETE": 8}.get(self.command, 0)
+                if need and not sh["permissions"] & need:
+                    return self._send(403, b"not allowed to write here")
             return getattr(self, "_dav_" + self.command.lower())(user, base, rel.rstrip("/"))
 
     do_GET = do_PUT = do_DELETE = do_POST = do_PROPFIND = do_MKCOL = do_MOVE = _all
@@ -193,7 +215,7 @@ class Handler(BaseHTTPRequestHandler):
         entries = [(rel, real in st.dirs)]
         if real in st.dirs and self.headers.get("Depth", "infinity") == "1":
             entries += [((rel + "/" if rel else "") + n, d) for n, d in st.children(user, rel)]
-        out = ['<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">']
+        out = ['<?xml version="1.0"?>' + (st.doctype or "") + '<d:multistatus xmlns:d="DAV:">']
         hrefs = []
         for name, is_dir in entries:
             href = quote((st.href_base or base) + name + ("/" if is_dir and name else ""), safe="/@")
@@ -207,7 +229,8 @@ class Handler(BaseHTTPRequestHandler):
             cl = "" if is_dir else f"<d:getcontentlength>{size}</d:getcontentlength>"
             lm = f"<d:getlastmodified>{formatdate(st.mtimes.get(r, time.time()), usegmt=True)}</d:getlastmodified>"
             out.append(f"<d:response><d:href>{href}</d:href><d:propstat><d:prop><d:resourcetype>{rt}</d:resourcetype>"
-                       f"{cl}<d:getetag>{etag}</d:getetag>{lm}</d:prop><d:status>HTTP/1.1 200 OK</d:status>"
+                       f"{cl}{'' if st.no_etag else f'<d:getetag>{etag}</d:getetag>'}{lm}</d:prop>"
+                       "<d:status>HTTP/1.1 200 OK</d:status>"
                        "</d:propstat></d:response>")
         out.append("</d:multistatus>")
         return self._send(207, "".join(out).encode(), ctype="application/xml; charset=utf-8")
@@ -313,13 +336,15 @@ class Handler(BaseHTTPRequestHandler):
             st.shares[sid] = {"owner": user, "path": real[len(user) + 1:], "with": with_user,
                               "permissions": int(form.get("permissions") or 31),
                               "mount": st.mount_name(with_user, real.rsplit("/", 1)[-1])}
-            return self._ocs_answer(200, 200, {"id": int(sid), "share_type": 0, "share_with": with_user})
+            return self._ocs_answer(200, 200, {"id": int(sid), "share_type": 0, "share_with": with_user,
+                                               "share_with_displayname": st.names.get(with_user, with_user)})
         if self.command == "GET" and path == OCS:
             q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
             real = st.resolve(user, (q.get("path") or "").strip("/"))
             if real not in st.dirs:
                 return self._ocs_answer(404, 404, message="Wrong path, file/folder does not exist")
             found = [{"id": int(i), "share_type": 0, "share_with": sh["with"], "path": "/" + sh["path"],
+                      "share_with_displayname": st.names.get(sh["with"], sh["with"]),
                       "permissions": sh["permissions"]} for i, sh in st.shares.items()
                      if sh["owner"] == user and f"{user}/{sh['path']}" == real]
             return self._ocs_answer(200, 200, found)

@@ -62,12 +62,14 @@ from .. import __version__, keychain, people
 from ..store import Workspace, now
 from . import folder, seal
 from .seal import Identity, SealProblem
-from .storage import NOT_FOUND, Storage, StorageProblem
+from .storage import FOLDER_GONE, NOT_FOUND, PASSWORD_REFUSED, Storage, StorageProblem
 
 CONFIG = "shared_space"                 # config.json: where this project's storage space is (no keys)
 LINK = "enlens://join#"                 # an invite link: the rest, after the #, is never sent to any server
 MIN_EVERY = 10 * 60                     # a space is looked at every 10 minutes at most (calls cost; speed is no goal)
 FOLLOW_SEARCH_EVERY = 30 * 60           # a copy waiting to follow a move to a drive searches it whole this seldom
+WALK_EVERY = 86400                      # each copy lists what it wrote in the space this seldom (`_walk`)
+LEFT_CHECK_EVERY = 60 * 60              # the keeper looks whether a share left to stop is gone this seldom
 _PART = re.compile(r"m[0-9a-f]{12}")
 _SPACE = re.compile(r"[0-9a-f]{16}")
 _M_FILES = ("person.json", "head.json", "read.json", "waiting.json")
@@ -292,8 +294,11 @@ class _Ctx:
             self.state = {}
         for k in ("remote", "pushed", "aside"):
             self.state.setdefault(k, {})
+        self._saved = json.dumps(self.state)   # (an idle round writes nothing: `save` skips a state that did not change)
         self.problems: list[dict] = []
         self.changed_desc = False
+        self.missing: set[str] = set()   # the space's own files this round asked for and did not find
+        self.walked = False              # this round listed the space (`_walk`)
 
     @property
     def roster(self) -> dict:
@@ -306,16 +311,19 @@ class _Ctx:
     def save(self) -> None:
         import time
 
-        part = self.state_path.with_name(self.state_path.name + ".part")
-        part.write_text(json.dumps(self.state), encoding="utf-8")
-        for i in range(20):   # (Windows: a reader that has the file open makes the replace wait a moment)
-            try:
-                os.replace(part, self.state_path)
-                break
-            except PermissionError:
-                if i == 19:
-                    raise
-                time.sleep(0.05)
+        data = json.dumps(self.state)
+        if data != self._saved or not self.state_path.is_file():
+            part = self.state_path.with_name(self.state_path.name + ".part")
+            part.write_text(data, encoding="utf-8")
+            for i in range(20):   # (Windows: a reader that has the file open makes the replace wait a moment)
+                try:
+                    os.replace(part, self.state_path)
+                    break
+                except PermissionError:
+                    if i == 19:
+                        raise
+                    time.sleep(0.05)
+            self._saved = data
         if self.changed_desc:
             _save(self.ws, self.desc)
 
@@ -558,11 +566,12 @@ def _folder_holder(desc: dict, access: dict | None = None) -> tuple[bool, str]:
     return False, f"{name} ({holder['user']})" if name else str(holder["user"])[:200]
 
 
-def _drive_share(desc: dict, access: dict, with_user: str) -> tuple[str | None, str | None]:
+def _drive_share(desc: dict, access: dict, with_user: str,
+                 named: list | None = None) -> tuple[str | None, str | None]:
     """Share the space's folder with a colleague's user name at the drive: (the share's id, or None and the words that
     tell the owner to share it in the drive's website). One share per user name: an earlier one is used again. When
     the folder is in someone else's drive (the owner's role was handed over), only they can share it: the words say
-    so."""
+    so. `named`: given a list, the account's display name as the drive gave it (or None) is put in it."""
     from . import webdav
 
     mine, holder = _folder_holder(desc, access)
@@ -576,10 +585,13 @@ def _drive_share(desc: dict, access: dict, with_user: str) -> tuple[str | None, 
     if not with_user:
         return None, by_hand
     try:
-        return webdav.share(desc["endpoint"], access.get("user") or "", access.get("password") or "",
-                            desc["folder"], with_user), None
+        sid, name = webdav.share_named(desc["endpoint"], access.get("user") or "", access.get("password") or "",
+                                       desc["folder"], with_user)
     except webdav.WebDAVProblem as e:
         return None, f"ENLENS could not share the folder: {e} {by_hand}"
+    if named is not None:
+        named.append(name)
+    return sid, None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -617,12 +629,16 @@ def _member_access(desc: dict, keeper: dict | None, part: str) -> tuple[dict, li
 
 
 def _drop_access(desc: dict, keeper: dict | None, ids: list[str], part: str | None = None,
-                 others: set[str] | None = None) -> list[str]:
+                 others: set[str] | None = None, left: list | None = None) -> list[str]:
     """Delete a member's storage keys (they can no longer read or write the space). Best effort per key. On a drive,
     stop sharing the folder with them (`part`; `others`: the parts that stay, members and invites waiting); returns
-    what the owner must still do by hand (words), if anything."""
+    what the owner must still do by hand (words), if anything, and puts what stays to be done in `left` (a list:
+    `_drive_unshare`)."""
     if desc.get("service") == "webdav":
-        return _drive_unshare(desc, ids, part, others)
+        words, todo = _drive_unshare(desc, ids, part, others)
+        if todo is not None and left is not None:
+            left.append(todo)
+        return words
     if not ids or desc.get("service") == "dir" or keeper is None:
         return []
     if desc.get("service") == "b2":
@@ -639,36 +655,72 @@ def _drop_access(desc: dict, keeper: dict | None, ids: list[str], part: str | No
     return []
 
 
-def _drive_unshare(desc: dict, ids: list[str], part: str | None = None, others: set[str] | None = None) -> list[str]:
-    """Stop sharing a drive's folder with a colleague (the shares ENLENS made: `share:<id>`), unless a member who
-    stays or an invite still waiting uses the same account at the drive (one share per user name). Returns the words
-    for the owner when something is left to do in the drive's website."""
+def _shared_on(desc: dict, user: str, shares: list[str], rest: set[str]) -> bool:
+    """A part that stays (`rest`) uses the same account at the drive, or one of the same shares."""
+    users = desc.get("drive_users") or {}
+    return any((user and str(users.get(p) or "").strip().lower() == user.lower())
+               or any(f"share:{sid}" in ((desc.get("access_ids") or {}).get(p) or []) for sid in shares) for p in rest)
+
+
+def _drive_unshare(desc: dict, ids: list[str], part: str | None = None,
+                   others: set[str] | None = None) -> tuple[list[str], dict | None]:
+    """Stop sharing a drive's folder with a colleague (the shares ENLENS made: `share:<id>`; else, when their user
+    name is known, the share the drive lists for it, also one made in its website), unless a member who stays or an
+    invite still waiting uses the same account at the drive (one share per user name). Returns (the words for the
+    owner when something is left to do, what stays to be done: {"id", "part", "user", "share_ids", "text", "at",
+    "check"} or None). "check": ENLENS can see by itself whether the folder is still shared with them (it is in this
+    person's drive and the account is known), and tries again now and then (`_check_left_to_do`)."""
     from . import webdav
 
     users = desc.get("drive_users") or {}
     user = str(users.get(part) or "").strip() if part else ""
     shares = [i.split(":", 1)[1] for i in ids or [] if isinstance(i, str) and i.startswith("share:")]
     rest = {p for p in (others if others is not None else set(users) | set(desc.get("access_ids") or {})) if p != part}
-    if any((user and str(users.get(p) or "").strip().lower() == user.lower())
-           or any(f"share:{sid}" in ((desc.get("access_ids") or {}).get(p) or []) for sid in shares) for p in rest):
+    if _shared_on(desc, user, shares, rest):
         return [f"The folder “{desc.get('folder')}” stays shared with {user or 'their account at the drive'}: another "
-                "member of the team, or an invite not used yet, uses the same account."]
+                "member of the team, or an invite not used yet, uses the same account."], None
     who = user or "them"
     access = _get_secret(desc["id"], "access") or {}
     mine, holder = _folder_holder(desc, access)
+    folder_name = desc.get("folder")
+
+    def todo(text: str, check: bool) -> tuple[list[str], dict]:
+        return [text], {"id": f"unshare-{part}", "part": part, "user": user or None, "share_ids": shares,
+                        "text": text, "at": now(), "check": check}
+
+    holder_user = str(((desc.get("drive_owner") or {}) if isinstance(desc.get("drive_owner"), dict) else {})
+                      .get("user") or "").strip().lower()
+    if user and holder_user and user.lower() == holder_user and not mine:
+        # the folder is in the removed person's own drive: nobody can stop sharing it with them
+        return todo(f"The folder “{folder_name}” is in the drive of {holder}, so it stays theirs, with everything the "
+                    "team puts in it. To keep the team's work from now on away from them, move the team to a folder "
+                    "in your own drive (Move to another storage space).", False)
     if not mine:
-        return [f"The folder “{desc.get('folder')}” is in the drive of {holder}: only they can stop sharing it. Ask "
-                f"them to stop sharing it with {who} in the drive's website, so {who} can no longer read or write it."]
-    by_hand = (f"Stop sharing the folder “{desc.get('folder')}” with {who} in the drive's website, so they can no "
-               "longer read or write it.")
-    if not shares:
-        return [by_hand]
-    for sid in shares:
-        try:
+        return todo(f"The folder “{folder_name}” is in the drive of {holder}: only they can stop sharing it. Ask them "
+                    f"to stop sharing it with {who} in the drive's website, so {user or 'they'} can no longer read or "
+                    "write it.", False)
+    by_hand = (f"Stop sharing the folder “{folder_name}” with {who} in the drive's website, so they can no longer "
+               "read or write it.")
+    if not shares and not user:
+        return todo(by_hand, False)
+    try:
+        if not shares:   # (shared in the drive's website: the drive's own list says which share is theirs)
+            found = webdav.find_share(desc["endpoint"], access.get("user") or "", access.get("password") or "",
+                                      desc["folder"], user)
+            shares = [found] if found else []
+        for sid in shares:
             webdav.unshare(desc["endpoint"], access.get("user") or "", access.get("password") or "", sid)
-        except webdav.WebDAVProblem as e:
-            return [f"ENLENS could not stop sharing the folder ({e}). {by_hand}"]
-    return []
+    except webdav.WebDAVProblem as e:
+        return todo(f"ENLENS could not stop sharing the folder ({e}). {by_hand}",
+                    e.kind not in ("no_share_api", "no_share_path"))
+    return [], None
+
+
+def _with_left(desc: dict, left: list[dict], who: str) -> list[dict]:
+    """The space's list of what stays to be done in the drive, with `left` (for `who`, a name for the Team tab) in
+    place of anything for the same part."""
+    parts = {t["part"] for t in left}
+    return [t for t in desc.get("left_to_do") or [] if t.get("part") not in parts] + [{**t, "who": who} for t in left]
 
 
 def _public_desc(desc: dict) -> dict:
@@ -729,8 +781,10 @@ def parse_link(text: str) -> dict:
 def _invite_unlocked(ws: Workspace, label: str | None = None, drive_user: str | None = None) -> dict:
     """*Invite a colleague*: a new part in the space with its own storage keys, and a link holding them, the project's
     keys and a one-time secret that binds the part to whoever uses it first. Returns {"link", "part", "message"}; on a
-    drive also "shared" (ENLENS shared the folder with `drive_user`, the colleague's user name there) and "share_note"
-    (what the owner must do in the drive's website instead)."""
+    drive also "shared" (ENLENS shared the folder with `drive_user`, the colleague's user name there), "shared_with"
+    ({"user", "name"}: the account and its display name as the drive gave it, or None: the owner checks it is their
+    colleague's, and can withdraw the invite at once) and "share_note" (what the owner must do in the drive's website
+    instead)."""
     desc = configured(ws)
     if desc is None:
         raise SpaceProblem("Set up a storage space for this project first.", "no_space")
@@ -740,12 +794,15 @@ def _invite_unlocked(ws: Workspace, label: str | None = None, drive_user: str | 
     keeper = _get_secret(desc["id"], "keeper")
     part = _new_part()
     access, ids = _member_access(desc, keeper, part)
-    share_note, drive_user = None, (drive_user or "").strip()[:200] or None
+    share_note, drive_user, named = None, (drive_user or "").strip()[:200] or None, []
     if desc.get("service") == "webdav":   # (one share per user name at the drive: `webdav.share` finds an earlier one)
-        share_id, share_note = _drive_share(desc, _get_secret(desc["id"], "access") or {}, drive_user or "")
+        share_id, share_note = _drive_share(desc, _get_secret(desc["id"], "access") or {}, drive_user or "", named)
         ids = [f"share:{share_id}"] if share_id else []
         if drive_user:
-            desc = {**desc, "drive_users": {**(desc.get("drive_users") or {}), part: drive_user}}
+            desc = {**desc, "drive_users": {**(desc.get("drive_users") or {}), part: drive_user},
+                    # (shared with this account again on purpose: what was left to do for it is done with)
+                    "left_to_do": [t for t in desc.get("left_to_do") or []
+                                   if str(t.get("user") or "").lower() != drive_user.lower()]}
     join = seal.new_key()
     names, epochs = _keys(desc["id"])
     _put_secret(desc["id"], f"invite:{part}", {"join": seal.b64(join)})
@@ -775,7 +832,8 @@ def _invite_unlocked(ws: Workspace, label: str | None = None, drive_user: str | 
     _note(ws, "space-invite", f"Made an invite link to the storage space{f' for {label.strip()[:80]}' if label else ''}.")
     out = {"link": link, "part": part, "message": message}
     if desc.get("service") == "webdav":
-        out.update(shared=bool(ids), share_note=share_note)
+        out.update(shared=bool(ids), share_note=share_note,
+                   shared_with={"user": drive_user, "name": named[0] if named else None} if ids else None)
     return out
 
 
@@ -786,12 +844,22 @@ def _cancel_invite_unlocked(ws: Workspace, part: str) -> dict:
         raise SpaceProblem("There is no such invite waiting.", "no_invite")
     keeper = _get_secret(desc["id"], "keeper")
     ids = (desc.get("access_ids") or {}).get(part) or []
-    left_to_do = _drop_access(desc, keeper, ids, part, _staying_parts(ws, desc, part))
+    label = next((i.get("label") for i in desc.get("invites") or [] if i.get("part") == part), None)
+    left: list[dict] = []
+    left_to_do = _drop_access(desc, keeper, ids, part, _staying_parts(ws, desc, part), left)
     desc = {**desc, "invites": [i for i in desc.get("invites") or [] if i.get("part") != part],
             "access_ids": {k: v for k, v in (desc.get("access_ids") or {}).items() if k != part},
             "drive_users": {k: v for k, v in (desc.get("drive_users") or {}).items() if k != part}}
+    if left:
+        for t in left:
+            t["text"] = t["text"].replace("with them", f"with {label or 'the colleague you invited'}")
+        desc["left_to_do"] = _with_left(desc, left, label or "the colleague you invited")
+        left_to_do = [w.replace("with them", f"with {label or 'the colleague you invited'}") for w in left_to_do]
     keychain.delete(_secret_name(desc["id"], f"invite:{part}"))
     _save(ws, desc)
+    if left:
+        _note(ws, "space-invite", f"Withdrew {f'the invite for {label}' if label else 'an invite'}; left to do: "
+                                  f"{left[0]['text']}")
     base = mirror_of(ws)
     try:   # (a note that a key file for it was set aside goes with it)
         st = json.loads((base / ".space-state.json").read_text(encoding="utf-8"))
@@ -1069,6 +1137,7 @@ def _space_file(ctx: _Ctx, name: str) -> bytes | None:
         return ctx.store.get(name, max_size=_CAP["space"])
     except StorageProblem as e:
         if e.kind == NOT_FOUND:
+            ctx.missing.add(name)
             return None
         if e.kind == "too_large":
             ctx.problem("set_aside", f"A file of the storage space ({name.rsplit('/', 1)[-1]}) is larger than ENLENS "
@@ -1501,8 +1570,9 @@ def _remove_member_unlocked(ws: Workspace, part: str) -> dict:
         if m is None or m.get("removed") or part == ctx.desc["part"]:
             raise SpaceProblem("There is no such colleague in the storage space.", "no_member")
         others = {p for p in _active(roster) if p != part} | {i.get("part") for i in ctx.desc.get("invites") or []}
+        left: list[dict] = []
         left_to_do = _drop_access(ctx.desc, _get_secret(ctx.id, "keeper"),
-                                  (ctx.desc.get("access_ids") or {}).get(part) or [], part, others)
+                                  (ctx.desc.get("access_ids") or {}).get(part) or [], part, others, left)
         m["removed"] = now()
         _write_roster(ctx, roster, rekey=True)
         ctx.desc["access_ids"] = {k: v for k, v in (ctx.desc.get("access_ids") or {}).items() if k != part}
@@ -1513,9 +1583,15 @@ def _remove_member_unlocked(ws: Workspace, part: str) -> dict:
     finally:
         ctx.save()
     name = _member_name(ws, m.get("person"))
-    _note(ws, "space-removed", f"Removed {name} from the storage space; the project's key was replaced.")
+    words = [w.replace("with them", f"with {name}") for w in left_to_do or []]
+    if left:   # (kept on the Team tab until it is done: `dismiss`, or a round sees the share gone)
+        for t in left:
+            t["text"] = t["text"].replace("with them", f"with {name}")
+        _save(ws, {**configured(ws), "left_to_do": _with_left(configured(ws), left, name)})
+    _note(ws, "space-removed", f"Removed {name} from the storage space; the project's key was replaced."
+          + (f" Left to do: {left[0]['text']}" if left else ""))
     out = status(ws)
-    out["warnings"] = [w.replace("with them", f"with {name}") for w in left_to_do or []]
+    out["warnings"] = words
     return out
 
 
@@ -1661,6 +1737,8 @@ def _read_moved(ctx: _Ctx) -> dict | None:
             drive_desc, access = _drive_for_join(sp, {**(ctx.access or {}), "address": ctx.desc.get("endpoint"),
                                                       "confirmed": True}, full=full)
         except SpaceProblem as e:
+            if e.kind == "denied":
+                ctx.state["refused"] = {"at": now(), "user": (ctx.access or {}).get("user")}
             ctx.problem("moved", f"The team moved to a folder in the drive at {sp.get('host')} (“{sp.get('folder')}”), "
                                  f"and your copy follows once it can open it: {e} Until then it works with the old "
                                  "storage space.")
@@ -1726,11 +1804,20 @@ def _sync_now_unlocked(ws: Workspace, progress: Progress | None = None, should_s
     except SpaceProblem as e:
         out["problems"].append({"kind": e.kind, "person": None, "message": str(e), "seq": None})
         return out
+    refused = ctx.state.get("refused")
+    if isinstance(refused, dict):   # (nothing is asked of the drive, and nothing written, until a new app password)
+        out["problems"].append({"kind": "denied", "person": None, "seq": None, "message": _refused_words(refused)})
+        return out
 
     def storage_problem(e: StorageProblem, doing: str) -> None:
         kind = "unreachable" if e.kind in ("unreachable", "maintenance") else e.kind
-        out["problems"].append({"kind": kind, "person": None, "seq": None,
-                                "message": f"ENLENS could not {doing} the storage space: {e}"})
+        message = f"ENLENS could not {doing} the storage space: {e}"
+        if getattr(e, "why", None) == PASSWORD_REFUSED and ctx.desc.get("service") == "webdav":
+            ctx.state["refused"] = {"at": now(), "user": ctx.access.get("user")}
+            message = _refused_words(ctx.state["refused"])
+        elif getattr(e, "why", None) == FOLDER_GONE and ctx.desc.get("service") == "webdav":
+            message = _folder_gone(ctx)
+        out["problems"].append({"kind": kind, "person": None, "seq": None, "message": message})
 
     try:
         say("space", "Looking in the storage space", {})
@@ -1765,9 +1852,17 @@ def _sync_now_unlocked(ws: Workspace, progress: Progress | None = None, should_s
     try:
         if not any(x.get("person") is None and x.get("kind") != "set_aside" for x in out["problems"]):
             say("space", "Sending your shared work to the storage space", {})
+            back = _walk(ctx)
+            if ctx.keeper and ctx.missing & {"space/project.json"} and ctx.state.get("project_sent"):
+                ctx.state.pop("project_sent", None)   # (written again by `_push`)
+                back.append("space/project.json")
             out["sent"] = _push(ctx)
+            back += _put_back_roster(ctx)
+            if back:
+                _restored(ctx, back)
             _hand_over_if_owner_changed(ctx)
             _clean_temporaries(ctx)
+            _check_left_to_do(ctx)
     except StorageProblem as e:
         storage_problem(e, "write to")
     finally:
@@ -1778,7 +1873,8 @@ def _sync_now_unlocked(ws: Workspace, progress: Progress | None = None, should_s
 
 def _clean_temporaries(ctx: _Ctx) -> None:
     """The keeper's round on a drive removes what writes cut off halfway left behind (hidden `.enlens-…` files older
-    than a day): the whole space is looked through once a day, a handful of files removed per round, best effort."""
+    than a day): the whole space is looked through once a day (with `_walk`'s listing when it made one this round), a
+    handful of files removed per round, best effort."""
     from .storage import WebDAVStorage
 
     if not ctx.keeper or not isinstance(ctx.store, WebDAVStorage):
@@ -1787,11 +1883,155 @@ def _clean_temporaries(ctx: _Ctx) -> None:
     if isinstance(last, (int, float)) and 0 <= time.time() - last < 86400:
         return
     try:
-        ctx.store.list("")
+        if not ctx.walked:
+            ctx.store.list("")
         if ctx.store.clean_temporaries(86400, 5) < 5:   # (more left: the next round goes on)
             ctx.state["temporaries_at"] = time.time()
     except StorageProblem:
         pass
+
+
+# ---------------------------------------------------------------------------------------------
+# files that went from the space by other hands (14 November 2026, the WebDAV audit, DAV-2): a drive shows the folder
+# in each member's files, in its website and in a desktop sync program, where deleting is one click
+# ---------------------------------------------------------------------------------------------
+def _walk(ctx: _Ctx) -> list[str]:
+    """Once a day (`WALK_EVERY`), list what this copy wrote in the space (the keeper on a drive: the whole space, the
+    listing the clean-up of temporary files uses too; anyone else: their own part), and forget having sent what is
+    not there any more, so `_push` writes it again. Returns the names that were missing. Every kind of space."""
+    last = ctx.state.get("walked_at")
+    if isinstance(last, (int, float)) and 0 <= time.time() - last < WALK_EVERY:
+        return []
+    from .storage import WebDAVStorage
+
+    whole = ctx.keeper and isinstance(ctx.store, WebDAVStorage)
+    try:
+        there = ctx.store.list("" if whole else f"parts/{ctx.desc['part']}/")
+    except StorageProblem:
+        return []   # (the round says what is wrong elsewhere; looked at again next round)
+    ctx.walked, ctx.state["walked_at"] = True, time.time()
+    pushed = ctx.state["pushed"]
+    gone = [rel for rel, v in pushed.items() if isinstance(v, dict) and v.get("remote") not in there]
+    for rel in gone:
+        pushed.pop(rel, None)
+    return [f"parts/{ctx.desc['part']}/{rel}" for rel in gone]
+
+
+def _put_back_roster(ctx: _Ctx) -> list[str]:
+    """The keeper writes the list of members and the keys again when this round did not find them (with a new number,
+    so every copy takes it); nobody can join without them. No request when they are there: the round reads them
+    anyway."""
+    gone = sorted(ctx.missing & {"space/roster.json", "space/keys.json"})
+    if not gone or not ctx.keeper or ctx.desc["part"] not in (ctx.roster.get("members") or {}):
+        return []
+    _write_roster(ctx, json.loads(json.dumps(ctx.roster)), rekey=False)
+    return gone
+
+
+def _restored(ctx: _Ctx, names: list[str]) -> None:
+    had = ctx.state.get("restored") if isinstance(ctx.state.get("restored"), dict) else {}
+    n = len(names) + (_as_int(had.get("files")) or 0)
+    ctx.state["restored"] = {"at": now(), "files": n}
+    was = "was" if len(names) == 1 else "were"
+    _note(ctx.ws, "space-restored", f"{_files(len(names))} ENLENS had written {was} missing from the storage space and "
+                                    f"{was} written again.")
+
+
+def _files(n: int) -> str:
+    return f"{n} file" + ("" if n == 1 else "s")
+
+
+def _restored_words(desc: dict, restored: dict) -> str:
+    n = _as_int(restored.get("files")) or 0
+    where = ("in the drive's website or by a sync program on someone's computer" if desc.get("service") == "webdav"
+             else "at the storage service")
+    return (f"{_files(n)} ENLENS had written {'was' if n == 1 else 'were'} missing from the storage space and "
+            f"{'was' if n == 1 else 'were'} written again. Someone may have deleted {'it' if n == 1 else 'them'} "
+            f"{where}. Change nothing in the team's folder by hand: ENLENS keeps it.")
+
+
+# ---------------------------------------------------------------------------------------------
+# a drive that refused the app password (DAV-3), a folder moved or renamed (DAV-7), a share left to stop (DAV-1)
+# ---------------------------------------------------------------------------------------------
+def _refused_words(refused: dict) -> str:
+    return ("The drive refused your user name and app password (the app password may have been removed or have "
+            "expired). ENLENS asks the drive nothing more until you enter a new app password on the Team tab, so the "
+            "drive does not start to slow down or block sign-ins from this computer's address.")
+
+
+def _folder_gone(ctx: _Ctx) -> str:
+    """The shared folder is not where this copy has it: look for it again by what it holds (the team's list of
+    members), at most every half hour; the words for the round."""
+    from . import webdav
+
+    name = ctx.desc.get("folder")
+    mine, _holder = _folder_holder(ctx.desc, ctx.access)
+    last = ctx.state.get("folder_search_at")
+    if not isinstance(last, (int, float)) or not 0 <= time.time() - last < FOLLOW_SEARCH_EVERY:
+        ctx.state["folder_search_at"] = time.time()
+        try:
+            found, _top = webdav.find_shared(ctx.desc["endpoint"], ctx.access.get("user") or "",
+                                             ctx.access.get("password") or "", name or "", ctx.id)
+        except webdav.WebDAVProblem:
+            found = None
+        if found and found != name:
+            ctx.desc["folder"] = found
+            ctx.changed_desc = True
+            _note(ctx.ws, "space-folder-found", f"Found the team's folder again in the drive as “{found}” (it was "
+                                                f"“{name}”).")
+            return (f"The team's folder was not at “{name}” any more; ENLENS found it again as “{found}” and uses it "
+                    "from the next round.")
+    if mine:
+        return (f"The folder “{name}” is not in your drive under that name any more. If you renamed or moved it, put it "
+                "back at the top of your drive, under any name: ENLENS looks for it every half hour and finds it again "
+                "by what it holds. Do not make a new one: it holds the team's work.")
+    return (f"The shared folder “{name}” is not in your drive any more, or no longer shared with you. If you renamed "
+            "or moved it, put it back at the top of your drive (or in your folder for shares): ENLENS looks for it "
+            "every half hour and finds it again by itself. Otherwise ask the owner to share it with you again.")
+
+
+def _check_left_to_do(ctx: _Ctx) -> None:
+    """The keeper's round, at most once an hour while a share is left to stop that ENLENS can see (in this person's
+    drive, the account known): stops it when it is still there, and takes the note off the Team tab when it is gone.
+    Nothing is asked of the drive when nothing is left to do."""
+    from . import webdav
+
+    todo = [t for t in ctx.desc.get("left_to_do") or [] if isinstance(t, dict)]
+    if not ctx.keeper or ctx.desc.get("service") != "webdav" or not any(t.get("check") for t in todo):
+        return
+    last = ctx.state.get("left_checked_at")
+    if isinstance(last, (int, float)) and 0 <= time.time() - last < LEFT_CHECK_EVERY:
+        return
+    ctx.state["left_checked_at"] = time.time()
+    if not _folder_holder(ctx.desc, ctx.access)[0]:
+        return
+    staying = set(_active(ctx.roster)) | {i.get("part") for i in ctx.desc.get("invites") or []}
+    user, password = ctx.access.get("user") or "", ctx.access.get("password") or ""
+    keep, done = [], []
+    for t in todo:
+        if not t.get("check"):
+            keep.append(t)
+            continue
+        who, shares = str(t.get("user") or ""), [str(x) for x in t.get("share_ids") or []]
+        if _shared_on(ctx.desc, who, shares, staying - {t.get("part")}):
+            done.append((t, False))   # (shared with that account again on purpose)
+            continue
+        try:
+            if who and not shares:
+                found = webdav.find_share(ctx.desc["endpoint"], user, password, ctx.desc["folder"], who)
+                shares = [found] if found else []
+            for sid in shares:
+                webdav.unshare(ctx.desc["endpoint"], user, password, sid)
+            done.append((t, True))
+        except webdav.WebDAVProblem as e:
+            keep.append({**t, "check": e.kind not in ("no_share_api", "no_share_path")})
+    if done or keep != todo:
+        ctx.desc["left_to_do"] = keep
+        ctx.changed_desc = True
+        for t, said in done:
+            if said:
+                _note(ctx.ws, "space-unshared", f"The folder “{ctx.desc.get('folder')}” is no longer shared with "
+                                                f"{t.get('who') or t.get('user') or 'a removed colleague'}.")
 
 
 def describe(desc: dict | None) -> str | None:
@@ -1829,7 +2069,11 @@ def status(ws: Workspace) -> dict | None:
     """What the Team tab shows of the storage space (None: the project has none): {"id", "service", "where", "region",
     "in_eu", "keeper" (this copy keeps its keys), "joined": whether the owner's copy has bound this copy's part yet,
     "members": [{"part", "person", "name", "me", "keeper", "removed", "since"}], "invites": [{"part", "made_at",
-    "label"}], "set_aside": [{"part", "why", "message", "at"}], "keychain"}."""
+    "label"}], "set_aside": [{"part", "why", "message", "at"}], "keychain", "drive" (`_drive_status`), and the standing
+    notices of the Team tab (14 November 2026): "left_to_do" [{"id", "who", "text", "at", "check"}] (a share ENLENS
+    could not stop after a removal: until `dismiss`, or a round sees it gone), "restored" ({"at", "files", "text"}:
+    files missing from the space were written again; until `dismiss`) and "refused" ({"at", "text"}: the drive refused
+    the app password; no round asks it anything until a new one is entered, or `retry_drive`)}."""
     desc = configured(ws)
     if desc is None:
         return None
@@ -1853,15 +2097,79 @@ def status(ws: Workspace) -> dict | None:
             "set_aside": [{k: v.get(k) for k in ("part", "why", "message", "at")}
                           for v in (state.get("aside") or {}).values()],
             "keychain": keychain.backend(),
-            "drive": _drive_status(desc) if desc.get("service") == "webdav" else None}
+            "drive": _drive_status(desc, roster) if desc.get("service") == "webdav" else None,
+            "left_to_do": [{k: t.get(k) for k in ("id", "who", "text", "at", "check")}
+                           for t in desc.get("left_to_do") or [] if isinstance(t, dict)],
+            "restored": ({**{k: state["restored"].get(k) for k in ("at", "files")},
+                          "text": _restored_words(desc, state["restored"])}
+                         if isinstance(state.get("restored"), dict) else None),
+            "refused": ({"at": state["refused"].get("at"), "text": _refused_words(state["refused"])}
+                        if isinstance(state.get("refused"), dict) else None)}
 
 
-def _drive_status(desc: dict) -> dict:
+def _drive_status(desc: dict, roster: dict | None = None) -> dict:
     """The Team tab's lines about a drive: where, as whom, and whose drive holds the folder ("mine": this person's;
-    "holder": the name to show otherwise, who alone can share the folder or stop sharing it)."""
+    "holder": the name to show otherwise, who alone can share the folder or stop sharing it), and for each member,
+    what removing them does to the sharing ("unshare": {part: "enlens" (ENLENS stops sharing it, or tries to: the
+    share it made, or the one the drive lists for their account), "by_hand" (the owner does, in the drive's website),
+    "holder_asks" (only the folder's holder can), "holds" (the folder is in their own drive: it stays theirs) or
+    "stays" (another member uses the same account)})."""
     mine, holder = _folder_holder(desc)
+    users = desc.get("drive_users") or {}
+    holder_user = str(((desc.get("drive_owner") or {}) if isinstance(desc.get("drive_owner"), dict) else {})
+                      .get("user") or "").strip().lower()
+    active = set(_active(roster or {})) | {i.get("part") for i in desc.get("invites") or []}
+    unshare = {}
+    for part in _active(roster or {}):
+        user = str(users.get(part) or "").strip()
+        shares = [i.split(":", 1)[1] for i in (desc.get("access_ids") or {}).get(part) or []
+                  if isinstance(i, str) and i.startswith("share:")]
+        if _shared_on(desc, user, shares, active - {part}):
+            unshare[part] = "stays"
+        elif user and user.lower() == holder_user and not mine:
+            unshare[part] = "holds"
+        elif not mine:
+            unshare[part] = "holder_asks"
+        else:
+            unshare[part] = "enlens" if shares or user else "by_hand"
     return {"host": desc.get("host"), "folder": desc.get("folder"), "address": desc.get("endpoint"),
-            "user": desc.get("user"), "mine": mine, "holder": None if mine else holder}
+            "user": desc.get("user"), "mine": mine, "holder": None if mine else holder, "unshare": unshare}
+
+
+def _edit_state(ws: Workspace, change: Callable[[dict], bool]) -> None:
+    """Change the copy of the space's state on this computer outside a round (`change` returns whether it did)."""
+    path = mirror_of(ws) / ".space-state.json"
+    try:
+        st = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(st, dict) and change(st):
+        _mirror_put(path, json.dumps(st).encode("utf-8"))
+
+
+def _dismiss_unlocked(ws: Workspace, notice: str) -> dict:
+    """The person says a standing notice of the Team tab is dealt with: "unshare-<part>" (they stopped sharing the
+    folder in the drive's website, or moved the team; said in the research log) or "restored". Returns `status`."""
+    desc = configured(ws)
+    if desc is None:
+        raise SpaceProblem("This project has no storage space.", "no_space")
+    if notice == "restored":
+        _edit_state(ws, lambda st: st.pop("restored", None) is not None)
+        return status(ws)
+    t = next((t for t in desc.get("left_to_do") or [] if isinstance(t, dict) and t.get("id") == notice), None)
+    if t is None:
+        raise SpaceProblem("There is no such notice.", "no_notice")
+    _save(ws, {**desc, "left_to_do": [x for x in desc.get("left_to_do") or [] if x is not t]})
+    _note(ws, "space-unshared", f"Marked as done: the folder “{desc.get('folder')}” is no longer shared with "
+                                f"{t.get('who') or t.get('user') or 'a removed colleague'} (done in the drive's website).")
+    return status(ws)
+
+
+def _retry_drive_unlocked(ws: Workspace) -> dict:
+    """*Try again* after the drive refused the app password: the next round asks the drive once more (a refusal
+    stops the rounds again). Returns `status`."""
+    _edit_state(ws, lambda st: st.pop("refused", None) is not None)
+    return status(ws)
 
 
 def _set_drive_password_unlocked(ws: Workspace, user: str, password: str) -> dict:
@@ -1883,6 +2191,7 @@ def _set_drive_password_unlocked(ws: Workspace, user: str, password: str) -> dic
         raise SpaceProblem(str(e), e.kind) from e
     _put_secret(desc["id"], "access", {"user": user, "password": password})
     _save(ws, {**desc, "user": user})
+    _edit_state(ws, lambda st: st.pop("refused", None) is not None)   # (the rounds ask the drive again)
     webdav.remember(desc["endpoint"])
     _note(ws, "space-password", "Entered a new app password for the drive.")
     return status(ws)
@@ -1891,6 +2200,18 @@ def _set_drive_password_unlocked(ws: Workspace, user: str, password: str) -> dic
 # ---------------------------------------------------------------------------------------------
 # the public calls, one at a time per project (`_locked`)
 # ---------------------------------------------------------------------------------------------
+def dismiss(ws: Workspace, notice: str) -> dict:
+    with _locked(ws):
+        return _dismiss_unlocked(ws, notice)
+dismiss.__doc__ = _dismiss_unlocked.__doc__
+
+
+def retry_drive(ws: Workspace) -> dict:
+    with _locked(ws):
+        return _retry_drive_unlocked(ws)
+retry_drive.__doc__ = _retry_drive_unlocked.__doc__
+
+
 def invite(ws: Workspace, label: str | None = None, drive_user: str | None = None) -> dict:
     with _locked(ws):
         return _invite_unlocked(ws, label, drive_user)

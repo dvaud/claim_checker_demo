@@ -58,16 +58,29 @@ drive…*. The dialog asks for three things:
   Research Drive shows its own;
 - your **user name** at the drive, as its settings show it (on SURFdrive it is not always your e-mail address);
 - an **app password**: in the drive's settings, under *Security*, make a new app password for ENLENS (on SURFdrive it
-  is called a *WebDAV password*). Never give ENLENS your main password. The app password stays in this computer's
-  keychain; nobody else gets it.
+  is called a *WebDAV password*). Never give ENLENS your main password. The app password stays on this computer, in its
+  keychain (or, where there is none, in a file in ENLENS's folder that only you can read); nobody else gets it. Keep in
+  mind that an app password opens **your whole account** at the drive, not only the team's folder: remove it in the
+  drive's settings when you stop working with ENLENS. Type the address without your user name or password in it:
+  they have fields of their own, and ENLENS refuses an address that holds them.
 
-ENLENS checks them, makes a folder named *ENLENS - <your project>* in your drive and tries it.
+ENLENS checks them, makes a folder named *ENLENS - <your project>* in your drive and tries it. To choose a free name,
+it reads the names of the folders at the top of your drive (only their names); a colleague's ENLENS does the same in
+their drive when they join, to find the shared folder.
+
+*What the drive's administrators see:* the folder's name, which holds the project's name (*ENLENS - <your project>*),
+and the accounts it is shared with, as they see every shared folder. The files in it are locked, so they cannot read
+your work. At Backblaze and Cloudflare the names are random instead.
 
 *Inviting a colleague:* *Invite a colleague…* also asks for their **user name at the drive**. ENLENS then shares the
 project's folder with them (they may read and change it, not share it on). Some drives do not let a program share
 folders; then, or when you leave the user name empty, the dialog says so: share the folder with them yourself in the
 drive's website, allowing them to edit. The invite link carries no password. The folder is shared once per account:
 a second invite to the same user name (a colleague's second computer, or an invite made again) uses the same share.
+Where the drive says whose account it is, the dialog shows that name beside the user name (*shared with Carol de Vries
+(cdevries)*): check it is your colleague, since a user name typed one letter wrong can belong to someone else. If it
+is not them, *Not them: withdraw the invite* stops sharing the folder with that account at once. Where the drive shows
+no name, the dialog says so: check the account in the drive's website.
 
 *Joining:* the colleague chooses *Join a team…* and pastes the link as usual. ENLENS sees that the team works in a
 drive, shows the drive's full address, and asks for their own user name there and an app password they made for
@@ -78,9 +91,27 @@ their drive by itself (a shared folder may have another name in their drive, or 
 cannot, it lists the folders at the top of their drive to choose from. If it is not there at all, the owner has not
 shared it with them yet.
 
-*Removing a colleague* stops sharing the folder with them, where ENLENS shared it; otherwise ENLENS says to stop sharing
-it in the drive's website. As at Cloudflare, the drive cannot keep a colleague to their own part of the folder: the
-signatures do (a file written in someone else's name is set aside).
+*Removing a colleague* stops sharing the folder with them where ENLENS can: when it shared the folder itself, or when
+it knows their user name at the drive and the drive lets a program share. The removal dialog says beforehand which
+it will be. Where ENLENS cannot (the folder was shared in the drive's website with an account it does not know, the
+drive has no sharing interface, or the folder is in someone else's drive), the removal still goes ahead, and a note
+stays on the card *The storage space* saying what is left to do, until you choose *It is done* (or, where ENLENS can
+look, until it sees the share gone: it looks about once an hour). Until then the colleague can still read and write the
+folder; the project's key is replaced at once, so what is shared from now on is locked against them. Removing the
+person whose drive holds the folder cannot stop it being shared with them at all: it is theirs. Move the team to a
+folder in your own drive first (*Move to another storage space*). As at Cloudflare, the drive cannot keep a colleague
+to their own part of the folder: the signatures do (a file written in someone else's name is set aside).
+
+*Leave the folder to ENLENS.* The folder shows up in everyone's files, in the drive's website and in the drive's
+desktop program, where deleting is one click. Change nothing in it by hand, and leave it out of the desktop program's
+folders to keep in step (in its settings, choose the folders it keeps in step and untick this one): ENLENS fetches what
+it needs itself. If files go missing anyway, the owner's ENLENS writes the team's list of members and keys again at its
+next round, and each copy writes its own files again within a day; the card *The storage space* then says files were
+missing and were written again. This works the same at Backblaze and Cloudflare.
+
+*If you rename or move the folder* in your drive, ENLENS looks for it about every half hour by what it holds (the
+team's list of members), at the top of your drive and in a *Shared* folder, and uses it again once found. Deeper than
+that it is not found: put it back at the top, under any name.
 
 *Handing the project over* (*Hand over…* on the Team page) works as everywhere, but the folder stays in the drive of
 the person who set it up: only they can share it with new colleagues or stop sharing it, and the dialogs then say to
@@ -96,12 +127,16 @@ permanently*. Whether replaced files are kept at all is a setting of the drive's
 help desk if the space runs short. ENLENS also removes, once a day, the hidden half-written files (named *.enlens-…*)
 that a cut-off connection can leave behind.
 
-*When the drive refuses your app password* (it was removed, or expired), make a new one in the drive's settings and
-enter it under *A new app password for the drive* on the card *The storage space*.
+*When the drive refuses your app password* (it was removed, or expired), ENLENS stops asking the drive anything: a drive
+that sees too many refused sign-ins from one address can slow down or block them, also for your other programs and
+for colleagues in the same building. The card *The storage space* says so until you make a new app password in the
+drive's settings and enter it with *Enter a new app password…*. *Try the same one again* lets the next round try once
+more. When the drive asks ENLENS to slow down, the round stops and the next one tries again.
 
 *Not tried with a real drive yet:* ENLENS's drive support was built and tested against a stand-in that follows the
-WebDAV standard and Nextcloud's documents. If something does not work with your institution's drive, the Team tab
-says what the drive answered.
+WebDAV standard and Nextcloud's documents. In particular, it was not seen how a real drive counts refused sign-ins,
+whether it gives the account's name when sharing, or how it names a folder whose name has accents. If something does
+not work with your institution's drive, the Team tab says what the drive answered.
 
 The dialog gives each company's sign-up address with a *Copy* button rather than a link, so you choose the browser.
 If Backblaze's sign-up page keeps showing *Not so fast!* and the *I'm not a robot* box comes back each time you tick
