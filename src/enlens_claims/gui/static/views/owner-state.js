@@ -109,7 +109,8 @@ export function blocksLine(d) {
   const out = bits.length ? [`${bits.join(", ")}.`] : [];
   if (d.bounds) out.push("Where the text starts or ends was changed.");
   // 0.18.1 (K2): a document marked as theory (the lens the research is read through), or as evidence again
-  if (d.role) out.push(d.role === "evidence" ? "Marked as evidence again." : "Marked as theory: left out of themes, codebook labels, check excerpts and key terms.");
+  // 0.18.8 (N3): or as a working document (the researcher's own draft or notes, never a source)
+  if (d.role) out.push(d.role === "evidence" ? "Marked as evidence again." : d.role === "working" ? "Marked as a working document: never a source, left out of themes, check excerpts, key terms and the corpus’s code counts." : "Marked as theory: left out of themes, codebook labels, check excerpts and key terms.");
   // 0.18.6: a document marked Non-scientific (its judgements no longer count in answers), or counted again
   if (d.nonscientific !== undefined) out.push(d.nonscientific ? "Marked as non-scientific: no judgement of its excerpts counts in an answer." : "Counted as scientific again.");
   return out.join(" ") || "Which passages are read was changed.";

@@ -1721,6 +1721,9 @@ class _Ctx:
         if role != was:  # 0.18.1 (K2): a theory mark the project took is a log entry of its own, as one's own mark is
             who = self.names.get(by or self.owner, "the owner")
             researchlog.record(self.cx, "document-role",
+                               f"Marked as a working document by {who}: never a source, left out of themes, check "
+                               "excerpts, key terms and the corpus's code counts from now on." if role == docrole.WORKING
+                               else  # 0.18.8 (N3)
                                f"Marked as theory by {who}: it is left out of themes, codebook labels, check excerpts "
                                "and key terms from now on." if role else
                                f"Marked as evidence again by {who}: it counts in themes, codebook labels, check excerpts "
@@ -1796,8 +1799,8 @@ def _apply_delta(base: dict, delta: dict) -> dict:
         if v is None:
             out.pop(fp, None)
         elif isinstance(v, list) and v:
-            side = fp.split(":", 1)[0] if fp.startswith(("start:", "end:")) else None
-            if side:  # the text starts (or ends) in one place only
+            side = fp.split(":", 1)[0] if fp.startswith(("start:", "end:", "role:")) else None
+            if side:  # the text starts (or ends) in one place only; 0.18.8 (N3): a document has one role only
                 for other in [f for f in out if f.startswith(side + ":")]:
                     out.pop(other)
             out[fp] = [1 if v[0] else 0, v[1] if len(v) > 1 else None]
@@ -1810,7 +1813,11 @@ def _delta_words(delta: dict) -> dict:
         if fp.startswith(("start:", "end:")):
             out["bounds"] += 1
         elif fp.startswith("role:"):  # 0.18.1 (K2, docrole.py): marked as theory (a role), or as evidence again
-            out["role"] = fp.split(":", 1)[1] if v is not None and v[0] else "evidence"
+            # 0.18.8 (N3): theory to working is a role set and one taken away: the role set wins, in any order
+            if v is not None and v[0]:
+                out["role"] = fp.split(":", 1)[1]
+            else:
+                out.setdefault("role", "evidence")
         elif fp.startswith("mark:"):  # 0.18.6 (docrole.py): marked Non-scientific, or counted as scientific again
             out[fp.split(":", 1)[1]] = bool(v is not None and v[0])
         elif v is None:
@@ -2545,7 +2552,8 @@ def what(p: dict) -> str:
     if p["kind"] == "blocks" and isinstance(det, dict) and det.get("role") and \
             not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):
         out = (f"marking {_q(p.get('title'))} as evidence again" if det["role"] == "evidence" else
-               f"marking {_q(p.get('title'))} as {det['role']} (the lens, not the evidence)")
+               f"marking {_q(p.get('title'))} as a working document (never a source)" if det["role"] == "working"
+               else f"marking {_q(p.get('title'))} as {det['role']} (the lens, not the evidence)")   # (N3: working)
     elif p["kind"] == "blocks" and isinstance(det, dict) and "nonscientific" in det and \
             not any(det.get(x) for x in ("left_out", "restored", "undone", "bounds")):  # 0.18.6
         out = (f"marking {_q(p.get('title'))} as non-scientific (its judgements no longer count in answers)"

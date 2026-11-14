@@ -191,10 +191,10 @@ def more_available(ws: Workspace, claim_id: str, semantic: bool = False) -> bool
     docs = set(opts.get("doc_ids") or [])
     if semantic:
         idx = passage_index(ws)
-        from .docrole import theory_docs  # 0.18.1 (K2): a theory document is never evidence, unless named by hand
-
+        from .docrole import not_evidence_docs  # K2, N3: a theory or working document is never evidence, unless
+        #                                          named by hand
         with ws.connect() as cx:
-            theory = theory_docs(cx) - docs
+            theory = not_evidence_docs(cx) - docs
         return any(pid not in seen and (not docs or d in docs) and d not in theory
                    for pid, d in zip(idx.ids, idx.doc_of))
     return bool(rank_passages(ws, uc["text"], json.loads(uc["terms_json"] or "[]"), k=1,

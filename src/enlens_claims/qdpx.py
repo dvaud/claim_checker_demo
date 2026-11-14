@@ -541,6 +541,8 @@ class _Builder:
                     desc.append(f"DOI: {d['doi']}")
                 if d.get("role") == "theory":
                     desc.append("Theory document: the framework the research is read through, not evidence.")
+                elif d.get("role") == "working":
+                    desc.append("Working document: the researcher's own draft or notes, never a source.")
                 if d.get("nonscientific"):
                     desc.append("Non-scientific: read and judged, never counted in an answer.")
                 if d.get("ai_access") == "none":

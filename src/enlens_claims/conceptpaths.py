@@ -303,7 +303,7 @@ def _profile(g: _Graph, node: str, docs: set[str] | None, top: int = 10) -> dict
 def over_time(ws: Workspace, term: str) -> dict:
     """A concept by publication year: {"label", "years": [{"year", "documents_in_year", **profile}], "no_year":
     {**profile, "documents_in_group"}, "with_year": n documents}."""
-    from .docrole import theory_docs
+    from .docrole import not_evidence_docs as theory_docs  # theory and (N3) working documents: neither is evidence
 
     if not ws.scalar("SELECT 1 FROM terms WHERE term_id=?", (term,)):
         raise KeyError(term)
@@ -327,7 +327,7 @@ def over_time(ws: Workspace, term: str) -> dict:
 def compare_groups(ws: Workspace, term: str, groups: dict[str, list[str]]) -> dict:
     """A concept in two (or more) sets of documents a person picked (not stored): {"label", "groups": [{"name",
     "documents_in_group", **profile}]}. Theory documents in a set are left out (and counted as such)."""
-    from .docrole import theory_docs
+    from .docrole import not_evidence_docs as theory_docs  # theory and (N3) working documents: neither is evidence
 
     if not ws.scalar("SELECT 1 FROM terms WHERE term_id=?", (term,)):
         raise KeyError(term)
@@ -342,5 +342,5 @@ def compare_groups(ws: Workspace, term: str, groups: dict[str, list[str]]) -> di
         picked = {d for d in ids if d in known}
         kept = picked - theory
         out["groups"].append({"name": str(name)[:80], "documents_in_group": len(kept),
-                              "theory_left_out": len(picked & theory), **_profile(g, node, kept)})
+                              "theory_left_out": len(picked & theory), **_profile(g, node, kept)})   # (and N3 working documents)
     return out

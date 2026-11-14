@@ -7,7 +7,16 @@ out of what counts as evidence: themes, labelling with codebooks, the excerpts a
 glossary's counts (and so the evidence map, which is drawn from the checks' excerpts).
 
 In code the mark is a *role*, never "framework": a framework is a codebook. `documents.role` is NULL (evidence) or
-`"theory"`; `"working"` is kept free for N3 (a person's own working documents, also never a source).
+`"theory"` or (0.18.8, roadmap N3) `"working"`.
+
+A **working document** (N3) is the researcher's own draft or notes, kept in the project: read, searched, opened,
+noted, labelled with codebooks (its codes show on its own page and as its own row of the profile's grid) and checked
+against the corpus a sentence at a time (the reading view's *Check against the corpus*), but never a source. It is left
+out of everything a theory document is left out of except the codebook labels (themes, the excerpts a check reads,
+key terms and the glossary's counts, the evidence map, the documents behind no answer), and its labels are never
+added into the corpus's code counts (`profile.grid`, `profile.stats`). Its claims are not found by themselves: at
+Level 0 no rule finds a draft's claims well enough, so the researcher picks the sentence to check. `not_evidence_docs`
+and `evidence_sql` leave out both roles; `theory_docs` is the theory alone (codes from a theory, its examples).
 
 **How the mark travels.** It is kept as one of the document's block choices, under the reserved key `role:theory`
 (beside the fingerprints of *Leave out* / *Restore* and the `start:` / `end:` marks of where the text starts and
@@ -36,9 +45,11 @@ from typing import Any
 from .store import Workspace, now
 
 THEORY = "theory"
-ROLES = (THEORY,)          # (N3 will add "working")
+WORKING = "working"        # 0.18.8 (N3): the researcher's own draft or notes
+ROLES = (THEORY, WORKING)
+NOT_EVIDENCE = ROLES       # every role but evidence (NULL) is never a source
 KEY = "role:"              # the prefix of a role's block choice
-ROLE_TEXT = {THEORY: "Theory", None: "Evidence"}
+ROLE_TEXT = {THEORY: "Theory", WORKING: "Working document", None: "Evidence"}
 NONSCIENTIFIC = "nonscientific"
 MARK = "mark:"             # 0.18.6: the prefix of a mark's block choice (beside the role, never cleared by set_role)
 NONSCI_KEY = MARK + NONSCIENTIFIC
@@ -93,6 +104,23 @@ def theory_docs(cx: sqlite3.Connection) -> set[str]:
         return set()
 
 
+def working_docs(cx: sqlite3.Connection) -> set[str]:
+    """0.18.8 (N3): the ids of the researcher's own working documents."""
+    try:
+        return {r[0] for r in cx.execute("SELECT doc_id FROM documents WHERE role=?", (WORKING,))}
+    except sqlite3.OperationalError:   # a database opened before the column (migrations not run): none
+        return set()
+
+
+def not_evidence_docs(cx: sqlite3.Connection) -> set[str]:
+    """The ids of the documents that are never a source: theory documents and (N3) working documents."""
+    try:
+        return {r[0] for r in cx.execute(
+            f"SELECT doc_id FROM documents WHERE role IN ({','.join('?' * len(NOT_EVIDENCE))})", NOT_EVIDENCE)}
+    except sqlite3.OperationalError:   # a database opened before the column (migrations not run): none
+        return set()
+
+
 def nonscientific_docs(cx) -> set[str]:
     """The ids of the documents marked Non-scientific (0.18.6). `cx`: a connection or a Workspace."""
     try:
@@ -109,12 +137,21 @@ def is_nonscientific(ws: Workspace, doc_id: str) -> bool:
 
 def evidence_sql(col: str = "doc_id") -> str:
     """The one SQL condition that keeps a row of an evidence document, `col` naming its document id: everything that
-    must leave theory out filters through it (or `theory_docs`)."""
+    must leave theory and working documents out filters through it (or `not_evidence_docs`). Values are the module's
+    own constants, never input."""
+    roles = ",".join(f"'{r}'" for r in NOT_EVIDENCE)
+    return f"{col} NOT IN (SELECT doc_id FROM documents WHERE role IN ({roles}))"
+
+
+def labelled_sql(col: str = "doc_id") -> str:
+    """0.18.8 (N3): the SQL condition for the documents a codebook labels: all but theory (a working document is
+    coded like any document, and its codes counted apart)."""
     return f"{col} NOT IN (SELECT doc_id FROM documents WHERE role='{THEORY}')"
 
 
 def set_role(ws: Workspace, doc_id: str, role: str | None, why: str | None = None) -> dict:
-    """Mark a document as theory (`role` "theory") or as evidence again (None). The research log keeps it; under an
+    """Mark a document as theory (`role` "theory"), as a working document ("working", N3) or as evidence again
+    (None). The research log keeps it; under an
     owner the next look at the copy makes it the project's (an Owner or a Co-owner) or a proposal (a Member), as
     *Leave out* is. Returns {"doc_id", "role", "changed", "impact"}."""
     from . import people, researchlog
@@ -136,13 +173,21 @@ def set_role(ws: Workspace, doc_id: str, role: str | None, why: str | None = Non
         reader2.apply_choices(cx, doc_id)
         sync_role(cx, doc_id)
         ws.bump_corpus(cx)
-        text = (f"Marked as theory: the framework the research is read through. It is still read, searched and "
-                f"noted, and left out of themes, codebook labels, check excerpts and key terms from now on."
-                if role else "Marked as evidence again: it counts in themes, codebook labels, check excerpts and "
-                             "key terms from now on.")
+        text = ROLE_LOG[role]
         researchlog.record(cx, "document-role", text, "document", doc_id, title, data={"role": role, "was": was},
                            why=why)
     return {"doc_id": doc_id, "role": role, "changed": True, "impact": impact(ws, doc_id)}
+
+
+ROLE_LOG = {
+    THEORY: "Marked as theory: the framework the research is read through. It is still read, searched and noted, and "
+            "left out of themes, codebook labels, check excerpts and key terms from now on.",
+    WORKING: "Marked as a working document: your own draft or notes. It is still read, searched, noted and labelled "
+             "with codebooks, and checked against the corpus, but never a source: left out of themes, check excerpts, "
+             "key terms and the corpus's code counts from now on.",
+    None: "Marked as evidence again: it counts as a source in themes, codebook labels and their counts, check excerpts "
+          "and key terms from now on.",
+}
 
 
 def impact(ws: Workspace, doc_id: str) -> dict[str, Any]:

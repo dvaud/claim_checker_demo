@@ -60,14 +60,15 @@ class CorpusApi:
                 "nonscientific": ns, "answers": docrole.counted_without(ws, doc_id) if ns else []}
 
     def put_document_role(self, name, doc_id, q):
-        """{"role": "theory" | null, "why"?}: mark a document as theory, or as evidence again. Under an owner, a
+        """{"role": "theory" | "working" | null, "why"?}: mark a document as theory, as a working document (N3), or
+        as evidence again. Under an owner, a
         Member's mark is a proposal (the Team tab's next look writes it), as *Leave out* is."""
         from .. import docrole
 
         body = self._body()
         role = body.get("role")
         if role is not None and role not in docrole.ROLES:
-            raise ApiError(400, "A document's role is \"theory\", or null (evidence).")
+            raise ApiError(400, "A document's role is \"theory\" or \"working\", or null (evidence).")
         why = body.get("why")
         try:
             return docrole.set_role(self.app.ws(name), doc_id, role, str(why).strip() or None if why else None)
@@ -93,7 +94,7 @@ class CorpusApi:
     def get_codebook_theory_docs(self, name, q):
         """{"documents": [{"doc_id", "title", "theory"}]}: the documents a codebook can start from, theory first."""
         ws = self.app.ws(name)
-        rows = ws.query("SELECT doc_id, title, role FROM documents ORDER BY role IS NULL, title")
+        rows = ws.query("SELECT doc_id, title, role FROM documents ORDER BY role IS NOT 'theory', title")   # (N3)
         return {"documents": [{"doc_id": r["doc_id"], "title": r["title"], "theory": r["role"] == "theory"} for r in rows]}
 
     # ---- D3 and D4 -----------------------------------------------------------------------------------------------

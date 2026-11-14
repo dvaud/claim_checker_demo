@@ -742,13 +742,13 @@ def _unread_split(ws: Workspace, hyp_id: str) -> tuple[set[str], set[str], set[s
     if not any(rounds.values()):
         return None
     seen = {x[1] for ts in rounds.values() for t in ts for x in _cc._excerpts(t)}
-    from .docrole import theory_docs
+    from .docrole import not_evidence_docs
     from .search import docs_matching, passage_index
 
     cutoff = max(h[0]["created_at"] or "", h[0]["docs_checked_at"] or "")
     later = {r[0] for r in ws.query("SELECT doc_id FROM documents WHERE added_at > ?", (cutoff,))}
     readable = set(passage_index(ws).doc_of)   # the body text a check searches: none for an unreadable document
-    pool = readable - seen - later - theory_docs(ws._conn())
+    pool = readable - seen - later - not_evidence_docs(ws._conn())   # N3: nor a working document
     hyp_limit = set(json.loads(h[0]["options_json"] or "{}").get("doc_ids") or [])
     strong: set[str] = set()
     some: set[str] = set()

@@ -208,10 +208,11 @@ def _draft_code(term: str, d: dict | None, title: str) -> dict:
 def suggest_examples(ws: Workspace, term: str, k: int = MAX_EXAMPLES, exclude_doc: str | None = None) -> list[dict]:
     """Up to `k` sentences of the evidence documents that use the term (its words, by keyword), to offer as examples:
     never from a theory document. Each {"quote", "doc_id", "title", "page", "start", "end", "project"}."""
-    from .docrole import theory_docs
+    from .docrole import not_evidence_docs
     from .search import rank_passages
 
-    theory = theory_docs(ws._conn()) | ({exclude_doc} if exclude_doc else set())   # (never the theory itself, review 16)
+    # never from a theory or (N3) a working document, nor from the theory itself (review 16)
+    theory = not_evidence_docs(ws._conn()) | ({exclude_doc} if exclude_doc else set())
     words = [w.lower() for w in re.findall(_W, term)]
     if not words:
         return []
@@ -244,9 +245,9 @@ def suggest_examples(ws: Workspace, term: str, k: int = MAX_EXAMPLES, exclude_do
 def keep_evidence_examples(ws: Workspace, codes: list[dict]) -> list[dict]:
     """The codes a person kept, with any example from a theory document taken out (the rule of K2: examples come only
     from the evidence)."""
-    from .docrole import theory_docs
+    from .docrole import not_evidence_docs
 
-    theory = theory_docs(ws._conn())
+    theory = not_evidence_docs(ws._conn())   # N3: nor from a working document
     out = []
     for c in codes:
         if not isinstance(c, dict):
