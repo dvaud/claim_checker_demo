@@ -15,6 +15,7 @@ export const JOB_KINDS = {
   more: { icon: "search", text: "More evidence", link: "#/hypotheses", withJob: true },
   reread: { icon: "refresh", text: "Reading an excerpt again", link: "#/hypotheses" },
   "read-new": { icon: "book-open", text: "Reading the new documents", link: "#/hypotheses", withJob: true, label: (j, t) => j.title || t },
+  "read-unread": { icon: "book-open", text: "Reading the documents not read yet", link: "#/hypotheses", withJob: true },   // roadmap N5
   "second-opinion": { icon: "scale", text: "Second opinion", link: "#/hypotheses", withJob: true,
     label: (j, t) => `${t}${/ on (\d+ hypothes\w+)$/.test(j.title || "") ? ` (${/ on (\d+ hypothes\w+)$/.exec(j.title)[1]})` : ""}` },
   ingest: { icon: "upload", text: "Adding documents", link: "#/sources" },

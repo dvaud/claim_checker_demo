@@ -682,5 +682,88 @@ def new_documents(ws: Workspace, hyp_id: str, matching: bool = True, _seen: set[
             for d in rows]
 
 
+UNREAD_MIN_WORDS = 2   # roadmap N5: "holds the search words" = an excerpt with two different words of the check
+UNREAD_LIST_MAX = 200  # titles listed in each group (the counts are always whole)
+
+
+def unread_documents(ws: Workspace, hyp_id: str) -> dict:
+    """Roadmap N5, the per-hypothesis half (0.18.7): the documents a check never showed an excerpt of, split by
+    whether they hold the check's own words. A neutral count, never a verdict on a document: one never read may be off
+    the hypothesis's topic, or say it in other words. Nothing is read by a model and no result changes.
+
+    A check keeps only the excerpts it picked (`rank_passages` drops the rest of its ranking), so whether a document
+    "came up" cannot be read from what is stored: the search is asked again, with each part's claim and its search
+    words (`terms_json`), one keyword query per part and group (`docs_matching`).
+
+    - *Read in this check*: any round of any part showed an excerpt of it (the excerpts of documents marked Only a
+      local AI or No AI too), whatever the judgement.
+    - *Left out*: theory documents (never evidence); documents added after the check (or after its new documents were
+      last read: they are the check's *documents added since*); documents with no readable excerpt (not read, reading
+      failed, or all their text left out in the reading view); documents a check limited to some documents was limited
+      away from (a part's own limit, else the hypothesis's). Non-scientific documents are read and judged as any
+      other, so they are in it.
+    - `matching`: an excerpt holds at least `UNREAD_MIN_WORDS` different words of a part and its search words
+      (`docs_matching(min_words=…)`); `one_word`: only single words in common; `no_word`: no word in common.
+
+    {"hyp_id", "checked": whether the check read anything yet, "considered": documents it could have read,
+    "matching": [{doc_id, title}], "matching_n", "one_word_n", "no_word": [{doc_id, title}], "no_word_n"}: the lists
+    sorted by title, at most `UNREAD_LIST_MAX` each. A check that has read nothing yet has none.
+    """
+    out: dict = {"hyp_id": hyp_id, "checked": False, "considered": 0, "matching": [], "matching_n": 0,
+                 "one_word_n": 0, "no_word": [], "no_word_n": 0}
+    split = _unread_split(ws, hyp_id)
+    if split is None:
+        return out
+    out["checked"] = True
+    considered, strong, one_word, no_word = split
+    if not considered:
+        return out
+    titles = {r[0]: r[1] or "" for r in ws.query("SELECT doc_id, title FROM documents")}
+
+    def listed(ids: set[str]) -> list[dict]:
+        rows = sorted(({"doc_id": d, "title": titles.get(d, "")} for d in ids), key=lambda x: (x["title"].lower(),
+                                                                                              x["doc_id"]))
+        return rows[:UNREAD_LIST_MAX]
+
+    out.update(considered=len(considered), matching=listed(strong), matching_n=len(strong),
+               one_word_n=len(one_word), no_word=listed(no_word), no_word_n=len(no_word))
+    return out
+
+
+def _unread_split(ws: Workspace, hyp_id: str) -> tuple[set[str], set[str], set[str], set[str]] | None:
+    """(considered, matching, one word only, no word) for `unread_documents`, or None when the check has read
+    nothing yet."""
+    h = ws.query("SELECT created_at, docs_checked_at, options_json FROM hypotheses WHERE hyp_id=?", (hyp_id,))
+    if not h:
+        raise KeyError(hyp_id)
+    claims = [dict(r) for r in ws.query("SELECT claim_id, text, terms_json, options_json FROM user_claims WHERE "
+                                        "hyp_id=? ORDER BY part, rowid", (hyp_id,))]
+    rounds = _cc._light_checks(ws, [c["claim_id"] for c in claims]) if claims else {}
+    if not any(rounds.values()):
+        return None
+    seen = {x[1] for ts in rounds.values() for t in ts for x in _cc._excerpts(t)}
+    from .docrole import theory_docs
+    from .search import docs_matching, passage_index
+
+    cutoff = max(h[0]["created_at"] or "", h[0]["docs_checked_at"] or "")
+    later = {r[0] for r in ws.query("SELECT doc_id FROM documents WHERE added_at > ?", (cutoff,))}
+    readable = set(passage_index(ws).doc_of)   # the body text a check searches: none for an unreadable document
+    pool = readable - seen - later - theory_docs(ws._conn())
+    hyp_limit = set(json.loads(h[0]["options_json"] or "{}").get("doc_ids") or [])
+    strong: set[str] = set()
+    some: set[str] = set()
+    considered: set[str] = set()
+    for c in claims:
+        limit = set(json.loads(c["options_json"] or "{}").get("doc_ids") or []) or hyp_limit
+        mine = pool & limit if limit else pool
+        if not mine:
+            continue
+        considered |= mine
+        terms = json.loads(c["terms_json"] or "[]")
+        strong |= docs_matching(ws, c["text"], terms, mine, min_words=UNREAD_MIN_WORDS)
+        some |= docs_matching(ws, c["text"], terms, mine - strong)
+    return considered, strong, some - strong, considered - strong - some
+
+
 # last, so that this module can be imported before `claimcheck` (the two refer to each other; `_cc.` is read at call time)
 from . import claimcheck as _cc  # noqa: E402

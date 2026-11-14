@@ -1114,6 +1114,27 @@ class App(LibraryMixin, QueueMixin):
         title = "Reading the new documents" + (f" for {len(hyp_ids)} hypotheses" if len(hyp_ids) > 1 else "")
         return self._job("read-new", title, name, run)
 
+    def start_read_unread(self, name: str, hyp_id: str) -> Job:
+        """Roadmap N5: read the documents with the check's search words that it never read, as a further round
+        limited to them (the check is not run again, so the reviews are kept)."""
+        ws = self.ws(name)
+        s = self.settings()
+        be, model = self.backend()
+        emb = home.make_embedder(s)
+
+        def run(job: Job):
+            tracker = Tracker(expand=False)
+            job.tracker = tracker
+            self._wire(job, be, tracker)
+            return claimcheck.read_unread_documents(ws, hyp_id, be, model, k=int(s["k"]),
+                                                    embedder=_usable_embedder(ws, emb),
+                                                    progress=lambda st, m, info=None: tracker.step(st, m, info or {}),
+                                                    should_stop=job.cancel.is_set)
+
+        job = self._job("read-unread", "Reading the documents not read yet", name, run)
+        job.scope = hyp_id  # the result page that started it follows it again after a reload
+        return job
+
     def start_second_opinion(self, name: str, body: dict) -> Job:
         """A second model grades the excerpts already read, keeping only one model in memory at a time."""
         from .. import prompts
@@ -1410,6 +1431,8 @@ ROUTES: list[tuple[str, re.Pattern, str]] = [(m, re.compile("^" + p + "$"), h) f
     ("GET", rf"/api/projects/{P}/map/documents", "get_map_documents"),   # roadmap N5: answers behind each document
     ("GET", rf"/api/projects/{P}/calibration", "get_calibration"),
     ("POST", rf"/api/projects/{P}/hypotheses/{P}/read-new", "post_read_new_one"),
+    ("GET", rf"/api/projects/{P}/hypotheses/{P}/unread", "get_unread"),  # roadmap N5: documents never read
+    ("POST", rf"/api/projects/{P}/hypotheses/{P}/read-unread", "post_read_unread"),
     ("POST", rf"/api/projects/{P}/read-new", "post_read_new"),
     ("POST", rf"/api/projects/{P}/second-opinion", "post_second_opinion"),
     ("GET", r"/api/jobs", "get_jobs"),

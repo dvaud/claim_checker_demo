@@ -944,7 +944,7 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   each source is. The text points to these and does not decide them. If an AI's wording is ever wanted, it is a
   separate draft sentence marked as the AI's (as in K1), never mixed into the sentences made by rules.
 
-**N5. Documents behind no answer** · Level 0 · first half built (unreleased)
+**N5. Documents behind no answer** · Level 0 · built (unreleased)
 - *The wish:* once several hypotheses are checked, see which documents the answers rest on, and which none do, so a
   corpus is not read through the same three documents. A neutral count, never a verdict on a document: one behind no
   answer may be off the hypotheses' topic, or say it in other words.
@@ -954,11 +954,16 @@ meaning too; and search by meaning set up only once per project. Built in 0.17.0
   says the number, and a document's panel says it always. After five checked hypotheses one quiet line above the list
   says how many documents are behind none, with *Show them*; the evidence map's line on documents with no excerpt
   that counts links to the same group.
-- *Still to build, the per-hypothesis half:* on a hypothesis's page, split the documents none of whose excerpts were
-  read into those that hold the check's search words (`docs_matching`, with a stricter bar than one shared word) and
-  those that share no word with it, with *Read these* for the first (a further round limited to them, as for
-  documents added since) and a hint to search with other words for the second. A check keeps only the excerpts it
-  picks (`rank_passages` drops the rest of the ranking), so "never came up in a search" cannot be said from what is
-  stored: it has to be asked again of the search, with the check's own words.
-- Leave out theory documents, documents added after the check, unreadable ones, and those a check was limited away
-  from.
+- *Built, the per-hypothesis half:* on a hypothesis's page, under the evidence, a small card *Documents not read in
+  this check* splits the documents none of whose excerpts any round of any part showed (the excerpts of documents
+  marked *Only a local AI* or *No AI* count as shown) into those that hold the check's words and those that share no
+  word with it (`unread_documents`, `GET …/hypotheses/<id>/unread`, fetched after the page is drawn). A check keeps
+  only the excerpts it picks, so the keyword search is asked again with each part's claim and search words. The
+  stricter bar (`docs_matching(min_words=2)`): an excerpt holds at least two *different* words (stems) of a part and
+  its search words, or every one of them when there are fewer; documents sharing one word only are counted apart.
+  *Read these* (`read_unread_documents`, job `read-unread`) reads them as a further round limited to them, each part
+  the documents that hold its own words, within its limit, as for documents added since; *Search with other words*
+  opens the existing box for the second group. Left out: theory documents, documents added after the check or after
+  its new documents were last read (its *documents added since*), documents with no readable body text (not read,
+  reading failed, or all of it left out), and documents a limited check was limited away from. Non-scientific
+  documents are in it. The Excel summary has *Documents with the search words never read*. Changes no result.
