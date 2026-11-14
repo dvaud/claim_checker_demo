@@ -53,6 +53,7 @@ ROLE_TEXT = {THEORY: "Theory", WORKING: "Working document", None: "Evidence"}
 NONSCIENTIFIC = "nonscientific"
 MARK = "mark:"             # 0.18.6: the prefix of a mark's block choice (beside the role, never cleared by set_role)
 NONSCI_KEY = MARK + NONSCIENTIFIC
+ORIGIN = "document"         # 0.18.8 (N3): `hypotheses.origin` of a check started from a document's text
 
 
 def key(role: str) -> str:
@@ -222,6 +223,22 @@ def _checks_reading(ws: Workspace, doc_id: str) -> list[str]:
         "SELECT h.hyp_id FROM verifications v JOIN user_claims u ON u.claim_id=v.subject_id JOIN hypotheses h "
         "ON h.hyp_id=u.hyp_id WHERE v.subject_kind='user_claim' AND v.doc_id=? GROUP BY h.hyp_id "
         "ORDER BY h.created_at DESC", (doc_id,))]
+
+
+def checks_started_from(ws: Workspace, doc_id: str) -> list[dict]:
+    """0.18.8 (N3): the checks started from the document's text (*Check against the corpus* on a working document),
+    each with its answer now: [{"hyp_id", "text", "status", "status_text"}], newest first. A check remembers the
+    document it was started from (`hypotheses.origin` "document", `origin_id`), not the sentence: the words may
+    have been changed into the claim before it was checked."""
+    rows = ws.query("SELECT hyp_id, text FROM hypotheses WHERE origin=? AND origin_id=? ORDER BY created_at DESC",
+                    (ORIGIN, doc_id))
+    got = _answers(ws, [r[0] for r in rows])
+    out = []
+    for hid, text in rows:
+        h = got.get(hid)   # none yet: the check has just started and has no parts (the checks list leaves it out)
+        out.append({"hyp_id": hid, "text": h["text"] if h else text, "status": h["status"] if h else "running",
+                    "status_text": _text(h) if h else "Being checked"})
+    return out
 
 
 def _answers(ws: Workspace, hyp_ids: list[str]) -> dict[str, dict]:

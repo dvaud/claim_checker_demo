@@ -133,6 +133,32 @@ def test_the_proposal_and_the_log_say_working_document():
     assert got == {"role:working": [1, "role"], "x": [0, None]}
 
 
+def test_a_check_started_from_a_document_is_listed_on_it(project):
+    """0.18.8 (N3's leftover): a check started from a working document's text remembers the document (`origin`
+    "document"), so the document's page lists it with its answer, and the check's result names the document."""
+    from enlens_claims import claimcheck
+    from enlens_claims.check_results import hypothesis_result
+
+    ws, draft, ev = project
+    docrole.set_role(ws, draft, "working")
+    assert docrole.checks_started_from(ws, draft) == []
+    first = claimcheck.create_hypothesis(ws, "Electrolyser plants create local jobs in the region.",
+                                         origin=docrole.ORIGIN, origin_id=draft)
+    other = claimcheck.create_hypothesis(ws, "Desalination plants need workers for the electrolysers.")
+    second = claimcheck.create_hypothesis(ws, "Local workers gain most from the grid connection.",
+                                          origin=docrole.ORIGIN, origin_id=draft)
+    got = docrole.checks_started_from(ws, draft)
+    assert {g["hyp_id"] for g in got} == {first, second} and other not in {g["hyp_id"] for g in got}
+    assert all(g["text"] and g["status"] and g["status_text"] for g in got)
+    assert docrole.checks_started_from(ws, ev[0]) == []
+    r = hypothesis_result(ws, first)
+    assert (r["origin"], r["origin_id"], r["origin_title"]) == ("document", draft, "My chapter draft on hydrogen jobs")
+    assert "origin_title" not in hypothesis_result(ws, other)
+    # its role changed back to evidence: the checks started from it stay listed
+    docrole.set_role(ws, draft, None)
+    assert {g["hyp_id"] for g in docrole.checks_started_from(ws, draft)} == {first, second}
+
+
 # ---- the routes ---------------------------------------------------------------------------------------------------
 def test_the_routes(api, tmp_path):  # noqa: F811
     d = tmp_path / "in"
@@ -152,6 +178,35 @@ def test_the_routes(api, tmp_path):  # noqa: F811
     assert api("GET", "/api/projects/Mine/document-roles")[1] == {"roles": {draft: "working"}, "nonscientific": []}
     assert api("GET", f"/api/projects/Mine/documents/{draft}/role")[1]["role"] == "working"
     assert api("PUT", f"/api/projects/Mine/documents/{draft}/role", {"role": "draft"})[0] == 400
+
+
+def test_a_check_started_from_a_document_by_the_route(api, corpus):  # noqa: F811
+    """POST /checks with `from_doc`: the check remembers the document; GET …/role lists it under `started`; the result
+    names the document. A document not in the project is refused before anything starts."""
+    import time
+
+    from test_queue import _project
+
+    docs = _project(api, corpus)
+    doc = sorted(docs.values())[0]
+    claim = "Electrolysis needs large amounts of fresh water in dry regions."
+    assert api("POST", "/api/projects/P/checks", {"text": claim, "k": 3, "from_doc": "nope"})[0] == 400
+    st, r = api("POST", "/api/projects/P/checks", {"text": claim, "k": 3, "from_doc": doc})
+    assert st == 200
+    jid = r["job"]["id"]
+    try:
+        end, started = time.time() + 15, []
+        while time.time() < end and not started:
+            started = api("GET", f"/api/projects/P/documents/{doc}/role")[1]["started"]
+            time.sleep(0.2)
+        assert [s["text"] for s in started] == [claim]
+        res = api("GET", f"/api/projects/P/hypotheses/{started[0]['hyp_id']}")[1]
+        assert res["origin"] == "document" and res["origin_id"] == doc and res["origin_title"]
+        other = sorted(docs.values())[1]
+        assert api("GET", f"/api/projects/P/documents/{other}/role")[1]["started"] == []
+    finally:
+        api("POST", f"/api/jobs/{jid}/cancel")
+        api.wait(jid)
 
 
 from test_app import api, home  # noqa: E402,F401  (fixtures)
