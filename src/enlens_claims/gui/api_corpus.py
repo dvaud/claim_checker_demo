@@ -31,6 +31,11 @@ ROUTES: list[tuple[str, str, str]] = [
     ("POST", rf"/api/projects/{P}/concept-groups/{P}", "post_concept_groups"),
     # A7 (reader 5): a figure's picture, drawn from the original PDF when it is shown, never stored
     ("GET", rf"/api/projects/{P}/documents/{P}/figures/{P}\.png", "get_figure_image"),
+    # 0.18.8 (K3, nonscientific.py): a hypothesis that counts the non-scientific documents, and the suggestion from
+    # the bibliography's item type (Mark is the route above; No is this POST)
+    ("PUT", rf"/api/projects/{P}/hypotheses/{P}/nonscientific", "put_hypothesis_nonscientific"),
+    ("GET", rf"/api/projects/{P}/documents/{P}/nonscientific-suggestion", "get_nonscientific_suggestion"),
+    ("POST", rf"/api/projects/{P}/documents/{P}/nonscientific-suggestion", "post_nonscientific_suggestion"),
 ]
 DOWNLOADS: set[str] = {"get_figure_image"}  # A7: in an <img>, as get_page_image is
 NOT_A_CHANGE: set[str] = set()
@@ -44,8 +49,12 @@ class CorpusApi:
         from .. import docrole
 
         ws = self.app.ws(name)
+        from .. import nonscientific
+
         return {"roles": {r[0]: r[1] for r in ws.query("SELECT doc_id, role FROM documents WHERE role IS NOT NULL")},
-                "nonscientific": sorted(docrole.nonscientific_docs(ws))}
+                "nonscientific": sorted(docrole.nonscientific_docs(ws)),
+                # 0.18.8 (K3): those the bibliography suggests marking, {doc id: "a newspaper article"}
+                "suggested": {d: x["words"] for d, x in nonscientific.suggestions(ws).items()}}
 
     def get_document_role(self, name, doc_id, q):
         """{"doc_id", "role" (null: evidence), "impact": what was made with it in (docrole.impact)}."""
@@ -209,6 +218,44 @@ class CorpusApi:
             raise ApiError(404, "No such page.")
         return self._send(200, png, "image/png", {"Cache-Control": "private, max-age=3600"})
 
+    # ---- 0.18.8 (K3): the per-hypothesis exception and the bibliography's suggestion (nonscientific.py) ----------
+    def put_hypothesis_nonscientific(self, name, hyp_id, q):
+        """{"count": true | false, "why"?}: count the non-scientific documents in this hypothesis's check, or not
+        again. The answer changes at once: the reply has it before and after (nonscientific.set_counting)."""
+        from .. import nonscientific
+
+        body = self._body()
+        on = body.get("count")
+        if not isinstance(on, bool):
+            raise ApiError(400, "\"count\" is true or false.")
+        why = body.get("why")
+        try:
+            return nonscientific.set_counting(self.app.ws(name), hyp_id, on, str(why) if why else None)
+        except KeyError:
+            raise ApiError(404, "No such result.") from None
+
+    def get_nonscientific_suggestion(self, name, doc_id, q):
+        """{"doc_id", "suggestion": {"item_type", "words", "text"} | null}."""
+        from .. import nonscientific
+
+        ws = self.app.ws(name)
+        if not ws.scalar("SELECT 1 FROM documents WHERE doc_id=?", (doc_id,)):
+            raise ApiError(404, "No such document in this project.")
+        return {"doc_id": doc_id, "suggestion": nonscientific.suggestion(ws, doc_id)}
+
+    def post_nonscientific_suggestion(self, name, doc_id, q):
+        """{"answer": "no", "why"?}: the person's No to the suggestion, kept as a decision (the research log)."""
+        from .. import nonscientific
+
+        body = self._body()
+        if body.get("answer") != "no":
+            raise ApiError(400, "\"answer\" is \"no\" (to mark the document, use its nonscientific route).")
+        why = body.get("why")
+        try:
+            return nonscientific.decline(self.app.ws(name), doc_id, str(why) if why else None)
+        except KeyError:
+            raise ApiError(404, "No such document in this project.") from None
+
 
 def _render_crop(path, page: int, box: tuple[float, float, float, float], scale: float) -> bytes | None:
     """The box (points from the top left of the page, with a margin of a few points) of a PDF page (1-based) as PNG
@@ -238,3 +285,4 @@ def _render_crop(path, page: int, box: tuple[float, float, float, float], scale:
     buf = io.BytesIO()
     img.crop((int(left), int(top), int(right) + 1, int(bottom) + 1)).save(buf, "PNG", optimize=True)
     return buf.getvalue()
+

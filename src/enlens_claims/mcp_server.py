@@ -222,6 +222,11 @@ def _summary(ws, check_id: str) -> dict:
         out["non_scientific_note"] = (f"{nonsci} judged excerpt(s) come from documents the user marked non-scientific "
                                       "(no method or data of their own): they are shown, but never count in the "
                                       "status. Say so when you report them.")
+    if r.get("count_nonscientific") and any(p.get("nonscientific_counted") for p in r["passages"]):  # 0.18.8 (K3)
+        out["non_scientific_counted_here"] = True
+        out["non_scientific_note"] = ("The user set this hypothesis to count documents marked non-scientific (they are "
+                                      "the material it is about), so their grades count in the status here. Say so "
+                                      "when you report them.")
     if r["status_any"] != r["status"]:
         low = sum(1 for e in evidence if (e["confidence"] or 0) < r["threshold"])
         out["note"] = (f"Counting every grade: {claimcheck.STATUS_TEXT.get(r['status_any'], r['status_any']).lower()}. "

@@ -97,7 +97,9 @@ def test_only_non_scientific_support_is_no_evidence(project):
     assert (row["status"], row["status_text"], row["supports"]) == ("unsupported", UNSUPPORTED_NONSCI, 0)
     m = evidence_map(ws)
     assert next(h for h in m["hypotheses"] if h["hyp_id"] == hid)["status"] == "unsupported"
-    assert news not in {d["doc_id"] for d in m["documents"]}
+    # 0.18.8 (K3): shown with a mark of its own, behind no answer
+    assert {d["doc_id"]: d["answers"] for d in m["documents"]}[news] == 0
+    assert m["cells"][hid][news]["counted"] is False
     # counted again: the answer comes back
     back = docrole.set_nonscientific(ws, news, False)
     assert [(a["was"], a["now"]) for a in back["answers"]] == [("unsupported", "supported")]
@@ -141,12 +143,12 @@ def test_the_routes(api, tmp_path):  # noqa: F811
     assert st == 200 and body["nonscientific"] is False and body["answers"] == []
     st, body = api("PUT", f"/api/projects/News/documents/{news}/nonscientific", {"nonscientific": True})
     assert st == 200 and body["nonscientific"] and body["changed"] and body["answers"] == []
-    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": [news]}
+    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": [news], "suggested": {}}
     assert api("GET", f"/api/projects/News/documents/{news}/role")[1]["nonscientific"] is True
     assert api("PUT", f"/api/projects/News/documents/{news}/nonscientific", {"nonscientific": "yes"})[0] == 400
     assert api("PUT", "/api/projects/News/documents/nope/nonscientific", {"nonscientific": True})[0] == 404
     api("PUT", f"/api/projects/News/documents/{news}/nonscientific", {"nonscientific": False})
-    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": []}
+    assert api("GET", "/api/projects/News/document-roles")[1] == {"roles": {}, "nonscientific": [], "suggested": {}}
 
 
 # ---- between copies: a decision about the document, like Leave out -------------------------------------------------

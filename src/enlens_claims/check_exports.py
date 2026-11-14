@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from typing import Callable
 
+from .nonscientific import REASON as NS_REASON
 from .store import Workspace
 from .verdicts import GRADES, STATUS_TEXT, _status_of_rounds, aggregate, effective, set_aside
 
@@ -52,12 +53,23 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
     titles.update(in_project)
     ver: dict[str, list[dict]] = {}
     from .docrole import nonscientific_docs
+    from .nonscientific import counting_hyps
 
     nonsci = nonscientific_docs(ws)  # 0.18.6: their judgements never decide an answer (verdicts.set_aside)
+    # 0.18.8 (K3): except in the checks of the hypotheses that count them (their own setting)
+    counts_ns = counting_hyps(ws) if nonsci else set()
+    ns_cids = {cid for hid in counts_ns for cid, _st in claims.get(hid, [])}
+    # 0.18.8 (K3): the judgements of non-scientific documents set aside, kept to draw them with a mark of their own
+    # (read, not counted): they change no count, colour or answer of the map
+    ns_ver: dict[str, list[dict]] = {}
     for v in ws.query("SELECT subject_id, passage_id, verdict, confidence, doc_id, user_verdict, model FROM "
                       "verifications WHERE subject_kind='user_claim'"):
         if counting.get(v["subject_id"], lambda _v: True)(v):
-            ver.setdefault(v["subject_id"], []).append(set_aside([effective(v)], nonsci)[0])
+            e = effective(v)
+            if nonsci and v["doc_id"] in nonsci and v["subject_id"] not in ns_cids:
+                ns_ver.setdefault(v["subject_id"], []).append(e)
+                e = set_aside([e], nonsci)[0]
+            ver.setdefault(v["subject_id"], []).append(e)
 
     def status_of(hid: str, leave_out: str | None = None) -> str:
         sts = []
@@ -67,40 +79,58 @@ def evidence_map(ws: Workspace, threshold: float | None = None, batch_id: str | 
             sts.append(_status_of_rounds(rs, vs, thr, stage, wt))
         return sts[0] if len(sts) == 1 else aggregate(sts)
 
+    def sides(rows: list[dict]) -> dict[str, dict[str, int]]:
+        per_doc: dict[str, dict[str, int]] = {}
+        for v in rows:
+            if v["verdict"] in GRADES and v["confidence"] is not None and v["confidence"] >= thr:
+                c = per_doc.setdefault(v["doc_id"], {"supports": 0, "partially_supports": 0, "refutes": 0})
+                c[v["verdict"]] += 1
+        return per_doc
+
+    def cell(c: dict[str, int]) -> dict:
+        positive = "supports" if c["supports"] else "partly" if c["partially_supports"] else None
+        return {"side": "both" if positive and c["refutes"] else positive or "refutes", "excerpts": sum(c.values())}
+
     cells: dict[str, dict[str, dict]] = {}
     answers: dict[str, int] = {}
     decides: dict[str, int] = {}
+    shown_ns: set[str] = set()  # 0.18.8 (K3): non-scientific documents shown with their own mark only
     hyps = []
     for h in hs:
         hid = h["hyp_id"]
-        per_doc: dict[str, dict[str, int]] = {}
         # an answer not given yet (waiting, failed, not judged) is not decided by any document
         decided = h["status"] not in ("waiting", "failed", "not_checked", "no_passages")
-        for cid, _stage in claims.get(hid, []):
-            for v in ver.get(cid, []):
-                if v["verdict"] in GRADES and v["confidence"] is not None and v["confidence"] >= thr:
-                    c = per_doc.setdefault(v["doc_id"], {"supports": 0, "partially_supports": 0, "refutes": 0})
-                    c[v["verdict"]] += 1
+        per_doc = sides([v for cid, _stage in claims.get(hid, []) for v in ver.get(cid, [])])
         row = {}
         for doc, c in per_doc.items():
-            positive = "supports" if c["supports"] else "partly" if c["partially_supports"] else None
-            side = "both" if positive and c["refutes"] else positive or "refutes"
-            row[doc] = {"side": side, "excerpts": sum(c.values())}
+            row[doc] = cell(c)
+            if doc in nonsci:  # counted by this hypothesis's own setting (K3)
+                row[doc].update(nonscientific=True, counted=True)
             answers[doc] = answers.get(doc, 0) + 1
             if decide and decided and status_of(hid, doc) != h["status"]:
                 decides[doc] = decides.get(doc, 0) + 1
+        counted_docs = len(row)
+        # 0.18.8 (K3): what the non-scientific documents say, read and not counted: a cell of its own look, never in
+        # the counts (`docs_counted`, `answers`, `decides`)
+        for doc, c in sides([v for cid, _stage in claims.get(hid, []) for v in ns_ver.get(cid, [])]).items():
+            if doc not in row:
+                row[doc] = {**cell(c), "nonscientific": True, "counted": False}
+                shown_ns.add(doc)
         cells[hid] = row
         hyps.append({"hyp_id": hid, "text": h["text"], "status": h["status"],
                      "status_text": h.get("status_text") or STATUS_TEXT.get(h["status"], h["status"]),
-                     "docs_counted": len(row),
-                     "single_document": len(row) == 1, "batch_id": h["batch_id"]})
+                     "docs_counted": counted_docs, "count_nonscientific": hid in counts_ns,
+                     "single_document": counted_docs == 1, "batch_id": h["batch_id"]})
     docs = []
-    for doc in sorted(answers, key=lambda d: (-answers[d], -decides.get(d, 0), titles.get(d, "").lower())):
+    for doc in sorted(set(answers) | shown_ns,
+                      key=lambda d: (-answers.get(d, 0), -decides.get(d, 0), titles.get(d, "").lower())):
         n = decides.get(doc, 0)
-        docs.append({"doc_id": doc, "title": titles.get(doc, ""), "answers": answers[doc], "decides": n,
-                     "key": n >= 2 and n >= 0.2 * max(1, len(hyps)), "in_project": doc in in_project})
+        docs.append({"doc_id": doc, "title": titles.get(doc, ""), "answers": answers.get(doc, 0), "decides": n,
+                     "key": n >= 2 and n >= 0.2 * max(1, len(hyps)), "in_project": doc in in_project,
+                     "nonscientific": doc in nonsci})
     return {"threshold": thr, "hypotheses": hyps, "documents": docs, "cells": cells,
-            "documents_without_evidence": len(set(in_project) - set(answers))}
+            "documents_without_evidence": len(set(in_project) - set(answers) - shown_ns),
+            "nonscientific_shown": len(shown_ns - set(answers))}
 
 
 def document_answers(ws: Workspace, threshold: float | None = None) -> dict:
@@ -114,7 +144,7 @@ def document_answers(ws: Workspace, threshold: float | None = None) -> dict:
     """
     m = evidence_map(ws, threshold, decide=False)
     last = ws.scalar("SELECT MAX(created_at) FROM tasks WHERE kind='check'")
-    return {"threshold": m["threshold"], "answers": {d["doc_id"]: d["answers"] for d in m["documents"]},
+    return {"threshold": m["threshold"], "answers": {d["doc_id"]: d["answers"] for d in m["documents"] if d["answers"]},
             "hypotheses": len(m["hypotheses"]), "last_check": last or None}
 
 
@@ -135,11 +165,14 @@ def map_table(m: dict) -> list[dict]:
                "Documents it rests on": h["docs_counted"] if not h["single_document"] else "1 (only one document)"}
         for d, name in zip(m["documents"], heads):
             c = m["cells"].get(h["hyp_id"], {}).get(d["doc_id"])
-            row[name] = f"{MAP_SYMBOL[c['side']]} {c['excerpts']}" if c else ""
+            # 0.18.8 (K3): a non-scientific document's, read and not counted, in brackets
+            row[name] = ("" if not c else f"[{MAP_SYMBOL[c['side']]} {c['excerpts']}]" if c.get("counted") is False
+                         else f"{MAP_SYMBOL[c['side']]} {c['excerpts']}")
         rows.append(row)
     if rows:
         rows.append({"Hypothesis": "Key: + supports, (+) partly supports, − contradicts, ± both; the number is how many "
-                                   "excerpts of that document count", "Answer": "", "Documents it rests on": ""})
+                                   "excerpts of that document count. In brackets: a non-scientific document, read and "
+                                   "not counted", "Answer": "", "Documents it rests on": ""})
     return rows
 
 
@@ -322,9 +355,11 @@ def export_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[st
                     "Judged by": judged_by,
                     "AI's own judgement": (unread or JUDGEMENT_TEXT.get(p["ai_verdict"])) if p else "",
                     "AI certainty": f"{cert} ({round(p['confidence'] * 100)}%)" if cert else "",
-                    "Counted in the answer": ("yes" if p["counted"] else  # 0.18.6: why not, for a Non-scientific one
-                                              "no: a non-scientific document" if p.get("nonscientific") and p["verdict"]
-                                              else "no") if p else "",
+                    "Counted in the answer": (  # 0.18.6: why not, for a Non-scientific one
+                        ("yes: a non-scientific document, counted in this check" if p.get("nonscientific_counted")
+                         else "yes") if p["counted"] else  # 0.18.8 (K3): counted by the hypothesis's own setting
+                        "no: a non-scientific document" if p.get("nonscientific") and p["verdict"]
+                        else "no") if p else "",
                     "Quote": (p["quote"] or "") if p else "",
                     "Quote chosen by": (p["quote_by"] or "") if p and p["quote"] else "",
                     "Document": p["title"] if p else "",
@@ -411,6 +446,13 @@ def summary_table(ws: Workspace, threshold: float | None = None, hyp_ids: list[s
             # 0.11.2: a stronger model read the excerpts again and its reading changed the answer
             "Answer before a stronger model read it again": STATUS_TEXT.get(res["status_before_stronger"], "")
             if res.get("status_before_stronger") else "",
+            # 0.18.6 / 0.18.8 (K3): the answer counting the non-scientific documents, where it differs; and whether this
+            # hypothesis counts them (its own setting), with why
+            "Answer counting non-scientific documents": STATUS_TEXT.get(res["status_all_sources"],
+                                                                         res["status_all_sources"])
+            if res.get("status_all_sources") and res["status_all_sources"] != res["status"] else "",
+            "Non-scientific documents counted here": (f"yes: {res.get('count_nonscientific_why') or NS_REASON}"
+                                                      if res.get("count_nonscientific") else ""),
             "Assessment": _assessment_text(res),  # 0.18.1 (N4): made by rules, never by an AI
             "Answer for each part": "; ".join(f"{i}. {p['claim']}: {_part_text(p)}"
                                               for i, p in enumerate(parts, 1)) if len(parts) > 1 else "",
